@@ -1,4 +1,0 @@
-functions-framework==3.*
-google-cloud-storage==2.*
-pillow>=10,<12
-pillow-heif>=0.16,<1
