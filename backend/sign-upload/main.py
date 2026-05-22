@@ -14,6 +14,7 @@ Variáveis de ambiente:
 Entry point: sign_upload    Runtime: python312
 Veja README.md para os passos de deploy.
 """
+import base64
 import datetime
 import json
 import os
@@ -85,7 +86,17 @@ def sign_upload(request):
     filename = body.get("filename") or "foto"
     safe = re.sub(r"[^A-Za-z0-9._-]", "_", filename)[-80:]
     stamp = datetime.datetime.utcnow().strftime("%Y%m%d-%H%M%S")
-    object_name = f"uploads/{stamp}-{uuid.uuid4().hex[:8]}-{safe}"
+    leaf = f"{stamp}-{uuid.uuid4().hex[:8]}-{safe}"
+    # O pedal detectado no cliente viaja embutido no caminho do objeto
+    # (base64url); a process-upload o lê de lá — sem depender de routes.json.
+    ride = body.get("ride")
+    if isinstance(ride, dict) and ride.get("date"):
+        token = (base64.urlsafe_b64encode(
+            json.dumps(ride, ensure_ascii=False).encode("utf-8"))
+            .decode("ascii").rstrip("="))
+        object_name = f"uploads/r-{token}/{leaf}"
+    else:
+        object_name = f"uploads/{leaf}"
 
     # Assina a URL v4 usando a SA do runtime via IAM signBlob — sem chave .json.
     creds, _ = google.auth.default()

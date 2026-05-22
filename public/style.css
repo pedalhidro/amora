@@ -1121,6 +1121,21 @@ body.drawing .trackpoint-marker:active { cursor: grabbing !important; }
   font-weight: 600;
   color: var(--text);
 }
+.photo-popup .photo-del-btn {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 7px 10px;
+  border: none;
+  border-top: 0.5px solid rgba(255, 255, 255, 0.14);
+  background: transparent;
+  color: #e24b4a;
+  font-size: 12px;
+  cursor: pointer;
+}
+.photo-popup .photo-del-btn:hover {
+  background: rgba(226, 75, 74, 0.14);
+}
 
 /* Fotos do pedal — tira de miniaturas no modal da rota. */
 .route-modal-photos:empty { display: none; }
@@ -1183,3 +1198,25 @@ body.drawing .trackpoint-marker:active { cursor: grabbing !important; }
 
 /* Foto enviada pelo usuário — anel destacado para diferenciar das do mapa. */
 .photo-dot-upload { border-color: #2da9ff; }
+
+/* Cone de visada — mostra rumo + campo de visão da câmera (EXIF). */
+.photo-aim { position: relative; }
+.photo-aim > svg {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  overflow: visible;
+}
+.photo-aim > .photo-dot {
+  position: absolute;
+  left: 40px;
+  top: 40px;
+}
+.photo-cone {
+  fill: #2da9ff;
+  fill-opacity: 0.25;
+  stroke: #2da9ff;
+  stroke-opacity: 0.6;
+  stroke-width: 1;
+}

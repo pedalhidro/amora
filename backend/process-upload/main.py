@@ -22,9 +22,11 @@ Variáveis de ambiente:
 Entry point: process_upload    Runtime: python312
 Veja README.md para deploy e IAM.
 """
+import base64
 import datetime
 import io
 import json
+import math
 import os
 import re
 import urllib.request
@@ -81,7 +83,8 @@ def _dms_to_decimal(dms, ref):
 
 
 def read_exif(img):
-    out = {"lat": None, "lng": None, "alt": None, "datetime": None}
+    out = {"lat": None, "lng": None, "alt": None, "datetime": None,
+           "bearing": None, "fov": None}
     try:
         exif = img.getexif()
     except Exception:
@@ -104,6 +107,23 @@ def read_exif(img):
                 out["alt"] = round(float(alt), 1)
             except (TypeError, ValueError):
                 pass
+        direction = gps.get(17)  # GPSImgDirection — bússola da câmera
+        if direction is not None:
+            try:
+                out["bearing"] = round(float(direction) % 360, 1)
+            except (TypeError, ValueError):
+                pass
+    f35 = exif.get(41989)  # FocalLengthIn35mmFilm → campo de visão
+    if f35:
+        try:
+            f = float(f35)
+            if f > 0:
+                portrait = (exif.get(274) or 1) in (5, 6, 7, 8)
+                frame = 24.0 if portrait else 36.0
+                out["fov"] = round(
+                    math.degrees(2 * math.atan(frame / (2 * f))), 1)
+        except (TypeError, ValueError):
+            pass
     dt_raw = exif.get(36867) or exif.get(306)
     if dt_raw:
         try:
@@ -139,6 +159,25 @@ def _load_routes():
         except Exception as e:  # noqa: BLE001
             print(f"[routes] não carregou {ROUTES_URL}: {e}")
     return _routes_cache
+
+
+def ride_from_name(name):
+    """Lê o pedal embutido no caminho 'uploads/r-<base64url>/...' (se houver).
+
+    A função sign-upload codifica ali o pedal que o app detectou no
+    navegador — é a fonte preferida, dispensando o fetch de routes.json.
+    """
+    for part in name.split("/"):
+        if part.startswith("r-"):
+            try:
+                token = part[2:]
+                token += "=" * (-len(token) % 4)
+                ride = json.loads(base64.urlsafe_b64decode(token))
+                if isinstance(ride, dict) and ride.get("date"):
+                    return ride
+            except Exception:  # noqa: BLE001
+                return None
+    return None
 
 
 def ride_for(dt_iso):
@@ -241,7 +280,10 @@ def process_upload(cloud_event):
         "lng": meta["lng"],
         "alt": meta["alt"],
         "datetime": meta["datetime"],
-        "ride": ride_for(meta["datetime"]),
+        "bearing": meta["bearing"],
+        "fov": meta["fov"],
+        # Prefere o pedal detectado pelo app; routes.json é só o reserva.
+        "ride": ride_from_name(name) or ride_for(meta["datetime"]),
     }
     _put(out, f"{OUT_PREFIX}/items/{pid}.json",
          json.dumps(item, ensure_ascii=False).encode("utf-8"),

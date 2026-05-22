@@ -324,10 +324,9 @@ function setOverpassOpacity(frac) {
 // Cada foto com GPS no EXIF vira um pequeno círculo no mapa; clicar abre um
 // popup com o thumbnail. photos.json é carregado preguiçosamente na primeira
 // vez que a camada é ligada.
-// Manifesto de fotos: primeiro o acervo no GCS (mantido pela função
-// process-upload), com queda para o photos.json local (build-photos.py / dev).
-const PHOTOS_REMOTE_URL =
-  'https://telhas.pedalhidrografi.co/fotos/photos.jsonld';
+// Manifesto de fotos: primeiro o acervo servido pelo backend em /fotos/
+// (mesma origem que o app), com queda para o photos.json local.
+const PHOTOS_REMOTE_URL = '/fotos/photos.jsonld';
 const PHOTOS_LOCAL_URL = 'photos.json';
 let photoMarkers = [];
 let photosLoaded = false;
@@ -342,6 +341,134 @@ function ridePhotos(date) {
   return photoMarkers.filter(
     (m) => m._photo.ride && m._photo.ride.date === date,
   );
+}
+
+// ── Marcador de foto: círculo, ou cone de visada quando há bússola ───────
+const CARDINALS = ['N', 'NE', 'L', 'SE', 'S', 'SO', 'O', 'NO'];
+function cardinal(deg) {
+  return CARDINALS[Math.round((((deg % 360) + 360) % 360) / 45) % 8];
+}
+
+// Caminho SVG de um setor (cone) com vértice em (cx,cy), abrindo `fov` graus
+// em torno do rumo `bearing` (0 = norte = para cima).
+function conePath(cx, cy, r, bearing, fov) {
+  const a1 = ((bearing - fov / 2) * Math.PI) / 180;
+  const a2 = ((bearing + fov / 2) * Math.PI) / 180;
+  const x1 = (cx + r * Math.sin(a1)).toFixed(1);
+  const y1 = (cy - r * Math.cos(a1)).toFixed(1);
+  const x2 = (cx + r * Math.sin(a2)).toFixed(1);
+  const y2 = (cy - r * Math.cos(a2)).toFixed(1);
+  const largeArc = fov > 180 ? 1 : 0;
+  return `M${cx},${cy} L${x1},${y1} A${r},${r} 0 ${largeArc} 1 ${x2},${y2} Z`;
+}
+
+// Deriva rumo + campo de visão dos metadados EXIF (saída do exifr).
+function cameraFromExif(meta) {
+  let bearing = null;
+  let fov = null;
+  const dir = meta && meta.GPSImgDirection;
+  if (Number.isFinite(dir)) bearing = ((dir % 360) + 360) % 360;
+  const f35 = meta && meta.FocalLengthIn35mmFilm;
+  if (Number.isFinite(f35) && f35 > 0) {
+    const portrait = [5, 6, 7, 8].includes(meta.Orientation);
+    const frame = portrait ? 24 : 36;
+    fov = (2 * Math.atan(frame / (2 * f35)) * 180) / Math.PI;
+  }
+  return { bearing, fov };
+}
+
+// divIcon da foto. Com bússola → cone translúcido + thumbnail no vértice;
+// sem bússola → o círculo simples.
+function photoDivIcon(thumbUrl, bearing, fov, extraClass) {
+  const dotClass = 'photo-dot' + (extraClass ? ' ' + extraClass : '');
+  const dot = `<div class="${dotClass}" style="background-image:url('${thumbUrl}')"></div>`;
+  if (!Number.isFinite(bearing)) {
+    return L.divIcon({
+      className: 'photo-dot-wrap',
+      html: dot,
+      iconSize: [40, 40],
+      iconAnchor: [20, 20],
+      popupAnchor: [0, -20],
+    });
+  }
+  const SZ = 120;
+  const C = SZ / 2;
+  const f = Number.isFinite(fov) ? Math.max(10, Math.min(170, fov)) : 70;
+  return L.divIcon({
+    className: 'photo-dot-wrap',
+    html:
+      `<div class="photo-aim" style="width:${SZ}px;height:${SZ}px">` +
+      `<svg width="${SZ}" height="${SZ}" viewBox="0 0 ${SZ} ${SZ}">` +
+      `<path d="${conePath(C, C, 50, bearing, f)}" class="photo-cone"/>` +
+      `</svg>${dot}</div>`,
+    iconSize: [SZ, SZ],
+    iconAnchor: [C, C],
+    popupAnchor: [0, -C],
+  });
+}
+
+// ── Detecção automática do pedal de uma foto ─────────────────────────────
+// Usa as rotas já carregadas na barra lateral: casa pela data (chave quase
+// única, pedais são semanais) e, na falta, pela proximidade do traçado.
+function rideFromEntry(e) {
+  const num = e.number;
+  return {
+    date: e.date || null,
+    code: num && num.value ? `${num.source} ${num.value}` : null,
+    name: e.name || null,
+  };
+}
+function dateKey(d) {
+  return (
+    d.getFullYear() +
+    '-' +
+    String(d.getMonth() + 1).padStart(2, '0') +
+    '-' +
+    String(d.getDate()).padStart(2, '0')
+  );
+}
+function detectRideByDate(dateObj) {
+  const cand = [dateKey(dateObj)];
+  if (dateObj.getHours() < 6) {
+    // foto de madrugada → provavelmente o pedal da véspera
+    const prev = new Date(dateObj);
+    prev.setDate(prev.getDate() - 1);
+    cand.push(dateKey(prev));
+  }
+  for (const r of routes.values()) {
+    if (r.entry.date && cand.includes(r.entry.date)) {
+      return rideFromEntry(r.entry);
+    }
+  }
+  return null;
+}
+function detectRideByGps(lat, lng) {
+  const here = L.latLng(lat, lng);
+  let best = null;
+  let bestD = Infinity;
+  for (const r of routes.values()) {
+    const lls = r.entry.latlngs;
+    if (!lls || !lls.length) continue;
+    for (const ll of lls) {
+      const d = here.distanceTo(L.latLng(ll[0], ll[1]));
+      if (d < bestD) {
+        bestD = d;
+        best = r.entry;
+      }
+    }
+  }
+  return bestD < 250 && best ? rideFromEntry(best) : null;
+}
+// dateObj: Date local da captura (EXIF). Devolve {date,code,name} ou null.
+function detectRide(dateObj, lat, lng) {
+  let ride = null;
+  if (dateObj instanceof Date && !isNaN(dateObj)) {
+    ride = detectRideByDate(dateObj);
+  }
+  if (!ride && Number.isFinite(lat) && Number.isFinite(lng)) {
+    ride = detectRideByGps(lat, lng);
+  }
+  return ride;
 }
 
 async function loadPhotos() {
@@ -368,13 +495,7 @@ async function loadPhotos() {
       for (const ph of data.photos || []) {
         if (!Number.isFinite(ph.lat) || !Number.isFinite(ph.lng)) continue;
         // Cada foto é um pequeno círculo com o próprio thumbnail dentro.
-        const icon = L.divIcon({
-          className: 'photo-dot-wrap',
-          html: `<div class="photo-dot" style="background-image:url('${ph.thumb || ph.file}')"></div>`,
-          iconSize: [40, 40],
-          iconAnchor: [20, 20],
-          popupAnchor: [0, -20],
-        });
+        const icon = photoDivIcon(ph.thumb || ph.file, ph.bearing, ph.fov, '');
         const m = L.marker([ph.lat, ph.lng], { icon, opacity: photosOpacity });
         m._photo = ph;
         const when = ph.datetime
@@ -386,6 +507,10 @@ async function loadPhotos() {
                 ph.ride.date,
             )}</div>`
           : '';
+        const canDelete = Boolean(DELETE_PHOTO_URL && ph.id);
+        const delBtn = canDelete
+          ? `<button type="button" class="photo-del-btn">Apagar foto</button>`
+          : '';
         m.bindPopup(
           `<div class="photo-popup">` +
             `<img src="${ph.file}" loading="lazy" alt="${escapeHtml(ph.orig || '')}" />` +
@@ -393,9 +518,19 @@ async function loadPhotos() {
             `<div class="photo-meta">${escapeHtml(ph.orig || '')}` +
             (when ? ` · ${escapeHtml(when)}` : '') +
             (Number.isFinite(ph.alt) ? ` · ${ph.alt} m` : '') +
-            `</div></div>`,
+            (Number.isFinite(ph.bearing)
+              ? ` · ${Math.round(ph.bearing)}° ${cardinal(ph.bearing)}`
+              : '') +
+            `</div>${delBtn}</div>`,
           { maxWidth: 320, className: 'photo-popup-wrap' },
         );
+        if (canDelete) {
+          m.on('popupopen', (e) => {
+            const el = e.popup.getElement();
+            const btn = el && el.querySelector('.photo-del-btn');
+            if (btn) btn.onclick = () => deleteArchivedPhoto(m);
+          });
+        }
         photoMarkers.push(m);
       }
       photosLoaded = true;
@@ -438,6 +573,38 @@ function hidePhotos() {
 function setPhotosOpacity(frac) {
   photosOpacity = frac;
   for (const m of photoMarkers) m.setOpacity(frac);
+}
+
+// Apaga uma foto do acervo via a função delete-photo (protegida por token).
+async function deleteArchivedPhoto(m) {
+  const ph = m && m._photo;
+  if (!ph || !ph.id || !DELETE_PHOTO_URL) return;
+  if (
+    !window.confirm(
+      `Apagar "${ph.orig || ph.id}" do acervo? Esta ação não pode ser desfeita.`,
+    )
+  ) {
+    return;
+  }
+  const token = getUploadToken();
+  if (!token) return;
+  try {
+    const res = await fetch(DELETE_PHOTO_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Upload-Token': token },
+      body: JSON.stringify({ id: ph.id }),
+    });
+    if (res.status === 403) {
+      localStorage.removeItem('phidro:uploadToken');
+      throw new Error('token inválido');
+    }
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    map.removeLayer(m);
+    photoMarkers = photoMarkers.filter((x) => x !== m);
+    showToast('Foto apagada do acervo.');
+  } catch (err) {
+    showToast(`Falha ao apagar: ${err.message}`);
+  }
 }
 
 // Liga a camada já filtrada para um pedal (usado pelo modal de rota).
@@ -522,7 +689,10 @@ const HEIC2ANY_URL =
 // URL da Cloud Function que emite URLs assinadas (backend/sign-upload/).
 // Deixe '' para manter o envio ao acervo desativado — só o preview local
 // fica disponível. Preencha após fazer o deploy da função.
-const SIGN_UPLOAD_URL = 'https://sign-upload-lrrinyjwxq-rj.a.run.app';
+// Backend de fotos. Caminhos relativos: o backend (Raspberry Pi) serve o
+// app e a API na mesma origem — sem CORS, sem URL para configurar.
+const SIGN_UPLOAD_URL = '/sign-upload';
+const DELETE_PHOTO_URL = '/delete-photo';
 let uploadedMarkers = [];
 let uploadedData = [];
 
@@ -577,7 +747,12 @@ async function handlePhotoUpload(fileList) {
   let failed = 0;
   for (const f of files) {
     try {
-      const meta = await window.exifr.parse(f, { gps: true, exif: true });
+      const meta = await window.exifr.parse(f, {
+        gps: true,
+        exif: true,
+        ifd0: true,
+        translateValues: false,
+      });
       const lat = meta?.latitude;
       const lng = meta?.longitude;
       if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
@@ -599,10 +774,13 @@ async function handlePhotoUpload(fileList) {
       } else {
         url = URL.createObjectURL(f);
       }
+      const cam = cameraFromExif(meta);
+      const ride = detectRide(meta?.DateTimeOriginal, lat, lng);
       addUploadedPhoto({
         url,
         file: f,
         orig: f.name,
+        ride,
         lat: Math.round(lat * 1e6) / 1e6,
         lng: Math.round(lng * 1e6) / 1e6,
         alt: Number.isFinite(meta?.GPSAltitude)
@@ -612,6 +790,8 @@ async function handlePhotoUpload(fileList) {
           meta?.DateTimeOriginal instanceof Date
             ? meta.DateTimeOriginal.toISOString()
             : null,
+        bearing: cam.bearing,
+        fov: cam.fov,
       });
       added++;
     } catch (err) {
@@ -634,22 +814,22 @@ async function handlePhotoUpload(fileList) {
 }
 
 function addUploadedPhoto(p) {
-  const icon = L.divIcon({
-    className: 'photo-dot-wrap',
-    html: `<div class="photo-dot photo-dot-upload" style="background-image:url('${p.url}')"></div>`,
-    iconSize: [40, 40],
-    iconAnchor: [20, 20],
-    popupAnchor: [0, -20],
-  });
+  const icon = photoDivIcon(p.url, p.bearing, p.fov, 'photo-dot-upload');
   const m = L.marker([p.lat, p.lng], { icon });
   const when = p.datetime ? new Date(p.datetime).toLocaleString('pt-BR') : '';
+  const rideText = p.ride
+    ? [p.ride.code, p.ride.name].filter(Boolean).join(' · ') || p.ride.date
+    : 'Foto enviada · apenas nesta sessão';
   m.bindPopup(
     `<div class="photo-popup">` +
       `<img src="${p.url}" alt="${escapeHtml(p.orig)}" />` +
-      `<div class="photo-ride">Foto enviada · apenas nesta sessão</div>` +
+      `<div class="photo-ride">${escapeHtml(rideText)}</div>` +
       `<div class="photo-meta">${escapeHtml(p.orig)}` +
       (when ? ` · ${escapeHtml(when)}` : '') +
       (Number.isFinite(p.alt) ? ` · ${p.alt} m` : '') +
+      (Number.isFinite(p.bearing)
+        ? ` · ${Math.round(p.bearing)}° ${cardinal(p.bearing)}`
+        : '') +
       `</div></div>`,
     { maxWidth: 320, className: 'photo-popup-wrap' },
   );
@@ -746,7 +926,11 @@ async function uploadToArchive() {
       const res = await fetch(SIGN_UPLOAD_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Upload-Token': token },
-        body: JSON.stringify({ filename: p.orig, contentType: ct }),
+        body: JSON.stringify({
+          filename: p.orig,
+          contentType: ct,
+          ride: p.ride || null,
+        }),
       });
       if (res.status === 403) {
         localStorage.removeItem('phidro:uploadToken');

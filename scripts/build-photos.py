@@ -27,6 +27,7 @@ Dependências:
 
 import argparse
 import json
+import math
 import re
 import sys
 from datetime import datetime
@@ -73,8 +74,9 @@ def dms_to_decimal(dms, ref):
 
 
 def read_exif(img):
-    """Devolve dict {lat, lng, alt, datetime} — campos None quando ausentes."""
-    out = {'lat': None, 'lng': None, 'alt': None, 'datetime': None}
+    """Devolve {lat, lng, alt, datetime, bearing, fov} — None quando ausente."""
+    out = {'lat': None, 'lng': None, 'alt': None, 'datetime': None,
+           'bearing': None, 'fov': None}
     try:
         exif = img.getexif()
     except Exception:
@@ -98,6 +100,27 @@ def read_exif(img):
                 out['alt'] = round(float(alt), 1)
             except (TypeError, ValueError):
                 pass
+        # GPSImgDirection (tag 17) — bússola: para onde a câmera apontava.
+        direction = gps.get(17)
+        if direction is not None:
+            try:
+                out['bearing'] = round(float(direction) % 360, 1)
+            except (TypeError, ValueError):
+                pass
+
+    # Campo de visão — calculado do FocalLengthIn35mmFilm (tag 41989).
+    f35 = exif.get(41989)
+    if f35:
+        try:
+            f = float(f35)
+            if f > 0:
+                # orientações 5–8 = retrato → lado curto do quadro (24 mm)
+                portrait = (exif.get(274) or 1) in (5, 6, 7, 8)
+                frame = 24.0 if portrait else 36.0
+                out['fov'] = round(
+                    math.degrees(2 * math.atan(frame / (2 * f))), 1)
+        except (TypeError, ValueError):
+            pass
 
     dt_raw = exif.get(36867) or exif.get(306)
     if dt_raw:
@@ -259,6 +282,8 @@ def main():
             'lng': meta['lng'],
             'alt': meta['alt'],
             'datetime': meta['datetime'],
+            'bearing': meta['bearing'],
+            'fov': meta['fov'],
             'ride': ride,
         })
         tag = f"  [{ride['code'] or ride['date']}]" if ride else ""
