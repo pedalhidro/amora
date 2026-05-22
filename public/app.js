@@ -110,7 +110,7 @@ const OVERLAY_LAYERS = [
   {
     id: 'photos',
     label: 'Fotos geo',
-    defaultVisible: false,
+    defaultVisible: true,
     defaultPct: 100,
     show: () => showPhotos(),
     hide: () => hidePhotos(),
@@ -605,16 +605,13 @@ function setSelectedVoice(id) {
   }
 }
 
-// Seletor de voz no painel de camadas — aparece só quando há +de uma voz.
+// Seletor de voz no painel de camadas — sempre visível, com a linha de
+// ações (nova / exportar / importar / apagar) logo abaixo.
 function refreshVoicePicker() {
   const panel = document.querySelector('.layer-panel');
   if (!panel) return;
   const voices = (photoManifest && photoManifest.voices) || [];
   let row = document.getElementById('voice-row');
-  if (voices.length < 2) {
-    if (row) row.remove();
-    return;
-  }
   if (!row) {
     row = document.createElement('div');
     row.id = 'voice-row';
@@ -625,6 +622,25 @@ function refreshVoicePicker() {
     panel.appendChild(row);
     row.querySelector('#voice-picker').addEventListener('change', (e) => {
       setSelectedVoice(e.target.value);
+    });
+    const actions = document.createElement('div');
+    actions.id = 'voice-actions';
+    actions.innerHTML =
+      '<a href="#" data-act="new" title="Nova voz">➕</a>' +
+      '<a href="#" data-act="export" title="Exportar voz (.zip)">💾</a>' +
+      '<a href="#" data-act="import" title="Importar voz (.zip)">📂</a>' +
+      '<a href="#" data-act="delete" title="Apagar voz">🗑️</a>';
+    panel.appendChild(actions);
+    actions.addEventListener('click', (e) => {
+      const a = e.target.closest('a[data-act]');
+      if (!a) return;
+      e.preventDefault();
+      const act = a.dataset.act;
+      if (act === 'new') createVoice();
+      else if (act === 'export') exportVoice(selectedVoice);
+      else if (act === 'import')
+        document.getElementById('voice-import-input')?.click();
+      else if (act === 'delete') deleteVoice(selectedVoice);
     });
   }
   const sel = row.querySelector('#voice-picker');
@@ -639,6 +655,141 @@ function refreshVoicePicker() {
       )
       .join('');
   sel.value = selectedVoice;
+}
+
+// Cria uma voz nova via POST /voices, adiciona-a e a seleciona.
+async function createVoice() {
+  const label = (window.prompt('Nome da nova voz:') || '').trim();
+  if (!label) return;
+  const token = getUploadToken();
+  if (!token) return;
+  try {
+    const res = await fetch(CREATE_VOICE_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Upload-Token': token },
+      body: JSON.stringify({ label }),
+    });
+    if (res.status === 403) {
+      localStorage.removeItem('phidro:uploadToken');
+      throw new Error('token inválido');
+    }
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const v = await res.json(); // { id, label }
+    if (!photoManifest) photoManifest = { voices: [] };
+    if (!Array.isArray(photoManifest.voices)) photoManifest.voices = [];
+    photoManifest.voices.push({ id: v.id, label: v.label, photos: [] });
+    setSelectedVoice(v.id);
+    refreshVoicePicker();
+    showToast(`Voz "${v.label}" criada e selecionada.`);
+  } catch (err) {
+    showToast(`Falha ao criar voz: ${err.message}`);
+  }
+}
+
+// Força um novo fetch do manifesto e reconstrói os marcadores.
+async function reloadPhotos() {
+  photosLoaded = false;
+  photosLoading = null;
+  await loadPhotos();
+  applyPhotoVisibility();
+}
+
+// Exporta a voz selecionada como .zip (voice.json + originais + fotos).
+async function exportVoice(vid) {
+  if (!vid || vid === 'all') {
+    showToast('Selecione uma voz para exportar.');
+    return;
+  }
+  const token = getUploadToken();
+  if (!token) return;
+  showToast('Preparando o .zip da voz…');
+  try {
+    const res = await fetch('/voice-export', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Upload-Token': token },
+      body: JSON.stringify({ voice: vid }),
+    });
+    if (res.status === 403) {
+      localStorage.removeItem('phidro:uploadToken');
+      throw new Error('token inválido');
+    }
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const blob = await res.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download =
+      vid.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-|-$/g, '') + '.zip';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  } catch (err) {
+    showToast(`Falha ao exportar: ${err.message}`);
+  }
+}
+
+// Importa uma voz de um .zip, recarrega o manifesto e a seleciona.
+async function importVoice(file) {
+  const token = getUploadToken();
+  if (!token) return;
+  showToast('Importando voz…');
+  try {
+    const res = await fetch('/voice-import', {
+      method: 'POST',
+      headers: { 'X-Upload-Token': token },
+      body: file,
+    });
+    if (res.status === 403) {
+      localStorage.removeItem('phidro:uploadToken');
+      throw new Error('token inválido');
+    }
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const r = await res.json();
+    await reloadPhotos();
+    setSelectedVoice(r.voice);
+    showToast(`Voz "${r.label}" importada — ${r.imported} foto(s).`);
+  } catch (err) {
+    showToast(`Falha ao importar: ${err.message}`);
+  }
+}
+
+// Apaga a voz selecionada e todas as suas fotos — definitivo.
+async function deleteVoice(vid) {
+  if (!vid || vid === 'all') {
+    showToast('Selecione uma voz para apagar.');
+    return;
+  }
+  if (vid === 'voice/censo') {
+    showToast('A voz Censo não pode ser apagada.');
+    return;
+  }
+  if (
+    !window.confirm(
+      'Apagar esta voz e TODAS as suas fotos? Não pode ser desfeito.',
+    )
+  ) {
+    return;
+  }
+  const token = getUploadToken();
+  if (!token) return;
+  try {
+    const res = await fetch('/voice-delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Upload-Token': token },
+      body: JSON.stringify({ voice: vid }),
+    });
+    if (res.status === 403) {
+      localStorage.removeItem('phidro:uploadToken');
+      throw new Error('token inválido');
+    }
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    selectedVoice = 'all';
+    try {
+      localStorage.setItem('phidro:voice', 'all');
+    } catch {}
+    await reloadPhotos();
+    showToast('Voz apagada.');
+  } catch (err) {
+    showToast(`Falha ao apagar voz: ${err.message}`);
+  }
 }
 
 // Visibilidade efetiva: camada ligada E (sem filtro OU foto do pedal filtrado).
@@ -791,6 +942,7 @@ const HEIC2ANY_URL =
 // app e a API na mesma origem — sem CORS, sem URL para configurar.
 const SIGN_UPLOAD_URL = '/sign-upload';
 const DELETE_PHOTO_URL = '/delete-photo';
+const CREATE_VOICE_URL = '/voices';
 let uploadedMarkers = [];
 let uploadedData = [];
 
@@ -1015,7 +1167,14 @@ async function uploadToArchive() {
   }
   const token = getUploadToken();
   if (!token) return;
-  showToast(`Enviando ${pending.length} foto(s) ao acervo…`);
+  // As fotos vão para a voz selecionada; com "Todas" selecionado, vão p/ Censo.
+  const uploadVoice =
+    selectedVoice && selectedVoice !== 'all' ? selectedVoice : 'voice/censo';
+  const voiceLabel =
+    ((photoManifest && photoManifest.voices) || []).find(
+      (v) => v.id === uploadVoice,
+    )?.label || uploadVoice;
+  showToast(`Enviando ${pending.length} foto(s) → ${voiceLabel}…`);
   let ok = 0;
   let fail = 0;
   for (const p of pending) {
@@ -1028,6 +1187,7 @@ async function uploadToArchive() {
           filename: p.orig,
           contentType: ct,
           ride: p.ride || null,
+          voice: uploadVoice,
         }),
       });
       if (res.status === 403) {
@@ -1045,7 +1205,10 @@ async function uploadToArchive() {
     }
   }
   renderUploadChip();
-  showToast(`Acervo: ${ok} enviada(s)${fail ? ` · ${fail} com erro` : ''}`);
+  showToast(
+    `Acervo (${voiceLabel}): ${ok} enviada(s)` +
+      (fail ? ` · ${fail} com erro` : ''),
+  );
 }
 
 function renderUploadChip() {
@@ -1084,6 +1247,12 @@ uploadBtn?.addEventListener('click', () => uploadInput?.click());
 uploadInput?.addEventListener('change', () => {
   handlePhotoUpload(uploadInput.files);
   uploadInput.value = ''; // permite reenviar o mesmo arquivo
+});
+const voiceImportInput = document.getElementById('voice-import-input');
+voiceImportInput?.addEventListener('change', () => {
+  const f = voiceImportInput.files && voiceImportInput.files[0];
+  if (f) importVoice(f);
+  voiceImportInput.value = '';
 });
 
 // ─── Cicloinfra (OSM cycling infrastructure) overlay ─────────────────────────
@@ -1483,6 +1652,11 @@ layerPanel.onAdd = function () {
   return div;
 };
 layerPanel.addTo(map);
+// A camada "Fotos geo" vem ligada por padrão (defaultVisible: true) — o
+// checkbox só reflete o estado, então a ativamos explicitamente aqui.
+showPhotos();
+// Garante que o seletor de voz apareça mesmo antes das fotos carregarem.
+refreshVoicePicker();
 
 // ─── State ───────────────────────────────────────────────────────────────────
 const routesList = document.getElementById('routes-list');
@@ -1623,14 +1797,14 @@ async function boot() {
     // Dark casing + white stroke for readability on top of OSM/hydrography.
     const casing = L.polyline(entry.latlngs, {
       color: '#1a1a1a',
-      weight: 7,
+      weight: 3.5,
       opacity: 0.55,
       lineCap: 'round',
       lineJoin: 'round',
     });
     const layer = L.polyline(entry.latlngs, {
       color: '#ffffff',
-      weight: 3.5,
+      weight: 1.75,
       opacity: 1,
       lineCap: 'round',
       lineJoin: 'round',

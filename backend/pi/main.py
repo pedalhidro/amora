@@ -35,6 +35,7 @@ import os
 import re
 import sqlite3
 import uuid
+import zipfile
 from pathlib import Path, PurePosixPath
 
 import pillow_heif
@@ -79,14 +80,29 @@ CONTEXT = {
 }
 
 app = Flask(__name__)
-app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024  # 50 MB por upload
+app.config["MAX_CONTENT_LENGTH"] = 256 * 1024 * 1024  # uploads e import .zip
 
 
 # ── SQLite ───────────────────────────────────────────────────────────────
+def _now():
+    return datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z"
+
+
 def _db():
     con = sqlite3.connect(DB_PATH)
     con.execute("CREATE TABLE IF NOT EXISTS photos "
                 "(id TEXT PRIMARY KEY, datetime TEXT, data TEXT)")
+    con.execute("CREATE TABLE IF NOT EXISTS voices "
+                "(id TEXT PRIMARY KEY, label TEXT, created TEXT)")
+    try:
+        con.execute("ALTER TABLE photos ADD COLUMN voice TEXT")
+    except sqlite3.OperationalError:
+        pass  # a coluna já existe
+    # garante a voz padrão
+    con.execute(
+        "INSERT OR IGNORE INTO voices (id, label, created) VALUES (?, ?, ?)",
+        ("voice/censo", "Censo Hidrográfico", _now()))
+    con.commit()
     return con
 
 
@@ -159,19 +175,19 @@ def read_exif(img):
     return out
 
 
-def ride_from_name(name):
-    """Lê o pedal embutido no caminho 'uploads/r-<base64url>/...'."""
+def meta_from_name(name):
+    """Lê {ride, voice} embutidos no caminho 'uploads/r-<base64url>/...'."""
     for part in name.split("/"):
         if part.startswith("r-"):
             try:
                 token = part[2:]
                 token += "=" * (-len(token) % 4)
-                ride = json.loads(base64.urlsafe_b64decode(token))
-                if isinstance(ride, dict) and ride.get("date"):
-                    return ride
+                payload = json.loads(base64.urlsafe_b64decode(token))
+                if isinstance(payload, dict):
+                    return payload
             except Exception:
-                return None
-    return None
+                return {}
+    return {}
 
 
 def _render(raw, max_size):
@@ -183,30 +199,42 @@ def _render(raw, max_size):
 
 
 def _rebuild_manifest():
+    """Gera photos.jsonld como um dataset de vozes (grafos nomeados).
+
+    Cada foto pertence a uma voz; o manifesto agrupa por voz e inclui também
+    as vozes registradas que ainda não têm fotos (para aparecerem no app).
+    """
     con = _db()
-    rows = con.execute("SELECT data FROM photos").fetchall()
+    voice_rows = con.execute(
+        "SELECT id, label FROM voices ORDER BY created").fetchall()
+    photo_rows = con.execute("SELECT voice, data FROM photos").fetchall()
     con.close()
-    photos = [json.loads(r[0]) for r in rows]
-    photos.sort(key=lambda p: p.get("datetime") or "")
-    now = datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z"
-    # Dataset de vozes (grafos nomeados). Hoje há uma só — voice/censo, a voz
-    # do operador deste backend. A estrutura já comporta várias: o app sempre
-    # renderiza por uma "fold" que funde as vozes numa visão única.
-    manifest = {
-        "@context": CONTEXT,
-        "generatedAt": now,
-        "voices": [
-            {
-                "id": "voice/censo",
-                "label": "Censo Hidrográfico",
-                "generatedAt": now,
-                "photos": photos,
-            }
-        ],
-    }
+
+    by_voice = {}
+    for vid, data in photo_rows:
+        by_voice.setdefault(vid or "voice/censo", []).append(json.loads(data))
+
+    now = _now()
+    known = {vid for vid, _ in voice_rows}
+    voices = []
+    for vid, label in voice_rows:
+        photos = sorted(by_voice.get(vid, []),
+                        key=lambda p: p.get("datetime") or "")
+        voices.append({"id": vid, "label": label,
+                       "generatedAt": now, "photos": photos})
+    # defensivo: fotos cuja voz não está registrada na tabela
+    for vid, photos in by_voice.items():
+        if vid not in known:
+            voices.append({
+                "id": vid, "label": vid, "generatedAt": now,
+                "photos": sorted(photos, key=lambda p: p.get("datetime") or ""),
+            })
+
+    manifest = {"@context": CONTEXT, "generatedAt": now, "voices": voices}
     (FOTOS / "photos.jsonld").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"[manifest] {len(photos)} fotos em 1 voz")
+    total = sum(len(v["photos"]) for v in voices)
+    print(f"[manifest] {total} fotos em {len(voices)} voz(es)")
 
 
 # ── Servir o app e as fotos ──────────────────────────────────────────────
@@ -250,10 +278,17 @@ def sign_upload():
     safe = re.sub(r"[^A-Za-z0-9._-]", "_", body.get("filename") or "foto")[-80:]
     stamp = datetime.datetime.utcnow().strftime("%Y%m%d-%H%M%S")
     leaf = f"{stamp}-{uuid.uuid4().hex[:8]}-{safe}"
+    # Embute {ride, voice} (detectados/escolhidos no cliente) no caminho.
+    payload = {}
     ride = body.get("ride")
     if isinstance(ride, dict) and ride.get("date"):
+        payload["ride"] = ride
+    voice = body.get("voice")
+    if isinstance(voice, str) and voice and voice != "all":
+        payload["voice"] = voice
+    if payload:
         token = (base64.urlsafe_b64encode(
-            json.dumps(ride, ensure_ascii=False).encode("utf-8"))
+            json.dumps(payload, ensure_ascii=False).encode("utf-8"))
             .decode("ascii").rstrip("="))
         objname = f"uploads/r-{token}/{leaf}"
     else:
@@ -285,6 +320,8 @@ def put(objpath):
 
     (PHOTOS_DIR / f"{pid}.jpg").write_bytes(_render(raw, DISPLAY_MAX))
     (THUMBS_DIR / f"{pid}.jpg").write_bytes(_render(raw, THUMB_MAX))
+    embedded = meta_from_name(objpath)
+    voice = embedded.get("voice") or "voice/censo"
     item = {
         "id": pid,
         "type": "ph:Image",
@@ -297,12 +334,15 @@ def put(objpath):
         "datetime": meta["datetime"],
         "bearing": meta["bearing"],
         "fov": meta["fov"],
-        "ride": ride_from_name(objpath),
+        "ride": embedded.get("ride"),
     }
     con = _db()
-    con.execute("INSERT OR REPLACE INTO photos (id, datetime, data) "
-                "VALUES (?, ?, ?)",
-                (pid, meta["datetime"] or "",
+    # rede de segurança: registra a voz se ela ainda não existir
+    con.execute("INSERT OR IGNORE INTO voices (id, label, created) "
+                "VALUES (?, ?, ?)", (voice, voice, _now()))
+    con.execute("INSERT OR REPLACE INTO photos (id, datetime, voice, data) "
+                "VALUES (?, ?, ?, ?)",
+                (pid, meta["datetime"] or "", voice,
                  json.dumps(item, ensure_ascii=False)))
     con.commit()
     con.close()
@@ -334,6 +374,150 @@ def delete_photo():
     _rebuild_manifest()
     print(f"[delete] {pid} ({removed} arquivos)")
     return jsonify(deleted=pid, removed=removed)
+
+
+@app.post("/voices")
+def create_voice():
+    """Cria uma voz nova. Recebe {label}; devolve {id, label}."""
+    body = request.get_json(silent=True) or {}
+    if not _authorized(body):
+        return jsonify(error="unauthorized"), 403
+    label = (body.get("label") or "").strip()
+    if not label:
+        return jsonify(error="label vazio"), 400
+    slug = re.sub(r"[^a-z0-9]+", "-", label.lower()).strip("-")[:40] or "voz"
+    vid = f"voice/{slug}-{uuid.uuid4().hex[:6]}"
+    con = _db()
+    con.execute("INSERT INTO voices (id, label, created) VALUES (?, ?, ?)",
+                (vid, label, _now()))
+    con.commit()
+    con.close()
+    _rebuild_manifest()  # para a voz nova já aparecer no manifesto
+    print(f"[voices] criada {vid} ({label})")
+    return jsonify(id=vid, label=label)
+
+
+@app.post("/voice-export")
+def export_voice():
+    """Empacota uma voz num .zip — voice.json + originais + fotos + thumbs."""
+    body = request.get_json(silent=True) or {}
+    if not _authorized(body):
+        return jsonify(error="unauthorized"), 403
+    vid = (body.get("voice") or "").strip()
+    if not vid:
+        return jsonify(error="voice vazio"), 400
+    con = _db()
+    row = con.execute("SELECT label FROM voices WHERE id = ?", (vid,)).fetchone()
+    photo_rows = con.execute(
+        "SELECT data FROM photos WHERE voice = ?", (vid,)).fetchall()
+    con.close()
+    if not row:
+        return jsonify(error="voz inexistente"), 404
+
+    items = [json.loads(r[0]) for r in photo_rows]
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("voice.json", json.dumps(
+            {"id": vid, "label": row[0], "photos": items},
+            ensure_ascii=False, indent=2))
+        for it in items:
+            pid = it.get("id")
+            if not pid:
+                continue
+            disp = PHOTOS_DIR / f"{pid}.jpg"
+            thumb = THUMBS_DIR / f"{pid}.jpg"
+            if disp.exists():
+                zf.write(disp, f"photos/{pid}.jpg")
+            if thumb.exists():
+                zf.write(thumb, f"thumbs/{pid}.jpg")
+            for orig in ORIGINALS.glob(f"{pid}.*"):
+                zf.write(orig, f"originals/{orig.name}")
+    fname = re.sub(r"[^A-Za-z0-9._-]+", "-", vid).strip("-") + ".zip"
+    return (buf.getvalue(), 200, {
+        "Content-Type": "application/zip",
+        "Content-Disposition": f'attachment; filename="{fname}"',
+    })
+
+
+@app.post("/voice-import")
+def import_voice():
+    """Lê um .zip de voz e o incorpora ao acervo (idempotente por id)."""
+    token = request.headers.get("X-Upload-Token")
+    if not token or token != SECRET:
+        return jsonify(error="unauthorized"), 403
+    raw = request.get_data()
+    if not raw:
+        return jsonify(error="zip vazio"), 400
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(raw))
+        meta = json.loads(zf.read("voice.json"))
+    except Exception as e:  # noqa: BLE001
+        return jsonify(error=f"zip invalido: {e}"), 400
+    vid = (meta.get("id") or "").strip()
+    label = (meta.get("label") or vid).strip()
+    if not vid:
+        return jsonify(error="voice.json sem id"), 400
+
+    con = _db()
+    con.execute("INSERT OR REPLACE INTO voices (id, label, created) "
+                "VALUES (?, ?, ?)", (vid, label, _now()))
+    n = 0
+    for it in meta.get("photos") or []:
+        pid = it.get("id")
+        # nunca confiar nos caminhos do zip — o destino é montado do pid.
+        if not pid or not re.fullmatch(r"[A-Za-z0-9._-]+", pid):
+            continue
+        try:
+            (PHOTOS_DIR / f"{pid}.jpg").write_bytes(
+                zf.read(f"photos/{pid}.jpg"))
+            (THUMBS_DIR / f"{pid}.jpg").write_bytes(
+                zf.read(f"thumbs/{pid}.jpg"))
+        except KeyError:
+            continue  # foto sem imagens no zip — pula
+        for name in zf.namelist():
+            if name.startswith(f"originals/{pid}.") and "/" not in name[10:]:
+                (ORIGINALS / f"{pid}{PurePosixPath(name).suffix}").write_bytes(
+                    zf.read(name))
+                break
+        con.execute("INSERT OR REPLACE INTO photos "
+                    "(id, datetime, voice, data) VALUES (?, ?, ?, ?)",
+                    (pid, it.get("datetime") or "", vid,
+                     json.dumps(it, ensure_ascii=False)))
+        n += 1
+    con.commit()
+    con.close()
+    _rebuild_manifest()
+    print(f"[voice-import] {vid} ({n} fotos)")
+    return jsonify(voice=vid, label=label, imported=n)
+
+
+@app.post("/voice-delete")
+def delete_voice():
+    """Apaga uma voz e todas as suas fotos (definitivo). Censo é protegida."""
+    body = request.get_json(silent=True) or {}
+    if not _authorized(body):
+        return jsonify(error="unauthorized"), 403
+    vid = (body.get("voice") or "").strip()
+    if not vid:
+        return jsonify(error="voice vazio"), 400
+    if vid == "voice/censo":
+        return jsonify(error="a voz Censo nao pode ser apagada"), 400
+    con = _db()
+    pids = [r[0] for r in con.execute(
+        "SELECT id FROM photos WHERE voice = ?", (vid,)).fetchall()]
+    con.execute("DELETE FROM photos WHERE voice = ?", (vid,))
+    con.execute("DELETE FROM voices WHERE id = ?", (vid,))
+    con.commit()
+    con.close()
+    for pid in pids:
+        for p in (PHOTOS_DIR / f"{pid}.jpg", THUMBS_DIR / f"{pid}.jpg"):
+            if p.exists():
+                p.unlink()
+        for orig in ORIGINALS.glob(f"{pid}.*"):
+            orig.unlink()
+    _rebuild_manifest()
+    print(f"[voice-delete] {vid} ({len(pids)} fotos)")
+    return jsonify(deleted=vid, photos=len(pids))
 
 
 if __name__ == "__main__":

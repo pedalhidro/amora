@@ -81,6 +81,24 @@ body {
   padding: 6px 14px 6px 0;
 }
 
+/* Os botões do cabeçalho ficam todos numa única linha; se não couberem na
+   largura, a faixa rola na horizontal em vez de quebrar linha. */
+.topbar-actions {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.topbar-actions::-webkit-scrollbar {
+  display: none;
+}
+.topbar-actions button {
+  flex: 0 0 auto;
+}
+
 .topnav {
   display: flex;
   gap: 6px;
@@ -1209,6 +1227,37 @@ body.drawing .trackpoint-marker:active { cursor: grabbing !important; }
   flex: 1;
   min-width: 0;
   font-size: 11px;
+}
+#voice-actions {
+  font-size: 11px;
+  padding: 3px 2px 5px;
+  line-height: 1.7;
+  white-space: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+#voice-actions::-webkit-scrollbar {
+  display: none;
+}
+#voice-actions a {
+  /* O painel de camadas usa a classe leaflet-bar, cujo CSS transforma todo
+     <a> num botão-bloco fixo (26×26) — por isso cada link caía numa linha.
+     Aqui desfazemos isso para os links voltarem a ser ícones inline. */
+  display: inline;
+  width: auto;
+  height: auto;
+  line-height: inherit;
+  padding: 0;
+  margin-right: 7px;
+  font-size: 15px;
+  background: none;
+  border: none;
+  text-decoration: none;
+  cursor: pointer;
+}
+#voice-actions a:hover {
+  background: none;
+  opacity: 0.6;
 }
 
 /* Cone de visada — mostra rumo + campo de visão da câmera (EXIF). */
