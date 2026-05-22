@@ -52,10 +52,13 @@
         <h1>Ajudante cartográfica-energética para passeios topo hidrográficos na Grande São Paulo</h1>
         <span class="credit">feito por Cláudio · pedido e dirigido pelos neogeógrafos hidrográficos</span>
       </div>
+      <button id="locate-btn" type="button" class="secondary-btn" title="Mostrar minha localização">📍 Localização</button>
       <button id="layers-btn" type="button" class="secondary-btn" title="Mostrar/ocultar camadas" aria-pressed="true">Camadas</button>
       <button id="help-btn" type="button" class="secondary-btn" title="Como usar">Instruções</button>
       <input type="file" id="edit-gpx-input" accept=".gpx,application/gpx+xml" hidden />
       <button id="edit-gpx-btn" type="button" class="secondary-btn" title="Carregar um arquivo .gpx para editar">Editar GPX…</button>
+      <input type="file" id="photo-upload-input" accept="image/jpeg,image/png,image/heic,image/heif,.jpg,.jpeg,.png,.heic,.heif" multiple hidden />
+      <button id="upload-btn" type="button" class="secondary-btn" title="Enviar fotos para ver no mapa (apenas nesta sessão)">📷 Enviar fotos</button>
       <button id="trace-btn" type="button" class="primary-btn">Traçar GPX</button>
       <button id="menu-btn" type="button" class="menu-btn secondary-btn" title="Mostrar rotas">Rotas</button>
     </header>
@@ -258,6 +261,7 @@
         </header>
         <div class="route-modal-body">
           <div class="route-modal-meta" id="route-modal-meta"></div>
+          <div class="route-modal-photos" id="route-modal-photos"></div>
           <div class="route-modal-ig" id="route-modal-ig"></div>
         </div>
       </div>

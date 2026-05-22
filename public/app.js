@@ -95,6 +95,27 @@ const OVERLAY_LAYERS = [
     hide: () => hideOverpass(),
     setOpacity: (frac) => setOverpassOpacity(frac),
   },
+  // Live OSM cycling infrastructure (cyclovias, ciclofaixas, paths).
+  {
+    id: 'osm-cicloinfra',
+    label: 'Cicloinfra OSM',
+    defaultVisible: false,
+    defaultPct: 100,
+    show: () => showCycloinfra(),
+    hide: () => hideCycloinfra(),
+    setOpacity: (frac) => setCycloinfraOpacity(frac),
+  },
+  // Fotos geotaggeadas (raw_imgs → public/photos.json). Pequenos círculos
+  // que abrem o thumbnail num popup ao clicar.
+  {
+    id: 'photos',
+    label: 'Fotos geo',
+    defaultVisible: false,
+    defaultPct: 100,
+    show: () => showPhotos(),
+    hide: () => hidePhotos(),
+    setOpacity: (frac) => setPhotosOpacity(frac),
+  },
   // User-defined tile sources. The URL is prompted on demand and persisted
   // in localStorage so the layer is restored on reload.
   {
@@ -299,6 +320,643 @@ function setOverpassOpacity(frac) {
   for (const l of overpassLayers) l.setStyle({ opacity: frac });
 }
 
+// ─── Fotos geotag­geadas (raw_imgs → public/photos.json) ─────────────────────
+// Cada foto com GPS no EXIF vira um pequeno círculo no mapa; clicar abre um
+// popup com o thumbnail. photos.json é carregado preguiçosamente na primeira
+// vez que a camada é ligada.
+// Manifesto de fotos: primeiro o acervo no GCS (mantido pela função
+// process-upload), com queda para o photos.json local (build-photos.py / dev).
+const PHOTOS_REMOTE_URL =
+  'https://telhas.pedalhidrografi.co/fotos/photos.jsonld';
+const PHOTOS_LOCAL_URL = 'photos.json';
+let photoMarkers = [];
+let photosLoaded = false;
+let photosLoading = null;
+let photosVisible = false;
+let photosOpacity = 1;
+// Quando setado ({date, label}), só as fotos daquele pedal ficam visíveis.
+let photoRideFilter = null;
+
+// Marcadores de foto de um pedal específico (data ISO AAAA-MM-DD).
+function ridePhotos(date) {
+  return photoMarkers.filter(
+    (m) => m._photo.ride && m._photo.ride.date === date,
+  );
+}
+
+async function loadPhotos() {
+  if (photosLoaded) return;
+  if (photosLoading) {
+    await photosLoading;
+    return;
+  }
+  photosLoading = (async () => {
+    try {
+      let data = null;
+      for (const url of [PHOTOS_REMOTE_URL, PHOTOS_LOCAL_URL]) {
+        try {
+          const res = await fetch(url, { cache: 'no-cache' });
+          if (res.ok) {
+            data = await res.json();
+            break;
+          }
+        } catch (e) {
+          console.warn(`[photos] ${url} indisponível: ${e.message}`);
+        }
+      }
+      if (!data) throw new Error('nenhum manifesto de fotos acessível');
+      for (const ph of data.photos || []) {
+        if (!Number.isFinite(ph.lat) || !Number.isFinite(ph.lng)) continue;
+        // Cada foto é um pequeno círculo com o próprio thumbnail dentro.
+        const icon = L.divIcon({
+          className: 'photo-dot-wrap',
+          html: `<div class="photo-dot" style="background-image:url('${ph.thumb || ph.file}')"></div>`,
+          iconSize: [40, 40],
+          iconAnchor: [20, 20],
+          popupAnchor: [0, -20],
+        });
+        const m = L.marker([ph.lat, ph.lng], { icon, opacity: photosOpacity });
+        m._photo = ph;
+        const when = ph.datetime
+          ? new Date(ph.datetime).toLocaleString('pt-BR')
+          : '';
+        const rideLine = ph.ride
+          ? `<div class="photo-ride">${escapeHtml(
+              [ph.ride.code, ph.ride.name].filter(Boolean).join(' · ') ||
+                ph.ride.date,
+            )}</div>`
+          : '';
+        m.bindPopup(
+          `<div class="photo-popup">` +
+            `<img src="${ph.file}" loading="lazy" alt="${escapeHtml(ph.orig || '')}" />` +
+            rideLine +
+            `<div class="photo-meta">${escapeHtml(ph.orig || '')}` +
+            (when ? ` · ${escapeHtml(when)}` : '') +
+            (Number.isFinite(ph.alt) ? ` · ${ph.alt} m` : '') +
+            `</div></div>`,
+          { maxWidth: 320, className: 'photo-popup-wrap' },
+        );
+        photoMarkers.push(m);
+      }
+      photosLoaded = true;
+      console.log(`[photos] ${photoMarkers.length} fotos georreferenciadas`);
+    } catch (err) {
+      console.warn('[photos] falha ao carregar photos.json:', err);
+      showToast(`Falha ao carregar fotos: ${err.message}`);
+    }
+  })();
+  await photosLoading;
+}
+
+// Visibilidade efetiva: camada ligada E (sem filtro OU foto do pedal filtrado).
+function applyPhotoVisibility() {
+  for (const m of photoMarkers) {
+    const matches =
+      !photoRideFilter ||
+      (m._photo.ride && m._photo.ride.date === photoRideFilter.date);
+    const shouldShow = photosVisible && matches;
+    if (shouldShow && !map.hasLayer(m)) m.addTo(map);
+    else if (!shouldShow && map.hasLayer(m)) map.removeLayer(m);
+  }
+  renderPhotoFilterChip();
+}
+
+function showPhotos() {
+  photosVisible = true;
+  loadPhotos().then(() => {
+    if (!photosVisible) return;
+    applyPhotoVisibility();
+    if (photoMarkers.length === 0) {
+      showToast('Nenhuma foto georreferenciada (rode build-photos.py)');
+    }
+  });
+}
+function hidePhotos() {
+  photosVisible = false;
+  applyPhotoVisibility();
+}
+function setPhotosOpacity(frac) {
+  photosOpacity = frac;
+  for (const m of photoMarkers) m.setOpacity(frac);
+}
+
+// Liga a camada já filtrada para um pedal (usado pelo modal de rota).
+function showPhotosForRide(date, label) {
+  photoRideFilter = { date, label: label || date };
+  photosVisible = true;
+  const cb = document.querySelector(
+    '.layer-panel .layer-row[data-id="photos"] input[type="checkbox"]',
+  );
+  if (cb) cb.checked = true;
+  loadPhotos().then(() => applyPhotoVisibility());
+}
+function clearPhotoRideFilter() {
+  photoRideFilter = null;
+  applyPhotoVisibility();
+}
+
+// Chip flutuante mostrando o filtro de pedal ativo (✕ limpa o filtro).
+function renderPhotoFilterChip() {
+  let chip = document.getElementById('photo-filter-chip');
+  if (!photoRideFilter || !photosVisible) {
+    if (chip) chip.remove();
+    return;
+  }
+  if (!chip) {
+    chip = document.createElement('div');
+    chip.id = 'photo-filter-chip';
+    chip.className = 'map-chip';
+    document.getElementById('map').appendChild(chip);
+  }
+  const n = ridePhotos(photoRideFilter.date).length;
+  chip.innerHTML =
+    `<span>Fotos: ${escapeHtml(photoRideFilter.label)} (${n})</span>` +
+    `<button type="button" title="Ver todas as fotos">✕</button>`;
+  chip.querySelector('button').onclick = clearPhotoRideFilter;
+}
+
+// Tira de miniaturas das fotos do pedal, exibida no modal da rota.
+function renderRoutePhotos(entry) {
+  const box = document.getElementById('route-modal-photos');
+  box.innerHTML = '';
+  if (!entry.date) return;
+  const label = entry.number?.value
+    ? `${entry.number.source} ${entry.number.value}`
+    : buildLabel(entry);
+  loadPhotos().then(() => {
+    const ms = ridePhotos(entry.date);
+    if (ms.length === 0) return;
+    const head = document.createElement('div');
+    head.className = 'route-photos-head';
+    head.textContent = `${ms.length} foto${ms.length > 1 ? 's' : ''} deste pedal`;
+    const strip = document.createElement('div');
+    strip.className = 'route-photos-strip';
+    for (const m of ms) {
+      const img = document.createElement('img');
+      img.src = m._photo.file;
+      img.loading = 'lazy';
+      img.alt = m._photo.orig || '';
+      img.title = 'Ver no mapa';
+      img.addEventListener('click', () => {
+        closeRouteModal();
+        showPhotosForRide(entry.date, label);
+        map.setView(m.getLatLng(), Math.max(map.getZoom(), 15));
+        m.openPopup();
+      });
+      strip.appendChild(img);
+    }
+    box.appendChild(head);
+    box.appendChild(strip);
+  });
+}
+
+// ─── Envio de fotos pelo usuário (apenas na sessão) ──────────────────────────
+// Botão que abre o seletor de arquivos; lê o GPS do EXIF de cada foto no
+// próprio navegador e a coloca no mapa. HEIC (iPhone) é convertido em JPEG
+// via heic2any. Nada é salvo no servidor — recarregar a página limpa tudo.
+// As bibliotecas exifr/heic2any são carregadas sob demanda para não pesar
+// o carregamento normal da página.
+const EXIFR_URL = 'https://cdn.jsdelivr.net/npm/exifr@7/dist/full.umd.js';
+const HEIC2ANY_URL =
+  'https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js';
+// URL da Cloud Function que emite URLs assinadas (backend/sign-upload/).
+// Deixe '' para manter o envio ao acervo desativado — só o preview local
+// fica disponível. Preencha após fazer o deploy da função.
+const SIGN_UPLOAD_URL = 'https://sign-upload-lrrinyjwxq-rj.a.run.app';
+let uploadedMarkers = [];
+let uploadedData = [];
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = src;
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error(`falha ao carregar ${src}`));
+    document.head.appendChild(s);
+  });
+}
+async function ensureExifr() {
+  if (!window.exifr) await loadScript(EXIFR_URL);
+}
+async function ensureHeic2any() {
+  if (!window.heic2any) await loadScript(HEIC2ANY_URL);
+}
+function isHeic(f) {
+  return /image\/hei[cf]/i.test(f.type) || /\.(heic|heif)$/i.test(f.name);
+}
+// Tipo MIME confiável — alguns navegadores deixam f.type vazio para HEIC.
+function fileContentType(f) {
+  if (f.type) return f.type;
+  const ext = (f.name.split('.').pop() || '').toLowerCase();
+  return (
+    { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
+      heic: 'image/heic', heif: 'image/heif' }[ext] || 'application/octet-stream'
+  );
+}
+
+async function handlePhotoUpload(fileList) {
+  const files = [...(fileList || [])];
+  if (files.length === 0) return;
+  showToast(`Processando ${files.length} foto(s)…`);
+  try {
+    await ensureExifr();
+  } catch {
+    showToast('Não foi possível carregar o leitor de EXIF.');
+    return;
+  }
+  if (files.some(isHeic)) {
+    try {
+      await ensureHeic2any();
+    } catch {
+      showToast('Não foi possível carregar o conversor HEIC.');
+    }
+  }
+
+  let added = 0;
+  let noGps = 0;
+  let failed = 0;
+  for (const f of files) {
+    try {
+      const meta = await window.exifr.parse(f, { gps: true, exif: true });
+      const lat = meta?.latitude;
+      const lng = meta?.longitude;
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+        noGps++;
+        continue;
+      }
+      let url;
+      if (isHeic(f)) {
+        if (!window.heic2any) {
+          failed++;
+          continue;
+        }
+        const out = await window.heic2any({
+          blob: f,
+          toType: 'image/jpeg',
+          quality: 0.7,
+        });
+        url = URL.createObjectURL(Array.isArray(out) ? out[0] : out);
+      } else {
+        url = URL.createObjectURL(f);
+      }
+      addUploadedPhoto({
+        url,
+        file: f,
+        orig: f.name,
+        lat: Math.round(lat * 1e6) / 1e6,
+        lng: Math.round(lng * 1e6) / 1e6,
+        alt: Number.isFinite(meta?.GPSAltitude)
+          ? Math.round(meta.GPSAltitude * 10) / 10
+          : null,
+        datetime:
+          meta?.DateTimeOriginal instanceof Date
+            ? meta.DateTimeOriginal.toISOString()
+            : null,
+      });
+      added++;
+    } catch (err) {
+      console.warn('[upload] falha em', f.name, err);
+      failed++;
+    }
+  }
+
+  if (added > 0) {
+    map.fitBounds(L.latLngBounds(uploadedMarkers.map((m) => m.getLatLng())), {
+      maxZoom: 15,
+      padding: [40, 40],
+    });
+  }
+  renderUploadChip();
+  const parts = [`${added} adicionada(s)`];
+  if (noGps) parts.push(`${noGps} sem GPS`);
+  if (failed) parts.push(`${failed} com erro`);
+  showToast(parts.join(' · '));
+}
+
+function addUploadedPhoto(p) {
+  const icon = L.divIcon({
+    className: 'photo-dot-wrap',
+    html: `<div class="photo-dot photo-dot-upload" style="background-image:url('${p.url}')"></div>`,
+    iconSize: [40, 40],
+    iconAnchor: [20, 20],
+    popupAnchor: [0, -20],
+  });
+  const m = L.marker([p.lat, p.lng], { icon });
+  const when = p.datetime ? new Date(p.datetime).toLocaleString('pt-BR') : '';
+  m.bindPopup(
+    `<div class="photo-popup">` +
+      `<img src="${p.url}" alt="${escapeHtml(p.orig)}" />` +
+      `<div class="photo-ride">Foto enviada · apenas nesta sessão</div>` +
+      `<div class="photo-meta">${escapeHtml(p.orig)}` +
+      (when ? ` · ${escapeHtml(when)}` : '') +
+      (Number.isFinite(p.alt) ? ` · ${p.alt} m` : '') +
+      `</div></div>`,
+    { maxWidth: 320, className: 'photo-popup-wrap' },
+  );
+  m.addTo(map);
+  uploadedMarkers.push(m);
+  uploadedData.push(p);
+}
+
+function clearUploadedPhotos() {
+  for (const m of uploadedMarkers) map.removeLayer(m);
+  for (const p of uploadedData) {
+    try {
+      URL.revokeObjectURL(p.url);
+    } catch {}
+  }
+  uploadedMarkers = [];
+  uploadedData = [];
+  renderUploadChip();
+}
+
+// Exporta os pontos no formato photos.json para realimentar o repositório.
+// O thumbnail real é gerado depois por build-photos.py a partir do original.
+function exportUploadedPhotos() {
+  if (uploadedData.length === 0) return;
+  const payload = {
+    generatedAt: new Date().toISOString(),
+    count: uploadedData.length,
+    photos: uploadedData.map((p) => ({
+      file: `photos/${p.orig.replace(/\.[^.]+$/, '')}.jpg`,
+      orig: p.orig,
+      lat: p.lat,
+      lng: p.lng,
+      alt: p.alt,
+      datetime: p.datetime,
+      ride: null,
+    })),
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {
+    type: 'application/json',
+  });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'photos-upload.json';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+// Token de envio ao acervo — digitado em runtime, guardado só neste aparelho.
+// Nunca fica no código publicado.
+function getUploadToken() {
+  let t = localStorage.getItem('phidro:uploadToken');
+  if (!t) {
+    t = (window.prompt('Token de envio ao acervo:') || '').trim();
+    if (t) localStorage.setItem('phidro:uploadToken', t);
+  }
+  return t;
+}
+
+// PUT do arquivo para a URL assinada. Usa XMLHttpRequest em vez de fetch:
+// o Safari falha de forma intermitente um fetch() com corpo grande entre
+// origens ("Load failed" / "network connection lost") — o XHR não tem o bug.
+function putToSignedUrl(url, file, contentType) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', url);
+    xhr.setRequestHeader('Content-Type', contentType);
+    xhr.timeout = 120000;
+    xhr.onload = () =>
+      xhr.status >= 200 && xhr.status < 300
+        ? resolve()
+        : reject(new Error(`PUT ${xhr.status}`));
+    xhr.onerror = () => reject(new Error('PUT bloqueado (rede/CORS)'));
+    xhr.ontimeout = () => reject(new Error('PUT expirou'));
+    xhr.send(file);
+  });
+}
+
+// Envia os originais ao bucket do GCS via URLs assinadas da Cloud Function.
+async function uploadToArchive() {
+  if (!SIGN_UPLOAD_URL) return;
+  const pending = uploadedData.filter((p) => p.file && !p.archived);
+  if (pending.length === 0) {
+    showToast('Nada novo para enviar ao acervo.');
+    return;
+  }
+  const token = getUploadToken();
+  if (!token) return;
+  showToast(`Enviando ${pending.length} foto(s) ao acervo…`);
+  let ok = 0;
+  let fail = 0;
+  for (const p of pending) {
+    try {
+      const ct = fileContentType(p.file);
+      const res = await fetch(SIGN_UPLOAD_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Upload-Token': token },
+        body: JSON.stringify({ filename: p.orig, contentType: ct }),
+      });
+      if (res.status === 403) {
+        localStorage.removeItem('phidro:uploadToken');
+        throw new Error('token inválido');
+      }
+      if (!res.ok) throw new Error(`assinatura HTTP ${res.status}`);
+      const { uploadUrl } = await res.json();
+      await putToSignedUrl(uploadUrl, p.file, ct);
+      p.archived = true;
+      ok++;
+    } catch (err) {
+      console.warn('[upload] envio ao acervo falhou:', p.orig, err);
+      fail++;
+    }
+  }
+  renderUploadChip();
+  showToast(`Acervo: ${ok} enviada(s)${fail ? ` · ${fail} com erro` : ''}`);
+}
+
+function renderUploadChip() {
+  let chip = document.getElementById('upload-status-chip');
+  if (uploadedMarkers.length === 0) {
+    if (chip) chip.remove();
+    return;
+  }
+  if (!chip) {
+    chip = document.createElement('div');
+    chip.id = 'upload-status-chip';
+    chip.className = 'map-chip';
+    document.getElementById('map').appendChild(chip);
+  }
+  const archived = uploadedData.filter((p) => p.archived).length;
+  let html = `<span>📷 ${uploadedMarkers.length} foto(s)`;
+  if (archived) html += ` · ${archived} no acervo`;
+  html += `</span>`;
+  if (SIGN_UPLOAD_URL) {
+    html += `<button type="button" data-act="archive">Enviar ao acervo</button>`;
+  }
+  html +=
+    `<button type="button" data-act="export">Exportar</button>` +
+    `<button type="button" data-act="clear">Limpar</button>`;
+  chip.innerHTML = html;
+  if (SIGN_UPLOAD_URL) {
+    chip.querySelector('[data-act="archive"]').onclick = uploadToArchive;
+  }
+  chip.querySelector('[data-act="export"]').onclick = exportUploadedPhotos;
+  chip.querySelector('[data-act="clear"]').onclick = clearUploadedPhotos;
+}
+
+const uploadBtn = document.getElementById('upload-btn');
+const uploadInput = document.getElementById('photo-upload-input');
+uploadBtn?.addEventListener('click', () => uploadInput?.click());
+uploadInput?.addEventListener('change', () => {
+  handlePhotoUpload(uploadInput.files);
+  uploadInput.value = ''; // permite reenviar o mesmo arquivo
+});
+
+// ─── Cicloinfra (OSM cycling infrastructure) overlay ─────────────────────────
+// Live-queries Overpass for everything that's safe-ish for a bicycle:
+//   highway=cycleway                  dedicated bike path
+//   highway=path  +  bicycle=yes/designated   shared multi-use path
+//   highway=*      +  cycleway[:left|:right|:both]=lane/track/...
+//                                     a road that has a bike lane / track
+// All in the same accent-cyan, with weight + dash signaling type.
+const cycloinfraLayers = [];
+let cycloinfraActive = false;
+let cycloinfraOpacity = 1;
+let cycloinfraDebounce = null;
+let cycloinfraFetchSeq = 0;
+
+async function queryCycloinfra(b) {
+  const q = `[out:json][timeout:60];
+(
+  way["highway"="cycleway"](${b.south},${b.west},${b.north},${b.east});
+  way["highway"="path"]["bicycle"~"yes|designated"](${b.south},${b.west},${b.north},${b.east});
+  way["highway"]["cycleway"~"lane|track|opposite_lane|opposite_track|shared_lane|share_busway"](${b.south},${b.west},${b.north},${b.east});
+  way["highway"]["cycleway:left"~"lane|track|opposite_lane|opposite_track|shared_lane|share_busway"](${b.south},${b.west},${b.north},${b.east});
+  way["highway"]["cycleway:right"~"lane|track|opposite_lane|opposite_track|shared_lane|share_busway"](${b.south},${b.west},${b.north},${b.east});
+  way["highway"]["cycleway:both"~"lane|track|opposite_lane|opposite_track|shared_lane|share_busway"](${b.south},${b.west},${b.north},${b.east});
+);
+out body;
+>;
+out skel qt;`;
+  const res = await fetch(OVERPASS_URL, {
+    method: 'POST',
+    body: 'data=' + encodeURIComponent(q),
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+  });
+  if (!res.ok) throw new Error(`Overpass ${res.status}`);
+  return res.json();
+}
+
+function classifyCycloinfra(tags) {
+  if (tags.highway === 'cycleway') return 'ciclovia';
+  if (tags.highway === 'path') return 'caminho compartilhado';
+  if (
+    tags.cycleway ||
+    tags['cycleway:left'] ||
+    tags['cycleway:right'] ||
+    tags['cycleway:both']
+  ) return 'ciclofaixa';
+  return '';
+}
+
+function styleForCycloinfra(tags) {
+  const kind = classifyCycloinfra(tags);
+  // Ciclovia (segregated): solid + thick. Ciclofaixa (painted lane on road):
+  // dashed + thinner. Shared path: dotted.
+  if (kind === 'ciclovia') {
+    return { color: '#00BFA6', weight: 4, opacity: cycloinfraOpacity };
+  }
+  if (kind === 'caminho compartilhado') {
+    return {
+      color: '#00BFA6',
+      weight: 3,
+      opacity: cycloinfraOpacity,
+      dashArray: '2 5',
+    };
+  }
+  if (kind === 'ciclofaixa') {
+    return {
+      color: '#00BFA6',
+      weight: 3,
+      opacity: cycloinfraOpacity,
+      dashArray: '6 4',
+    };
+  }
+  return { color: '#00BFA6', weight: 2, opacity: cycloinfraOpacity };
+}
+
+function clearCycloinfraLayers() {
+  for (const l of cycloinfraLayers) map.removeLayer(l);
+  cycloinfraLayers.length = 0;
+}
+
+function renderCycloinfra(data) {
+  clearCycloinfraLayers();
+  const nodes = new Map();
+  for (const el of data.elements || []) {
+    if (el.type === 'node') nodes.set(el.id, [el.lat, el.lon]);
+  }
+  for (const el of data.elements || []) {
+    if (el.type !== 'way') continue;
+    const latlngs = (el.nodes || []).map((id) => nodes.get(id)).filter(Boolean);
+    if (latlngs.length < 2) continue;
+    const tags = el.tags || {};
+    const layer = L.polyline(latlngs, styleForCycloinfra(tags));
+    const parts = [];
+    if (tags.name) parts.push(`<strong>${escapeHtml(tags.name)}</strong>`);
+    const kind = classifyCycloinfra(tags);
+    if (kind) parts.push(`<em>${kind}</em>`);
+    if (tags.surface) parts.push(`piso: ${escapeHtml(tags.surface)}`);
+    layer.bindTooltip(parts.join(' · ') || 'cicloinfra', {
+      sticky: true,
+      className: 'osm-tip',
+    });
+    layer.addTo(map);
+    cycloinfraLayers.push(layer);
+  }
+}
+
+async function refreshCycloinfra() {
+  if (!cycloinfraActive) return;
+  if (map.getZoom() < OVERPASS_MIN_ZOOM) {
+    clearCycloinfraLayers();
+    showToast(`Aproxime o mapa (zoom ≥ ${OVERPASS_MIN_ZOOM}) para buscar OSM`);
+    return;
+  }
+  const b = map.getBounds();
+  const bbox = {
+    south: b.getSouth().toFixed(6),
+    west: b.getWest().toFixed(6),
+    north: b.getNorth().toFixed(6),
+    east: b.getEast().toFixed(6),
+  };
+  const seq = ++cycloinfraFetchSeq;
+  showToast('Buscando cicloinfra OSM…', 1500);
+  try {
+    const data = await queryCycloinfra(bbox);
+    if (seq !== cycloinfraFetchSeq || !cycloinfraActive) return;
+    renderCycloinfra(data);
+    showToast(`Cicloinfra: ${cycloinfraLayers.length} vias`, 1800);
+  } catch (err) {
+    if (seq !== cycloinfraFetchSeq) return;
+    console.warn('Overpass cicloinfra failed:', err);
+    showToast(`Falha cicloinfra: ${err.message}`);
+  }
+}
+
+function onCycloinfraMoveEnd() {
+  clearTimeout(cycloinfraDebounce);
+  cycloinfraDebounce = setTimeout(refreshCycloinfra, 700);
+}
+
+function showCycloinfra() {
+  cycloinfraActive = true;
+  map.on('moveend', onCycloinfraMoveEnd);
+  refreshCycloinfra();
+}
+function hideCycloinfra() {
+  cycloinfraActive = false;
+  map.off('moveend', onCycloinfraMoveEnd);
+  clearTimeout(cycloinfraDebounce);
+  clearCycloinfraLayers();
+}
+function setCycloinfraOpacity(frac) {
+  cycloinfraOpacity = frac;
+  for (const l of cycloinfraLayers) l.setStyle({ opacity: frac });
+}
+
 // ─── Custom XYZ / WMS layers ─────────────────────────────────────────────────
 let customXyzUrl = localStorage.getItem('phidro:customXyz') || '';
 let customXyzLayer = null;
@@ -426,10 +1084,12 @@ function promptCustomWmsConfig() {
   showToast(`WMS custom carregado`);
 }
 
-// "Where am I" control (leaflet-locatecontrol). Shown in top-left; clicking
-// asks for geolocation permission and pans/zooms to the user's position.
+// "Where am I" control (leaflet-locatecontrol). Adds the small target icon
+// in the top-left of the map AND wires the topbar "📍 Localização" button
+// to trigger it programmatically — same control instance, two affordances.
+let locateControl = null;
 if (L.control.locate) {
-  L.control.locate({
+  locateControl = L.control.locate({
     position: 'topleft',
     setView: 'untilPan',
     flyTo: true,
@@ -447,6 +1107,16 @@ if (L.control.locate) {
     },
   }).addTo(map);
 }
+const locateBtn = document.getElementById('locate-btn');
+locateBtn?.addEventListener('click', () => {
+  if (!locateControl) {
+    alert('Geolocalização não disponível neste navegador.');
+    return;
+  }
+  // Toggle behavior: tap once to start tracking, tap again to stop.
+  if (locateControl._active) locateControl.stop();
+  else locateControl.start();
+});
 
 const layerPanel = L.control({ position: 'topright' });
 layerPanel.onAdd = function () {
@@ -1028,12 +1698,14 @@ function openRouteModal(id) {
     routeModalIG.innerHTML = `<p class="muted">No Instagram post linked for this route.</p>`;
   }
 
+  renderRoutePhotos(entry);
   routeModal.hidden = false;
 }
 
 function closeRouteModal() {
   routeModal.hidden = true;
   routeModalIG.innerHTML = ''; // stop the iframe loading
+  document.getElementById('route-modal-photos').innerHTML = '';
 }
 
 // Accept full URLs to instagram posts/reels/IGTV; return embed URL.
