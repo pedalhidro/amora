@@ -1217,48 +1217,99 @@ body.drawing .trackpoint-marker:active { cursor: grabbing !important; }
 /* Foto enviada pelo usuário — anel destacado para diferenciar das do mapa. */
 .photo-dot-upload { border-color: #2da9ff; }
 
-/* Seletor de voz no painel de camadas (Parte B — perspectivas). */
+/* Linha de vozes no painel de camadas — só abre o modal (Parte B). */
 .layer-row.voice-row {
   margin-top: 4px;
   padding-top: 6px;
   border-top: 0.5px solid rgba(255, 255, 255, 0.14);
 }
-.layer-row.voice-row select {
-  flex: 1;
-  min-width: 0;
-  font-size: 11px;
-}
-#voice-actions {
-  font-size: 11px;
-  padding: 3px 2px 5px;
-  line-height: 1.7;
-  white-space: nowrap;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-#voice-actions::-webkit-scrollbar {
-  display: none;
-}
-#voice-actions a {
-  /* O painel de camadas usa a classe leaflet-bar, cujo CSS transforma todo
-     <a> num botão-bloco fixo (26×26) — por isso cada link caía numa linha.
-     Aqui desfazemos isso para os links voltarem a ser ícones inline. */
+#voices-open-btn {
+  /* O painel usa a classe leaflet-bar, que transforma <a>/<button> em
+     botão-bloco fixo — aqui forçamos um link inline simples. */
   display: inline;
   width: auto;
   height: auto;
   line-height: inherit;
   padding: 0;
-  margin-right: 7px;
-  font-size: 15px;
+  margin-left: 6px;
+  font-size: 11px;
   background: none;
   border: none;
-  text-decoration: none;
+  color: var(--accent, #2da9ff);
+  text-decoration: underline;
   cursor: pointer;
 }
-#voice-actions a:hover {
-  background: none;
-  opacity: 0.6;
+#voices-open-btn:hover { opacity: 0.7; }
+
+/* Modal "Vozes" — pilha de precedência das fotos. */
+#voices-modal .modal-body { padding: 12px 16px 16px; }
+#voices-modal .modal-body .muted {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--muted, #9aa);
 }
+#voices-stack { display: flex; flex-direction: column; gap: 6px; }
+.voice-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  font-size: 13px;
+}
+.voice-item.off { opacity: 0.5; }
+.voice-rank { display: flex; flex-direction: column; line-height: 0.8; }
+.voice-rank button {
+  background: none;
+  border: none;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 10px;
+  padding: 1px 2px;
+}
+.voice-rank button:disabled { opacity: 0.25; cursor: default; }
+.voice-show { display: flex; align-items: center; }
+.voice-name { flex: 1; min-width: 0; }
+.voice-count {
+  display: inline-block;
+  font-size: 11px;
+  color: var(--muted, #9aa);
+  margin-left: 2px;
+}
+.voice-active {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--muted, #9aa);
+  white-space: nowrap;
+}
+.voice-item button[data-vact] {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0 2px;
+}
+#voices-modal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+#voices-modal-actions button {
+  flex: 1;
+  min-width: 120px;
+  padding: 7px 10px;
+  font-size: 12px;
+  background: var(--panel-2, rgba(255, 255, 255, 0.06));
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  cursor: pointer;
+}
+#voices-modal-actions button:hover { opacity: 0.8; }
 
 /* Cone de visada — mostra rumo + campo de visão da câmera (EXIF). */
 .photo-aim { position: relative; }

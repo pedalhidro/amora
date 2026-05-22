@@ -335,13 +335,52 @@ let photosVisible = false;
 let photosOpacity = 1;
 // Quando setado ({date, label}), só as fotos daquele pedal ficam visíveis.
 let photoRideFilter = null;
-// Parte B — perspectivas. Manifesto cru guardado para re-fold ao trocar de
-// voz sem refazer o fetch; voz selecionada ('all' = todas).
+// Parte B — perspectivas. Manifesto cru guardado para re-fold sem refazer o
+// fetch. A pilha de precedência: `photoOrder` é a ordem das vozes (índice 0
+// = topo = mais forte), `photoOff` as vozes ocultas, `activeVoice` a voz
+// destino dos uploads.
 let photoManifest = null;
-let selectedVoice =
+function _lsJson(key, dflt) {
+  try {
+    return JSON.parse(localStorage.getItem(key)) ?? dflt;
+  } catch {
+    return dflt;
+  }
+}
+let photoOrder = _lsJson('phidro:voiceOrder', []);
+let photoOff = new Set(_lsJson('phidro:voiceOff', []));
+let activeVoice =
   (typeof localStorage !== 'undefined' &&
-    localStorage.getItem('phidro:voice')) ||
-  'all';
+    localStorage.getItem('phidro:activeVoice')) ||
+  'voice/censo';
+
+function saveStack() {
+  try {
+    localStorage.setItem('phidro:voiceOrder', JSON.stringify(photoOrder));
+    localStorage.setItem('phidro:voiceOff', JSON.stringify([...photoOff]));
+    localStorage.setItem('phidro:activeVoice', activeVoice);
+  } catch {}
+}
+
+// Reconcilia a pilha salva com as vozes do manifesto atual: mantém a ordem,
+// descarta vozes que sumiram, anexa as novas ao fim (menor precedência).
+function reconcileStack() {
+  const ids = ((photoManifest && photoManifest.voices) || []).map((v) => v.id);
+  const idset = new Set(ids);
+  photoOrder = photoOrder.filter((id) => idset.has(id));
+  for (const id of ids) {
+    if (!photoOrder.includes(id)) photoOrder.push(id);
+  }
+  photoOff = new Set([...photoOff].filter((id) => idset.has(id)));
+  if (ids.length && !idset.has(activeVoice)) {
+    activeVoice = idset.has('voice/censo') ? 'voice/censo' : ids[0];
+  }
+}
+
+// As vozes exibidas, em ordem de precedência (topo = mais forte).
+function effectiveStack() {
+  return photoOrder.filter((id) => !photoOff.has(id));
+}
 
 // Marcadores de foto de um pedal específico (data ISO AAAA-MM-DD).
 function ridePhotos(date) {
@@ -482,22 +521,23 @@ function detectRide(dateObj, lat, lng) {
 // traz uma voz só, então a fold é praticamente a identidade — mas o app
 // passa a renderizar SEMPRE por aqui. É a costura onde, nos próximos passos,
 // entram a pilha de precedência e a reconciliação por divergência.
-function foldVoices(data, selected) {
-  // Tolera o formato novo (voices) e o antigo (photos plano).
-  const all =
-    data && Array.isArray(data.voices)
-      ? data.voices
-      : [{ id: 'voice/local', photos: (data && data.photos) || [] }];
-  // selected: id de uma voz, ou 'all'/vazio para fundir todas.
-  const voices =
-    selected && selected !== 'all'
-      ? all.filter((v) => v.id === selected)
-      : all;
+function foldVoices(data) {
+  // Tolera o formato antigo (photos plano) — vira uma voz local única.
+  if (!data || !Array.isArray(data.voices)) {
+    return ((data && data.photos) || []).map((ph) => ({
+      ...ph,
+      _voice: 'voice/local',
+    }));
+  }
+  const byVoice = new Map(data.voices.map((v) => [v.id, v]));
+  const stack = effectiveStack(); // topo = mais forte
   const byId = new Map();
   let n = 0;
-  for (const v of voices) {
+  // Itera do MENOR para o MAIOR precedência → o topo da pilha sobrescreve.
+  for (let i = stack.length - 1; i >= 0; i--) {
+    const v = byVoice.get(stack[i]);
+    if (!v) continue;
     for (const ph of v.photos || []) {
-      // Fotos são set-valued: união por id; a última voz vence em conflito.
       const key = ph.id || `${v.id}#${n++}`;
       byId.set(key, { ...ph, _voice: v.id });
     }
@@ -544,12 +584,8 @@ function buildPhotoMarkers() {
     if (map.hasLayer(m)) map.removeLayer(m);
   }
   photoMarkers = [];
-  // Se a voz guardada sumiu do manifesto, volta para "todas".
-  const ids = ((photoManifest && photoManifest.voices) || []).map((v) => v.id);
-  if (selectedVoice !== 'all' && !ids.includes(selectedVoice)) {
-    selectedVoice = 'all';
-  }
-  for (const ph of foldVoices(photoManifest, selectedVoice)) {
+  reconcileStack();
+  for (const ph of foldVoices(photoManifest)) {
     if (!Number.isFinite(ph.lat) || !Number.isFinite(ph.lng)) continue;
     const icon = photoDivIcon(ph.thumb || ph.file, ph.bearing, ph.fov, '');
     const m = L.marker([ph.lat, ph.lng], { icon, opacity: photosOpacity });
@@ -589,72 +625,142 @@ function buildPhotoMarkers() {
     }
     photoMarkers.push(m);
   }
-  console.log(`[photos] ${photoMarkers.length} fotos · voz: ${selectedVoice}`);
+  console.log(
+    `[photos] ${photoMarkers.length} fotos · ${effectiveStack().length} voz(es)`,
+  );
   refreshVoicePicker();
 }
 
-// Troca a voz exibida e reconstrói os marcadores (sem refazer o fetch).
-function setSelectedVoice(id) {
-  selectedVoice = id;
-  try {
-    localStorage.setItem('phidro:voice', id);
-  } catch {}
+// Persiste a pilha, reconstrói os marcadores e re-renderiza o modal.
+function applyStackChange() {
+  saveStack();
   if (photosLoaded) {
     buildPhotoMarkers();
     applyPhotoVisibility();
   }
+  renderVoicesModal();
 }
 
-// Seletor de voz no painel de camadas — sempre visível, com a linha de
-// ações (nova / exportar / importar / apagar) logo abaixo.
+// Move uma voz uma posição na pilha (-1 = mais precedência, +1 = menos).
+function voiceMove(id, delta) {
+  const i = photoOrder.indexOf(id);
+  const j = i + delta;
+  if (i < 0 || j < 0 || j >= photoOrder.length) return;
+  [photoOrder[i], photoOrder[j]] = [photoOrder[j], photoOrder[i]];
+  applyStackChange();
+}
+
+// Linha "Vozes das fotos" no painel de camadas — só um gatilho do modal.
 function refreshVoicePicker() {
   const panel = document.querySelector('.layer-panel');
-  if (!panel) return;
-  const voices = (photoManifest && photoManifest.voices) || [];
-  let row = document.getElementById('voice-row');
-  if (!row) {
-    row = document.createElement('div');
-    row.id = 'voice-row';
-    row.className = 'layer-row voice-row';
-    row.innerHTML =
-      '<label><span>Voz das fotos</span></label>' +
-      '<select id="voice-picker"></select>';
-    panel.appendChild(row);
-    row.querySelector('#voice-picker').addEventListener('change', (e) => {
-      setSelectedVoice(e.target.value);
-    });
-    const actions = document.createElement('div');
-    actions.id = 'voice-actions';
-    actions.innerHTML =
-      '<a href="#" data-act="new" title="Nova voz">➕</a>' +
-      '<a href="#" data-act="export" title="Exportar voz (.zip)">💾</a>' +
-      '<a href="#" data-act="import" title="Importar voz (.zip)">📂</a>' +
-      '<a href="#" data-act="delete" title="Apagar voz">🗑️</a>';
-    panel.appendChild(actions);
-    actions.addEventListener('click', (e) => {
-      const a = e.target.closest('a[data-act]');
-      if (!a) return;
-      e.preventDefault();
-      const act = a.dataset.act;
-      if (act === 'new') createVoice();
-      else if (act === 'export') exportVoice(selectedVoice);
-      else if (act === 'import')
-        document.getElementById('voice-import-input')?.click();
-      else if (act === 'delete') deleteVoice(selectedVoice);
-    });
+  if (!panel || document.getElementById('voice-row')) return;
+  const row = document.createElement('div');
+  row.id = 'voice-row';
+  row.className = 'layer-row voice-row';
+  row.innerHTML =
+    '<label><span>Vozes das fotos</span></label>' +
+    '<button type="button" id="voices-open-btn">gerir…</button>';
+  panel.appendChild(row);
+  row
+    .querySelector('#voices-open-btn')
+    .addEventListener('click', openVoicesModal);
+}
+
+// Renderiza a pilha de vozes dentro do modal.
+function renderVoicesModal() {
+  const box = document.getElementById('voices-stack');
+  if (!box) return;
+  const byId = new Map(
+    ((photoManifest && photoManifest.voices) || []).map((v) => [v.id, v]),
+  );
+  if (photoOrder.length === 0) {
+    box.innerHTML = '<p class="muted">Nenhuma voz ainda.</p>';
+    return;
   }
-  const sel = row.querySelector('#voice-picker');
-  sel.innerHTML =
-    '<option value="all">Todas as vozes</option>' +
-    voices
-      .map(
-        (v) =>
-          `<option value="${escapeHtml(v.id)}">${escapeHtml(
-            v.label || v.id,
-          )}</option>`,
-      )
-      .join('');
-  sel.value = selectedVoice;
+  box.innerHTML = photoOrder
+    .map((id, i) => {
+      const v = byId.get(id);
+      if (!v) return '';
+      const shown = !photoOff.has(id);
+      const isCenso = id === 'voice/censo';
+      return (
+        `<div class="voice-item${shown ? '' : ' off'}" data-id="${escapeHtml(id)}">` +
+        '<span class="voice-rank">' +
+        `<button data-vact="up" title="Mais precedência"${i === 0 ? ' disabled' : ''}>▲</button>` +
+        `<button data-vact="down" title="Menos precedência"${i === photoOrder.length - 1 ? ' disabled' : ''}>▼</button>` +
+        '</span>' +
+        '<label class="voice-show" title="Mostrar no mapa">' +
+        `<input type="checkbox" data-vact="show"${shown ? ' checked' : ''} /></label>` +
+        `<span class="voice-name">${escapeHtml(v.label || id)}` +
+        ` <span class="voice-count">${(v.photos || []).length}</span></span>` +
+        '<label class="voice-active" title="Enviar fotos para esta voz">' +
+        `<input type="radio" name="phidro-active-voice" data-vact="active"${id === activeVoice ? ' checked' : ''} /> envio</label>` +
+        '<button data-vact="export" title="Exportar .zip">💾</button>' +
+        (isCenso
+          ? ''
+          : '<button data-vact="delete" title="Apagar voz">🗑️</button>') +
+        '</div>'
+      );
+    })
+    .join('');
+}
+
+function openVoicesModal() {
+  reconcileStack();
+  renderVoicesModal();
+  const m = document.getElementById('voices-modal');
+  if (m) m.hidden = false;
+}
+function closeVoicesModal() {
+  const m = document.getElementById('voices-modal');
+  if (m) m.hidden = true;
+}
+
+// Liga os controles do modal de vozes (chamado uma vez no boot).
+function setupVoicesModal() {
+  const modal = document.getElementById('voices-modal');
+  if (!modal) return;
+  modal
+    .querySelector('#voices-modal-close')
+    ?.addEventListener('click', closeVoicesModal);
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) closeVoicesModal();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !modal.hidden) closeVoicesModal();
+  });
+  const stack = document.getElementById('voices-stack');
+  stack.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-vact]');
+    const id = btn && btn.closest('.voice-item')?.dataset.id;
+    if (!id) return;
+    const act = btn.dataset.vact;
+    if (act === 'up') voiceMove(id, -1);
+    else if (act === 'down') voiceMove(id, 1);
+    else if (act === 'export') exportVoice(id);
+    else if (act === 'delete') deleteVoice(id);
+  });
+  stack.addEventListener('change', (e) => {
+    const inp = e.target.closest('input[data-vact]');
+    const id = inp && inp.closest('.voice-item')?.dataset.id;
+    if (!id) return;
+    if (inp.dataset.vact === 'show') {
+      if (inp.checked) photoOff.delete(id);
+      else photoOff.add(id);
+      applyStackChange();
+    } else if (inp.dataset.vact === 'active') {
+      activeVoice = id;
+      applyStackChange();
+    }
+  });
+  document
+    .getElementById('voices-new-btn')
+    ?.addEventListener('click', createVoice);
+  document
+    .getElementById('voices-import-btn')
+    ?.addEventListener('click', () =>
+      document.getElementById('voice-import-input')?.click(),
+    );
 }
 
 // Cria uma voz nova via POST /voices, adiciona-a e a seleciona.
@@ -678,9 +784,11 @@ async function createVoice() {
     if (!photoManifest) photoManifest = { voices: [] };
     if (!Array.isArray(photoManifest.voices)) photoManifest.voices = [];
     photoManifest.voices.push({ id: v.id, label: v.label, photos: [] });
-    setSelectedVoice(v.id);
-    refreshVoicePicker();
-    showToast(`Voz "${v.label}" criada e selecionada.`);
+    activeVoice = v.id;
+    reconcileStack();
+    applyStackChange();
+    renderVoicesModal();
+    showToast(`Voz "${v.label}" criada e ativada.`);
   } catch (err) {
     showToast(`Falha ao criar voz: ${err.message}`);
   }
@@ -743,8 +851,10 @@ async function importVoice(file) {
     }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const r = await res.json();
+    activeVoice = r.voice;
+    saveStack();
     await reloadPhotos();
-    setSelectedVoice(r.voice);
+    renderVoicesModal();
     showToast(`Voz "${r.label}" importada — ${r.imported} foto(s).`);
   } catch (err) {
     showToast(`Falha ao importar: ${err.message}`);
@@ -781,11 +891,12 @@ async function deleteVoice(vid) {
       throw new Error('token inválido');
     }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    selectedVoice = 'all';
-    try {
-      localStorage.setItem('phidro:voice', 'all');
-    } catch {}
+    if (activeVoice === vid) activeVoice = 'voice/censo';
+    photoOff.delete(vid);
+    photoOrder = photoOrder.filter((id) => id !== vid);
+    saveStack();
     await reloadPhotos();
+    renderVoicesModal();
     showToast('Voz apagada.');
   } catch (err) {
     showToast(`Falha ao apagar voz: ${err.message}`);
@@ -1167,9 +1278,8 @@ async function uploadToArchive() {
   }
   const token = getUploadToken();
   if (!token) return;
-  // As fotos vão para a voz selecionada; com "Todas" selecionado, vão p/ Censo.
-  const uploadVoice =
-    selectedVoice && selectedVoice !== 'all' ? selectedVoice : 'voice/censo';
+  // As fotos vão para a voz ativa (alvo de upload escolhido no modal Vozes).
+  const uploadVoice = activeVoice || 'voice/censo';
   const voiceLabel =
     ((photoManifest && photoManifest.voices) || []).find(
       (v) => v.id === uploadVoice,
@@ -1657,6 +1767,8 @@ layerPanel.addTo(map);
 showPhotos();
 // Garante que o seletor de voz apareça mesmo antes das fotos carregarem.
 refreshVoicePicker();
+// Liga os botões do modal "Vozes" (abrir/fechar/nova/importar).
+setupVoicesModal();
 
 // ─── State ───────────────────────────────────────────────────────────────────
 const routesList = document.getElementById('routes-list');

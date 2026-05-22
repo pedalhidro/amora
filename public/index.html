@@ -269,6 +269,24 @@
       </div>
     </div>
 
+    <!-- Voices modal — precedence stack: order, show/hide, active, manage -->
+    <div id="voices-modal" class="modal" hidden>
+      <div class="modal-content">
+        <header>
+          <h2>Vozes</h2>
+          <button class="close" id="voices-modal-close" type="button" aria-label="Fechar">&times;</button>
+        </header>
+        <div class="modal-body">
+          <p class="muted">A voz no topo prevalece quando há conflito. Marque quais aparecem no mapa e qual recebe os envios.</p>
+          <div id="voices-stack"></div>
+          <div id="voices-modal-actions">
+            <button type="button" id="voices-new-btn">➕ Nova voz</button>
+            <button type="button" id="voices-import-btn">📂 Importar voz</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div id="toast" class="toast" hidden></div>
 
     <!-- Floating tooltip shown when hovering a route in the sidebar -->
