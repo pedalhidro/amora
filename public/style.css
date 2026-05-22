@@ -1199,6 +1199,18 @@ body.drawing .trackpoint-marker:active { cursor: grabbing !important; }
 /* Foto enviada pelo usuário — anel destacado para diferenciar das do mapa. */
 .photo-dot-upload { border-color: #2da9ff; }
 
+/* Seletor de voz no painel de camadas (Parte B — perspectivas). */
+.layer-row.voice-row {
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 0.5px solid rgba(255, 255, 255, 0.14);
+}
+.layer-row.voice-row select {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+}
+
 /* Cone de visada — mostra rumo + campo de visão da câmera (EXIF). */
 .photo-aim { position: relative; }
 .photo-aim > svg {

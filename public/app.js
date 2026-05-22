@@ -335,6 +335,13 @@ let photosVisible = false;
 let photosOpacity = 1;
 // Quando setado ({date, label}), só as fotos daquele pedal ficam visíveis.
 let photoRideFilter = null;
+// Parte B — perspectivas. Manifesto cru guardado para re-fold ao trocar de
+// voz sem refazer o fetch; voz selecionada ('all' = todas).
+let photoManifest = null;
+let selectedVoice =
+  (typeof localStorage !== 'undefined' &&
+    localStorage.getItem('phidro:voice')) ||
+  'all';
 
 // Marcadores de foto de um pedal específico (data ISO AAAA-MM-DD).
 function ridePhotos(date) {
@@ -475,12 +482,17 @@ function detectRide(dateObj, lat, lng) {
 // traz uma voz só, então a fold é praticamente a identidade — mas o app
 // passa a renderizar SEMPRE por aqui. É a costura onde, nos próximos passos,
 // entram a pilha de precedência e a reconciliação por divergência.
-function foldVoices(data) {
+function foldVoices(data, selected) {
   // Tolera o formato novo (voices) e o antigo (photos plano).
-  const voices =
+  const all =
     data && Array.isArray(data.voices)
       ? data.voices
       : [{ id: 'voice/local', photos: (data && data.photos) || [] }];
+  // selected: id de uma voz, ou 'all'/vazio para fundir todas.
+  const voices =
+    selected && selected !== 'all'
+      ? all.filter((v) => v.id === selected)
+      : all;
   const byId = new Map();
   let n = 0;
   for (const v of voices) {
@@ -514,55 +526,119 @@ async function loadPhotos() {
         }
       }
       if (!data) throw new Error('nenhum manifesto de fotos acessível');
-      for (const ph of foldVoices(data)) {
-        if (!Number.isFinite(ph.lat) || !Number.isFinite(ph.lng)) continue;
-        // Cada foto é um pequeno círculo com o próprio thumbnail dentro.
-        const icon = photoDivIcon(ph.thumb || ph.file, ph.bearing, ph.fov, '');
-        const m = L.marker([ph.lat, ph.lng], { icon, opacity: photosOpacity });
-        m._photo = ph;
-        const when = ph.datetime
-          ? new Date(ph.datetime).toLocaleString('pt-BR')
-          : '';
-        const rideLine = ph.ride
-          ? `<div class="photo-ride">${escapeHtml(
-              [ph.ride.code, ph.ride.name].filter(Boolean).join(' · ') ||
-                ph.ride.date,
-            )}</div>`
-          : '';
-        const canDelete = Boolean(DELETE_PHOTO_URL && ph.id);
-        const delBtn = canDelete
-          ? `<button type="button" class="photo-del-btn">Apagar foto</button>`
-          : '';
-        m.bindPopup(
-          `<div class="photo-popup">` +
-            `<img src="${ph.file}" loading="lazy" alt="${escapeHtml(ph.orig || '')}" />` +
-            rideLine +
-            `<div class="photo-meta">${escapeHtml(ph.orig || '')}` +
-            (when ? ` · ${escapeHtml(when)}` : '') +
-            (Number.isFinite(ph.alt) ? ` · ${ph.alt} m` : '') +
-            (Number.isFinite(ph.bearing)
-              ? ` · ${Math.round(ph.bearing)}° ${cardinal(ph.bearing)}`
-              : '') +
-            `</div>${delBtn}</div>`,
-          { maxWidth: 320, className: 'photo-popup-wrap' },
-        );
-        if (canDelete) {
-          m.on('popupopen', (e) => {
-            const el = e.popup.getElement();
-            const btn = el && el.querySelector('.photo-del-btn');
-            if (btn) btn.onclick = () => deleteArchivedPhoto(m);
-          });
-        }
-        photoMarkers.push(m);
-      }
+      photoManifest = data;
+      buildPhotoMarkers();
       photosLoaded = true;
-      console.log(`[photos] ${photoMarkers.length} fotos georreferenciadas`);
     } catch (err) {
       console.warn('[photos] falha ao carregar photos.json:', err);
       showToast(`Falha ao carregar fotos: ${err.message}`);
     }
   })();
   await photosLoading;
+}
+
+// (Re)constrói os marcadores a partir do manifesto e da voz selecionada.
+// Não os adiciona ao mapa — quem faz isso é applyPhotoVisibility().
+function buildPhotoMarkers() {
+  for (const m of photoMarkers) {
+    if (map.hasLayer(m)) map.removeLayer(m);
+  }
+  photoMarkers = [];
+  // Se a voz guardada sumiu do manifesto, volta para "todas".
+  const ids = ((photoManifest && photoManifest.voices) || []).map((v) => v.id);
+  if (selectedVoice !== 'all' && !ids.includes(selectedVoice)) {
+    selectedVoice = 'all';
+  }
+  for (const ph of foldVoices(photoManifest, selectedVoice)) {
+    if (!Number.isFinite(ph.lat) || !Number.isFinite(ph.lng)) continue;
+    const icon = photoDivIcon(ph.thumb || ph.file, ph.bearing, ph.fov, '');
+    const m = L.marker([ph.lat, ph.lng], { icon, opacity: photosOpacity });
+    m._photo = ph;
+    const when = ph.datetime
+      ? new Date(ph.datetime).toLocaleString('pt-BR')
+      : '';
+    const rideLine = ph.ride
+      ? `<div class="photo-ride">${escapeHtml(
+          [ph.ride.code, ph.ride.name].filter(Boolean).join(' · ') ||
+            ph.ride.date,
+        )}</div>`
+      : '';
+    const canDelete = Boolean(DELETE_PHOTO_URL && ph.id);
+    const delBtn = canDelete
+      ? `<button type="button" class="photo-del-btn">Apagar foto</button>`
+      : '';
+    m.bindPopup(
+      `<div class="photo-popup">` +
+        `<img src="${ph.file}" loading="lazy" alt="${escapeHtml(ph.orig || '')}" />` +
+        rideLine +
+        `<div class="photo-meta">${escapeHtml(ph.orig || '')}` +
+        (when ? ` · ${escapeHtml(when)}` : '') +
+        (Number.isFinite(ph.alt) ? ` · ${ph.alt} m` : '') +
+        (Number.isFinite(ph.bearing)
+          ? ` · ${Math.round(ph.bearing)}° ${cardinal(ph.bearing)}`
+          : '') +
+        `</div>${delBtn}</div>`,
+      { maxWidth: 320, className: 'photo-popup-wrap' },
+    );
+    if (canDelete) {
+      m.on('popupopen', (e) => {
+        const el = e.popup.getElement();
+        const btn = el && el.querySelector('.photo-del-btn');
+        if (btn) btn.onclick = () => deleteArchivedPhoto(m);
+      });
+    }
+    photoMarkers.push(m);
+  }
+  console.log(`[photos] ${photoMarkers.length} fotos · voz: ${selectedVoice}`);
+  refreshVoicePicker();
+}
+
+// Troca a voz exibida e reconstrói os marcadores (sem refazer o fetch).
+function setSelectedVoice(id) {
+  selectedVoice = id;
+  try {
+    localStorage.setItem('phidro:voice', id);
+  } catch {}
+  if (photosLoaded) {
+    buildPhotoMarkers();
+    applyPhotoVisibility();
+  }
+}
+
+// Seletor de voz no painel de camadas — aparece só quando há +de uma voz.
+function refreshVoicePicker() {
+  const panel = document.querySelector('.layer-panel');
+  if (!panel) return;
+  const voices = (photoManifest && photoManifest.voices) || [];
+  let row = document.getElementById('voice-row');
+  if (voices.length < 2) {
+    if (row) row.remove();
+    return;
+  }
+  if (!row) {
+    row = document.createElement('div');
+    row.id = 'voice-row';
+    row.className = 'layer-row voice-row';
+    row.innerHTML =
+      '<label><span>Voz das fotos</span></label>' +
+      '<select id="voice-picker"></select>';
+    panel.appendChild(row);
+    row.querySelector('#voice-picker').addEventListener('change', (e) => {
+      setSelectedVoice(e.target.value);
+    });
+  }
+  const sel = row.querySelector('#voice-picker');
+  sel.innerHTML =
+    '<option value="all">Todas as vozes</option>' +
+    voices
+      .map(
+        (v) =>
+          `<option value="${escapeHtml(v.id)}">${escapeHtml(
+            v.label || v.id,
+          )}</option>`,
+      )
+      .join('');
+  sel.value = selectedVoice;
 }
 
 // Visibilidade efetiva: camada ligada E (sem filtro OU foto do pedal filtrado).
