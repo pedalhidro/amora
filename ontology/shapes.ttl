@@ -1,0 +1,98 @@
+@prefix sh:      <http://www.w3.org/ns/shacl#> .
+@prefix ph:      <https://pedalhidrografi.co/vocab/1.0/> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix prov:    <http://www.w3.org/ns/prov#> .
+@prefix schema:  <https://schema.org/> .
+@prefix xsd:     <http://www.w3.org/2001/XMLSchema#> .
+
+# Autoria e licença vivem no nível do documento (schema:Dataset).
+# Cada foto herda essas asserções via o grafo / voz do documento.
+ph:DatasetShape
+    a sh:NodeShape ;
+    sh:targetClass schema:Dataset ;
+    sh:severity sh:Violation ;
+
+    sh:property [
+        sh:path     prov:wasAttributedTo ;
+        sh:minCount 1 ;
+        sh:nodeKind sh:IRI ;
+        sh:message  "Dataset precisa de ao menos uma voz autora (prov:wasAttributedTo)."@pt ;
+    ] ;
+    sh:property [
+        sh:path     dcterms:license ;
+        sh:minCount 1 ; sh:maxCount 1 ;
+        sh:nodeKind sh:IRI ;
+        sh:message  "Dataset precisa de exatamente uma licença."@pt ;
+    ] .
+
+# Mínimo por foto: timestamp e coordenadas GPS.
+ph:UsableImageShape
+    a sh:NodeShape ;
+    sh:targetClass ph:Image ;
+    sh:severity sh:Violation ;
+
+    sh:property [
+        sh:path     schema:dateCreated ;
+        sh:minCount 1 ; sh:maxCount 1 ;
+        sh:datatype xsd:dateTime ;
+        sh:message  "Foto precisa de um único timestamp (schema:dateCreated)."@pt ;
+    ] ;
+    sh:property [
+        sh:path     ph:capturedAt ;
+        sh:minCount 1 ; sh:maxCount 1 ;
+        sh:class    schema:GeoCoordinates ;
+        sh:message  "Foto precisa de uma única coordenada GPS (ph:capturedAt → schema:GeoCoordinates)."@pt ;
+    ] .
+
+# Cada nó de coordenada precisa de lat/long válidos.
+ph:GeoCoordinatesShape
+    a sh:NodeShape ;
+    sh:targetClass schema:GeoCoordinates ;
+    sh:severity sh:Violation ;
+
+    sh:property [
+        sh:path     schema:latitude ;
+        sh:minCount 1 ; sh:maxCount 1 ;
+        sh:datatype xsd:double ;
+        sh:minInclusive -90 ; sh:maxInclusive 90 ;
+        sh:message  "Latitude precisa estar em [-90, 90]."@pt ;
+    ] ;
+    sh:property [
+        sh:path     schema:longitude ;
+        sh:minCount 1 ; sh:maxCount 1 ;
+        sh:datatype xsd:double ;
+        sh:minInclusive -180 ; sh:maxInclusive 180 ;
+        sh:message  "Longitude precisa estar em [-180, 180]."@pt ;
+    ] .
+
+# Ideal: além do mínimo, declarar direção, campo de visão e tour associado.
+ph:IdealImageShape
+    a sh:NodeShape ;
+    sh:targetClass ph:Image ;
+    sh:node ph:UsableImageShape ;
+
+    sh:property [
+        sh:path     ph:bearing ;
+        sh:severity sh:Info ;
+        sh:minCount 1 ; sh:maxCount 1 ;
+        sh:datatype xsd:decimal ;
+        sh:minInclusive 0 ;
+        sh:maxExclusive 360 ;
+        sh:message  "Ideal: declarar direção (ph:bearing, 0–360°)."@pt ;
+    ] ;
+    sh:property [
+        sh:path     ph:fieldOfView ;
+        sh:severity sh:Info ;
+        sh:minCount 1 ; sh:maxCount 1 ;
+        sh:datatype xsd:decimal ;
+        sh:minExclusive 0 ;
+        sh:maxInclusive 180 ;
+        sh:message  "Ideal: declarar campo de visão (ph:fieldOfView, graus)."@pt ;
+    ] ;
+    sh:property [
+        sh:path     ph:capturedDuring ;
+        sh:severity sh:Info ;
+        sh:minCount 1 ;
+        sh:class    ph:Tour ;
+        sh:message  "Ideal: associar a foto a um ph:Tour via ph:capturedDuring."@pt ;
+    ] .

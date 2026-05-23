@@ -1,0 +1,1154 @@
+# Synthetic — should produce ZERO SHACL violations.
+
+@prefix ph:      <https://pedalhidrografi.co/censo/1.0/> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix prov:    <http://www.w3.org/ns/prov#> .
+@prefix schema:  <https://schema.org/> .
+@prefix xsd:     <http://www.w3.org/2001/XMLSchema#> .
+@prefix id:      <https://pedalhidrografi.co/id/> .
+
+id:person/author-v000 a schema:Person ;
+    schema:name "Autor v000" .
+
+id:geo/v000-0 a schema:GeoCoordinates ;
+    schema:latitude  -23.692497e+0 ;
+    schema:longitude -46.717491e+0 .
+
+id:photo/v000-0 a ph:Photo ;
+    ph:hasLocation id:geo/v000-0 ;
+    ph:fieldOfView 55.62 ;
+    ph:hasAuthor id:person/author-v000 ;
+    dcterms:license <https://creativecommons.org/publicdomain/zero/1.0/> .
+
+id:narrative/v000 a ph:NarrativeText ;
+    ph:content "Texto da narrativa v000." ;
+    ph:hasAuthor id:person/author-v000 .
+
+id:igstats/v000-0 a ph:InstagramPostStats ;
+    prov:generatedAtTime "2026-04-06T18:50:00+00:00"^^xsd:dateTime ;
+    ph:likes 44 ;
+    ph:messageShares 37 ;
+    ph:reposts 6 .
+
+id:igstats/v000-1 a ph:InstagramPostStats ;
+    prov:generatedAtTime "2026-03-26T02:21:00+00:00"^^xsd:dateTime ;
+    ph:likes 15 ;
+    ph:messageShares 5 ;
+    ph:reposts 3 .
+
+id:igstats/v000-2 a ph:InstagramPostStats ;
+    prov:generatedAtTime "2026-03-30T16:03:00+00:00"^^xsd:dateTime ;
+    ph:likes 258 ;
+    ph:messageShares 38 ;
+    ph:reposts 0 .
+
+id:igpost/v000 a ph:InstagramPost ;
+    schema:url <https://instagram.com/p/v000> ;
+    ph:hasNarrativeText id:narrative/v000 ;
+    ph:hasInstagramPostStats id:igstats/v000-0 , id:igstats/v000-1 , id:igstats/v000-2 .
+
+id:planstats/v000 a ph:PlannedRouteStats ;
+    ph:distanceKm 61.54 ;
+    ph:ascentMeters 576.0 ;
+    ph:estimatedMovementEnergyKj 2142.5 .
+
+id:plannedroute/v000 a ph:PlannedRoute ;
+    schema:url <https://ridewithgps.com/routes/v000> ;
+    ph:hasAuthor id:person/author-v000 ;
+    ph:hasPlannedRouteStats id:planstats/v000 .
+
+id:tour/v000 a ph:Tour ;
+    ph:hasPlannedRoute id:plannedroute/v000 ;
+    ph:hasPhoto id:photo/v000-0 ;
+    ph:hasInstagramPost id:igpost/v000 .
+
+id:person/author-v001 a schema:Person ;
+    schema:name "Autor v001" .
+
+id:geo/v001-0 a schema:GeoCoordinates ;
+    schema:latitude  -23.523220e+0 ;
+    schema:longitude -46.557171e+0 .
+
+id:photo/v001-0 a ph:Photo ;
+    ph:hasLocation id:geo/v001-0 ;
+    ph:fieldOfView 40.45 ;
+    ph:hasAuthor id:person/author-v001 ;
+    dcterms:license <https://creativecommons.org/licenses/by-sa/4.0/> .
+
+id:geo/v001-1 a schema:GeoCoordinates ;
+    schema:latitude  -23.490558e+0 ;
+    schema:longitude -46.697925e+0 .
+
+id:photo/v001-1 a ph:Photo ;
+    ph:hasLocation id:geo/v001-1 ;
+    ph:fieldOfView 50.88 ;
+    ph:hasAuthor id:person/author-v001 ;
+    dcterms:license <https://creativecommons.org/licenses/by/4.0/> .
+
+id:geo/v001-2 a schema:GeoCoordinates ;
+    schema:latitude  -23.669337e+0 ;
+    schema:longitude -46.686022e+0 .
+
+id:photo/v001-2 a ph:Photo ;
+    ph:hasLocation id:geo/v001-2 ;
+    ph:fieldOfView 65.13 ;
+    ph:hasAuthor id:person/author-v001 ;
+    dcterms:license <https://creativecommons.org/licenses/by/4.0/> .
+
+id:geo/v001-3 a schema:GeoCoordinates ;
+    schema:latitude  -23.518882e+0 ;
+    schema:longitude -46.557862e+0 .
+
+id:photo/v001-3 a ph:Photo ;
+    ph:hasLocation id:geo/v001-3 ;
+    ph:fieldOfView 91.08 ;
+    ph:hasAuthor id:person/author-v001 ;
+    dcterms:license <https://creativecommons.org/publicdomain/zero/1.0/> .
+
+id:narrative/v001 a ph:NarrativeText ;
+    ph:content "Texto da narrativa v001." ;
+    ph:hasAuthor id:person/author-v001 .
+
+id:igstats/v001-0 a ph:InstagramPostStats ;
+    prov:generatedAtTime "2026-03-27T04:02:00+00:00"^^xsd:dateTime ;
+    ph:likes 282 ;
+    ph:messageShares 18 ;
+    ph:reposts 10 .
+
+id:igstats/v001-1 a ph:InstagramPostStats ;
+    prov:generatedAtTime "2026-04-02T14:30:00+00:00"^^xsd:dateTime ;
+    ph:likes 295 ;
+    ph:messageShares 12 ;
+    ph:reposts 1 .
+
+id:igpost/v001 a ph:InstagramPost ;
+    schema:url <https://instagram.com/p/v001> ;
+    ph:hasNarrativeText id:narrative/v001 ;
+    ph:hasInstagramPostStats id:igstats/v001-0 , id:igstats/v001-1 .
+
+id:planstats/v001 a ph:PlannedRouteStats ;
+    ph:distanceKm 29.81 ;
+    ph:ascentMeters 267.0 ;
+    ph:estimatedMovementEnergyKj 1055.3 .
+
+id:plannedroute/v001 a ph:PlannedRoute ;
+    schema:url <https://ridewithgps.com/routes/v001> ;
+    ph:hasAuthor id:person/author-v001 ;
+    ph:hasPlannedRouteStats id:planstats/v001 .
+
+id:tour/v001 a ph:Tour ;
+    ph:hasPlannedRoute id:plannedroute/v001 ;
+    ph:hasPhoto id:photo/v001-0 , id:photo/v001-1 , id:photo/v001-2 , id:photo/v001-3 ;
+    ph:hasInstagramPost id:igpost/v001 .
+
+id:person/author-v002 a schema:Person ;
+    schema:name "Autor v002" .
+
+id:geo/v002-0 a schema:GeoCoordinates ;
+    schema:latitude  -23.440055e+0 ;
+    schema:longitude -46.685962e+0 .
+
+id:photo/v002-0 a ph:Photo ;
+    ph:hasLocation id:geo/v002-0 ;
+    ph:fieldOfView 71.74 ;
+    ph:hasAuthor id:person/author-v002 ;
+    dcterms:license <https://creativecommons.org/licenses/by/4.0/> .
+
+id:geo/v002-1 a schema:GeoCoordinates ;
+    schema:latitude  -23.651204e+0 ;
+    schema:longitude -46.693419e+0 .
+
+id:photo/v002-1 a ph:Photo ;
+    ph:hasLocation id:geo/v002-1 ;
+    ph:fieldOfView 86.91 ;
+    ph:hasAuthor id:person/author-v002 ;
+    dcterms:license <https://creativecommons.org/publicdomain/zero/1.0/> .
+
+id:planstats/v002 a ph:PlannedRouteStats ;
+    ph:distanceKm 54.59 ;
+    ph:ascentMeters 178.4 ;
+    ph:estimatedMovementEnergyKj 3133.2 .
+
+id:plannedroute/v002 a ph:PlannedRoute ;
+    schema:url <https://ridewithgps.com/routes/v002> ;
+    ph:hasAuthor id:person/author-v002 ;
+    ph:hasPlannedRouteStats id:planstats/v002 .
+
+id:tour/v002 a ph:Tour ;
+    ph:hasPlannedRoute id:plannedroute/v002 ;
+    ph:hasPhoto id:photo/v002-0 , id:photo/v002-1 .
+
+id:person/author-v003 a schema:Person ;
+    schema:name "Autor v003" .
+
+id:geo/v003-0 a schema:GeoCoordinates ;
+    schema:latitude  -23.561322e+0 ;
+    schema:longitude -46.719016e+0 .
+
+id:photo/v003-0 a ph:Photo ;
+    ph:hasLocation id:geo/v003-0 ;
+    ph:fieldOfView 104.78 ;
+    ph:hasAuthor id:person/author-v003 ;
+    dcterms:license <https://creativecommons.org/publicdomain/zero/1.0/> .
+
+id:geo/v003-1 a schema:GeoCoordinates ;
+    schema:latitude  -23.532915e+0 ;
+    schema:longitude -46.594616e+0 .
+
+id:photo/v003-1 a ph:Photo ;
+    ph:hasLocation id:geo/v003-1 ;
+    ph:fieldOfView 99.0 ;
+    ph:hasAuthor id:person/author-v003 ;
+    dcterms:license <https://creativecommons.org/licenses/by-sa/4.0/> .
+
+id:narrative/v003 a ph:NarrativeText ;
+    ph:content "Texto da narrativa v003." ;
+    ph:hasAuthor id:person/author-v003 .
+
+id:igstats/v003-0 a ph:InstagramPostStats ;
+    prov:generatedAtTime "2026-04-01T13:16:00+00:00"^^xsd:dateTime ;
+    ph:likes 205 ;
+    ph:messageShares 17 ;
+    ph:reposts 1 .
+
+id:igpost/v003 a ph:InstagramPost ;
+    schema:url <https://instagram.com/p/v003> ;
+    ph:hasNarrativeText id:narrative/v003 ;
+    ph:hasInstagramPostStats id:igstats/v003-0 .
+
+id:planstats/v003 a ph:PlannedRouteStats ;
+    ph:distanceKm 76.29 ;
+    ph:ascentMeters 707.3 ;
+    ph:estimatedMovementEnergyKj 1807.0 .
+
+id:plannedroute/v003 a ph:PlannedRoute ;
+    schema:url <https://ridewithgps.com/routes/v003> ;
+    ph:hasAuthor id:person/author-v003 ;
+    ph:hasPlannedRouteStats id:planstats/v003 .
+
+id:tour/v003 a ph:Tour ;
+    ph:hasPlannedRoute id:plannedroute/v003 ;
+    ph:hasPhoto id:photo/v003-0 , id:photo/v003-1 ;
+    ph:hasInstagramPost id:igpost/v003 .
+
+id:person/author-v004 a schema:Person ;
+    schema:name "Autor v004" .
+
+id:geo/v004-0 a schema:GeoCoordinates ;
+    schema:latitude  -23.581310e+0 ;
+    schema:longitude -46.525636e+0 .
+
+id:photo/v004-0 a ph:Photo ;
+    ph:hasLocation id:geo/v004-0 ;
+    ph:fieldOfView 72.12 ;
+    ph:hasAuthor id:person/author-v004 ;
+    dcterms:license <https://creativecommons.org/licenses/by/4.0/> .
+
+id:geo/v004-1 a schema:GeoCoordinates ;
+    schema:latitude  -23.658111e+0 ;
+    schema:longitude -46.576503e+0 .
+
+id:photo/v004-1 a ph:Photo ;
+    ph:hasLocation id:geo/v004-1 ;
+    ph:fieldOfView 77.73 ;
+    ph:hasAuthor id:person/author-v004 ;
+    dcterms:license <https://creativecommons.org/publicdomain/zero/1.0/> .
+
+id:geo/v004-2 a schema:GeoCoordinates ;
+    schema:latitude  -23.524624e+0 ;
+    schema:longitude -46.530653e+0 .
+
+id:photo/v004-2 a ph:Photo ;
+    ph:hasLocation id:geo/v004-2 ;
+    ph:fieldOfView 67.96 ;
+    ph:hasAuthor id:person/author-v004 ;
+    dcterms:license <https://creativecommons.org/licenses/by-sa/4.0/> .
+
+id:geo/v004-3 a schema:GeoCoordinates ;
+    schema:latitude  -23.400802e+0 ;
+    schema:longitude -46.758500e+0 .
+
+id:photo/v004-3 a ph:Photo ;
+    ph:hasLocation id:geo/v004-3 ;
+    ph:fieldOfView 74.55 ;
+    ph:hasAuthor id:person/author-v004 ;
+    dcterms:license <https://creativecommons.org/licenses/by-sa/4.0/> .
+
+id:planstats/v004 a ph:PlannedRouteStats ;
+    ph:distanceKm 25.4 ;
+    ph:ascentMeters 560.4 ;
+    ph:estimatedMovementEnergyKj 2708.5 .
+
+id:plannedroute/v004 a ph:PlannedRoute ;
+    schema:url <https://ridewithgps.com/routes/v004> ;
+    ph:hasAuthor id:person/author-v004 ;
+    ph:hasPlannedRouteStats id:planstats/v004 .
+
+id:tour/v004 a ph:Tour ;
+    ph:hasPlannedRoute id:plannedroute/v004 ;
+    ph:hasPhoto id:photo/v004-0 , id:photo/v004-1 , id:photo/v004-2 , id:photo/v004-3 .
+
+id:person/author-v005 a schema:Person ;
+    schema:name "Autor v005" .
+
+id:geo/v005-0 a schema:GeoCoordinates ;
+    schema:latitude  -23.585514e+0 ;
+    schema:longitude -46.501164e+0 .
+
+id:photo/v005-0 a ph:Photo ;
+    ph:hasLocation id:geo/v005-0 ;
+    ph:fieldOfView 77.04 ;
+    ph:hasAuthor id:person/author-v005 ;
+    dcterms:license <https://creativecommons.org/publicdomain/zero/1.0/> .
+
+id:geo/v005-1 a schema:GeoCoordinates ;
+    schema:latitude  -23.441766e+0 ;
+    schema:longitude -46.796556e+0 .
+
+id:photo/v005-1 a ph:Photo ;
+    ph:hasLocation id:geo/v005-1 ;
+    ph:fieldOfView 90.45 ;
+    ph:hasAuthor id:person/author-v005 ;
+    dcterms:license <https://creativecommons.org/publicdomain/zero/1.0/> .
+
+id:geo/v005-2 a schema:GeoCoordinates ;
+    schema:latitude  -23.434563e+0 ;
+    schema:longitude -46.574737e+0 .
+
+id:photo/v005-2 a ph:Photo ;
+    ph:hasLocation id:geo/v005-2 ;
+    ph:fieldOfView 93.8 ;
+    ph:hasAuthor id:person/author-v005 ;
+    dcterms:license <https://creativecommons.org/licenses/by/4.0/> .
+
+id:geo/v005-3 a schema:GeoCoordinates ;
+    schema:latitude  -23.666534e+0 ;
+    schema:longitude -46.669570e+0 .
+
+id:photo/v005-3 a ph:Photo ;
+    ph:hasLocation id:geo/v005-3 ;
+    ph:fieldOfView 71.76 ;
+    ph:hasAuthor id:person/author-v005 ;
+    dcterms:license <https://creativecommons.org/publicdomain/zero/1.0/> .
+
+id:planstats/v005 a ph:PlannedRouteStats ;
+    ph:distanceKm 47.54 ;
+    ph:ascentMeters 184.0 ;
+    ph:estimatedMovementEnergyKj 3720.4 .
+
+id:plannedroute/v005 a ph:PlannedRoute ;
+    schema:url <https://ridewithgps.com/routes/v005> ;
+    ph:hasAuthor id:person/author-v005 ;
+    ph:hasPlannedRouteStats id:planstats/v005 .
+
+id:tour/v005 a ph:Tour ;
+    ph:hasPlannedRoute id:plannedroute/v005 ;
+    ph:hasPhoto id:photo/v005-0 , id:photo/v005-1 , id:photo/v005-2 , id:photo/v005-3 .
+
+id:person/author-v006 a schema:Person ;
+    schema:name "Autor v006" .
+
+id:geo/v006-0 a schema:GeoCoordinates ;
+    schema:latitude  -23.447499e+0 ;
+    schema:longitude -46.647701e+0 .
+
+id:photo/v006-0 a ph:Photo ;
+    ph:hasLocation id:geo/v006-0 ;
+    ph:fieldOfView 53.92 ;
+    ph:hasAuthor id:person/author-v006 ;
+    dcterms:license <https://creativecommons.org/licenses/by/4.0/> .
+
+id:geo/v006-1 a schema:GeoCoordinates ;
+    schema:latitude  -23.471247e+0 ;
+    schema:longitude -46.638186e+0 .
+
+id:photo/v006-1 a ph:Photo ;
+    ph:hasLocation id:geo/v006-1 ;
+    ph:fieldOfView 94.5 ;
+    ph:hasAuthor id:person/author-v006 ;
+    dcterms:license <https://creativecommons.org/publicdomain/zero/1.0/> .
+
+id:geo/v006-2 a schema:GeoCoordinates ;
+    schema:latitude  -23.424452e+0 ;
+    schema:longitude -46.620317e+0 .
+
+id:photo/v006-2 a ph:Photo ;
+    ph:hasLocation id:geo/v006-2 ;
+    ph:fieldOfView 74.2 ;
+    ph:hasAuthor id:person/author-v006 ;
+    dcterms:license <https://creativecommons.org/licenses/by-sa/4.0/> .
+
+id:tour/v006 a ph:Tour ;
+    ph:hasPhoto id:photo/v006-0 , id:photo/v006-1 , id:photo/v006-2 .
+
+id:person/author-v007 a schema:Person ;
+    schema:name "Autor v007" .
+
+id:geo/v007-0 a schema:GeoCoordinates ;
+    schema:latitude  -23.628164e+0 ;
+    schema:longitude -46.727739e+0 .
+
+id:photo/v007-0 a ph:Photo ;
+    ph:hasLocation id:geo/v007-0 ;
+    ph:fieldOfView 79.71 ;
+    ph:hasAuthor id:person/author-v007 ;
+    dcterms:license <https://creativecommons.org/licenses/by-sa/4.0/> .
+
+id:geo/v007-1 a schema:GeoCoordinates ;
+    schema:latitude  -23.674304e+0 ;
+    schema:longitude -46.654203e+0 .
+
+id:photo/v007-1 a ph:Photo ;
+    ph:hasLocation id:geo/v007-1 ;
+    ph:fieldOfView 44.84 ;
+    ph:hasAuthor id:person/author-v007 ;
+    dcterms:license <https://creativecommons.org/publicdomain/zero/1.0/> .
+
+id:geo/v007-2 a schema:GeoCoordinates ;
+    schema:latitude  -23.470250e+0 ;
+    schema:longitude -46.761483e+0 .
+
+id:photo/v007-2 a ph:Photo ;
+    ph:hasLocation id:geo/v007-2 ;
+    ph:fieldOfView 73.27 ;
+    ph:hasAuthor id:person/author-v007 ;
+    dcterms:license <https://creativecommons.org/publicdomain/zero/1.0/> .
+
+id:narrative/v007 a ph:NarrativeText ;
+    ph:content "Texto da narrativa v007." ;
+    ph:hasAuthor id:person/author-v007 .
+
+id:igstats/v007-0 a ph:InstagramPostStats ;
+    prov:generatedAtTime "2026-04-08T04:16:00+00:00"^^xsd:dateTime ;
+    ph:likes 216 ;
+    ph:messageShares 13 ;
+    ph:reposts 8 .
+
+id:igstats/v007-1 a ph:InstagramPostStats ;
+    prov:generatedAtTime "2026-03-29T22:51:00+00:00"^^xsd:dateTime ;
+    ph:likes 365 ;
+    ph:messageShares 19 ;
+    ph:reposts 6 .
+
+id:igstats/v007-2 a ph:InstagramPostStats ;
+    prov:generatedAtTime "2026-04-02T20:56:00+00:00"^^xsd:dateTime ;
+    ph:likes 224 ;
+    ph:messageShares 33 ;
+    ph:reposts 7 .
+
+id:igpost/v007 a ph:InstagramPost ;
+    schema:url <https://instagram.com/p/v007> ;
+    ph:hasNarrativeText id:narrative/v007 ;
+    ph:hasInstagramPostStats id:igstats/v007-0 , id:igstats/v007-1 , id:igstats/v007-2 .
+
+id:planstats/v007 a ph:PlannedRouteStats ;
+    ph:distanceKm 29.61 ;
+    ph:ascentMeters 303.6 ;
+    ph:estimatedMovementEnergyKj 2682.6 .
+
+id:plannedroute/v007 a ph:PlannedRoute ;
+    schema:url <https://ridewithgps.com/routes/v007> ;
+    ph:hasAuthor id:person/author-v007 ;
+    ph:hasPlannedRouteStats id:planstats/v007 .
+
+id:tour/v007 a ph:Tour ;
+    ph:hasPlannedRoute id:plannedroute/v007 ;
+    ph:hasPhoto id:photo/v007-0 , id:photo/v007-1 , id:photo/v007-2 ;
+    ph:hasInstagramPost id:igpost/v007 .
+
+id:person/author-v008 a schema:Person ;
+    schema:name "Autor v008" .
+
+id:geo/v008-0 a schema:GeoCoordinates ;
+    schema:latitude  -23.523468e+0 ;
+    schema:longitude -46.797843e+0 .
+
+id:photo/v008-0 a ph:Photo ;
+    ph:hasLocation id:geo/v008-0 ;
+    ph:fieldOfView 89.55 ;
+    ph:hasAuthor id:person/author-v008 ;
+    dcterms:license <https://creativecommons.org/licenses/by-sa/4.0/> .
+
+id:geo/v008-1 a schema:GeoCoordinates ;
+    schema:latitude  -23.631317e+0 ;
+    schema:longitude -46.528374e+0 .
+
+id:photo/v008-1 a ph:Photo ;
+    ph:hasLocation id:geo/v008-1 ;
+    ph:fieldOfView 100.17 ;
+    ph:hasAuthor id:person/author-v008 ;
+    dcterms:license <https://creativecommons.org/licenses/by-sa/4.0/> .
+
+id:narrative/v008 a ph:NarrativeText ;
+    ph:content "Texto da narrativa v008." ;
+    ph:hasAuthor id:person/author-v008 .
+
+id:igstats/v008-0 a ph:InstagramPostStats ;
+    prov:generatedAtTime "2026-04-05T10:06:00+00:00"^^xsd:dateTime ;
+    ph:likes 109 ;
+    ph:messageShares 34 ;
+    ph:reposts 2 .
+
+id:igstats/v008-1 a ph:InstagramPostStats ;
+    prov:generatedAtTime "2026-04-07T08:51:00+00:00"^^xsd:dateTime ;
+    ph:likes 295 ;
+    ph:messageShares 30 ;
+    ph:reposts 3 .
+
+id:igpost/v008 a ph:InstagramPost ;
+    schema:url <https://instagram.com/p/v008> ;
+    ph:hasNarrativeText id:narrative/v008 ;
+    ph:hasInstagramPostStats id:igstats/v008-0 , id:igstats/v008-1 .
+
+id:planstats/v008 a ph:PlannedRouteStats ;
+    ph:distanceKm 67.49 ;
+    ph:ascentMeters 192.8 ;
+    ph:estimatedMovementEnergyKj 1110.2 .
+
+id:plannedroute/v008 a ph:PlannedRoute ;
+    schema:url <https://ridewithgps.com/routes/v008> ;
+    ph:hasAuthor id:person/author-v008 ;
+    ph:hasPlannedRouteStats id:planstats/v008 .
+
+id:tour/v008 a ph:Tour ;
+    ph:hasPlannedRoute id:plannedroute/v008 ;
+    ph:hasPhoto id:photo/v008-0 , id:photo/v008-1 ;
+    ph:hasInstagramPost id:igpost/v008 .
+
+id:person/author-v009 a schema:Person ;
+    schema:name "Autor v009" .
+
+id:geo/v009-0 a schema:GeoCoordinates ;
+    schema:latitude  -23.593711e+0 ;
+    schema:longitude -46.676669e+0 .
+
+id:photo/v009-0 a ph:Photo ;
+    ph:hasLocation id:geo/v009-0 ;
+    ph:fieldOfView 100.47 ;
+    ph:hasAuthor id:person/author-v009 ;
+    dcterms:license <https://creativecommons.org/licenses/by-sa/4.0/> .
+
+id:geo/v009-1 a schema:GeoCoordinates ;
+    schema:latitude  -23.497991e+0 ;
+    schema:longitude -46.504750e+0 .
+
+id:photo/v009-1 a ph:Photo ;
+    ph:hasLocation id:geo/v009-1 ;
+    ph:fieldOfView 46.89 ;
+    ph:hasAuthor id:person/author-v009 ;
+    dcterms:license <https://creativecommons.org/licenses/by/4.0/> .
+
+id:geo/v009-2 a schema:GeoCoordinates ;
+    schema:latitude  -23.481536e+0 ;
+    schema:longitude -46.559822e+0 .
+
+id:photo/v009-2 a ph:Photo ;
+    ph:hasLocation id:geo/v009-2 ;
+    ph:fieldOfView 47.65 ;
+    ph:hasAuthor id:person/author-v009 ;
+    dcterms:license <https://creativecommons.org/licenses/by-sa/4.0/> .
+
+id:geo/v009-3 a schema:GeoCoordinates ;
+    schema:latitude  -23.642937e+0 ;
+    schema:longitude -46.665416e+0 .
+
+id:photo/v009-3 a ph:Photo ;
+    ph:hasLocation id:geo/v009-3 ;
+    ph:fieldOfView 69.53 ;
+    ph:hasAuthor id:person/author-v009 ;
+    dcterms:license <https://creativecommons.org/licenses/by/4.0/> .
+
+id:narrative/v009 a ph:NarrativeText ;
+    ph:content "Texto da narrativa v009." ;
+    ph:hasAuthor id:person/author-v009 .
+
+id:igstats/v009-0 a ph:InstagramPostStats ;
+    prov:generatedAtTime "2026-04-04T11:00:00+00:00"^^xsd:dateTime ;
+    ph:likes 413 ;
+    ph:messageShares 35 ;
+    ph:reposts 1 .
+
+id:igpost/v009 a ph:InstagramPost ;
+    schema:url <https://instagram.com/p/v009> ;
+    ph:hasNarrativeText id:narrative/v009 ;
+    ph:hasInstagramPostStats id:igstats/v009-0 .
+
+id:planstats/v009 a ph:PlannedRouteStats ;
+    ph:distanceKm 79.95 ;
+    ph:ascentMeters 677.0 ;
+    ph:estimatedMovementEnergyKj 3900.8 .
+
+id:plannedroute/v009 a ph:PlannedRoute ;
+    schema:url <https://ridewithgps.com/routes/v009> ;
+    ph:hasAuthor id:person/author-v009 ;
+    ph:hasPlannedRouteStats id:planstats/v009 .
+
+id:tour/v009 a ph:Tour ;
+    ph:hasPlannedRoute id:plannedroute/v009 ;
+    ph:hasPhoto id:photo/v009-0 , id:photo/v009-1 , id:photo/v009-2 , id:photo/v009-3 ;
+    ph:hasInstagramPost id:igpost/v009 .
+
+id:person/author-v010 a schema:Person ;
+    schema:name "Autor v010" .
+
+id:geo/v010-0 a schema:GeoCoordinates ;
+    schema:latitude  -23.650107e+0 ;
+    schema:longitude -46.654308e+0 .
+
+id:photo/v010-0 a ph:Photo ;
+    ph:hasLocation id:geo/v010-0 ;
+    ph:fieldOfView 54.96 ;
+    ph:hasAuthor id:person/author-v010 ;
+    dcterms:license <https://creativecommons.org/licenses/by/4.0/> .
+
+id:geo/v010-1 a schema:GeoCoordinates ;
+    schema:latitude  -23.429267e+0 ;
+    schema:longitude -46.750609e+0 .
+
+id:photo/v010-1 a ph:Photo ;
+    ph:hasLocation id:geo/v010-1 ;
+    ph:fieldOfView 40.15 ;
+    ph:hasAuthor id:person/author-v010 ;
+    dcterms:license <https://creativecommons.org/licenses/by/4.0/> .
+
+id:narrative/v010 a ph:NarrativeText ;
+    ph:content "Texto da narrativa v010." ;
+    ph:hasAuthor id:person/author-v010 .
+
+id:igstats/v010-0 a ph:InstagramPostStats ;
+    prov:generatedAtTime "2026-03-31T20:47:00+00:00"^^xsd:dateTime ;
+    ph:likes 216 ;
+    ph:messageShares 44 ;
+    ph:reposts 8 .
+
+id:igstats/v010-1 a ph:InstagramPostStats ;
+    prov:generatedAtTime "2026-04-05T10:47:00+00:00"^^xsd:dateTime ;
+    ph:likes 79 ;
+    ph:messageShares 12 ;
+    ph:reposts 4 .
+
+id:igpost/v010 a ph:InstagramPost ;
+    schema:url <https://instagram.com/p/v010> ;
+    ph:hasNarrativeText id:narrative/v010 ;
+    ph:hasInstagramPostStats id:igstats/v010-0 , id:igstats/v010-1 .
+
+id:planstats/v010 a ph:PlannedRouteStats ;
+    ph:distanceKm 18.8 ;
+    ph:ascentMeters 601.8 ;
+    ph:estimatedMovementEnergyKj 995.1 .
+
+id:plannedroute/v010 a ph:PlannedRoute ;
+    schema:url <https://ridewithgps.com/routes/v010> ;
+    ph:hasAuthor id:person/author-v010 ;
+    ph:hasPlannedRouteStats id:planstats/v010 .
+
+id:tour/v010 a ph:Tour ;
+    ph:hasPlannedRoute id:plannedroute/v010 ;
+    ph:hasPhoto id:photo/v010-0 , id:photo/v010-1 ;
+    ph:hasInstagramPost id:igpost/v010 .
+
+id:person/author-v011 a schema:Person ;
+    schema:name "Autor v011" .
+
+id:geo/v011-0 a schema:GeoCoordinates ;
+    schema:latitude  -23.682850e+0 ;
+    schema:longitude -46.624747e+0 .
+
+id:photo/v011-0 a ph:Photo ;
+    ph:hasLocation id:geo/v011-0 ;
+    ph:fieldOfView 75.2 ;
+    ph:hasAuthor id:person/author-v011 ;
+    dcterms:license <https://creativecommons.org/publicdomain/zero/1.0/> .
+
+id:geo/v011-1 a schema:GeoCoordinates ;
+    schema:latitude  -23.652770e+0 ;
+    schema:longitude -46.511766e+0 .
+
+id:photo/v011-1 a ph:Photo ;
+    ph:hasLocation id:geo/v011-1 ;
+    ph:fieldOfView 45.61 ;
+    ph:hasAuthor id:person/author-v011 ;
+    dcterms:license <https://creativecommons.org/licenses/by-sa/4.0/> .
+
+id:geo/v011-2 a schema:GeoCoordinates ;
+    schema:latitude  -23.679444e+0 ;
+    schema:longitude -46.779612e+0 .
+
+id:photo/v011-2 a ph:Photo ;
+    ph:hasLocation id:geo/v011-2 ;
+    ph:fieldOfView 100.33 ;
+    ph:hasAuthor id:person/author-v011 ;
+    dcterms:license <https://creativecommons.org/licenses/by/4.0/> .
+
+id:narrative/v011 a ph:NarrativeText ;
+    ph:content "Texto da narrativa v011." ;
+    ph:hasAuthor id:person/author-v011 .
+
+id:igstats/v011-0 a ph:InstagramPostStats ;
+    prov:generatedAtTime "2026-03-30T23:27:00+00:00"^^xsd:dateTime ;
+    ph:likes 296 ;
+    ph:messageShares 38 ;
+    ph:reposts 0 .
+
+id:igstats/v011-1 a ph:InstagramPostStats ;
+    prov:generatedAtTime "2026-03-27T05:46:00+00:00"^^xsd:dateTime ;
+    ph:likes 214 ;
+    ph:messageShares 42 ;
+    ph:reposts 9 .
+
+id:igstats/v011-2 a ph:InstagramPostStats ;
+    prov:generatedAtTime "2026-04-07T05:41:00+00:00"^^xsd:dateTime ;
+    ph:likes 267 ;
+    ph:messageShares 20 ;
+    ph:reposts 4 .
+
+id:igpost/v011 a ph:InstagramPost ;
+    schema:url <https://instagram.com/p/v011> ;
+    ph:hasNarrativeText id:narrative/v011 ;
+    ph:hasInstagramPostStats id:igstats/v011-0 , id:igstats/v011-1 , id:igstats/v011-2 .
+
+id:planstats/v011 a ph:PlannedRouteStats ;
+    ph:distanceKm 61.55 ;
+    ph:ascentMeters 229.0 ;
+    ph:estimatedMovementEnergyKj 2066.5 .
+
+id:plannedroute/v011 a ph:PlannedRoute ;
+    schema:url <https://ridewithgps.com/routes/v011> ;
+    ph:hasAuthor id:person/author-v011 ;
+    ph:hasPlannedRouteStats id:planstats/v011 .
+
+id:tour/v011 a ph:Tour ;
+    ph:hasPlannedRoute id:plannedroute/v011 ;
+    ph:hasPhoto id:photo/v011-0 , id:photo/v011-1 , id:photo/v011-2 ;
+    ph:hasInstagramPost id:igpost/v011 .
+
+id:person/author-v012 a schema:Person ;
+    schema:name "Autor v012" .
+
+id:geo/v012-0 a schema:GeoCoordinates ;
+    schema:latitude  -23.562833e+0 ;
+    schema:longitude -46.521295e+0 .
+
+id:photo/v012-0 a ph:Photo ;
+    ph:hasLocation id:geo/v012-0 ;
+    ph:fieldOfView 105.5 ;
+    ph:hasAuthor id:person/author-v012 ;
+    dcterms:license <https://creativecommons.org/licenses/by-sa/4.0/> .
+
+id:geo/v012-1 a schema:GeoCoordinates ;
+    schema:latitude  -23.562514e+0 ;
+    schema:longitude -46.500464e+0 .
+
+id:photo/v012-1 a ph:Photo ;
+    ph:hasLocation id:geo/v012-1 ;
+    ph:fieldOfView 109.73 ;
+    ph:hasAuthor id:person/author-v012 ;
+    dcterms:license <https://creativecommons.org/licenses/by-sa/4.0/> .
+
+id:geo/v012-2 a schema:GeoCoordinates ;
+    schema:latitude  -23.538710e+0 ;
+    schema:longitude -46.648235e+0 .
+
+id:photo/v012-2 a ph:Photo ;
+    ph:hasLocation id:geo/v012-2 ;
+    ph:fieldOfView 49.27 ;
+    ph:hasAuthor id:person/author-v012 ;
+    dcterms:license <https://creativecommons.org/licenses/by/4.0/> .
+
+id:tour/v012 a ph:Tour ;
+    ph:hasPhoto id:photo/v012-0 , id:photo/v012-1 , id:photo/v012-2 .
+
+id:person/author-v013 a schema:Person ;
+    schema:name "Autor v013" .
+
+id:geo/v013-0 a schema:GeoCoordinates ;
+    schema:latitude  -23.614504e+0 ;
+    schema:longitude -46.668545e+0 .
+
+id:photo/v013-0 a ph:Photo ;
+    ph:hasLocation id:geo/v013-0 ;
+    ph:fieldOfView 78.03 ;
+    ph:hasAuthor id:person/author-v013 ;
+    dcterms:license <https://creativecommons.org/licenses/by/4.0/> .
+
+id:geo/v013-1 a schema:GeoCoordinates ;
+    schema:latitude  -23.516497e+0 ;
+    schema:longitude -46.503830e+0 .
+
+id:photo/v013-1 a ph:Photo ;
+    ph:hasLocation id:geo/v013-1 ;
+    ph:fieldOfView 85.78 ;
+    ph:hasAuthor id:person/author-v013 ;
+    dcterms:license <https://creativecommons.org/licenses/by-sa/4.0/> .
+
+id:geo/v013-2 a schema:GeoCoordinates ;
+    schema:latitude  -23.499641e+0 ;
+    schema:longitude -46.633619e+0 .
+
+id:photo/v013-2 a ph:Photo ;
+    ph:hasLocation id:geo/v013-2 ;
+    ph:fieldOfView 105.22 ;
+    ph:hasAuthor id:person/author-v013 ;
+    dcterms:license <https://creativecommons.org/licenses/by-sa/4.0/> .
+
+id:planstats/v013 a ph:PlannedRouteStats ;
+    ph:distanceKm 22.5 ;
+    ph:ascentMeters 130.3 ;
+    ph:estimatedMovementEnergyKj 2570.3 .
+
+id:plannedroute/v013 a ph:PlannedRoute ;
+    schema:url <https://ridewithgps.com/routes/v013> ;
+    ph:hasAuthor id:person/author-v013 ;
+    ph:hasPlannedRouteStats id:planstats/v013 .
+
+id:tour/v013 a ph:Tour ;
+    ph:hasPlannedRoute id:plannedroute/v013 ;
+    ph:hasPhoto id:photo/v013-0 , id:photo/v013-1 , id:photo/v013-2 .
+
+id:person/author-v014 a schema:Person ;
+    schema:name "Autor v014" .
+
+id:geo/v014-0 a schema:GeoCoordinates ;
+    schema:latitude  -23.615473e+0 ;
+    schema:longitude -46.736811e+0 .
+
+id:photo/v014-0 a ph:Photo ;
+    ph:hasLocation id:geo/v014-0 ;
+    ph:fieldOfView 64.0 ;
+    ph:hasAuthor id:person/author-v014 ;
+    dcterms:license <https://creativecommons.org/publicdomain/zero/1.0/> .
+
+id:geo/v014-1 a schema:GeoCoordinates ;
+    schema:latitude  -23.509729e+0 ;
+    schema:longitude -46.720805e+0 .
+
+id:photo/v014-1 a ph:Photo ;
+    ph:hasLocation id:geo/v014-1 ;
+    ph:fieldOfView 74.2 ;
+    ph:hasAuthor id:person/author-v014 ;
+    dcterms:license <https://creativecommons.org/licenses/by-sa/4.0/> .
+
+id:geo/v014-2 a schema:GeoCoordinates ;
+    schema:latitude  -23.672310e+0 ;
+    schema:longitude -46.672927e+0 .
+
+id:photo/v014-2 a ph:Photo ;
+    ph:hasLocation id:geo/v014-2 ;
+    ph:fieldOfView 59.37 ;
+    ph:hasAuthor id:person/author-v014 ;
+    dcterms:license <https://creativecommons.org/licenses/by-sa/4.0/> .
+
+id:narrative/v014 a ph:NarrativeText ;
+    ph:content "Texto da narrativa v014." ;
+    ph:hasAuthor id:person/author-v014 .
+
+id:igstats/v014-0 a ph:InstagramPostStats ;
+    prov:generatedAtTime "2026-03-31T08:03:00+00:00"^^xsd:dateTime ;
+    ph:likes 82 ;
+    ph:messageShares 47 ;
+    ph:reposts 7 .
+
+id:igpost/v014 a ph:InstagramPost ;
+    schema:url <https://instagram.com/p/v014> ;
+    ph:hasNarrativeText id:narrative/v014 ;
+    ph:hasInstagramPostStats id:igstats/v014-0 .
+
+id:planstats/v014 a ph:PlannedRouteStats ;
+    ph:distanceKm 42.8 ;
+    ph:ascentMeters 57.3 ;
+    ph:estimatedMovementEnergyKj 1040.8 .
+
+id:plannedroute/v014 a ph:PlannedRoute ;
+    schema:url <https://ridewithgps.com/routes/v014> ;
+    ph:hasAuthor id:person/author-v014 ;
+    ph:hasPlannedRouteStats id:planstats/v014 .
+
+id:tour/v014 a ph:Tour ;
+    ph:hasPlannedRoute id:plannedroute/v014 ;
+    ph:hasPhoto id:photo/v014-0 , id:photo/v014-1 , id:photo/v014-2 ;
+    ph:hasInstagramPost id:igpost/v014 .
+
+id:person/author-v015 a schema:Person ;
+    schema:name "Autor v015" .
+
+id:geo/v015-0 a schema:GeoCoordinates ;
+    schema:latitude  -23.536323e+0 ;
+    schema:longitude -46.549621e+0 .
+
+id:photo/v015-0 a ph:Photo ;
+    ph:hasLocation id:geo/v015-0 ;
+    ph:fieldOfView 80.78 ;
+    ph:hasAuthor id:person/author-v015 ;
+    dcterms:license <https://creativecommons.org/licenses/by-sa/4.0/> .
+
+id:geo/v015-1 a schema:GeoCoordinates ;
+    schema:latitude  -23.571064e+0 ;
+    schema:longitude -46.787451e+0 .
+
+id:photo/v015-1 a ph:Photo ;
+    ph:hasLocation id:geo/v015-1 ;
+    ph:fieldOfView 65.53 ;
+    ph:hasAuthor id:person/author-v015 ;
+    dcterms:license <https://creativecommons.org/licenses/by-sa/4.0/> .
+
+id:planstats/v015 a ph:PlannedRouteStats ;
+    ph:distanceKm 31.22 ;
+    ph:ascentMeters 127.1 ;
+    ph:estimatedMovementEnergyKj 3296.4 .
+
+id:plannedroute/v015 a ph:PlannedRoute ;
+    schema:url <https://ridewithgps.com/routes/v015> ;
+    ph:hasAuthor id:person/author-v015 ;
+    ph:hasPlannedRouteStats id:planstats/v015 .
+
+id:tour/v015 a ph:Tour ;
+    ph:hasPlannedRoute id:plannedroute/v015 ;
+    ph:hasPhoto id:photo/v015-0 , id:photo/v015-1 .
+
+id:person/author-v016 a schema:Person ;
+    schema:name "Autor v016" .
+
+id:geo/v016-0 a schema:GeoCoordinates ;
+    schema:latitude  -23.407849e+0 ;
+    schema:longitude -46.575157e+0 .
+
+id:photo/v016-0 a ph:Photo ;
+    ph:hasLocation id:geo/v016-0 ;
+    ph:fieldOfView 104.8 ;
+    ph:hasAuthor id:person/author-v016 ;
+    dcterms:license <https://creativecommons.org/licenses/by-sa/4.0/> .
+
+id:geo/v016-1 a schema:GeoCoordinates ;
+    schema:latitude  -23.440618e+0 ;
+    schema:longitude -46.507138e+0 .
+
+id:photo/v016-1 a ph:Photo ;
+    ph:hasLocation id:geo/v016-1 ;
+    ph:fieldOfView 96.75 ;
+    ph:hasAuthor id:person/author-v016 ;
+    dcterms:license <https://creativecommons.org/licenses/by/4.0/> .
+
+id:geo/v016-2 a schema:GeoCoordinates ;
+    schema:latitude  -23.692564e+0 ;
+    schema:longitude -46.579031e+0 .
+
+id:photo/v016-2 a ph:Photo ;
+    ph:hasLocation id:geo/v016-2 ;
+    ph:fieldOfView 63.25 ;
+    ph:hasAuthor id:person/author-v016 ;
+    dcterms:license <https://creativecommons.org/licenses/by/4.0/> .
+
+id:geo/v016-3 a schema:GeoCoordinates ;
+    schema:latitude  -23.459329e+0 ;
+    schema:longitude -46.540781e+0 .
+
+id:photo/v016-3 a ph:Photo ;
+    ph:hasLocation id:geo/v016-3 ;
+    ph:fieldOfView 96.75 ;
+    ph:hasAuthor id:person/author-v016 ;
+    dcterms:license <https://creativecommons.org/licenses/by/4.0/> .
+
+id:narrative/v016 a ph:NarrativeText ;
+    ph:content "Texto da narrativa v016." ;
+    ph:hasAuthor id:person/author-v016 .
+
+id:igstats/v016-0 a ph:InstagramPostStats ;
+    prov:generatedAtTime "2026-03-27T20:02:00+00:00"^^xsd:dateTime ;
+    ph:likes 195 ;
+    ph:messageShares 2 ;
+    ph:reposts 7 .
+
+id:igstats/v016-1 a ph:InstagramPostStats ;
+    prov:generatedAtTime "2026-03-30T10:28:00+00:00"^^xsd:dateTime ;
+    ph:likes 102 ;
+    ph:messageShares 29 ;
+    ph:reposts 5 .
+
+id:igstats/v016-2 a ph:InstagramPostStats ;
+    prov:generatedAtTime "2026-04-01T07:40:00+00:00"^^xsd:dateTime ;
+    ph:likes 420 ;
+    ph:messageShares 50 ;
+    ph:reposts 3 .
+
+id:igpost/v016 a ph:InstagramPost ;
+    schema:url <https://instagram.com/p/v016> ;
+    ph:hasNarrativeText id:narrative/v016 ;
+    ph:hasInstagramPostStats id:igstats/v016-0 , id:igstats/v016-1 , id:igstats/v016-2 .
+
+id:planstats/v016 a ph:PlannedRouteStats ;
+    ph:distanceKm 57.9 ;
+    ph:ascentMeters 348.8 ;
+    ph:estimatedMovementEnergyKj 1691.5 .
+
+id:plannedroute/v016 a ph:PlannedRoute ;
+    schema:url <https://ridewithgps.com/routes/v016> ;
+    ph:hasAuthor id:person/author-v016 ;
+    ph:hasPlannedRouteStats id:planstats/v016 .
+
+id:tour/v016 a ph:Tour ;
+    ph:hasPlannedRoute id:plannedroute/v016 ;
+    ph:hasPhoto id:photo/v016-0 , id:photo/v016-1 , id:photo/v016-2 , id:photo/v016-3 ;
+    ph:hasInstagramPost id:igpost/v016 .
+
+id:person/author-v017 a schema:Person ;
+    schema:name "Autor v017" .
+
+id:geo/v017-0 a schema:GeoCoordinates ;
+    schema:latitude  -23.409933e+0 ;
+    schema:longitude -46.716263e+0 .
+
+id:photo/v017-0 a ph:Photo ;
+    ph:hasLocation id:geo/v017-0 ;
+    ph:fieldOfView 84.9 ;
+    ph:hasAuthor id:person/author-v017 ;
+    dcterms:license <https://creativecommons.org/licenses/by/4.0/> .
+
+id:narrative/v017 a ph:NarrativeText ;
+    ph:content "Texto da narrativa v017." ;
+    ph:hasAuthor id:person/author-v017 .
+
+id:igstats/v017-0 a ph:InstagramPostStats ;
+    prov:generatedAtTime "2026-04-01T21:51:00+00:00"^^xsd:dateTime ;
+    ph:likes 480 ;
+    ph:messageShares 1 ;
+    ph:reposts 1 .
+
+id:igstats/v017-1 a ph:InstagramPostStats ;
+    prov:generatedAtTime "2026-03-31T07:39:00+00:00"^^xsd:dateTime ;
+    ph:likes 91 ;
+    ph:messageShares 37 ;
+    ph:reposts 4 .
+
+id:igstats/v017-2 a ph:InstagramPostStats ;
+    prov:generatedAtTime "2026-03-26T05:53:00+00:00"^^xsd:dateTime ;
+    ph:likes 55 ;
+    ph:messageShares 38 ;
+    ph:reposts 6 .
+
+id:igpost/v017 a ph:InstagramPost ;
+    schema:url <https://instagram.com/p/v017> ;
+    ph:hasNarrativeText id:narrative/v017 ;
+    ph:hasInstagramPostStats id:igstats/v017-0 , id:igstats/v017-1 , id:igstats/v017-2 .
+
+id:planstats/v017 a ph:PlannedRouteStats ;
+    ph:distanceKm 66.12 ;
+    ph:ascentMeters 377.3 ;
+    ph:estimatedMovementEnergyKj 3949.6 .
+
+id:plannedroute/v017 a ph:PlannedRoute ;
+    schema:url <https://ridewithgps.com/routes/v017> ;
+    ph:hasAuthor id:person/author-v017 ;
+    ph:hasPlannedRouteStats id:planstats/v017 .
+
+id:tour/v017 a ph:Tour ;
+    ph:hasPlannedRoute id:plannedroute/v017 ;
+    ph:hasPhoto id:photo/v017-0 ;
+    ph:hasInstagramPost id:igpost/v017 .
+
+id:person/author-v018 a schema:Person ;
+    schema:name "Autor v018" .
+
+id:geo/v018-0 a schema:GeoCoordinates ;
+    schema:latitude  -23.584441e+0 ;
+    schema:longitude -46.627024e+0 .
+
+id:photo/v018-0 a ph:Photo ;
+    ph:hasLocation id:geo/v018-0 ;
+    ph:fieldOfView 57.83 ;
+    ph:hasAuthor id:person/author-v018 ;
+    dcterms:license <https://creativecommons.org/publicdomain/zero/1.0/> .
+
+id:narrative/v018 a ph:NarrativeText ;
+    ph:content "Texto da narrativa v018." ;
+    ph:hasAuthor id:person/author-v018 .
+
+id:igstats/v018-0 a ph:InstagramPostStats ;
+    prov:generatedAtTime "2026-04-06T15:03:00+00:00"^^xsd:dateTime ;
+    ph:likes 351 ;
+    ph:messageShares 46 ;
+    ph:reposts 10 .
+
+id:igstats/v018-1 a ph:InstagramPostStats ;
+    prov:generatedAtTime "2026-03-29T20:36:00+00:00"^^xsd:dateTime ;
+    ph:likes 186 ;
+    ph:messageShares 27 ;
+    ph:reposts 1 .
+
+id:igstats/v018-2 a ph:InstagramPostStats ;
+    prov:generatedAtTime "2026-04-01T21:19:00+00:00"^^xsd:dateTime ;
+    ph:likes 319 ;
+    ph:messageShares 20 ;
+    ph:reposts 10 .
+
+id:igpost/v018 a ph:InstagramPost ;
+    schema:url <https://instagram.com/p/v018> ;
+    ph:hasNarrativeText id:narrative/v018 ;
+    ph:hasInstagramPostStats id:igstats/v018-0 , id:igstats/v018-1 , id:igstats/v018-2 .
+
+id:tour/v018 a ph:Tour ;
+    ph:hasPhoto id:photo/v018-0 ;
+    ph:hasInstagramPost id:igpost/v018 .
+
+id:person/author-v019 a schema:Person ;
+    schema:name "Autor v019" .
+
+id:geo/v019-0 a schema:GeoCoordinates ;
+    schema:latitude  -23.547863e+0 ;
+    schema:longitude -46.599932e+0 .
+
+id:photo/v019-0 a ph:Photo ;
+    ph:hasLocation id:geo/v019-0 ;
+    ph:fieldOfView 62.83 ;
+    ph:hasAuthor id:person/author-v019 ;
+    dcterms:license <https://creativecommons.org/publicdomain/zero/1.0/> .
+
+id:geo/v019-1 a schema:GeoCoordinates ;
+    schema:latitude  -23.611303e+0 ;
+    schema:longitude -46.761814e+0 .
+
+id:photo/v019-1 a ph:Photo ;
+    ph:hasLocation id:geo/v019-1 ;
+    ph:fieldOfView 69.43 ;
+    ph:hasAuthor id:person/author-v019 ;
+    dcterms:license <https://creativecommons.org/licenses/by/4.0/> .
+
+id:geo/v019-2 a schema:GeoCoordinates ;
+    schema:latitude  -23.496805e+0 ;
+    schema:longitude -46.529158e+0 .
+
+id:photo/v019-2 a ph:Photo ;
+    ph:hasLocation id:geo/v019-2 ;
+    ph:fieldOfView 83.09 ;
+    ph:hasAuthor id:person/author-v019 ;
+    dcterms:license <https://creativecommons.org/licenses/by/4.0/> .
+
+id:narrative/v019 a ph:NarrativeText ;
+    ph:content "Texto da narrativa v019." ;
+    ph:hasAuthor id:person/author-v019 .
+
+id:igstats/v019-0 a ph:InstagramPostStats ;
+    prov:generatedAtTime "2026-04-01T06:57:00+00:00"^^xsd:dateTime ;
+    ph:likes 146 ;
+    ph:messageShares 13 ;
+    ph:reposts 6 .
+
+id:igpost/v019 a ph:InstagramPost ;
+    schema:url <https://instagram.com/p/v019> ;
+    ph:hasNarrativeText id:narrative/v019 ;
+    ph:hasInstagramPostStats id:igstats/v019-0 .
+
+id:planstats/v019 a ph:PlannedRouteStats ;
+    ph:distanceKm 54.43 ;
+    ph:ascentMeters 291.7 ;
+    ph:estimatedMovementEnergyKj 2213.7 .
+
+id:plannedroute/v019 a ph:PlannedRoute ;
+    schema:url <https://ridewithgps.com/routes/v019> ;
+    ph:hasAuthor id:person/author-v019 ;
+    ph:hasPlannedRouteStats id:planstats/v019 .
+
+id:tour/v019 a ph:Tour ;
+    ph:hasPlannedRoute id:plannedroute/v019 ;
+    ph:hasPhoto id:photo/v019-0 , id:photo/v019-1 , id:photo/v019-2 ;
+    ph:hasInstagramPost id:igpost/v019 .
+

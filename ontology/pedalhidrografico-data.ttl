@@ -5,6 +5,13 @@
 @prefix schema: <https://schema.org/> .
 @prefix unit: <http://qudt.org/vocab/unit/> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix prov:    <http://www.w3.org/ns/prov#>  .
+
+<> a schema:Dataset;
+    dcterms:title "Pedal Hidrográfico Dataset"@en ;
+    dcterms:license <https://creativecommons.org/licenses/by-sa/4.0/> ;
+    ph:voice <https://pedalhidrografi.co/voice/danlessa>;
+    prov:wasAttributedTo <https://pedalhidrografi.co/voice/danlessa> .
 
 <https://pedalhidrografi.co/id/media/img-7946> a ph:Video ;
     schema:name "IMG_7946.MOV" .
@@ -8347,8 +8354,7 @@
 <https://pedalhidrografi.co/id/route/planned/rwgps-51588263> a ph:PlannedRoute ;
     dcterms:creator <https://pedalhidrografi.co/id/person/dandan> ;
     ph:hasMetrics <https://pedalhidrografi.co/id/route/planned/rwgps-51588263/metrics> ;
-    schema:sameAs <https://ridewithgps.com/routes/51588263
-> .
+    schema:sameAs <https://ridewithgps.com/routes/51588263> .
 
 <https://pedalhidrografi.co/id/route/planned/rwgps-51701965> a ph:PlannedRoute ;
     dcterms:creator <https://pedalhidrografi.co/id/person/dandan> ;

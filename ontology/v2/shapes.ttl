@@ -1,0 +1,236 @@
+@prefix sh:      <http://www.w3.org/ns/shacl#> .
+@prefix ph:      <https://pedalhidrografi.co/censo/1.0/> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix prov:    <http://www.w3.org/ns/prov#> .
+@prefix schema:  <https://schema.org/> .
+@prefix xsd:     <http://www.w3.org/2001/XMLSchema#> .
+
+
+# ---------------------------------------------------------------------------
+# Tour — the hub. Optional links out; cardinalities reflect that not every
+# Tour will have every artefact attached.
+# ---------------------------------------------------------------------------
+
+ph:TourShape
+    a sh:NodeShape ;
+    sh:targetClass ph:Tour ;
+    sh:severity sh:Violation ;
+
+    sh:property [
+        sh:path     ph:hasPlannedRoute ;
+        sh:maxCount 1 ;
+        sh:class    ph:PlannedRoute ;
+        sh:message  "Tour pode ter no máximo uma rota planejada (ph:hasPlannedRoute)."@pt ;
+    ] ;
+    sh:property [
+        sh:path    ph:hasPhoto ;
+        sh:class   ph:Photo ;
+        sh:message "ph:hasPhoto deve apontar para ph:Photo."@pt ;
+    ] ;
+    sh:property [
+        sh:path    ph:hasInstagramPost ;
+        sh:class   ph:InstagramPost ;
+        sh:message "ph:hasInstagramPost deve apontar para ph:InstagramPost."@pt ;
+    ] .
+
+
+# ---------------------------------------------------------------------------
+# InstagramPost — must have a live URL and a narrative; stats are repeatable
+# snapshots over time.
+# ---------------------------------------------------------------------------
+
+ph:InstagramPostShape
+    a sh:NodeShape ;
+    sh:targetClass ph:InstagramPost ;
+    sh:severity sh:Violation ;
+
+    sh:property [
+        sh:path     schema:url ;
+        sh:minCount 1 ; sh:maxCount 1 ;
+        sh:nodeKind sh:IRI ;
+        sh:message  "Post precisa de uma única URL (schema:url)."@pt ;
+    ] ;
+    sh:property [
+        sh:path     ph:hasNarrativeText ;
+        sh:minCount 1 ; sh:maxCount 1 ;
+        sh:class    ph:NarrativeText ;
+        sh:message  "Post precisa de exatamente um texto narrativo."@pt ;
+    ] ;
+    sh:property [
+        sh:path     ph:hasInstagramPostStats ;
+        sh:class    ph:InstagramPostStats ;
+        sh:message  "ph:hasInstagramPostStats deve apontar para ph:InstagramPostStats."@pt ;
+    ] .
+
+
+ph:NarrativeTextShape
+    a sh:NodeShape ;
+    sh:targetClass ph:NarrativeText ;
+    sh:severity sh:Violation ;
+
+    sh:property [
+        sh:path     ph:content ;
+        sh:minCount 1 ; sh:maxCount 1 ;
+        sh:datatype xsd:string ;
+        sh:minLength 1 ;
+        sh:message  "Texto narrativo precisa de um único conteúdo não-vazio."@pt ;
+    ] ;
+    sh:property [
+        sh:path     ph:hasAuthor ;
+        sh:minCount 1 ;
+        sh:class    schema:Person ;
+        sh:message  "Texto narrativo precisa de ao menos um autor (schema:Person)."@pt ;
+    ] .
+
+
+ph:InstagramPostStatsShape
+    a sh:NodeShape ;
+    sh:targetClass ph:InstagramPostStats ;
+    sh:severity sh:Violation ;
+
+    sh:property [
+        sh:path     prov:generatedAtTime ;
+        sh:minCount 1 ; sh:maxCount 1 ;
+        sh:datatype xsd:dateTime ;
+        sh:message  "Snapshot precisa de um único timestamp de observação (prov:generatedAtTime)."@pt ;
+    ] ;
+    sh:property [
+        sh:path     ph:likes ;
+        sh:minCount 1 ; sh:maxCount 1 ;
+        sh:datatype xsd:integer ;
+        sh:minInclusive 0 ;
+        sh:message  "Curtidas precisam ser um inteiro ≥ 0."@pt ;
+    ] ;
+    sh:property [
+        sh:path     ph:messageShares ;
+        sh:minCount 1 ; sh:maxCount 1 ;
+        sh:datatype xsd:integer ;
+        sh:minInclusive 0 ;
+        sh:message  "Compartilhamentos por mensagem precisam ser um inteiro ≥ 0."@pt ;
+    ] ;
+    sh:property [
+        sh:path     ph:reposts ;
+        sh:minCount 1 ; sh:maxCount 1 ;
+        sh:datatype xsd:integer ;
+        sh:minInclusive 0 ;
+        sh:message  "Republicações precisam ser um inteiro ≥ 0."@pt ;
+    ] .
+
+
+# ---------------------------------------------------------------------------
+# Photo
+# ---------------------------------------------------------------------------
+
+ph:PhotoShape
+    a sh:NodeShape ;
+    sh:targetClass ph:Photo ;
+    sh:severity sh:Violation ;
+
+    sh:property [
+        sh:path     ph:hasLocation ;
+        sh:minCount 1 ; sh:maxCount 1 ;
+        sh:class    schema:GeoCoordinates ;
+        sh:message  "Foto precisa de uma única localização (ph:hasLocation → schema:GeoCoordinates)."@pt ;
+    ] ;
+    sh:property [
+        sh:path     ph:fieldOfView ;
+        sh:minCount 1 ; sh:maxCount 1 ;
+        sh:datatype xsd:decimal ;
+        sh:minExclusive 0 ;
+        sh:maxInclusive 180 ;
+        sh:message  "Foto precisa de um único campo de visão em graus (0–180]."@pt ;
+    ] ;
+    sh:property [
+        sh:path     ph:hasAuthor ;
+        sh:minCount 1 ;
+        sh:class    schema:Person ;
+        sh:message  "Foto precisa de ao menos um autor (schema:Person)."@pt ;
+    ] ;
+    sh:property [
+        sh:path     dcterms:license ;
+        sh:minCount 1 ; sh:maxCount 1 ;
+        sh:nodeKind sh:IRI ;
+        sh:message  "Foto precisa de exatamente uma licença (dcterms:license)."@pt ;
+    ] .
+
+
+# ---------------------------------------------------------------------------
+# Reuse the v1 GeoCoordinates check — lat/long must exist and be in range.
+# ---------------------------------------------------------------------------
+
+ph:GeoCoordinatesShape
+    a sh:NodeShape ;
+    sh:targetClass schema:GeoCoordinates ;
+    sh:severity sh:Violation ;
+
+    sh:property [
+        sh:path     schema:latitude ;
+        sh:minCount 1 ; sh:maxCount 1 ;
+        sh:datatype xsd:double ;
+        sh:minInclusive -90 ; sh:maxInclusive 90 ;
+        sh:message  "Latitude precisa estar em [-90, 90]."@pt ;
+    ] ;
+    sh:property [
+        sh:path     schema:longitude ;
+        sh:minCount 1 ; sh:maxCount 1 ;
+        sh:datatype xsd:double ;
+        sh:minInclusive -180 ; sh:maxInclusive 180 ;
+        sh:message  "Longitude precisa estar em [-180, 180]."@pt ;
+    ] .
+
+
+# ---------------------------------------------------------------------------
+# PlannedRoute
+# ---------------------------------------------------------------------------
+
+ph:PlannedRouteShape
+    a sh:NodeShape ;
+    sh:targetClass ph:PlannedRoute ;
+    sh:severity sh:Violation ;
+
+    sh:property [
+        sh:path     schema:url ;
+        sh:minCount 1 ; sh:maxCount 1 ;
+        sh:nodeKind sh:IRI ;
+        sh:message  "Rota planejada precisa de uma única URL (schema:url)."@pt ;
+    ] ;
+    sh:property [
+        sh:path     ph:hasAuthor ;
+        sh:minCount 1 ;
+        sh:class    schema:Person ;
+        sh:message  "Rota planejada precisa de ao menos um autor."@pt ;
+    ] ;
+    sh:property [
+        sh:path     ph:hasPlannedRouteStats ;
+        sh:maxCount 1 ;
+        sh:class    ph:PlannedRouteStats ;
+        sh:message  "Rota planejada pode ter no máximo um bloco de estatísticas."@pt ;
+    ] .
+
+
+ph:PlannedRouteStatsShape
+    a sh:NodeShape ;
+    sh:targetClass ph:PlannedRouteStats ;
+    sh:severity sh:Violation ;
+
+    sh:property [
+        sh:path     ph:distanceKm ;
+        sh:minCount 1 ; sh:maxCount 1 ;
+        sh:datatype xsd:decimal ;
+        sh:minExclusive 0 ;
+        sh:message  "Distância precisa ser um decimal > 0 (km)."@pt ;
+    ] ;
+    sh:property [
+        sh:path     ph:ascentMeters ;
+        sh:minCount 1 ; sh:maxCount 1 ;
+        sh:datatype xsd:decimal ;
+        sh:minInclusive 0 ;
+        sh:message  "Subida acumulada precisa ser um decimal ≥ 0 (m)."@pt ;
+    ] ;
+    sh:property [
+        sh:path     ph:estimatedMovementEnergyKj ;
+        sh:minCount 1 ; sh:maxCount 1 ;
+        sh:datatype xsd:decimal ;
+        sh:minExclusive 0 ;
+        sh:message  "Energia de movimento estimada precisa ser um decimal > 0 (kJ)."@pt ;
+    ] .

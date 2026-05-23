@@ -1,0 +1,715 @@
+# Synthetic — each Tour intentionally violates one constraint.
+# Violation kinds covered: 16
+
+@prefix ph:      <https://pedalhidrografi.co/censo/1.0/> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix prov:    <http://www.w3.org/ns/prov#> .
+@prefix schema:  <https://schema.org/> .
+@prefix xsd:     <http://www.w3.org/2001/XMLSchema#> .
+@prefix id:      <https://pedalhidrografi.co/id/> .
+
+# violation kind: photo_missing_location
+id:person/author-i000-photo_missing_location a schema:Person ;
+    schema:name "Autor i000-photo_missing_location" .
+
+id:geo/i000-photo_missing_location-0 a schema:GeoCoordinates ;
+    schema:latitude  -23.497312e+0 ;
+    schema:longitude -46.646648e+0 .
+
+id:photo/i000-photo_missing_location-0 a ph:Photo ;
+    ph:fieldOfView 95.56 ;
+    ph:hasAuthor id:person/author-i000-photo_missing_location ;
+    dcterms:license <https://creativecommons.org/publicdomain/zero/1.0/> .
+
+id:narrative/i000-photo_missing_location a ph:NarrativeText ;
+    ph:content "Texto da narrativa i000-photo_missing_location." ;
+    ph:hasAuthor id:person/author-i000-photo_missing_location .
+
+id:igstats/i000-photo_missing_location-0 a ph:InstagramPostStats ;
+    prov:generatedAtTime "2026-03-17T19:41:00+00:00"^^xsd:dateTime ;
+    ph:likes 337 ;
+    ph:messageShares 5 ;
+    ph:reposts 4 .
+
+id:igpost/i000-photo_missing_location a ph:InstagramPost ;
+    schema:url <https://instagram.com/p/i000-photo_missing_location> ;
+    ph:hasNarrativeText id:narrative/i000-photo_missing_location ;
+    ph:hasInstagramPostStats id:igstats/i000-photo_missing_location-0 .
+
+id:planstats/i000-photo_missing_location a ph:PlannedRouteStats ;
+    ph:distanceKm 48.5 ;
+    ph:ascentMeters 524.7 ;
+    ph:estimatedMovementEnergyKj 1872.6 .
+
+id:plannedroute/i000-photo_missing_location a ph:PlannedRoute ;
+    schema:url <https://ridewithgps.com/routes/i000-photo_missing_location> ;
+    ph:hasAuthor id:person/author-i000-photo_missing_location ;
+    ph:hasPlannedRouteStats id:planstats/i000-photo_missing_location .
+
+id:tour/i000-photo_missing_location a ph:Tour ;
+    ph:hasPlannedRoute id:plannedroute/i000-photo_missing_location ;
+    ph:hasPhoto id:photo/i000-photo_missing_location-0 ;
+    ph:hasInstagramPost id:igpost/i000-photo_missing_location .
+
+# violation kind: photo_missing_author
+id:person/author-i001-photo_missing_author a schema:Person ;
+    schema:name "Autor i001-photo_missing_author" .
+
+id:geo/i001-photo_missing_author-0 a schema:GeoCoordinates ;
+    schema:latitude  -23.454473e+0 ;
+    schema:longitude -46.574659e+0 .
+
+id:photo/i001-photo_missing_author-0 a ph:Photo ;
+    ph:hasLocation id:geo/i001-photo_missing_author-0 ;
+    ph:fieldOfView 87.1 ;
+    dcterms:license <https://creativecommons.org/licenses/by-sa/4.0/> .
+
+id:narrative/i001-photo_missing_author a ph:NarrativeText ;
+    ph:content "Texto da narrativa i001-photo_missing_author." ;
+    ph:hasAuthor id:person/author-i001-photo_missing_author .
+
+id:igstats/i001-photo_missing_author-0 a ph:InstagramPostStats ;
+    prov:generatedAtTime "2026-03-20T12:00:00+00:00"^^xsd:dateTime ;
+    ph:likes 75 ;
+    ph:messageShares 1 ;
+    ph:reposts 0 .
+
+id:igpost/i001-photo_missing_author a ph:InstagramPost ;
+    schema:url <https://instagram.com/p/i001-photo_missing_author> ;
+    ph:hasNarrativeText id:narrative/i001-photo_missing_author ;
+    ph:hasInstagramPostStats id:igstats/i001-photo_missing_author-0 .
+
+id:planstats/i001-photo_missing_author a ph:PlannedRouteStats ;
+    ph:distanceKm 30.91 ;
+    ph:ascentMeters 406.4 ;
+    ph:estimatedMovementEnergyKj 3519.2 .
+
+id:plannedroute/i001-photo_missing_author a ph:PlannedRoute ;
+    schema:url <https://ridewithgps.com/routes/i001-photo_missing_author> ;
+    ph:hasAuthor id:person/author-i001-photo_missing_author ;
+    ph:hasPlannedRouteStats id:planstats/i001-photo_missing_author .
+
+id:tour/i001-photo_missing_author a ph:Tour ;
+    ph:hasPlannedRoute id:plannedroute/i001-photo_missing_author ;
+    ph:hasPhoto id:photo/i001-photo_missing_author-0 ;
+    ph:hasInstagramPost id:igpost/i001-photo_missing_author .
+
+# violation kind: photo_missing_license
+id:person/author-i002-photo_missing_license a schema:Person ;
+    schema:name "Autor i002-photo_missing_license" .
+
+id:geo/i002-photo_missing_license-0 a schema:GeoCoordinates ;
+    schema:latitude  -23.678152e+0 ;
+    schema:longitude -46.675668e+0 .
+
+id:photo/i002-photo_missing_license-0 a ph:Photo ;
+    ph:hasLocation id:geo/i002-photo_missing_license-0 ;
+    ph:fieldOfView 84.08 ;
+    ph:hasAuthor id:person/author-i002-photo_missing_license .
+
+id:narrative/i002-photo_missing_license a ph:NarrativeText ;
+    ph:content "Texto da narrativa i002-photo_missing_license." ;
+    ph:hasAuthor id:person/author-i002-photo_missing_license .
+
+id:igstats/i002-photo_missing_license-0 a ph:InstagramPostStats ;
+    prov:generatedAtTime "2026-04-06T07:48:00+00:00"^^xsd:dateTime ;
+    ph:likes 253 ;
+    ph:messageShares 25 ;
+    ph:reposts 3 .
+
+id:igpost/i002-photo_missing_license a ph:InstagramPost ;
+    schema:url <https://instagram.com/p/i002-photo_missing_license> ;
+    ph:hasNarrativeText id:narrative/i002-photo_missing_license ;
+    ph:hasInstagramPostStats id:igstats/i002-photo_missing_license-0 .
+
+id:planstats/i002-photo_missing_license a ph:PlannedRouteStats ;
+    ph:distanceKm 24.59 ;
+    ph:ascentMeters 565.7 ;
+    ph:estimatedMovementEnergyKj 3656.5 .
+
+id:plannedroute/i002-photo_missing_license a ph:PlannedRoute ;
+    schema:url <https://ridewithgps.com/routes/i002-photo_missing_license> ;
+    ph:hasAuthor id:person/author-i002-photo_missing_license ;
+    ph:hasPlannedRouteStats id:planstats/i002-photo_missing_license .
+
+id:tour/i002-photo_missing_license a ph:Tour ;
+    ph:hasPlannedRoute id:plannedroute/i002-photo_missing_license ;
+    ph:hasPhoto id:photo/i002-photo_missing_license-0 ;
+    ph:hasInstagramPost id:igpost/i002-photo_missing_license .
+
+# violation kind: photo_fov_out_of_range
+id:person/author-i003-photo_fov_out_of_range a schema:Person ;
+    schema:name "Autor i003-photo_fov_out_of_range" .
+
+id:geo/i003-photo_fov_out_of_range-0 a schema:GeoCoordinates ;
+    schema:latitude  -23.441868e+0 ;
+    schema:longitude -46.534360e+0 .
+
+id:photo/i003-photo_fov_out_of_range-0 a ph:Photo ;
+    ph:hasLocation id:geo/i003-photo_fov_out_of_range-0 ;
+    ph:fieldOfView 270.0 ;
+    ph:hasAuthor id:person/author-i003-photo_fov_out_of_range ;
+    dcterms:license <https://creativecommons.org/licenses/by/4.0/> .
+
+id:narrative/i003-photo_fov_out_of_range a ph:NarrativeText ;
+    ph:content "Texto da narrativa i003-photo_fov_out_of_range." ;
+    ph:hasAuthor id:person/author-i003-photo_fov_out_of_range .
+
+id:igstats/i003-photo_fov_out_of_range-0 a ph:InstagramPostStats ;
+    prov:generatedAtTime "2026-03-22T07:03:00+00:00"^^xsd:dateTime ;
+    ph:likes 90 ;
+    ph:messageShares 44 ;
+    ph:reposts 8 .
+
+id:igpost/i003-photo_fov_out_of_range a ph:InstagramPost ;
+    schema:url <https://instagram.com/p/i003-photo_fov_out_of_range> ;
+    ph:hasNarrativeText id:narrative/i003-photo_fov_out_of_range ;
+    ph:hasInstagramPostStats id:igstats/i003-photo_fov_out_of_range-0 .
+
+id:planstats/i003-photo_fov_out_of_range a ph:PlannedRouteStats ;
+    ph:distanceKm 45.2 ;
+    ph:ascentMeters 468.1 ;
+    ph:estimatedMovementEnergyKj 3735.9 .
+
+id:plannedroute/i003-photo_fov_out_of_range a ph:PlannedRoute ;
+    schema:url <https://ridewithgps.com/routes/i003-photo_fov_out_of_range> ;
+    ph:hasAuthor id:person/author-i003-photo_fov_out_of_range ;
+    ph:hasPlannedRouteStats id:planstats/i003-photo_fov_out_of_range .
+
+id:tour/i003-photo_fov_out_of_range a ph:Tour ;
+    ph:hasPlannedRoute id:plannedroute/i003-photo_fov_out_of_range ;
+    ph:hasPhoto id:photo/i003-photo_fov_out_of_range-0 ;
+    ph:hasInstagramPost id:igpost/i003-photo_fov_out_of_range .
+
+# violation kind: geo_lat_out_of_range
+id:person/author-i004-geo_lat_out_of_range a schema:Person ;
+    schema:name "Autor i004-geo_lat_out_of_range" .
+
+id:geo/i004-geo_lat_out_of_range-0 a schema:GeoCoordinates ;
+    schema:latitude  200.000000e+0 ;
+    schema:longitude -46.763592e+0 .
+
+id:photo/i004-geo_lat_out_of_range-0 a ph:Photo ;
+    ph:hasLocation id:geo/i004-geo_lat_out_of_range-0 ;
+    ph:fieldOfView 49.33 ;
+    ph:hasAuthor id:person/author-i004-geo_lat_out_of_range ;
+    dcterms:license <https://creativecommons.org/licenses/by/4.0/> .
+
+id:narrative/i004-geo_lat_out_of_range a ph:NarrativeText ;
+    ph:content "Texto da narrativa i004-geo_lat_out_of_range." ;
+    ph:hasAuthor id:person/author-i004-geo_lat_out_of_range .
+
+id:igstats/i004-geo_lat_out_of_range-0 a ph:InstagramPostStats ;
+    prov:generatedAtTime "2026-04-19T17:16:00+00:00"^^xsd:dateTime ;
+    ph:likes 286 ;
+    ph:messageShares 38 ;
+    ph:reposts 5 .
+
+id:igpost/i004-geo_lat_out_of_range a ph:InstagramPost ;
+    schema:url <https://instagram.com/p/i004-geo_lat_out_of_range> ;
+    ph:hasNarrativeText id:narrative/i004-geo_lat_out_of_range ;
+    ph:hasInstagramPostStats id:igstats/i004-geo_lat_out_of_range-0 .
+
+id:planstats/i004-geo_lat_out_of_range a ph:PlannedRouteStats ;
+    ph:distanceKm 76.75 ;
+    ph:ascentMeters 718.6 ;
+    ph:estimatedMovementEnergyKj 2760.5 .
+
+id:plannedroute/i004-geo_lat_out_of_range a ph:PlannedRoute ;
+    schema:url <https://ridewithgps.com/routes/i004-geo_lat_out_of_range> ;
+    ph:hasAuthor id:person/author-i004-geo_lat_out_of_range ;
+    ph:hasPlannedRouteStats id:planstats/i004-geo_lat_out_of_range .
+
+id:tour/i004-geo_lat_out_of_range a ph:Tour ;
+    ph:hasPlannedRoute id:plannedroute/i004-geo_lat_out_of_range ;
+    ph:hasPhoto id:photo/i004-geo_lat_out_of_range-0 ;
+    ph:hasInstagramPost id:igpost/i004-geo_lat_out_of_range .
+
+# violation kind: narrative_empty_content
+id:person/author-i005-narrative_empty_content a schema:Person ;
+    schema:name "Autor i005-narrative_empty_content" .
+
+id:geo/i005-narrative_empty_content-0 a schema:GeoCoordinates ;
+    schema:latitude  -23.484218e+0 ;
+    schema:longitude -46.648567e+0 .
+
+id:photo/i005-narrative_empty_content-0 a ph:Photo ;
+    ph:hasLocation id:geo/i005-narrative_empty_content-0 ;
+    ph:fieldOfView 98.14 ;
+    ph:hasAuthor id:person/author-i005-narrative_empty_content ;
+    dcterms:license <https://creativecommons.org/publicdomain/zero/1.0/> .
+
+id:narrative/i005-narrative_empty_content a ph:NarrativeText ;
+    ph:content "" ;
+    ph:hasAuthor id:person/author-i005-narrative_empty_content .
+
+id:igstats/i005-narrative_empty_content-0 a ph:InstagramPostStats ;
+    prov:generatedAtTime "2026-04-11T23:06:00+00:00"^^xsd:dateTime ;
+    ph:likes 459 ;
+    ph:messageShares 10 ;
+    ph:reposts 7 .
+
+id:igpost/i005-narrative_empty_content a ph:InstagramPost ;
+    schema:url <https://instagram.com/p/i005-narrative_empty_content> ;
+    ph:hasNarrativeText id:narrative/i005-narrative_empty_content ;
+    ph:hasInstagramPostStats id:igstats/i005-narrative_empty_content-0 .
+
+id:planstats/i005-narrative_empty_content a ph:PlannedRouteStats ;
+    ph:distanceKm 44.25 ;
+    ph:ascentMeters 613.8 ;
+    ph:estimatedMovementEnergyKj 3487.6 .
+
+id:plannedroute/i005-narrative_empty_content a ph:PlannedRoute ;
+    schema:url <https://ridewithgps.com/routes/i005-narrative_empty_content> ;
+    ph:hasAuthor id:person/author-i005-narrative_empty_content ;
+    ph:hasPlannedRouteStats id:planstats/i005-narrative_empty_content .
+
+id:tour/i005-narrative_empty_content a ph:Tour ;
+    ph:hasPlannedRoute id:plannedroute/i005-narrative_empty_content ;
+    ph:hasPhoto id:photo/i005-narrative_empty_content-0 ;
+    ph:hasInstagramPost id:igpost/i005-narrative_empty_content .
+
+# violation kind: narrative_missing_author
+id:person/author-i006-narrative_missing_author a schema:Person ;
+    schema:name "Autor i006-narrative_missing_author" .
+
+id:geo/i006-narrative_missing_author-0 a schema:GeoCoordinates ;
+    schema:latitude  -23.616807e+0 ;
+    schema:longitude -46.566698e+0 .
+
+id:photo/i006-narrative_missing_author-0 a ph:Photo ;
+    ph:hasLocation id:geo/i006-narrative_missing_author-0 ;
+    ph:fieldOfView 73.92 ;
+    ph:hasAuthor id:person/author-i006-narrative_missing_author ;
+    dcterms:license <https://creativecommons.org/licenses/by-sa/4.0/> .
+
+id:narrative/i006-narrative_missing_author a ph:NarrativeText ;
+    ph:content "Texto da narrativa i006-narrative_missing_author." .
+
+id:igstats/i006-narrative_missing_author-0 a ph:InstagramPostStats ;
+    prov:generatedAtTime "2026-03-27T08:52:00+00:00"^^xsd:dateTime ;
+    ph:likes 225 ;
+    ph:messageShares 4 ;
+    ph:reposts 4 .
+
+id:igpost/i006-narrative_missing_author a ph:InstagramPost ;
+    schema:url <https://instagram.com/p/i006-narrative_missing_author> ;
+    ph:hasNarrativeText id:narrative/i006-narrative_missing_author ;
+    ph:hasInstagramPostStats id:igstats/i006-narrative_missing_author-0 .
+
+id:planstats/i006-narrative_missing_author a ph:PlannedRouteStats ;
+    ph:distanceKm 30.24 ;
+    ph:ascentMeters 301.9 ;
+    ph:estimatedMovementEnergyKj 3657.7 .
+
+id:plannedroute/i006-narrative_missing_author a ph:PlannedRoute ;
+    schema:url <https://ridewithgps.com/routes/i006-narrative_missing_author> ;
+    ph:hasAuthor id:person/author-i006-narrative_missing_author ;
+    ph:hasPlannedRouteStats id:planstats/i006-narrative_missing_author .
+
+id:tour/i006-narrative_missing_author a ph:Tour ;
+    ph:hasPlannedRoute id:plannedroute/i006-narrative_missing_author ;
+    ph:hasPhoto id:photo/i006-narrative_missing_author-0 ;
+    ph:hasInstagramPost id:igpost/i006-narrative_missing_author .
+
+# violation kind: stats_missing_observed_at
+id:person/author-i007-stats_missing_observed_at a schema:Person ;
+    schema:name "Autor i007-stats_missing_observed_at" .
+
+id:geo/i007-stats_missing_observed_at-0 a schema:GeoCoordinates ;
+    schema:latitude  -23.675827e+0 ;
+    schema:longitude -46.754751e+0 .
+
+id:photo/i007-stats_missing_observed_at-0 a ph:Photo ;
+    ph:hasLocation id:geo/i007-stats_missing_observed_at-0 ;
+    ph:fieldOfView 66.81 ;
+    ph:hasAuthor id:person/author-i007-stats_missing_observed_at ;
+    dcterms:license <https://creativecommons.org/licenses/by-sa/4.0/> .
+
+id:narrative/i007-stats_missing_observed_at a ph:NarrativeText ;
+    ph:content "Texto da narrativa i007-stats_missing_observed_at." ;
+    ph:hasAuthor id:person/author-i007-stats_missing_observed_at .
+
+id:igstats/i007-stats_missing_observed_at-0 a ph:InstagramPostStats ;
+    ph:likes 32 ;
+    ph:messageShares 26 ;
+    ph:reposts 6 .
+
+id:igpost/i007-stats_missing_observed_at a ph:InstagramPost ;
+    schema:url <https://instagram.com/p/i007-stats_missing_observed_at> ;
+    ph:hasNarrativeText id:narrative/i007-stats_missing_observed_at ;
+    ph:hasInstagramPostStats id:igstats/i007-stats_missing_observed_at-0 .
+
+id:planstats/i007-stats_missing_observed_at a ph:PlannedRouteStats ;
+    ph:distanceKm 36.51 ;
+    ph:ascentMeters 399.4 ;
+    ph:estimatedMovementEnergyKj 999.3 .
+
+id:plannedroute/i007-stats_missing_observed_at a ph:PlannedRoute ;
+    schema:url <https://ridewithgps.com/routes/i007-stats_missing_observed_at> ;
+    ph:hasAuthor id:person/author-i007-stats_missing_observed_at ;
+    ph:hasPlannedRouteStats id:planstats/i007-stats_missing_observed_at .
+
+id:tour/i007-stats_missing_observed_at a ph:Tour ;
+    ph:hasPlannedRoute id:plannedroute/i007-stats_missing_observed_at ;
+    ph:hasPhoto id:photo/i007-stats_missing_observed_at-0 ;
+    ph:hasInstagramPost id:igpost/i007-stats_missing_observed_at .
+
+# violation kind: stats_negative_likes
+id:person/author-i008-stats_negative_likes a schema:Person ;
+    schema:name "Autor i008-stats_negative_likes" .
+
+id:geo/i008-stats_negative_likes-0 a schema:GeoCoordinates ;
+    schema:latitude  -23.450133e+0 ;
+    schema:longitude -46.683157e+0 .
+
+id:photo/i008-stats_negative_likes-0 a ph:Photo ;
+    ph:hasLocation id:geo/i008-stats_negative_likes-0 ;
+    ph:fieldOfView 93.89 ;
+    ph:hasAuthor id:person/author-i008-stats_negative_likes ;
+    dcterms:license <https://creativecommons.org/publicdomain/zero/1.0/> .
+
+id:narrative/i008-stats_negative_likes a ph:NarrativeText ;
+    ph:content "Texto da narrativa i008-stats_negative_likes." ;
+    ph:hasAuthor id:person/author-i008-stats_negative_likes .
+
+id:igstats/i008-stats_negative_likes-0 a ph:InstagramPostStats ;
+    prov:generatedAtTime "2026-03-04T03:40:00+00:00"^^xsd:dateTime ;
+    ph:likes -5 ;
+    ph:messageShares 48 ;
+    ph:reposts 9 .
+
+id:igpost/i008-stats_negative_likes a ph:InstagramPost ;
+    schema:url <https://instagram.com/p/i008-stats_negative_likes> ;
+    ph:hasNarrativeText id:narrative/i008-stats_negative_likes ;
+    ph:hasInstagramPostStats id:igstats/i008-stats_negative_likes-0 .
+
+id:planstats/i008-stats_negative_likes a ph:PlannedRouteStats ;
+    ph:distanceKm 39.72 ;
+    ph:ascentMeters 54.4 ;
+    ph:estimatedMovementEnergyKj 1925.6 .
+
+id:plannedroute/i008-stats_negative_likes a ph:PlannedRoute ;
+    schema:url <https://ridewithgps.com/routes/i008-stats_negative_likes> ;
+    ph:hasAuthor id:person/author-i008-stats_negative_likes ;
+    ph:hasPlannedRouteStats id:planstats/i008-stats_negative_likes .
+
+id:tour/i008-stats_negative_likes a ph:Tour ;
+    ph:hasPlannedRoute id:plannedroute/i008-stats_negative_likes ;
+    ph:hasPhoto id:photo/i008-stats_negative_likes-0 ;
+    ph:hasInstagramPost id:igpost/i008-stats_negative_likes .
+
+# violation kind: post_missing_url
+id:person/author-i009-post_missing_url a schema:Person ;
+    schema:name "Autor i009-post_missing_url" .
+
+id:geo/i009-post_missing_url-0 a schema:GeoCoordinates ;
+    schema:latitude  -23.473957e+0 ;
+    schema:longitude -46.543966e+0 .
+
+id:photo/i009-post_missing_url-0 a ph:Photo ;
+    ph:hasLocation id:geo/i009-post_missing_url-0 ;
+    ph:fieldOfView 106.74 ;
+    ph:hasAuthor id:person/author-i009-post_missing_url ;
+    dcterms:license <https://creativecommons.org/licenses/by/4.0/> .
+
+id:narrative/i009-post_missing_url a ph:NarrativeText ;
+    ph:content "Texto da narrativa i009-post_missing_url." ;
+    ph:hasAuthor id:person/author-i009-post_missing_url .
+
+id:igstats/i009-post_missing_url-0 a ph:InstagramPostStats ;
+    prov:generatedAtTime "2026-04-20T08:45:00+00:00"^^xsd:dateTime ;
+    ph:likes 382 ;
+    ph:messageShares 47 ;
+    ph:reposts 8 .
+
+id:igpost/i009-post_missing_url a ph:InstagramPost ;
+    ph:hasNarrativeText id:narrative/i009-post_missing_url ;
+    ph:hasInstagramPostStats id:igstats/i009-post_missing_url-0 .
+
+id:planstats/i009-post_missing_url a ph:PlannedRouteStats ;
+    ph:distanceKm 66.99 ;
+    ph:ascentMeters 723.4 ;
+    ph:estimatedMovementEnergyKj 2362.3 .
+
+id:plannedroute/i009-post_missing_url a ph:PlannedRoute ;
+    schema:url <https://ridewithgps.com/routes/i009-post_missing_url> ;
+    ph:hasAuthor id:person/author-i009-post_missing_url ;
+    ph:hasPlannedRouteStats id:planstats/i009-post_missing_url .
+
+id:tour/i009-post_missing_url a ph:Tour ;
+    ph:hasPlannedRoute id:plannedroute/i009-post_missing_url ;
+    ph:hasPhoto id:photo/i009-post_missing_url-0 ;
+    ph:hasInstagramPost id:igpost/i009-post_missing_url .
+
+# violation kind: post_missing_narrative
+id:person/author-i010-post_missing_narrative a schema:Person ;
+    schema:name "Autor i010-post_missing_narrative" .
+
+id:geo/i010-post_missing_narrative-0 a schema:GeoCoordinates ;
+    schema:latitude  -23.618119e+0 ;
+    schema:longitude -46.654307e+0 .
+
+id:photo/i010-post_missing_narrative-0 a ph:Photo ;
+    ph:hasLocation id:geo/i010-post_missing_narrative-0 ;
+    ph:fieldOfView 67.22 ;
+    ph:hasAuthor id:person/author-i010-post_missing_narrative ;
+    dcterms:license <https://creativecommons.org/publicdomain/zero/1.0/> .
+
+id:narrative/i010-post_missing_narrative a ph:NarrativeText ;
+    ph:content "Texto da narrativa i010-post_missing_narrative." ;
+    ph:hasAuthor id:person/author-i010-post_missing_narrative .
+
+id:igstats/i010-post_missing_narrative-0 a ph:InstagramPostStats ;
+    prov:generatedAtTime "2026-04-08T04:14:00+00:00"^^xsd:dateTime ;
+    ph:likes 370 ;
+    ph:messageShares 10 ;
+    ph:reposts 7 .
+
+id:igpost/i010-post_missing_narrative a ph:InstagramPost ;
+    schema:url <https://instagram.com/p/i010-post_missing_narrative> ;
+    ph:hasInstagramPostStats id:igstats/i010-post_missing_narrative-0 .
+
+id:planstats/i010-post_missing_narrative a ph:PlannedRouteStats ;
+    ph:distanceKm 74.77 ;
+    ph:ascentMeters 785.5 ;
+    ph:estimatedMovementEnergyKj 2509.2 .
+
+id:plannedroute/i010-post_missing_narrative a ph:PlannedRoute ;
+    schema:url <https://ridewithgps.com/routes/i010-post_missing_narrative> ;
+    ph:hasAuthor id:person/author-i010-post_missing_narrative ;
+    ph:hasPlannedRouteStats id:planstats/i010-post_missing_narrative .
+
+id:tour/i010-post_missing_narrative a ph:Tour ;
+    ph:hasPlannedRoute id:plannedroute/i010-post_missing_narrative ;
+    ph:hasPhoto id:photo/i010-post_missing_narrative-0 ;
+    ph:hasInstagramPost id:igpost/i010-post_missing_narrative .
+
+# violation kind: plan_missing_url
+id:person/author-i011-plan_missing_url a schema:Person ;
+    schema:name "Autor i011-plan_missing_url" .
+
+id:geo/i011-plan_missing_url-0 a schema:GeoCoordinates ;
+    schema:latitude  -23.427921e+0 ;
+    schema:longitude -46.622432e+0 .
+
+id:photo/i011-plan_missing_url-0 a ph:Photo ;
+    ph:hasLocation id:geo/i011-plan_missing_url-0 ;
+    ph:fieldOfView 86.41 ;
+    ph:hasAuthor id:person/author-i011-plan_missing_url ;
+    dcterms:license <https://creativecommons.org/licenses/by-sa/4.0/> .
+
+id:narrative/i011-plan_missing_url a ph:NarrativeText ;
+    ph:content "Texto da narrativa i011-plan_missing_url." ;
+    ph:hasAuthor id:person/author-i011-plan_missing_url .
+
+id:igstats/i011-plan_missing_url-0 a ph:InstagramPostStats ;
+    prov:generatedAtTime "2026-04-29T21:06:00+00:00"^^xsd:dateTime ;
+    ph:likes 219 ;
+    ph:messageShares 8 ;
+    ph:reposts 7 .
+
+id:igpost/i011-plan_missing_url a ph:InstagramPost ;
+    schema:url <https://instagram.com/p/i011-plan_missing_url> ;
+    ph:hasNarrativeText id:narrative/i011-plan_missing_url ;
+    ph:hasInstagramPostStats id:igstats/i011-plan_missing_url-0 .
+
+id:planstats/i011-plan_missing_url a ph:PlannedRouteStats ;
+    ph:distanceKm 26.81 ;
+    ph:ascentMeters 245.1 ;
+    ph:estimatedMovementEnergyKj 1847.5 .
+
+id:plannedroute/i011-plan_missing_url a ph:PlannedRoute ;
+    ph:hasAuthor id:person/author-i011-plan_missing_url ;
+    ph:hasPlannedRouteStats id:planstats/i011-plan_missing_url .
+
+id:tour/i011-plan_missing_url a ph:Tour ;
+    ph:hasPlannedRoute id:plannedroute/i011-plan_missing_url ;
+    ph:hasPhoto id:photo/i011-plan_missing_url-0 ;
+    ph:hasInstagramPost id:igpost/i011-plan_missing_url .
+
+# violation kind: plan_missing_author
+id:person/author-i012-plan_missing_author a schema:Person ;
+    schema:name "Autor i012-plan_missing_author" .
+
+id:geo/i012-plan_missing_author-0 a schema:GeoCoordinates ;
+    schema:latitude  -23.563590e+0 ;
+    schema:longitude -46.698750e+0 .
+
+id:photo/i012-plan_missing_author-0 a ph:Photo ;
+    ph:hasLocation id:geo/i012-plan_missing_author-0 ;
+    ph:fieldOfView 101.57 ;
+    ph:hasAuthor id:person/author-i012-plan_missing_author ;
+    dcterms:license <https://creativecommons.org/licenses/by/4.0/> .
+
+id:narrative/i012-plan_missing_author a ph:NarrativeText ;
+    ph:content "Texto da narrativa i012-plan_missing_author." ;
+    ph:hasAuthor id:person/author-i012-plan_missing_author .
+
+id:igstats/i012-plan_missing_author-0 a ph:InstagramPostStats ;
+    prov:generatedAtTime "2026-04-09T17:55:00+00:00"^^xsd:dateTime ;
+    ph:likes 129 ;
+    ph:messageShares 5 ;
+    ph:reposts 7 .
+
+id:igpost/i012-plan_missing_author a ph:InstagramPost ;
+    schema:url <https://instagram.com/p/i012-plan_missing_author> ;
+    ph:hasNarrativeText id:narrative/i012-plan_missing_author ;
+    ph:hasInstagramPostStats id:igstats/i012-plan_missing_author-0 .
+
+id:planstats/i012-plan_missing_author a ph:PlannedRouteStats ;
+    ph:distanceKm 16.26 ;
+    ph:ascentMeters 454.6 ;
+    ph:estimatedMovementEnergyKj 3999.7 .
+
+id:plannedroute/i012-plan_missing_author a ph:PlannedRoute ;
+    schema:url <https://ridewithgps.com/routes/i012-plan_missing_author> ;
+    ph:hasPlannedRouteStats id:planstats/i012-plan_missing_author .
+
+id:tour/i012-plan_missing_author a ph:Tour ;
+    ph:hasPlannedRoute id:plannedroute/i012-plan_missing_author ;
+    ph:hasPhoto id:photo/i012-plan_missing_author-0 ;
+    ph:hasInstagramPost id:igpost/i012-plan_missing_author .
+
+# violation kind: plan_distance_zero
+id:person/author-i013-plan_distance_zero a schema:Person ;
+    schema:name "Autor i013-plan_distance_zero" .
+
+id:geo/i013-plan_distance_zero-0 a schema:GeoCoordinates ;
+    schema:latitude  -23.595012e+0 ;
+    schema:longitude -46.604957e+0 .
+
+id:photo/i013-plan_distance_zero-0 a ph:Photo ;
+    ph:hasLocation id:geo/i013-plan_distance_zero-0 ;
+    ph:fieldOfView 94.69 ;
+    ph:hasAuthor id:person/author-i013-plan_distance_zero ;
+    dcterms:license <https://creativecommons.org/publicdomain/zero/1.0/> .
+
+id:narrative/i013-plan_distance_zero a ph:NarrativeText ;
+    ph:content "Texto da narrativa i013-plan_distance_zero." ;
+    ph:hasAuthor id:person/author-i013-plan_distance_zero .
+
+id:igstats/i013-plan_distance_zero-0 a ph:InstagramPostStats ;
+    prov:generatedAtTime "2026-03-06T00:56:00+00:00"^^xsd:dateTime ;
+    ph:likes 386 ;
+    ph:messageShares 1 ;
+    ph:reposts 3 .
+
+id:igpost/i013-plan_distance_zero a ph:InstagramPost ;
+    schema:url <https://instagram.com/p/i013-plan_distance_zero> ;
+    ph:hasNarrativeText id:narrative/i013-plan_distance_zero ;
+    ph:hasInstagramPostStats id:igstats/i013-plan_distance_zero-0 .
+
+id:planstats/i013-plan_distance_zero a ph:PlannedRouteStats ;
+    ph:distanceKm 0.0 ;
+    ph:ascentMeters 199.5 ;
+    ph:estimatedMovementEnergyKj 865.2 .
+
+id:plannedroute/i013-plan_distance_zero a ph:PlannedRoute ;
+    schema:url <https://ridewithgps.com/routes/i013-plan_distance_zero> ;
+    ph:hasAuthor id:person/author-i013-plan_distance_zero ;
+    ph:hasPlannedRouteStats id:planstats/i013-plan_distance_zero .
+
+id:tour/i013-plan_distance_zero a ph:Tour ;
+    ph:hasPlannedRoute id:plannedroute/i013-plan_distance_zero ;
+    ph:hasPhoto id:photo/i013-plan_distance_zero-0 ;
+    ph:hasInstagramPost id:igpost/i013-plan_distance_zero .
+
+# violation kind: plan_negative_ascent
+id:person/author-i014-plan_negative_ascent a schema:Person ;
+    schema:name "Autor i014-plan_negative_ascent" .
+
+id:geo/i014-plan_negative_ascent-0 a schema:GeoCoordinates ;
+    schema:latitude  -23.654285e+0 ;
+    schema:longitude -46.762134e+0 .
+
+id:photo/i014-plan_negative_ascent-0 a ph:Photo ;
+    ph:hasLocation id:geo/i014-plan_negative_ascent-0 ;
+    ph:fieldOfView 86.86 ;
+    ph:hasAuthor id:person/author-i014-plan_negative_ascent ;
+    dcterms:license <https://creativecommons.org/publicdomain/zero/1.0/> .
+
+id:narrative/i014-plan_negative_ascent a ph:NarrativeText ;
+    ph:content "Texto da narrativa i014-plan_negative_ascent." ;
+    ph:hasAuthor id:person/author-i014-plan_negative_ascent .
+
+id:igstats/i014-plan_negative_ascent-0 a ph:InstagramPostStats ;
+    prov:generatedAtTime "2026-03-22T05:09:00+00:00"^^xsd:dateTime ;
+    ph:likes 238 ;
+    ph:messageShares 44 ;
+    ph:reposts 4 .
+
+id:igpost/i014-plan_negative_ascent a ph:InstagramPost ;
+    schema:url <https://instagram.com/p/i014-plan_negative_ascent> ;
+    ph:hasNarrativeText id:narrative/i014-plan_negative_ascent ;
+    ph:hasInstagramPostStats id:igstats/i014-plan_negative_ascent-0 .
+
+id:planstats/i014-plan_negative_ascent a ph:PlannedRouteStats ;
+    ph:distanceKm 64.85 ;
+    ph:ascentMeters -10.0 ;
+    ph:estimatedMovementEnergyKj 1336.9 .
+
+id:plannedroute/i014-plan_negative_ascent a ph:PlannedRoute ;
+    schema:url <https://ridewithgps.com/routes/i014-plan_negative_ascent> ;
+    ph:hasAuthor id:person/author-i014-plan_negative_ascent ;
+    ph:hasPlannedRouteStats id:planstats/i014-plan_negative_ascent .
+
+id:tour/i014-plan_negative_ascent a ph:Tour ;
+    ph:hasPlannedRoute id:plannedroute/i014-plan_negative_ascent ;
+    ph:hasPhoto id:photo/i014-plan_negative_ascent-0 ;
+    ph:hasInstagramPost id:igpost/i014-plan_negative_ascent .
+
+# violation kind: tour_two_planned_routes
+id:person/author-i015-tour_two_planned_routes a schema:Person ;
+    schema:name "Autor i015-tour_two_planned_routes" .
+
+id:geo/i015-tour_two_planned_routes-0 a schema:GeoCoordinates ;
+    schema:latitude  -23.517826e+0 ;
+    schema:longitude -46.575622e+0 .
+
+id:photo/i015-tour_two_planned_routes-0 a ph:Photo ;
+    ph:hasLocation id:geo/i015-tour_two_planned_routes-0 ;
+    ph:fieldOfView 48.02 ;
+    ph:hasAuthor id:person/author-i015-tour_two_planned_routes ;
+    dcterms:license <https://creativecommons.org/licenses/by-sa/4.0/> .
+
+id:narrative/i015-tour_two_planned_routes a ph:NarrativeText ;
+    ph:content "Texto da narrativa i015-tour_two_planned_routes." ;
+    ph:hasAuthor id:person/author-i015-tour_two_planned_routes .
+
+id:igstats/i015-tour_two_planned_routes-0 a ph:InstagramPostStats ;
+    prov:generatedAtTime "2026-03-30T16:28:00+00:00"^^xsd:dateTime ;
+    ph:likes 55 ;
+    ph:messageShares 37 ;
+    ph:reposts 0 .
+
+id:igpost/i015-tour_two_planned_routes a ph:InstagramPost ;
+    schema:url <https://instagram.com/p/i015-tour_two_planned_routes> ;
+    ph:hasNarrativeText id:narrative/i015-tour_two_planned_routes ;
+    ph:hasInstagramPostStats id:igstats/i015-tour_two_planned_routes-0 .
+
+id:planstats/i015-tour_two_planned_routes a ph:PlannedRouteStats ;
+    ph:distanceKm 75.38 ;
+    ph:ascentMeters 481.8 ;
+    ph:estimatedMovementEnergyKj 3705.7 .
+
+id:plannedroute/i015-tour_two_planned_routes a ph:PlannedRoute ;
+    schema:url <https://ridewithgps.com/routes/i015-tour_two_planned_routes> ;
+    ph:hasAuthor id:person/author-i015-tour_two_planned_routes ;
+    ph:hasPlannedRouteStats id:planstats/i015-tour_two_planned_routes .
+
+id:planstats/i015-tour_two_planned_routes-extra a ph:PlannedRouteStats ;
+    ph:distanceKm 39.39 ;
+    ph:ascentMeters 756.1 ;
+    ph:estimatedMovementEnergyKj 1434.7 .
+
+id:plannedroute/i015-tour_two_planned_routes-extra a ph:PlannedRoute ;
+    schema:url <https://ridewithgps.com/routes/i015-tour_two_planned_routes-extra> ;
+    ph:hasAuthor id:person/author-i015-tour_two_planned_routes ;
+    ph:hasPlannedRouteStats id:planstats/i015-tour_two_planned_routes-extra .
+
+id:tour/i015-tour_two_planned_routes a ph:Tour ;
+    ph:hasPlannedRoute id:plannedroute/i015-tour_two_planned_routes , id:plannedroute/i015-tour_two_planned_routes-extra ;
+    ph:hasPhoto id:photo/i015-tour_two_planned_routes-0 ;
+    ph:hasInstagramPost id:igpost/i015-tour_two_planned_routes .
+
