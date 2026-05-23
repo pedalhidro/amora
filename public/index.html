@@ -283,6 +283,21 @@
             <button type="button" id="voices-new-btn">➕ Nova voz</button>
             <button type="button" id="voices-import-btn">📂 Importar voz</button>
           </div>
+          <p class="muted" id="voices-identity"></p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Divergences review panel — clusters where voices disagree -->
+    <div id="divergence-modal" class="modal" hidden>
+      <div class="modal-content">
+        <header>
+          <h2>Divergências</h2>
+          <button class="close" id="divergence-modal-close" type="button" aria-label="Fechar">&times;</button>
+        </header>
+        <div class="modal-body">
+          <p class="muted">Fotos em que as vozes não concordam. Clique para ir até a foto no mapa.</p>
+          <div id="divergence-list"></div>
         </div>
       </div>
     </div>

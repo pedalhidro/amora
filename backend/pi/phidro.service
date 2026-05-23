@@ -7,8 +7,6 @@ Wants=network-online.target
 Type=simple
 User=pi
 WorkingDirectory=/home/pi/pedalhidrografico/backend/pi
-# TROQUE o token abaixo por um segredo seu (o mesmo que vai no app):
-Environment=UPLOAD_SECRET=TROQUE-ESTE-TOKEN
 Environment=PHIDRO_DATA=/home/pi/phidro-data
 ExecStart=/home/pi/pedalhidrografico/backend/pi/venv/bin/gunicorn \
   --bind 127.0.0.1:8000 --workers 2 --threads 4 --timeout 120 main:app

@@ -527,22 +527,224 @@ function foldVoices(data) {
     return ((data && data.photos) || []).map((ph) => ({
       ...ph,
       _voice: 'voice/local',
+      _voices: ['voice/local'],
+      _voiceTotal: 1,
+      _divergence: null,
     }));
   }
+  // Presença + membros: para cada foto, em quais vozes ela aparece e a cópia
+  // de cada voz. Varre o manifesto INTEIRO (vozes ocultas inclusas), pois o
+  // x/TOTAL e a divergência descrevem o acervo, não a vista atual. A chave é
+  // o `cluster` (uploads quase idênticos compartilham cluster), caindo no id.
+  const presence = new Map(); // cluster → [voiceId, ...]
+  const members = new Map(); // cluster → [{voiceId, photo}, ...]
+  for (const v of data.voices) {
+    for (const ph of v.photos || []) {
+      const cid = ph.cluster || ph.id;
+      if (!cid) continue;
+      const arr = presence.get(cid) || [];
+      if (!arr.includes(v.id)) arr.push(v.id);
+      presence.set(cid, arr);
+      const ml = members.get(cid) || [];
+      ml.push({ voiceId: v.id, photo: ph });
+      members.set(cid, ml);
+    }
+  }
+  const voiceTotal = data.voices.length;
   const byVoice = new Map(data.voices.map((v) => [v.id, v]));
   const stack = effectiveStack(); // topo = mais forte
   const byId = new Map();
   let n = 0;
   // Itera do MENOR para o MAIOR precedência → o topo da pilha sobrescreve.
+  // Fotos do mesmo cluster colapsam num marcador só; o de maior precedência
+  // ganha e fornece a imagem exibida.
   for (let i = stack.length - 1; i >= 0; i--) {
     const v = byVoice.get(stack[i]);
     if (!v) continue;
     for (const ph of v.photos || []) {
-      const key = ph.id || `${v.id}#${n++}`;
-      byId.set(key, { ...ph, _voice: v.id });
+      const cid = ph.cluster || ph.id;
+      const key = cid || `${v.id}#${n++}`;
+      byId.set(key, {
+        ...ph,
+        _voice: v.id,
+        // Fotos sem cluster/id não casam entre vozes → presença = só a sua.
+        _voices: cid ? presence.get(cid) || [v.id] : [v.id],
+        _voiceTotal: voiceTotal,
+        _divergence: cid ? computeDivergence(members.get(cid)) : null,
+      });
     }
   }
   return [...byId.values()];
+}
+
+// Resolve o id de uma voz no seu rótulo legível (cai no id se desconhecido).
+function voiceLabelOf(id) {
+  const v = ((photoManifest && photoManifest.voices) || []).find(
+    (x) => x.id === id,
+  );
+  return (v && v.label) || id;
+}
+
+// Tipo de uma voz: 'model' (inanimada, p.ex. o censo) ou 'person' (animada).
+function voiceKindOf(id) {
+  const v = ((photoManifest && photoManifest.voices) || []).find(
+    (x) => x.id === id,
+  );
+  return (v && v.kind) || 'person';
+}
+
+// ── Divergência (passo 4 — registro vs. modelo) ──────────────────────────
+// Campos cujo desacordo entre vozes vale exibir. `get` devolve a string que
+// serve de chave de comparação E de exibição (já com tolerância embutida via
+// arredondamento). Comparam-se só valores presentes nas duas pontas: uma voz
+// que simplesmente não tem o campo é ausência, não conflito.
+const DIVERGENCE_FIELDS = [
+  {
+    key: 'ride',
+    label: 'Pedal',
+    get: (p) =>
+      p.ride
+        ? [p.ride.code, p.ride.name, p.ride.date].filter(Boolean).join(' · ')
+        : null,
+  },
+  {
+    key: 'gps',
+    label: 'GPS',
+    get: (p) =>
+      Number.isFinite(p.lat) && Number.isFinite(p.lng)
+        ? `${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}`
+        : null,
+  },
+  {
+    key: 'alt',
+    label: 'Altitude',
+    get: (p) => (Number.isFinite(p.alt) ? `${Math.round(p.alt)} m` : null),
+  },
+  {
+    key: 'datetime',
+    label: 'Data/hora',
+    get: (p) =>
+      p.datetime ? new Date(p.datetime).toLocaleString('pt-BR') : null,
+  },
+  {
+    key: 'bearing',
+    label: 'Rumo',
+    get: (p) =>
+      Number.isFinite(p.bearing) ? `${Math.round(p.bearing)}°` : null,
+  },
+  {
+    key: 'fov',
+    label: 'Campo de visão',
+    get: (p) => (Number.isFinite(p.fov) ? `${Math.round(p.fov)}°` : null),
+  },
+];
+
+// Calcula a divergência de um cluster a partir das cópias de cada voz.
+// Só aparece quando há ≥1 voz-modelo envolvida (pessoa-vs-pessoa fica na
+// precedência silenciosa). Devolve [{key,label,groups:[{value,voices}]}] ou
+// null quando não há conflito a mostrar.
+function computeDivergence(members) {
+  if (!members || members.length < 2) return null;
+  if (!members.some((m) => voiceKindOf(m.voiceId) === 'model')) return null;
+  const out = [];
+  for (const f of DIVERGENCE_FIELDS) {
+    const byValue = new Map(); // valor → Set(voiceId)
+    for (const m of members) {
+      const val = f.get(m.photo);
+      if (val == null || val === '') continue;
+      if (!byValue.has(val)) byValue.set(val, new Set());
+      byValue.get(val).add(m.voiceId);
+    }
+    if (byValue.size < 2) continue; // só conflito de fato (≥2 valores)
+    out.push({
+      key: f.key,
+      label: f.label,
+      groups: [...byValue.entries()].map(([value, vs]) => ({
+        value,
+        voices: [...vs],
+      })),
+    });
+  }
+  return out.length ? out : null;
+}
+
+// HTML da seção de divergência — usada no popup da foto e no painel de
+// revisão. Cada campo lista os valores em conflito e as vozes de cada um.
+function divergenceSectionHtml(div) {
+  if (!Array.isArray(div) || !div.length) return '';
+  const rows = div
+    .map((f) => {
+      const groups = f.groups
+        .map(
+          (g) =>
+            `<div class="div-val"><span class="div-value">${escapeHtml(
+              g.value,
+            )}</span><span class="div-voices">` +
+            g.voices
+              .map(
+                (vid) =>
+                  `<span class="div-voice${
+                    voiceKindOf(vid) === 'model' ? ' div-voice-model' : ''
+                  }">${escapeHtml(voiceLabelOf(vid))}</span>`,
+              )
+              .join('') +
+            `</span></div>`,
+        )
+        .join('');
+      return (
+        `<div class="div-field"><span class="div-field-label">${escapeHtml(
+          f.label,
+        )}</span>${groups}</div>`
+      );
+    })
+    .join('');
+  return (
+    `<div class="photo-divergence">` +
+    `<div class="div-head">⚠ Vozes divergem</div>${rows}</div>`
+  );
+}
+
+// Marcadores-fantasma para a divergência de GPS: um círculo tênue em cada
+// posição que não é a do marcador vencedor, ligado a ele por uma linha
+// tracejada. Devolve a lista de camadas (vazia quando não há divergência).
+function buildGhostMarkers(ph) {
+  const ghosts = [];
+  const gpsDiv = (ph._divergence || []).find((f) => f.key === 'gps');
+  if (!gpsDiv) return ghosts;
+  const winnerKey = `${ph.lat.toFixed(5)}, ${ph.lng.toFixed(5)}`;
+  for (const g of gpsDiv.groups) {
+    if (g.value === winnerKey) continue; // a posição do marcador principal
+    const parts = g.value.split(',');
+    const glat = parseFloat(parts[0]);
+    const glng = parseFloat(parts[1]);
+    if (!Number.isFinite(glat) || !Number.isFinite(glng)) continue;
+    const link = L.polyline(
+      [
+        [ph.lat, ph.lng],
+        [glat, glng],
+      ],
+      {
+        color: '#2da9ff',
+        weight: 1,
+        opacity: 0.6,
+        dashArray: '4 4',
+        interactive: false,
+      },
+    );
+    const ghost = L.circleMarker([glat, glng], {
+      radius: 7,
+      color: '#2da9ff',
+      weight: 1.5,
+      opacity: 0.75,
+      fillColor: '#2da9ff',
+      fillOpacity: 0.18,
+    });
+    ghost.bindTooltip(g.voices.map((vid) => voiceLabelOf(vid)).join(', '), {
+      direction: 'top',
+    });
+    ghosts.push(link, ghost);
+  }
+  return ghosts;
 }
 
 async function loadPhotos() {
@@ -582,6 +784,9 @@ async function loadPhotos() {
 function buildPhotoMarkers() {
   for (const m of photoMarkers) {
     if (map.hasLayer(m)) map.removeLayer(m);
+    for (const g of m._ghosts || []) {
+      if (map.hasLayer(g)) map.removeLayer(g);
+    }
   }
   photoMarkers = [];
   reconcileStack();
@@ -599,6 +804,24 @@ function buildPhotoMarkers() {
             ph.ride.date,
         )}</div>`
       : '';
+    // Linha de vozes: em quantas/quais vozes esta foto aparece. Só faz
+    // sentido com mais de uma voz no acervo — com uma só, "1/1" é ruído.
+    const phVoices = Array.isArray(ph._voices) ? ph._voices : [];
+    const voiceLine =
+      ph._voiceTotal > 1 && phVoices.length
+        ? `<div class="photo-voices">` +
+          `<span class="photo-voices-count" title="Presente em ${phVoices.length} de ${ph._voiceTotal} vozes">` +
+          `${phVoices.length}/${ph._voiceTotal}</span>` +
+          phVoices
+            .map(
+              (v) =>
+                `<span class="voice-chip${
+                  v === ph._voice ? ' voice-chip-active' : ''
+                }">${escapeHtml(voiceLabelOf(v))}</span>`,
+            )
+            .join('') +
+          `</div>`
+        : '';
     const canDelete = Boolean(DELETE_PHOTO_URL && ph.id);
     const delBtn = canDelete
       ? `<button type="button" class="photo-del-btn">Apagar foto</button>`
@@ -607,6 +830,8 @@ function buildPhotoMarkers() {
       `<div class="photo-popup">` +
         `<img src="${ph.file}" loading="lazy" alt="${escapeHtml(ph.orig || '')}" />` +
         rideLine +
+        voiceLine +
+        divergenceSectionHtml(ph._divergence) +
         `<div class="photo-meta">${escapeHtml(ph.orig || '')}` +
         (when ? ` · ${escapeHtml(when)}` : '') +
         (Number.isFinite(ph.alt) ? ` · ${ph.alt} m` : '') +
@@ -623,12 +848,23 @@ function buildPhotoMarkers() {
         if (btn) btn.onclick = () => deleteArchivedPhoto(m);
       });
     }
+    // Fantasmas: quando as vozes divergem no GPS, marca cada posição
+    // alternativa com um círculo tênue ligado ao marcador principal.
+    m._ghosts = buildGhostMarkers(ph);
     photoMarkers.push(m);
   }
   console.log(
     `[photos] ${photoMarkers.length} fotos · ${effectiveStack().length} voz(es)`,
   );
   refreshVoicePicker();
+  refreshDivergenceRow();
+}
+
+// Marcadores de foto com divergência entre vozes (passo 4).
+function divergentMarkers() {
+  return photoMarkers.filter(
+    (m) => Array.isArray(m._photo._divergence) && m._photo._divergence.length,
+  );
 }
 
 // Persiste a pilha, reconstrói os marcadores e re-renderiza o modal.
@@ -683,6 +919,7 @@ function renderVoicesModal() {
       if (!v) return '';
       const shown = !photoOff.has(id);
       const isCenso = id === 'voice/censo';
+      const isModel = v.kind === 'model';
       return (
         `<div class="voice-item${shown ? '' : ' off'}" data-id="${escapeHtml(id)}">` +
         '<span class="voice-rank">' +
@@ -693,6 +930,20 @@ function renderVoicesModal() {
         `<input type="checkbox" data-vact="show"${shown ? ' checked' : ''} /></label>` +
         `<span class="voice-name">${escapeHtml(v.label || id)}` +
         ` <span class="voice-count">${(v.photos || []).length}</span></span>` +
+        (v.signed
+          ? `<span class="voice-sig ${
+              v.verified ? 'sig-ok' : 'sig-bad'
+            }" title="${
+              v.verified
+                ? `Assinatura verificada · ${escapeHtml(v.pubkey || '')}`
+                : 'Assinatura inválida ou não verificada'
+            }">${v.verified ? '🔏' : '⚠'}</span>`
+          : '') +
+        `<button data-vact="kind" class="voice-kind" title="${
+          isModel
+            ? 'Modelo (inanimada) — clique para marcar como Pessoa'
+            : 'Pessoa (animada) — clique para marcar como Modelo'
+        }">${isModel ? '📊' : '👤'}</button>` +
         '<label class="voice-active" title="Enviar fotos para esta voz">' +
         `<input type="radio" name="phidro-active-voice" data-vact="active"${id === activeVoice ? ' checked' : ''} /> envio</label>` +
         '<button data-vact="export" title="Exportar .zip">💾</button>' +
@@ -705,9 +956,29 @@ function renderVoicesModal() {
     .join('');
 }
 
+// Mostra a impressão digital da chave de identidade do próprio usuário.
+async function renderIdentityLine() {
+  const el = document.getElementById('voices-identity');
+  if (!el) return;
+  try {
+    const { pubJwk } = await getIdentityKey();
+    const fpr = await keyFingerprint(pubJwk);
+    el.innerHTML =
+      `Sua chave de assinatura: <code>${escapeHtml(fpr)}</code> ` +
+      '<button type="button" id="identity-copy">copiar</button>';
+    el.querySelector('#identity-copy')?.addEventListener('click', () => {
+      if (navigator.clipboard) navigator.clipboard.writeText(fpr);
+      showToast('Impressão digital copiada.');
+    });
+  } catch {
+    el.textContent = 'Identidade de assinatura indisponível neste navegador.';
+  }
+}
+
 function openVoicesModal() {
   reconcileStack();
   renderVoicesModal();
+  renderIdentityLine();
   const m = document.getElementById('voices-modal');
   if (m) m.hidden = false;
 }
@@ -737,6 +1008,7 @@ function setupVoicesModal() {
     const act = btn.dataset.vact;
     if (act === 'up') voiceMove(id, -1);
     else if (act === 'down') voiceMove(id, 1);
+    else if (act === 'kind') voiceKindToggle(id);
     else if (act === 'export') exportVoice(id);
     else if (act === 'delete') deleteVoice(id);
   });
@@ -763,22 +1035,121 @@ function setupVoicesModal() {
     );
 }
 
+// ── Painel de revisão de divergências (passo 4) ──────────────────────────
+// Linha no painel de camadas — abre o modal e mostra a contagem.
+function refreshDivergenceRow() {
+  const panel = document.querySelector('.layer-panel');
+  if (!panel) return;
+  let row = document.getElementById('divergence-row');
+  if (!row) {
+    row = document.createElement('div');
+    row.id = 'divergence-row';
+    row.className = 'layer-row voice-row';
+    row.innerHTML =
+      '<label><span>Divergências</span></label>' +
+      '<button type="button" id="divergence-open-btn">0</button>';
+    panel.appendChild(row);
+    row
+      .querySelector('#divergence-open-btn')
+      .addEventListener('click', openDivergenceModal);
+  }
+  const n = divergentMarkers().length;
+  const btn = row.querySelector('#divergence-open-btn');
+  btn.textContent = n ? `rever ${n}` : '0';
+  btn.disabled = n === 0;
+}
+
+// Lista, no modal, cada foto cujas vozes divergem.
+function renderDivergenceModal() {
+  const box = document.getElementById('divergence-list');
+  if (!box) return;
+  const items = divergentMarkers();
+  if (!items.length) {
+    box.innerHTML = '<p class="muted">Nenhuma divergência no acervo.</p>';
+    return;
+  }
+  box.innerHTML = '';
+  for (const m of items) {
+    const ph = m._photo;
+    const el = document.createElement('button');
+    el.type = 'button';
+    el.className = 'div-item';
+    const fields = ph._divergence
+      .map((f) => `<span class="div-chip">${escapeHtml(f.label)}</span>`)
+      .join('');
+    el.innerHTML =
+      `<img src="${ph.thumb || ph.file}" loading="lazy" alt="" />` +
+      '<span class="div-item-body">' +
+      `<span class="div-item-name">${escapeHtml(
+        ph.orig || ph.id || '',
+      )}</span>` +
+      `<span class="div-chips">${fields}</span></span>`;
+    el.addEventListener('click', () => {
+      closeDivergenceModal();
+      map.setView([ph.lat, ph.lng], Math.max(map.getZoom(), 16));
+      if (!map.hasLayer(m)) m.addTo(map);
+      m.openPopup();
+    });
+    box.appendChild(el);
+  }
+}
+
+function openDivergenceModal() {
+  renderDivergenceModal();
+  const el = document.getElementById('divergence-modal');
+  if (el) el.hidden = false;
+}
+function closeDivergenceModal() {
+  const el = document.getElementById('divergence-modal');
+  if (el) el.hidden = true;
+}
+function setupDivergenceModal() {
+  const modal = document.getElementById('divergence-modal');
+  if (!modal) return;
+  modal
+    .querySelector('#divergence-modal-close')
+    ?.addEventListener('click', closeDivergenceModal);
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) closeDivergenceModal();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !modal.hidden) closeDivergenceModal();
+  });
+}
+
+// Alterna o tipo de uma voz (pessoa ↔ modelo) via POST /voice-kind.
+// O tipo da voz governa a divergência: ela só fica visível com um modelo.
+async function voiceKindToggle(vid) {
+  const v = ((photoManifest && photoManifest.voices) || []).find(
+    (x) => x.id === vid,
+  );
+  const next = v && v.kind === 'model' ? 'person' : 'model';
+  try {
+    const res = await fetch(VOICE_KIND_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ voice: vid, kind: next }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (v) v.kind = next;
+    // A divergência depende do tipo da voz → recalcula marcadores + modal.
+    applyStackChange();
+    showToast(`Voz marcada como ${next === 'model' ? 'modelo' : 'pessoa'}.`);
+  } catch (err) {
+    showToast(`Falha ao mudar o tipo: ${err.message}`);
+  }
+}
+
 // Cria uma voz nova via POST /voices, adiciona-a e a seleciona.
 async function createVoice() {
   const label = (window.prompt('Nome da nova voz:') || '').trim();
   if (!label) return;
-  const token = getUploadToken();
-  if (!token) return;
   try {
     const res = await fetch(CREATE_VOICE_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Upload-Token': token },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ label }),
     });
-    if (res.status === 403) {
-      localStorage.removeItem('phidro:uploadToken');
-      throw new Error('token inválido');
-    }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const v = await res.json(); // { id, label }
     if (!photoManifest) photoManifest = { voices: [] };
@@ -802,60 +1173,205 @@ async function reloadPhotos() {
   applyPhotoVisibility();
 }
 
+// ── Identidade de assinatura (passo 5 — assinar/verificar vozes) ─────────
+// Um par de chaves ECDSA P-256 (Web Crypto), gerado uma vez e guardado em
+// localStorage. É a identidade de quem opera este app: assina as vozes que
+// você exporta; quem recebe o .zip verifica a integridade do conteúdo.
+const ID_KEY_LS = 'phidro:idKey';
+let _idKeyPromise = null;
+
+function _b64(bytes) {
+  const a = new Uint8Array(bytes);
+  let s = '';
+  for (let i = 0; i < a.length; i++) s += String.fromCharCode(a[i]);
+  return btoa(s);
+}
+function _unb64(str) {
+  const s = atob(str);
+  const a = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) a[i] = s.charCodeAt(i);
+  return a;
+}
+
+// Carrega (ou gera, na primeira vez) o par de chaves de identidade.
+function getIdentityKey() {
+  if (_idKeyPromise) return _idKeyPromise;
+  _idKeyPromise = (async () => {
+    const algo = { name: 'ECDSA', namedCurve: 'P-256' };
+    let stored = null;
+    try {
+      stored = JSON.parse(localStorage.getItem(ID_KEY_LS) || 'null');
+    } catch {
+      stored = null;
+    }
+    if (stored && stored.priv && stored.pub) {
+      const privateKey = await crypto.subtle.importKey(
+        'jwk', stored.priv, algo, false, ['sign']);
+      return { privateKey, pubJwk: stored.pub };
+    }
+    const pair = await crypto.subtle.generateKey(algo, true, [
+      'sign',
+      'verify',
+    ]);
+    const priv = await crypto.subtle.exportKey('jwk', pair.privateKey);
+    const pub = await crypto.subtle.exportKey('jwk', pair.publicKey);
+    try {
+      localStorage.setItem(ID_KEY_LS, JSON.stringify({ priv, pub }));
+    } catch {}
+    return { privateKey: pair.privateKey, pubJwk: pub };
+  })();
+  return _idKeyPromise;
+}
+
+// Assina bytes com a chave de identidade; devolve a assinatura em base64.
+async function signBytes(bytes) {
+  const { privateKey } = await getIdentityKey();
+  const sig = await crypto.subtle.sign(
+    { name: 'ECDSA', hash: 'SHA-256' }, privateKey, bytes);
+  return _b64(sig);
+}
+
+// Verifica uma assinatura base64 contra a chave pública (JWK) embutida.
+async function verifyBytes(bytes, sigB64, pubJwk) {
+  try {
+    const key = await crypto.subtle.importKey(
+      'jwk', pubJwk, { name: 'ECDSA', namedCurve: 'P-256' }, false,
+      ['verify']);
+    return await crypto.subtle.verify(
+      { name: 'ECDSA', hash: 'SHA-256' }, key, _unb64(sigB64), bytes);
+  } catch {
+    return false;
+  }
+}
+
+// Impressão digital curta e estável de uma chave pública — SHA-256 das
+// coordenadas, em grupos hex. Serve para comparar identidades a olho.
+async function keyFingerprint(pubJwk) {
+  if (!pubJwk || !pubJwk.x || !pubJwk.y) return '????';
+  const data = new TextEncoder().encode(`${pubJwk.x}.${pubJwk.y}`);
+  const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', data));
+  return [...hash.slice(0, 8)]
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('')
+    .replace(/(.{4})(?=.)/g, '$1-');
+}
+
+// Carrega o JSZip sob demanda (assinar/verificar mexe no .zip da voz).
+async function ensureJSZip() {
+  if (!window.JSZip) await loadScript(JSZIP_URL);
+  return window.JSZip;
+}
+
 // Exporta a voz selecionada como .zip (voice.json + originais + fotos).
 async function exportVoice(vid) {
   if (!vid || vid === 'all') {
     showToast('Selecione uma voz para exportar.');
     return;
   }
-  const token = getUploadToken();
-  if (!token) return;
   showToast('Preparando o .zip da voz…');
   try {
     const res = await fetch('/voice-export', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Upload-Token': token },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ voice: vid }),
     });
-    if (res.status === 403) {
-      localStorage.removeItem('phidro:uploadToken');
-      throw new Error('token inválido');
-    }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const blob = await res.blob();
+    let blob = await res.blob();
+    // Assina a voice.json e embute uma voice.sig no .zip. Se algo falhar,
+    // exporta sem assinatura — melhor um .zip sem assinatura que nenhum.
+    let signed = false;
+    try {
+      const JSZip = await ensureJSZip();
+      const zip = await JSZip.loadAsync(blob);
+      const vjFile = zip.file('voice.json');
+      if (vjFile) {
+        const vjBytes = await vjFile.async('uint8array');
+        const { pubJwk } = await getIdentityKey();
+        zip.file(
+          'voice.sig',
+          JSON.stringify(
+            {
+              alg: 'ECDSA-P256-SHA256',
+              pub: pubJwk,
+              sig: await signBytes(vjBytes),
+              signedAt: new Date().toISOString(),
+            },
+            null,
+            2,
+          ),
+        );
+        blob = await zip.generateAsync({
+          type: 'blob',
+          compression: 'DEFLATE',
+        });
+        signed = true;
+      }
+    } catch (err) {
+      console.warn('[voice] assinatura falhou:', err);
+    }
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download =
       vid.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-|-$/g, '') + '.zip';
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    showToast(
+      signed ? 'Voz exportada e assinada.' : 'Voz exportada (sem assinatura).',
+    );
   } catch (err) {
     showToast(`Falha ao exportar: ${err.message}`);
   }
 }
 
-// Importa uma voz de um .zip, recarrega o manifesto e a seleciona.
+// Importa uma voz de um .zip: verifica a assinatura (integridade), envia ao
+// backend e reporta o veredito. Assinatura inválida não barra o import — a
+// voz entra marcada como não verificada (decisão do passo 5).
 async function importVoice(file) {
-  const token = getUploadToken();
-  if (!token) return;
   showToast('Importando voz…');
+  // Verifica a voice.sig antes de enviar.
+  let hadSig = false;
+  let verified = false;
+  let fpr = '';
   try {
+    const JSZip = await ensureJSZip();
+    const zip = await JSZip.loadAsync(file);
+    const vjFile = zip.file('voice.json');
+    const sigFile = zip.file('voice.sig');
+    if (vjFile && sigFile) {
+      hadSig = true;
+      const vjBytes = await vjFile.async('uint8array');
+      const sigMeta = JSON.parse(await sigFile.async('string'));
+      verified = await verifyBytes(vjBytes, sigMeta.sig, sigMeta.pub);
+      fpr = await keyFingerprint(sigMeta.pub);
+    }
+  } catch (err) {
+    console.warn('[voice] verificação falhou:', err);
+  }
+  try {
+    const headers = {};
+    if (hadSig) {
+      headers['X-Voice-Verified'] = verified ? '1' : '0';
+      headers['X-Voice-Pubkey'] = fpr;
+    }
     const res = await fetch('/voice-import', {
       method: 'POST',
-      headers: { 'X-Upload-Token': token },
+      headers,
       body: file,
     });
-    if (res.status === 403) {
-      localStorage.removeItem('phidro:uploadToken');
-      throw new Error('token inválido');
-    }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const r = await res.json();
     activeVoice = r.voice;
     saveStack();
     await reloadPhotos();
     renderVoicesModal();
-    showToast(`Voz "${r.label}" importada — ${r.imported} foto(s).`);
+    const sigNote = !hadSig
+      ? 'sem assinatura'
+      : verified
+        ? `assinatura ✓ ${fpr}`
+        : 'assinatura inválida ⚠';
+    showToast(
+      `Voz "${r.label}" importada — ${r.imported} foto(s) · ${sigNote}.`,
+    );
   } catch (err) {
     showToast(`Falha ao importar: ${err.message}`);
   }
@@ -878,18 +1394,12 @@ async function deleteVoice(vid) {
   ) {
     return;
   }
-  const token = getUploadToken();
-  if (!token) return;
   try {
     const res = await fetch('/voice-delete', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Upload-Token': token },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ voice: vid }),
     });
-    if (res.status === 403) {
-      localStorage.removeItem('phidro:uploadToken');
-      throw new Error('token inválido');
-    }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     if (activeVoice === vid) activeVoice = 'voice/censo';
     photoOff.delete(vid);
@@ -912,6 +1422,11 @@ function applyPhotoVisibility() {
     const shouldShow = photosVisible && matches;
     if (shouldShow && !map.hasLayer(m)) m.addTo(map);
     else if (!shouldShow && map.hasLayer(m)) map.removeLayer(m);
+    // Marcadores-fantasma da divergência de GPS acompanham a foto.
+    for (const g of m._ghosts || []) {
+      if (shouldShow && !map.hasLayer(g)) g.addTo(map);
+      else if (!shouldShow && map.hasLayer(g)) map.removeLayer(g);
+    }
   }
   renderPhotoFilterChip();
 }
@@ -946,18 +1461,12 @@ async function deleteArchivedPhoto(m) {
   ) {
     return;
   }
-  const token = getUploadToken();
-  if (!token) return;
   try {
     const res = await fetch(DELETE_PHOTO_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Upload-Token': token },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: ph.id }),
     });
-    if (res.status === 403) {
-      localStorage.removeItem('phidro:uploadToken');
-      throw new Error('token inválido');
-    }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     map.removeLayer(m);
     photoMarkers = photoMarkers.filter((x) => x !== m);
@@ -1046,6 +1555,8 @@ function renderRoutePhotos(entry) {
 const EXIFR_URL = 'https://cdn.jsdelivr.net/npm/exifr@7/dist/full.umd.js';
 const HEIC2ANY_URL =
   'https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js';
+const JSZIP_URL =
+  'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js';
 // URL da Cloud Function que emite URLs assinadas (backend/sign-upload/).
 // Deixe '' para manter o envio ao acervo desativado — só o preview local
 // fica disponível. Preencha após fazer o deploy da função.
@@ -1054,6 +1565,7 @@ const HEIC2ANY_URL =
 const SIGN_UPLOAD_URL = '/sign-upload';
 const DELETE_PHOTO_URL = '/delete-photo';
 const CREATE_VOICE_URL = '/voices';
+const VOICE_KIND_URL = '/voice-kind';
 let uploadedMarkers = [];
 let uploadedData = [];
 
@@ -1238,17 +1750,6 @@ function exportUploadedPhotos() {
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
-// Token de envio ao acervo — digitado em runtime, guardado só neste aparelho.
-// Nunca fica no código publicado.
-function getUploadToken() {
-  let t = localStorage.getItem('phidro:uploadToken');
-  if (!t) {
-    t = (window.prompt('Token de envio ao acervo:') || '').trim();
-    if (t) localStorage.setItem('phidro:uploadToken', t);
-  }
-  return t;
-}
-
 // PUT do arquivo para a URL assinada. Usa XMLHttpRequest em vez de fetch:
 // o Safari falha de forma intermitente um fetch() com corpo grande entre
 // origens ("Load failed" / "network connection lost") — o XHR não tem o bug.
@@ -1276,8 +1777,6 @@ async function uploadToArchive() {
     showToast('Nada novo para enviar ao acervo.');
     return;
   }
-  const token = getUploadToken();
-  if (!token) return;
   // As fotos vão para a voz ativa (alvo de upload escolhido no modal Vozes).
   const uploadVoice = activeVoice || 'voice/censo';
   const voiceLabel =
@@ -1292,7 +1791,7 @@ async function uploadToArchive() {
       const ct = fileContentType(p.file);
       const res = await fetch(SIGN_UPLOAD_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Upload-Token': token },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           filename: p.orig,
           contentType: ct,
@@ -1300,10 +1799,6 @@ async function uploadToArchive() {
           voice: uploadVoice,
         }),
       });
-      if (res.status === 403) {
-        localStorage.removeItem('phidro:uploadToken');
-        throw new Error('token inválido');
-      }
       if (!res.ok) throw new Error(`assinatura HTTP ${res.status}`);
       const { uploadUrl } = await res.json();
       await putToSignedUrl(uploadUrl, p.file, ct);
@@ -1769,6 +2264,8 @@ showPhotos();
 refreshVoicePicker();
 // Liga os botões do modal "Vozes" (abrir/fechar/nova/importar).
 setupVoicesModal();
+// Liga o modal de revisão de divergências (passo 4).
+setupDivergenceModal();
 
 // ─── State ───────────────────────────────────────────────────────────────────
 const routesList = document.getElementById('routes-list');

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #
-# Sync the static site at public/ to gs://telhas/rota_app.
+# Sync the static site at public/ to gs://telhas/rotas_app.
+# Served at https://tiles.pedalhidrografi.co/rotas_app/ via the CDN.
 #
 # Usage:
 #   scripts/deploy.sh             # sync (uploads new + changed, deletes orphans)
@@ -9,7 +10,7 @@
 # Requirements:
 #   - gcloud CLI installed (https://cloud.google.com/sdk/docs/install)
 #   - authenticated: `gcloud auth login`  (or service account)
-#   - permissions to write to gs://telhas/rota_app
+#   - permissions to write to gs://telhas/rotas_app
 #
 # Behavior notes:
 #   - Uses the modern `gcloud storage rsync`, which is faster than the old
@@ -24,7 +25,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOCAL_DIR="$REPO_ROOT/public"
-BUCKET_DIR="gs://telhas/rota_app"
+BUCKET_DIR="gs://telhas/rotas_app"
 
 # ─── Argument parsing ────────────────────────────────────────────────────────
 DRY=()
@@ -100,11 +101,11 @@ if [[ "${#DRY[@]}" -eq 0 ]]; then
     --cache-control="no-cache, must-revalidate" --quiet
   echo "→ Cache-busted index.html with ?v=$DEPLOY_VERSION (app.js, style.css)"
 
-  # Hard-invalidate Cloud CDN edge caches for /rota_app/*. Override via env
+  # Hard-invalidate Cloud CDN edge caches for /rotas_app/*. Override via env
   # vars if your project layout differs (or set CLOUD_CDN_URL_MAP="" to skip).
   CDN_URL_MAP="${CLOUD_CDN_URL_MAP-tiles-map}"
   CDN_PROJECT="${CLOUD_CDN_PROJECT-pedal-hidrografico}"
-  CDN_PATH="${CLOUD_CDN_INVALIDATE_PATH-/rota_app/*}"
+  CDN_PATH="${CLOUD_CDN_INVALIDATE_PATH-/rotas_app/*}"
   if [[ -n "$CDN_URL_MAP" ]]; then
     echo "→ Invalidating Cloud CDN: $CDN_URL_MAP path=$CDN_PATH"
     gcloud compute url-maps invalidate-cdn-cache "$CDN_URL_MAP" \
@@ -115,5 +116,5 @@ fi
 
 echo "✓ Done."
 echo "  Bucket path:    $BUCKET_DIR"
-echo "  Public URL:     https://telhas.pedalhidrografi.co/rota_app/index.html"
+echo "  Public URL:     https://tiles.pedalhidrografi.co/rotas_app/index.html"
 echo "  (Or whatever your CDN / load balancer maps to that prefix.)"

@@ -11,9 +11,9 @@ Raspberry Pi
   └─ gunicorn → main.py (Flask)
         ├─ GET  /              → public/ (o app do mapa)
         ├─ GET  /fotos/...     → fotos processadas + photos.jsonld
-        ├─ POST /sign-upload   → URL de PUT (token)
+        ├─ POST /sign-upload   → URL de PUT
         ├─ PUT  /put/...       → recebe + processa a foto
-        └─ POST /delete-photo  → apaga (token)
+        └─ POST /delete-photo  → apaga
   └─ cloudflared → túnel HTTPS público
 ```
 
@@ -70,10 +70,9 @@ python3 -m venv venv
 ./venv/bin/pip install -r requirements.txt
 ```
 
-## 3. Token e teste
+## 3. Teste local
 
 ```sh
-export UPLOAD_SECRET="<um-segredo-seu>"
 export PHIDRO_DATA="/home/pi/phidro-data"
 ./venv/bin/python main.py        # sobe em http://0.0.0.0:8000
 ```
@@ -83,7 +82,7 @@ Abra `http://<ip-do-pi>:8000/` na rede local — o mapa deve carregar.
 
 ## 4. Serviço no boot (systemd)
 
-Edite `phidro.service` — troque `UPLOAD_SECRET`, confira os caminhos — e:
+Edite `phidro.service` — confira os caminhos — e:
 
 ```sh
 sudo cp phidro.service /etc/systemd/system/phidro.service
@@ -123,8 +122,7 @@ serviço para `http://localhost:8000`, e rode o `cloudflared` como serviço
 
 `public/app.js` usa caminhos relativos (`/sign-upload`, `/delete-photo`,
 `/fotos/photos.jsonld`) — como o Pi serve o app e a API na **mesma origem**,
-funciona sem CORS e sem configurar URLs. O token é pedido uma vez no
-navegador e fica no `localStorage`.
+funciona sem CORS e sem configurar URLs.
 
 ## Limitações e notas
 
@@ -133,10 +131,10 @@ navegador e fica no `localStorage`.
   (externo, gratuito) continua funcionando; só o relevo colorido some até
   você hospedar esses tiles em algum lugar (o Pi pode servi-los como
   arquivos estáticos, se você tiver a pirâmide de tiles).
-- **Segurança:** `/sign-upload` e `/delete-photo` exigem o token. O `/put`
-  confia na URL (contém um uuid imprevisível que só o `/sign-upload`
-  entrega) — mesma lógica da URL assinada da nuvem. Como o endpoint é
-  público, mantenha o token só com quem deve enviar/apagar.
+- **Segurança:** não há autenticação — presume-se que quem alcança o
+  servidor é de confiança. Qualquer um que abrir a URL pode enviar e apagar
+  fotos. Se isso deixar de valer, restrinja o acesso na borda (regra do
+  Cloudflare Tunnel, lista de IPs, VPN) ou reintroduza um token.
 - **HEIC:** decodificação em ARM é mais lenta que num PC, mas para o volume
   do coletivo (poucas fotos por pedal) é tranquilo.
 
@@ -155,8 +153,8 @@ python3 -m venv venv
 ```
 
 **Rodar no boot — launchd, não systemd.** Use o `phidro.plist` desta pasta
-(é o equivalente macOS do `phidro.service`). Edite-o trocando o usuário, os
-caminhos e o `UPLOAD_SECRET`, depois:
+(é o equivalente macOS do `phidro.service`). Edite-o trocando o usuário e os
+caminhos, depois:
 
 ```sh
 sudo cp phidro.plist /Library/LaunchDaemons/co.pedalhidrografi.phidro.plist

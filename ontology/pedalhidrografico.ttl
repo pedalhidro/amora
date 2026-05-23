@@ -9,7 +9,7 @@
 # `ph:` apenas para o que é específico do Pedal Hidrográfico.
 #
 # Namespace: https://pedalhidrografi.co/vocab/1.0/
-# Versão: 1.0
+# Versão: 1.1
 
 @prefix ph:      <https://pedalhidrografi.co/vocab/1.0/> .
 @prefix rdf:     <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
@@ -32,7 +32,7 @@ ph: a owl:Ontology ;
                   "Vocabulário Pedal Hidrográfico"@pt ;
     dcterms:description
         "Vocabulary for the rides of the Pedal Hidrográfico cycling collective: tours, planned and actual routes, narrative, attendance, georeferenced media and social posts."@en ;
-    owl:versionInfo "1.0" ;
+    owl:versionInfo "1.1" ;
     dcterms:creator "Pedal Hidrográfico" ;
     dcterms:license <https://creativecommons.org/licenses/by-sa/4.0/> .
 
@@ -150,6 +150,25 @@ ph:SeriesEntry a owl:Class ;
     rdfs:label "Series entry"@en , "Entrada de série"@pt ;
     rdfs:comment
         "A tour's membership in one numbering series: pairs a ph:Series with the edition number the tour holds in it. A tour has one ph:SeriesEntry per series it is numbered in (e.g. eH 1 and PH 1 are two entries of the same tour)."@en .
+
+# ─── Map layers ──────────────────────────────────────────────────────────
+
+ph:MapLayer a owl:Class ;
+    rdfs:label "Map layer"@en , "Camada do mapa"@pt ;
+    rdfs:comment
+        "A web tile layer the app draws as cartographic backdrop, under the routes and media. Abstract — use ph:BasemapLayer or ph:OverlayLayer."@en .
+
+ph:BasemapLayer a owl:Class ;
+    rdfs:subClassOf ph:MapLayer ;
+    rdfs:label "Basemap layer"@en , "Camada base"@pt ;
+    rdfs:comment
+        "An opaque background layer; exactly one is active at a time (the app selects it with a radio button)."@en .
+
+ph:OverlayLayer a owl:Class ;
+    rdfs:subClassOf ph:MapLayer ;
+    rdfs:label "Overlay layer"@en , "Camada de sobreposição"@pt ;
+    rdfs:comment
+        "A semi-transparent layer drawn over the basemap; any number may be visible at once, each with its own opacity."@en .
 
 # ═════════════════════════════════════════════════════════════════════════
 # OBJECT PROPERTIES
@@ -294,6 +313,44 @@ ph:gatheringTime a owl:DatatypeProperty ;
     rdfs:label "gathering time"@en , "horário de encontro"@pt ;
     rdfs:comment "When participants should arrive — the schema:doorTime analogue."@en .
 
+# ─── Map layer configuration ─────────────────────────────────────────────
+
+ph:tileUrlTemplate a owl:DatatypeProperty , owl:FunctionalProperty ;
+    rdfs:domain ph:MapLayer ;
+    rdfs:range xsd:string ;
+    rdfs:label "tile URL template"@en , "modelo de URL dos tiles"@pt ;
+    rdfs:comment "XYZ tile template with {z}/{x}/{y} placeholders. Used by tiled (non-WMS) layers."@en .
+
+ph:wmsEndpoint a owl:DatatypeProperty , owl:FunctionalProperty ;
+    rdfs:domain ph:MapLayer ;
+    rdfs:range xsd:anyURI ;
+    rdfs:label "WMS endpoint"@en , "endpoint WMS"@pt ;
+    rdfs:comment "Base URL of the WMS service. Used by WMS layers in place of ph:tileUrlTemplate."@en .
+
+ph:wmsLayerName a owl:DatatypeProperty , owl:FunctionalProperty ;
+    rdfs:domain ph:MapLayer ;
+    rdfs:range xsd:string ;
+    rdfs:label "WMS layer name"@en , "nome da camada WMS"@pt ;
+    rdfs:comment "The layer identifier requested from the WMS service, e.g. 'SaraBrasil_1930'."@en .
+
+ph:maxZoom a owl:DatatypeProperty , owl:FunctionalProperty ;
+    rdfs:domain ph:MapLayer ;
+    rdfs:range xsd:integer ;
+    rdfs:label "maximum zoom"@en , "zoom máximo"@pt ;
+    rdfs:comment "Deepest zoom level the layer serves tiles for."@en .
+
+ph:defaultOpacity a owl:DatatypeProperty , owl:FunctionalProperty ;
+    rdfs:domain ph:MapLayer ;
+    rdfs:range xsd:decimal ;
+    rdfs:label "default opacity"@en , "opacidade padrão"@pt ;
+    rdfs:comment "Opacity the layer loads with, from 0 (transparent) to 1 (opaque)."@en .
+
+ph:enabledByDefault a owl:DatatypeProperty , owl:FunctionalProperty ;
+    rdfs:domain ph:MapLayer ;
+    rdfs:range xsd:boolean ;
+    rdfs:label "enabled by default"@en , "ativa por padrão"@pt ;
+    rdfs:comment "Whether the layer is on when the app first loads — the selected basemap, or a visible overlay."@en .
+
 # ─── RideMetrics quantities (QUDT pattern) ───────────────────────────────
 # Each ranges qudt:Quantity; a quantity carries qudt:numericValue + qudt:unit.
 
@@ -378,3 +435,47 @@ ph:series-S a ph:Series ;
     skos:prefLabel "S"@pt ;
     rdfs:comment "Pedal Hidrográfico Suado — pedais PH não-canônicos, de maior exigência energética."@pt ;
     ph:displayPrecedence 5 .
+
+# ═════════════════════════════════════════════════════════════════════════
+# INDIVIDUALS — Map layers
+# ═════════════════════════════════════════════════════════════════════════
+# As camadas cartográficas que o app desenha sob as rotas e as fotos. A
+# configuração-fonte vive em public/app.js (BASE_LAYERS / OVERLAY_LAYERS);
+# aqui ela fica descrita de forma independente da implementação.
+
+ph:layer-osm a ph:BasemapLayer ;
+    rdfs:label "OpenStreetMap"@en , "OpenStreetMap"@pt ;
+    ph:tileUrlTemplate "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" ;
+    ph:maxZoom 19 ;
+    ph:defaultOpacity 1.0 ;
+    ph:enabledByDefault true ;
+    dcterms:rights "© OpenStreetMap contributors" .
+
+ph:layer-satellite a ph:BasemapLayer ;
+    rdfs:label "Satellite"@en , "Satélite"@pt ;
+    rdfs:comment "Esri World Imagery — note the {z}/{y}/{x} tile order."@en ;
+    ph:tileUrlTemplate "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" ;
+    ph:maxZoom 19 ;
+    ph:defaultOpacity 1.0 ;
+    ph:enabledByDefault false ;
+    dcterms:rights "Imagery © Esri, Maxar, Earthstar Geographics, and the GIS User Community" .
+
+ph:layer-rmsampa a ph:OverlayLayer ;
+    rdfs:label "Colour topography"@en , "Topografia colorida"@pt ;
+    rdfs:comment "Pedal Hidrográfico's own shaded-relief topographic tiles for the São Paulo metropolitan region."@en ;
+    ph:tileUrlTemplate "https://telhas.pedalhidrografi.co/rmsampa-v2/{z}/{x}/{y}.png" ;
+    ph:maxZoom 19 ;
+    ph:defaultOpacity 0.85 ;
+    ph:enabledByDefault true ;
+    dcterms:publisher "Pedal Hidrográfico" ;
+    dcterms:rights "Topografia: Pedal Hidrográfico" .
+
+ph:layer-sara1930 a ph:OverlayLayer ;
+    rdfs:label "SARA Brasil 1930"@en , "SARA Brasil 1930"@pt ;
+    rdfs:comment "Historical 1930 aerial-photo mosaic of São Paulo, served from GeoSampa's GeoServer over WMS."@en ;
+    ph:wmsEndpoint "https://raster.geosampa.prefeitura.sp.gov.br/geoserver/geoportal/wms"^^xsd:anyURI ;
+    ph:wmsLayerName "SaraBrasil_1930" ;
+    ph:maxZoom 19 ;
+    ph:defaultOpacity 0.85 ;
+    ph:enabledByDefault false ;
+    dcterms:rights "SARA Brasil 1930 · GeoSampa / Prefeitura de São Paulo" .

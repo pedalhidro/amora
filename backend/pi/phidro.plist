@@ -3,7 +3,7 @@
   "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
   launchd LaunchDaemon — Pedal Hidrografico (equivalente macOS do
-  phidro.service do systemd). TROQUE: o usuario, os caminhos e o token.
+  phidro.service do systemd). TROQUE: o usuario e os caminhos.
   Instalar: ver a secao "Rodar no macOS" do README.
 -->
 <plist version="1.0">
@@ -19,8 +19,6 @@
 
   <key>EnvironmentVariables</key>
   <dict>
-    <key>UPLOAD_SECRET</key>
-    <string>TROQUE-ESTE-TOKEN</string>
     <key>PHIDRO_DATA</key>
     <string>/Users/danilo/phidro-data</string>
   </dict>
