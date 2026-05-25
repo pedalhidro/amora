@@ -1,0 +1,47 @@
+@prefix censo: <https://pedalhidrografico.example/ont#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix ph: <https://pedalhidrografico.example/ont#> .
+@prefix phd: <https://pedalhidrografico.example/id/> .
+@prefix prov: <http://www.w3.org/ns/prov#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix schema: <https://schema.org/> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+# Data Graph
+
+### Orgs
+
+phd:pedal_hidrografico a schema:SportsOrganization ;
+    schema:name "Pedal Hidrográfico" ;
+    schema:sport "Cycling" ;
+    schema:url <https://pedalhidrografi.co/> ;
+    schema:sameAs <https://www.instagram.com/pedalhidrografico/> ;
+    schema:areaServed [ a schema:City ; schema:name "São Paulo" ] ;
+    schema:description "Coletivo de ciclismo urbano focado em rios e córregos de São Paulo."@pt .
+
+phd:bicipassarinhada a schema:SportsOrganization ;
+    schema:name "Bicipassarinhada" ;
+    schema:sport "Cycling" .
+
+### Rides 
+
+phd:pha1_narrative a censo:Narrative ;
+    prov.a
+
+phd:ph1 a censo:BicycleTour ;
+    censo:title "Água Preta e Tiburtino" ;
+    censo:hasEdition censo:PH1, censo:BP1 ;
+    censo:scheduledStartTime "2024-09-09 20:00" ;
+    censo:narrative ph1_narrative .
+
+censo:PH a censo:Series ;
+    censo:inSeries censo:PH ;
+    censo:editionNumber 1 .
+
+censo:BP1 a censo:Series ;
+    censo:inSeries censo:PH ;
+    censo:editionNumber 1 .
+
+

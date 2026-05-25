@@ -1,0 +1,212 @@
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix ph: <https://pedalhidrografico.example/ont#> .
+@prefix schema: <https://schema.org/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+# =============================================================================
+#  SHACL shapes for the Pedal Hidrográfico census graph.
+#  - Datatypes/cardinalities match the data and the Tour SPARQL query.
+#  - Property shapes on the Tour carry sh:name / sh:order so the same shape can
+#    drive a capture form (shape-driven UI), not just validation.
+#  - Hard constraints are sh:Violation (default); data-quality checks are
+#    sh:Warning, so they surface as feedback without failing the graph.
+# =============================================================================
+
+ph:TourShape a sh:NodeShape ;
+    sh:targetClass ph:Tour ;
+    rdfs:label "Pedal Hidrográfico tour" ;
+    
+    # --- identifiers (always present) ---
+    sh:property [
+        sh:path ph:uuid ;
+        sh:name "Global edition id (eH)" ;
+        sh:order 1 ;
+        sh:datatype xsd:integer ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:minInclusive 1
+    ] ;
+    sh:property [
+        sh:path ph:edition ;
+        sh:name "Pedal Hidrográfico nº (PH)" ;
+        sh:order 2 ;
+        sh:description "Sequential PH number; absent for non-regular editions." ;
+        sh:datatype xsd:integer ;
+        sh:maxCount 1 ;
+        sh:minInclusive 1
+    ] ;
+    sh:property [ sh:path ph:date ; sh:name "Date" ; sh:order 3 ; sh:datatype xsd:date ; sh:minCount 1 ; sh:maxCount 1 ] ;
+    sh:property [ sh:path schema:name ; sh:name "Name" ; sh:order 4 ; sh:datatype xsd:string ; sh:maxCount 1 ] ;
+    sh:property [ sh:path ph:category ; sh:name "Category" ; sh:order 5 ; sh:datatype xsd:string ; sh:maxCount 1 ] ;
+    
+    # --- booleans ---
+    sh:property [
+        sh:path ph:hadPublicAnnouncement ;
+        sh:name "Had public announcement?" ;
+        sh:order 6 ;
+        sh:datatype xsd:boolean ;
+        sh:maxCount 1
+    ] ;
+    sh:property [
+        sh:path ph:hadBikeLift ;
+        sh:name "Had bonde / bike-lift?" ;
+        sh:order 7 ;
+        sh:datatype xsd:boolean ;
+        sh:maxCount 1
+    ] ;
+    sh:property [ sh:path ph:rained ; sh:name "Rained?" ; sh:order 8 ; sh:datatype xsd:boolean ; sh:maxCount 1 ] ;
+    
+    # --- links & times ---
+    sh:property [
+        sh:path ph:instagramPost ;
+        sh:name "Instagram post" ;
+        sh:order 9 ;
+        sh:datatype xsd:anyURI ;
+        sh:maxCount 1
+    ] ;
+    sh:property [
+        sh:path ph:plannedDeparture ;
+        sh:name "Planned departure" ;
+        sh:order 10 ;
+        sh:datatype xsd:dateTime ;
+        sh:maxCount 1
+    ] ;
+    sh:property [
+        sh:path ph:observedDeparture ;
+        sh:name "Observed departure" ;
+        sh:order 11 ;
+        sh:datatype xsd:dateTime ;
+        sh:maxCount 1
+    ] ;
+    sh:property [
+        sh:path ph:observedArrival ;
+        sh:name "Observed arrival" ;
+        sh:order 12 ;
+        sh:datatype xsd:dateTime ;
+        sh:maxCount 1
+    ] ;
+    
+    # --- observed counts (the "observed" half of derived-or-observed) ---
+    sh:property [
+        sh:path ph:observedHeadcount ;
+        sh:name "Observed headcount" ;
+        sh:order 13 ;
+        sh:datatype xsd:integer ;
+        sh:minInclusive 0 ;
+        sh:maxCount 1
+    ] ;
+    sh:property [
+        sh:path ph:observedNewcomerCount ;
+        sh:name "Observed newcomer count" ;
+        sh:order 14 ;
+        sh:datatype xsd:integer ;
+        sh:minInclusive 0 ;
+        sh:maxCount 1
+    ] ;
+    sh:property [
+        sh:path ph:observedActivityCount ;
+        sh:name "Observed Strava-activity count" ;
+        sh:order 15 ;
+        sh:datatype xsd:integer ;
+        sh:minInclusive 0 ;
+        sh:maxCount 1
+    ] ;
+    sh:property [
+        sh:path ph:mediaCount ;
+        sh:name "Media count" ;
+        sh:order 16 ;
+        sh:datatype xsd:integer ;
+        sh:minInclusive 0 ;
+        sh:maxCount 1
+    ] ;
+    sh:property [ sh:path ph:photosCollected ; sh:datatype xsd:boolean ; sh:maxCount 1 ] ;
+    sh:property [ sh:path ph:attendanceListed ; sh:datatype xsd:boolean ; sh:maxCount 1 ] ;
+    
+    # --- sub-resources ---
+    sh:property [
+        sh:path ph:plannedRoute ;
+        sh:name "Planned route" ;
+        sh:order 17 ;
+        sh:class ph:Route ;
+        sh:maxCount 1 ;
+        sh:nodeKind sh:IRI
+    ] ;
+    sh:property [
+        sh:path ph:actualActivity ;
+        sh:name "Actual activity" ;
+        sh:order 18 ;
+        sh:class ph:Activity ;
+        sh:maxCount 1 ;
+        sh:nodeKind sh:IRI
+    ] ;
+    
+    # --- people (multi-valued: no maxCount) ---
+    sh:property [
+        sh:path ph:routedBy ;
+        sh:name "Routed by" ;
+        sh:order 19 ;
+        sh:class schema:Person ;
+        sh:nodeKind sh:IRI
+    ] ;
+    sh:property [
+        sh:path ph:writtenBy ;
+        sh:name "Written by" ;
+        sh:order 20 ;
+        sh:class schema:Person ;
+        sh:nodeKind sh:IRI
+    ] ;
+    sh:property [ sh:path ph:artBy ; sh:name "Art by" ; sh:order 21 ; sh:class schema:Person ; sh:nodeKind sh:IRI ] ;
+    sh:property [
+        sh:path ph:attendance ;
+        sh:name "Attendance" ;
+        sh:order 22 ;
+        sh:class ph:Attendance ;
+        sh:nodeKind sh:IRI
+    ] .
+
+# --- cross-field data-quality check (SHACL-SPARQL), shape-level Warning so it
+#     surfaces as feedback without failing the graph ---
+ph:TourConsistencyShape a sh:NodeShape ;
+    sh:targetClass ph:Tour ;
+    sh:severity sh:Warning ;
+    sh:sparql [
+        a sh:SPARQLConstraint ;
+        sh:message "Observed newcomer count exceeds observed headcount." ;
+        sh:select """
+            SELECT $this ?n ?h WHERE {
+                $this <https://pedalhidrografico.example/ont#observedNewcomerCount> ?n .
+                $this <https://pedalhidrografico.example/ont#observedHeadcount> ?h .
+                FILTER (?n > ?h)
+            }
+        """
+    ] .
+
+# --- planned route ---
+ph:RouteShape a sh:NodeShape ;
+    sh:targetClass ph:Route ;
+    sh:property [ sh:path schema:url ; sh:datatype xsd:anyURI ; sh:maxCount 1 ] ;
+    sh:property [ sh:path ph:energyKJ ; sh:datatype xsd:decimal ; sh:minInclusive 0 ; sh:maxCount 1 ] .
+
+# --- actual activity ---
+ph:ActivityShape a sh:NodeShape ;
+    sh:targetClass ph:Activity ;
+    sh:property [ sh:path schema:url ; sh:datatype xsd:anyURI ; sh:maxCount 1 ] ;
+    sh:property [ sh:path ph:energyKJ ; sh:datatype xsd:decimal ; sh:minInclusive 0 ; sh:maxCount 1 ] .
+
+# --- attendance (one person per record) ---
+ph:AttendanceShape a sh:NodeShape ;
+    sh:targetClass ph:Attendance ;
+    sh:property [ sh:path ph:person ; sh:class schema:Person ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ] ;
+    sh:property [ sh:path ph:newcomer ; sh:datatype xsd:boolean ; sh:maxCount 1 ] ;
+    sh:property [ sh:path ph:stravaActivity ; sh:maxCount 1 ] .
+
+# --- person ---
+ph:PersonShape a sh:NodeShape ;
+    sh:targetClass schema:Person ;
+    sh:property [ sh:path schema:name ; sh:datatype xsd:string ; sh:minCount 1 ; sh:maxCount 1 ] .
+
+# --- collected media ---
+ph:MediaShape a sh:NodeShape ;
+    sh:targetClass ph:Media ;
+    sh:property [ sh:path ph:depictsTour ; sh:class ph:Tour ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ] .

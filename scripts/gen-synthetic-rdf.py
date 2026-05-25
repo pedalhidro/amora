@@ -19,15 +19,22 @@ import random
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+BASE = "https://pedalhidrografi.co/id"
+
 PREFIXES = """\
 @prefix ph:      <https://pedalhidrografi.co/censo/1.0/> .
 @prefix dcterms: <http://purl.org/dc/terms/> .
 @prefix prov:    <http://www.w3.org/ns/prov#> .
 @prefix schema:  <https://schema.org/> .
 @prefix xsd:     <http://www.w3.org/2001/XMLSchema#> .
-@prefix id:      <https://pedalhidrografi.co/id/> .
 
 """
+
+
+def iri(*segments: str) -> str:
+    """Build a full angle-bracket IRI. Turtle PN_LOCAL forbids '/', so
+    hierarchical paths must be written as full IRIs, not prefixed names."""
+    return "<" + "/".join((BASE, *segments)) + ">"
 
 LICENSES = [
     "<https://creativecommons.org/licenses/by-sa/4.0/>",
@@ -58,24 +65,24 @@ def rnd_dt(base: datetime, jitter_min: int = 60 * 24 * 30) -> str:
 # ---------------------------------------------------------------------------
 
 def person(tag: str, name: str) -> tuple[str, str]:
-    iri = f"id:person/{tag}"
+    subj = iri("person", tag)
     block = (
-        f"{iri} a schema:Person ;\n"
+        f"{subj} a schema:Person ;\n"
         f'    schema:name "{name}" .\n'
     )
-    return iri, block
+    return subj, block
 
 
 def geo(tag: str, lat: float | None = None, lon: float | None = None) -> tuple[str, str]:
-    iri = f"id:geo/{tag}"
+    subj = iri("geo", tag)
     lat = rnd_lat() if lat is None else lat
     lon = rnd_lon() if lon is None else lon
     block = (
-        f"{iri} a schema:GeoCoordinates ;\n"
+        f"{subj} a schema:GeoCoordinates ;\n"
         f"    schema:latitude  {lat:.6f}e+0 ;\n"
         f"    schema:longitude {lon:.6f}e+0 .\n"
     )
-    return iri, block
+    return subj, block
 
 
 def photo(tag: str, author_iri: str, geo_iri: str,
@@ -83,10 +90,10 @@ def photo(tag: str, author_iri: str, geo_iri: str,
           license_iri: str | None = None,
           drop: set[str] | None = None) -> tuple[str, str]:
     drop = drop or set()
-    iri = f"id:photo/{tag}"
+    subj = iri("photo", tag)
     fov = round(random.uniform(40, 110), 2) if fov is None else fov
     license_iri = random.choice(LICENSES) if license_iri is None else license_iri
-    lines = [f"{iri} a ph:Photo ;"]
+    lines = [f"{subj} a ph:Photo ;"]
     if "location" not in drop:
         lines.append(f"    ph:hasLocation {geo_iri} ;")
     if "fov" not in drop:
@@ -96,21 +103,21 @@ def photo(tag: str, author_iri: str, geo_iri: str,
     if "license" not in drop:
         lines.append(f"    dcterms:license {license_iri} ;")
     block = "\n".join(lines).rstrip(" ;") + " .\n"
-    return iri, block
+    return subj, block
 
 
 def narrative(tag: str, author_iri: str, content: str | None = None,
               drop: set[str] | None = None) -> tuple[str, str]:
     drop = drop or set()
-    iri = f"id:narrative/{tag}"
+    subj = iri("narrative", tag)
     content = content if content is not None else f"Texto da narrativa {tag}."
-    lines = [f"{iri} a ph:NarrativeText ;"]
+    lines = [f"{subj} a ph:NarrativeText ;"]
     if "content" not in drop:
         lines.append(f'    ph:content "{content}" ;')
     if "author" not in drop:
         lines.append(f"    ph:hasAuthor {author_iri} ;")
     block = "\n".join(lines).rstrip(" ;") + " .\n"
-    return iri, block
+    return subj, block
 
 
 def ig_stats(tag: str, observed_at: str,
@@ -119,11 +126,11 @@ def ig_stats(tag: str, observed_at: str,
              reposts: int | None = None,
              drop: set[str] | None = None) -> tuple[str, str]:
     drop = drop or set()
-    iri = f"id:igstats/{tag}"
+    subj = iri("igstats", tag)
     likes = random.randint(0, 500) if likes is None else likes
     shares = random.randint(0, 50) if shares is None else shares
     reposts = random.randint(0, 10) if reposts is None else reposts
-    lines = [f"{iri} a ph:InstagramPostStats ;"]
+    lines = [f"{subj} a ph:InstagramPostStats ;"]
     if "observedAt" not in drop:
         lines.append(f'    prov:generatedAtTime "{observed_at}"^^xsd:dateTime ;')
     if "likes" not in drop:
@@ -133,16 +140,16 @@ def ig_stats(tag: str, observed_at: str,
     if "reposts" not in drop:
         lines.append(f"    ph:reposts {reposts} ;")
     block = "\n".join(lines).rstrip(" ;") + " .\n"
-    return iri, block
+    return subj, block
 
 
 def ig_post(tag: str, narrative_iri: str, stats_iris: list[str],
             url: str | None = None,
             drop: set[str] | None = None) -> tuple[str, str]:
     drop = drop or set()
-    iri = f"id:igpost/{tag}"
+    subj = iri("igpost", tag)
     url = url if url is not None else f"<https://instagram.com/p/{tag}>"
-    lines = [f"{iri} a ph:InstagramPost ;"]
+    lines = [f"{subj} a ph:InstagramPost ;"]
     if "url" not in drop:
         lines.append(f"    schema:url {url} ;")
     if "narrative" not in drop:
@@ -151,7 +158,7 @@ def ig_post(tag: str, narrative_iri: str, stats_iris: list[str],
         joined = " , ".join(stats_iris)
         lines.append(f"    ph:hasInstagramPostStats {joined} ;")
     block = "\n".join(lines).rstrip(" ;") + " .\n"
-    return iri, block
+    return subj, block
 
 
 def plan_stats(tag: str,
@@ -160,11 +167,11 @@ def plan_stats(tag: str,
                energy_kj: float | None = None,
                drop: set[str] | None = None) -> tuple[str, str]:
     drop = drop or set()
-    iri = f"id:planstats/{tag}"
+    subj = iri("planstats", tag)
     distance_km = round(random.uniform(15, 80), 2) if distance_km is None else distance_km
     ascent_m = round(random.uniform(50, 800), 1) if ascent_m is None else ascent_m
     energy_kj = round(random.uniform(800, 4000), 1) if energy_kj is None else energy_kj
-    lines = [f"{iri} a ph:PlannedRouteStats ;"]
+    lines = [f"{subj} a ph:PlannedRouteStats ;"]
     if "distance" not in drop:
         lines.append(f"    ph:distanceKm {distance_km} ;")
     if "ascent" not in drop:
@@ -172,16 +179,16 @@ def plan_stats(tag: str,
     if "energy" not in drop:
         lines.append(f"    ph:estimatedMovementEnergyKj {energy_kj} ;")
     block = "\n".join(lines).rstrip(" ;") + " .\n"
-    return iri, block
+    return subj, block
 
 
 def planned_route(tag: str, author_iri: str, stats_iri: str | None,
                   url: str | None = None,
                   drop: set[str] | None = None) -> tuple[str, str]:
     drop = drop or set()
-    iri = f"id:plannedroute/{tag}"
+    subj = iri("plannedroute", tag)
     url = url if url is not None else f"<https://ridewithgps.com/routes/{tag}>"
-    lines = [f"{iri} a ph:PlannedRoute ;"]
+    lines = [f"{subj} a ph:PlannedRoute ;"]
     if "url" not in drop:
         lines.append(f"    schema:url {url} ;")
     if "author" not in drop:
@@ -189,13 +196,13 @@ def planned_route(tag: str, author_iri: str, stats_iri: str | None,
     if "stats" not in drop and stats_iri:
         lines.append(f"    ph:hasPlannedRouteStats {stats_iri} ;")
     block = "\n".join(lines).rstrip(" ;") + " .\n"
-    return iri, block
+    return subj, block
 
 
 def tour(tag: str, plan_iri: str | None, photo_iris: list[str],
          post_iris: list[str]) -> tuple[str, str]:
-    iri = f"id:tour/{tag}"
-    lines = [f"{iri} a ph:Tour ;"]
+    subj = iri("tour", tag)
+    lines = [f"{subj} a ph:Tour ;"]
     if plan_iri:
         lines.append(f"    ph:hasPlannedRoute {plan_iri} ;")
     if photo_iris:
@@ -203,7 +210,7 @@ def tour(tag: str, plan_iri: str | None, photo_iris: list[str],
     if post_iris:
         lines.append(f"    ph:hasInstagramPost {' , '.join(post_iris)} ;")
     block = "\n".join(lines).rstrip(" ;") + " .\n"
-    return iri, block
+    return subj, block
 
 
 # ---------------------------------------------------------------------------
@@ -364,7 +371,7 @@ def make_invalid_tour(tag: str, kind: str, base_dt: datetime) -> str:
         blocks.append(ps2_block)
         plan2_iri, plan2_block = planned_route(f"{tag}-extra", p_iri, ps2_iri)
         blocks.append(plan2_block)
-        t_iri = f"id:tour/{tag}"
+        t_iri = iri("tour", tag)
         t_block = (
             f"{t_iri} a ph:Tour ;\n"
             f"    ph:hasPlannedRoute {plan_iri} , {plan2_iri} ;\n"

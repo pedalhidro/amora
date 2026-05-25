@@ -1,0 +1,78 @@
+PREFIX ph:     <https://pedalhidrografico.example/ont#>
+PREFIX schema: <https://schema.org/>
+PREFIX xsd:    <http://www.w3.org/2001/XMLSchema#>
+
+SELECT
+  ?tour
+  (SAMPLE(?dateVal)     AS ?date)
+  (SAMPLE(?uuidVal)     AS ?uuid)
+  (SAMPLE(?editionVal)  AS ?edition)
+  (SAMPLE(?annVal)      AS ?hadPublicAnnouncement)
+  (SAMPLE(?liftVal)     AS ?hadBikeLift)
+  (SAMPLE(?rainVal)     AS ?rained)
+  (GROUP_CONCAT(DISTINCT ?routerName; SEPARATOR=", ") AS ?routeBy)
+  (GROUP_CONCAT(DISTINCT ?writerName; SEPARATOR=", ") AS ?writingBy)
+  (GROUP_CONCAT(DISTINCT ?artistName; SEPARATOR=", ") AS ?artBy)
+  (SAMPLE(?igVal)       AS ?instagramUrl)
+  (SAMPLE(?plannedUrl)  AS ?plannedRouteUrl)
+  (SAMPLE(?actualUrl)   AS ?actualRouteUrl)
+  (SAMPLE(?plannedDep)  AS ?plannedDeparture)
+  (COALESCE(SAMPLE(?obsDep), SAMPLE(?actStart)) AS ?actualDeparture)
+  (COALESCE(SAMPLE(?obsArr), SAMPLE(?actEnd))   AS ?actualArrival)
+  (COALESCE(SAMPLE(?obsHead), COUNT(DISTINCT ?attendee)) AS ?howManyPeople)
+  (COALESCE(SAMPLE(?obsNew),  COUNT(DISTINCT ?newcomer)) AS ?howManyNewPeople)
+  (COALESCE(SAMPLE(?obsActs), COUNT(DISTINCT ?strava))   AS ?howManyStravaActivities)
+  (SAMPLE(?annKJ)       AS ?announcedEnergyKJ)
+  (SAMPLE(?actKJ)       AS ?actualEnergyKJ)
+  (COUNT(DISTINCT ?photo) AS ?fotosColetadas)
+  (GROUP_CONCAT(DISTINCT ?attendeeName; SEPARATOR=", ") AS ?presencas)
+  (GROUP_CONCAT(DISTINCT ?newcomerName; SEPARATOR=", ") AS ?novasPresencas)
+WHERE {
+  ?tour a ph:Tour .
+
+  OPTIONAL { ?tour ph:date              ?dateVal }
+  OPTIONAL { ?tour ph:uuid              ?uuidVal }
+  OPTIONAL { ?tour ph:edition           ?editionVal }
+  OPTIONAL { ?tour ph:hadPublicAnnouncement ?annVal }
+  OPTIONAL { ?tour ph:hadBikeLift       ?liftVal }
+  OPTIONAL { ?tour ph:rained            ?rainVal }
+  OPTIONAL { ?tour ph:instagramPost     ?igVal }
+  OPTIONAL { ?tour ph:plannedDeparture  ?plannedDep }
+  OPTIONAL { ?tour ph:observedDeparture ?obsDep }
+  OPTIONAL { ?tour ph:observedArrival   ?obsArr }
+  OPTIONAL { ?tour ph:observedHeadcount     ?obsHead }
+  OPTIONAL { ?tour ph:observedNewcomerCount ?obsNew }
+  OPTIONAL { ?tour ph:observedActivityCount ?obsActs }
+
+  OPTIONAL {                                   # planned route resource
+    ?tour ph:plannedRoute ?pr .
+    OPTIONAL { ?pr schema:url  ?plannedUrl }
+    OPTIONAL { ?pr ph:energyKJ ?annKJ }
+  }
+  OPTIONAL {                                   # actual activity resource
+    ?tour ph:actualActivity ?act .
+    OPTIONAL { ?act schema:url   ?actualUrl }
+    OPTIONAL { ?act ph:energyKJ  ?actKJ }
+    OPTIONAL { ?act ph:startTime ?actStart }
+    OPTIONAL { ?act ph:endTime   ?actEnd }
+  }
+
+  OPTIONAL { ?tour ph:routedBy  ?router . ?router schema:name ?routerName }
+  OPTIONAL { ?tour ph:writtenBy ?writer . ?writer schema:name ?writerName }
+  OPTIONAL { ?tour ph:artBy     ?artist . ?artist schema:name ?artistName }
+
+  OPTIONAL {                                   # attendance → presences (+ strava)
+    ?tour ph:attendance ?att .
+    ?att  ph:person ?attendee .
+    ?attendee schema:name ?attendeeName .
+    OPTIONAL { ?att ph:stravaActivity ?strava }
+  }
+  OPTIONAL {                                   # newcomers = attendance flagged new
+    ?tour ph:attendance ?attN .
+    ?attN ph:person ?newcomer ; ph:newcomer true .
+    ?newcomer schema:name ?newcomerName .
+  }
+  OPTIONAL { ?photo ph:depictsTour ?tour }     # photos collected (derived count)
+}
+GROUP BY ?tour
+ORDER BY ?date

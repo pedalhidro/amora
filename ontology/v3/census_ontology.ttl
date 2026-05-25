@@ -1,0 +1,35 @@
+@prefix censo: <https://pedalhidrografico.example/ont#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix phd: <https://pedalhidrografico.example/id/> .
+@prefix prov: <http://www.w3.org/ns/prov#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix rfs: <> .
+@prefix schema: <https://schema.org/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+censo: a owl:Ontology ;
+    dcterms:title "Pedal Hidrográfico Census Vocabulary"@en, "Vocabulário do Censo do Pedal Hidrográfico"@pt ;
+    dcterms:description "Vocabulary for the rides of the Pedal Hidrográfico cycling collective: tours, planned and actual routes, narrative, attendance, georeferenced media and social posts."@en ;
+    owl:versionInfo "1.1" ;
+    dcterms:creator "Pedal Hidrográfico" ;
+    dcterms:license <https://creativecommons.org/licenses/by-sa/4.0/> .
+
+# Ontology
+
+censo:BicycleTour a owl:Class ;
+    rdfs:label "Bicycle tour"@en ;
+    rdfs:label "Passeio de bicicleta"@pt ;
+    rdfs:subClassOf schema:SportsEvent ;
+    rdfs:subClassOf [ a owl:Restriction ; owl:onProperty schema:sport ; owl:hasValue "Cycling" ] .
+
+censo:Series a owl:Class ;
+    rdfs:label "Event series"@en ;
+    rdfs:subClassOf schema:EventSeries .
+
+censo:scheduledStartTime a owl:DatatypeProperty ;
+    rdfs:label "scheduled start time"@en, "horário previsto de início"@pt ;
+    rdfs:comment "Datetime at which a prov:Plan prescribes its associated activity to start. Distinct from prov:startedAtTime, which records the actual start of the executed activity."@en ;
+    rdfs:domain prov:Plan ;
+    rdfs:range xsd:dateTime ;
+    rdfs:isDefinedBy censo: .

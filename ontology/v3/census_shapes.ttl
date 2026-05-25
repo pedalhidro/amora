@@ -1,0 +1,170 @@
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix censo: <https://pedalhidrografico.example/ont#> .
+@prefix schema: <https://schema.org/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix prov: <http://www.w3.org/ns/prov#> .
+censo:TourObservationShape a sh:NodeShape ;
+    sh:targetClass censo:Tour ;
+    rdfs:label "Formato de observação do passeio" ;
+    sh:property [
+        sh:path
+        sh:class schema:EventSeries ;
+        sh:name "Táxon do passeio" ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:minInclusive 1
+    ] ;
+
+    sh:property [
+        sh:path censo:edition ;
+        sh:name "Númeração do passeio" ;
+        sh:datatype xsd:integer ;
+        sh:maxCount 1 ;
+        sh:minInclusive 1
+    ] ;
+
+    sh:property [
+        sh:path schema:name ;
+        sh:name "Nome do passeio" ;
+        sh:datatype xsd:string ;
+        sh:maxCount 1
+    ] ;
+
+    sh:property [
+        sh:path ph:scheduledStartTime ;
+        sh:name "Data-hora de encontro" ;
+        sh:datatype xsd:dateTime ;
+        sh:minCount 1 ;
+        sh:maxCount 1
+    ] ;
+
+
+    # --- booleans ---
+    sh:property [
+        sh:path ph:hadPublicAnnouncement ;
+        sh:name "Foi anunciado?" ;
+        sh:datatype xsd:boolean ;
+        sh:maxCount 1
+    ] ;
+    sh:property [
+        sh:path ph:hadBikeLift ;
+        sh:name "Teve bonde?" ;
+        sh:datatype xsd:boolean ;
+        sh:maxCount 1
+    ] ;
+    sh:property [
+        sh:path ph:rained ;
+        sh:name "Choveu?" ;
+        sh:datatype xsd:boolean ;
+        sh:maxCount 1
+    ] ;
+
+    # --- links & times ---
+    sh:property [
+        sh:path ph:instagramPost ;
+        sh:name "Link pro post do Instagram" ;
+        sh:datatype xsd:anyURI ;
+        sh:maxCount 1
+    ] ;
+    sh:property [
+        sh:path ph:observedDeparture ;
+        sh:name "Quando saiu?" ;
+        sh:datatype xsd:dateTime ;
+        sh:maxCount 1
+    ] ;
+    sh:property [
+        sh:path ph:observedArrival ;
+        sh:name "Quando chegou?" ;
+        sh:datatype xsd:dateTime ;
+        sh:maxCount 1
+    ] ;
+
+    # --- observed counts (the "observed" half of derived-or-observed) ---
+    sh:property [
+        sh:path ph:observedHeadcount ;
+        sh:name "Quantos presentes?" ;
+        sh:datatype xsd:integer ;
+        sh:minInclusive 0 ;
+        sh:maxCount 1
+    ] ;
+    sh:property [
+        sh:path ph:observedNewcomerCount ;
+        sh:name "Quantos novatos?" ;
+        sh:datatype xsd:integer ;
+        sh:minInclusive 0 ;
+        sh:maxCount 1
+    ] ;
+    sh:property [
+        sh:path ph:observedActivityCount ;
+        sh:name "Quantas atividades no Strava?" ;
+        sh:datatype xsd:integer ;
+        sh:minInclusive 0 ;
+        sh:maxCount 1
+    ] ;
+    sh:property [
+        sh:path ph:mediaCount ;
+        sh:name "Quantas fotos?" ;
+        sh:datatype xsd:integer ;
+        sh:minInclusive 0 ;
+        sh:maxCount 1
+    ] ;
+
+    sh:property [
+        sh:path ph:plannedRoute ;
+        sh:name "Link da rota planejada" ;
+        sh:class ph:Route ;
+        sh:maxCount 1 ;
+        sh:nodeKind sh:IRI
+    ] ;
+    sh:property [
+        sh:path ph:actualActivity ;
+        sh:name "Link para atividade feita" ;
+        sh:class ph:Activity ;
+        sh:maxCount 1 ;
+        sh:nodeKind sh:IRI
+    ] ;
+
+    # --- people (multi-valued: no maxCount) ---
+    sh:property [
+        sh:path ph:routedBy ;
+        sh:name "Quem autorou a rota?" ;
+        sh:class schema:Person ;
+        sh:nodeKind sh:IRI
+    ] ;
+    sh:property [
+        sh:path ph:writtenBy ;
+        sh:name "Quem autorou a escrita?" ;
+        sh:class schema:Person ;
+        sh:nodeKind sh:IRI
+    ] ;
+    sh:property [
+        sh:path ph:artBy ;
+        sh:name "Quem autorou a arte?" ;
+        sh:class schema:Person ;
+        sh:nodeKind sh:IRI
+    ] ;
+    sh:property [
+        sh:path ph:attendance ;
+        sh:name "Presenças" ;
+        sh:class ph:Attendance ;
+        sh:nodeKind sh:IRI
+    ] .
+
+# --- cross-field data-quality check (SHACL-SPARQL), shape-level Warning so it
+#     surfaces as feedback without failing the graph ---
+ph:TourConsistencyShape a sh:NodeShape ;
+    sh:targetClass ph:Tour ;
+    sh:severity sh:Warning ;
+    sh:sparql [
+        a sh:SPARQLConstraint ;
+        sh:message "Observed newcomer count exceeds observed headcount." ;
+        sh:select """
+            SELECT $this ?n ?h WHERE {
+                $this <https://pedalhidrografico.example/ont#observedNewcomerCount> ?n .
+                $this <https://pedalhidrografico.example/ont#observedHeadcount> ?h .
+                FILTER (?n > ?h)
+            }
+        """
+    ] .

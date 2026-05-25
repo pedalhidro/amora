@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8">
+<title>Censo · Formulário</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  Standalone SHACL-driven form for ph:Tour observations.
+  Reads census_shapes.ttl at load time and renders fields from the shape.
+  Requires HTTP serving (fetch won't work over file://): from this directory run
+      python3 -m http.server 8000
+  then open http://localhost:8000/form.html
+-->
+<script src="https://unpkg.com/n3@1.17.4/browser/n3.min.js"></script>
+<style>
+  :root { --fg:#222; --muted:#777; --bg:#fafafa; --card:#fff; --line:#e5e5e5; --accent:#06692f; --warn:#a85400; }
+  * { box-sizing: border-box; }
+  body { font: 15px/1.45 system-ui, -apple-system, sans-serif; color: var(--fg); background: var(--bg); margin: 0; padding: 2rem 1rem; }
+  main { max-width: 720px; margin: 0 auto; }
+  h1 { font-size: 1.5rem; margin: 0 0 0.25rem; }
+  .sub { color: var(--muted); margin-bottom: 1.5rem; font-size: 0.9rem; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 1rem; }
+  fieldset { border: none; padding: 0; margin: 0 0 1rem; }
+  label { display: block; font-weight: 500; margin-bottom: 0.35rem; }
+  label .req { color: var(--accent); margin-left: 0.2rem; }
+  label .hint { font-weight: 400; color: var(--muted); font-size: 0.85rem; margin-left: 0.4rem; }
+  input, select, textarea { width: 100%; padding: 0.5rem 0.6rem; border: 1px solid var(--line); border-radius: 5px; font: inherit; background: white; }
+  input[type=checkbox] { width: auto; }
+  .row { display: flex; gap: 0.4rem; align-items: center; margin-bottom: 0.35rem; }
+  .row input { flex: 1; }
+  .multi-add { background: none; border: 1px dashed var(--line); color: var(--accent); padding: 0.35rem 0.6rem; border-radius: 5px; cursor: pointer; font: inherit; font-size: 0.85rem; }
+  .multi-rm { background: none; border: none; color: var(--muted); cursor: pointer; padding: 0 0.4rem; font-size: 1.1rem; }
+  .desc { color: var(--muted); font-size: 0.85rem; margin-top: 0.2rem; }
+  .actions { display: flex; gap: 0.5rem; margin-top: 1rem; }
+  button.primary { background: var(--accent); color: white; border: none; padding: 0.6rem 1rem; border-radius: 5px; font: inherit; cursor: pointer; }
+  button.secondary { background: white; color: var(--fg); border: 1px solid var(--line); padding: 0.6rem 1rem; border-radius: 5px; font: inherit; cursor: pointer; }
+  pre.output { background: #1e1e1e; color: #eee; padding: 1rem; border-radius: 6px; overflow-x: auto; font: 13px/1.5 ui-monospace, Menlo, monospace; white-space: pre; }
+  .warn { color: var(--warn); font-size: 0.85rem; margin-top: 0.3rem; }
+  .status { color: var(--muted); font-size: 0.85rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Censo do Pedal Hidrográfico</h1>
+  <p class="sub">Formulário gerado a partir de <code>census_shapes.ttl</code>.</p>
+  <div id="status" class="status">Carregando shapes…</div>
+  <form id="tour-form" class="card" hidden></form>
+  <div id="output-block" hidden>
+    <h2 style="font-size:1.1rem;margin:1.5rem 0 0.5rem">Turtle gerado</h2>
+    <pre id="output" class="output"></pre>
+    <div class="actions">
+      <button class="secondary" id="copy-btn" type="button">Copiar</button>
+      <button class="secondary" id="download-btn" type="button">Baixar .ttl</button>
+    </div>
+  </div>
+</main>
+
+<script>
+const NS = {
+  sh:     'http://www.w3.org/ns/shacl#',
+  xsd:    'http://www.w3.org/2001/XMLSchema#',
+  rdf:    'http://www.w3.org/1999/02/22-rdf-syntax-ns#',
+  rdfs:   'http://www.w3.org/2000/01/rdf-schema#',
+  ph:     'https://pedalhidrografico.example/ont#',
+  schema: 'https://schema.org/',
+  prov:   'http://www.w3.org/ns/prov#',
+};
+const TARGET_CLASS = NS.ph + 'Tour';
+
+const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+
+function curie(iri) {
+  for (const [p, ns] of Object.entries(NS)) {
+    if (iri.startsWith(ns)) return `${p}:${iri.slice(ns.length)}`;
+  }
+  return `<${iri}>`;
+}
+
+function getObj(store, s, p) {
+  return store.getQuads(s, p, null, null)[0]?.object;
+}
+function val(node) { return node?.value; }
+
+async function loadShapes() {
+  const text = await fetch('census_shapes.ttl').then(r => {
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.text();
+  });
+  const store = new N3.Store();
+  store.addQuads(new N3.Parser().parse(text));
+  return store;
+}
+
+function findTargetShape(store) {
+  for (const q of store.getQuads(null, NS.sh + 'targetClass', TARGET_CLASS, null)) {
+    return q.subject;
+  }
+  return null;
+}
+
+function readProperties(store, shapeNode) {
+  const props = [];
+  for (const q of store.getQuads(shapeNode, NS.sh + 'property', null, null)) {
+    const pn = q.object;
+    const path = val(getObj(store, pn, NS.sh + 'path'));
+    if (!path) continue;
+    let datatype = val(getObj(store, pn, NS.sh + 'datatype'));
+    if (datatype === NS.xsd + 'datetime') datatype = NS.xsd + 'dateTime';
+    props.push({
+      pn,
+      path,
+      curie: curie(path),
+      name: val(getObj(store, pn, NS.sh + 'name')) || curie(path),
+      description: val(getObj(store, pn, NS.sh + 'description')),
+      datatype,
+      cls: val(getObj(store, pn, NS.sh + 'class')),
+      nodeKind: val(getObj(store, pn, NS.sh + 'nodeKind')),
+      minCount: parseInt(val(getObj(store, pn, NS.sh + 'minCount')) || '0', 10),
+      maxCount: val(getObj(store, pn, NS.sh + 'maxCount')) != null
+        ? parseInt(val(getObj(store, pn, NS.sh + 'maxCount')), 10)
+        : Infinity,
+      minInclusive: val(getObj(store, pn, NS.sh + 'minInclusive')),
+    });
+  }
+  return props;
+}
+
+function inputTypeFor(prop) {
+  if (prop.nodeKind === NS.sh + 'IRI' || prop.cls) return 'iri';
+  switch (prop.datatype) {
+    case NS.xsd + 'string':   return 'text';
+    case NS.xsd + 'integer':  return 'integer';
+    case NS.xsd + 'boolean':  return 'boolean';
+    case NS.xsd + 'date':     return 'date';
+    case NS.xsd + 'dateTime': return 'datetime';
+    case NS.xsd + 'anyURI':   return 'url';
+    default: return 'text';
+  }
+}
+
+function makeInput(prop, kind) {
+  const el = document.createElement('input');
+  el.dataset.kind = kind;
+  el.dataset.path = prop.path;
+  if (prop.datatype) el.dataset.datatype = prop.datatype;
+  if (prop.cls) el.dataset.cls = prop.cls;
+  switch (kind) {
+    case 'integer':  el.type = 'number'; el.step = '1'; break;
+    case 'boolean':  el.type = 'checkbox'; break;
+    case 'date':     el.type = 'date'; break;
+    case 'datetime': el.type = 'datetime-local'; break;
+    case 'url':      el.type = 'url'; el.placeholder = 'https://…'; break;
+    case 'iri':      el.type = 'text'; el.placeholder = prop.cls ? `IRI de ${curie(prop.cls)} (ex.: ph:…)` : 'IRI'; break;
+    default:         el.type = 'text';
+  }
+  if (prop.minInclusive != null && kind === 'integer') el.min = prop.minInclusive;
+  return el;
+}
+
+function renderField(prop) {
+  const wrap = document.createElement('fieldset');
+  const label = document.createElement('label');
+  label.textContent = prop.name;
+  if (prop.minCount >= 1) {
+    const r = document.createElement('span'); r.className = 'req'; r.textContent = '*'; label.append(r);
+  }
+  const hint = document.createElement('span');
+  hint.className = 'hint';
+  hint.textContent = prop.curie;
+  label.append(hint);
+  wrap.append(label);
+
+  const kind = inputTypeFor(prop);
+  const multi = prop.maxCount > 1;
+
+  if (kind === 'boolean') {
+    // single tri-state with select to allow "unset"
+    const sel = document.createElement('select');
+    sel.dataset.kind = 'boolean';
+    sel.dataset.path = prop.path;
+    sel.dataset.datatype = NS.xsd + 'boolean';
+    for (const [v, label] of [['', '— (não informado)'], ['true', 'Sim'], ['false', 'Não']]) {
+      const o = document.createElement('option'); o.value = v; o.textContent = label; sel.append(o);
+    }
+    wrap.append(sel);
+  } else if (multi) {
+    const list = document.createElement('div');
+    list.dataset.multi = 'true';
+    const addRow = () => {
+      const row = document.createElement('div'); row.className = 'row';
+      row.append(makeInput(prop, kind));
+      const rm = document.createElement('button'); rm.type = 'button'; rm.className = 'multi-rm'; rm.textContent = '×';
+      rm.onclick = () => row.remove();
+      row.append(rm);
+      list.append(row);
+    };
+    addRow();
+    const add = document.createElement('button'); add.type = 'button'; add.className = 'multi-add'; add.textContent = '+ adicionar';
+    add.onclick = addRow;
+    wrap.append(list, add);
+  } else {
+    wrap.append(makeInput(prop, kind));
+  }
+
+  if (prop.description) {
+    const d = document.createElement('div'); d.className = 'desc'; d.textContent = prop.description; wrap.append(d);
+  }
+  if (!prop.path || prop.path === NS.sh + 'path') {
+    const w = document.createElement('div'); w.className = 'warn';
+    w.textContent = 'Aviso: shape sem sh:path declarado.'; wrap.append(w);
+  }
+  return wrap;
+}
+
+function escapeTurtleString(s) {
+  return s.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t');
+}
+
+function formatLiteral(value, datatype) {
+  if (datatype === NS.xsd + 'boolean') return value === 'true' ? 'true' : 'false';
+  if (datatype === NS.xsd + 'integer') return String(parseInt(value, 10));
+  if (datatype === NS.xsd + 'string' || !datatype) return `"${escapeTurtleString(value)}"`;
+  let v = value;
+  if (datatype === NS.xsd + 'dateTime' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(v)) v += ':00';
+  return `"${escapeTurtleString(v)}"^^${curie(datatype)}`;
+}
+
+function formatIri(raw) {
+  const v = raw.trim();
+  if (!v) return null;
+  if (/^[a-z]+:[^/]/i.test(v) && !/^https?:/i.test(v)) return v; // already a CURIE
+  if (/^https?:\/\//i.test(v) || /^urn:/i.test(v) || /^[a-z]+:/.test(v)) {
+    return curie(v) !== `<${v}>` ? curie(v) : `<${v}>`;
+  }
+  return `<${v}>`;
+}
+
+function gatherValues(form) {
+  // group inputs by sh:path
+  const byPath = new Map();
+  for (const el of $$('[data-path]', form)) {
+    if (el.disabled) continue;
+    const path = el.dataset.path;
+    let raw;
+    if (el.type === 'checkbox') raw = el.checked ? 'true' : '';
+    else raw = el.value;
+    if (raw === '' || raw == null) continue;
+    let formatted;
+    if (el.dataset.kind === 'iri') {
+      formatted = formatIri(raw);
+      if (!formatted) continue;
+    } else {
+      formatted = formatLiteral(raw, el.dataset.datatype);
+    }
+    if (!byPath.has(path)) byPath.set(path, []);
+    byPath.get(path).push(formatted);
+  }
+  return byPath;
+}
+
+function buildTurtle(byPath) {
+  const usedPrefixes = new Set(['ph', 'xsd']);
+  for (const vals of byPath.values()) {
+    for (const v of vals) {
+      const m = v.match(/^([a-z]+):/i);
+      if (m) usedPrefixes.add(m[1]);
+      const dt = v.match(/\^\^([a-z]+):/i);
+      if (dt) usedPrefixes.add(dt[1]);
+    }
+  }
+  const lines = [];
+  for (const p of usedPrefixes) {
+    if (NS[p]) lines.push(`@prefix ${p}: <${NS[p]}> .`);
+  }
+  lines.push('');
+
+  // subject IRI: ph:tour/<uuid>
+  const subj = `ph:tour-${crypto.randomUUID().slice(0, 8)}`;
+  lines.push(`${subj} a ph:Tour ;`);
+  const entries = [...byPath.entries()];
+  entries.forEach(([path, vals], i) => {
+    const last = i === entries.length - 1;
+    const predicate = curie(path);
+    if (vals.length === 1) {
+      lines.push(`    ${predicate} ${vals[0]}${last ? ' .' : ' ;'}`);
+    } else {
+      lines.push(`    ${predicate} ${vals.join(' , ')}${last ? ' .' : ' ;'}`);
+    }
+  });
+  return lines.join('\n') + '\n';
+}
+
+async function main() {
+  const status = $('#status');
+  let store;
+  try {
+    store = await loadShapes();
+  } catch (e) {
+    status.textContent = `Erro ao carregar shapes: ${e.message}. Sirva esta pasta por HTTP (python3 -m http.server).`;
+    return;
+  }
+  const shape = findTargetShape(store);
+  if (!shape) { status.textContent = 'Nenhum sh:NodeShape com sh:targetClass ph:Tour encontrado.'; return; }
+  const props = readProperties(store, shape);
+  if (!props.length) { status.textContent = 'Shape sem sh:property declaradas.'; return; }
+  status.hidden = true;
+
+  const form = $('#tour-form');
+  form.hidden = false;
+  for (const prop of props) form.append(renderField(prop));
+
+  const actions = document.createElement('div');
+  actions.className = 'actions';
+  const submit = document.createElement('button'); submit.type = 'submit'; submit.className = 'primary'; submit.textContent = 'Gerar Turtle';
+  const reset = document.createElement('button'); reset.type = 'reset'; reset.className = 'secondary'; reset.textContent = 'Limpar';
+  actions.append(submit, reset);
+  form.append(actions);
+
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const values = gatherValues(form);
+    if (!values.size) { alert('Preencha ao menos um campo.'); return; }
+    const ttl = buildTurtle(values);
+    $('#output').textContent = ttl;
+    $('#output-block').hidden = false;
+    $('#output-block').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+
+  $('#copy-btn').addEventListener('click', async () => {
+    await navigator.clipboard.writeText($('#output').textContent);
+    $('#copy-btn').textContent = 'Copiado!';
+    setTimeout(() => { $('#copy-btn').textContent = 'Copiar'; }, 1200);
+  });
+  $('#download-btn').addEventListener('click', () => {
+    const blob = new Blob([$('#output').textContent], { type: 'text/turtle' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `tour-${new Date().toISOString().slice(0, 10)}.ttl`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+}
+
+main();
+</script>
+</body>
+</html>
