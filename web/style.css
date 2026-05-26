@@ -75,6 +75,26 @@ body {
   color: var(--muted);
   margin-top: 2px;
 }
+/* Discreet "?" help button living inline with the credit line. */
+.help-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px; height: 18px;
+  margin-left: 6px;
+  padding: 0;
+  border: 1px solid var(--muted);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  font: 600 11px/1 system-ui, sans-serif;
+  cursor: pointer;
+  vertical-align: middle;
+}
+.help-btn:hover {
+  color: var(--text);
+  border-color: var(--text);
+}
 .topbar .title {
   flex: 1 1 auto;
   min-width: 0;
@@ -246,6 +266,21 @@ body {
   max-height: 90vh;
   overflow-y: auto;
   box-shadow: var(--shadow);
+}
+
+/* Upload modal: muito mais largo (cards do form em grade); iframe preenche. */
+.upload-modal-content {
+  width: min(1400px, 96vw);
+  height: min(92vh, 1100px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.upload-modal-content > iframe {
+  flex: 1;
+  width: 100%;
+  border: 0;
+  background: #fff;
 }
 
 .modal-content header {
@@ -1133,6 +1168,53 @@ body.drawing .trackpoint-marker:active { cursor: grabbing !important; }
   line-height: 1.4;
   word-break: break-word;
 }
+/* Structured detail rows under the thumbnail (Quando/Onde/Quem/Licença/Envio). */
+.photo-popup .photo-details {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 2px 8px;
+  padding: 8px 10px 10px;
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.4;
+}
+.photo-popup .photo-details dt {
+  color: var(--muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 9px;
+  letter-spacing: .04em;
+  padding-top: 2px;
+}
+.photo-popup .photo-details dd {
+  margin: 0;
+  color: var(--text);
+  word-break: break-word;
+}
+.photo-popup .photo-details code {
+  font-size: 10px;
+  background: rgba(127, 127, 127, .15);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+.photo-popup .photo-details .muted { color: var(--muted); }
+.photo-popup .photo-details a { color: inherit; text-decoration: underline; }
+.photo-popup .photo-actions {
+  padding: 8px 10px 10px;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.photo-popup .photo-dl {
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: var(--surface-2, rgba(127,127,127,.15));
+  color: var(--text);
+  text-decoration: none;
+  border: 1px solid rgba(127,127,127,.3);
+}
+.photo-popup .photo-dl:hover { background: rgba(127,127,127,.25); }
 .photo-popup .photo-ride {
   padding: 6px 10px 0;
   font-size: 12px;
@@ -1185,10 +1267,16 @@ body.drawing .trackpoint-marker:active { cursor: grabbing !important; }
 /* Fotos do pedal — tira de miniaturas no modal da rota. */
 .route-modal-photos:empty { display: none; }
 .route-photos-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
   font-size: 12px;
   color: var(--muted);
   margin: 4px 0 6px;
 }
+.route-photos-dl { display: inline-flex; gap: 8px; }
+.route-photos-dl button { font-size: 12px; }
 .route-photos-strip {
   display: flex;
   flex-wrap: wrap;

@@ -1,0 +1,1152 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Upload de imagens (ao vivo) — Pedal Hidrográfico</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 1400px; margin: 1.5rem auto; padding: 0 1rem; color: #222; }
+  h1 { font-size: 1.4rem; margin: 0 0 .25rem; }
+  p.lede { color: #666; margin: 0 0 1rem; }
+  fieldset { border: 1px solid #ccc; padding: 1rem; margin: 1rem 0; }
+  legend { font-weight: 600; padding: 0 .4rem; }
+  label { display: block; margin: .6rem 0 .2rem; font-size: .9rem; }
+  input[type="file"], input[type="text"], input[type="number"], input[type="datetime-local"], select {
+    width: 100%; padding: .45rem; box-sizing: border-box; font-size: 1rem; font-family: inherit;
+  }
+  small { display: block; color: #666; font-size: .8rem; margin-top: .25rem; }
+  pre { background: #f4f4f4; padding: 1rem; overflow-x: auto; font-size: .85rem; border-radius: 4px; white-space: pre-wrap; word-break: break-word; }
+  .actions { margin: 1rem 0; display: flex; gap: .5rem; flex-wrap: wrap; }
+  button { padding: .5rem 1rem; font-size: 1rem; cursor: pointer; border: 1px solid #888; background: #f8f8f8; border-radius: 4px; }
+  button[disabled] { opacity: .5; cursor: not-allowed; }
+  .required::after { content: " *"; color: #c00; }
+  .ok { color: #080; }
+  .warn { color: #c80; }
+  .err { color: #c00; }
+  code { background: #eee; padding: 0 .25rem; border-radius: 2px; font-size: .9em; }
+
+  /* Upload zone (arquivos + padrões lado a lado, dentro do mesmo fieldset) */
+  .upload-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+  }
+  @media (max-width: 760px) { .upload-row { grid-template-columns: 1fr; } }
+  #upload-zone { margin-top: 1rem; }
+
+  /* Painel de "Opções de saída" (anonimizar/comprimir) */
+  .opts { display: flex; gap: 1rem; flex-wrap: wrap; }
+  .opts label { display: flex; align-items: center; gap: .35rem; margin: 0; font-size: .9rem; }
+  .opts input[type="checkbox"] { width: auto; }
+
+  /* Grid de cards (1 por foto) */
+  #cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+    gap: 1rem;
+    margin: 1rem 0;
+  }
+  .card {
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    padding: .75rem;
+    background: #fff;
+    font-size: .9rem;
+    display: flex;
+    flex-direction: column;
+    gap: .25rem;
+  }
+  .card-header { display: flex; gap: .5rem; align-items: center; }
+  .card-thumb {
+    width: 56px; height: 56px;
+    object-fit: cover; border-radius: 4px; background: #eee;
+  }
+  .card-meta { flex: 1; min-width: 0; }
+  .card-meta strong { display: block; font-size: .85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .card-meta .hash { font-size: .65rem; color: #666; word-break: break-all; }
+  .card-remove {
+    border: 0; background: transparent; cursor: pointer;
+    font-size: 1.2rem; color: #c00; padding: 0 .25rem; line-height: 1;
+  }
+  .card-remove:hover { color: #800; }
+  .card-section { border-top: 1px dashed #ddd; padding-top: .4rem; margin-top: .25rem; }
+  .card-section h4 {
+    font-size: .7rem; color: #888; font-weight: 600;
+    text-transform: uppercase; margin: 0 0 .25rem; letter-spacing: .04em;
+  }
+  .card label { font-size: .75rem; margin: .3rem 0 .1rem; }
+  .card input[type="datetime-local"], .card input[type="number"], .card select { padding: .25rem .35rem; font-size: .85rem; }
+  .card .row { display: flex; gap: .4rem; }
+  .card .row > div { flex: 1; min-width: 0; }
+  .card .tour-auto-status { font-size: .7rem; margin-top: .1rem; }
+
+  /* Tom Select compactado dentro dos cards */
+  .ts-wrapper { font-size: .85rem; }
+  .card .ts-control { padding: .2rem .3rem !important; min-height: 0; }
+</style>
+<link href="./lib/tom-select.min.css" rel="stylesheet">
+</head>
+<body>
+
+<h1>Upload de imagens (ao vivo)</h1>
+<p class="lede">Cada imagem é enviada individualmente para <code>POST /upload-image</code> no Pi — validação SHACL acontece a cada envio, com feedback por card.</p>
+
+<form id="form">
+
+  <!-- Grade de cards (cresce de cima pra baixo; upload-zone fica abaixo) -->
+  <div id="cards"></div>
+
+  <!-- Upload zone único (sempre após o grid; "desce" conforme cards são adicionados) -->
+  <fieldset id="upload-zone">
+    <legend>Adicionar imagens</legend>
+    <div class="upload-row">
+      <div>
+        <label for="files">Arquivos</label>
+        <input type="file" id="files" accept="image/*" multiple>
+        <small id="filesStatus">Selecione imagens — pHash e EXIF são extraídos; duplicatas (pHash ≤ 5) são rejeitadas.</small>
+        <small id="catalogStatus">Carregando catálogo…</small>
+        <div id="notices" style="margin: .5rem 0;"></div>
+        <div style="margin-top: .5rem">
+          <button type="button" id="clearAll" disabled>Limpar todas as imagens</button>
+        </div>
+      </div>
+
+      <div>
+        <label style="font-weight:600;margin-top:0">Padrões da Atribuição</label>
+        <small>Aplicados a cada imagem adicionada daqui em diante (edite por card depois).</small>
+
+        <label for="d-tour">Passeio <small style="display:inline;color:#888">(sobrescreve auto-detecção)</small></label>
+        <select id="d-tour"><option value="">— deixar para auto-detecção —</option></select>
+
+        <label for="d-author">Autoras</label>
+        <select multiple id="d-author" placeholder="busca ou digita…"></select>
+
+        <label for="d-provider">Quem subiu</label>
+        <select multiple id="d-provider" placeholder="busca ou digita…"></select>
+
+        <label for="d-license">Licença</label>
+        <select id="d-license">
+          <option value="https://creativecommons.org/licenses/by-sa/4.0/" selected>CC BY-SA 4.0</option>
+          <option value="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</option>
+          <option value="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</option>
+          <option value="https://creativecommons.org/licenses/by-nc/4.0/">CC BY-NC 4.0</option>
+          <option value="https://creativecommons.org/publicdomain/zero/1.0/">CC0 1.0</option>
+        </select>
+
+        <label>Saída</label>
+        <div class="opts">
+          <label><input type="checkbox" id="d-anon"> Anonimizar (remover metadados)</label>
+          <label><input type="checkbox" id="d-comp"> Comprimir imagem para 500 kB máx.</label>
+        </div>
+      </div>
+    </div>
+  </fieldset>
+
+  <div class="actions">
+    <button type="button" id="uploadAll" disabled>📤 Enviar todas (pendentes)</button>
+    <button type="button" id="previewTtl" disabled>👁 Pré-visualizar TTL</button>
+    <small id="uploadAllStatus" style="margin-left:.5rem"></small>
+  </div>
+  <pre id="ttl-preview" hidden></pre>
+
+</form>
+
+<!-- Modal de seleção de coordenadas no mapa (Leaflet/OSM, lazy-load).
+     `display:none` inline garante que o atributo `hidden` não compita com
+     o `display:flex` que outros estilos poderiam impor. -->
+<div id="map-picker-modal" style="
+  position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 9999;
+  display: none; align-items: center; justify-content: center;
+">
+  <div style="
+    background: #fff; border-radius: 6px; padding: 1rem; width: min(800px, 95vw);
+    height: min(70vh, 600px); display: flex; flex-direction: column; gap: .5rem;
+  ">
+    <div style="display:flex;justify-content:space-between;align-items:center;">
+      <strong>Escolher coordenadas no mapa</strong>
+      <button type="button" id="map-picker-close" style="font-size:1.1rem;padding:.15rem .5rem">✕</button>
+    </div>
+    <small style="color:#666">Clique no mapa pra posicionar — ou arraste o marcador.</small>
+    <div id="map-picker-mapbox" style="flex:1;border:1px solid #ccc;border-radius:4px;"></div>
+    <div style="display:flex;gap:.5rem;align-items:center;justify-content:flex-end;">
+      <span id="map-picker-coords" style="font-family:monospace;font-size:.85rem;color:#444;margin-right:auto;"></span>
+      <button type="button" id="map-picker-cancel">Cancelar</button>
+      <button type="button" id="map-picker-confirm">Usar essa posição</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+const $  = (sel, root = document) => root.querySelector(sel);
+
+// ===================== Dependências CDN ================================
+let exifr = null;
+try {
+  exifr = await import('https://cdn.jsdelivr.net/npm/exifr@7.1.3/dist/full.esm.mjs')
+    .then(m => m.default || m);
+} catch (_) { console.warn('exifr indisponível.'); }
+
+// Tom Select é UMD vendored em web/lib/ — sem CDN, sem dynamic ESM import
+// (que falha quando esm.sh está bloqueado).
+function _loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = src; s.onload = () => resolve(); s.onerror = () => reject(new Error(`falha ao carregar ${src}`));
+    document.head.appendChild(s);
+  });
+}
+if (!window.TomSelect) await _loadScript('./lib/tom-select.complete.min.js');
+const TomSelect = window.TomSelect;
+let JSZip;
+try {
+  JSZip = (await import('https://esm.sh/jszip@3.10.1')).default;
+} catch (_) { console.warn('JSZip indisponível — download de kit ZIP desativado.'); }
+
+// heic2any: HEIC → JPEG no cliente. Chrome/Firefox não decodificam HEIC
+// nativamente; sem isto, `createImageBitmap` falha em arquivos de iPhone.
+let heic2any = null;
+try {
+  heic2any = (await import('https://esm.sh/heic2any@0.0.4')).default;
+} catch (_) { console.warn('heic2any indisponível — uploads HEIC só funcionarão no Safari.'); }
+
+// ===================== Helpers básicos =================================
+function turtle_escape(s) {
+  return s.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n');
+}
+function slugifyPerson(s) {
+  return s.normalize('NFKD').replace(/\p{Diacritic}/gu, '')
+    .split(/\s+/).map(w => w.replace(/[^A-Za-z0-9]/g, '')).filter(Boolean)
+    .map(w => w[0].toUpperCase() + w.slice(1).toLowerCase()).join('');
+}
+function pad(n) { return String(n).padStart(2, '0'); }
+function dateToLocalInput(d) {
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}` +
+         `T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+function localToXsdDateTime(s) {
+  const d = new Date(s); if (isNaN(d)) return null;
+  const off = -d.getTimezoneOffset();
+  const sign = off >= 0 ? '+' : '-';
+  const oh = pad(Math.floor(Math.abs(off) / 60));
+  const om = pad(Math.abs(off) % 60);
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}` +
+         `T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}` +
+         `${sign}${oh}:${om}`;
+}
+
+// ===================== Hash perceptual (pHash) =========================
+// pHash (Hacker Factor / Zauner): 32×32 cinza → DCT 2D → bloco 8×8 de
+// baixa frequência → bit = 1 se coef > mediana, else 0. Resultado: 64 bits
+// (16 hex). Mais robusto a mudanças de brilho/contraste/rotações pequenas
+// do que um dHash gradient-based. Fotos quase idênticas → mesmo pHash (cluster id).
+function dct1d(input, N) {
+  const out = new Float32Array(N);
+  for (let k = 0; k < N; k++) {
+    let sum = 0;
+    const f = Math.PI * k / (2 * N);
+    for (let n = 0; n < N; n++) sum += input[n] * Math.cos((2 * n + 1) * f);
+    out[k] = sum;
+  }
+  return out;
+}
+function computePHash(bitmap) {
+  const N = 32;
+  const c = document.createElement('canvas');
+  c.width = N; c.height = N;
+  const ctx = c.getContext('2d');
+  ctx.drawImage(bitmap, 0, 0, N, N);
+  const data = ctx.getImageData(0, 0, N, N).data;
+
+  // Grayscale matrix (linha-major)
+  const m = new Float32Array(N * N);
+  for (let i = 0; i < N * N; i++) {
+    m[i] = data[i*4]*0.299 + data[i*4+1]*0.587 + data[i*4+2]*0.114;
+  }
+  // DCT 2D separável: linhas, depois colunas
+  const tmp = new Float32Array(N * N);
+  for (let y = 0; y < N; y++) {
+    const out = dct1d(m.subarray(y * N, (y + 1) * N), N);
+    for (let x = 0; x < N; x++) tmp[y * N + x] = out[x];
+  }
+  const dct = new Float32Array(N * N);
+  const col = new Float32Array(N);
+  for (let x = 0; x < N; x++) {
+    for (let y = 0; y < N; y++) col[y] = tmp[y * N + x];
+    const out = dct1d(col, N);
+    for (let y = 0; y < N; y++) dct[y * N + x] = out[y];
+  }
+  // Bloco 8×8 de baixa frequência (top-left)
+  const block = new Float32Array(64);
+  for (let y = 0; y < 8; y++)
+    for (let x = 0; x < 8; x++) block[y * 8 + x] = dct[y * N + x];
+
+  // Mediana excluindo o termo DC (block[0])
+  const sorted = Array.from(block.slice(1)).sort((a, b) => a - b);
+  const median = sorted[Math.floor(sorted.length / 2)];
+
+  let hex = '';
+  for (let row = 0; row < 8; row++) {
+    let byte = 0;
+    for (let col2 = 0; col2 < 8; col2++) {
+      byte = (byte << 1) | (block[row * 8 + col2] > median ? 1 : 0);
+    }
+    hex += byte.toString(16).padStart(2, '0');
+  }
+  return hex;
+}
+
+// ===================== Processamento de imagem =========================
+function drawToCanvas(bitmap, maxDim) {
+  const w = bitmap.width, h = bitmap.height;
+  const scale = Math.min(1, maxDim / Math.max(w, h));
+  const cw = Math.max(1, Math.round(w * scale));
+  const ch = Math.max(1, Math.round(h * scale));
+  const c = document.createElement('canvas');
+  c.width = cw; c.height = ch;
+  c.getContext('2d').drawImage(bitmap, 0, 0, cw, ch);
+  return c;
+}
+function encodeJpeg(canvas, q) {
+  return new Promise(res => canvas.toBlob(b => res(b), 'image/jpeg', q));
+}
+async function compressToTarget(bitmap, maxBytes, startDim = 2400) {
+  for (const dim of [startDim, 1800, 1400, 1100, 900, 700, 500]) {
+    const canvas = drawToCanvas(bitmap, dim);
+    for (const q of [0.85, 0.7, 0.55, 0.4, 0.3]) {
+      const blob = await encodeJpeg(canvas, q);
+      if (blob.size <= maxBytes) return blob;
+    }
+  }
+  return await encodeJpeg(drawToCanvas(bitmap, 500), 0.3);
+}
+async function makeThumbnail(bitmap, dim = 256) {
+  return await encodeJpeg(drawToCanvas(bitmap, dim), 0.75);
+}
+async function anonymizeJpeg(bitmap, q = 0.92) {
+  // re-encoda sem usar EXIF da origem → strip de metadados
+  return await encodeJpeg(drawToCanvas(bitmap, Math.max(bitmap.width, bitmap.height)), q);
+}
+
+// Copia o APP1/Exif do JPEG de origem para um blob JPEG já re-encodado pelo
+// canvas (que sempre nasce sem metadados). Se a origem não for JPEG ou não
+// tiver Exif, devolve o blob alvo intacto.
+async function copyExifSegment(sourceFile, targetBlob) {
+  const src = new Uint8Array(await sourceFile.arrayBuffer());
+  if (src.length < 4 || src[0] !== 0xFF || src[1] !== 0xD8) return targetBlob;
+
+  let exifSeg = null;
+  for (let i = 2; i < src.length - 4; ) {
+    if (src[i] !== 0xFF) break;
+    const marker = src[i + 1];
+    if (marker === 0xDA || marker === 0xD9) break;   // SOS / EOI — acabou o cabeçalho
+    const segLen = (src[i + 2] << 8) | src[i + 3];
+    if (segLen < 2) break;
+    if (marker === 0xE1 &&
+        src[i + 4] === 0x45 && src[i + 5] === 0x78 &&    // 'E' 'x'
+        src[i + 6] === 0x69 && src[i + 7] === 0x66 &&    // 'i' 'f'
+        src[i + 8] === 0x00 && src[i + 9] === 0x00) {
+      exifSeg = src.slice(i, i + 2 + segLen);
+      break;
+    }
+    i += 2 + segLen;
+  }
+  if (!exifSeg) return targetBlob;
+
+  const tgt = new Uint8Array(await targetBlob.arrayBuffer());
+  if (tgt[0] !== 0xFF || tgt[1] !== 0xD8) return targetBlob;
+  const out = new Uint8Array(2 + exifSeg.length + (tgt.length - 2));
+  out.set(tgt.subarray(0, 2), 0);
+  out.set(exifSeg, 2);
+  out.set(tgt.subarray(2), 2 + exifSeg.length);
+  return new Blob([out], { type: 'image/jpeg' });
+}
+
+// ===================== Catálogo (tours + persons) ======================
+const PHD_NS    = 'https://pedalhidrografi.co/data/';
+const PH_NS     = 'https://pedalhidrografi.co/terms#';
+const SCHEMA    = 'https://schema.org/';
+const RDF_TYPE  = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
+const DCT_TITLE = 'http://purl.org/dc/terms/title';
+const DCT_DATE  = 'http://purl.org/dc/terms/date';
+
+function shortIRI(iri) {
+  if (iri.startsWith(PHD_NS)) return `phd:${iri.slice(PHD_NS.length)}`;
+  if (iri.startsWith(PH_NS))  return `ph:${iri.slice(PH_NS.length)}`;
+  return iri;
+}
+function seriesLabel(iri) {
+  const slug = iri.startsWith(PHD_NS) ? iri.slice(PHD_NS.length) : iri;
+  return slug === 'S' ? 'PH-S' : slug;
+}
+function fmtAssoc(label, n) {
+  return `${label}${label.includes('-') ? ' ' : '-'}${n}`;
+}
+
+async function loadCatalog() {
+  let Parser;
+  try {
+    ({ Parser } = await import('https://esm.sh/n3@1.17.4?bundle'));
+  } catch (e) {
+    throw new Error('N3.js indisponível.');
+  }
+  const tours = new Map(), persons = new Map();
+  const types = new Map(), titles = new Map(), dts = new Map(), names = new Map();
+  const inSE = new Map(), aSer = new Map(), aSeq = new Map();
+  // pHashes já presentes no servidor — usados pra rejeitar re-uploads.
+  const existingPhashes = new Set();
+  const IMAGE_IRI_PREFIX = 'https://pedalhidrografi.co/data/image_';
+  // tours.ttl tem os passeios; uploads.ttl tem as imagens (e seus phash via IRI).
+  for (const url of ['./data/tours.ttl', './data/uploads.ttl']) {
+    try {
+      const res = await fetch(url); if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const text = await res.text();
+      for (const q of new Parser().parse(text)) {
+        const s = q.subject.value, p = q.predicate.value, o = q.object.value;
+        if (p === RDF_TYPE) { if (!types.has(s)) types.set(s, new Set()); types.get(s).add(o); }
+        else if (p === DCT_TITLE) titles.set(s, o);
+        else if (p === DCT_DATE)  dts.set(s, o.slice(0, 16));
+        else if (p === SCHEMA + 'alternateName' || p === SCHEMA + 'name') names.set(s, o);
+        else if (p === PH_NS + 'inSeriesEdition') { if (!inSE.has(s)) inSE.set(s, new Set()); inSE.get(s).add(o); }
+        else if (p === PH_NS + 'inEventSeries')    aSer.set(s, o);
+        else if (p === PH_NS + 'sequenceInSeries') aSeq.set(s, parseInt(o, 10));
+        // Imagens — extrai pHash do próprio IRI (`phd:image_<phash16>`).
+        if (s.startsWith(IMAGE_IRI_PREFIX)) {
+          const ph = s.slice(IMAGE_IRI_PREFIX.length);
+          if (/^[0-9a-f]{16}$/i.test(ph)) existingPhashes.add(ph.toLowerCase());
+        }
+      }
+    } catch (e) {
+      console.warn(`Catálogo: ${url} indisponível —`, e.message);
+    }
+  }
+  for (const [s, ts] of types) {
+    if (ts.has(PH_NS + 'Tour')) {
+      const assocs = [];
+      for (const a of inSE.get(s) || []) {
+        const sr = aSer.get(a), n = aSeq.get(a);
+        if (sr && Number.isInteger(n)) assocs.push({ label: seriesLabel(sr), n });
+      }
+      assocs.sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'));
+      tours.set(s, { title: titles.get(s) || s, dateTime: dts.get(s) || '', assocs });
+    }
+    if (ts.has(SCHEMA + 'Person')) persons.set(s, { name: names.get(s) || s });
+  }
+  return { tours, persons, existingPhashes };
+}
+
+// ===================== Estado global ===================================
+const tourItems     = [];
+const tourCatalog   = [];                  // { value, ms, label } para auto-detecção
+const personOptions = [];
+const newPersons    = new Map();           // iri → nome
+const cards         = [];                  // [{ index, file, phash, bitmap, elem, authorTs, providerTs, skipAutoDetect }]
+const personSelects = [];                  // todas as instâncias TomSelect ligadas a pessoas
+// pHashes (16-hex) das imagens já no servidor — preenchido pelo bootstrap
+// do catálogo. Usado para rejeitar re-uploads antes de chamar o backend.
+const existingPhashes = [];
+
+const TOUR_WINDOW_BEFORE_MS =  2 * 3600 * 1000;
+const TOUR_WINDOW_AFTER_MS  = 12 * 3600 * 1000;
+const COMPRESS_TARGET_BYTES = 500 * 1024;
+// Hamming distance ≤ este valor → tratamos como duplicata e rejeitamos.
+// 0 = idêntico; 5 = "mesma foto, processada diferente"; 10+ começa a aceitar quadros sequenciais.
+const PHASH_DUP_THRESHOLD   = 5;
+
+function hammingDistance(h1, h2) {
+  if (!h1 || !h2 || h1.length !== h2.length) return Infinity;
+  let total = 0;
+  for (let i = 0; i < h1.length; i += 2) {
+    let x = parseInt(h1.substr(i, 2), 16) ^ parseInt(h2.substr(i, 2), 16);
+    while (x) { total += x & 1; x >>>= 1; }
+  }
+  return total;
+}
+
+let cardCounter = 0;
+let pickerBusy  = false;   // guarda contra re-entrada do handler de #files
+
+// ===================== Bootstrap catálogo ==============================
+try {
+  const { tours, persons, existingPhashes: srvHashes } = await loadCatalog();
+  for (const h of srvHashes) existingPhashes.push(h);
+  for (const [iri, m] of tours) {
+    const assocStr = m.assocs.map(a => fmtAssoc(a.label, a.n)).join(' & ');
+    const head = m.dateTime ? `${m.dateTime}: ` : '';
+    const tail = assocStr ? `. ${assocStr}` : '';
+    tourItems.push({ value: shortIRI(iri), label: `${head}${m.title}${tail}`, _dt: m.dateTime });
+  }
+  tourItems.sort((a, b) => (b._dt || '').localeCompare(a._dt || ''));
+  for (const it of tourItems) {
+    if (!it._dt) continue;
+    const ms = new Date(it._dt).getTime();
+    if (!isNaN(ms)) tourCatalog.push({ value: it.value, ms, label: it.label });
+  }
+  for (const [iri, m] of persons) {
+    personOptions.push({ value: shortIRI(iri), text: m.name });
+  }
+  personOptions.sort((a, b) => a.text.localeCompare(b.text, 'pt-BR'));
+  if (tours.size || persons.size) {
+    $('#catalogStatus').innerHTML =
+      `<span class="ok">Catálogo: ${tours.size} passeios, ${persons.size} pessoas, ${existingPhashes.length} imagens.</span>`;
+  } else {
+    $('#catalogStatus').innerHTML = `<span class="warn">Catálogo vazio.</span>`;
+  }
+} catch (e) {
+  $('#catalogStatus').innerHTML = `<span class="warn">Catálogo indisponível (${e.message}).</span>`;
+}
+
+// Popula os painéis de Padrões (lote 1 + append)
+function populateTourSelect(selectEl) {
+  for (const it of tourItems) {
+    const opt = document.createElement('option');
+    opt.value = it.value;
+    opt.textContent = it.label;
+    selectEl.appendChild(opt);
+  }
+}
+populateTourSelect($('#d-tour'));
+
+// ===================== Mint pessoa nova ================================
+function mintPerson(input) {
+  const slug = slugifyPerson(input);
+  if (!slug) return null;
+  const iri  = `phd:pessoa${slug}`;
+  const name = input.trim();
+  if (!newPersons.has(iri)) {
+    newPersons.set(iri, name);
+    const opt = { value: iri, text: name };
+    personOptions.push(opt);
+    for (const ts of personSelects) ts.addOption(opt);
+  }
+  return { value: iri, text: name };
+}
+
+function initPersonSelect(selectEl) {
+  const ts = new TomSelect(selectEl, {
+    options: [...personOptions],
+    valueField: 'value',
+    labelField: 'text',
+    searchField: ['text'],
+    plugins: ['remove_button'],
+    persist: false,
+    create: (input) => mintPerson(input) || false,
+    render: {
+      option_create: (data, escape) =>
+        `<div class="create">+ adicionar <strong>${escape(data.input)}</strong></div>`,
+    },
+    sortField: { field: 'text', direction: 'asc' },
+    maxOptions: 500,
+  });
+  personSelects.push(ts);
+  return ts;
+}
+function destroyPersonSelect(ts) {
+  if (!ts) return;
+  const i = personSelects.indexOf(ts);
+  if (i >= 0) personSelects.splice(i, 1);
+  try { ts.destroy(); } catch (_) {}
+}
+
+// Ativa TS no painel único de padrões
+const defaultsTs = { author: null, provider: null };
+defaultsTs.author   = initPersonSelect($('#d-author'));
+defaultsTs.provider = initPersonSelect($('#d-provider'));
+
+// ===================== Auto-detecção do passeio ========================
+function autoDetectTour(card) {
+  if (card.skipAutoDetect) return;
+  if (!tourCatalog.length) return;
+  const dateInput  = $('[data-field="date"]',  card.elem);
+  const tourSelect = $('[data-field="tour"]',  card.elem);
+  const status     = $('.tour-auto-status',    card.elem);
+  if (!dateInput.value) { status.textContent = ''; return; }
+  const ms = new Date(dateInput.value).getTime();
+  if (isNaN(ms)) return;
+  const matches = tourCatalog.filter(t =>
+    ms >= t.ms - TOUR_WINDOW_BEFORE_MS && ms <= t.ms + TOUR_WINDOW_AFTER_MS
+  );
+  if (!matches.length) {
+    status.innerHTML = `<span class="warn">Nenhum passeio em −2h / +12h.</span>`;
+    return;
+  }
+  matches.sort((a, b) => Math.abs(ms - a.ms) - Math.abs(ms - b.ms));
+  const best = matches[0];
+  tourSelect.value = best.value;
+  status.innerHTML = `<span class="ok">Detectado: ${best.label}</span>` +
+    (matches.length > 1 ? ` <span class="warn">(${matches.length - 1} outros)</span>` : '');
+}
+
+// ===================== Card factory ====================================
+function buildCardElem(displayIdx, file) {
+  const elem = document.createElement('div');
+  elem.className = 'card';
+  elem.innerHTML = `
+    <div class="card-header">
+      <img class="card-thumb" alt="">
+      <div class="card-meta">
+        <strong></strong>
+        <span class="hash">— calculando pHash —</span>
+      </div>
+      <button type="button" class="card-remove" title="Remover deste lote" aria-label="Remover">×</button>
+    </div>
+
+    <div class="card-section">
+      <h4>Quando / Onde</h4>
+      <label class="required">Data e hora</label>
+      <input type="datetime-local" data-field="date" step="1" required>
+      <div class="row">
+        <div>
+          <label class="required">Latitude</label>
+          <input type="number" data-field="lat" step="any" min="-90" max="90" required>
+        </div>
+        <div>
+          <label class="required">Longitude</label>
+          <input type="number" data-field="lon" step="any" min="-180" max="180" required>
+        </div>
+      </div>
+      <button type="button" class="pick-on-map" style="margin-top:.35rem;padding:.25rem .5rem;font-size:.8rem;">
+        🗺 Escolher no mapa
+      </button>
+    </div>
+
+    <div class="card-section">
+      <h4>Câmera</h4>
+      <div class="row">
+        <div>
+          <label>Direção (°)</label>
+          <input type="number" data-field="bearing" step="any" min="0" max="359.999">
+        </div>
+        <div>
+          <label>Focal eq. 35 mm</label>
+          <input type="number" data-field="focal" step="any" min="0.001" max="180">
+        </div>
+      </div>
+    </div>
+
+    <div class="card-section">
+      <h4>Atribuição</h4>
+      <label>Passeio</label>
+      <select data-field="tour"><option value="">— nenhum —</option></select>
+      <small class="tour-auto-status"></small>
+
+      <label>Autoras</label>
+      <select multiple data-field="author" placeholder="busca ou digita…"></select>
+
+      <label>Quem subiu</label>
+      <select multiple data-field="provider" placeholder="busca ou digita…"></select>
+
+      <label>Licença</label>
+      <select data-field="license">
+        <option value="https://creativecommons.org/licenses/by-sa/4.0/" selected>CC BY-SA 4.0</option>
+        <option value="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</option>
+        <option value="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</option>
+        <option value="https://creativecommons.org/licenses/by-nc/4.0/">CC BY-NC 4.0</option>
+        <option value="https://creativecommons.org/publicdomain/zero/1.0/">CC0 1.0</option>
+      </select>
+    </div>
+
+    <div class="card-section">
+      <h4>Saída</h4>
+      <div class="opts">
+        <label><input type="checkbox" data-field="anon"> Anonimizar (remover metadados)</label>
+        <label><input type="checkbox" data-field="comp"> Comprimir imagem para 500 kB máx.</label>
+      </div>
+    </div>
+
+    <div class="card-section">
+      <h4>Envio</h4>
+      <div style="display:flex;gap:.4rem;align-items:center;flex-wrap:wrap">
+        <button type="button" class="card-send" disabled>📤 Enviar</button>
+        <small class="card-send-status">pendente</small>
+      </div>
+    </div>
+  `;
+  $('.card-meta strong', elem).textContent = `${displayIdx}. ${file.name}`;
+  $('.card-thumb', elem).src = URL.createObjectURL(file);
+  populateTourSelect($('[data-field="tour"]', elem));
+  return elem;
+}
+
+function removeCard(card) {
+  destroyPersonSelect(card.authorTs);
+  destroyPersonSelect(card.providerTs);
+  try { URL.revokeObjectURL($('.card-thumb', card.elem).src); } catch (_) {}
+  card.elem.remove();
+  const i = cards.indexOf(card);
+  if (i >= 0) cards.splice(i, 1);
+  refreshGenerateButtons();
+}
+
+function refreshGenerateButtons() {
+  const has = cards.length > 0;
+  $('#uploadAll').disabled  = !has;
+  $('#previewTtl').disabled = !has;
+  $('#clearAll').disabled   = !has;
+}
+
+// Mostra inline a concatenação dos TTLs single-image que seriam enviados.
+function showTtlPreview() {
+  const pre = $('#ttl-preview');
+  if (!cards.length) { pre.textContent = '— sem cards —'; pre.hidden = false; return; }
+  const blocks = cards.map((card, i) => {
+    if (!card.phash) return `# ─── ${i + 1}: ${card.file.name} — pHash ainda não pronto ───`;
+    const head = `# ─── ${i + 1}/${cards.length}: ${card.file.name} (${card.phash}) ───`;
+    return `${head}\n${buildSingleImageTtl(card)}`;
+  });
+  pre.textContent = blocks.join('\n\n');
+  pre.hidden = false;
+  pre.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function notify(html, kind = 'warn') {
+  const div = document.createElement('div');
+  div.className = kind;
+  div.style.cssText =
+    'padding: .4rem .6rem; background: #fff8e1; border: 1px solid #ffe082;' +
+    'border-radius: 3px; margin: .3rem 0; font-size: .85rem;';
+  div.innerHTML = html;
+  $('#notices').appendChild(div);
+}
+function clearNotices() { $('#notices').innerHTML = ''; }
+
+function isHeicFile(file) {
+  const t = (file.type || '').toLowerCase();
+  if (t === 'image/heic' || t === 'image/heif') return true;
+  return /\.(heic|heif)$/i.test(file.name);
+}
+
+async function createCard(file, defaults) {
+  // 0) HEIC → JPEG. Substituímos `file` para que o resto do pipeline (pHash,
+  //    EXIF, compressão, splicer Exif) trate como JPEG. A conversão preserva
+  //    os metadados, então o splicer continua propagando-os para large/original.
+  if (isHeicFile(file)) {
+    if (!heic2any) {
+      notify(`<strong>${file.name}</strong>: HEIC requer heic2any (CDN indisponível).`, 'err');
+      return { ok: false, reason: 'heic-unavailable' };
+    }
+    try {
+      const out = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.92 });
+      const blob = Array.isArray(out) ? out[0] : out;
+      const newName = file.name.replace(/\.(heic|heif)$/i, '.jpg');
+      file = new File([blob], newName, { type: 'image/jpeg' });
+    } catch (e) {
+      notify(`<strong>${file.name}</strong>: conversão HEIC falhou (${e.message}).`, 'err');
+      return { ok: false, reason: 'heic-convert-failed' };
+    }
+  }
+
+  // 1) Decodifica e computa pHash ANTES de criar DOM/TS,
+  //    para podermos rejeitar duplicatas barato.
+  let bitmap, phash;
+  try {
+    bitmap = await createImageBitmap(file);
+    phash  = computePHash(bitmap);
+  } catch (e) {
+    notify(`<strong>${file.name}</strong>: não consegui ler (${e.message}).`, 'err');
+    return { ok: false, reason: 'decode-error' };
+  }
+
+  // 2a) Rejeita se for similar (pHash) a algum card já criado neste lote.
+  for (const existing of cards) {
+    if (!existing.phash) continue;
+    const dist = hammingDistance(phash, existing.phash);
+    if (dist <= PHASH_DUP_THRESHOLD) {
+      notify(
+        `<strong>${file.name}</strong> rejeitada — pHash similar a ` +
+        `<em>${existing.file.name}</em> (distância ${dist} ≤ ${PHASH_DUP_THRESHOLD}).`,
+        'warn'
+      );
+      try { bitmap.close?.(); } catch (_) {}
+      return { ok: false, reason: 'duplicate' };
+    }
+  }
+  // 2b) Rejeita se for similar a alguma imagem já no servidor (re-upload).
+  for (const srv of existingPhashes) {
+    const dist = hammingDistance(phash, srv);
+    if (dist <= PHASH_DUP_THRESHOLD) {
+      notify(
+        `<strong>${file.name}</strong> rejeitada — já existe no servidor ` +
+        `(<code>image_${srv}</code>, distância pHash ${dist} ≤ ${PHASH_DUP_THRESHOLD}).`,
+        'warn'
+      );
+      try { bitmap.close?.(); } catch (_) {}
+      return { ok: false, reason: 'duplicate' };
+    }
+  }
+
+  // 3) Aceita: cria o card.
+  cardCounter += 1;
+  const elem = buildCardElem(cardCounter, file);
+  $('#cards').appendChild(elem);
+
+  const card = {
+    index: cardCounter, file, phash, bitmap, elem,
+    authorTs: null, providerTs: null, skipAutoDetect: false,
+  };
+  cards.push(card);
+
+  card.authorTs   = initPersonSelect($('[data-field="author"]',   elem));
+  card.providerTs = initPersonSelect($('[data-field="provider"]', elem));
+
+  // Aplica padrões do lote em que foi adicionado
+  if (defaults.tour) {
+    $('[data-field="tour"]', elem).value = defaults.tour;
+    card.skipAutoDetect = true;
+  }
+  if (defaults.license) $('[data-field="license"]', elem).value = defaults.license;
+  if (defaults.authors?.length)   card.authorTs.setValue(defaults.authors);
+  if (defaults.providers?.length) card.providerTs.setValue(defaults.providers);
+  $('[data-field="anon"]', elem).checked = !!defaults.anon;
+  $('[data-field="comp"]', elem).checked = !!defaults.comp;
+
+  // Manuseio de tour manual = lock auto-detect
+  $('[data-field="tour"]', elem).addEventListener('change', () => {
+    card.skipAutoDetect = true;
+  });
+  // Data muda → re-detecta
+  const dateInput = $('[data-field="date"]', elem);
+  dateInput.addEventListener('change', () => autoDetectTour(card));
+  dateInput.addEventListener('input',  () => autoDetectTour(card));
+  // Remove
+  $('.card-remove', elem).addEventListener('click', () => removeCard(card));
+  $('.card-send',   elem).addEventListener('click', () => uploadCard(card));
+  // Mapa pra escolher coordenadas
+  $('.pick-on-map', elem).addEventListener('click', () => {
+    const latI = $('[data-field="lat"]', elem);
+    const lonI = $('[data-field="lon"]', elem);
+    const lat = parseFloat(latI.value);
+    const lon = parseFloat(lonI.value);
+    openMapPicker(
+      Number.isFinite(lat) ? lat : null,
+      Number.isFinite(lon) ? lon : null,
+      (newLat, newLon) => {
+        latI.value = newLat.toFixed(6);
+        lonI.value = newLon.toFixed(6);
+        // Dispara `change` pra qualquer listener (ex: autoDetectTour).
+        latI.dispatchEvent(new Event('change', { bubbles: true }));
+        lonI.dispatchEvent(new Event('change', { bubbles: true }));
+      },
+    );
+  });
+
+  // pHash já calculado acima
+  $('.hash', elem).textContent = `pHash: ${card.phash}`;
+  setCardSendEnabled(card, true);
+  setCardStatus(card, 'pronta para envio', '');
+
+  // EXIF
+  if (exifr) {
+    try {
+      const data = await exifr.parse(file, { gps: true });
+      if (data) {
+        if (data.DateTimeOriginal) {
+          dateInput.value = dateToLocalInput(new Date(data.DateTimeOriginal));
+          autoDetectTour(card);
+        }
+        if (data.latitude  != null) $('[data-field="lat"]', elem).value     = data.latitude.toFixed(6);
+        if (data.longitude != null) $('[data-field="lon"]', elem).value     = data.longitude.toFixed(6);
+        if (data.GPSImgDirection != null)         $('[data-field="bearing"]', elem).value = data.GPSImgDirection;
+        if (data.FocalLengthIn35mmFormat != null) $('[data-field="focal"]',   elem).value = data.FocalLengthIn35mmFormat;
+      }
+    } catch (e) { console.warn('EXIF:', e); }
+  }
+  return { ok: true, card };
+}
+
+function readDefaults() {
+  return {
+    tour:      $('#d-tour').value,
+    license:   $('#d-license').value,
+    anon:      $('#d-anon').checked,
+    comp:      $('#d-comp').checked,
+    authors:   defaultsTs.author.getValue(),
+    providers: defaultsTs.provider.getValue(),
+  };
+}
+
+// ===================== File pickers ====================================
+// Picker único: cada seleção APPENDA aos cards existentes
+$('#files').addEventListener('change', async (e) => {
+  if (pickerBusy) return;            // evita re-entrada (alguns browsers disparam change 2×)
+  pickerBusy = true;
+  try {
+    const files = [...e.target.files];
+    if (!files.length) return;
+    clearNotices();                  // mensagens antigas saem antes do novo lote
+    const defaults = readDefaults();
+    const tally = { ok: 0, duplicate: 0, 'decode-error': 0,
+                    'heic-unavailable': 0, 'heic-convert-failed': 0 };
+    for (const f of files) {         // sequencial: dedup precisa ver os recém-aceitos
+      const r = await createCard(f, defaults);
+      const key = r?.ok ? 'ok' : (r?.reason || 'decode-error');
+      tally[key] = (tally[key] || 0) + 1;
+    }
+    const parts = [`+${tally.ok} imagem(ns)`];
+    if (tally.duplicate)             parts.push(`<span class="warn">${tally.duplicate} duplicada(s)</span>`);
+    const errs = tally['decode-error'] + tally['heic-unavailable'] + tally['heic-convert-failed'];
+    if (errs)                        parts.push(`<span class="err">${errs} com erro</span>`);
+    parts.push(`(total: ${cards.length}).`);
+    $('#filesStatus').innerHTML = parts.join(' · ');
+    e.target.value = '';             // permite re-selecionar os mesmos arquivos depois
+    refreshGenerateButtons();
+  } finally {
+    pickerBusy = false;
+  }
+});
+
+// Botão "Limpar todas as imagens"
+$('#clearAll').addEventListener('click', () => {
+  if (cards.length && !confirm(`Remover todas as ${cards.length} imagem(ns)?`)) return;
+  for (const c of [...cards]) removeCard(c);
+  cardCounter = 0;
+  clearNotices();
+  $('#filesStatus').textContent = 'Nenhum arquivo.';
+  $('#uploadAllStatus').textContent = '';
+});
+
+// ===================== Geração do Turtle ===============================
+function buildImageBlock(card) {
+  const elem    = card.elem;
+  const dateXsd = localToXsdDateTime($('[data-field="date"]',    elem).value);
+  const lat     = $('[data-field="lat"]',     elem).value;
+  const lon     = $('[data-field="lon"]',     elem).value;
+  const bearing = $('[data-field="bearing"]', elem).value;
+  const focal   = $('[data-field="focal"]',   elem).value;
+  const tour    = $('[data-field="tour"]',    elem).value.trim();
+  const license = $('[data-field="license"]', elem).value;
+  const anon    = $('[data-field="anon"]',    elem).checked;
+  const comp    = $('[data-field="comp"]',    elem).checked;
+  const authors   = card.authorTs.getValue();
+  const providers = card.providerTs.getValue();
+
+  const id    = `phd:image_${card.phash}`;
+  const props = [
+    `a ph:Image`,
+    `nfo:hasHash [\n        a nfo:FileHash ;\n        nfo:hashAlgorithm "pHash" ;\n        nfo:hashValue "${card.phash}"\n    ]`,
+    `dcterms:date "${dateXsd}"^^xsd:dateTime`,
+    `dcterms:license <${license}>`,
+    `schema:locationCreated [\n        a schema:GeoCoordinates ;\n        schema:latitude "${lat}"^^xsd:decimal ;\n        schema:longitude "${lon}"^^xsd:decimal\n    ]`,
+  ];
+  if (bearing !== '') props.push(`exif:gpsImgDirection "${bearing}"^^xsd:decimal`);
+  if (focal   !== '') props.push(`exif:focalLengthIn35mmFilm "${focal}"^^xsd:decimal`);
+  if (tour)           props.push(`ph:capturedDuring ${tour}`);
+  for (const a of authors)   props.push(`prov:wasAttributedTo ${a}`);
+  for (const p of providers) props.push(`pav:providedBy ${p}`);
+  if (anon) props.push(`ph:anonymized true`);
+  if (comp) props.push(`ph:compressed true`);
+  const body = props.map(p => `    ${p}`).join(' ;\n');
+  return { id, ttl: `${id}\n${body} .` };
+}
+
+// ===================== Empacotamento single-image TTL ==================
+// Gera um TTL auto-suficiente para 1 foto: prefixos + declarações de pessoas
+// novas usadas + bloco da imagem. O Pi valida com SHACL e mescla em
+// web/data/photos.ttl deduplicando pelo IRI.
+function buildSingleImageTtl(card) {
+  const prefixes = [
+    '@prefix dcterms: <http://purl.org/dc/terms/> .',
+    '@prefix exif:    <http://www.w3.org/2003/12/exif/ns#> .',
+    '@prefix nfo:     <http://www.semanticdesktop.org/ontologies/2007/03/22/nfo#> .',
+    '@prefix pav:     <http://purl.org/pav/> .',
+    '@prefix ph:      <https://pedalhidrografi.co/terms#> .',
+    '@prefix phd:     <https://pedalhidrografi.co/data/> .',
+    '@prefix prov:    <http://www.w3.org/ns/prov#> .',
+    '@prefix schema:  <https://schema.org/> .',
+    '@prefix xsd:     <http://www.w3.org/2001/XMLSchema#> .',
+  ].join('\n');
+  const used = new Set();
+  for (const v of [...card.authorTs.getValue(), ...card.providerTs.getValue()]) {
+    if (newPersons.has(v)) used.add(v);
+  }
+  const personDecls = [...used].map(iri =>
+    `${iri} a schema:Person ;\n    schema:alternateName "${turtle_escape(newPersons.get(iri))}" .`
+  ).join('\n\n');
+  const decls = personDecls ? `\n# Pessoas novas\n${personDecls}\n` : '';
+  return `${prefixes}\n${decls}\n${buildImageBlock(card).ttl}\n`;
+}
+
+// Constrói as 3 variantes da imagem em blobs (mesma lógica do kit ZIP do
+// modo lote: respeita Anonimizar / Comprimir; large/thumb sempre derivam
+// do bitmap em memória).
+async function buildVariants(card) {
+  const anon = $('[data-field="anon"]', card.elem).checked;
+  const comp = $('[data-field="comp"]', card.elem).checked;
+  let originalBlob, originalName;
+  if (comp) {
+    originalBlob = await compressToTarget(card.bitmap, COMPRESS_TARGET_BYTES);
+    if (!anon) originalBlob = await copyExifSegment(card.file, originalBlob);
+    originalName = 'original.jpg';
+  } else if (anon) {
+    originalBlob = await anonymizeJpeg(card.bitmap);
+    originalName = 'original.jpg';
+  } else {
+    originalBlob = card.file;
+    const ext = (card.file.name.match(/\.([a-z0-9]+)$/i)?.[1] || 'jpg').toLowerCase();
+    originalName = `original.${ext}`;
+  }
+  let largeBlob = await compressToTarget(card.bitmap, COMPRESS_TARGET_BYTES);
+  if (!anon) largeBlob = await copyExifSegment(card.file, largeBlob);
+  const thumbBlob = await makeThumbnail(card.bitmap);
+  return {
+    original: { blob: originalBlob, name: originalName },
+    large:    { blob: largeBlob,    name: 'large.jpg' },
+    thumb:    { blob: thumbBlob,    name: 'thumb.jpg' },
+  };
+}
+
+// ===================== Upload de uma foto ==============================
+const UPLOAD_URL = './upload-image';   // mesma origem (Pi serve este HTML)
+
+function setCardStatus(card, label, kind = '') {
+  const el = $('.card-send-status', card.elem);
+  if (!el) return;
+  el.textContent = label;
+  el.className = `card-send-status ${kind}`;
+}
+function setCardSendEnabled(card, enabled) {
+  const btn = $('.card-send', card.elem);
+  if (btn) btn.disabled = !enabled;
+}
+
+async function uploadCard(card) {
+  if (!card.phash || !card.bitmap) {
+    setCardStatus(card, 'erro: imagem não pronta', 'err');
+    return false;
+  }
+  if (!$('#form').reportValidity()) return false;
+  setCardSendEnabled(card, false);
+  setCardStatus(card, 'preparando…', 'warn');
+  let ttl, variants;
+  try {
+    ttl = buildSingleImageTtl(card);
+    variants = await buildVariants(card);
+  } catch (e) {
+    setCardStatus(card, `falha local: ${e.message}`, 'err');
+    setCardSendEnabled(card, true);
+    return false;
+  }
+  const fd = new FormData();
+  fd.append('ttl', ttl);
+  fd.append('original', variants.original.blob, variants.original.name);
+  fd.append('large',    variants.large.blob,    variants.large.name);
+  fd.append('thumb',    variants.thumb.blob,    variants.thumb.name);
+  setCardStatus(card, 'enviando…', 'warn');
+  try {
+    const res = await fetch(UPLOAD_URL, { method: 'POST', body: fd });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const detail = (data.details || []).join('; ') || data.error || `HTTP ${res.status}`;
+      setCardStatus(card, `erro: ${detail}`, 'err');
+      setCardSendEnabled(card, true);
+      return false;
+    }
+    card.uploaded = true;
+    setCardStatus(card, `✓ enviada (phash ${data.phash || card.phash})`, 'ok');
+    return true;
+  } catch (e) {
+    setCardStatus(card, `erro de rede: ${e.message}`, 'err');
+    setCardSendEnabled(card, true);
+    return false;
+  }
+}
+
+async function uploadAll() {
+  const pending = cards.filter(c => !c.uploaded);
+  if (!pending.length) { $('#uploadAllStatus').textContent = 'tudo enviado.'; return; }
+  $('#uploadAll').disabled = true;
+  let ok = 0, fail = 0;
+  for (let i = 0; i < pending.length; i++) {
+    $('#uploadAllStatus').textContent = `enviando ${i + 1}/${pending.length}…`;
+    const success = await uploadCard(pending[i]);
+    if (success) ok++; else fail++;
+  }
+  $('#uploadAllStatus').innerHTML =
+    `<span class="ok">${ok} enviada(s)</span>` +
+    (fail ? ` · <span class="err">${fail} com erro</span>` : '');
+  $('#uploadAll').disabled = false;
+}
+
+$('#uploadAll').addEventListener('click', uploadAll);
+$('#previewTtl').addEventListener('click', showTtlPreview);
+
+// ===================== Map picker (Leaflet/OSM, lazy) ==================
+const LEAFLET_CSS = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+const LEAFLET_JS  = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+const SP_CENTER   = [-23.55, -46.633];   // São Paulo, fallback quando sem coords
+
+let _leafletLoading = null;
+function ensureLeaflet() {
+  if (window.L) return Promise.resolve(window.L);
+  if (_leafletLoading) return _leafletLoading;
+  _leafletLoading = new Promise((resolve, reject) => {
+    if (!document.querySelector(`link[href="${LEAFLET_CSS}"]`)) {
+      const link = document.createElement('link');
+      link.rel = 'stylesheet'; link.href = LEAFLET_CSS;
+      document.head.appendChild(link);
+    }
+    const s = document.createElement('script');
+    s.src = LEAFLET_JS;
+    s.onload  = () => resolve(window.L);
+    s.onerror = () => reject(new Error('falha ao carregar Leaflet'));
+    document.head.appendChild(s);
+  });
+  return _leafletLoading;
+}
+
+let _picker = null;   // { map, marker, onConfirm, lat, lon }
+const _pickerModal   = $('#map-picker-modal');
+const _pickerCoords  = $('#map-picker-coords');
+
+function _updatePickerCoords(latlng) {
+  _picker.lat = latlng.lat;
+  _picker.lon = latlng.lng;
+  _pickerCoords.textContent = `${latlng.lat.toFixed(6)}, ${latlng.lng.toFixed(6)}`;
+}
+
+async function openMapPicker(initLat, initLon, onConfirm) {
+  try {
+    const L = await ensureLeaflet();
+    _pickerModal.style.display = 'flex';
+    const start = (initLat != null && initLon != null) ? [initLat, initLon] : SP_CENTER;
+    const initialZoom = (initLat != null && initLon != null) ? 16 : 12;
+    if (!_picker || !_picker.map) {
+      const map = L.map($('#map-picker-mapbox'));
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap',
+        maxZoom: 19,
+      }).addTo(map);
+      const marker = L.marker(start, { draggable: true }).addTo(map);
+      map.on('click', (e) => { marker.setLatLng(e.latlng); _updatePickerCoords(e.latlng); });
+      marker.on('dragend', () => _updatePickerCoords(marker.getLatLng()));
+      _picker = { map, marker };
+    }
+    _picker.map.setView(start, initialZoom);
+    _picker.marker.setLatLng(start);
+    _updatePickerCoords({ lat: start[0], lng: start[1] });
+    _picker.onConfirm = onConfirm;
+    // Leaflet às vezes calcula o tamanho antes do modal estar visível.
+    setTimeout(() => _picker.map.invalidateSize(), 50);
+  } catch (e) {
+    alert(`Não foi possível abrir o mapa: ${e.message}`);
+  }
+}
+
+function closeMapPicker() {
+  _pickerModal.style.display = 'none';
+  if (_picker) _picker.onConfirm = null;
+}
+
+$('#map-picker-close').addEventListener('click', closeMapPicker);
+$('#map-picker-cancel').addEventListener('click', closeMapPicker);
+$('#map-picker-confirm').addEventListener('click', () => {
+  if (_picker?.onConfirm && Number.isFinite(_picker.lat) && Number.isFinite(_picker.lon)) {
+    _picker.onConfirm(_picker.lat, _picker.lon);
+  }
+  closeMapPicker();
+});
+_pickerModal.addEventListener('click', (e) => { if (e.target === _pickerModal) closeMapPicker(); });
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && _pickerModal.style.display !== 'none') closeMapPicker();
+});
+</script>
+</body>
+</html>

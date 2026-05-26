@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Sync the static site at public/ to gs://telhas/rotas_app.
+# Sync the static site at web/ to gs://telhas/rotas_app.
 # Served at https://tiles.pedalhidrografi.co/rotas_app/ via the CDN.
 #
 # Usage:
@@ -24,7 +24,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-LOCAL_DIR="$REPO_ROOT/public"
+LOCAL_DIR="$REPO_ROOT/web"
 BUCKET_DIR="gs://telhas/rotas_app"
 
 # ─── Argument parsing ────────────────────────────────────────────────────────
@@ -47,8 +47,8 @@ fi
 # Build routes.json if it's missing. Without it, /rotas data on the deployed
 # site will be empty, and that's almost never what you want.
 if [[ ! -f "$LOCAL_DIR/routes.json" ]]; then
-  echo "→ routes.json missing locally — running 'npm run build:routes' first…"
-  (cd "$REPO_ROOT" && npm run build:routes)
+  echo "→ routes.json missing locally — running 'python scripts/build-routes.py' first…"
+  (cd "$REPO_ROOT" && python scripts/build-routes.py)
 fi
 
 # ─── Sync ────────────────────────────────────────────────────────────────────

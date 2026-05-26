@@ -7,52 +7,69 @@ local-first.
 
 ## Repo layout
 
-- `public/` — the app. A static PWA: `index.html`, one big `app.js`
-  (~3500 lines, single file, no build step), `style.css`, `sw.js` (service
-  worker), `manifest.json`, icons, `lib/utils.js`. Leaflet-based map.
+- `web/` — the app. A static PWA: `index.html`, one big `app.js` (single
+  file, no build step), `style.css`, `sw.js` (service worker),
+  `manifest.json`, icons, `lib/{utils.js,n3.min.js}` (N3.js vendored).
+  Leaflet-based map. Also hosts `upload_images.html` (per-photo upload form)
+  and the `data/` + `photos/` directories the app reads from.
 - `backend/pi/` — the self-hosted backend. One Flask service (`main.py`)
-  that serves the app *and* the photo archive; SQLite index + files on disk.
-  `phidro.service` (systemd) / `phidro.plist` (launchd), `requirements.txt`,
-  `README.md`. Runs on a Raspberry Pi (64-bit OS) or macOS.
-- `ontology/` — the RDF vocabulary (`pedalhidrografico.ttl`, v1.1) + the
-  JSON-LD context + generated instance data + a standalone graph explorer.
-- `scripts/` — `build-routes.mjs` (bakes `routes.json` from RideWithGPS),
-  `build-photos.py` (EXIF → `public/photos.json` + thumbnails),
-  `coletor_*.py` (photo collectors), `deploy.sh` (GCS static deploy).
+  that serves `web/` as static files **and** validates+stores incoming
+  photos. No SQLite; state lives in `web/data/photos.ttl` (catalog) +
+  `web/photos/<phash>/{original,large,thumb}.*` (image variants).
+  `phidro.service` (systemd) / `phidro.plist` (launchd),
+  `requirements.txt`, `README.md`. Runs on a Raspberry Pi or macOS.
+- `research/photos-rdf/` — the RDF substrate. `ontology.ttl` +
+  `shapes.ttl` (SHACL — what the Pi validates against), `data/tours.ttl`
+  (catalog of historical rides, generated from a TSV by `build-tours.py`),
+  `data/initial-data.ttl` (person declarations + demo image),
+  `upload-form.html` (batch download-kit form), `DESIGN.md`.
+- `ontology/` — the older RDF vocabulary (`pedalhidrografico.ttl`, v1.1)
+  with a JSON-LD context. Superseded by `research/photos-rdf/`; kept for now.
+- `scripts/` — `build-routes.py` (bakes `routes.json` from RideWithGPS),
+  `coletor_*.py` (legacy photo collectors), `deploy.sh` (GCS static deploy).
 
 ## Architecture
 
 The app is fully static and works offline (service worker). It reads
-pre-baked `routes.json` and a photo manifest. When served by the Pi backend,
-uploads/edits hit same-origin API routes; on a static-only host those routes
-404 and the app degrades to read-only.
+pre-baked `routes.json` and a Turtle catalog at `web/data/photos.ttl`.
+When served by the Pi backend, uploads hit `POST /upload-image` same-origin;
+on a static-only host (CDN) the form is offline-friendly but uploads have
+nowhere to go.
 
-**Photos are a "voiced manifest."** `photos.jsonld` is
-`{@context, generatedAt, voices:[{id,label,kind,signed,verified,pubkey,photos:[...]}]}`.
-Each voice is a named graph / perspective. The app folds the voices into one
-view (`foldVoices` in `app.js`).
+**Photos are described in RDF/Turtle** per the SHACL shapes in
+`research/photos-rdf/shapes.ttl` (notably `ph:ImageShape`). One photo =
+one `phd:image_<phash16>` IRI. `phash` is a 64-bit perceptual hash (pHash,
+DCT-based, computed in the browser); near-duplicate uploads share an IRI
+and naturally cluster.
 
-Key concepts (all implemented — "Part B steps 1–5"):
+Key flows:
 
-- **Voices** — perspectives on the photo archive. `kind` is `person`
-  (animate) or `model` (inanimate; the `voice/censo` voice is the model).
-- **Precedence stack** — for the photo layer, voices are ordered; the top
-  voice wins per photo. State in `localStorage` (`phidro:voiceOrder`,
-  `phidro:voiceOff`, `phidro:activeVoice`). Managed in the "Vozes" modal.
-- **Clusters** — uploads are perceptual-hashed (dHash) on the Pi; near-
-  identical photos share a `cluster` id so the same photo across voices is
-  recognised. `foldVoices` keys on `cluster || id`.
-- **Divergence** — when voices disagree about a clustered photo's metadata,
-  it is surfaced (popup section, ghost markers, review panel) — but only
-  when a `model` voice is involved; person-vs-person stays silent precedence.
-- **Signing** — exporting a voice `.zip` signs `voice.json` with a browser-
-  held ECDSA P-256 key (`localStorage` `phidro:idKey`); import verifies
-  integrity only (no key pinning). Bad signature flags, doesn't reject.
+- **Display.** `web/app.js` fetches `./data/photos.ttl`, parses it with the
+  bundled N3.js (`web/lib/n3.min.js`), and renders one Leaflet marker per
+  `ph:Image` (GPS from `schema:locationCreated`, popup from triples).
+  The **Source** modal (`🗂 Fonte…` in the topbar) lets the user switch
+  between Pi (same-origin), CDN, or Local (kit ZIP file picker — stored in
+  memory, image URLs become blob URLs). Import/export buttons live there.
+- **Upload.** `web/upload_images.html` is the operational form. Each card =
+  one photo with EXIF auto-fill, tour auto-detect, multi-select people
+  (Tom Select w/ create-on-the-fly), license + anonymize/compress toggles.
+  Each card POSTs `multipart/form-data` to `/upload-image` with a
+  self-contained single-image TTL block + `original`/`large`/`thumb`
+  variants. The Pi validates with pyshacl, writes files into
+  `web/photos/<phash>/`, and merges the triples into `web/data/photos.ttl`
+  (deduping by IRI). pHash dedup prevents accidental re-uploads in the
+  same batch.
+- **Validation.** `pyshacl` loads `research/photos-rdf/{shapes,ontology}.ttl`
+  once per process. The validator merges the incoming TTL with the
+  ontology before checking — `pyshacl`'s `ont_graph` parameter does NOT
+  expose ontology-declared instances (like `ph:rwgps a schema:Organization`)
+  to `sh:class` checks, so manual merging is mandatory. See
+  `research/photos-rdf/DESIGN.md` §2 for the full gotcha.
 
 ## Conventions — please follow
 
-- **Bump `sw.js` `VERSION`** (currently `phidro-v31`) on *any* change to
-  files in `public/` — otherwise the service worker serves stale cached
+- **Bump `sw.js` `VERSION`** (currently `phidro-v51`) on *any* change to
+  files in `web/` — otherwise the service worker serves stale cached
   copies and the change won't reach users. It's a monotonic `phidro-vN`.
 - **No backend auth.** Anyone who can reach the Pi can upload/delete — this
   is an intentional decision (trusted access assumed). Don't reintroduce a
@@ -70,26 +87,37 @@ Key concepts (all implemented — "Part B steps 1–5"):
 
 ## Verify before finishing
 
-- `node --check public/app.js && node --check public/sw.js`
-- `python3 -m py_compile backend/pi/main.py`
+- JS in `web/`: load it in a browser (or the existing dev server) — the
+  browser surfaces syntax errors immediately. No standalone JS tooling here.
+- `python -m py_compile backend/pi/main.py`
 - Ontology: parse with `rdflib` after editing `*.ttl`.
 
 ## Build & deploy
 
-- `npm run build:routes` — regenerate `public/routes.json`.
-- `python3 scripts/build-photos.py [--photos-root DIR]` — regenerate
-  `public/photos.json` + thumbnails.
-- `npm run deploy:dry` / `npm run deploy` — sync `public/` to the GCS static
-  mirror (read-only; needs `gcloud` auth).
-- Pi: see `backend/pi/README.md`.
+- `python scripts/build-routes.py` — regenerate `web/routes.json`
+  (requires `pip install python-dotenv` and credentials in `.env`).
+- `python research/photos-rdf/build-tours.py` — regenerate
+  `research/photos-rdf/data/tours.ttl` from the TSV in the same dir.
+  `web/data/tours.ttl` is a symlink to this file.
+- `bash scripts/deploy.sh` (or `bash scripts/deploy.sh --dry-run`) — sync
+  `web/` to the GCS static mirror (read-only; needs `gcloud` auth).
+- Pi: `pip install -r backend/pi/requirements.txt && python backend/pi/main.py`
+  (defaults to port 8000; override with `PORT=…`). See `backend/pi/README.md`.
 
 ## Open loose ends
 
-- Local cleanup the user runs: `rm -rf backend/delete-photo` (stray empty
-  dir) and `git rm --cached public/.DS_Store` (tracked despite `.gitignore`).
-- `public/photos.json` is not committed — it's a build artifact. The static
-  GCS mirror shows no photos until `build-photos.py` is run locally first.
-- `backend/pi/data/` is the live local archive (gitignored) — don't delete.
+- **Retire** `scripts/build-photos.py` — its photos.json artifact is gone;
+  uploads now flow through `web/upload_images.html` → Pi → `web/data/photos.ttl`.
+  Pillow/HEIF dropped from `backend/pi/requirements.txt`. User-deletes:
+  `git rm scripts/build-photos.py`.
+- **Legacy data dirs** under `backend/pi/data/` (`fotos/`, `originals/`,
+  `photos.db`, voice ZIPs) are orphaned — the new backend stores nothing
+  there. Inspect and `rm -rf` at your own pace.
+- Local cleanup the user runs: `git rm --cached web/.DS_Store` (tracked
+  despite `.gitignore`).
+- `web/data/photos.ttl` and `web/photos/<phash>/` are runtime artifacts of
+  the Pi — gitignore or commit per your deploy strategy. The CDN mirror
+  shows no photos until that catalog exists at the destination.
 
 ## Notes
 

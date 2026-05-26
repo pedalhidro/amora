@@ -9,7 +9,7 @@
 //                    their second visit.
 //   RUNTIME_CACHE — map tiles, OSRM, elevation, etc. Same strategy.
 
-const VERSION = 'phidro-v31';
+const VERSION = 'phidro-v59';
 const STATIC_CACHE = `${VERSION}-static`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 
@@ -27,6 +27,10 @@ const STATIC_ASSETS = [
   './icon-512.png',
   './apple-touch-icon.png',
   './lib/utils.js',
+  './lib/n3.min.js',
+  './lib/energy-worker.js',
+  './lib/tom-select.complete.min.js',
+  './lib/tom-select.min.css',
 ];
 
 self.addEventListener('install', (event) => {
@@ -75,10 +79,15 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(req.url);
 
-  // Same-origin app shell + routes.json: stale-while-revalidate so redeploys
-  // surface on the next reload without a hard-refresh dance.
+  // Same-origin: dynamic catalogs (data_graphs.ttl) precisam de network-first
+  // — qualquer upload novo já aparece no próximo refresh sem o dance de
+  // dois-refreshes do stale-while-revalidate.
   if (url.origin === self.location.origin) {
-    event.respondWith(staleWhileRevalidate(req, STATIC_CACHE));
+    if (url.pathname === '/data/data_graphs.ttl') {
+      event.respondWith(networkFirst(req, STATIC_CACHE));
+    } else {
+      event.respondWith(staleWhileRevalidate(req, STATIC_CACHE));
+    }
     return;
   }
 
@@ -91,6 +100,18 @@ self.addEventListener('fetch', (event) => {
   // Everything else: pass through.
 });
 
+// Tenta rede primeiro; cai pra cache só se a rede falhar (offline).
+async function networkFirst(req, cacheName) {
+  const cache = await caches.open(cacheName);
+  try {
+    const res = await fetch(req);
+    if (res && res.ok && res.status === 200) cache.put(req, res.clone());
+    return res;
+  } catch (_) {
+    return (await cache.match(req)) || Response.error();
+  }
+}
+
 async function staleWhileRevalidate(req, cacheName) {
   const cache = await caches.open(cacheName);
   const cached = await cache.match(req);
@@ -98,7 +119,7 @@ async function staleWhileRevalidate(req, cacheName) {
     .then((res) => {
       // Only cache successful, non-opaque responses to avoid filling cache
       // with failed/redirect garbage.
-      if (res && res.ok) cache.put(req, res.clone());
+      if (res && res.ok && res.status === 200) cache.put(req, res.clone());
       return res;
     })
     .catch(() => cached || Response.error());

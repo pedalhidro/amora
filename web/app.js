@@ -1,6 +1,6 @@
 // Pedal Hidrográfico — "Rotas" page (standalone)
 //
-// Reads the pre-baked public/routes.json (produced by `npm run build:routes`),
+// Reads the pre-baked web/routes.json (produced by `npm run build:routes`),
 // renders every route on a Leaflet map with OSM + the custom hydrography
 // overlay, sorts the sidebar by Data descending, and supports:
 //   - a date-window slider that filters routes in real time
@@ -105,11 +105,11 @@ const OVERLAY_LAYERS = [
     hide: () => hideCycloinfra(),
     setOpacity: (frac) => setCycloinfraOpacity(frac),
   },
-  // Fotos geotaggeadas (raw_imgs → public/photos.json). Pequenos círculos
+  // Fotos geotaggeadas (raw_imgs → web/photos.json). Pequenos círculos
   // que abrem o thumbnail num popup ao clicar.
   {
     id: 'photos',
-    label: 'Fotos geo',
+    label: 'Imagens geo',
     defaultVisible: true,
     defaultPct: 100,
     show: () => showPhotos(),
@@ -320,67 +320,72 @@ function setOverpassOpacity(frac) {
   for (const l of overpassLayers) l.setStyle({ opacity: frac });
 }
 
-// ─── Fotos geotag­geadas (raw_imgs → public/photos.json) ─────────────────────
-// Cada foto com GPS no EXIF vira um pequeno círculo no mapa; clicar abre um
-// popup com o thumbnail. photos.json é carregado preguiçosamente na primeira
-// vez que a camada é ligada.
-// Manifesto de fotos: primeiro o acervo servido pelo backend em /fotos/
-// (mesma origem que o app), com queda para o photos.json local.
-const PHOTOS_REMOTE_URL = '/fotos/photos.jsonld';
-const PHOTOS_LOCAL_URL = 'photos.json';
-let photoMarkers = [];
-let photosLoaded = false;
-let photosLoading = null;
-let photosVisible = false;
-let photosOpacity = 1;
+// ─── Fotos geotag­geadas (TTL → web/data/photos.ttl) ──────────────────────
+// Cada foto com GPS vira um pequeno círculo no mapa; clicar abre um popup
+// com o thumbnail. O acervo é descrito em RDF/Turtle conforme
+// `research/photos-rdf/shapes.ttl` (ph:ImageShape). N3.js parseia o TTL no
+// browser; a fonte pode ser o Pi, a CDN, ou um kit local (.zip).
+const PHOTOS_TTL_REL    = 'data/photos.ttl';
+const PHOTOS_DIR_REL    = 'photos/';                       // <phash>/{original,large,thumb}.jpg
+const PHOTOS_CDN_BASE   = 'https://tiles.pedalhidrografi.co/rotas_app/';
+const TOURS_TTL_REL     = 'data/tours.ttl';                // catálogo de passeios (opcional)
+
+// Origem persistida em localStorage: 'auto' | 'pi' | 'cdn' | 'local'.
+// Default 'pi' (mesma origem). 'auto' tentaria CDN também — útil em prod,
+// mas pra dev local gera DNS errors barulhentos quando o CDN não existe.
+// O usuário pode trocar via 🗂 Fonte….
+let photoSource = localStorage.getItem('phidro:photoSource') || 'pi';
+// Quando local: kit ZIP descompactado em memória, com blob URLs por arquivo.
+let localKit = null;   // { ttlText, files: Map<path,blob URL> }
+
+let photoMarkers   = [];
+let photosLoaded   = false;
+let photosLoading  = null;
+let photosVisible  = false;
+let photosOpacity  = 1;
 // Quando setado ({date, label}), só as fotos daquele pedal ficam visíveis.
 let photoRideFilter = null;
-// Parte B — perspectivas. Manifesto cru guardado para re-fold sem refazer o
-// fetch. A pilha de precedência: `photoOrder` é a ordem das vozes (índice 0
-// = topo = mais forte), `photoOff` as vozes ocultas, `activeVoice` a voz
-// destino dos uploads.
-let photoManifest = null;
-function _lsJson(key, dflt) {
-  try {
-    return JSON.parse(localStorage.getItem(key)) ?? dflt;
-  } catch {
-    return dflt;
-  }
-}
-let photoOrder = _lsJson('phidro:voiceOrder', []);
-let photoOff = new Set(_lsJson('phidro:voiceOff', []));
-let activeVoice =
-  (typeof localStorage !== 'undefined' &&
-    localStorage.getItem('phidro:activeVoice')) ||
-  'voice/censo';
+// Conteúdo bruto da última .ttl carregada (para o "Baixar .ttl").
+let lastTtlText  = '';
+let lastTtlOrigin = '';   // URL / nome de arquivo de origem (para debug + status)
+// Catálogos derivados do TTL: tours[iri]={title,date}, persons[iri]={name}.
+let tourCatalog   = new Map();
+let personCatalog = new Map();
 
-function saveStack() {
-  try {
-    localStorage.setItem('phidro:voiceOrder', JSON.stringify(photoOrder));
-    localStorage.setItem('phidro:voiceOff', JSON.stringify([...photoOff]));
-    localStorage.setItem('phidro:activeVoice', activeVoice);
-  } catch {}
-}
-
-// Reconcilia a pilha salva com as vozes do manifesto atual: mantém a ordem,
-// descarta vozes que sumiram, anexa as novas ao fim (menor precedência).
-function reconcileStack() {
-  const ids = ((photoManifest && photoManifest.voices) || []).map((v) => v.id);
-  const idset = new Set(ids);
-  photoOrder = photoOrder.filter((id) => idset.has(id));
-  for (const id of ids) {
-    if (!photoOrder.includes(id)) photoOrder.push(id);
+// Delegação de clique nos popups de foto: link no Passeio abre o modal da
+// rota correspondente (mesma janela que a barra lateral usa).
+document.addEventListener('click', (ev) => {
+  const a = ev.target.closest?.('.photo-popup a.ride-link[data-route-id]');
+  if (a) {
+    ev.preventDefault();
+    const id = a.getAttribute('data-route-id');
+    if (id && typeof openRouteModal === 'function') openRouteModal(id);
+    return;
   }
-  photoOff = new Set([...photoOff].filter((id) => idset.has(id)));
-  if (ids.length && !idset.has(activeVoice)) {
-    activeVoice = idset.has('voice/censo') ? 'voice/censo' : ids[0];
+  // Botão "Excluir" no popup: chama o backend e recarrega a camada.
+  const del = ev.target.closest?.('.photo-popup button.photo-del[data-phash]');
+  if (del) {
+    ev.preventDefault();
+    const phash = del.getAttribute('data-phash');
+    if (!phash) return;
+    if (!confirm('Excluir esta imagem? Remove arquivos + triples no servidor.')) return;
+    del.disabled = true; del.textContent = 'Excluindo…';
+    fetch(`./delete-image/${encodeURIComponent(phash)}`, { method: 'POST' })
+      .then(async (r) => {
+        if (!r.ok) {
+          const body = await r.text().catch(() => '');
+          throw new Error(`HTTP ${r.status}${body ? ` — ${body.slice(0, 200)}` : ''}`);
+        }
+        showToast('Imagem excluída.');
+        map.closePopup();
+        reloadPhotos();
+      })
+      .catch((err) => {
+        del.disabled = false; del.textContent = 'Excluir ✕';
+        alert(`Falha ao excluir: ${err.message}`);
+      });
   }
-}
-
-// As vozes exibidas, em ordem de precedência (topo = mais forte).
-function effectiveStack() {
-  return photoOrder.filter((id) => !photoOff.has(id));
-}
+});
 
 // Marcadores de foto de um pedal específico (data ISO AAAA-MM-DD).
 function ridePhotos(date) {
@@ -517,655 +522,391 @@ function detectRide(dateObj, lat, lng) {
   return ride;
 }
 
-// Funde as vozes do manifesto numa lista única de fotos. Hoje o manifesto
-// traz uma voz só, então a fold é praticamente a identidade — mas o app
-// passa a renderizar SEMPRE por aqui. É a costura onde, nos próximos passos,
-// entram a pilha de precedência e a reconciliação por divergência.
-function foldVoices(data) {
-  // Tolera o formato antigo (photos plano) — vira uma voz local única.
-  if (!data || !Array.isArray(data.voices)) {
-    return ((data && data.photos) || []).map((ph) => ({
-      ...ph,
-      _voice: 'voice/local',
-      _voices: ['voice/local'],
-      _voiceTotal: 1,
-      _divergence: null,
-    }));
+
+// ─── Carregamento do TTL + parsing ────────────────────────────────────────
+// N3.js servido localmente em web/lib/n3.min.js (UMD; expõe window.N3).
+// Bundled offline para não depender de CDN — alinha com o "local-first".
+const N3_URL = './lib/n3.min.js';
+let _n3Promise = null;
+async function ensureN3() {
+  if (!_n3Promise) {
+    _n3Promise = (async () => {
+      if (!window.N3) await loadScript(N3_URL);
+      return window.N3.Parser;
+    })();
   }
-  // Presença + membros: para cada foto, em quais vozes ela aparece e a cópia
-  // de cada voz. Varre o manifesto INTEIRO (vozes ocultas inclusas), pois o
-  // x/TOTAL e a divergência descrevem o acervo, não a vista atual. A chave é
-  // o `cluster` (uploads quase idênticos compartilham cluster), caindo no id.
-  const presence = new Map(); // cluster → [voiceId, ...]
-  const members = new Map(); // cluster → [{voiceId, photo}, ...]
-  for (const v of data.voices) {
-    for (const ph of v.photos || []) {
-      const cid = ph.cluster || ph.id;
-      if (!cid) continue;
-      const arr = presence.get(cid) || [];
-      if (!arr.includes(v.id)) arr.push(v.id);
-      presence.set(cid, arr);
-      const ml = members.get(cid) || [];
-      ml.push({ voiceId: v.id, photo: ph });
-      members.set(cid, ml);
+  return _n3Promise;
+}
+
+const PH_NS  = 'https://pedalhidrografi.co/terms#';
+const PHD_NS = 'https://pedalhidrografi.co/data/';
+const SCHEMA = 'https://schema.org/';
+const DCT    = 'http://purl.org/dc/terms/';
+const PROV   = 'http://www.w3.org/ns/prov#';
+const NFO    = 'http://www.semanticdesktop.org/ontologies/2007/03/22/nfo#';
+const EXIF   = 'http://www.w3.org/2003/12/exif/ns#';
+const RDFT   = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
+
+// Resolve a URL de uma variante de imagem com base na fonte ativa.
+function resolvePhotoUrl(phash, variant /* 'large' | 'thumb' | 'original' */) {
+  if (!phash) return '';
+  if (localKit) {
+    const candidates = variant === 'original'
+      ? [`photos/${phash}/original.jpg`, `photos/${phash}/original.png`,
+         `photos/${phash}/original.heic`, `photos/${phash}/original.jpeg`]
+      : [`photos/${phash}/${variant}.jpg`];
+    for (const p of candidates) {
+      const u = localKit.files.get(p);
+      if (u) return u;
+    }
+    return '';
+  }
+  const base = (photoSource === 'cdn') ? PHOTOS_CDN_BASE : './';
+  return `${base}${PHOTOS_DIR_REL}${phash}/${variant}.jpg`;
+}
+
+// Parse de um texto TTL em quads (lista de triples N3.js).
+async function parseTtlToQuads(text) {
+  const Parser = await ensureN3();
+  return new Parser().parse(text);
+}
+
+// Constrói o modelo (tours, persons, photos) a partir de uma lista de quads.
+function buildModelFromQuads(quads) {
+  const types = new Map(), titles = new Map(), dates = new Map();
+  const names = new Map(), elev = new Map();
+  const bearings = new Map(), focals = new Map();
+  const tours = new Map();
+  // Filiação a séries (PH, BP, BT, S...) por meio de Associações:
+  //   Tour --ph:inSeriesEdition--> Association --ph:inEventSeries--> EventSeries
+  //                                            --ph:sequenceInSeries--> N
+  const tourAssocs    = new Map();   // tourIri → Set(assocIri)
+  const assocSeries   = new Map();   // assocIri → seriesIri
+  const assocSequence = new Map();   // assocIri → integer
+  // ph:linkRoute → RouteReference (bn) → schema:url (RWGPS URL).
+  const tourRouteRef  = new Map();   // tourIri → bn IRI
+  const subjectUrl    = new Map();   // subject IRI/bn → URL string
+  const authors = new Map(), provs = new Map();
+  const licenses = new Map();
+  const locOf = new Map(), locLat = new Map(), locLng = new Map();
+  // Activity (ph:Upload) → { startedAt, generated: imageIri }
+  const uploadProps    = new Map();
+  const uploadByImage  = new Map();   // image IRI → activity props
+
+  for (const q of quads) {
+    const s = q.subject.value, p = q.predicate.value, ov = q.object.value;
+    if      (p === RDFT) { if (!types.has(s)) types.set(s, new Set()); types.get(s).add(ov); }
+    else if (p === DCT + 'title')           titles.set(s, ov);
+    else if (p === DCT + 'date')            dates.set(s, ov);
+    else if (p === DCT + 'license')         licenses.set(s, ov);
+    else if (p === SCHEMA + 'alternateName' || p === SCHEMA + 'name') names.set(s, ov);
+    else if (p === SCHEMA + 'latitude')     locLat.set(s, parseFloat(ov));
+    else if (p === SCHEMA + 'longitude')    locLng.set(s, parseFloat(ov));
+    else if (p === SCHEMA + 'elevation')    elev.set(s, parseFloat(ov));
+    else if (p === SCHEMA + 'locationCreated') locOf.set(s, ov);
+    else if (p === EXIF + 'gpsImgDirection')   bearings.set(s, parseFloat(ov));
+    else if (p === EXIF + 'focalLengthIn35mmFilm') focals.set(s, parseFloat(ov));
+    else if (p === PH_NS + 'capturedDuring')   tours.set(s, ov);
+    else if (p === PH_NS + 'inSeriesEdition') {
+      if (!tourAssocs.has(s)) tourAssocs.set(s, new Set());
+      tourAssocs.get(s).add(ov);
+    }
+    else if (p === PH_NS + 'inEventSeries')    assocSeries.set(s, ov);
+    else if (p === PH_NS + 'sequenceInSeries') assocSequence.set(s, parseInt(ov, 10));
+    else if (p === PH_NS + 'linkRoute')        tourRouteRef.set(s, ov);
+    else if (p === SCHEMA + 'url')             subjectUrl.set(s, ov);
+    else if (p === PROV + 'wasAttributedTo') {
+      if (!authors.has(s)) authors.set(s, new Set()); authors.get(s).add(ov);
+    }
+    else if (p === 'http://purl.org/pav/providedBy') {
+      if (!provs.has(s)) provs.set(s, new Set()); provs.get(s).add(ov);
+    }
+    // ph:Upload activity (adicionado pelo backend em cada /upload-image).
+    else if (p === PROV + 'startedAtTime') {
+      const a = uploadProps.get(s) || {}; a.startedAt = ov; uploadProps.set(s, a);
+    }
+    else if (p === PROV + 'generated') {
+      const a = uploadProps.get(s) || {}; a.generated = ov; uploadProps.set(s, a);
     }
   }
-  const voiceTotal = data.voices.length;
-  const byVoice = new Map(data.voices.map((v) => [v.id, v]));
-  const stack = effectiveStack(); // topo = mais forte
-  const byId = new Map();
-  let n = 0;
-  // Itera do MENOR para o MAIOR precedência → o topo da pilha sobrescreve.
-  // Fotos do mesmo cluster colapsam num marcador só; o de maior precedência
-  // ganha e fornece a imagem exibida.
-  for (let i = stack.length - 1; i >= 0; i--) {
-    const v = byVoice.get(stack[i]);
-    if (!v) continue;
-    for (const ph of v.photos || []) {
-      const cid = ph.cluster || ph.id;
-      const key = cid || `${v.id}#${n++}`;
-      byId.set(key, {
-        ...ph,
-        _voice: v.id,
-        // Fotos sem cluster/id não casam entre vozes → presença = só a sua.
-        _voices: cid ? presence.get(cid) || [v.id] : [v.id],
-        _voiceTotal: voiceTotal,
-        _divergence: cid ? computeDivergence(members.get(cid)) : null,
+  // Indexa activities pelas imagens que geraram.
+  for (const [_aIri, a] of uploadProps) {
+    if (a.generated) uploadByImage.set(a.generated, a);
+  }
+
+  // Mapeia IRI de série pra sigla de exibição. Slug do IRI por padrão;
+  // exceção: a série S (Suado) historicamente é grafada "PH-S".
+  const SERIES_LABEL_OVERRIDE = { S: 'PH-S' };
+  const seriesLabel = (iri) => {
+    const slug = iri.split(/[/#]/).pop();
+    return SERIES_LABEL_OVERRIDE[slug] || slug;
+  };
+  // Concatena as siglas de filiação de um passeio, ex.: "PH 92" ou
+  // "PH 92 & PH-S 6". Ordena por sigla pra estabilidade.
+  const buildTourCode = (tourIri) => {
+    const assocs = tourAssocs.get(tourIri);
+    if (!assocs || !assocs.size) return null;
+    const parts = [];
+    for (const a of assocs) {
+      const sIri = assocSeries.get(a);
+      const seq  = assocSequence.get(a);
+      if (!sIri || !Number.isFinite(seq)) continue;
+      parts.push(`${seriesLabel(sIri)} ${seq}`);
+    }
+    if (!parts.length) return null;
+    parts.sort();
+    return parts.join(' & ');
+  };
+
+  // Extrai o ID numérico do RideWithGPS da URL referenciada por ph:linkRoute.
+  const tourRouteId = (tourIri) => {
+    const bn = tourRouteRef.get(tourIri);
+    if (!bn) return null;
+    const url = subjectUrl.get(bn);
+    if (!url) return null;
+    const m = /ridewithgps\.com\/routes\/(\d+)/i.exec(url);
+    return m ? m[1] : null;
+  };
+
+  tourCatalog = new Map();
+  personCatalog = new Map();
+  for (const [s, ts] of types) {
+    if (ts.has(PH_NS + 'Tour')) {
+      tourCatalog.set(s, {
+        title:   titles.get(s) || s,
+        date:    (dates.get(s) || '').slice(0, 10),
+        code:    buildTourCode(s),
+        routeId: tourRouteId(s),
       });
     }
-  }
-  return [...byId.values()];
-}
-
-// Resolve o id de uma voz no seu rótulo legível (cai no id se desconhecido).
-function voiceLabelOf(id) {
-  const v = ((photoManifest && photoManifest.voices) || []).find(
-    (x) => x.id === id,
-  );
-  return (v && v.label) || id;
-}
-
-// Tipo de uma voz: 'model' (inanimada, p.ex. o censo) ou 'person' (animada).
-function voiceKindOf(id) {
-  const v = ((photoManifest && photoManifest.voices) || []).find(
-    (x) => x.id === id,
-  );
-  return (v && v.kind) || 'person';
-}
-
-// ── Divergência (passo 4 — registro vs. modelo) ──────────────────────────
-// Campos cujo desacordo entre vozes vale exibir. `get` devolve a string que
-// serve de chave de comparação E de exibição (já com tolerância embutida via
-// arredondamento). Comparam-se só valores presentes nas duas pontas: uma voz
-// que simplesmente não tem o campo é ausência, não conflito.
-const DIVERGENCE_FIELDS = [
-  {
-    key: 'ride',
-    label: 'Pedal',
-    get: (p) =>
-      p.ride
-        ? [p.ride.code, p.ride.name, p.ride.date].filter(Boolean).join(' · ')
-        : null,
-  },
-  {
-    key: 'gps',
-    label: 'GPS',
-    get: (p) =>
-      Number.isFinite(p.lat) && Number.isFinite(p.lng)
-        ? `${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}`
-        : null,
-  },
-  {
-    key: 'alt',
-    label: 'Altitude',
-    get: (p) => (Number.isFinite(p.alt) ? `${Math.round(p.alt)} m` : null),
-  },
-  {
-    key: 'datetime',
-    label: 'Data/hora',
-    get: (p) =>
-      p.datetime ? new Date(p.datetime).toLocaleString('pt-BR') : null,
-  },
-  {
-    key: 'bearing',
-    label: 'Rumo',
-    get: (p) =>
-      Number.isFinite(p.bearing) ? `${Math.round(p.bearing)}°` : null,
-  },
-  {
-    key: 'fov',
-    label: 'Campo de visão',
-    get: (p) => (Number.isFinite(p.fov) ? `${Math.round(p.fov)}°` : null),
-  },
-];
-
-// Calcula a divergência de um cluster a partir das cópias de cada voz.
-// Só aparece quando há ≥1 voz-modelo envolvida (pessoa-vs-pessoa fica na
-// precedência silenciosa). Devolve [{key,label,groups:[{value,voices}]}] ou
-// null quando não há conflito a mostrar.
-function computeDivergence(members) {
-  if (!members || members.length < 2) return null;
-  if (!members.some((m) => voiceKindOf(m.voiceId) === 'model')) return null;
-  const out = [];
-  for (const f of DIVERGENCE_FIELDS) {
-    const byValue = new Map(); // valor → Set(voiceId)
-    for (const m of members) {
-      const val = f.get(m.photo);
-      if (val == null || val === '') continue;
-      if (!byValue.has(val)) byValue.set(val, new Set());
-      byValue.get(val).add(m.voiceId);
+    if (ts.has(SCHEMA + 'Person')) {
+      personCatalog.set(s, { name: names.get(s) || s });
     }
-    if (byValue.size < 2) continue; // só conflito de fato (≥2 valores)
-    out.push({
-      key: f.key,
-      label: f.label,
-      groups: [...byValue.entries()].map(([value, vs]) => ({
-        value,
-        voices: [...vs],
-      })),
+  }
+
+  const photos = [];
+  for (const [s, ts] of types) {
+    if (!ts.has(PH_NS + 'Image')) continue;
+    const locNode = locOf.get(s);
+    const lat = locNode != null ? locLat.get(locNode) : undefined;
+    const lng = locNode != null ? locLng.get(locNode) : undefined;
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+    const phash = s.startsWith(PHD_NS + 'image_') ? s.slice((PHD_NS + 'image_').length) : null;
+    const tourIri = tours.get(s);
+    const t = tourIri ? tourCatalog.get(tourIri) : null;
+    const ride = t
+      ? { date: t.date, name: t.title, code: t.code || null, routeId: t.routeId || null }
+      : null;
+    const personName = (iri) => personCatalog.get(iri)?.name || iri.split(/[/#]/).pop();
+    const authorIris = [...(authors.get(s) || [])];
+    const authorNames = authorIris.map(personName);
+    const providerIris = [...(provs.get(s) || [])];
+    const providerNames = providerIris.map(personName);
+    const datetime = dates.get(s) || null;
+    let fov = null;
+    const f35 = focals.get(s);
+    if (Number.isFinite(f35) && f35 > 0) {
+      fov = (2 * Math.atan(36 / (2 * f35)) * 180) / Math.PI;
+    }
+    // Activity (`ph:Upload`) que gerou esta imagem, se houver — o servidor a
+    // adiciona junto do upload, com ip / user-agent / timestamp de envio.
+    const upload = uploadByImage.get(s) || null;
+    photos.push({
+      id: s,
+      phash,
+      lat, lng,
+      alt:       elev.get(s) ?? null,
+      bearing:   Number.isFinite(bearings.get(s)) ? bearings.get(s) : null,
+      fov,
+      orig:      titles.get(s) || (phash ? `image_${phash}` : s),
+      datetime,
+      ride,
+      authors:   authorNames,
+      providers: providerNames,
+      license:   licenses.get(s) || null,
+      upload,    // { startedAt } | null
+      file:      resolvePhotoUrl(phash, 'large'),
+      thumb:     resolvePhotoUrl(phash, 'thumb'),
+      full:      resolvePhotoUrl(phash, 'original'),
     });
   }
-  return out.length ? out : null;
+  return photos;
 }
 
-// HTML da seção de divergência — usada no popup da foto e no painel de
-// revisão. Cada campo lista os valores em conflito e as vozes de cada um.
-function divergenceSectionHtml(div) {
-  if (!Array.isArray(div) || !div.length) return '';
-  const rows = div
-    .map((f) => {
-      const groups = f.groups
-        .map(
-          (g) =>
-            `<div class="div-val"><span class="div-value">${escapeHtml(
-              g.value,
-            )}</span><span class="div-voices">` +
-            g.voices
-              .map(
-                (vid) =>
-                  `<span class="div-voice${
-                    voiceKindOf(vid) === 'model' ? ' div-voice-model' : ''
-                  }">${escapeHtml(voiceLabelOf(vid))}</span>`,
-              )
-              .join('') +
-            `</span></div>`,
-        )
-        .join('');
-      return (
-        `<div class="div-field"><span class="div-field-label">${escapeHtml(
-          f.label,
-        )}</span>${groups}</div>`
-      );
-    })
-    .join('');
-  return (
-    `<div class="photo-divergence">` +
-    `<div class="div-head">⚠ Vozes divergem</div>${rows}</div>`
-  );
-}
+// Tenta carregar o manifesto `data/data_graphs.ttl` de uma fonte; devolve
+// a lista de URLs absolutas dos arquivos a fundir.
+const VOID  = 'http://rdfs.org/ns/void#';
+const MANIFEST_REL = 'data/data_graphs.ttl';
 
-// Marcadores-fantasma para a divergência de GPS: um círculo tênue em cada
-// posição que não é a do marcador vencedor, ligado a ele por uma linha
-// tracejada. Devolve a lista de camadas (vazia quando não há divergência).
-function buildGhostMarkers(ph) {
-  const ghosts = [];
-  const gpsDiv = (ph._divergence || []).find((f) => f.key === 'gps');
-  if (!gpsDiv) return ghosts;
-  const winnerKey = `${ph.lat.toFixed(5)}, ${ph.lng.toFixed(5)}`;
-  for (const g of gpsDiv.groups) {
-    if (g.value === winnerKey) continue; // a posição do marcador principal
-    const parts = g.value.split(',');
-    const glat = parseFloat(parts[0]);
-    const glng = parseFloat(parts[1]);
-    if (!Number.isFinite(glat) || !Number.isFinite(glng)) continue;
-    const link = L.polyline(
-      [
-        [ph.lat, ph.lng],
-        [glat, glng],
-      ],
-      {
-        color: '#2da9ff',
-        weight: 1,
-        opacity: 0.6,
-        dashArray: '4 4',
-        interactive: false,
-      },
-    );
-    const ghost = L.circleMarker([glat, glng], {
-      radius: 7,
-      color: '#2da9ff',
-      weight: 1.5,
-      opacity: 0.75,
-      fillColor: '#2da9ff',
-      fillOpacity: 0.18,
-    });
-    ghost.bindTooltip(g.voices.map((vid) => voiceLabelOf(vid)).join(', '), {
-      direction: 'top',
-    });
-    ghosts.push(link, ghost);
+async function fetchManifest(originBase, originLabel) {
+  // Resolve para URL absoluta — `new URL(rel, base)` exige base absoluta,
+  // então `./data/data_graphs.ttl` (modo Pi) precisa virar
+  // `http://host/.../data/data_graphs.ttl` primeiro.
+  const url = new URL(originBase + MANIFEST_REL, location.href).href;
+  const res = await fetch(url, { cache: 'no-cache' });
+  if (!res.ok) throw new Error(`${originLabel}: HTTP ${res.status}`);
+  const text = await res.text();
+  const quads = await parseTtlToQuads(text);
+  const urls = [];
+  for (const q of quads) {
+    if (q.predicate.value === VOID + 'dataDump') {
+      urls.push(new URL(q.object.value, url).href);
+    }
   }
-  return ghosts;
+  return { url, urls };
+}
+
+// Carrega todos os grafos listados no manifesto e devolve {quads, text}.
+// Para modo local, ignora manifesto e usa o TTL do kit direto.
+async function loadAllGraphs() {
+  if (photoSource === 'local') {
+    if (!localKit) throw new Error('sem kit local importado');
+    return {
+      quads:   await parseTtlToQuads(localKit.ttlText),
+      text:    localKit.ttlText,
+      origin:  'local',
+      sources: ['(kit local)'],
+    };
+  }
+  // Pi e CDN: tenta cada base na ordem; o primeiro manifesto que responder vence.
+  const bases = [];
+  if (photoSource === 'pi'  || photoSource === 'auto') bases.push({ base: './',              label: 'pi' });
+  if (photoSource === 'cdn' || photoSource === 'auto') bases.push({ base: PHOTOS_CDN_BASE,   label: 'cdn' });
+  let lastErr = '';
+  for (const b of bases) {
+    let m;
+    try { m = await fetchManifest(b.base, b.label); }
+    catch (e) { lastErr = e.message; continue; }
+    // Manifesto vivo — baixa cada arquivo listado.
+    const allQuads = [];
+    const parts    = [];
+    for (const u of m.urls) {
+      try {
+        const r = await fetch(u, { cache: 'no-cache' });
+        if (!r.ok) { console.warn(`[manifest] ${u}: ${r.status}`); continue; }
+        const t = await r.text();
+        parts.push(`# ─── ${u} ───\n${t}`);
+        allQuads.push(...await parseTtlToQuads(t));
+      } catch (e) { console.warn(`[manifest] ${u}: ${e.message}`); }
+    }
+    return {
+      quads:   allQuads,
+      text:    parts.join('\n\n'),
+      origin:  b.label,
+      sources: m.urls,
+    };
+  }
+  throw new Error(lastErr || 'nenhuma fonte respondeu');
 }
 
 async function loadPhotos() {
   if (photosLoaded) return;
-  if (photosLoading) {
-    await photosLoading;
-    return;
-  }
+  if (photosLoading) { await photosLoading; return; }
   photosLoading = (async () => {
     try {
-      let data = null;
-      for (const url of [PHOTOS_REMOTE_URL, PHOTOS_LOCAL_URL]) {
-        try {
-          const res = await fetch(url, { cache: 'no-cache' });
-          if (res.ok) {
-            data = await res.json();
-            break;
-          }
-        } catch (e) {
-          console.warn(`[photos] ${url} indisponível: ${e.message}`);
-        }
-      }
-      if (!data) throw new Error('nenhum manifesto de fotos acessível');
-      photoManifest = data;
-      buildPhotoMarkers();
+      const r = await loadAllGraphs();
+      lastTtlText  = r.text;
+      lastTtlOrigin = `${r.origin} · ${r.sources.length} grafo(s)`;
+      const photos = buildModelFromQuads(r.quads);
+      buildPhotoMarkers(photos);
       photosLoaded = true;
+      updatePhotoSourceStatus(`${photos.length} foto(s), ${r.sources.length} grafo(s).`);
     } catch (err) {
-      console.warn('[photos] falha ao carregar photos.json:', err);
-      showToast(`Falha ao carregar fotos: ${err.message}`);
+      console.warn('[photos] falha:', err);
+      showToast(`Falha ao carregar imagens: ${err.message}`);
+      updatePhotoSourceStatus(`Erro: ${err.message}`);
     }
   })();
   await photosLoading;
 }
 
-// (Re)constrói os marcadores a partir do manifesto e da voz selecionada.
-// Não os adiciona ao mapa — quem faz isso é applyPhotoVisibility().
-function buildPhotoMarkers() {
+// Dado curto: { rótulo, conteúdo HTML }. Vira <dl>.
+function _photoDetailRows(ph) {
+  const rows = [];
+  if (ph.datetime) {
+    const dt = new Date(ph.datetime);
+    if (!isNaN(dt)) rows.push(['Quando', escapeHtml(dt.toLocaleString('pt-BR'))]);
+  }
+  if (ph.ride) {
+    // Ex.: "PH 92: Crista do Lauzane…" ou "PH 92 & PH-S 6: O Trem e o Meteoro".
+    const label = ph.ride.code && ph.ride.name
+      ? `${ph.ride.code}: ${ph.ride.name}`
+      : (ph.ride.code || ph.ride.name || ph.ride.date);
+    // Se o passeio tem rota associada (RWGPS), vira link que abre o modal
+    // da rota correspondente na barra lateral.
+    const html = ph.ride.routeId
+      ? `<a href="#" class="ride-link" data-route-id="${escapeHtml(ph.ride.routeId)}">${escapeHtml(label)}</a>`
+      : escapeHtml(label);
+    rows.push(['Passeio', html]);
+  }
+  const coords =
+    `${ph.lat.toFixed(5)}, ${ph.lng.toFixed(5)}` +
+    (Number.isFinite(ph.alt) ? ` · ${Math.round(ph.alt)} m` : '') +
+    (Number.isFinite(ph.bearing) ? ` · ${Math.round(ph.bearing)}° ${cardinal(ph.bearing)}` : '');
+  rows.push(['Coordenadas', escapeHtml(coords)]);
+  if (ph.authors && ph.authors.length) {
+    rows.push(['Autoria', escapeHtml(ph.authors.join(', '))]);
+  }
+  if (ph.providers && ph.providers.length) {
+    rows.push(['Quem subiu', escapeHtml(ph.providers.join(', '))]);
+  }
+  if (ph.license) {
+    // Texto compacto para CC; fallback pra URL inteira.
+    let label = ph.license;
+    const m = /licenses\/([a-z-]+)\/(\d+\.\d+)/.exec(ph.license);
+    if (m) label = `CC ${m[1].toUpperCase()} ${m[2]}`;
+    else if (/publicdomain\/zero\/1\.0/.test(ph.license)) label = 'CC0 1.0';
+    rows.push(['Licença', `<a href="${escapeHtml(ph.license)}" target="_blank" rel="noopener">${escapeHtml(label)}</a>`]);
+  }
+  if (ph.upload && ph.upload.startedAt) {
+    const dt = new Date(ph.upload.startedAt);
+    const when = !isNaN(dt) ? dt.toLocaleString('pt-BR') : ph.upload.startedAt;
+    rows.push(['Envio', escapeHtml(when)]);
+  }
+  if (ph.phash) {
+    rows.push(['pHash', `<code>${escapeHtml(ph.phash)}</code>`]);
+  }
+  return rows;
+}
+
+function buildPhotoMarkers(photos) {
   for (const m of photoMarkers) {
     if (map.hasLayer(m)) map.removeLayer(m);
-    for (const g of m._ghosts || []) {
-      if (map.hasLayer(g)) map.removeLayer(g);
-    }
   }
   photoMarkers = [];
-  reconcileStack();
-  for (const ph of foldVoices(photoManifest)) {
+  for (const ph of photos) {
     if (!Number.isFinite(ph.lat) || !Number.isFinite(ph.lng)) continue;
     const icon = photoDivIcon(ph.thumb || ph.file, ph.bearing, ph.fov, '');
     const m = L.marker([ph.lat, ph.lng], { icon, opacity: photosOpacity });
     m._photo = ph;
-    const when = ph.datetime
-      ? new Date(ph.datetime).toLocaleString('pt-BR')
+    const rows = _photoDetailRows(ph)
+      .map(([k, v]) => `<dt>${escapeHtml(k)}</dt><dd>${v}</dd>`).join('');
+    // Baixar original: usa `download` no <a> — o backend é same-origin então
+    // o browser respeita o atributo e abre o save-as direto. O nome do
+    // arquivo herda o `orig` (título dcterms) quando disponível.
+    const dlName = (ph.orig || (ph.phash ? `image_${ph.phash}` : 'image')).replace(/[\s/]+/g, '_');
+    const dlBtn = ph.full
+      ? `<a class="photo-dl" href="${escapeHtml(ph.full)}" download="${escapeHtml(dlName)}" target="_blank" rel="noopener">Baixar original ↓</a>`
       : '';
-    const rideLine = ph.ride
-      ? `<div class="photo-ride">${escapeHtml(
-          [ph.ride.code, ph.ride.name].filter(Boolean).join(' · ') ||
-            ph.ride.date,
-        )}</div>`
+    // Botão de excluir: bate em POST /delete-image/<phash> (backend Pi).
+    // Requer phash e fonte same-origin; em CDN/local só mostra "Baixar".
+    const delBtn = (ph.phash && (photoSource === 'pi' || photoSource === 'auto'))
+      ? `<button type="button" class="photo-del" data-phash="${escapeHtml(ph.phash)}">Excluir ✕</button>`
       : '';
-    // Linha de vozes: em quantas/quais vozes esta foto aparece. Só faz
-    // sentido com mais de uma voz no acervo — com uma só, "1/1" é ruído.
-    const phVoices = Array.isArray(ph._voices) ? ph._voices : [];
-    const voiceLine =
-      ph._voiceTotal > 1 && phVoices.length
-        ? `<div class="photo-voices">` +
-          `<span class="photo-voices-count" title="Presente em ${phVoices.length} de ${ph._voiceTotal} vozes">` +
-          `${phVoices.length}/${ph._voiceTotal}</span>` +
-          phVoices
-            .map(
-              (v) =>
-                `<span class="voice-chip${
-                  v === ph._voice ? ' voice-chip-active' : ''
-                }">${escapeHtml(voiceLabelOf(v))}</span>`,
-            )
-            .join('') +
-          `</div>`
-        : '';
-    const canDelete = Boolean(DELETE_PHOTO_URL && ph.id);
-    const delBtn = canDelete
-      ? `<button type="button" class="photo-del-btn">Apagar foto</button>`
-      : '';
+    const actions = [dlBtn, delBtn].filter(Boolean).join('');
     m.bindPopup(
       `<div class="photo-popup">` +
-        `<img src="${ph.file}" loading="lazy" alt="${escapeHtml(ph.orig || '')}" />` +
-        rideLine +
-        voiceLine +
-        divergenceSectionHtml(ph._divergence) +
-        `<div class="photo-meta">${escapeHtml(ph.orig || '')}` +
-        (when ? ` · ${escapeHtml(when)}` : '') +
-        (Number.isFinite(ph.alt) ? ` · ${ph.alt} m` : '') +
-        (Number.isFinite(ph.bearing)
-          ? ` · ${Math.round(ph.bearing)}° ${cardinal(ph.bearing)}`
-          : '') +
-        `</div>${delBtn}</div>`,
-      { maxWidth: 320, className: 'photo-popup-wrap' },
+        `<img src="${ph.file}" loading="lazy" alt="${escapeHtml(ph.orig)}" />` +
+        `<dl class="photo-details">${rows}</dl>` +
+        (actions ? `<div class="photo-actions">${actions}</div>` : '') +
+      `</div>`,
+      { maxWidth: 360, className: 'photo-popup-wrap' },
     );
-    if (canDelete) {
-      m.on('popupopen', (e) => {
-        const el = e.popup.getElement();
-        const btn = el && el.querySelector('.photo-del-btn');
-        if (btn) btn.onclick = () => deleteArchivedPhoto(m);
-      });
-    }
-    // Fantasmas: quando as vozes divergem no GPS, marca cada posição
-    // alternativa com um círculo tênue ligado ao marcador principal.
-    m._ghosts = buildGhostMarkers(ph);
     photoMarkers.push(m);
   }
-  console.log(
-    `[photos] ${photoMarkers.length} fotos · ${effectiveStack().length} voz(es)`,
-  );
-  refreshVoicePicker();
-  refreshDivergenceRow();
+  console.log(`[photos] ${photoMarkers.length} marcador(es)`);
 }
 
-// Marcadores de foto com divergência entre vozes (passo 4).
-function divergentMarkers() {
-  return photoMarkers.filter(
-    (m) => Array.isArray(m._photo._divergence) && m._photo._divergence.length,
-  );
-}
-
-// Persiste a pilha, reconstrói os marcadores e re-renderiza o modal.
-function applyStackChange() {
-  saveStack();
-  if (photosLoaded) {
-    buildPhotoMarkers();
-    applyPhotoVisibility();
-  }
-  renderVoicesModal();
-}
-
-// Move uma voz uma posição na pilha (-1 = mais precedência, +1 = menos).
-function voiceMove(id, delta) {
-  const i = photoOrder.indexOf(id);
-  const j = i + delta;
-  if (i < 0 || j < 0 || j >= photoOrder.length) return;
-  [photoOrder[i], photoOrder[j]] = [photoOrder[j], photoOrder[i]];
-  applyStackChange();
-}
-
-// Linha "Vozes das fotos" no painel de camadas — só um gatilho do modal.
-function refreshVoicePicker() {
-  const panel = document.querySelector('.layer-panel');
-  if (!panel || document.getElementById('voice-row')) return;
-  const row = document.createElement('div');
-  row.id = 'voice-row';
-  row.className = 'layer-row voice-row';
-  row.innerHTML =
-    '<label><span>Vozes das fotos</span></label>' +
-    '<button type="button" id="voices-open-btn">gerir…</button>';
-  panel.appendChild(row);
-  row
-    .querySelector('#voices-open-btn')
-    .addEventListener('click', openVoicesModal);
-}
-
-// Renderiza a pilha de vozes dentro do modal.
-function renderVoicesModal() {
-  const box = document.getElementById('voices-stack');
-  if (!box) return;
-  const byId = new Map(
-    ((photoManifest && photoManifest.voices) || []).map((v) => [v.id, v]),
-  );
-  if (photoOrder.length === 0) {
-    box.innerHTML = '<p class="muted">Nenhuma voz ainda.</p>';
-    return;
-  }
-  box.innerHTML = photoOrder
-    .map((id, i) => {
-      const v = byId.get(id);
-      if (!v) return '';
-      const shown = !photoOff.has(id);
-      const isCenso = id === 'voice/censo';
-      const isModel = v.kind === 'model';
-      return (
-        `<div class="voice-item${shown ? '' : ' off'}" data-id="${escapeHtml(id)}">` +
-        '<span class="voice-rank">' +
-        `<button data-vact="up" title="Mais precedência"${i === 0 ? ' disabled' : ''}>▲</button>` +
-        `<button data-vact="down" title="Menos precedência"${i === photoOrder.length - 1 ? ' disabled' : ''}>▼</button>` +
-        '</span>' +
-        '<label class="voice-show" title="Mostrar no mapa">' +
-        `<input type="checkbox" data-vact="show"${shown ? ' checked' : ''} /></label>` +
-        `<span class="voice-name">${escapeHtml(v.label || id)}` +
-        ` <span class="voice-count">${(v.photos || []).length}</span></span>` +
-        (v.signed
-          ? `<span class="voice-sig ${
-              v.verified ? 'sig-ok' : 'sig-bad'
-            }" title="${
-              v.verified
-                ? `Assinatura verificada · ${escapeHtml(v.pubkey || '')}`
-                : 'Assinatura inválida ou não verificada'
-            }">${v.verified ? '🔏' : '⚠'}</span>`
-          : '') +
-        `<button data-vact="kind" class="voice-kind" title="${
-          isModel
-            ? 'Modelo (inanimada) — clique para marcar como Pessoa'
-            : 'Pessoa (animada) — clique para marcar como Modelo'
-        }">${isModel ? '📊' : '👤'}</button>` +
-        '<label class="voice-active" title="Enviar fotos para esta voz">' +
-        `<input type="radio" name="phidro-active-voice" data-vact="active"${id === activeVoice ? ' checked' : ''} /> envio</label>` +
-        '<button data-vact="export" title="Exportar .zip">💾</button>' +
-        (isCenso
-          ? ''
-          : '<button data-vact="delete" title="Apagar voz">🗑️</button>') +
-        '</div>'
-      );
-    })
-    .join('');
-}
-
-// Mostra a impressão digital da chave de identidade do próprio usuário.
-async function renderIdentityLine() {
-  const el = document.getElementById('voices-identity');
-  if (!el) return;
-  try {
-    const { pubJwk } = await getIdentityKey();
-    const fpr = await keyFingerprint(pubJwk);
-    el.innerHTML =
-      `Sua chave de assinatura: <code>${escapeHtml(fpr)}</code> ` +
-      '<button type="button" id="identity-copy">copiar</button>';
-    el.querySelector('#identity-copy')?.addEventListener('click', () => {
-      if (navigator.clipboard) navigator.clipboard.writeText(fpr);
-      showToast('Impressão digital copiada.');
-    });
-  } catch {
-    el.textContent = 'Identidade de assinatura indisponível neste navegador.';
-  }
-}
-
-function openVoicesModal() {
-  reconcileStack();
-  renderVoicesModal();
-  renderIdentityLine();
-  const m = document.getElementById('voices-modal');
-  if (m) m.hidden = false;
-}
-function closeVoicesModal() {
-  const m = document.getElementById('voices-modal');
-  if (m) m.hidden = true;
-}
-
-// Liga os controles do modal de vozes (chamado uma vez no boot).
-function setupVoicesModal() {
-  const modal = document.getElementById('voices-modal');
-  if (!modal) return;
-  modal
-    .querySelector('#voices-modal-close')
-    ?.addEventListener('click', closeVoicesModal);
-  modal.addEventListener('click', (e) => {
-    if (e.target === modal) closeVoicesModal();
-  });
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !modal.hidden) closeVoicesModal();
-  });
-  const stack = document.getElementById('voices-stack');
-  stack.addEventListener('click', (e) => {
-    const btn = e.target.closest('button[data-vact]');
-    const id = btn && btn.closest('.voice-item')?.dataset.id;
-    if (!id) return;
-    const act = btn.dataset.vact;
-    if (act === 'up') voiceMove(id, -1);
-    else if (act === 'down') voiceMove(id, 1);
-    else if (act === 'kind') voiceKindToggle(id);
-    else if (act === 'export') exportVoice(id);
-    else if (act === 'delete') deleteVoice(id);
-  });
-  stack.addEventListener('change', (e) => {
-    const inp = e.target.closest('input[data-vact]');
-    const id = inp && inp.closest('.voice-item')?.dataset.id;
-    if (!id) return;
-    if (inp.dataset.vact === 'show') {
-      if (inp.checked) photoOff.delete(id);
-      else photoOff.add(id);
-      applyStackChange();
-    } else if (inp.dataset.vact === 'active') {
-      activeVoice = id;
-      applyStackChange();
-    }
-  });
-  document
-    .getElementById('voices-new-btn')
-    ?.addEventListener('click', createVoice);
-  document
-    .getElementById('voices-import-btn')
-    ?.addEventListener('click', () =>
-      document.getElementById('voice-import-input')?.click(),
-    );
-}
-
-// ── Painel de revisão de divergências (passo 4) ──────────────────────────
-// Linha no painel de camadas — abre o modal e mostra a contagem.
-function refreshDivergenceRow() {
-  const panel = document.querySelector('.layer-panel');
-  if (!panel) return;
-  let row = document.getElementById('divergence-row');
-  if (!row) {
-    row = document.createElement('div');
-    row.id = 'divergence-row';
-    row.className = 'layer-row voice-row';
-    row.innerHTML =
-      '<label><span>Divergências</span></label>' +
-      '<button type="button" id="divergence-open-btn">0</button>';
-    panel.appendChild(row);
-    row
-      .querySelector('#divergence-open-btn')
-      .addEventListener('click', openDivergenceModal);
-  }
-  const n = divergentMarkers().length;
-  const btn = row.querySelector('#divergence-open-btn');
-  btn.textContent = n ? `rever ${n}` : '0';
-  btn.disabled = n === 0;
-}
-
-// Lista, no modal, cada foto cujas vozes divergem.
-function renderDivergenceModal() {
-  const box = document.getElementById('divergence-list');
-  if (!box) return;
-  const items = divergentMarkers();
-  if (!items.length) {
-    box.innerHTML = '<p class="muted">Nenhuma divergência no acervo.</p>';
-    return;
-  }
-  box.innerHTML = '';
-  for (const m of items) {
-    const ph = m._photo;
-    const el = document.createElement('button');
-    el.type = 'button';
-    el.className = 'div-item';
-    const fields = ph._divergence
-      .map((f) => `<span class="div-chip">${escapeHtml(f.label)}</span>`)
-      .join('');
-    el.innerHTML =
-      `<img src="${ph.thumb || ph.file}" loading="lazy" alt="" />` +
-      '<span class="div-item-body">' +
-      `<span class="div-item-name">${escapeHtml(
-        ph.orig || ph.id || '',
-      )}</span>` +
-      `<span class="div-chips">${fields}</span></span>`;
-    el.addEventListener('click', () => {
-      closeDivergenceModal();
-      map.setView([ph.lat, ph.lng], Math.max(map.getZoom(), 16));
-      if (!map.hasLayer(m)) m.addTo(map);
-      m.openPopup();
-    });
-    box.appendChild(el);
-  }
-}
-
-function openDivergenceModal() {
-  renderDivergenceModal();
-  const el = document.getElementById('divergence-modal');
-  if (el) el.hidden = false;
-}
-function closeDivergenceModal() {
-  const el = document.getElementById('divergence-modal');
-  if (el) el.hidden = true;
-}
-function setupDivergenceModal() {
-  const modal = document.getElementById('divergence-modal');
-  if (!modal) return;
-  modal
-    .querySelector('#divergence-modal-close')
-    ?.addEventListener('click', closeDivergenceModal);
-  modal.addEventListener('click', (e) => {
-    if (e.target === modal) closeDivergenceModal();
-  });
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !modal.hidden) closeDivergenceModal();
-  });
-}
-
-// Alterna o tipo de uma voz (pessoa ↔ modelo) via POST /voice-kind.
-// O tipo da voz governa a divergência: ela só fica visível com um modelo.
-async function voiceKindToggle(vid) {
-  const v = ((photoManifest && photoManifest.voices) || []).find(
-    (x) => x.id === vid,
-  );
-  const next = v && v.kind === 'model' ? 'person' : 'model';
-  try {
-    const res = await fetch(VOICE_KIND_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ voice: vid, kind: next }),
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    if (v) v.kind = next;
-    // A divergência depende do tipo da voz → recalcula marcadores + modal.
-    applyStackChange();
-    showToast(`Voz marcada como ${next === 'model' ? 'modelo' : 'pessoa'}.`);
-  } catch (err) {
-    showToast(`Falha ao mudar o tipo: ${err.message}`);
-  }
-}
-
-// Cria uma voz nova via POST /voices, adiciona-a e a seleciona.
-async function createVoice() {
-  const label = (window.prompt('Nome da nova voz:') || '').trim();
-  if (!label) return;
-  try {
-    const res = await fetch(CREATE_VOICE_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ label }),
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const v = await res.json(); // { id, label }
-    if (!photoManifest) photoManifest = { voices: [] };
-    if (!Array.isArray(photoManifest.voices)) photoManifest.voices = [];
-    photoManifest.voices.push({ id: v.id, label: v.label, photos: [] });
-    activeVoice = v.id;
-    reconcileStack();
-    applyStackChange();
-    renderVoicesModal();
-    showToast(`Voz "${v.label}" criada e ativada.`);
-  } catch (err) {
-    showToast(`Falha ao criar voz: ${err.message}`);
-  }
-}
-
-// Força um novo fetch do manifesto e reconstrói os marcadores.
 async function reloadPhotos() {
   photosLoaded = false;
   photosLoading = null;
@@ -1173,244 +914,108 @@ async function reloadPhotos() {
   applyPhotoVisibility();
 }
 
-// ── Identidade de assinatura (passo 5 — assinar/verificar vozes) ─────────
-// Um par de chaves ECDSA P-256 (Web Crypto), gerado uma vez e guardado em
-// localStorage. É a identidade de quem opera este app: assina as vozes que
-// você exporta; quem recebe o .zip verifica a integridade do conteúdo.
-const ID_KEY_LS = 'phidro:idKey';
-let _idKeyPromise = null;
-
-function _b64(bytes) {
-  const a = new Uint8Array(bytes);
-  let s = '';
-  for (let i = 0; i < a.length; i++) s += String.fromCharCode(a[i]);
-  return btoa(s);
-}
-function _unb64(str) {
-  const s = atob(str);
-  const a = new Uint8Array(s.length);
-  for (let i = 0; i < s.length; i++) a[i] = s.charCodeAt(i);
-  return a;
+// ─── Fonte (Pi / CDN / Local) ─────────────────────────────────────────────
+function setPhotoSource(src) {
+  if (!['auto', 'pi', 'cdn', 'local'].includes(src)) return;
+  photoSource = src;
+  try { localStorage.setItem('phidro:photoSource', src); } catch {}
+  updatePhotoSourceStatus(`Fonte: ${src}.`);
+  reloadPhotos();
 }
 
-// Carrega (ou gera, na primeira vez) o par de chaves de identidade.
-function getIdentityKey() {
-  if (_idKeyPromise) return _idKeyPromise;
-  _idKeyPromise = (async () => {
-    const algo = { name: 'ECDSA', namedCurve: 'P-256' };
-    let stored = null;
-    try {
-      stored = JSON.parse(localStorage.getItem(ID_KEY_LS) || 'null');
-    } catch {
-      stored = null;
-    }
-    if (stored && stored.priv && stored.pub) {
-      const privateKey = await crypto.subtle.importKey(
-        'jwk', stored.priv, algo, false, ['sign']);
-      return { privateKey, pubJwk: stored.pub };
-    }
-    const pair = await crypto.subtle.generateKey(algo, true, [
-      'sign',
-      'verify',
-    ]);
-    const priv = await crypto.subtle.exportKey('jwk', pair.privateKey);
-    const pub = await crypto.subtle.exportKey('jwk', pair.publicKey);
-    try {
-      localStorage.setItem(ID_KEY_LS, JSON.stringify({ priv, pub }));
-    } catch {}
-    return { privateKey: pair.privateKey, pubJwk: pub };
-  })();
-  return _idKeyPromise;
+function updatePhotoSourceStatus(msg) {
+  const el = document.getElementById('photos-source-status');
+  if (el) el.textContent = `${msg} (origem: ${lastTtlOrigin || photoSource})`;
 }
 
-// Assina bytes com a chave de identidade; devolve a assinatura em base64.
-async function signBytes(bytes) {
-  const { privateKey } = await getIdentityKey();
-  const sig = await crypto.subtle.sign(
-    { name: 'ECDSA', hash: 'SHA-256' }, privateKey, bytes);
-  return _b64(sig);
-}
-
-// Verifica uma assinatura base64 contra a chave pública (JWK) embutida.
-async function verifyBytes(bytes, sigB64, pubJwk) {
-  try {
-    const key = await crypto.subtle.importKey(
-      'jwk', pubJwk, { name: 'ECDSA', namedCurve: 'P-256' }, false,
-      ['verify']);
-    return await crypto.subtle.verify(
-      { name: 'ECDSA', hash: 'SHA-256' }, key, _unb64(sigB64), bytes);
-  } catch {
-    return false;
-  }
-}
-
-// Impressão digital curta e estável de uma chave pública — SHA-256 das
-// coordenadas, em grupos hex. Serve para comparar identidades a olho.
-async function keyFingerprint(pubJwk) {
-  if (!pubJwk || !pubJwk.x || !pubJwk.y) return '????';
-  const data = new TextEncoder().encode(`${pubJwk.x}.${pubJwk.y}`);
-  const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', data));
-  return [...hash.slice(0, 8)]
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('')
-    .replace(/(.{4})(?=.)/g, '$1-');
-}
-
-// Carrega o JSZip sob demanda (assinar/verificar mexe no .zip da voz).
-async function ensureJSZip() {
-  if (!window.JSZip) await loadScript(JSZIP_URL);
-  return window.JSZip;
-}
-
-// Exporta a voz selecionada como .zip (voice.json + originais + fotos).
-async function exportVoice(vid) {
-  if (!vid || vid === 'all') {
-    showToast('Selecione uma voz para exportar.');
+async function importPhotosLocal(file) {
+  if (!file) return;
+  const name = (file.name || '').toLowerCase();
+  if (name.endsWith('.ttl') || file.type === 'text/turtle') {
+    lastTtlText = await file.text();
+    lastTtlOrigin = `local: ${file.name}`;
+    const photos = buildModelFromQuads(await parseTtlToQuads(lastTtlText));
+    buildPhotoMarkers(photos);
+    photosLoaded = true;
+    applyPhotoVisibility();
+    updatePhotoSourceStatus(`Importado ${photos.length} foto(s) de ${file.name}.`);
     return;
   }
-  showToast('Preparando o .zip da voz…');
-  try {
-    const res = await fetch('/voice-export', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ voice: vid }),
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    let blob = await res.blob();
-    // Assina a voice.json e embute uma voice.sig no .zip. Se algo falhar,
-    // exporta sem assinatura — melhor um .zip sem assinatura que nenhum.
-    let signed = false;
-    try {
-      const JSZip = await ensureJSZip();
-      const zip = await JSZip.loadAsync(blob);
-      const vjFile = zip.file('voice.json');
-      if (vjFile) {
-        const vjBytes = await vjFile.async('uint8array');
-        const { pubJwk } = await getIdentityKey();
-        zip.file(
-          'voice.sig',
-          JSON.stringify(
-            {
-              alg: 'ECDSA-P256-SHA256',
-              pub: pubJwk,
-              sig: await signBytes(vjBytes),
-              signedAt: new Date().toISOString(),
-            },
-            null,
-            2,
-          ),
-        );
-        blob = await zip.generateAsync({
-          type: 'blob',
-          compression: 'DEFLATE',
-        });
-        signed = true;
-      }
-    } catch (err) {
-      console.warn('[voice] assinatura falhou:', err);
-    }
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download =
-      vid.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-|-$/g, '') + '.zip';
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-    showToast(
-      signed ? 'Voz exportada e assinada.' : 'Voz exportada (sem assinatura).',
-    );
-  } catch (err) {
-    showToast(`Falha ao exportar: ${err.message}`);
-  }
-}
-
-// Importa uma voz de um .zip: verifica a assinatura (integridade), envia ao
-// backend e reporta o veredito. Assinatura inválida não barra o import — a
-// voz entra marcada como não verificada (decisão do passo 5).
-async function importVoice(file) {
-  showToast('Importando voz…');
-  // Verifica a voice.sig antes de enviar.
-  let hadSig = false;
-  let verified = false;
-  let fpr = '';
-  try {
+  if (name.endsWith('.zip') || file.type === 'application/zip') {
     const JSZip = await ensureJSZip();
     const zip = await JSZip.loadAsync(file);
-    const vjFile = zip.file('voice.json');
-    const sigFile = zip.file('voice.sig');
-    if (vjFile && sigFile) {
-      hadSig = true;
-      const vjBytes = await vjFile.async('uint8array');
-      const sigMeta = JSON.parse(await sigFile.async('string'));
-      verified = await verifyBytes(vjBytes, sigMeta.sig, sigMeta.pub);
-      fpr = await keyFingerprint(sigMeta.pub);
+    let ttlEntry = zip.file('update.ttl');
+    if (!ttlEntry) {
+      for (const entry of Object.values(zip.files)) {
+        if (!entry.dir && entry.name.endsWith('.ttl')) { ttlEntry = entry; break; }
+      }
     }
-  } catch (err) {
-    console.warn('[voice] verificação falhou:', err);
-  }
-  try {
-    const headers = {};
-    if (hadSig) {
-      headers['X-Voice-Verified'] = verified ? '1' : '0';
-      headers['X-Voice-Pubkey'] = fpr;
+    if (!ttlEntry) throw new Error('kit sem .ttl');
+    if (localKit) {
+      for (const u of localKit.files.values()) try { URL.revokeObjectURL(u); } catch {}
     }
-    const res = await fetch('/voice-import', {
-      method: 'POST',
-      headers,
-      body: file,
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const r = await res.json();
-    activeVoice = r.voice;
-    saveStack();
-    await reloadPhotos();
-    renderVoicesModal();
-    const sigNote = !hadSig
-      ? 'sem assinatura'
-      : verified
-        ? `assinatura ✓ ${fpr}`
-        : 'assinatura inválida ⚠';
-    showToast(
-      `Voz "${r.label}" importada — ${r.imported} foto(s) · ${sigNote}.`,
-    );
-  } catch (err) {
-    showToast(`Falha ao importar: ${err.message}`);
+    const files = new Map();
+    for (const entry of Object.values(zip.files)) {
+      if (entry.dir || !entry.name.startsWith('photos/')) continue;
+      files.set(entry.name, URL.createObjectURL(await entry.async('blob')));
+    }
+    const ttlText = await ttlEntry.async('string');
+    localKit = { ttlText, files };
+    lastTtlText = ttlText;
+    lastTtlOrigin = `local kit: ${file.name}`;
+    photoSource = 'local';
+    try { localStorage.setItem('phidro:photoSource', 'local'); } catch {}
+    const photos = buildModelFromQuads(await parseTtlToQuads(ttlText));
+    buildPhotoMarkers(photos);
+    photosLoaded = true;
+    applyPhotoVisibility();
+    updatePhotoSourceStatus(`Importado kit com ${photos.length} foto(s).`);
+    return;
   }
+  throw new Error('arquivo precisa ser .ttl ou kit .zip');
 }
 
-// Apaga a voz selecionada e todas as suas fotos — definitivo.
-async function deleteVoice(vid) {
-  if (!vid || vid === 'all') {
-    showToast('Selecione uma voz para apagar.');
-    return;
+function downloadTtl() {
+  if (!lastTtlText) { showToast('Carregue um catálogo primeiro.'); return; }
+  const blob = new Blob([lastTtlText], { type: 'text/turtle;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  a.download = `photos-${stamp}.ttl`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+async function downloadKit() {
+  if (!photoMarkers.length) { showToast('Carregue um catálogo primeiro.'); return; }
+  if (!lastTtlText) { showToast('TTL não disponível para o kit.'); return; }
+  const JSZip = await ensureJSZip();
+  const zip = new JSZip();
+  zip.file('update.ttl', lastTtlText);
+  const photosFolder = zip.folder('photos');
+  let added = 0, missing = 0;
+  for (const m of photoMarkers) {
+    const ph = m._photo;
+    if (!ph.phash) continue;
+    const folder = photosFolder.folder(ph.phash);
+    for (const [variant, url] of [['large', ph.file], ['thumb', ph.thumb], ['original', ph.full]]) {
+      if (!url) { missing++; continue; }
+      try {
+        const res = await fetch(url);
+        if (!res.ok) { missing++; continue; }
+        folder.file(`${variant}.jpg`, await res.blob());
+        added++;
+      } catch { missing++; }
+    }
   }
-  if (vid === 'voice/censo') {
-    showToast('A voz Censo não pode ser apagada.');
-    return;
-  }
-  if (
-    !window.confirm(
-      'Apagar esta voz e TODAS as suas fotos? Não pode ser desfeito.',
-    )
-  ) {
-    return;
-  }
-  try {
-    const res = await fetch('/voice-delete', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ voice: vid }),
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    if (activeVoice === vid) activeVoice = 'voice/censo';
-    photoOff.delete(vid);
-    photoOrder = photoOrder.filter((id) => id !== vid);
-    saveStack();
-    await reloadPhotos();
-    renderVoicesModal();
-    showToast('Voz apagada.');
-  } catch (err) {
-    showToast(`Falha ao apagar voz: ${err.message}`);
-  }
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `phidro-kit-${stamp}.zip`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  showToast(`Kit pronto: ${added} arquivo(s)${missing ? `, ${missing} indisponível(is)` : ''}.`);
 }
 
 // Visibilidade efetiva: camada ligada E (sem filtro OU foto do pedal filtrado).
@@ -1422,11 +1027,6 @@ function applyPhotoVisibility() {
     const shouldShow = photosVisible && matches;
     if (shouldShow && !map.hasLayer(m)) m.addTo(map);
     else if (!shouldShow && map.hasLayer(m)) map.removeLayer(m);
-    // Marcadores-fantasma da divergência de GPS acompanham a foto.
-    for (const g of m._ghosts || []) {
-      if (shouldShow && !map.hasLayer(g)) g.addTo(map);
-      else if (!shouldShow && map.hasLayer(g)) map.removeLayer(g);
-    }
   }
   renderPhotoFilterChip();
 }
@@ -1437,7 +1037,7 @@ function showPhotos() {
     if (!photosVisible) return;
     applyPhotoVisibility();
     if (photoMarkers.length === 0) {
-      showToast('Nenhuma foto georreferenciada (rode build-photos.py)');
+      showToast('Nenhuma imagem carregada (suba via upload_images.html)');
     }
   });
 }
@@ -1448,32 +1048,6 @@ function hidePhotos() {
 function setPhotosOpacity(frac) {
   photosOpacity = frac;
   for (const m of photoMarkers) m.setOpacity(frac);
-}
-
-// Apaga uma foto do acervo via a função delete-photo (protegida por token).
-async function deleteArchivedPhoto(m) {
-  const ph = m && m._photo;
-  if (!ph || !ph.id || !DELETE_PHOTO_URL) return;
-  if (
-    !window.confirm(
-      `Apagar "${ph.orig || ph.id}" do acervo? Esta ação não pode ser desfeita.`,
-    )
-  ) {
-    return;
-  }
-  try {
-    const res = await fetch(DELETE_PHOTO_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: ph.id }),
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    map.removeLayer(m);
-    photoMarkers = photoMarkers.filter((x) => x !== m);
-    showToast('Foto apagada do acervo.');
-  } catch (err) {
-    showToast(`Falha ao apagar: ${err.message}`);
-  }
 }
 
 // Liga a camada já filtrada para um pedal (usado pelo modal de rota).
@@ -1507,7 +1081,7 @@ function renderPhotoFilterChip() {
   const n = ridePhotos(photoRideFilter.date).length;
   chip.innerHTML =
     `<span>Fotos: ${escapeHtml(photoRideFilter.label)} (${n})</span>` +
-    `<button type="button" title="Ver todas as fotos">✕</button>`;
+    `<button type="button" title="Ver todas as imagens">✕</button>`;
   chip.querySelector('button').onclick = clearPhotoRideFilter;
 }
 
@@ -1524,7 +1098,25 @@ function renderRoutePhotos(entry) {
     if (ms.length === 0) return;
     const head = document.createElement('div');
     head.className = 'route-photos-head';
-    head.textContent = `${ms.length} foto${ms.length > 1 ? 's' : ''} deste pedal`;
+    const count = document.createElement('span');
+    count.textContent = `${ms.length} imagem${ms.length > 1 ? 'ns' : ''} deste pedal`;
+    head.appendChild(count);
+    // Botões de download em lote — empacotam todas as fotos do pedal num .zip.
+    const dlActions = document.createElement('span');
+    dlActions.className = 'route-photos-dl';
+    const bigBtn   = document.createElement('button');
+    bigBtn.type = 'button'; bigBtn.className = 'linkbtn';
+    bigBtn.textContent = 'Baixar originais ↓';
+    const largeBtn = document.createElement('button');
+    largeBtn.type = 'button'; largeBtn.className = 'linkbtn';
+    largeBtn.textContent = 'Baixar grandes ↓';
+    bigBtn.addEventListener('click',
+      () => bulkDownloadPhotos(ms.map((m) => m._photo), 'original', label, bigBtn));
+    largeBtn.addEventListener('click',
+      () => bulkDownloadPhotos(ms.map((m) => m._photo), 'large', label, largeBtn));
+    dlActions.appendChild(bigBtn);
+    dlActions.appendChild(largeBtn);
+    head.appendChild(dlActions);
     const strip = document.createElement('div');
     strip.className = 'route-photos-strip';
     for (const m of ms) {
@@ -1546,6 +1138,57 @@ function renderRoutePhotos(entry) {
   });
 }
 
+// Baixa todas as fotos de um pedal num .zip (variant = 'original' | 'large').
+// Usa o JSZip que já carregamos pra outros fluxos. Em caso de erro num
+// arquivo, segue baixando os outros — o .zip sai com o que conseguiu.
+async function bulkDownloadPhotos(photos, variant, label, btn) {
+  if (!photos || !photos.length) return;
+  const origLabel = btn?.textContent;
+  if (btn) { btn.disabled = true; btn.textContent = 'Empacotando…'; }
+  try {
+    const JSZip = await ensureJSZip();
+    const zip = new JSZip();
+    let ok = 0, fail = 0;
+    for (let i = 0; i < photos.length; i++) {
+      const ph = photos[i];
+      const url = variant === 'original' ? ph.full : ph.file;
+      if (!url) { fail++; continue; }
+      if (btn) btn.textContent = `Baixando ${i + 1}/${photos.length}…`;
+      try {
+        const r = await fetch(url, { cache: 'no-cache' });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const blob = await r.blob();
+        // Nome no zip: tenta `orig`, cai pro phash, depois pro fim da URL.
+        let name = (ph.orig || (ph.phash ? `image_${ph.phash}` : '')) || url.split('/').pop();
+        name = name.replace(/[\\/:*?"<>|]+/g, '_');
+        // Garante extensão razoável quando `orig` não traz.
+        if (!/\.[a-z0-9]{1,5}$/i.test(name)) {
+          const ext = (blob.type.split('/')[1] || 'jpg').replace('jpeg', 'jpg');
+          name = `${name}.${ext}`;
+        }
+        zip.file(name, blob);
+        ok++;
+      } catch (e) {
+        console.warn(`[bulk-dl] ${url}: ${e.message}`);
+        fail++;
+      }
+    }
+    if (!ok) { showToast(`Falha ao baixar (${fail} erros)`); return; }
+    if (btn) btn.textContent = 'Compactando…';
+    const out = await zip.generateAsync({ type: 'blob' });
+    const safe = (label || 'pedal').replace(/[\\/:*?"<>|\s]+/g, '_');
+    const fname = `${safe}_${variant}.zip`;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(out);
+    a.download = fname;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 60_000);
+    showToast(`${ok} imagem(ns) compactada(s)${fail ? ` · ${fail} com erro` : ''}`);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = origLabel; }
+  }
+}
+
 // ─── Envio de fotos pelo usuário (apenas na sessão) ──────────────────────────
 // Botão que abre o seletor de arquivos; lê o GPS do EXIF de cada foto no
 // próprio navegador e a coloca no mapa. HEIC (iPhone) é convertido em JPEG
@@ -1557,15 +1200,8 @@ const HEIC2ANY_URL =
   'https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js';
 const JSZIP_URL =
   'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js';
-// URL da Cloud Function que emite URLs assinadas (backend/sign-upload/).
-// Deixe '' para manter o envio ao acervo desativado — só o preview local
-// fica disponível. Preencha após fazer o deploy da função.
-// Backend de fotos. Caminhos relativos: o backend (Raspberry Pi) serve o
-// app e a API na mesma origem — sem CORS, sem URL para configurar.
-const SIGN_UPLOAD_URL = '/sign-upload';
-const DELETE_PHOTO_URL = '/delete-photo';
-const CREATE_VOICE_URL = '/voices';
-const VOICE_KIND_URL = '/voice-kind';
+// Envio ao acervo agora acontece pela research/photos-rdf/upload-form-live.html
+// (POST /upload-image no Pi). Aqui no app o upload é apenas preview de sessão.
 let uploadedMarkers = [];
 let uploadedData = [];
 
@@ -1584,6 +1220,10 @@ async function ensureExifr() {
 async function ensureHeic2any() {
   if (!window.heic2any) await loadScript(HEIC2ANY_URL);
 }
+async function ensureJSZip() {
+  if (!window.JSZip) await loadScript(JSZIP_URL);
+  return window.JSZip;
+}
 function isHeic(f) {
   return /image\/hei[cf]/i.test(f.type) || /\.(heic|heif)$/i.test(f.name);
 }
@@ -1600,7 +1240,7 @@ function fileContentType(f) {
 async function handlePhotoUpload(fileList) {
   const files = [...(fileList || [])];
   if (files.length === 0) return;
-  showToast(`Processando ${files.length} foto(s)…`);
+  showToast(`Processando ${files.length} imagem(ns)…`);
   try {
     await ensureExifr();
   } catch {
@@ -1691,8 +1331,10 @@ function addUploadedPhoto(p) {
   const m = L.marker([p.lat, p.lng], { icon });
   const when = p.datetime ? new Date(p.datetime).toLocaleString('pt-BR') : '';
   const rideText = p.ride
-    ? [p.ride.code, p.ride.name].filter(Boolean).join(' · ') || p.ride.date
-    : 'Foto enviada · apenas nesta sessão';
+    ? (p.ride.code && p.ride.name
+        ? `${p.ride.code}: ${p.ride.name}`
+        : (p.ride.code || p.ride.name || p.ride.date))
+    : 'Imagem enviada · apenas nesta sessão';
   m.bindPopup(
     `<div class="photo-popup">` +
       `<img src="${p.url}" alt="${escapeHtml(p.orig)}" />` +
@@ -1723,8 +1365,8 @@ function clearUploadedPhotos() {
   renderUploadChip();
 }
 
-// Exporta os pontos no formato photos.json para realimentar o repositório.
-// O thumbnail real é gerado depois por build-photos.py a partir do original.
+// Exporta os pontos da sessão como JSON simples — útil pra triagem manual.
+// Para entrar no acervo, suba via upload_images.html (POST /upload-image).
 function exportUploadedPhotos() {
   if (uploadedData.length === 0) return;
   const payload = {
@@ -1750,72 +1392,6 @@ function exportUploadedPhotos() {
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
-// PUT do arquivo para a URL assinada. Usa XMLHttpRequest em vez de fetch:
-// o Safari falha de forma intermitente um fetch() com corpo grande entre
-// origens ("Load failed" / "network connection lost") — o XHR não tem o bug.
-function putToSignedUrl(url, file, contentType) {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open('PUT', url);
-    xhr.setRequestHeader('Content-Type', contentType);
-    xhr.timeout = 120000;
-    xhr.onload = () =>
-      xhr.status >= 200 && xhr.status < 300
-        ? resolve()
-        : reject(new Error(`PUT ${xhr.status}`));
-    xhr.onerror = () => reject(new Error('PUT bloqueado (rede/CORS)'));
-    xhr.ontimeout = () => reject(new Error('PUT expirou'));
-    xhr.send(file);
-  });
-}
-
-// Envia os originais ao bucket do GCS via URLs assinadas da Cloud Function.
-async function uploadToArchive() {
-  if (!SIGN_UPLOAD_URL) return;
-  const pending = uploadedData.filter((p) => p.file && !p.archived);
-  if (pending.length === 0) {
-    showToast('Nada novo para enviar ao acervo.');
-    return;
-  }
-  // As fotos vão para a voz ativa (alvo de upload escolhido no modal Vozes).
-  const uploadVoice = activeVoice || 'voice/censo';
-  const voiceLabel =
-    ((photoManifest && photoManifest.voices) || []).find(
-      (v) => v.id === uploadVoice,
-    )?.label || uploadVoice;
-  showToast(`Enviando ${pending.length} foto(s) → ${voiceLabel}…`);
-  let ok = 0;
-  let fail = 0;
-  for (const p of pending) {
-    try {
-      const ct = fileContentType(p.file);
-      const res = await fetch(SIGN_UPLOAD_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          filename: p.orig,
-          contentType: ct,
-          ride: p.ride || null,
-          voice: uploadVoice,
-        }),
-      });
-      if (!res.ok) throw new Error(`assinatura HTTP ${res.status}`);
-      const { uploadUrl } = await res.json();
-      await putToSignedUrl(uploadUrl, p.file, ct);
-      p.archived = true;
-      ok++;
-    } catch (err) {
-      console.warn('[upload] envio ao acervo falhou:', p.orig, err);
-      fail++;
-    }
-  }
-  renderUploadChip();
-  showToast(
-    `Acervo (${voiceLabel}): ${ok} enviada(s)` +
-      (fail ? ` · ${fail} com erro` : ''),
-  );
-}
-
 function renderUploadChip() {
   let chip = document.getElementById('upload-status-chip');
   if (uploadedMarkers.length === 0) {
@@ -1828,37 +1404,90 @@ function renderUploadChip() {
     chip.className = 'map-chip';
     document.getElementById('map').appendChild(chip);
   }
-  const archived = uploadedData.filter((p) => p.archived).length;
-  let html = `<span>📷 ${uploadedMarkers.length} foto(s)`;
-  if (archived) html += ` · ${archived} no acervo`;
-  html += `</span>`;
-  if (SIGN_UPLOAD_URL) {
-    html += `<button type="button" data-act="archive">Enviar ao acervo</button>`;
-  }
-  html +=
+  chip.innerHTML =
+    `<span>📷 ${uploadedMarkers.length} imagem(ns) (apenas nesta sessão)</span>` +
     `<button type="button" data-act="export">Exportar</button>` +
     `<button type="button" data-act="clear">Limpar</button>`;
-  chip.innerHTML = html;
-  if (SIGN_UPLOAD_URL) {
-    chip.querySelector('[data-act="archive"]').onclick = uploadToArchive;
-  }
   chip.querySelector('[data-act="export"]').onclick = exportUploadedPhotos;
   chip.querySelector('[data-act="clear"]').onclick = clearUploadedPhotos;
 }
 
-const uploadBtn = document.getElementById('upload-btn');
-const uploadInput = document.getElementById('photo-upload-input');
-uploadBtn?.addEventListener('click', () => uploadInput?.click());
-uploadInput?.addEventListener('change', () => {
-  handlePhotoUpload(uploadInput.files);
-  uploadInput.value = ''; // permite reenviar o mesmo arquivo
+// "Enviar imagens" abre o upload_images.html dentro de um iframe modal:
+// isola o estado da página (CDN imports, Tom Select, etc.) e devolve um
+// uploadModal limpo a cada abertura.
+const uploadBtn        = document.getElementById('upload-btn');
+const uploadModal      = document.getElementById('upload-modal');
+const uploadModalClose = document.getElementById('upload-modal-close');
+const uploadIframe     = document.getElementById('upload-iframe');
+function openUploadModal() {
+  if (!uploadModal) return;
+  // Lazy-load: só seta o src na 1ª abertura (depois mantém o estado do form).
+  // NB: `iframe.src` (IDL) é truthy mesmo quando o atributo está vazio
+  // (devolve a URL da página pai/`about:blank`). Checamos o atributo cru.
+  if (!uploadIframe.getAttribute('src')) {
+    uploadIframe.src = './upload_images.html';
+  }
+  uploadModal.hidden = false;
+}
+function closeUploadModal() {
+  if (uploadModal) uploadModal.hidden = true;
+  // Pega o manifesto + tiles novos sem dance de hard-refresh.
+  reloadPhotos();
+}
+uploadBtn?.addEventListener('click', openUploadModal);
+uploadModalClose?.addEventListener('click', closeUploadModal);
+// Clique no overlay (fora do conteúdo) fecha.
+uploadModal?.addEventListener('click', (e) => {
+  if (e.target === uploadModal) closeUploadModal();
 });
-const voiceImportInput = document.getElementById('voice-import-input');
-voiceImportInput?.addEventListener('change', () => {
-  const f = voiceImportInput.files && voiceImportInput.files[0];
-  if (f) importVoice(f);
-  voiceImportInput.value = '';
+// Esc também fecha.
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && uploadModal && !uploadModal.hidden) closeUploadModal();
 });
+
+// ─── Modal "Fonte do acervo" + import/export ──────────────────────────────
+const photosSourceBtn   = document.getElementById('photos-source-btn');
+const photosSourceModal = document.getElementById('photos-source-modal');
+const photosSourceClose = document.getElementById('photos-source-close');
+const photosImportBtn   = document.getElementById('photos-import-btn');
+const photosImportInput = document.getElementById('photos-import-input');
+const photosExportTtlBtn = document.getElementById('photos-export-ttl-btn');
+const photosExportKitBtn = document.getElementById('photos-export-kit-btn');
+const photosReloadBtn   = document.getElementById('photos-reload-btn');
+
+function openPhotosSource() {
+  if (!photosSourceModal) return;
+  // Marca o rádio com a fonte atual.
+  for (const r of photosSourceModal.querySelectorAll('input[name="photos-source"]')) {
+    r.checked = (r.value === photoSource);
+  }
+  updatePhotoSourceStatus(lastTtlOrigin ? 'OK' : 'sem TTL carregado');
+  photosSourceModal.hidden = false;
+}
+function closePhotosSource() {
+  if (photosSourceModal) photosSourceModal.hidden = true;
+}
+photosSourceBtn?.addEventListener('click', openPhotosSource);
+photosSourceClose?.addEventListener('click', closePhotosSource);
+photosSourceModal?.addEventListener('click', (e) => {
+  if (e.target === photosSourceModal) closePhotosSource();
+});
+for (const r of photosSourceModal?.querySelectorAll('input[name="photos-source"]') || []) {
+  r.addEventListener('change', () => setPhotoSource(r.value));
+}
+photosImportBtn?.addEventListener('click', () => photosImportInput?.click());
+photosImportInput?.addEventListener('change', async () => {
+  const f = photosImportInput.files && photosImportInput.files[0];
+  if (!f) return;
+  try { await importPhotosLocal(f); }
+  catch (err) { showToast(`Falha no import: ${err.message}`); }
+  photosImportInput.value = '';
+});
+photosExportTtlBtn?.addEventListener('click', downloadTtl);
+photosExportKitBtn?.addEventListener('click', () => {
+  downloadKit().catch(err => showToast(`Falha no kit: ${err.message}`));
+});
+photosReloadBtn?.addEventListener('click', () => reloadPhotos());
 
 // ─── Cicloinfra (OSM cycling infrastructure) overlay ─────────────────────────
 // Live-queries Overpass for everything that's safe-ish for a bicycle:
@@ -2260,12 +1889,6 @@ layerPanel.addTo(map);
 // A camada "Fotos geo" vem ligada por padrão (defaultVisible: true) — o
 // checkbox só reflete o estado, então a ativamos explicitamente aqui.
 showPhotos();
-// Garante que o seletor de voz apareça mesmo antes das fotos carregarem.
-refreshVoicePicker();
-// Liga os botões do modal "Vozes" (abrir/fechar/nova/importar).
-setupVoicesModal();
-// Liga o modal de revisão de divergências (passo 4).
-setupDivergenceModal();
 
 // ─── State ───────────────────────────────────────────────────────────────────
 const routesList = document.getElementById('routes-list');
@@ -2821,7 +2444,7 @@ const traceControls = document.getElementById('trace-controls');
 const traceUndo = document.getElementById('trace-undo');
 const traceRedo = document.getElementById('trace-redo');
 const traceCancel = document.getElementById('trace-cancel');
-const traceCount = document.getElementById('trace-count');
+const traceCount = document.getElementById('trace-count');   // ausente desde a remoção do label "# pontos"
 
 // The floating panel sits inside the map container, so without this Leaflet
 // would treat clicks on its buttons as map clicks and add trackpoints.
@@ -2853,6 +2476,14 @@ const DEFAULT_PARAMS = {
   epsilon: 0.10,            // 0..1 — fraction of descent gravity converted to speed
   efficiency: 0.90,         // 0..1 — moving time / total time
   slopeFlatThreshold: 0.01, // 0..1 — ±1% boundary for flat vs. ascent/descent
+  // Fonte de elevação: FABDEM (Range fetch de tiles 1°×1°) por padrão; cai
+  // pra Open-Meteo se desligado ou se a célula vier nodata/404.
+  useFabdem: true,
+  // Roteamento "menor energia" (FABDEM + Dijkstra assimétrico):
+  energyAlpha: 1,           // peso da distância no custo
+  energyBeta: 5,            // peso do desnível positivo
+  energyEta: 0.5,           // fração do ganho de descida recuperada (0..1)
+  energySearchMarginPct: 20, // % de margem em torno da bbox dos endpoints
 };
 
 function powerFor(gradient, p) {
@@ -3338,19 +2969,265 @@ async function refetchPath(idx) {
   const seq = ++pendingRouteSeq;
   const tpId = tp.id;
   try {
-    const path = await osrmRoute(
-      prev.marker.getLatLng(),
-      tp.marker.getLatLng(),
-      routingMode === 'foot' ? 'foot' : 'cycling',
-    );
-    // Discard if a newer call has been made for the same trackpoint, or if it
-    // was undone away by undo/restore.
+    let path;
+    if (routingMode === 'energy' || routingMode === 'energy_road') {
+      const subMode = routingMode === 'energy_road' ? 'road' : 'free';
+      path = await energyRoute(prev.marker.getLatLng(), tp.marker.getLatLng(), subMode);
+    } else {
+      path = await osrmRoute(
+        prev.marker.getLatLng(),
+        tp.marker.getLatLng(),
+        routingMode === 'foot' ? 'foot' : 'cycling',
+      );
+    }
     const stillExists = trackpoints.find((t) => t.id === tpId);
     if (!stillExists || seq !== pendingRouteSeq) return;
     stillExists.pathFromPrev = path;
   } catch (err) {
-    console.warn(`OSRM route failed (idx=${idx}):`, err.message);
+    console.warn(`Route failed (mode=${routingMode}, idx=${idx}):`, err.message);
     // Keep the straight fallback that was already set.
+  }
+}
+
+// ─── Roteamento por menor energia (FABDEM + Dijkstra) ────────────────────
+// Limite duro do segmento — fora dele o custo do DEM cresce demais e a
+// experiência azeda. Acima desta distância cai pra reta.
+const ENERGY_MAX_SEGMENT_KM = 2;
+
+let _energyWorker = null;
+function getEnergyWorker() {
+  if (!_energyWorker) {
+    _energyWorker = new Worker('./lib/energy-worker.js');
+  }
+  return _energyWorker;
+}
+
+function runEnergyWorker(payload) {
+  const w = getEnergyWorker();
+  return new Promise((resolve, reject) => {
+    const onmsg = (ev) => {
+      const m = ev.data;
+      if (m.kind === 'progress') return;
+      w.removeEventListener('message', onmsg);
+      if (m.kind === 'error') reject(new Error(m.message));
+      else resolve(m);
+    };
+    w.addEventListener('message', onmsg);
+    w.postMessage({ kind: 'run', ...payload });
+  });
+}
+
+// Costura tiles 1°×1° em um Float32Array sobre uma bbox dada. Cells fora
+// da cobertura → NaN/mask=0. Devolve { height, mask, H, W }.
+async function loadFabdemMosaic(bb) {
+  const A = FABDEM_ARCSEC;
+  const W = Math.round((bb.east  - bb.west)  / A);
+  const H = Math.round((bb.north - bb.south) / A);
+  const height = new Float32Array(W * H);
+  const mask   = new Uint8Array(W * H);
+  height.fill(NaN);
+
+  const eps = 1e-9;
+  const latLo = Math.floor(bb.south);
+  const latHi = Math.floor(bb.north - eps);
+  const lonLo = Math.floor(bb.west);
+  const lonHi = Math.floor(bb.east  - eps);
+
+  for (let lat = latLo; lat <= latHi; lat++) {
+    for (let lon = lonLo; lon <= lonHi; lon++) {
+      const t = await openFabdemTile(lat, lon);
+      if (!t) continue;
+      const interWest  = Math.max(bb.west,  lon);
+      const interEast  = Math.min(bb.east,  lon + 1);
+      const interSouth = Math.max(bb.south, lat);
+      const interNorth = Math.min(bb.north, lat + 1);
+      if (interEast <= interWest || interNorth <= interSouth) continue;
+      const [oX, oY] = t.origin;
+      const [rX, rY] = t.resolution;
+      const wnd = [
+        Math.round((interWest  - oX) / rX),
+        Math.round((interNorth - oY) / rY),
+        Math.round((interEast  - oX) / rX),
+        Math.round((interSouth - oY) / rY),
+      ];
+      const raster = await t.image.readRasters({ window: wnd, interleave: true });
+      const rW = wnd[2] - wnd[0];
+      const rH = wnd[3] - wnd[1];
+      const colOffset = Math.round((interWest - bb.west)    / A);
+      const rowOffset = Math.round((bb.north  - interNorth) / A);
+      for (let r = 0; r < rH; r++) {
+        const mr = rowOffset + r;
+        if (mr < 0 || mr >= H) continue;
+        for (let c = 0; c < rW; c++) {
+          const mc = colOffset + c;
+          if (mc < 0 || mc >= W) continue;
+          const v = raster[r * rW + c];
+          if (Number.isFinite(v) && (t.nodata == null || v !== t.nodata)) {
+            const idx = mr * W + mc;
+            height[idx] = v;
+            mask[idx]   = 1;
+          }
+        }
+      }
+    }
+  }
+  return { height, mask, H, W };
+}
+
+// Overpass: ways com highway=* na bbox. Devolve { nodes: Map<id, [lat,lng]>,
+// ways: [{ nodes: [id1, id2, …] }] }.
+async function fetchOsmRoadsForBbox(bb) {
+  const q = `[out:json][timeout:30];
+way["highway"](${bb.south},${bb.west},${bb.north},${bb.east});
+out body;
+>;
+out skel qt;`;
+  const res = await fetch(OVERPASS_URL, {
+    method: 'POST',
+    body: 'data=' + encodeURIComponent(q),
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+  });
+  if (!res.ok) throw new Error(`Overpass ${res.status}`);
+  const data = await res.json();
+  const nodes = new Map();
+  const ways  = [];
+  for (const el of data.elements || []) {
+    if (el.type === 'node') nodes.set(el.id, [el.lat, el.lon]);
+    else if (el.type === 'way' && Array.isArray(el.nodes)) ways.push({ nodes: el.nodes });
+  }
+  return { nodes, ways };
+}
+
+// Bresenham: pinta (r0,c0)→(r1,c1) na máscara.
+function rasterizeLineToMask(mask, W, H, r0, c0, r1, c1) {
+  let r = r0, c = c0;
+  const dr = Math.abs(r1 - r0), dc = Math.abs(c1 - c0);
+  const sr = r0 < r1 ? 1 : -1;
+  const sc = c0 < c1 ? 1 : -1;
+  let err = dc - dr;
+  while (true) {
+    if (r >= 0 && r < H && c >= 0 && c < W) mask[r * W + c] = 1;
+    if (r === r1 && c === c1) break;
+    const e2 = err * 2;
+    if (e2 > -dr) { err -= dr; c += sc; }
+    if (e2 <  dc) { err += dc; r += sr; }
+  }
+}
+
+// Constrói a máscara binária do viário (1-célula de largura ≈ 30 m, a
+// resolução do FABDEM). Sem dilatação — o caminho fica preso aos eixos
+// das vias. O carimbo 3×3 ao redor de seed/goal acontece DEPOIS, em
+// energyRoute(), pra garantir que a origem/destino estejam acessíveis
+// mesmo que o clique fique a 1 célula do nó OSM mais próximo.
+function rasterizeRoads(osm, bb, H, W, A) {
+  const mask = new Uint8Array(W * H);
+  for (const w of osm.ways) {
+    let prev = null;
+    for (const id of w.nodes) {
+      const ll = osm.nodes.get(id);
+      if (!ll) { prev = null; continue; }
+      const r = Math.round((bb.north - ll[0]) / A);
+      const c = Math.round((ll[1] - bb.west) / A);
+      if (prev) rasterizeLineToMask(mask, W, H, prev[0], prev[1], r, c);
+      prev = [r, c];
+    }
+  }
+  return mask;
+}
+
+// `mode` = 'free' (qualquer célula do DEM) | 'road' (restringe ao viário OSM)
+async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
+  const distKm = fromLatLng.distanceTo(toLatLng) / 1000;
+  if (distKm > ENERGY_MAX_SEGMENT_KM) {
+    showToast(`Segmento ${distKm.toFixed(2)} km > ${ENERGY_MAX_SEGMENT_KM} km — usando reta`);
+    return straightPath(fromLatLng, toLatLng);
+  }
+
+  const margin = Math.max(0, params.energySearchMarginPct / 100);
+  let west  = Math.min(fromLatLng.lng, toLatLng.lng);
+  let east  = Math.max(fromLatLng.lng, toLatLng.lng);
+  let south = Math.min(fromLatLng.lat, toLatLng.lat);
+  let north = Math.max(fromLatLng.lat, toLatLng.lat);
+  const padLng = Math.max((east  - west)  * margin, 1e-4);
+  const padLat = Math.max((north - south) * margin, 1e-4);
+  west  -= padLng; east  += padLng;
+  south -= padLat; north += padLat;
+
+  const A = FABDEM_ARCSEC;
+  const bb = {
+    west:  Math.floor(west  / A) * A,
+    east:  Math.ceil (east  / A) * A,
+    south: Math.floor(south / A) * A,
+    north: Math.ceil (north / A) * A,
+  };
+
+  await ensureGeoTIFF();
+  const dem = await loadFabdemMosaic(bb);
+  if (!dem.W || !dem.H) {
+    console.warn('[energy] DEM vazio — fallback pra reta');
+    return straightPath(fromLatLng, toLatLng);
+  }
+
+  // OSM road network (paralelo ao DEM, mesmo bbox).
+  let networkMask = null;
+  if (mode === 'road') {
+    try {
+      const osm = await fetchOsmRoadsForBbox(bb);
+      if (!osm.ways.length) {
+        showToast('Sem viário OSM no bbox — caindo para menor energia livre.');
+      } else {
+        networkMask = rasterizeRoads(osm, bb, dem.H, dem.W, A);
+      }
+    } catch (e) {
+      console.warn('[energy_road] Overpass falhou:', e.message);
+      showToast(`Overpass falhou (${e.message}) — caindo para menor energia livre.`);
+    }
+  }
+
+  const midLat = (bb.south + bb.north) / 2;
+  const EARTH_R = 6378137;
+  const dy = A * Math.PI / 180 * EARTH_R;
+  const dx = dy * Math.cos(midLat * Math.PI / 180);
+
+  const seedR = Math.max(0, Math.min(dem.H - 1, Math.round((bb.north - fromLatLng.lat) / A)));
+  const seedC = Math.max(0, Math.min(dem.W - 1, Math.round((fromLatLng.lng - bb.west) / A)));
+  const goalR = Math.max(0, Math.min(dem.H - 1, Math.round((bb.north - toLatLng.lat)   / A)));
+  const goalC = Math.max(0, Math.min(dem.W - 1, Math.round((toLatLng.lng - bb.west)    / A)));
+
+  // Garante que seed/goal estão sempre na máscara de viário — senão
+  // Dijkstra nunca sai da origem. Pintamos um carimbo 3×3 ao redor de cada.
+  if (networkMask) {
+    for (const [pr, pc] of [[seedR, seedC], [goalR, goalC]]) {
+      for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+        const rr = pr + dr, cc = pc + dc;
+        if (rr >= 0 && rr < dem.H && cc >= 0 && cc < dem.W) networkMask[rr * dem.W + cc] = 1;
+      }
+    }
+  }
+
+  try {
+    const res = await runEnergyWorker({
+      height: dem.height, mask: dem.mask,
+      networkMask,
+      H: dem.H, W: dem.W, dx, dy,
+      seedR, seedC, goalR, goalC,
+      mode: 'from',
+      alpha: params.energyAlpha,
+      beta:  params.energyBeta,
+      eta:   params.energyEta,
+    });
+    if (!res.path || !res.path.length) {
+      console.warn('[energy] sem caminho — fallback pra reta');
+      return straightPath(fromLatLng, toLatLng);
+    }
+    return Array.from(res.path, (i) => {
+      const r = (i / dem.W) | 0;
+      const c = i - r * dem.W;
+      return [bb.north - (r + 0.5) * A, bb.west + (c + 0.5) * A];
+    });
+  } catch (e) {
+    console.warn('[energy] worker falhou:', e.message);
+    return straightPath(fromLatLng, toLatLng);
   }
 }
 
@@ -3520,7 +3397,140 @@ function totalDistanceMeters() {
   return total;
 }
 
-// ─── Elevation (Open-Meteo, free + CORS) ─────────────────────────────────────
+// ─── FABDEM (1°×1° COG tiles hospedadas em telhas.pedalhidrografi.co) ────────
+// Range-fetch só dos strips que cobrem cada ponto/bbox. geotiff.js é
+// carregado sob demanda do CDN; window.GeoTIFF expõe a API.
+const FABDEM_BASE_URL = 'https://telhas.pedalhidrografi.co/fabdem/';
+const FABDEM_TILE_DEG = 1;
+const FABDEM_ARCSEC   = 1 / 3600;            // ~30 m no equador
+const GEOTIFF_URL     = 'https://cdn.jsdelivr.net/npm/geotiff@3.0.5/dist-browser/geotiff.js';
+
+let _geoTiffPromise = null;
+async function ensureGeoTIFF() {
+  if (!_geoTiffPromise) {
+    _geoTiffPromise = (async () => {
+      if (!window.GeoTIFF) await loadScript(GEOTIFF_URL);
+      return window.GeoTIFF;
+    })();
+  }
+  return _geoTiffPromise;
+}
+
+// Convenção do bucket: SW corner, hemisfério antes dos dígitos.
+//   lat=-24, lon=-47  →  S24W047_FABDEM_V1-2.tif
+function fabdemTileName(lat, lon) {
+  const ns = lat >= 0 ? 'N' : 'S';
+  const ew = lon >= 0 ? 'E' : 'W';
+  const la = String(Math.abs(lat)).padStart(2, '0');
+  const lo = String(Math.abs(lon)).padStart(3, '0');
+  return `${ns}${la}${ew}${lo}_FABDEM_V1-2.tif`;
+}
+
+// Cache de tiles abertos. Cada entrada guarda só o IFD (geotiff.js
+// adia o fetch de pixels até readRasters).
+const _fabdemTileCache = new Map();   // "SXX[E|W]XXX" → { image, origin, resolution, nodata } | null
+async function openFabdemTile(latLo, lonLo) {
+  const key = `${latLo}_${lonLo}`;
+  if (_fabdemTileCache.has(key)) return _fabdemTileCache.get(key);
+  const url = FABDEM_BASE_URL + fabdemTileName(latLo, lonLo);
+  try {
+    const GeoTIFF = await ensureGeoTIFF();
+    const tiff   = await GeoTIFF.fromUrl(url);
+    const image  = await tiff.getImage();
+    const origin = image.getOrigin();
+    const resolution = image.getResolution();
+    const nodataRaw = image.fileDirectory.getValue
+      ? image.fileDirectory.getValue('GDAL_NODATA')
+      : image.fileDirectory.GDAL_NODATA;
+    const nodata = nodataRaw ? parseFloat(nodataRaw) : null;
+    const entry = { image, origin, resolution, nodata };
+    _fabdemTileCache.set(key, entry);
+    return entry;
+  } catch (e) {
+    console.info(`[fabdem] tile (${latLo},${lonLo}) indisponível: ${e.message}`);
+    _fabdemTileCache.set(key, null);    // negative cache: don't keep retrying
+    return null;
+  }
+}
+
+// Sample elevation (meters) at lat/lng. Returns null when the tile is
+// missing or the cell is nodata. Batched callers should prefer
+// `sampleFabdemBatch` to reuse a single window per tile.
+async function sampleFabdemAt(lat, lng) {
+  const latLo = Math.floor(lat);
+  const lonLo = Math.floor(lng);
+  const t = await openFabdemTile(latLo, lonLo);
+  if (!t) return null;
+  const [oX, oY] = t.origin;
+  const [rX, rY] = t.resolution;   // rX > 0, rY < 0
+  const col = Math.round((lng - oX) / rX);
+  const row = Math.round((lat - oY) / rY);
+  try {
+    const ras = await t.image.readRasters({
+      window: [col, row, col + 1, row + 1],
+      interleave: true,
+    });
+    const v = ras[0];
+    if (!Number.isFinite(v)) return null;
+    if (t.nodata != null && v === t.nodata) return null;
+    return v;
+  } catch (e) {
+    console.warn(`[fabdem] sample ${lat},${lng} falhou: ${e.message}`);
+    return null;
+  }
+}
+
+// Sample many points efficiently: groups by tile and reads one bounding
+// window per tile, then indexes each point into the buffer. ~1 HTTP
+// range request per tile instead of one per point.
+async function sampleFabdemBatch(points /* [[lat, lng], …] */) {
+  if (!points.length) return [];
+  // Bucket points by their tile.
+  const groups = new Map();   // "latLo_lonLo" → { latLo, lonLo, idxs: [origIdx,…] }
+  points.forEach(([lat, lng], i) => {
+    const latLo = Math.floor(lat);
+    const lonLo = Math.floor(lng);
+    const k = `${latLo}_${lonLo}`;
+    if (!groups.has(k)) groups.set(k, { latLo, lonLo, idxs: [] });
+    groups.get(k).idxs.push(i);
+  });
+  const out = new Array(points.length).fill(null);
+  for (const { latLo, lonLo, idxs } of groups.values()) {
+    const t = await openFabdemTile(latLo, lonLo);
+    if (!t) continue;
+    const [oX, oY] = t.origin;
+    const [rX, rY] = t.resolution;
+    // Bounding pixel window for this group.
+    let cMin = Infinity, cMax = -Infinity, rMin = Infinity, rMax = -Infinity;
+    const cells = idxs.map(i => {
+      const [lat, lng] = points[i];
+      const c = Math.round((lng - oX) / rX);
+      const r = Math.round((lat - oY) / rY);
+      if (c < cMin) cMin = c; if (c > cMax) cMax = c;
+      if (r < rMin) rMin = r; if (r > rMax) rMax = r;
+      return [i, r, c];
+    });
+    try {
+      const wndW = cMax - cMin + 1;
+      const wndH = rMax - rMin + 1;
+      const ras = await t.image.readRasters({
+        window: [cMin, rMin, cMax + 1, rMax + 1],
+        interleave: true,
+      });
+      for (const [i, r, c] of cells) {
+        const v = ras[(r - rMin) * wndW + (c - cMin)];
+        if (Number.isFinite(v) && (t.nodata == null || v !== t.nodata)) {
+          out[i] = v;
+        }
+      }
+    } catch (e) {
+      console.warn(`[fabdem] read window (${latLo},${lonLo}) falhou: ${e.message}`);
+    }
+  }
+  return out;
+}
+
+// ─── Elevation (FABDEM por padrão; Open-Meteo como fallback) ─────────────────
 // Cached by ~1m-rounded lat,lon so dragging/undo doesn't refetch the same
 // point. Up to 100 coords per HTTP call; debounced 400ms after user activity.
 const elevationCache = new Map();
@@ -3558,10 +3568,30 @@ async function fetchMissingElevations(path, seq) {
   }
   if (missing.length === 0) return;
 
+  // Tenta FABDEM primeiro (quando ativo); o que vier null tenta Open-Meteo.
+  let stillMissing = missing;
+  if (params.useFabdem) {
+    try {
+      const elevs = await sampleFabdemBatch(missing);
+      if (seq !== elevationFetchSeq) return;
+      const remaining = [];
+      missing.forEach(([la, lo], i) => {
+        const e = elevs[i];
+        if (Number.isFinite(e)) elevationCache.set(elevKey(la, lo), e);
+        else remaining.push([la, lo]);
+      });
+      stillMissing = remaining;
+    } catch (err) {
+      console.warn('FABDEM elevation fetch failed:', err.message);
+    }
+  }
+  if (stillMissing.length === 0) return;
+
+  // Open-Meteo (fallback): 1 chamada a cada 100 coords.
   const BATCH = 100;
-  for (let i = 0; i < missing.length; i += BATCH) {
-    if (seq !== elevationFetchSeq) return; // newer request superseded us
-    const batch = missing.slice(i, i + BATCH);
+  for (let i = 0; i < stillMissing.length; i += BATCH) {
+    if (seq !== elevationFetchSeq) return;
+    const batch = stillMissing.slice(i, i + BATCH);
     const lats = batch.map(([la]) => la.toFixed(5)).join(',');
     const lons = batch.map(([, lo]) => lo.toFixed(5)).join(',');
     const url = `https://api.open-meteo.com/v1/elevation?latitude=${lats}&longitude=${lons}`;
@@ -3742,7 +3772,7 @@ function updateMetrics() {
   const effPct = (params.efficiency * 100).toFixed(0);
 
   traceMetrics.textContent =
-    `${fmt(km, 2)} km · ${ascDesc} · ${formatHMS(movingTimeSec)} mov · ${formatHMS(totalTimeSec)} tot · ⌀ ${fmt(avgKmh)} km/h · ${fmt(totalKJ)} kJ${elevHint}`;
+    `${fmt(km, 2)} km · ${ascDesc} · ${formatHMS(movingTimeSec)} mov · ${formatHMS(totalTimeSec)} tot · ${fmt(totalKJ)} kJ${elevHint}`;
   traceMetrics.title =
     `Simulação por segmento.\n` +
     `  Distância:        ${fmt(km, 2)} km\n` +
@@ -3789,6 +3819,14 @@ const PARAM_INPUTS = {
   epsilon:            document.getElementById('param-epsilon'),
   efficiency:         document.getElementById('param-efficiency'),
   slopeFlatThreshold: document.getElementById('param-slope-threshold'),
+  // FABDEM + energy-routing
+  energyAlpha:        document.getElementById('param-energy-alpha'),
+  energyBeta:         document.getElementById('param-energy-beta'),
+  energyEta:          document.getElementById('param-energy-eta'),
+  energySearchMarginPct: document.getElementById('param-energy-margin'),
+};
+const PARAM_CHECKBOXES = {
+  useFabdem: document.getElementById('param-use-fabdem'),
 };
 
 paramsBtn.addEventListener('click', () => {
@@ -3814,6 +3852,13 @@ for (const [key, input] of Object.entries(PARAM_INPUTS)) {
     updateMetrics();
   });
 }
+for (const [key, input] of Object.entries(PARAM_CHECKBOXES)) {
+  input.addEventListener('change', () => {
+    params[key] = !!input.checked;
+    saveParams();
+    updateMetrics();
+  });
+}
 
 function fillParamInputs() {
   PARAM_INPUTS.mass.value = params.mass;
@@ -3826,6 +3871,11 @@ function fillParamInputs() {
   PARAM_INPUTS.epsilon.value = (params.epsilon * 100).toFixed(0);
   PARAM_INPUTS.efficiency.value = (params.efficiency * 100).toFixed(0);
   PARAM_INPUTS.slopeFlatThreshold.value = (params.slopeFlatThreshold * 100).toFixed(1);
+  PARAM_INPUTS.energyAlpha.value           = params.energyAlpha;
+  PARAM_INPUTS.energyBeta.value            = params.energyBeta;
+  PARAM_INPUTS.energyEta.value             = params.energyEta;
+  PARAM_INPUTS.energySearchMarginPct.value = params.energySearchMarginPct;
+  PARAM_CHECKBOXES.useFabdem.checked       = params.useFabdem !== false;
 }
 
 // ─── Params serialization (JSON-LD with QUDT + schema.org) ───────────────────
@@ -3986,8 +4036,10 @@ function restoreSnapshot(snap) {
 function updateTraceControls() {
   traceUndo.disabled = historyIndex <= 0;
   traceRedo.disabled = historyIndex >= history.length - 1;
-  const n = trackpoints.length;
-  traceCount.textContent = `${n} ponto${n === 1 ? '' : 's'}`;
+  if (traceCount) {
+    const n = trackpoints.length;
+    traceCount.textContent = `${n} ponto${n === 1 ? '' : 's'}`;
+  }
 }
 
 // Opens the save-name modal; the modal's confirm button does the actual save.
@@ -4131,7 +4183,7 @@ async function tryLoadFromShareHash() {
     trackpoints = [];
     pendingRouteSeq++;
 
-    if (state.rm && ['straight', 'cycling', 'foot'].includes(state.rm)) {
+    if (state.rm && ['straight', 'cycling', 'foot', 'energy', 'energy_road'].includes(state.rm)) {
       routingMode = state.rm;
       traceRoutingMode.value = state.rm;
     }
@@ -4194,9 +4246,14 @@ function buildGpx(latlngs, name, pois = [], extras = {}) {
         `  </wpt>`,
     )
     .join('\n');
-  const trkpts = latlngs
-    .map(([lat, lon]) => `      <trkpt lat="${lat}" lon="${lon}"/>`)
-    .join('\n');
+  // Inclui <ele> quando a elevação está no cache (FABDEM ou Open-Meteo).
+  const trkpts = latlngs.map(([lat, lon]) => {
+    const e = elevationCache.get(elevKey(lat, lon));
+    if (Number.isFinite(e)) {
+      return `      <trkpt lat="${lat}" lon="${lon}"><ele>${e.toFixed(2)}</ele></trkpt>`;
+    }
+    return `      <trkpt lat="${lat}" lon="${lon}"/>`;
+  }).join('\n');
 
   // Embed our JSON-LD params + user waypoint snapshot as CDATA in extensions.
   let extensions = '';
@@ -4674,7 +4731,7 @@ async function loadGpxIntoEditor(gpxText) {
   for (const t of trackpoints) map.removeLayer(t.marker);
   trackpoints = [];
 
-  if (savedRoutingMode && ['straight', 'cycling', 'foot'].includes(savedRoutingMode)) {
+  if (savedRoutingMode && ['straight', 'cycling', 'foot', 'energy', 'energy_road'].includes(savedRoutingMode)) {
     routingMode = savedRoutingMode;
     traceRoutingMode.value = savedRoutingMode;
   }

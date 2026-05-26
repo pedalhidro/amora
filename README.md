@@ -24,46 +24,46 @@ an in-browser GPX drawing tool.
 
 It's a fully static site. There are two stages:
 
-1. **Build step (Node, with credentials).** `scripts/build-routes.mjs` reads
+1. **Build step (Python, with credentials).** `scripts/build-routes.py` reads
    the Google Sheet via the `gviz` JSON endpoint, then fetches every route's
    GPX from RideWithGPS using your API credentials, downsamples each track to
-   ≤400 points, and writes everything into `public/routes.json`. This is the
+   ≤400 points, and writes everything into `web/routes.json`. This is the
    only place RWGPS credentials are needed — the browser never sees them.
 
-2. **Runtime (browser only).** `public/index.html` loads `routes.json` and
-   does everything from there. No backend required at runtime; serve `public/`
+2. **Runtime (browser only).** `web/index.html` loads `routes.json` and
+   does everything from there. No backend required at runtime; serve `web/`
    from any static host.
 
 ## Run it
 
 ```bash
-npm install
+pip install python-dotenv
 cp .env.example .env
 # fill in RWGPS_API_KEY and RWGPS_AUTH_TOKEN — see "Credentials" below
 
-npm run build:routes        # writes public/routes.json
+python scripts/build-routes.py    # writes web/routes.json
 ```
 
-Then serve `public/` with anything:
+Then serve `web/` with anything:
 
 ```bash
-cd public && python3 -m http.server 8000
+cd web && python -m http.server 8000
 # open http://localhost:8000/
 ```
 
-Node 18+ required for the build step (uses built-in `fetch`).
+Python 3.10+ recommended (uses `str | None` annotations and `urllib`).
 
-Re-run `npm run build:routes` whenever the sheet has new entries.
+Re-run `python scripts/build-routes.py` whenever the sheet has new entries.
 
 ### Static deploy
 
-After `npm run build:routes`, `public/` is fully self-contained. Push it to
-GitHub Pages, Netlify, S3, etc. and you're done — no server needed.
+After `python scripts/build-routes.py`, `web/` is fully self-contained. Push
+it to GitHub Pages, Netlify, S3, etc. and you're done — no server needed.
 
 ## Credentials
 
-`.env` is gitignored. The build step (`npm run build:routes`) is the only
-thing that touches credentials.
+`.env` is gitignored. The build step (`python scripts/build-routes.py`) is the
+only thing that touches credentials.
 
 - `RWGPS_API_KEY` — request one at <https://ridewithgps.com/api>.
 - `RWGPS_AUTH_TOKEN` — auth token for the user account that owns the routes.
@@ -75,7 +75,7 @@ thing that touches credentials.
 
 ## Sheet columns used by the build script
 
-`scripts/build-routes.mjs` reads these columns from the `Geral` sheet
+`scripts/build-routes.py` reads these columns from the `Geral` sheet
 (case-insensitive header match):
 
 | Column | Use |
@@ -90,7 +90,7 @@ thing that touches credentials.
 
 - **Instagram embeds only work for public posts.** Private-account posts won't
   render in the iframe — the modal falls back to a "View on Instagram ↗" link.
-- **`public/routes.json` is gitignored** so credentials-derived data isn't
+- **`web/routes.json` is gitignored** so credentials-derived data isn't
   committed by accident. To deploy via GitHub Pages without a build server,
   remove it from `.gitignore` and commit the JSON.
 - **The Traçar GPX tool produces a bare track** (no elevation, no per-point
