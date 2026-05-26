@@ -101,13 +101,6 @@ def series_label(iri: str) -> str:
     return SERIES_LABEL_OVERRIDE.get(slug, slug)
 
 
-def pick_primary_number(assocs: list[dict]) -> dict:
-    """Primeiro item de `order_numbers(assocs)`, ou placeholders se vazio.
-    Mantido por compatibilidade — o consumidor moderno usa `order_numbers`."""
-    nums = order_numbers(assocs)
-    return nums[0] if nums else {"source": "", "value": ""}
-
-
 def order_numbers(assocs: list[dict]) -> list[dict]:
     """Retorna [{source, value}, …] ordenados por SERIES_PRIORITY.
     Tours pertencendo a múltiplas séries (ex.: PH 79 + BP 4) preservam todas
@@ -327,9 +320,12 @@ def parse_gpx_pois(gpx_text: str) -> list[dict]:
             continue
         if not (math.isfinite(la) and math.isfinite(lo)):
             continue
-        name = (_NAME_RE.search(body) or [None, ""]).group(1) if _NAME_RE.search(body) else ""
-        sym  = (_SYM_RE.search(body)  or [None, ""]).group(1) if _SYM_RE.search(body)  else ""
-        typ  = (_TYPE_RE.search(body) or [None, ""]).group(1) if _TYPE_RE.search(body) else ""
+        name_m = _NAME_RE.search(body)
+        sym_m  = _SYM_RE.search(body)
+        typ_m  = _TYPE_RE.search(body)
+        name = name_m.group(1) if name_m else ""
+        sym  = sym_m.group(1)  if sym_m  else ""
+        typ  = typ_m.group(1)  if typ_m  else ""
         out.append({
             "lat":  round(la, COORD_PRECISION),
             "lng":  round(lo, COORD_PRECISION),

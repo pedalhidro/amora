@@ -521,9 +521,10 @@ body.header-hidden .topbar { display: none; }
 
   /* Trace controls panel no mobile: ocupa toda a largura disponível, ancorado
      no rodapé do mapa (pra não brigar com os controles de zoom e o toggle do
-     cabeçalho no canto sup. esq.) e quebra em DUAS linhas — undo/redo/Rota em
-     cima, gear/métricas/save embaixo. O `.trace-break` (flex-basis 100%) força
-     a quebra antes do botão ⚙.
+     cabeçalho no canto sup. esq.). O `.trace-break` (flex-basis 100%) força
+     uma quebra de linha; com a ordem atual no HTML (undo/redo/seletor de
+     roteamento, ⚙, ⤓🗺︎, break, métricas), os botões ocupam a 1ª linha e
+     a faixa de métricas fica embaixo.
      `body` no seletor sobe a especificidade pra ganhar do `.trace-controls`
      base (que vem depois neste arquivo). */
   body .trace-controls {

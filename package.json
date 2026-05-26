@@ -8,7 +8,7 @@
     "node": ">=18"
   },
   "scripts": {
-    "build:routes": "node scripts/build-routes.mjs",
+    "build:routes": "python scripts/build-routes.py",
     "deploy": "bash scripts/deploy.sh",
     "deploy:dry": "bash scripts/deploy.sh --dry-run"
   },

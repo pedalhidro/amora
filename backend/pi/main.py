@@ -12,13 +12,14 @@ Cada upload contém:
 
 O backend valida o TTL contra `web/data/shapes.ttl` + a ontologia,
 grava as variantes em `web/photos/<phash>/{original|large|thumb}.<ext>` e
-anexa as triples ao catálogo único em `web/data/photos.ttl` (deduplicando
-por IRI da imagem).
+anexa as triples ao catálogo único em `web/data/uploads.ttl` (deduplicando
+por IRI da imagem). O dump fica registrado no manifesto
+`web/data/data_graphs.ttl` (idempotente).
 
 Rotas:
   GET  /                     serve web/index.html
   GET  /health               "ok"
-  GET  /<path>               estáticos de web/ (app.js, fotos, photos.ttl, …)
+  GET  /<path>               estáticos de web/ (app.js, fotos, data/*.ttl, …)
   POST /upload-image         multipart com `ttl` + variantes; valida e grava
   POST /delete-image/<phash> remove arquivos + triples
 
@@ -375,7 +376,7 @@ def index():
 
 @app.get("/<path:p>")
 def web_files(p):
-    """Estáticos de web/ — inclui ./data/photos.ttl e ./photos/<phash>/*.jpg."""
+    """Estáticos de web/ — inclui ./data/*.ttl e ./photos/<phash>/*.jpg."""
     if (WEB / p).is_file():
         resp = send_from_directory(WEB, p)
         if p.endswith(".ttl") or p.endswith(".json"):

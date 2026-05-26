@@ -1,6 +1,6 @@
 // Pedal Hidrográfico — "Rotas" page (standalone)
 //
-// Reads the pre-baked web/routes.json (produced by `npm run build:routes`),
+// Reads the pre-baked web/routes.json (produced by `python scripts/build-routes.py`),
 // renders every route on a Leaflet map with OSM + the custom hydrography
 // overlay, sorts the sidebar by Data descending, and supports:
 //   - a date-window slider that filters routes in real time
@@ -134,16 +134,23 @@ map.on('popupopen', (e) => {
   const popup = e.popup;
   const el = popup.getElement?.();
   if (!el || !el.classList.contains('photo-popup-wrap')) return;
-  // Aguarda o layout assentar (img pode estar sem dimensões iniciais) antes de
-  // medir; se mesmo então não couber, promove pro modal.
-  requestAnimationFrame(() => {
+  // Checa se cabe na viewport; se não, promove pro modal. A medição roda
+  // uma vez após o layout assentar (rAF) e, se houver `<img loading=lazy>`
+  // sem dimensões ainda, re-checa quando a imagem terminar de carregar.
+  const promoteIfNeeded = () => {
+    if (!el.isConnected || el.style.visibility === 'hidden') return;
     if (popupFitsViewport(el)) return;
     const inner = el.querySelector('.photo-popup');
     if (!inner) return;
     el.style.visibility = 'hidden';
     showPhotoFallbackModal(inner.outerHTML);
     setTimeout(() => map.closePopup(popup), 0);
-  });
+  };
+  requestAnimationFrame(promoteIfNeeded);
+  const img = el.querySelector('.photo-popup img');
+  if (img && !img.complete) {
+    img.addEventListener('load', () => requestAnimationFrame(promoteIfNeeded), { once: true });
+  }
 });
 
 const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -228,8 +235,9 @@ const OVERLAY_LAYERS = [
     hide: () => hideCycloinfra(),
     setOpacity: (frac) => setCycloinfraOpacity(frac),
   },
-  // Fotos geotaggeadas (raw_imgs → web/photos.json). Pequenos círculos
-  // que abrem o thumbnail num popup ao clicar.
+  // Fotos geotaggeadas (lidas do manifesto web/data/data_graphs.ttl, que
+  // aponta pra uploads.ttl entre outros dumps). Pequenos círculos que abrem
+  // o thumbnail num popup ao clicar.
   {
     id: 'photos',
     label: 'Imagens geo',
@@ -443,12 +451,13 @@ function setOverpassOpacity(frac) {
   for (const l of overpassLayers) l.setStyle({ opacity: frac });
 }
 
-// ─── Fotos geotag­geadas (TTL → web/data/photos.ttl) ──────────────────────
+// ─── Fotos geotaggeadas (manifesto → dumps em web/data/*.ttl) ─────────────
 // Cada foto com GPS vira um pequeno círculo no mapa; clicar abre um popup
 // com o thumbnail. O acervo é descrito em RDF/Turtle conforme
-// `data/shapes.ttl` (ph:ImageShape). N3.js parseia o TTL no
-// browser; a fonte pode ser o Pi, a CDN, ou um kit local (.zip).
-const PHOTOS_TTL_REL    = 'data/photos.ttl';
+// `data/shapes.ttl` (ph:ImageShape). O app lê `data/data_graphs.ttl` (um
+// void:Dataset) pra descobrir quais dumps carregar — atualmente
+// `uploads.ttl` (imagens) e `tours.ttl` (passeios). N3.js parseia tudo
+// no browser; a fonte pode ser o Pi, a CDN, ou um kit local (.zip).
 const PHOTOS_DIR_REL    = 'photos/';                       // <phash>/{original,large,thumb}.jpg
 const PHOTOS_CDN_BASE   = 'https://tiles.pedalhidrografi.co/rotas_app/';
 const TOURS_TTL_REL     = 'data/tours.ttl';                // catálogo de passeios (opcional)
@@ -1168,11 +1177,10 @@ function _photoDetailRows(ph) {
     const label = ph.ride.code && ph.ride.name
       ? `${ph.ride.code}: ${ph.ride.name}`
       : (ph.ride.code || ph.ride.name || ph.ride.date);
-    // Se o passeio tem rota associada (RWGPS), vira link que abre o modal
-    // da rota correspondente na barra lateral.
-    const rideKey = ph.ride.tourIri || ph.ride.routeId;
-    const html = rideKey
-      ? `<a href="#" class="ride-link" data-route-id="${escapeHtml(rideKey)}">${escapeHtml(label)}</a>`
+    // Se o passeio bate com uma entrada do catálogo (routes está chaveado
+    // por tourIri), vira link que abre o modal correspondente na sidebar.
+    const html = ph.ride.tourIri
+      ? `<a href="#" class="ride-link" data-route-id="${escapeHtml(ph.ride.tourIri)}">${escapeHtml(label)}</a>`
       : escapeHtml(label);
     rows.push(['Passeio', html]);
   }
@@ -2375,11 +2383,27 @@ let dateMax = null;
 // ─── Layer panel toggle (header button) ──────────────────────────────────────
 const layersBtn = document.getElementById('layers-btn');
 const LAYERS_HIDDEN_KEY = 'phidro:layersHidden';
+const LAYERS_AUTO_HIDE_AREA_FRAC = 0.2; // se o painel cobriria >20% da tela, oculta no boot
 function applyLayersVisibility(hidden) {
   document.body.classList.toggle('layers-hidden', hidden);
   if (layersBtn) layersBtn.setAttribute('aria-pressed', String(!hidden));
 }
-applyLayersVisibility(localStorage.getItem(LAYERS_HIDDEN_KEY) === '1');
+function defaultLayersHiddenByArea() {
+  const el = document.querySelector('.layer-panel');
+  if (!el) return false;
+  const rect = el.getBoundingClientRect();
+  if (!rect.width || !rect.height) return false;
+  const panelArea = rect.width * rect.height;
+  const viewportArea = window.innerWidth * window.innerHeight;
+  return panelArea > LAYERS_AUTO_HIDE_AREA_FRAC * viewportArea;
+}
+{
+  const persisted = localStorage.getItem(LAYERS_HIDDEN_KEY);
+  const shouldHide = persisted !== null
+    ? persisted === '1'
+    : defaultLayersHiddenByArea();
+  applyLayersVisibility(shouldHide);
+}
 layersBtn?.addEventListener('click', () => {
   const nowHidden = !document.body.classList.contains('layers-hidden');
   applyLayersVisibility(nowHidden);
@@ -2509,7 +2533,7 @@ async function boot() {
   } catch (err) {
     throw new Error(
       `Could not load ${ROUTES_JSON_URL} (${err.message}). ` +
-        `Run \`npm run build:routes\` to generate it.`,
+        `Run \`python scripts/build-routes.py\` to generate it.`,
     );
   }
 
@@ -2880,7 +2904,7 @@ function openRouteModal(id) {
   );
   if (Array.isArray(entry.latlngs) && entry.latlngs.length >= 2) {
     metaParts.push(
-      `<button type="button" class="linkbtn edit-route-btn" data-route-id="${entry.id}">Editar este traçado ✎</button>`,
+      `<button type="button" class="linkbtn edit-route-btn" data-route-id="${escapeHtml(entry.tourIri || entry.id)}">Editar este traçado ✎</button>`,
     );
   }
   routeModalMeta.innerHTML = metaParts.join(' · ');
@@ -5140,10 +5164,9 @@ async function editEntryInDrawingTool(entry) {
   pushHistory();
 
   const poiCount = (entry.pois || []).length;
-  console.log(`[edit] entry.pois (${poiCount}):`, entry.pois);
   const poiTag = poiCount
     ? ` (${poiCount} POI${poiCount === 1 ? '' : 's'})`
-    : ' · sem POIs no routes.json — rode `npm run build:routes`';
+    : ' · sem POIs no routes.json — rode `python scripts/build-routes.py`';
   showToast(
     `Editando "${entry.name || entry.date || `Route ${entry.id}`}" ` +
       `· ${trackpoints.length} pontos${poiTag}`,

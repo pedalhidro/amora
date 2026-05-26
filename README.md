@@ -1,47 +1,63 @@
 # pedalhidrografico
 
-Static web app: an OpenStreetMap with the Pedal Hidrográfico hydrography
-overlay, every route from the project's Google Sheet drawn on top of it,
-filterable by date, with the linked Instagram post embedded on click. Includes
-an in-browser GPX drawing tool.
+Static PWA: an OpenStreetMap with the Pedal Hidrográfico hydrography overlay,
+every passeio of the collective drawn on top of it, filterable by date, with
+the linked Instagram post embedded on click. Includes an in-browser GPX
+drawing tool and a photo overlay sourced from RDF/Turtle. Architecture and
+conventions in [CLAUDE.md](CLAUDE.md); ontology notes in
+[research/photos-rdf/DESIGN.md](research/photos-rdf/DESIGN.md); self-hosted
+backend in [backend/pi/README.md](backend/pi/README.md).
 
 ## What it does
 
 - OpenStreetMap base + custom hydrography overlay
   (`https://telhas.pedalhidrografi.co/rmsampa-v2/{z}/{x}/{y}.png`), togglable
   via the layer control.
-- Renders every route from the "Geral" sheet's `Rota` column in white with a
-  dark casing, labelled by `Data — Nome`.
-- Numbered overlay per route (plain text + halo) using the first non-empty,
-  non-`-` value from `PH → BT → BP → S`.
-- Sidebar sorted by `Data` descending. Date-window slider filters in real time.
-- Click a route → modal embedding the linked Instagram post (`Post IG` column).
-- **Traçar GPX** button: click the map to drop trackpoints, drag them to move,
-  Undo/Redo (also ⌘/Ctrl+Z / ⌘/Ctrl+Shift+Z), then **Salvar GPX** downloads
-  a `.gpx` file. Esc cancels.
+- Renders every passeio from `web/data/tours.ttl` in white with a dark
+  casing, labelled by `Data — Nome`.
+- Numbered overlay per route (plain text + halo). Multi-series tours show
+  every series code stacked (e.g. `PH 79` / `BP 4`).
+- Sidebar sorted by date descending. Date-window slider filters in real
+  time.
+- Click a route → modal embedding the linked Instagram post.
+- **Traçar GPX** button: click the map to drop trackpoints, drag them to
+  move, Undo/Redo (also ⌘/Ctrl+Z / ⌘/Ctrl+Shift+Z), then **Salvar GPX**
+  downloads a `.gpx` file. Esc cancels.
+- Geo-tagged photo overlay loaded from `web/data/uploads.ttl`. Click a
+  photo dot → centered modal preview (auto-fallback when the popup won't
+  fit the viewport).
 
 ## Architecture
 
-It's a fully static site. There are two stages:
+It's a fully static site with an optional self-hosted backend for uploads.
+Two stages:
 
-1. **Build step (Python, with credentials).** `scripts/build-routes.py` reads
-   the Google Sheet via the `gviz` JSON endpoint, then fetches every route's
-   GPX from RideWithGPS using your API credentials, downsamples each track to
-   ≤400 points, and writes everything into `web/routes.json`. This is the
-   only place RWGPS credentials are needed — the browser never sees them.
+1. **Build steps (Python, with credentials).**
+   - `python research/photos-rdf/build-tours.py` reads
+     `research/photos-rdf/data/tours.csv` and writes
+     `web/data/tours.ttl` (the Tour catalog).
+   - `python scripts/build-routes.py` reads `web/data/tours.ttl`, fetches
+     every referenced GPX from RideWithGPS, downsamples each track to
+     ≤400 points, and writes everything into `web/routes.json`. Unique
+     RWGPS IDs are fetched once even when multiple tours share a route
+     (e.g. anniversary re-rides). This is the only place RWGPS credentials
+     are needed — the browser never sees them.
 
 2. **Runtime (browser only).** `web/index.html` loads `routes.json` and
-   does everything from there. No backend required at runtime; serve `web/`
-   from any static host.
+   resolves data graphs via `web/data/data_graphs.ttl`. No backend
+   required at runtime; serve `web/` from any static host. For uploads
+   and photo storage, run the backend — see
+   [backend/pi/README.md](backend/pi/README.md).
 
 ## Run it
 
 ```bash
-pip install python-dotenv
+pip install python-dotenv rdflib pyshacl       # build + backend deps
 cp .env.example .env
 # fill in RWGPS_API_KEY and RWGPS_AUTH_TOKEN — see "Credentials" below
 
-python scripts/build-routes.py    # writes web/routes.json
+python research/photos-rdf/build-tours.py      # writes web/data/tours.ttl
+python scripts/build-routes.py                 # writes web/routes.json
 ```
 
 Then serve `web/` with anything:
@@ -53,17 +69,20 @@ cd web && python -m http.server 8000
 
 Python 3.10+ recommended (uses `str | None` annotations and `urllib`).
 
-Re-run `python scripts/build-routes.py` whenever the sheet has new entries.
+Re-run `build-tours.py` whenever the spreadsheet changes, then
+`build-routes.py` to refresh `routes.json`.
 
 ### Static deploy
 
-After `python scripts/build-routes.py`, `web/` is fully self-contained. Push
-it to GitHub Pages, Netlify, S3, etc. and you're done — no server needed.
+After the build steps above, `web/` is fully self-contained. Push it to
+GitHub Pages, Netlify, S3, etc. and you're done — no server needed.
+Photos won't show on a static mirror unless you also publish `web/data/`
+and `web/photos/` from a backend run.
 
 ## Credentials
 
-`.env` is gitignored. The build step (`python scripts/build-routes.py`) is the
-only thing that touches credentials.
+`.env` is gitignored. Build steps are the only thing that touches
+credentials.
 
 - `RWGPS_API_KEY` — request one at <https://ridewithgps.com/api>.
 - `RWGPS_AUTH_TOKEN` — auth token for the user account that owns the routes.
@@ -72,19 +91,6 @@ only thing that touches credentials.
   `user.auth_token`), or from your account settings page.
 - `RWGPS_COLLECTION_PRIVACY_CODE` — set if some routes are unlisted and need
   the collection privacy code.
-
-## Sheet columns used by the build script
-
-`scripts/build-routes.py` reads these columns from the `Geral` sheet
-(case-insensitive header match):
-
-| Column | Use |
-| --- | --- |
-| `Rota` | RideWithGPS URL or numeric ID. Required. |
-| `Data` | Display label + sort key. Parsed as a real date for the slider. |
-| `Nome` | Display label. |
-| `Post IG` | Instagram URL (post / reel / IGTV). Embedded in modal on click. |
-| `PH`, `BT`, `BP`, `S` | Route number. First non-empty, non-`-` value wins, in that order. |
 
 ## Caveats
 

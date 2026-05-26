@@ -10,7 +10,8 @@ persiste tudo em arquivos**, sem dependência de nuvem nem SQLite.
 Raspberry Pi
   └─ gunicorn → main.py (Flask)
         ├─ GET  /                      → web/index.html (o app)
-        ├─ GET  /<path>                → estáticos de web/ (app.js, fotos, ttl, …)
+        ├─ GET  /<path>                → estáticos de web/ (app.js, fotos,
+        │                                data/*.ttl, …)
         ├─ POST /upload-image          → multipart: ttl + variantes;
         │                                valida com pyshacl, grava em web/
         └─ POST /delete-image/<phash>  → apaga arquivos + triples
@@ -22,26 +23,29 @@ Arquivos: `main.py`, `requirements.txt`, `phidro.service` (Linux),
 
 ## O estado vive em `web/`
 
-Não há mais SQLite nem `PHIDRO_DATA` separado: o catálogo de fotos é
-**`web/data/photos.ttl`** (Turtle) e cada foto vive em
-**`web/photos/<phash>/{original,large,thumb}.<ext>`**. O Pi serve esses
-arquivos diretamente como estáticos para o app — mesma origem, sem CORS.
+Não há mais SQLite nem `PHIDRO_DATA` separado. Os uploads viram triples em
+**`web/data/uploads.ttl`** (Turtle); cada foto vira arquivos em
+**`web/photos/<phash>/{original,large,thumb}.<ext>`**. Um manifesto em
+**`web/data/data_graphs.ttl`** registra cada dump (`void:dataDump`), e é
+ele que o app consulta no boot pra descobrir quais grafos carregar. O Pi
+serve tudo direto como estáticos — mesma origem, sem CORS.
 
 ```text
 web/
 ├─ index.html, app.js, style.css, sw.js, manifest.json, icons…
 ├─ upload_images.html          formulário de envio (POSTa em /upload-image)
-├─ lib/                        utils.js + n3.min.js (parser de Turtle vendored)
+├─ lib/                        utils.js + n3.min.js (parser Turtle vendored)
 ├─ data/
-│   ├─ photos.ttl              catálogo único; gerado/mantido pelo /upload-image
-│   ├─ tours.ttl               catálogo de passeios (gerado por build-tours.py)
+│   ├─ data_graphs.ttl         manifesto void: aponta pros dumps abaixo
+│   ├─ uploads.ttl             triples de cada imagem + activity de upload
+│   ├─ tours.ttl               catálogo de passeios (build-tours.py)
 │   ├─ shapes.ttl              SHACL — validação do /upload-image
 │   └─ ontology.ttl            vocabulário ph:
 └─ photos/<phash>/             { original.jpg | large.jpg | thumb.jpg }
 ```
 
 A validação SHACL acontece contra `web/data/shapes.ttl` mesclado com
-`web/data/ontology.ttl`. O Pi lê esses arquivos do próprio diretório web/
+`web/data/ontology.ttl`. O Pi lê esses arquivos do próprio diretório `web/`
 que serve.
 
 **Backup é copiar `web/data/` + `web/photos/`** — não há mais nada de
@@ -123,9 +127,9 @@ serviço para `http://localhost:8000`, e rode o `cloudflared` como serviço
 ## 6. O app já está pronto
 
 `web/app.js` e `web/upload_images.html` usam caminhos relativos
-(`./data/photos.ttl`, `./photos/<phash>/large.jpg`, `./upload-image`,
-`./delete-image/<phash>`). Como o Pi serve o app e a API na **mesma
-origem**, funciona sem CORS e sem configurar URLs.
+(`./data/data_graphs.ttl`, `./data/uploads.ttl`, `./photos/<phash>/large.jpg`,
+`./upload-image`, `./delete-image/<phash>`). Como o Pi serve o app e a
+API na **mesma origem**, funciona sem CORS e sem configurar URLs.
 
 ## Limitações e notas
 
