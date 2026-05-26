@@ -10,3 +10,4 @@ venv/
 # Runtime state served by the Pi backend — backup target, not source.
 web/data/
 web/photos/
+web/clips/

@@ -694,12 +694,12 @@ body.header-hidden .topbar { display: none; }
   .layer-row { grid-template-columns: minmax(110px, max-content) 1fr 32px; }
 
   /* Modais (Enviar, Ajustes, Ajuda, photo-fallback) viram bottom-sheet —
-     slidam de baixo, com overlay transparente que ainda recebe cliques pra
-     habilitar fechar-clicando-fora. O mapa fica inativo enquanto aberto
-     (padrão típico de bottom-sheet). */
+     slidam de baixo, sem escurecer o que fica atrás. O overlay segue
+     recebendo cliques (background transparente é click-target) pra manter
+     o fechar-clicando-fora. O mapa fica inativo enquanto aberto. */
   .modal {
     align-items: flex-end;
-    background: rgba(0, 0, 0, 0.10);
+    background: transparent;
   }
   .modal-content {
     width: 100%;
@@ -723,10 +723,7 @@ body.header-hidden .topbar { display: none; }
     border-radius: 12px 12px 0 0;
   }
 
-  /* Modals scale with the viewport. */
-  .modal-content { max-height: 88vh; }
   .ig-embed { height: 70vh; }
-
 }
 
 /* Photo fallback modal: caixa centralizada usada quando o popup padrão do
@@ -739,7 +736,7 @@ body.header-hidden .topbar { display: none; }
   position: relative;
   width: min(92vw, 540px);
   max-width: 92vw;
-  max-height: 88vh;
+  max-height: 70vh;
   overflow-y: auto;
   padding: 0;
 }
@@ -763,6 +760,42 @@ body.header-hidden .topbar { display: none; }
   max-width: none;
 }
 .photo-fallback-content .photo-popup img { max-height: 50vh; }
+
+/* Ghost video: cobre o mapa como um overlay translúcido (opacidade
+   controlada pelo painel Camadas). Plantado direto no `.leaflet-container`
+   pra herdar suas dimensões. */
+.clips-ghost-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+  z-index: 400;
+}
+.clips-ghost-video[hidden] { display: none !important; }
+
+/* Marker do clipe no mapa — círculo laranja sólido, escondido por padrão.
+   Só aparece o do clipe que está tocando agora (recebe `.active` via JS).
+   No estado ativo, escala de ~0.1× (silêncio) até ~3× (pico) acompanhando
+   a intensidade RMS do áudio, exposta em `--clip-intensity` por JS. */
+.clip-marker {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: transparent;
+  border: 3px solid #fff;
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.55);
+  cursor: pointer;
+  pointer-events: auto;
+  display: none;
+}
+.clip-marker.active {
+  display: block;
+  /* 0.1 + 19.9 × intensidade → 0.1× (silêncio) a 20× (pico de RMS). */
+  transform: scale(calc(0.1 + 19.9 * var(--clip-intensity, 0)));
+  transition: transform 0.06s linear;
+}
 
 /* iOS PWA standalone: respect the home indicator / notch. */
 @supports (padding: max(0px)) {
@@ -1977,11 +2010,28 @@ body.drawing .trackpoint-marker:active { cursor: grabbing !important; }
   top: 0;
   pointer-events: none;
   overflow: visible;
+  /* O dot fica explicitamente acima do cone — assim mesmo se o cone ficar
+     translúcido sobre o dot por causa do scale, o thumbnail circular continua
+     em primeiro plano. */
+  z-index: 1;
+  transform-origin: center;
+  transition: transform 0.15s ease;
 }
 .photo-aim > .photo-dot {
   position: absolute;
   left: 40px;
   top: 40px;
+  z-index: 2;
+}
+/* No hover, o dot cresce (até ~3.3× = ~132px) e antes cobria todo o cone.
+   Escalamos o SVG pra o cone se estender pra além do thumbnail ampliado —
+   o `/1.5` mantém o cone relativamente menor que o dot (gosto visual), e
+   o `/parent-scale` inverte o transform de `.photo-aim` pra alcançar um
+   tamanho absoluto em pixels (igual ao truque do dot logo abaixo), senão
+   em zoom mais distante o cone encolhe junto com o pai e some atrás do
+   dot que mantém tamanho fixo. */
+.photo-aim:has(> .photo-dot:hover) > svg {
+  transform: scale(calc(var(--photo-hover-scale, 3.3) / 1.5 / (var(--photo-scale, 1) * var(--photo-density-scale, 1))));
 }
 .photo-cone {
   fill: #fff;

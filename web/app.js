@@ -51,6 +51,11 @@ const SETTINGS_DEFAULTS = {
     startZoom: 12,                      // aplicado no load inicial
     baseLayer: 'osm',                   // 'osm' | 'satellite'
   },
+  clipsGhost: {
+    enabled: true,                      // tocar vídeo fantasma quando Animação ligada
+    segmentSec: 10,                     // duração de cada clipe em laço
+    fadeSec: 2,                         // duração do fade-in/out (imagem + áudio)
+  },
 };
 function _deepMerge(base, over) {
   if (!over || typeof over !== 'object') return base;
@@ -96,6 +101,52 @@ const map = L.map('map', { zoomControl: true })
 // funciona porque `.leaflet-map-pane` recebe `transform` durante pan/zoom,
 // virando containing block pra `position: fixed`. Interceptar o popupopen,
 // medir o tamanho e promover pro modal quando não couber é o caminho robusto.
+
+// Quando o modal de foto abre no mobile, o mapa pode estar centralizando o
+// marcador clicado bem no meio da tela — escondido atrás da folha de baixo.
+// Pra deixar o cone de visada visível, panejamos o mapa de forma que o dot
+// fique horizontalmente e verticalmente centralizado na faixa visível —
+// entre a base do cabeçalho (topo do container do mapa) e o topo do modal.
+// Ao fechar, voltamos pra view anterior.
+let savedMapViewForPhoto = null;
+function panMapAbovePhotoSheet(latlng, modal) {
+  if (!latlng) return;
+  // Salva a view só na primeira chamada de uma sessão — chamadas seguintes
+  // (ex.: avançando entre clipes) já estão num estado deslocado, e queremos
+  // restaurar pra ANTES de tudo isso quando o modal fechar.
+  if (!savedMapViewForPhoto) {
+    savedMapViewForPhoto = { center: map.getCenter(), zoom: map.getZoom() };
+  }
+  const mapEl = map.getContainer();
+  const mapRect = mapEl.getBoundingClientRect();
+  // Importante: medimos a `.modal-content` (a folha em si, ancorada no rodapé
+  // da viewport), NÃO o `.modal` (que é o overlay full-screen com inset:0).
+  // Sem isso, modalRect.top viria sempre 0 e o cálculo colocaria o dot no
+  // canto superior do mapa.
+  const sheet = modal && !modal.hidden ? modal.querySelector('.modal-content') : null;
+  const modalRect = sheet
+    ? sheet.getBoundingClientRect()
+    : { top: window.innerHeight };
+  // Faixa visível do mapa (em coords da viewport): do topo do container até
+  // o topo do modal (ou base da viewport, se não há modal aberto).
+  const visTop = Math.max(0, mapRect.top);
+  const visBottom = Math.min(modalRect.top, mapRect.bottom);
+  // Centro vertical da faixa, em coords do container do mapa.
+  const desiredY = (visTop + visBottom) / 2 - mapRect.top;
+  const desiredX = mapEl.clientWidth / 2;
+  const pt = map.latLngToContainerPoint(latlng);
+  const dx = pt.x - desiredX;
+  const dy = pt.y - desiredY;
+  if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
+    map.panBy([dx, dy], { animate: true, duration: 0.25 });
+  }
+}
+function restoreMapViewAfterPhoto() {
+  if (!savedMapViewForPhoto) return;
+  const { center, zoom } = savedMapViewForPhoto;
+  savedMapViewForPhoto = null;
+  map.flyTo(center, zoom, { duration: 0.3 });
+}
 function showPhotoFallbackModal(innerHtml) {
   let modal = document.getElementById('photo-fallback-modal');
   if (!modal) {
@@ -104,7 +155,10 @@ function showPhotoFallbackModal(innerHtml) {
     modal.className = 'modal photo-fallback-modal';
     modal.hidden = true;
     modal.addEventListener('click', (ev) => {
-      if (ev.target === modal) modal.hidden = true;
+      if (ev.target === modal) {
+        modal.hidden = true;
+        restoreMapViewAfterPhoto();
+      }
     });
     document.body.appendChild(modal);
   }
@@ -115,6 +169,7 @@ function showPhotoFallbackModal(innerHtml) {
     '</div>';
   modal.querySelector('.photo-fallback-close').addEventListener('click', () => {
     modal.hidden = true;
+    restoreMapViewAfterPhoto();
   });
   modal.hidden = false;
 }
@@ -145,6 +200,12 @@ map.on('popupopen', (e) => {
     el.style.visibility = 'hidden';
     showPhotoFallbackModal(inner.outerHTML);
     setTimeout(() => map.closePopup(popup), 0);
+    // Espera o modal terminar de renderizar pra medir o topo dele com
+    // precisão; só então panejamos o mapa pra centralizar o dot na faixa
+    // visível entre topbar e topo do modal.
+    const latlng = popup.getLatLng?.();
+    const modal = document.getElementById('photo-fallback-modal');
+    requestAnimationFrame(() => panMapAbovePhotoSheet(latlng, modal));
   };
   requestAnimationFrame(promoteIfNeeded);
   const img = el.querySelector('.photo-popup img');
@@ -246,6 +307,18 @@ const OVERLAY_LAYERS = [
     show: () => showPhotos(),
     hide: () => hidePhotos(),
     setOpacity: (frac) => setPhotosOpacity(frac),
+  },
+  // Vídeo fantasma: opacidade do <video> que toca os clipes sobre o mapa
+  // quando Animação está ligada. O checkbox não esconde a feature
+  // (Animação faz isso); só zera a opacidade.
+  {
+    id: 'clips-ghost',
+    label: 'Vídeo fantasma',
+    defaultVisible: true,
+    defaultPct: 40,
+    show: () => setClipsGhostOpacity(clipsGhostUserOpacity),
+    hide: () => setClipsGhostOpacity(0),
+    setOpacity: (frac) => { clipsGhostUserOpacity = frac; setClipsGhostOpacity(frac); },
   },
   // User-defined tile sources. The URL is prompted on demand and persisted
   // in localStorage so the layer is restored on reload.
@@ -809,14 +882,281 @@ function applyPhotoAnim() {
 
 const photoAnimBtn = document.getElementById('photo-anim-btn');
 if (photoAnimBtn) {
+  // Animação liga/desliga TUDO: o spotlight (animação dos marcadores) e o
+  // ghost video (clipes em loop como pano de fundo translúcido sobre o mapa).
   photoAnimBtn.setAttribute('aria-pressed', String(settings.spotlight.enabled));
-  photoAnimBtn.addEventListener('click', () => {
-    settings.spotlight.enabled = !settings.spotlight.enabled;
+  photoAnimBtn.addEventListener('click', async () => {
+    const enabling = !settings.spotlight.enabled;
+    settings.spotlight.enabled = enabling;
     saveSettings();
     applyPhotoAnim();
+    photoAnimBtn.setAttribute('aria-pressed', String(enabling));
+    if (enabling) await startClipsGhost();
+    else stopClipsGhost();
   });
 }
 applyPhotoAnim();
+
+// ── Clips: ghost backdrop ─────────────────────────────────────────────────
+// `web/clips/clips.json` (gerado por `scripts/build-clips.py`) lista clipes
+// 360p com GPS. Quando Animação está ligada, um `<video>` sobre o mapa toca
+// segmentos aleatórios de 5s de cada clipe em laço, com áudio. O mapa não
+// move; só os marcadores de cada clipe acendem quando seu vídeo está no ar.
+const CLIPS_JSON_URL = './clips/clips.json';
+const CLIPS_DIR      = './clips/';
+// Duração do segmento e do fade são lidos do `settings.clipsGhost` em tempo
+// real — assim mudanças nos sliders de Ajustes pegam efeito no próximo clipe.
+function clipSegmentS() { return Math.max(2, settings.clipsGhost?.segmentSec ?? 10); }
+function clipFadeS()    { return Math.max(0.1, Math.min(settings.clipsGhost?.fadeSec ?? 2, clipSegmentS() / 2)); }
+let clipsCatalog = null;          // [{file, lat, lng, duration, ...}]
+let clipsMarkers = [];            // [{clip, marker}]
+let clipsAdvanceTimer = null;
+let clipsCurrentIndex = -1;
+let clipsGhostVideo  = null;      // <video> element, criado preguiçosamente
+let clipsGhostUserOpacity = 0.4;  // controlada pelo slider do painel Camadas
+
+function setClipsGhostOpacity(frac) {
+  if (clipsGhostVideo) clipsGhostVideo.style.opacity = String(frac);
+}
+
+function ensureClipsGhostVideo() {
+  if (clipsGhostVideo) return clipsGhostVideo;
+  const v = document.createElement('video');
+  v.id = 'clips-ghost-video';
+  v.className = 'clips-ghost-video';
+  v.playsInline = true;
+  v.preload = 'auto';
+  v.hidden = true;
+  v.style.opacity = '0';
+  v.volume = 0;
+  // No `.leaflet-container` (sibling do `.leaflet-map-pane`). Não tentamos
+  // mais empilhar com z-index entre tiles e markers porque o map-pane do
+  // Leaflet cria seu próprio stacking context (transform), o que torna
+  // impossível inserir um irmão entre suas panes internas. Trade-off
+  // aceito: vídeo fica por cima de tudo, mas os marcadores (anel branco
+  // grosso pulsando até 20×) atravessam visualmente o vídeo translúcido.
+  map.getContainer().appendChild(v);
+  clipsGhostVideo = v;
+  return v;
+}
+
+// ── Audio intensity → pulso do marker do clipe ────────────────────────────
+// Plugamos o <video> num AudioContext via MediaElementSource e medimos o
+// RMS do sinal a cada frame. O valor (0..1) vira CSS custom property no
+// marker ativo (`--clip-intensity`), que escala o círculo laranja.
+let clipsAudioCtx = null;
+let clipsAnalyser = null;
+let clipsAudioBuf = null;
+let clipsAudioRaf = null;
+
+function ensureClipsAudioGraph(video) {
+  if (clipsAnalyser) return clipsAnalyser;
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    clipsAudioCtx = new AC();
+    const src = clipsAudioCtx.createMediaElementSource(video);
+    clipsAnalyser = clipsAudioCtx.createAnalyser();
+    clipsAnalyser.fftSize = 256;
+    clipsAnalyser.smoothingTimeConstant = 0.5;
+    clipsAudioBuf = new Uint8Array(clipsAnalyser.fftSize);
+    // Em série: source → analyser → destination. Sem o destination o vídeo
+    // ficaria mudo (MediaElementSource desconecta o output direto do elemento).
+    src.connect(clipsAnalyser);
+    clipsAnalyser.connect(clipsAudioCtx.destination);
+  } catch (err) {
+    console.warn('[clips audio] init falhou:', err.message);
+    return null;
+  }
+  return clipsAnalyser;
+}
+
+function setActiveMarkerIntensity(level) {
+  if (clipsCurrentIndex < 0) return;
+  const m = clipsMarkers[clipsCurrentIndex];
+  if (!m) return;
+  const dot = m.marker.getElement()?.querySelector('.clip-marker');
+  if (dot) dot.style.setProperty('--clip-intensity', level.toFixed(3));
+}
+
+function startClipsIntensityLoop() {
+  if (clipsAudioRaf || !clipsAnalyser) return;
+  const tick = () => {
+    if (!clipsAnalyser) { clipsAudioRaf = null; return; }
+    clipsAnalyser.getByteTimeDomainData(clipsAudioBuf);
+    // RMS amplitude do sinal (centrado em 128).
+    let sum = 0;
+    for (let i = 0; i < clipsAudioBuf.length; i++) {
+      const x = (clipsAudioBuf[i] - 128) / 128;
+      sum += x * x;
+    }
+    const rms = Math.sqrt(sum / clipsAudioBuf.length);
+    // Voz típica fica ~0.1-0.3 RMS; multiplica pra esticar a faixa visual.
+    const level = Math.min(1, rms * 4);
+    setActiveMarkerIntensity(level);
+    clipsAudioRaf = requestAnimationFrame(tick);
+  };
+  clipsAudioRaf = requestAnimationFrame(tick);
+}
+
+function stopClipsIntensityLoop() {
+  if (clipsAudioRaf) cancelAnimationFrame(clipsAudioRaf);
+  clipsAudioRaf = null;
+  setActiveMarkerIntensity(0);
+}
+
+// Rampa linear de opacidade + volume em paralelo. Usa rAF pra um fade
+// suave. Retorna uma promise que resolve no fim da animação (ou se for
+// cancelada por outra chamada).
+let clipsFadeRaf = null;
+function fadeClip(v, targetOpacity, targetVolume, durationMs) {
+  if (clipsFadeRaf) cancelAnimationFrame(clipsFadeRaf);
+  return new Promise((resolve) => {
+    const startOpacity = parseFloat(v.style.opacity) || 0;
+    const startVolume = v.volume;
+    const start = performance.now();
+    const step = (now) => {
+      const t = Math.min(1, (now - start) / durationMs);
+      v.style.opacity = String(startOpacity + (targetOpacity - startOpacity) * t);
+      v.volume = Math.max(0, Math.min(1, startVolume + (targetVolume - startVolume) * t));
+      if (t < 1) clipsFadeRaf = requestAnimationFrame(step);
+      else { clipsFadeRaf = null; resolve(); }
+    };
+    clipsFadeRaf = requestAnimationFrame(step);
+  });
+}
+
+async function loadClipsCatalog() {
+  if (clipsCatalog) return clipsCatalog;
+  try {
+    const res = await fetch(CLIPS_JSON_URL, { cache: 'no-cache' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    clipsCatalog = await res.json();
+  } catch (err) {
+    console.warn('[clips] falha ao carregar catálogo:', err.message);
+    clipsCatalog = [];
+  }
+  return clipsCatalog;
+}
+
+function makeClipMarkers(clips) {
+  for (const { marker } of clipsMarkers) map.removeLayer(marker);
+  clipsMarkers = [];
+  for (let i = 0; i < clips.length; i++) {
+    const c = clips[i];
+    if (!Number.isFinite(c.lat) || !Number.isFinite(c.lng)) continue;
+    const icon = L.divIcon({
+      className: 'clip-marker-wrap',
+      html: '<div class="clip-marker"></div>',
+      iconSize: [24, 24],
+      iconAnchor: [12, 12],
+    });
+    const m = L.marker([c.lat, c.lng], { icon, interactive: true });
+    m.on('click', () => playClipAt(i));
+    m.addTo(map);
+    clipsMarkers.push({ clip: c, marker: m });
+  }
+}
+
+function highlightClipMarker(index) {
+  for (let i = 0; i < clipsMarkers.length; i++) {
+    const dot = clipsMarkers[i].marker.getElement()?.querySelector('.clip-marker');
+    if (!dot) continue;
+    dot.classList.toggle('active', i === index);
+  }
+}
+
+function pickNextClipIndex() {
+  if (!clipsCatalog || clipsCatalog.length === 0) return -1;
+  if (clipsCatalog.length === 1) return 0;
+  let next;
+  let tries = 0;
+  do {
+    next = Math.floor(Math.random() * clipsCatalog.length);
+    tries++;
+  } while (next === clipsCurrentIndex && tries < 10);
+  return next;
+}
+
+function playClipAt(index) {
+  if (!clipsCatalog || index < 0 || index >= clipsCatalog.length) return;
+  const v = ensureClipsGhostVideo();
+  const c = clipsCatalog[index];
+  clipsCurrentIndex = index;
+  highlightClipMarker(index);
+
+  if (clipsAdvanceTimer) { clearTimeout(clipsAdvanceTimer); clipsAdvanceTimer = null; }
+
+  const src = CLIPS_DIR + encodeURIComponent(c.file);
+  if (v.src !== new URL(src, location.href).href) {
+    v.src = src;
+  }
+  v.hidden = false;
+  // Começa silencioso/invisível pra encadear o fade-in junto do início do
+  // segmento. Se o usuário desligou o painel Camadas → opacity 0, o
+  // efeito segue invisível mesmo após o fade.
+  v.style.opacity = '0';
+  v.volume = 0;
+
+  const startAt = () => {
+    const segS = clipSegmentS();
+    const fadeS = clipFadeS();
+    const dur = v.duration;
+    const maxStart = Math.max(0, (Number.isFinite(dur) ? dur : c.duration || 0) - segS);
+    const start = maxStart > 0 ? Math.random() * maxStart : 0;
+    try { v.currentTime = start; } catch {}
+    v.play().catch(() => {});
+    // Liga o grafo de áudio + loop de intensidade no primeiro play (precisa
+    // de gesto do usuário — Animação click já satisfaz isso). Resume se
+    // o context entrou em suspended por inatividade.
+    ensureClipsAudioGraph(v);
+    if (clipsAudioCtx && clipsAudioCtx.state === 'suspended') {
+      clipsAudioCtx.resume().catch(() => {});
+    }
+    startClipsIntensityLoop();
+    // Fade-in (imagem + áudio) durante os primeiros `fadeS` segundos.
+    fadeClip(v, clipsGhostUserOpacity, 1, fadeS * 1000);
+    // `fadeS` antes do fim do segmento, inicia o fade-out e logo em
+    // seguida pula pro próximo clipe.
+    clipsAdvanceTimer = setTimeout(() => {
+      fadeClip(v, 0, 0, fadeS * 1000).then(() => advanceClip());
+    }, (segS - fadeS) * 1000);
+  };
+  if (v.readyState >= 1) startAt();
+  else v.addEventListener('loadedmetadata', startAt, { once: true });
+}
+
+function advanceClip() {
+  if (!settings.spotlight.enabled) return;
+  const next = pickNextClipIndex();
+  if (next >= 0) playClipAt(next);
+}
+
+async function startClipsGhost() {
+  if (!settings.clipsGhost?.enabled) return;
+  await loadClipsCatalog();
+  if (!clipsCatalog || clipsCatalog.length === 0) return;
+  if (clipsMarkers.length === 0) makeClipMarkers(clipsCatalog);
+  const start = pickNextClipIndex();
+  if (start >= 0) playClipAt(start);
+}
+
+function stopClipsGhost() {
+  if (clipsAdvanceTimer) { clearTimeout(clipsAdvanceTimer); clipsAdvanceTimer = null; }
+  if (clipsGhostVideo) {
+    try { clipsGhostVideo.pause(); } catch {}
+    clipsGhostVideo.hidden = true;
+  }
+  stopClipsIntensityLoop();
+  highlightClipMarker(-1);
+}
+
+// Carrega marcadores na boot pra mostrar onde existem clipes mesmo com
+// Animação desligada.
+loadClipsCatalog().then((clips) => {
+  if (clips && clips.length) makeClipMarkers(clips);
+  if (settings.spotlight.enabled) startClipsGhost();
+});
 
 // ── Detecção automática do pedal de uma foto ─────────────────────────────
 // Usa as rotas já carregadas na barra lateral: casa pela data (chave quase
@@ -1842,6 +2182,23 @@ function applyAllSettings() {
   applyPhotoAnim();      // liga/desliga animação + tickMs novo
   relaxPhotoMarkers();   // novos floor/ceil/boost pegam efeito agora
   applyPhotoHoverScale();
+  applyClipsGhostSettings();
+}
+// Reage a mudanças no `settings.clipsGhost.enabled` quando o slider de
+// Ajustes muda em tempo real. Se Animação está ligada e o vídeo foi
+// desabilitado, para a reprodução; se foi habilitado e Animação está ligada,
+// reinicia. (segmentSec / fadeSec pegam efeito no próximo clipe via
+// `clipSegmentS()`/`clipFadeS()`.)
+function applyClipsGhostSettings() {
+  if (typeof settings === 'undefined') return;
+  const animOn = settings.spotlight?.enabled;
+  const wantClips = settings.clipsGhost?.enabled !== false;
+  const isPlaying = clipsGhostVideo && !clipsGhostVideo.paused;
+  if (animOn && wantClips && !isPlaying) {
+    startClipsGhost();
+  } else if (isPlaying && (!animOn || !wantClips)) {
+    stopClipsGhost();
+  }
 }
 applyPhotoHoverScale();
 

@@ -413,6 +413,26 @@
             </label>
           </section>
 
+          <!-- Vídeo fantasma — clipes em laço quando Animação está ligada -->
+          <section class="settings-section" data-section="clipsGhost">
+            <h3>Vídeo fantasma</h3>
+            <p class="muted">Comportamento dos clipes em laço sobre o mapa quando Animação está ligada.</p>
+            <label class="settings-row">
+              <span>Tocar vídeo</span>
+              <input type="checkbox" data-setting="clipsGhost.enabled">
+            </label>
+            <label class="settings-row">
+              <span>Duração do clipe (s)</span>
+              <input type="range" data-setting="clipsGhost.segmentSec" min="3" max="30" step="1">
+              <output></output>
+            </label>
+            <label class="settings-row">
+              <span>Fade in/out (s)</span>
+              <input type="range" data-setting="clipsGhost.fadeSec" min="0" max="5" step="0.1">
+              <output></output>
+            </label>
+          </section>
+
           <!-- Importar / exportar -->
           <section class="settings-section">
             <h3>Configurações — exportar / importar</h3>

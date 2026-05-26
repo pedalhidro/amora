@@ -121,6 +121,7 @@ rsync -avz --human-readable --rsync-path='sudo rsync' "${PROGRESS[@]}" \
   --exclude='node_modules/' \
   --exclude='web/data/' \
   --exclude='web/photos/' \
+  --exclude='web/clips/raw/' \
   --exclude='backend/pi/data/' \
   $RSYNC_EXTRA \
   "$REPO_ROOT/" "$DEST"
