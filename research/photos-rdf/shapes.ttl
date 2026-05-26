@@ -85,6 +85,20 @@ ph:ImageShape a sh:NodeShape ;
         sh:minCount 1 ;
         sh:class schema:Person ;
         sh:message "Foto precisa de proveniência (pav:providedBy)."@pt ;
+    ] ;
+    sh:property [
+        sh:path ph:anonymized ;
+        sh:severity sh:Warning ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:boolean ;
+        sh:message "Se declarado, ph:anonymized deve ser booleano."@pt ;
+    ] ;
+    sh:property [
+        sh:path ph:compressed ;
+        sh:severity sh:Warning ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:boolean ;
+        sh:message "Se declarado, ph:compressed deve ser booleano."@pt ;
     ] .
 
 ph:TourShape a sh:NodeShape ;

@@ -121,6 +121,20 @@ ph:intensityClassification a owl:DatatypeProperty ;
 # Propriedades — Foto (ph:Image)
 # =====================================================================
 
+ph:anonymized a owl:DatatypeProperty ;
+    rdfs:label "anonimizada"@pt ;
+    rdfs:comment
+        "true se o arquivo distribuído teve seus metadados (EXIF, etc.) removidos."@pt ;
+    rdfs:domain ph:Image ;
+    rdfs:range xsd:boolean .
+
+ph:compressed a owl:DatatypeProperty ;
+    rdfs:label "comprimida"@pt ;
+    rdfs:comment
+        "true se o arquivo 'original' distribuído foi reduzido para um tamanho-alvo (ex.: 500 KB)."@pt ;
+    rdfs:domain ph:Image ;
+    rdfs:range xsd:boolean .
+
 ph:capturedDuring a owl:ObjectProperty ;
     rdfs:label "registrada durante"@pt ;
     rdfs:comment

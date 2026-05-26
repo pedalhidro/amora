@@ -2,20 +2,20 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
-<title>Upload de foto — Pedal Hidrográfico</title>
+<title>Upload de fotos — Pedal Hidrográfico</title>
 <style>
-  body { font-family: system-ui, sans-serif; max-width: 760px; margin: 2rem auto; padding: 0 1rem; color: #222; }
+  body { font-family: system-ui, sans-serif; max-width: 1400px; margin: 1.5rem auto; padding: 0 1rem; color: #222; }
   h1 { font-size: 1.4rem; margin: 0 0 .25rem; }
   p.lede { color: #666; margin: 0 0 1rem; }
   fieldset { border: 1px solid #ccc; padding: 1rem; margin: 1rem 0; }
   legend { font-weight: 600; padding: 0 .4rem; }
   label { display: block; margin: .6rem 0 .2rem; font-size: .9rem; }
-  input, select { width: 100%; padding: .45rem; box-sizing: border-box; font-size: 1rem; font-family: inherit; }
-  .row { display: flex; gap: 1rem; }
-  .row > div { flex: 1; }
+  input[type="file"], input[type="text"], input[type="number"], input[type="datetime-local"], select {
+    width: 100%; padding: .45rem; box-sizing: border-box; font-size: 1rem; font-family: inherit;
+  }
   small { display: block; color: #666; font-size: .8rem; margin-top: .25rem; }
   pre { background: #f4f4f4; padding: 1rem; overflow-x: auto; font-size: .85rem; border-radius: 4px; white-space: pre-wrap; word-break: break-word; }
-  .actions { margin: 1rem 0; display: flex; gap: .5rem; }
+  .actions { margin: 1rem 0; display: flex; gap: .5rem; flex-wrap: wrap; }
   button { padding: .5rem 1rem; font-size: 1rem; cursor: pointer; border: 1px solid #888; background: #f8f8f8; border-radius: 4px; }
   button[disabled] { opacity: .5; cursor: not-allowed; }
   .required::after { content: " *"; color: #c00; }
@@ -23,114 +23,168 @@
   .warn { color: #c80; }
   .err { color: #c00; }
   code { background: #eee; padding: 0 .25rem; border-radius: 2px; font-size: .9em; }
+
+  /* Upload zone (arquivos + padrões lado a lado, dentro do mesmo fieldset) */
+  .upload-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+  }
+  @media (max-width: 760px) { .upload-row { grid-template-columns: 1fr; } }
+  #upload-zone { margin-top: 1rem; }
+
+  /* Painel de "Opções de saída" (anonimizar/comprimir) */
+  .opts { display: flex; gap: 1rem; flex-wrap: wrap; }
+  .opts label { display: flex; align-items: center; gap: .35rem; margin: 0; font-size: .9rem; }
+  .opts input[type="checkbox"] { width: auto; }
+
+  /* Grid de cards (1 por foto) */
+  #cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+    gap: 1rem;
+    margin: 1rem 0;
+  }
+  .card {
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    padding: .75rem;
+    background: #fff;
+    font-size: .9rem;
+    display: flex;
+    flex-direction: column;
+    gap: .25rem;
+  }
+  .card-header { display: flex; gap: .5rem; align-items: center; }
+  .card-thumb {
+    width: 56px; height: 56px;
+    object-fit: cover; border-radius: 4px; background: #eee;
+  }
+  .card-meta { flex: 1; min-width: 0; }
+  .card-meta strong { display: block; font-size: .85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .card-meta .hash { font-size: .65rem; color: #666; word-break: break-all; }
+  .card-remove {
+    border: 0; background: transparent; cursor: pointer;
+    font-size: 1.2rem; color: #c00; padding: 0 .25rem; line-height: 1;
+  }
+  .card-remove:hover { color: #800; }
+  .card-section { border-top: 1px dashed #ddd; padding-top: .4rem; margin-top: .25rem; }
+  .card-section h4 {
+    font-size: .7rem; color: #888; font-weight: 600;
+    text-transform: uppercase; margin: 0 0 .25rem; letter-spacing: .04em;
+  }
+  .card label { font-size: .75rem; margin: .3rem 0 .1rem; }
+  .card input[type="datetime-local"], .card input[type="number"], .card select { padding: .25rem .35rem; font-size: .85rem; }
+  .card .row { display: flex; gap: .4rem; }
+  .card .row > div { flex: 1; min-width: 0; }
+  .card .tour-auto-status { font-size: .7rem; margin-top: .1rem; }
+
+  /* Tom Select compactado dentro dos cards */
+  .ts-wrapper { font-size: .85rem; }
+  .card .ts-control { padding: .2rem .3rem !important; min-height: 0; }
 </style>
+<link href="https://cdn.jsdelivr.net/npm/tom-select@2.4.3/dist/css/tom-select.min.css" rel="stylesheet">
 </head>
 <body>
 
-<h1>Upload de foto</h1>
-<p class="lede">Gera RDF (Turtle) que satisfaz <code>ph:ImageShape</code>.</p>
+<h1>Upload de fotos</h1>
+<p class="lede">Gera RDF (Turtle) e <em>update kit</em> (ZIP) para múltiplas fotos conforme <code>ph:ImageShape</code>.</p>
 
 <form id="form">
-  <fieldset>
-    <legend>Arquivo</legend>
-    <label class="required" for="file">Foto (JPEG/PNG)</label>
-    <input type="file" id="file" accept="image/*" required>
-    <small id="hashStatus">Hash SHA-256 e EXIF serão extraídos automaticamente.</small>
-  </fieldset>
 
-  <fieldset>
-    <legend>Quando / onde</legend>
-    <label class="required" for="date">Data e hora</label>
-    <input type="datetime-local" id="date" step="1" required>
-    <small>Será gravado como <code>xsd:dateTime</code> no fuso local.</small>
+  <!-- Grade de cards (cresce de cima pra baixo; upload-zone fica abaixo) -->
+  <div id="cards"></div>
 
-    <div class="row">
+  <!-- Upload zone único (sempre após o grid; "desce" conforme cards são adicionados) -->
+  <fieldset id="upload-zone">
+    <legend>Adicionar fotos</legend>
+    <div class="upload-row">
       <div>
-        <label class="required" for="lat">Latitude</label>
-        <input type="number" id="lat" step="any" min="-90" max="90" placeholder="-23.5505" required>
+        <label for="files">Arquivos</label>
+        <input type="file" id="files" accept="image/*" multiple>
+        <small id="filesStatus">Selecione fotos — pHash e EXIF são extraídos; duplicatas (pHash ≤ 5) são rejeitadas.</small>
+        <small id="catalogStatus">Carregando catálogo…</small>
+        <div id="notices" style="margin: .5rem 0;"></div>
+        <div style="margin-top: .5rem">
+          <button type="button" id="clearAll" disabled>Limpar todas as fotos</button>
+        </div>
       </div>
+
       <div>
-        <label class="required" for="lon">Longitude</label>
-        <input type="number" id="lon" step="any" min="-180" max="180" placeholder="-46.6333" required>
+        <label style="font-weight:600;margin-top:0">Padrões da Atribuição</label>
+        <small>Aplicados a cada foto adicionada daqui em diante (edite por card depois).</small>
+
+        <label for="d-tour">Passeio <small style="display:inline;color:#888">(sobrescreve auto-detecção)</small></label>
+        <select id="d-tour"><option value="">— deixar para auto-detecção —</option></select>
+
+        <label for="d-author">Autoras</label>
+        <select multiple id="d-author" placeholder="busca ou digita…"></select>
+
+        <label for="d-provider">Quem subiu</label>
+        <select multiple id="d-provider" placeholder="busca ou digita…"></select>
+
+        <label for="d-license">Licença</label>
+        <select id="d-license">
+          <option value="https://creativecommons.org/licenses/by-sa/4.0/" selected>CC BY-SA 4.0</option>
+          <option value="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</option>
+          <option value="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</option>
+          <option value="https://creativecommons.org/licenses/by-nc/4.0/">CC BY-NC 4.0</option>
+          <option value="https://creativecommons.org/publicdomain/zero/1.0/">CC0 1.0</option>
+        </select>
+
+        <label>Saída</label>
+        <div class="opts">
+          <label><input type="checkbox" id="d-anon"> Anonimizar (remover metadados)</label>
+          <label><input type="checkbox" id="d-comp"> Comprimir imagem para 500 kB máx.</label>
+        </div>
       </div>
     </div>
-  </fieldset>
-
-  <fieldset>
-    <legend>Câmera <small style="display:inline;color:#888">(opcional, mas recomendado)</small></legend>
-    <div class="row">
-      <div>
-        <label for="bearing">Direção (0–360°)</label>
-        <input type="number" id="bearing" step="any" min="0" max="359.999">
-      </div>
-      <div>
-        <label for="focal">Distância focal eq. 35 mm (mm)</label>
-        <input type="number" id="focal" step="any" min="0.001" max="180">
-      </div>
-    </div>
-  </fieldset>
-
-  <fieldset>
-    <legend>Atribuição <small style="display:inline;color:#888">(opcional)</small></legend>
-    <label for="tour">Passeio — <code>ph:capturedDuring</code></label>
-    <input type="text" id="tour" placeholder="phd:tour_ph1" pattern="^[A-Za-z_][A-Za-z0-9_-]*:[A-Za-z0-9_.-]+$|^https?://\S+$">
-
-    <label for="author">Autora — <code>prov:wasAttributedTo</code></label>
-    <input type="text" id="author" placeholder="phd:pessoaXxx" pattern="^[A-Za-z_][A-Za-z0-9_-]*:[A-Za-z0-9_.-]+$|^https?://\S+$">
-
-    <label for="provider">Quem subiu — <code>pav:providedBy</code></label>
-    <input type="text" id="provider" placeholder="phd:pessoaXxx" pattern="^[A-Za-z_][A-Za-z0-9_-]*:[A-Za-z0-9_.-]+$|^https?://\S+$">
-
-    <label for="license">Licença</label>
-    <select id="license">
-      <option value="https://creativecommons.org/licenses/by-sa/4.0/" selected>CC BY-SA 4.0</option>
-      <option value="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</option>
-      <option value="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</option>
-      <option value="https://creativecommons.org/licenses/by-nc/4.0/">CC BY-NC 4.0</option>
-      <option value="https://creativecommons.org/publicdomain/zero/1.0/">CC0 1.0</option>
-    </select>
   </fieldset>
 
   <div class="actions">
-    <button type="button" id="generate">Gerar Turtle</button>
+    <button type="button" id="generate" disabled>Gerar Turtle</button>
     <button type="button" id="download" disabled>Baixar .ttl</button>
     <button type="button" id="copy" disabled>Copiar</button>
+    <button type="button" id="kit" disabled>Baixar update kit (.zip)</button>
   </div>
+
 </form>
 
 <h2>RDF (Turtle)</h2>
 <pre id="output">— vazio —</pre>
 
 <script type="module">
-const $ = (sel) => document.querySelector(sel);
-let fileHash = null;
+const $  = (sel, root = document) => root.querySelector(sel);
 
+// ===================== Dependências CDN ================================
 let exifr = null;
 try {
   exifr = await import('https://cdn.jsdelivr.net/npm/exifr@7.1.3/dist/full.esm.mjs')
     .then(m => m.default || m);
-} catch (_) {
-  $('#hashStatus').textContent = 'EXIF auto-fill indisponível (offline). Preencha manualmente.';
-}
+} catch (_) { console.warn('exifr indisponível.'); }
 
-async function sha256Hex(blob) {
-  const buf = await blob.arrayBuffer();
-  const hash = await crypto.subtle.digest('SHA-256', buf);
-  return Array.from(new Uint8Array(hash))
-    .map(b => b.toString(16).padStart(2, '0')).join('');
-}
+const TomSelect = (await import('https://esm.sh/tom-select@2.4.3')).default;
+let JSZip;
+try {
+  JSZip = (await import('https://esm.sh/jszip@3.10.1')).default;
+} catch (_) { console.warn('JSZip indisponível — download de kit ZIP desativado.'); }
 
+// ===================== Helpers básicos =================================
+function turtle_escape(s) {
+  return s.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n');
+}
+function slugifyPerson(s) {
+  return s.normalize('NFKD').replace(/\p{Diacritic}/gu, '')
+    .split(/\s+/).map(w => w.replace(/[^A-Za-z0-9]/g, '')).filter(Boolean)
+    .map(w => w[0].toUpperCase() + w.slice(1).toLowerCase()).join('');
+}
 function pad(n) { return String(n).padStart(2, '0'); }
-
 function dateToLocalInput(d) {
   return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}` +
          `T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
-
 function localToXsdDateTime(s) {
-  // datetime-local → xsd:dateTime with local TZ offset
-  const d = new Date(s);
-  if (isNaN(d)) return null;
+  const d = new Date(s); if (isNaN(d)) return null;
   const off = -d.getTimezoneOffset();
   const sign = off >= 0 ? '+' : '-';
   const oh = pad(Math.floor(Math.abs(off) / 60));
@@ -140,58 +194,581 @@ function localToXsdDateTime(s) {
          `${sign}${oh}:${om}`;
 }
 
-$('#file').addEventListener('change', async (e) => {
-  const f = e.target.files[0];
-  if (!f) return;
-  $('#hashStatus').innerHTML = 'Calculando hash…';
-  fileHash = await sha256Hex(f);
-  $('#hashStatus').innerHTML = `<span class="ok">SHA-256: <code>${fileHash}</code></span>`;
+// ===================== Hash perceptual (pHash) =========================
+// pHash (Hacker Factor / Zauner): 32×32 cinza → DCT 2D → bloco 8×8 de
+// baixa frequência → bit = 1 se coef > mediana, else 0. Resultado: 64 bits
+// (16 hex). Mais robusto a mudanças de brilho/contraste/rotações pequenas
+// do que um dHash gradient-based. Fotos quase idênticas → mesmo pHash (cluster id).
+function dct1d(input, N) {
+  const out = new Float32Array(N);
+  for (let k = 0; k < N; k++) {
+    let sum = 0;
+    const f = Math.PI * k / (2 * N);
+    for (let n = 0; n < N; n++) sum += input[n] * Math.cos((2 * n + 1) * f);
+    out[k] = sum;
+  }
+  return out;
+}
+function computePHash(bitmap) {
+  const N = 32;
+  const c = document.createElement('canvas');
+  c.width = N; c.height = N;
+  const ctx = c.getContext('2d');
+  ctx.drawImage(bitmap, 0, 0, N, N);
+  const data = ctx.getImageData(0, 0, N, N).data;
 
-  if (!exifr) return;
+  // Grayscale matrix (linha-major)
+  const m = new Float32Array(N * N);
+  for (let i = 0; i < N * N; i++) {
+    m[i] = data[i*4]*0.299 + data[i*4+1]*0.587 + data[i*4+2]*0.114;
+  }
+  // DCT 2D separável: linhas, depois colunas
+  const tmp = new Float32Array(N * N);
+  for (let y = 0; y < N; y++) {
+    const out = dct1d(m.subarray(y * N, (y + 1) * N), N);
+    for (let x = 0; x < N; x++) tmp[y * N + x] = out[x];
+  }
+  const dct = new Float32Array(N * N);
+  const col = new Float32Array(N);
+  for (let x = 0; x < N; x++) {
+    for (let y = 0; y < N; y++) col[y] = tmp[y * N + x];
+    const out = dct1d(col, N);
+    for (let y = 0; y < N; y++) dct[y * N + x] = out[y];
+  }
+  // Bloco 8×8 de baixa frequência (top-left)
+  const block = new Float32Array(64);
+  for (let y = 0; y < 8; y++)
+    for (let x = 0; x < 8; x++) block[y * 8 + x] = dct[y * N + x];
+
+  // Mediana excluindo o termo DC (block[0])
+  const sorted = Array.from(block.slice(1)).sort((a, b) => a - b);
+  const median = sorted[Math.floor(sorted.length / 2)];
+
+  let hex = '';
+  for (let row = 0; row < 8; row++) {
+    let byte = 0;
+    for (let col2 = 0; col2 < 8; col2++) {
+      byte = (byte << 1) | (block[row * 8 + col2] > median ? 1 : 0);
+    }
+    hex += byte.toString(16).padStart(2, '0');
+  }
+  return hex;
+}
+
+// ===================== Processamento de imagem =========================
+function drawToCanvas(bitmap, maxDim) {
+  const w = bitmap.width, h = bitmap.height;
+  const scale = Math.min(1, maxDim / Math.max(w, h));
+  const cw = Math.max(1, Math.round(w * scale));
+  const ch = Math.max(1, Math.round(h * scale));
+  const c = document.createElement('canvas');
+  c.width = cw; c.height = ch;
+  c.getContext('2d').drawImage(bitmap, 0, 0, cw, ch);
+  return c;
+}
+function encodeJpeg(canvas, q) {
+  return new Promise(res => canvas.toBlob(b => res(b), 'image/jpeg', q));
+}
+async function compressToTarget(bitmap, maxBytes, startDim = 2400) {
+  for (const dim of [startDim, 1800, 1400, 1100, 900, 700, 500]) {
+    const canvas = drawToCanvas(bitmap, dim);
+    for (const q of [0.85, 0.7, 0.55, 0.4, 0.3]) {
+      const blob = await encodeJpeg(canvas, q);
+      if (blob.size <= maxBytes) return blob;
+    }
+  }
+  return await encodeJpeg(drawToCanvas(bitmap, 500), 0.3);
+}
+async function makeThumbnail(bitmap, dim = 256) {
+  return await encodeJpeg(drawToCanvas(bitmap, dim), 0.75);
+}
+async function anonymizeJpeg(bitmap, q = 0.92) {
+  // re-encoda sem usar EXIF da origem → strip de metadados
+  return await encodeJpeg(drawToCanvas(bitmap, Math.max(bitmap.width, bitmap.height)), q);
+}
+
+// ===================== Catálogo (tours + persons) ======================
+const PHD_NS    = 'https://pedalhidrografi.co/data/';
+const PH_NS     = 'https://pedalhidrografi.co/terms#';
+const SCHEMA    = 'https://schema.org/';
+const RDF_TYPE  = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
+const DCT_TITLE = 'http://purl.org/dc/terms/title';
+const DCT_DATE  = 'http://purl.org/dc/terms/date';
+
+function shortIRI(iri) {
+  if (iri.startsWith(PHD_NS)) return `phd:${iri.slice(PHD_NS.length)}`;
+  if (iri.startsWith(PH_NS))  return `ph:${iri.slice(PH_NS.length)}`;
+  return iri;
+}
+function seriesLabel(iri) {
+  const slug = iri.startsWith(PHD_NS) ? iri.slice(PHD_NS.length) : iri;
+  return slug === 'S' ? 'PH-S' : slug;
+}
+function fmtAssoc(label, n) {
+  return `${label}${label.includes('-') ? ' ' : '-'}${n}`;
+}
+
+async function loadCatalog() {
+  let Parser;
   try {
-    const data = await exifr.parse(f, { gps: true });
-    if (!data) return;
-    const filled = [];
-    if (data.DateTimeOriginal && !$('#date').value) {
-      $('#date').value = dateToLocalInput(new Date(data.DateTimeOriginal));
-      filled.push('data');
+    ({ Parser } = await import('https://esm.sh/n3@1.17.4?bundle'));
+  } catch (e) {
+    throw new Error('N3.js indisponível.');
+  }
+  const tours = new Map(), persons = new Map();
+  const types = new Map(), titles = new Map(), dts = new Map(), names = new Map();
+  const inSE = new Map(), aSer = new Map(), aSeq = new Map();
+  for (const url of ['./data/tours.ttl', './data/initial-data.ttl']) {
+    try {
+      const res = await fetch(url); if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const text = await res.text();
+      for (const q of new Parser().parse(text)) {
+        const s = q.subject.value, p = q.predicate.value, o = q.object.value;
+        if (p === RDF_TYPE) { if (!types.has(s)) types.set(s, new Set()); types.get(s).add(o); }
+        else if (p === DCT_TITLE) titles.set(s, o);
+        else if (p === DCT_DATE)  dts.set(s, o.slice(0, 16));
+        else if (p === SCHEMA + 'alternateName' || p === SCHEMA + 'name') names.set(s, o);
+        else if (p === PH_NS + 'inSeriesEdition') { if (!inSE.has(s)) inSE.set(s, new Set()); inSE.get(s).add(o); }
+        else if (p === PH_NS + 'inEventSeries')    aSer.set(s, o);
+        else if (p === PH_NS + 'sequenceInSeries') aSeq.set(s, parseInt(o, 10));
+      }
+    } catch (e) {
+      console.warn(`Catálogo: ${url} indisponível —`, e.message);
     }
-    if (data.latitude != null && !$('#lat').value) {
-      $('#lat').value = data.latitude.toFixed(6); filled.push('lat');
+  }
+  for (const [s, ts] of types) {
+    if (ts.has(PH_NS + 'Tour')) {
+      const assocs = [];
+      for (const a of inSE.get(s) || []) {
+        const sr = aSer.get(a), n = aSeq.get(a);
+        if (sr && Number.isInteger(n)) assocs.push({ label: seriesLabel(sr), n });
+      }
+      assocs.sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'));
+      tours.set(s, { title: titles.get(s) || s, dateTime: dts.get(s) || '', assocs });
     }
-    if (data.longitude != null && !$('#lon').value) {
-      $('#lon').value = data.longitude.toFixed(6); filled.push('lon');
+    if (ts.has(SCHEMA + 'Person')) persons.set(s, { name: names.get(s) || s });
+  }
+  return { tours, persons };
+}
+
+// ===================== Estado global ===================================
+const tourItems     = [];
+const tourCatalog   = [];                  // { value, ms, label } para auto-detecção
+const personOptions = [];
+const newPersons    = new Map();           // iri → nome
+const cards         = [];                  // [{ index, file, phash, bitmap, elem, authorTs, providerTs, skipAutoDetect }]
+const personSelects = [];                  // todas as instâncias TomSelect ligadas a pessoas
+
+const TOUR_WINDOW_BEFORE_MS =  2 * 3600 * 1000;
+const TOUR_WINDOW_AFTER_MS  = 12 * 3600 * 1000;
+const COMPRESS_TARGET_BYTES = 500 * 1024;
+// Hamming distance ≤ este valor → tratamos como duplicata e rejeitamos.
+// 0 = idêntico; 5 = "mesma foto, processada diferente"; 10+ começa a aceitar quadros sequenciais.
+const PHASH_DUP_THRESHOLD   = 5;
+
+function hammingDistance(h1, h2) {
+  if (!h1 || !h2 || h1.length !== h2.length) return Infinity;
+  let total = 0;
+  for (let i = 0; i < h1.length; i += 2) {
+    let x = parseInt(h1.substr(i, 2), 16) ^ parseInt(h2.substr(i, 2), 16);
+    while (x) { total += x & 1; x >>>= 1; }
+  }
+  return total;
+}
+
+let cardCounter = 0;
+let pickerBusy  = false;   // guarda contra re-entrada do handler de #files
+
+// ===================== Bootstrap catálogo ==============================
+try {
+  const { tours, persons } = await loadCatalog();
+  for (const [iri, m] of tours) {
+    const assocStr = m.assocs.map(a => fmtAssoc(a.label, a.n)).join(' & ');
+    const head = m.dateTime ? `${m.dateTime}: ` : '';
+    const tail = assocStr ? `. ${assocStr}` : '';
+    tourItems.push({ value: shortIRI(iri), label: `${head}${m.title}${tail}`, _dt: m.dateTime });
+  }
+  tourItems.sort((a, b) => (b._dt || '').localeCompare(a._dt || ''));
+  for (const it of tourItems) {
+    if (!it._dt) continue;
+    const ms = new Date(it._dt).getTime();
+    if (!isNaN(ms)) tourCatalog.push({ value: it.value, ms, label: it.label });
+  }
+  for (const [iri, m] of persons) {
+    personOptions.push({ value: shortIRI(iri), text: m.name });
+  }
+  personOptions.sort((a, b) => a.text.localeCompare(b.text, 'pt-BR'));
+  if (tours.size || persons.size) {
+    $('#catalogStatus').innerHTML =
+      `<span class="ok">Catálogo: ${tours.size} passeios, ${persons.size} pessoas.</span>`;
+  } else {
+    $('#catalogStatus').innerHTML = `<span class="warn">Catálogo vazio.</span>`;
+  }
+} catch (e) {
+  $('#catalogStatus').innerHTML = `<span class="warn">Catálogo indisponível (${e.message}).</span>`;
+}
+
+// Popula os painéis de Padrões (lote 1 + append)
+function populateTourSelect(selectEl) {
+  for (const it of tourItems) {
+    const opt = document.createElement('option');
+    opt.value = it.value;
+    opt.textContent = it.label;
+    selectEl.appendChild(opt);
+  }
+}
+populateTourSelect($('#d-tour'));
+
+// ===================== Mint pessoa nova ================================
+function mintPerson(input) {
+  const slug = slugifyPerson(input);
+  if (!slug) return null;
+  const iri  = `phd:pessoa${slug}`;
+  const name = input.trim();
+  if (!newPersons.has(iri)) {
+    newPersons.set(iri, name);
+    const opt = { value: iri, text: name };
+    personOptions.push(opt);
+    for (const ts of personSelects) ts.addOption(opt);
+  }
+  return { value: iri, text: name };
+}
+
+function initPersonSelect(selectEl) {
+  const ts = new TomSelect(selectEl, {
+    options: [...personOptions],
+    valueField: 'value',
+    labelField: 'text',
+    searchField: ['text'],
+    plugins: ['remove_button'],
+    persist: false,
+    create: (input) => mintPerson(input) || false,
+    render: {
+      option_create: (data, escape) =>
+        `<div class="create">+ adicionar <strong>${escape(data.input)}</strong></div>`,
+    },
+    sortField: { field: 'text', direction: 'asc' },
+    maxOptions: 500,
+  });
+  personSelects.push(ts);
+  return ts;
+}
+function destroyPersonSelect(ts) {
+  if (!ts) return;
+  const i = personSelects.indexOf(ts);
+  if (i >= 0) personSelects.splice(i, 1);
+  try { ts.destroy(); } catch (_) {}
+}
+
+// Ativa TS no painel único de padrões
+const defaultsTs = { author: null, provider: null };
+defaultsTs.author   = initPersonSelect($('#d-author'));
+defaultsTs.provider = initPersonSelect($('#d-provider'));
+
+// ===================== Auto-detecção do passeio ========================
+function autoDetectTour(card) {
+  if (card.skipAutoDetect) return;
+  if (!tourCatalog.length) return;
+  const dateInput  = $('[data-field="date"]',  card.elem);
+  const tourSelect = $('[data-field="tour"]',  card.elem);
+  const status     = $('.tour-auto-status',    card.elem);
+  if (!dateInput.value) { status.textContent = ''; return; }
+  const ms = new Date(dateInput.value).getTime();
+  if (isNaN(ms)) return;
+  const matches = tourCatalog.filter(t =>
+    ms >= t.ms - TOUR_WINDOW_BEFORE_MS && ms <= t.ms + TOUR_WINDOW_AFTER_MS
+  );
+  if (!matches.length) {
+    status.innerHTML = `<span class="warn">Nenhum passeio em −2h / +12h.</span>`;
+    return;
+  }
+  matches.sort((a, b) => Math.abs(ms - a.ms) - Math.abs(ms - b.ms));
+  const best = matches[0];
+  tourSelect.value = best.value;
+  status.innerHTML = `<span class="ok">Detectado: ${best.label}</span>` +
+    (matches.length > 1 ? ` <span class="warn">(${matches.length - 1} outros)</span>` : '');
+}
+
+// ===================== Card factory ====================================
+function buildCardElem(displayIdx, file) {
+  const elem = document.createElement('div');
+  elem.className = 'card';
+  elem.innerHTML = `
+    <div class="card-header">
+      <img class="card-thumb" alt="">
+      <div class="card-meta">
+        <strong></strong>
+        <span class="hash">— calculando pHash —</span>
+      </div>
+      <button type="button" class="card-remove" title="Remover deste lote" aria-label="Remover">×</button>
+    </div>
+
+    <div class="card-section">
+      <h4>Quando / Onde</h4>
+      <label class="required">Data e hora</label>
+      <input type="datetime-local" data-field="date" step="1" required>
+      <div class="row">
+        <div>
+          <label class="required">Latitude</label>
+          <input type="number" data-field="lat" step="any" min="-90" max="90" required>
+        </div>
+        <div>
+          <label class="required">Longitude</label>
+          <input type="number" data-field="lon" step="any" min="-180" max="180" required>
+        </div>
+      </div>
+    </div>
+
+    <div class="card-section">
+      <h4>Câmera</h4>
+      <div class="row">
+        <div>
+          <label>Direção (°)</label>
+          <input type="number" data-field="bearing" step="any" min="0" max="359.999">
+        </div>
+        <div>
+          <label>Focal eq. 35 mm</label>
+          <input type="number" data-field="focal" step="any" min="0.001" max="180">
+        </div>
+      </div>
+    </div>
+
+    <div class="card-section">
+      <h4>Atribuição</h4>
+      <label>Passeio</label>
+      <select data-field="tour"><option value="">— nenhum —</option></select>
+      <small class="tour-auto-status"></small>
+
+      <label>Autoras</label>
+      <select multiple data-field="author" placeholder="busca ou digita…"></select>
+
+      <label>Quem subiu</label>
+      <select multiple data-field="provider" placeholder="busca ou digita…"></select>
+
+      <label>Licença</label>
+      <select data-field="license">
+        <option value="https://creativecommons.org/licenses/by-sa/4.0/" selected>CC BY-SA 4.0</option>
+        <option value="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</option>
+        <option value="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</option>
+        <option value="https://creativecommons.org/licenses/by-nc/4.0/">CC BY-NC 4.0</option>
+        <option value="https://creativecommons.org/publicdomain/zero/1.0/">CC0 1.0</option>
+      </select>
+    </div>
+
+    <div class="card-section">
+      <h4>Saída</h4>
+      <div class="opts">
+        <label><input type="checkbox" data-field="anon"> Anonimizar (remover metadados)</label>
+        <label><input type="checkbox" data-field="comp"> Comprimir imagem para 500 kB máx.</label>
+      </div>
+    </div>
+  `;
+  $('.card-meta strong', elem).textContent = `${displayIdx}. ${file.name}`;
+  $('.card-thumb', elem).src = URL.createObjectURL(file);
+  populateTourSelect($('[data-field="tour"]', elem));
+  return elem;
+}
+
+function removeCard(card) {
+  destroyPersonSelect(card.authorTs);
+  destroyPersonSelect(card.providerTs);
+  try { URL.revokeObjectURL($('.card-thumb', card.elem).src); } catch (_) {}
+  card.elem.remove();
+  const i = cards.indexOf(card);
+  if (i >= 0) cards.splice(i, 1);
+  refreshGenerateButtons();
+}
+
+function refreshGenerateButtons() {
+  const has = cards.length > 0;
+  $('#generate').disabled = !has;
+  $('#clearAll').disabled = !has;
+  // download/copy/kit ficam habilitados só depois de Gerar
+}
+
+function notify(html, kind = 'warn') {
+  const div = document.createElement('div');
+  div.className = kind;
+  div.style.cssText =
+    'padding: .4rem .6rem; background: #fff8e1; border: 1px solid #ffe082;' +
+    'border-radius: 3px; margin: .3rem 0; font-size: .85rem;';
+  div.innerHTML = html;
+  $('#notices').appendChild(div);
+}
+function clearNotices() { $('#notices').innerHTML = ''; }
+
+async function createCard(file, defaults) {
+  // 1) Decodifica e computa pHash ANTES de criar DOM/TS,
+  //    para podermos rejeitar duplicatas barato.
+  let bitmap, phash;
+  try {
+    bitmap = await createImageBitmap(file);
+    phash  = computePHash(bitmap);
+  } catch (e) {
+    notify(`<strong>${file.name}</strong>: não consegui ler (${e.message}).`, 'err');
+    return null;
+  }
+
+  // 2) Rejeita se for similar (pHash) a algum card já criado.
+  for (const existing of cards) {
+    if (!existing.phash) continue;
+    const dist = hammingDistance(phash, existing.phash);
+    if (dist <= PHASH_DUP_THRESHOLD) {
+      notify(
+        `<strong>${file.name}</strong> rejeitada — pHash similar a ` +
+        `<em>${existing.file.name}</em> (distância ${dist} ≤ ${PHASH_DUP_THRESHOLD}).`,
+        'warn'
+      );
+      try { bitmap.close?.(); } catch (_) {}
+      return null;
     }
-    if (data.GPSImgDirection != null && !$('#bearing').value) {
-      $('#bearing').value = data.GPSImgDirection; filled.push('direção');
+  }
+
+  // 3) Aceita: cria o card.
+  cardCounter += 1;
+  const elem = buildCardElem(cardCounter, file);
+  $('#cards').appendChild(elem);
+
+  const card = {
+    index: cardCounter, file, phash, bitmap, elem,
+    authorTs: null, providerTs: null, skipAutoDetect: false,
+  };
+  cards.push(card);
+
+  card.authorTs   = initPersonSelect($('[data-field="author"]',   elem));
+  card.providerTs = initPersonSelect($('[data-field="provider"]', elem));
+
+  // Aplica padrões do lote em que foi adicionado
+  if (defaults.tour) {
+    $('[data-field="tour"]', elem).value = defaults.tour;
+    card.skipAutoDetect = true;
+  }
+  if (defaults.license) $('[data-field="license"]', elem).value = defaults.license;
+  if (defaults.authors?.length)   card.authorTs.setValue(defaults.authors);
+  if (defaults.providers?.length) card.providerTs.setValue(defaults.providers);
+  $('[data-field="anon"]', elem).checked = !!defaults.anon;
+  $('[data-field="comp"]', elem).checked = !!defaults.comp;
+
+  // Manuseio de tour manual = lock auto-detect
+  $('[data-field="tour"]', elem).addEventListener('change', () => {
+    card.skipAutoDetect = true;
+  });
+  // Data muda → re-detecta
+  const dateInput = $('[data-field="date"]', elem);
+  dateInput.addEventListener('change', () => autoDetectTour(card));
+  dateInput.addEventListener('input',  () => autoDetectTour(card));
+  // Remove
+  $('.card-remove', elem).addEventListener('click', () => removeCard(card));
+
+  // pHash já calculado acima
+  $('.hash', elem).textContent = `pHash: ${card.phash}`;
+
+  // EXIF
+  if (exifr) {
+    try {
+      const data = await exifr.parse(file, { gps: true });
+      if (data) {
+        if (data.DateTimeOriginal) {
+          dateInput.value = dateToLocalInput(new Date(data.DateTimeOriginal));
+          autoDetectTour(card);
+        }
+        if (data.latitude  != null) $('[data-field="lat"]', elem).value     = data.latitude.toFixed(6);
+        if (data.longitude != null) $('[data-field="lon"]', elem).value     = data.longitude.toFixed(6);
+        if (data.GPSImgDirection != null)         $('[data-field="bearing"]', elem).value = data.GPSImgDirection;
+        if (data.FocalLengthIn35mmFormat != null) $('[data-field="focal"]',   elem).value = data.FocalLengthIn35mmFormat;
+      }
+    } catch (e) { console.warn('EXIF:', e); }
+  }
+}
+
+function readDefaults() {
+  return {
+    tour:      $('#d-tour').value,
+    license:   $('#d-license').value,
+    anon:      $('#d-anon').checked,
+    comp:      $('#d-comp').checked,
+    authors:   defaultsTs.author.getValue(),
+    providers: defaultsTs.provider.getValue(),
+  };
+}
+
+// ===================== File pickers ====================================
+// Picker único: cada seleção APPENDA aos cards existentes
+$('#files').addEventListener('change', async (e) => {
+  if (pickerBusy) return;            // evita re-entrada (alguns browsers disparam change 2×)
+  pickerBusy = true;
+  try {
+    const files = [...e.target.files];
+    if (!files.length) return;
+    clearNotices();                  // mensagens antigas saem antes do novo lote
+    const defaults = readDefaults();
+    let accepted = 0;
+    for (const f of files) {         // sequencial: dedup precisa ver os recém-aceitos
+      const c = await createCard(f, defaults);
+      if (c) accepted++;
     }
-    if (data.FocalLengthIn35mmFormat != null && !$('#focal').value) {
-      $('#focal').value = data.FocalLengthIn35mmFormat; filled.push('focal');
-    }
-    if (filled.length) {
-      $('#hashStatus').innerHTML +=
-        ` <span class="ok">· EXIF preenchido: ${filled.join(', ')}.</span>`;
-    }
-  } catch (err) {
-    console.warn('EXIF:', err);
+    const rej = files.length - accepted;
+    $('#filesStatus').innerHTML =
+      `+${accepted} foto(s)` +
+      (rej ? `, <span class="warn">${rej} rejeitada(s) por similaridade</span>` : '') +
+      ` (total: ${cards.length}).`;
+    e.target.value = '';             // permite re-selecionar os mesmos arquivos depois
+    refreshGenerateButtons();
+  } finally {
+    pickerBusy = false;
   }
 });
 
+// Botão "Limpar todas as fotos"
+$('#clearAll').addEventListener('click', () => {
+  if (cards.length && !confirm(`Remover todas as ${cards.length} foto(s)?`)) return;
+  for (const c of [...cards]) removeCard(c);
+  cardCounter = 0;
+  clearNotices();
+  $('#output').textContent = '— vazio —';
+  $('#download').disabled = true;
+  $('#copy').disabled = true;
+  $('#kit').disabled = true;
+  $('#filesStatus').textContent = 'Nenhum arquivo.';
+});
+
+// ===================== Geração do Turtle ===============================
+function buildImageBlock(card) {
+  const elem    = card.elem;
+  const dateXsd = localToXsdDateTime($('[data-field="date"]',    elem).value);
+  const lat     = $('[data-field="lat"]',     elem).value;
+  const lon     = $('[data-field="lon"]',     elem).value;
+  const bearing = $('[data-field="bearing"]', elem).value;
+  const focal   = $('[data-field="focal"]',   elem).value;
+  const tour    = $('[data-field="tour"]',    elem).value.trim();
+  const license = $('[data-field="license"]', elem).value;
+  const anon    = $('[data-field="anon"]',    elem).checked;
+  const comp    = $('[data-field="comp"]',    elem).checked;
+  const authors   = card.authorTs.getValue();
+  const providers = card.providerTs.getValue();
+
+  const id    = `phd:image_${card.phash}`;
+  const props = [
+    `a ph:Image`,
+    `nfo:hasHash [\n        a nfo:FileHash ;\n        nfo:hashAlgorithm "pHash" ;\n        nfo:hashValue "${card.phash}"\n    ]`,
+    `dcterms:date "${dateXsd}"^^xsd:dateTime`,
+    `dcterms:license <${license}>`,
+    `schema:locationCreated [\n        a schema:GeoCoordinates ;\n        schema:latitude "${lat}"^^xsd:decimal ;\n        schema:longitude "${lon}"^^xsd:decimal\n    ]`,
+  ];
+  if (bearing !== '') props.push(`exif:gpsImgDirection "${bearing}"^^xsd:decimal`);
+  if (focal   !== '') props.push(`exif:focalLengthIn35mmFilm "${focal}"^^xsd:decimal`);
+  if (tour)           props.push(`ph:capturedDuring ${tour}`);
+  for (const a of authors)   props.push(`prov:wasAttributedTo ${a}`);
+  for (const p of providers) props.push(`pav:providedBy ${p}`);
+  if (anon) props.push(`ph:anonymized true`);
+  if (comp) props.push(`ph:compressed true`);
+  const body = props.map(p => `    ${p}`).join(' ;\n');
+  return { id, ttl: `${id}\n${body} .` };
+}
+
 function generate() {
-  if (!fileHash) { alert('Selecione um arquivo primeiro.'); return; }
+  if (!cards.length) { alert('Selecione fotos primeiro.'); return; }
   if (!$('#form').reportValidity()) return;
-
-  const dateXsd  = localToXsdDateTime($('#date').value);
-  const lat      = $('#lat').value;
-  const lon      = $('#lon').value;
-  const bearing  = $('#bearing').value;
-  const focal    = $('#focal').value;
-  const tour     = $('#tour').value.trim();
-  const author   = $('#author').value.trim();
-  const provider = $('#provider').value.trim();
-  const license  = $('#license').value;
-
-  const id = `phd:image_${fileHash.slice(0, 8)}`;
 
   const prefixes = [
     '@prefix dcterms: <http://purl.org/dc/terms/> .',
@@ -205,56 +782,101 @@ function generate() {
     '@prefix xsd:     <http://www.w3.org/2001/XMLSchema#> .',
   ].join('\n');
 
-  const props = [];
-  props.push(`a ph:Image`);
-  props.push(
-    `nfo:hasHash [\n` +
-    `        a nfo:FileHash ;\n` +
-    `        nfo:hashAlgorithm "SHA-256" ;\n` +
-    `        nfo:hashValue "${fileHash}"\n` +
-    `    ]`
-  );
-  props.push(`dcterms:date "${dateXsd}"^^xsd:dateTime`);
-  props.push(`dcterms:license <${license}>`);
-  props.push(
-    `schema:locationCreated [\n` +
-    `        a schema:GeoCoordinates ;\n` +
-    `        schema:latitude "${lat}"^^xsd:decimal ;\n` +
-    `        schema:longitude "${lon}"^^xsd:decimal\n` +
-    `    ]`
-  );
-  if (bearing !== '') props.push(`exif:gpsImgDirection "${bearing}"^^xsd:decimal`);
-  if (focal   !== '') props.push(`exif:focalLengthIn35mmFilm "${focal}"^^xsd:decimal`);
-  if (tour)           props.push(`ph:capturedDuring ${tour}`);
-  if (author)         props.push(`prov:wasAttributedTo ${author}`);
-  if (provider)       props.push(`pav:providedBy ${provider}`);
-
-  const body = props.map(p => `    ${p}`).join(' ;\n');
-  const ttl = `${prefixes}\n\n${id}\n${body} .\n`;
+  const used = new Set();
+  const blocks = [];
+  for (const card of cards) {
+    if (!card.phash) continue;
+    blocks.push(buildImageBlock(card).ttl);
+    for (const v of [...card.authorTs.getValue(), ...card.providerTs.getValue()]) {
+      if (newPersons.has(v)) used.add(v);
+    }
+  }
+  const personDecls = [...used].map(iri =>
+    `${iri} a schema:Person ;\n    schema:alternateName "${turtle_escape(newPersons.get(iri))}" .`
+  ).join('\n\n');
+  const decls = personDecls ? `\n# Pessoas novas\n${personDecls}\n` : '';
+  const ttl   = `${prefixes}\n${decls}\n${blocks.join('\n\n')}\n`;
 
   $('#output').textContent = ttl;
   $('#download').disabled = false;
   $('#copy').disabled = false;
-  $('#download').dataset.ttl = ttl;
-  $('#download').dataset.name = `image_${fileHash.slice(0, 8)}.ttl`;
+  $('#kit').disabled = !JSZip;
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  $('#download').dataset.ttl  = ttl;
+  $('#download').dataset.name = `images_${stamp}.ttl`;
+  $('#kit').dataset.name      = `phidro-update-${stamp}.zip`;
 }
 
-$('#generate').addEventListener('click', generate);
+// ===================== Update kit ZIP ==================================
+async function buildKit() {
+  if (!JSZip) throw new Error('JSZip não disponível.');
+  const zip = new JSZip();
+  zip.file('update.ttl', $('#download').dataset.ttl);
+  const photos = zip.folder('photos');
 
+  for (const card of cards) {
+    if (!card.phash || !card.bitmap) continue;
+    const folder = photos.folder(card.phash);
+    const anon = $('[data-field="anon"]', card.elem).checked;
+    const comp = $('[data-field="comp"]', card.elem).checked;
+
+    // Original / anonymized / compressed
+    let originalBlob, originalName;
+    if (comp) {
+      originalBlob = await compressToTarget(card.bitmap, COMPRESS_TARGET_BYTES);
+      originalName = 'original.jpg';
+    } else if (anon) {
+      originalBlob = await anonymizeJpeg(card.bitmap);
+      originalName = 'original.jpg';
+    } else {
+      originalBlob = card.file;
+      const ext = (card.file.name.match(/\.([a-z0-9]+)$/i)?.[1] || 'jpg').toLowerCase();
+      originalName = `original.${ext}`;
+    }
+    folder.file(originalName, originalBlob);
+
+    // Large (≤500 kB) — sempre
+    folder.file('large.jpg', await compressToTarget(card.bitmap, COMPRESS_TARGET_BYTES));
+
+    // Thumbnail — sempre
+    folder.file('thumb.jpg', await makeThumbnail(card.bitmap));
+  }
+
+  return await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+}
+
+// ===================== Botões ==========================================
+$('#generate').addEventListener('click', generate);
 $('#download').addEventListener('click', () => {
-  const ttl = $('#download').dataset.ttl;
-  const blob = new Blob([ttl], { type: 'text/turtle;charset=utf-8' });
+  const blob = new Blob([$('#download').dataset.ttl], { type: 'text/turtle;charset=utf-8' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = $('#download').dataset.name;
   document.body.appendChild(a); a.click(); a.remove();
   URL.revokeObjectURL(a.href);
 });
-
 $('#copy').addEventListener('click', async () => {
   await navigator.clipboard.writeText($('#output').textContent);
   $('#copy').textContent = 'Copiado!';
   setTimeout(() => $('#copy').textContent = 'Copiar', 1200);
+});
+$('#kit').addEventListener('click', async () => {
+  const btn = $('#kit');
+  const old = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Empacotando…';
+  try {
+    const blob = await buildKit();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = btn.dataset.name;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(a.href);
+  } catch (e) {
+    alert(`Erro montando o kit: ${e.message}`);
+    console.error(e);
+  } finally {
+    btn.disabled = false; btn.textContent = old;
+  }
 });
 </script>
 </body>
