@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 build-photos.py — lê o GPS do EXIF das fotos, gera thumbnails JPEG
-web-friendly e escreve public/photos.json para o app exibir as fotos como
+web-friendly e escreve web/photos.json para o app exibir as fotos como
 círculos no mapa.
 
 Dois modos de origem:
@@ -45,8 +45,8 @@ from PIL import Image, ImageOps, ExifTags
 REPO = Path(__file__).resolve().parent.parent
 RAW_DEFAULT   = REPO / "raw_imgs"
 XLSX_DEFAULT  = REPO / "Censo Hidrográfico - microdados-atualizado.xlsx"
-OUT_JSON      = REPO / "public" / "photos.json"
-OUT_THUMBS    = REPO / "public" / "photos"
+OUT_JSON      = REPO / "web" / "photos.json"
+OUT_THUMBS    = REPO / "web" / "photos"
 THUMB_MAX_DEF = 1400
 THUMB_QUALITY = 82
 IMG_EXTS      = {'.heic', '.heif', '.jpg', '.jpeg', '.png'}

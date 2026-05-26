@@ -1,59 +1,57 @@
 # backend/pi — Pedal Hidrográfico auto-hospedado
 
-Um único serviço Flask que **serve o app do mapa e é o backend das fotos**,
-sem nenhuma dependência de nuvem: arquivos em disco, índice em SQLite.
+Um único serviço Flask que **serve o app do mapa, valida uploads RDF/imagem e
+persiste tudo em arquivos**, sem dependência de nuvem nem SQLite.
 
 > A pasta se chama `pi` por histórico, mas o `main.py` é Python puro e roda
-> igual num **Raspberry Pi** (passos 1–6) ou num **macOS** (ver o fim).
+> igual num **Raspberry Pi** ou num **macOS** (ver o fim).
 
-```
+```text
 Raspberry Pi
   └─ gunicorn → main.py (Flask)
-        ├─ GET  /              → public/ (o app do mapa)
-        ├─ GET  /fotos/...     → fotos processadas + photos.jsonld
-        ├─ POST /sign-upload   → URL de PUT
-        ├─ PUT  /put/...       → recebe + processa a foto
-        └─ POST /delete-photo  → apaga
+        ├─ GET  /                      → web/index.html (o app)
+        ├─ GET  /<path>                → estáticos de web/ (app.js, fotos, ttl, …)
+        ├─ POST /upload-image          → multipart: ttl + variantes;
+        │                                valida com pyshacl, grava em web/
+        └─ POST /delete-image/<phash>  → apaga arquivos + triples
   └─ cloudflared → túnel HTTPS público
 ```
 
 Arquivos: `main.py`, `requirements.txt`, `phidro.service` (Linux),
 `phidro.plist` (macOS).
 
-## A pasta de dados (`PHIDRO_DATA`)
+## O estado vive em `web/`
 
-`PHIDRO_DATA` aponta para a pasta que guarda **todo o acervo** — é o estado
-do sistema, mantido de propósito separado do código. Deixe-a **fora do
-repositório** (ex.: `/home/pi/phidro-data`) e, de preferência, num SSD/HD
-USB, não no cartão SD (as fotos crescem e o SD se desgasta).
+Não há mais SQLite nem `PHIDRO_DATA` separado: o catálogo de fotos é
+**`web/data/photos.ttl`** (Turtle) e cada foto vive em
+**`web/photos/<phash>/{original,large,thumb}.<ext>`**. O Pi serve esses
+arquivos diretamente como estáticos para o app — mesma origem, sem CORS.
 
-Não precisa criá-la à mão — o `main.py` cria as subpastas no primeiro
-arranque. O conteúdo:
-
-```
-PHIDRO_DATA/
-├─ originals/         arquivos originais, como enviados (HEIC/JPEG):
-│                     o arquivo morto — nunca recomprimido
-├─ fotos/             ← é esta pasta que o serviço publica em /fotos/
-│  ├─ photos/         versão de exibição de cada foto  (JPEG ~1600 px)
-│  ├─ thumbs/         miniatura de cada foto           (JPEG ~400 px)
-│  └─ photos.jsonld   o manifesto que o app lê (recriado a cada mudança)
-└─ photos.db          índice SQLite de todas as fotos — a fonte da verdade
+```text
+web/
+├─ index.html, app.js, style.css, sw.js, manifest.json, icons…
+├─ upload_images.html          formulário de envio (POSTa em /upload-image)
+├─ lib/                        utils.js + n3.min.js (parser de Turtle vendored)
+├─ data/
+│   ├─ photos.ttl              catálogo único; gerado/mantido pelo /upload-image
+│   ├─ tours.ttl               símbolo para research/photos-rdf/data/tours.ttl
+│   └─ initial-data.ttl        idem (pessoas declaradas)
+└─ photos/<phash>/             { original.jpg | large.jpg | thumb.jpg }
 ```
 
-`photos.db` é o índice; o `photos.jsonld` é derivado dele a cada upload ou
-remoção. `originals/` o app não usa — é o arquivo bruto, de onde se
-regeneraria tudo se preciso.
+A validação SHACL acontece contra `research/photos-rdf/shapes.ttl` mesclado
+com `research/photos-rdf/ontology.ttl`. O Pi descobre esses arquivos pelo
+caminho relativo ao próprio repositório.
 
-**Backup é copiar esta pasta.** Um `rsync` periódico de `PHIDRO_DATA` para
-outro disco é todo o seu backup — não há redundância em nuvem.
+**Backup é copiar `web/data/` + `web/photos/`** — não há mais nada de
+estado. (`web/routes.json` é regenerado por `scripts/build-routes.py`.)
 
 ## 1. Sistema
 
-Use **Raspberry Pi OS de 64 bits** — é o que tem wheels prontas de
-`pillow-heif` (decodificação de HEIC) para ARM64; no de 32 bits ele tentaria
-compilar. Pi 4 ou 5 recomendado. Vale apontar `PHIDRO_DATA` para um
-SSD/HD USB em vez do cartão SD (as fotos crescem e o SD desgasta).
+Use **Raspberry Pi OS de 64 bits** — `rdflib`/`pyshacl` precisam só do
+Python (sem dependências nativas), mas o 64 bits acelera tudo. Pi 4 ou 5
+recomendado. Considere apontar o repositório para um SSD/HD USB em vez do
+cartão SD (as fotos crescem, e o SD desgasta com escrita).
 
 ```sh
 sudo apt update
@@ -73,12 +71,15 @@ python3 -m venv venv
 ## 3. Teste local
 
 ```sh
-export PHIDRO_DATA="/home/pi/phidro-data"
 ./venv/bin/python main.py        # sobe em http://0.0.0.0:8000
 ```
 
-Abra `http://<ip-do-pi>:8000/` na rede local — o mapa deve carregar.
+Abra `http://<ip-do-pi>:8000/` na rede local — o mapa deve carregar. Para
+testar o fluxo de upload, abra `http://<ip-do-pi>:8000/upload_images.html`.
 `Ctrl-C` para parar.
+
+Variáveis úteis: `PORT` (padrão `8000`) e `PHIDRO_WEB` (padrão
+`../../web`, o sibling do `main.py`).
 
 ## 4. Serviço no boot (systemd)
 
@@ -120,9 +121,10 @@ serviço para `http://localhost:8000`, e rode o `cloudflared` como serviço
 
 ## 6. O app já está pronto
 
-`public/app.js` usa caminhos relativos (`/sign-upload`, `/delete-photo`,
-`/fotos/photos.jsonld`) — como o Pi serve o app e a API na **mesma origem**,
-funciona sem CORS e sem configurar URLs.
+`web/app.js` e `web/upload_images.html` usam caminhos relativos
+(`./data/photos.ttl`, `./photos/<phash>/large.jpg`, `./upload-image`,
+`./delete-image/<phash>`). Como o Pi serve o app e a API na **mesma
+origem**, funciona sem CORS e sem configurar URLs.
 
 ## Limitações e notas
 
@@ -135,13 +137,14 @@ funciona sem CORS e sem configurar URLs.
   servidor é de confiança. Qualquer um que abrir a URL pode enviar e apagar
   fotos. Se isso deixar de valer, restrinja o acesso na borda (regra do
   Cloudflare Tunnel, lista de IPs, VPN) ou reintroduza um token.
-- **HEIC:** decodificação em ARM é mais lenta que num PC, mas para o volume
-  do coletivo (poucas fotos por pedal) é tranquilo.
+- **HEIC:** o Pi não decodifica mais imagem — `upload_images.html` converte
+  HEIC para JPEG no browser (via `heic2any`) e envia variantes prontas.
+  Servidor não precisa de `pillow-heif`.
 
 ## Rodar no macOS em vez do Pi
 
-O `main.py` não muda — Flask, Pillow e pillow-heif têm wheels de macOS
-(Apple Silicon e Intel). Só duas coisas diferem do Pi.
+O `main.py` não muda — Flask, rdflib e pyshacl são Python puro. Só duas
+coisas diferem do Pi.
 
 **Instalar (Homebrew):**
 
