@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Censo Hidrográfico — Pedal Hidrográfico</title>
+<style>
+  :root {
+    --bg: #0f1721;
+    --panel: #15202b;
+    --surface: #0c1722;
+    --text: #e7eef5;
+    --muted: #97a3b1;
+    --accent: #ff8c2e;
+    --accent-hover: #e07320;
+    --border: #243240;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+  body { padding: 16px; max-width: 1100px; margin: 0 auto; }
+
+  header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+    margin-bottom: 16px; }
+  header h1 { margin: 0; font-size: 22px; }
+  header .sub { color: var(--muted); font-size: 13px; }
+  header a { color: var(--accent); text-decoration: none; margin-left: auto; }
+  header a:hover { color: var(--accent-hover); }
+
+  /* Métricas — cards inline */
+  .metrics {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 10px;
+    margin: 14px 0 22px;
+  }
+  .metric {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+  }
+  .metric .v { font-size: 22px; font-weight: 700; color: var(--accent); line-height: 1.1; }
+  .metric .l { font-size: 11px; color: var(--muted); text-transform: uppercase;
+    letter-spacing: 0.04em; margin-top: 4px; }
+  .metric .h { font-size: 11px; color: var(--muted); margin-top: 6px; line-height: 1.3; }
+
+  /* Tabela */
+  .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead th {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+    padding: 8px 10px;
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+  }
+  thead th:hover { color: var(--text); }
+  thead th.sorted { color: var(--accent); }
+  thead th.sorted::after {
+    content: " ↑"; font-size: 9px; opacity: 0.8;
+  }
+  thead th.sorted.desc::after { content: " ↓"; }
+  tbody td {
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  tbody td.wrap { white-space: normal; min-width: 220px; }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover { background: rgba(255, 255, 255, 0.025); }
+  tbody td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tbody td.muted { color: var(--muted); }
+  tbody td a { color: inherit; text-decoration: none; border-bottom: 1px dotted var(--muted); }
+  tbody td a:hover { color: var(--accent); border-bottom-color: var(--accent); }
+  tbody td a.edit-btn {
+    display: inline-block;
+    padding: 2px 8px;
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    text-decoration: none;
+    border-bottom: 1px solid var(--accent);
+  }
+  tbody td a.edit-btn:hover {
+    background: var(--accent);
+    color: #fff;
+  }
+  .intensity { display: inline-block; padding: 1px 7px; border-radius: 10px;
+    font-size: 10px; font-weight: 600; }
+  .intensity[data-c="De boa"]      { background: #2c6e4a; color: #e7f7ee; }
+  .intensity[data-c="Ok"]          { background: #466e2c; color: #f0f7e7; }
+  .intensity[data-c="Endorfinado"] { background: #b8801e; color: #fff8e1; }
+  .intensity[data-c="Frito"]       { background: #b3431e; color: #fff0ea; }
+  .intensity[data-c="Insano"]      { background: #8c1f1f; color: #ffeaea; }
+
+  #status { color: var(--muted); padding: 12px 0; }
+  .err { color: #ff6b6b; }
+  .ok  { color: #5dd29c; }
+
+  footer { margin-top: 20px; color: var(--muted); font-size: 11px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Censo Hidrográfico</h1>
+  <span class="sub">Pedal Hidrográfico — métricas agregadas dos passeios</span>
+  <a href="./index.html">← Mapa</a>
+</header>
+
+<div id="status">Carregando catálogo de passeios…</div>
+
+<div id="metrics" class="metrics" hidden></div>
+
+<div class="table-wrap" hidden>
+  <table id="tours-table">
+    <thead>
+      <tr>
+        <th data-key="date"    data-num="false" class="sorted desc">Data</th>
+        <th data-key="code"    data-num="false">Série</th>
+        <th data-key="title"   data-num="false">Título</th>
+        <th data-key="attendees" data-num="true">Participantes</th>
+        <th data-key="newcomers" data-num="true">Iniciantes</th>
+        <th data-key="energy"  data-num="true">kJ&nbsp;est.</th>
+        <th data-key="totalKj" data-num="true">kJ&nbsp;coletivo</th>
+        <th data-key="intensity" data-num="false">Intensidade</th>
+        <th>Editar</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+</div>
+
+<footer>
+  Calculado a partir de <code>web/data/tours.ttl</code>; intensidade segue a
+  faixa declarada na ontologia (kJ por participante, não pelo coletivo).
+  <span id="meta-ts"></span>
+</footer>
+
+<script type="module">
+const $ = (q) => document.querySelector(q);
+
+// ── N3.js ────────────────────────────────────────────────────────────────
+// Vendored UMD em ./lib/n3.min.js — popula window.N3 quando carrega.
+async function loadN3() {
+  if (window.N3) return window.N3;
+  await new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = './lib/n3.min.js'; s.onload = res; s.onerror = rej;
+    document.head.appendChild(s);
+  });
+  return window.N3;
+}
+
+const PH     = 'https://pedalhidrografi.co/terms#';
+const PHD    = 'https://pedalhidrografi.co/data/';
+const DCT    = 'http://purl.org/dc/terms/';
+const QUDT   = 'http://qudt.org/schema/qudt/';
+const RDFT   = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
+
+const SERIES_LABEL_OVERRIDE = { S: 'PH-S' };
+const seriesLabel = (iri) => {
+  const slug = (iri || '').split(/[/#]/).pop();
+  return SERIES_LABEL_OVERRIDE[slug] || slug;
+};
+
+async function loadTours() {
+  const res = await fetch('./data/tours.ttl', { cache: 'no-cache' });
+  if (!res.ok) throw new Error(`tours.ttl HTTP ${res.status}`);
+  const text = await res.text();
+  const N3 = await loadN3();
+  const parser = new N3.Parser({ format: 'text/turtle' });
+  return new Promise((resolve, reject) => {
+    // Acumula por subject, depois cruza com bnodes (energyEstimate, assoc).
+    const types  = new Map();
+    const props  = new Map();   // subj → { title, date, attendee, newcomer, energyBn, assocs:Set }
+    const energy = new Map();   // bn   → { kj, intensity }
+    const assocs = new Map();   // bn   → { series, seq }
+    function s(subj) {
+      let p = props.get(subj);
+      if (!p) { p = { assocs: new Set() }; props.set(subj, p); }
+      return p;
+    }
+    parser.parse(text, (err, quad, done) => {
+      if (err) { reject(err); return; }
+      if (done) {
+        const tours = [];
+        for (const [iri, p] of props) {
+          if (types.get(iri) !== PH + 'Tour') continue;
+          const e = p.energyBn ? energy.get(p.energyBn) : null;
+          const code = [...p.assocs].map((a) => {
+            const x = assocs.get(a);
+            return x && Number.isInteger(x.seq) ? `${seriesLabel(x.series)} ${x.seq}` : null;
+          }).filter(Boolean).sort().join(' & ');
+          const attendees = Number.isFinite(p.attendee) ? p.attendee : null;
+          const newcomers = Number.isFinite(p.newcomer) ? p.newcomer : null;
+          const kj = e?.kj ?? null;
+          const totalKj = (attendees != null && kj != null) ? attendees * kj : null;
+          tours.push({
+            iri,
+            date:      p.date || '',          // ordenável lexicograficamente (ISO 8601)
+            title:     p.title || iri.split(/[/#]/).pop(),
+            code:      code || '',
+            attendees, newcomers,
+            energy:    kj,
+            intensity: e?.intensity || '',
+            totalKj,
+          });
+        }
+        tours.sort((a, b) => b.date.localeCompare(a.date));
+        resolve(tours);
+        return;
+      }
+      const sub = quad.subject.value;
+      const pred = quad.predicate.value;
+      const obj = quad.object.value;
+      if (pred === RDFT) types.set(sub, obj);
+      else if (pred === DCT + 'title')  s(sub).title = obj;
+      else if (pred === DCT + 'date')   s(sub).date  = obj;
+      else if (pred === PH  + 'countAttendee') s(sub).attendee = parseInt(obj, 10);
+      else if (pred === PH  + 'countNewcomer') s(sub).newcomer = parseInt(obj, 10);
+      else if (pred === PH  + 'energyEstimate') s(sub).energyBn = obj;
+      else if (pred === QUDT + 'numericValue') {
+        const e = energy.get(sub) || {}; e.kj = parseFloat(obj); energy.set(sub, e);
+      }
+      else if (pred === PH + 'intensityClassification') {
+        const e = energy.get(sub) || {}; e.intensity = obj; energy.set(sub, e);
+      }
+      else if (pred === PH + 'inSeriesEdition') s(sub).assocs.add(obj);
+      else if (pred === PH + 'inEventSeries') {
+        const a = assocs.get(sub) || {}; a.series = obj; assocs.set(sub, a);
+      }
+      else if (pred === PH + 'sequenceInSeries') {
+        const a = assocs.get(sub) || {}; a.seq = parseInt(obj, 10); assocs.set(sub, a);
+      }
+    });
+  });
+}
+
+function fmtInt(n)  { return n == null ? '—' : n.toLocaleString('pt-BR'); }
+function fmtKJ(n)   { return n == null ? '—' : `${Math.round(n).toLocaleString('pt-BR')} kJ`; }
+function fmtDate(d) {
+  if (!d) return '—';
+  return d.slice(0, 10);
+}
+
+function renderMetrics(tours) {
+  // Total agregado: kJ × participantes em cada passeio. Conta só passeios
+  // que TÊM os dois valores; outros entram com "?" no card.
+  let totalKj = 0, totalAttendees = 0, totalNewcomers = 0;
+  let toursWithEnergy = 0, toursWithAttendees = 0;
+  let firstDate = null, lastDate = null;
+  for (const t of tours) {
+    if (Number.isFinite(t.attendees)) {
+      totalAttendees += t.attendees;
+      toursWithAttendees++;
+    }
+    if (Number.isFinite(t.newcomers)) totalNewcomers += t.newcomers;
+    if (Number.isFinite(t.energy))    toursWithEnergy++;
+    if (Number.isFinite(t.totalKj))   totalKj += t.totalKj;
+    if (t.date) {
+      if (!firstDate || t.date < firstDate) firstDate = t.date;
+      if (!lastDate  || t.date > lastDate)  lastDate  = t.date;
+    }
+  }
+  const span = firstDate && lastDate
+    ? `${fmtDate(firstDate)} – ${fmtDate(lastDate)}` : '—';
+
+  const cards = [
+    { v: fmtInt(tours.length),                  l: 'Passeios catalogados', h: span },
+    { v: fmtInt(totalAttendees),                l: 'Participantes (soma)', h: `em ${toursWithAttendees} passeios` },
+    { v: fmtInt(totalNewcomers),                l: 'Iniciantes (soma)' },
+    { v: fmtKJ(totalKj),                        l: 'kJ coletivos',         h: `Σ participantes × kJ/passeio (${toursWithEnergy} c/ energia)` },
+    { v: fmtKJ(toursWithAttendees ? totalKj / toursWithAttendees : null),
+                                                l: 'Média kJ/passeio',     h: `coletivo ÷ passeios` },
+    { v: fmtInt(toursWithAttendees ? Math.round(totalAttendees / toursWithAttendees) : null),
+                                                l: 'Média participantes',  h: 'por passeio' },
+  ];
+  const box = $('#metrics');
+  box.innerHTML = cards.map(c =>
+    `<div class="metric">` +
+      `<div class="v">${c.v}</div>` +
+      `<div class="l">${c.l}</div>` +
+      (c.h ? `<div class="h">${c.h}</div>` : '') +
+    `</div>`
+  ).join('');
+  box.hidden = false;
+}
+
+function renderTable(tours) {
+  const tbody = $('#tours-table tbody');
+  // Link pro modal de rota no app principal — `?route=<tourIri>` é
+  // capturado pelo index.html (se o app foi alterado pra isso). Por ora
+  // só linkamos pro mapa direto.
+  const rows = tours.map(t => {
+    const intensityCell = t.intensity
+      ? `<span class="intensity" data-c="${t.intensity}">${t.intensity}</span>`
+      : '<span class="intensity" style="background:#333;color:#aaa">—</span>';
+    // Link pro upload_tour.html com `?id=<tour_id>` — o formulário lê o
+    // param via prefillFromId() e abre em modo edição (upsert).
+    const slug = t.iri.startsWith(PHD) ? t.iri.slice(PHD.length) : t.iri;
+    const tourId = slug.startsWith('tour_') ? slug.slice('tour_'.length) : slug;
+    const editHref = `./upload_tour.html?id=${encodeURIComponent(tourId)}`;
+    return (
+      `<tr>` +
+        `<td class="muted">${fmtDate(t.date)}</td>` +
+        `<td>${t.code || '<span class="muted">—</span>'}</td>` +
+        `<td class="wrap">${escapeHtml(t.title)}</td>` +
+        `<td class="num">${fmtInt(t.attendees)}</td>` +
+        `<td class="num">${fmtInt(t.newcomers)}</td>` +
+        `<td class="num">${fmtKJ(t.energy)}</td>` +
+        `<td class="num">${fmtKJ(t.totalKj)}</td>` +
+        `<td>${intensityCell}</td>` +
+        `<td><a class="edit-btn" href="${editHref}" title="Editar este passeio em upload_tour.html">Editar</a></td>` +
+      `</tr>`
+    );
+  });
+  tbody.innerHTML = rows.join('');
+  $('.table-wrap').hidden = false;
+}
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"]/g, (c) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+
+// Sort por click no header. Re-renderiza tabela com a nova ordem.
+function attachSort(tours) {
+  const headers = document.querySelectorAll('#tours-table thead th');
+  headers.forEach(th => {
+    th.addEventListener('click', () => {
+      const key = th.dataset.key;
+      const isNum = th.dataset.num === 'true';
+      const wasSorted = th.classList.contains('sorted');
+      const desc = wasSorted ? !th.classList.contains('desc') : true;
+      // null/'' vão sempre pro fim (independente de asc/desc).
+      tours.sort((a, b) => {
+        const av = a[key], bv = b[key];
+        const aE = (av === null || av === '' || av === undefined);
+        const bE = (bv === null || bv === '' || bv === undefined);
+        if (aE && bE) return 0;
+        if (aE) return 1;
+        if (bE) return -1;
+        const cmp = isNum ? (av - bv) : String(av).localeCompare(String(bv));
+        return desc ? -cmp : cmp;
+      });
+      for (const x of headers) x.classList.remove('sorted', 'desc');
+      th.classList.add('sorted');
+      if (desc) th.classList.add('desc');
+      renderTable(tours);
+    });
+  });
+}
+
+(async () => {
+  try {
+    const tours = await loadTours();
+    if (!tours.length) {
+      $('#status').innerHTML = '<span class="err">Nenhum passeio encontrado.</span>';
+      return;
+    }
+    $('#status').remove();
+    renderMetrics(tours);
+    renderTable(tours);
+    attachSort(tours);
+    $('#meta-ts').textContent = ` · gerado em ${new Date().toLocaleString('pt-BR')}`;
+  } catch (e) {
+    $('#status').innerHTML = `<span class="err">Falha ao carregar: ${escapeHtml(e.message)}</span>`;
+  }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,918 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Cadastrar passeio — Pedal Hidrográfico</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 900px; margin: 1.5rem auto; padding: 0 1rem; color: #222; }
+  h1 { font-size: 1.4rem; margin: 0 0 .25rem; }
+  p.lede { color: #666; margin: 0 0 1rem; }
+  fieldset { border: 1px solid #ccc; padding: 1rem; margin: 1rem 0; }
+  legend { font-weight: 600; padding: 0 .4rem; }
+  label { display: block; margin: .6rem 0 .2rem; font-size: .9rem; }
+  input[type="text"], input[type="number"], input[type="datetime-local"],
+  input[type="time"], input[type="url"], input[type="file"], select, textarea {
+    width: 100%; padding: .45rem; box-sizing: border-box; font-size: 1rem; font-family: inherit;
+  }
+  textarea { font-family: inherit; font-size: .95rem; min-height: 6rem; resize: vertical; }
+  small { display: block; color: #666; font-size: .8rem; margin-top: .25rem; }
+  pre { background: #f4f4f4; padding: 1rem; overflow-x: auto; font-size: .85rem; border-radius: 4px; white-space: pre-wrap; word-break: break-word; }
+  .actions { margin: 1rem 0; display: flex; gap: .5rem; flex-wrap: wrap; }
+  button { padding: .5rem 1rem; font-size: 1rem; cursor: pointer; border: 1px solid #888; background: #f8f8f8; border-radius: 4px; }
+  button.linkish { background: transparent; border: 1px dashed #888; color: #06c; font-size: .85rem; padding: .3rem .6rem; }
+  button.danger  { background: transparent; border: 0; color: #c00; font-size: 1.1rem; padding: 0 .4rem; line-height: 1; }
+  button.danger-action {
+    background: #fff5f5; border: 1px solid #c00; color: #900;
+    padding: .5rem 1rem; font-weight: 600;
+  }
+  button.danger-action:hover { background: #ffd6d6; }
+  button[disabled] { opacity: .5; cursor: not-allowed; }
+  .required::after { content: " *"; color: #c00; }
+  .ok { color: #080; }
+  .warn { color: #c80; }
+  .err { color: #c00; }
+  code { background: #eee; padding: 0 .25rem; border-radius: 2px; font-size: .9em; }
+
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  .row > div { min-width: 0; }
+  .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; }
+  .row3 > div { min-width: 0; }
+
+  .ts-wrapper { font-size: .9rem; }
+  .ts-dropdown .create { padding: .25rem .5rem; color: #06c; font-size: .85rem; }
+
+  .series-row {
+    display: grid; grid-template-columns: 2fr 1fr auto; gap: .5rem;
+    align-items: end; margin-bottom: .5rem;
+  }
+  .checkboxes { display: flex; gap: 1.5rem; flex-wrap: wrap; }
+  .checkboxes label {
+    display: inline-flex; align-items: center; gap: .35rem; margin: 0;
+    font-size: .95rem; font-weight: 500;
+  }
+  .checkboxes input { width: auto; }
+
+  #notices { display: flex; flex-direction: column; gap: .35rem; }
+  .notice { padding: .35rem .55rem; border-radius: 4px; font-size: .85rem; }
+  .notice.ok   { background: #e6f4ea; color: #135; }
+  .notice.warn { background: #fff3cd; color: #856; }
+  .notice.err  { background: #fde2e2; color: #722; }
+</style>
+<link href="./lib/tom-select.min.css" rel="stylesheet">
+</head>
+<body>
+
+<h1>Cadastrar / editar passeio</h1>
+<p class="lede">
+  Gera um <code>phd:tour_&lt;id&gt;</code> conforme <code>ph:TourShape</code>
+  e envia pra <code>POST /upload-tour</code>. Campos com "+ adicionar"
+  suportam criar entidades novas (séries, pessoas, organizadores, provedores)
+  inline.
+</p>
+
+<form id="form" autocomplete="off">
+
+  <fieldset>
+    <legend>Identificação</legend>
+    <div class="row">
+      <div>
+        <label class="required" for="t-id">ID curto (slug do passeio)</label>
+        <input type="text" id="t-id" required pattern="[A-Za-z0-9_\-]+" placeholder="ex.: 103, agua-branca">
+        <small>Vira <code>phd:tour_&lt;id&gt;</code>. Edição: digite o ID existente pra sobrescrever.</small>
+      </div>
+      <div>
+        <label class="required" for="t-title">Nome do passeio</label>
+        <input type="text" id="t-title" required placeholder="ex.: Água Preta e Tiburtino">
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label class="required" for="t-date">Data + hora agendada</label>
+        <input type="datetime-local" id="t-date" required>
+      </div>
+      <div>
+        <label for="t-instagram">Link do Instagram (opcional)</label>
+        <input type="url" id="t-instagram" placeholder="https://www.instagram.com/p/...">
+      </div>
+    </div>
+    <label for="t-announcement">Imagem do anúncio (arquivo)</label>
+    <input type="file" id="t-announcement" accept="image/jpeg,image/png,image/webp,image/gif,image/heic">
+    <small>Upload vai pra <code>tour_assets/&lt;id&gt;/announcement.&lt;ext&gt;</code>. Vira <code>schema:image &lt;URL&gt;</code> no TTL automaticamente.</small>
+
+    <label for="t-narrative">Narrativa do passeio</label>
+    <textarea id="t-narrative" placeholder="Descreva o passeio…"></textarea>
+  </fieldset>
+
+  <fieldset>
+    <legend>Séries (uma ou mais) + edição</legend>
+    <div id="series-rows">
+      <!-- Linhas inseridas dinamicamente; uma já presente na inicialização. -->
+    </div>
+    <div class="actions">
+      <button type="button" class="linkish" id="add-series">+ adicionar outra série</button>
+    </div>
+    <small>Cada linha vira <code>ph:inSeriesEdition phd:assoc_&lt;série&gt;_&lt;n&gt;</code>.</small>
+
+    <label for="t-organizer">Organização(ões) — opcional</label>
+    <select multiple id="t-organizer" placeholder="busca ou digita…"></select>
+    <small>Vira <code>schema:organizer</code>. Novas: viram <code>phd:org_&lt;slug&gt; a schema:Organization</code>.</small>
+  </fieldset>
+
+  <fieldset>
+    <legend>Rota</legend>
+    <div class="row">
+      <div>
+        <label for="t-route-url">URL da rota</label>
+        <input type="url" id="t-route-url" placeholder="https://ridewithgps.com/routes/...">
+      </div>
+      <div>
+        <label for="t-route-provider">Provedor</label>
+        <select id="t-route-provider" placeholder="busca ou digita…"></select>
+      </div>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Pessoas</legend>
+    <label for="t-authors" class="required">Autoras (organizam / dirigem)</label>
+    <select multiple id="t-authors" placeholder="busca ou digita…"></select>
+    <small>Vira <code>prov:wasAttributedTo</code>. Novas pessoas: digite o nome e <em>Enter</em>.</small>
+
+    <label for="t-providers" class="required">Quem subiu (pav:providedBy)</label>
+    <select multiple id="t-providers" placeholder="busca ou digita…"></select>
+  </fieldset>
+
+  <fieldset>
+    <legend>Métricas estimadas</legend>
+    <div class="row3">
+      <div>
+        <label for="t-attendees">Participantes</label>
+        <input type="number" id="t-attendees" min="0" step="1" placeholder="ex.: 14">
+      </div>
+      <div>
+        <label for="t-newcomers">Iniciantes</label>
+        <input type="number" id="t-newcomers" min="0" step="1" placeholder="ex.: 3">
+      </div>
+      <div>
+        <label for="t-energy-kj">Energia estimada (kJ)</label>
+        <input type="number" id="t-energy-kj" min="0" step="1" placeholder="ex.: 220">
+      </div>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Métricas reais (após o passeio)</legend>
+    <div class="row">
+      <div>
+        <label for="t-departed">Partiu em</label>
+        <input type="datetime-local" id="t-departed">
+        <small>Vira <code>ph:departedAt</code>.</small>
+      </div>
+      <div>
+        <label for="t-arrived">Chegou em</label>
+        <input type="datetime-local" id="t-arrived">
+        <small>Vira <code>ph:arrivedAt</code>.</small>
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label for="t-moving-time">Tempo de movimento</label>
+        <input type="text" id="t-moving-time" placeholder="HH:MM ou HH:MM:SS — ex.: 2:35">
+        <small>Vira <code>ph:movingDuration "PT…"^^xsd:duration</code>.</small>
+      </div>
+      <div>
+        <label for="t-measured-kj">Energia medida (kJ)</label>
+        <input type="number" id="t-measured-kj" min="0" step="1" placeholder="ex.: 195">
+        <small>Vira <code>ph:measuredEnergy</code>.</small>
+      </div>
+    </div>
+    <div class="checkboxes" style="margin-top:.8rem">
+      <label><input type="checkbox" id="t-had-bonde"> Teve bonde?</label>
+      <label><input type="checkbox" id="t-had-rain"> Choveu?</label>
+    </div>
+    <small>Cada um vira <code>ph:hadBonde true</code> / <code>ph:hadRain true</code>. Marcação ausente = omitido (não negado).</small>
+  </fieldset>
+
+  <fieldset>
+    <legend>Incidentes</legend>
+    <label for="t-incidents">Uma linha por incidente</label>
+    <textarea id="t-incidents" placeholder="Furo de pneu na Aclimação&#10;Algum desvio na rua Augusta por causa de obra"></textarea>
+    <small>Cada linha vira <code>ph:hadIncident "..."@pt</code> (multiplica triples).</small>
+  </fieldset>
+
+  <div id="notices"></div>
+
+  <div class="actions">
+    <button type="button" id="preview">Preview TTL</button>
+    <button type="submit" id="send">Enviar →</button>
+    <!-- Aparece só em modo edição (carregado via ?id=…) -->
+    <button type="button" id="delete-tour" class="danger-action" hidden>Apagar passeio ✕</button>
+  </div>
+
+  <fieldset id="ttl-zone" hidden>
+    <legend>TTL gerado</legend>
+    <pre id="ttl-out"></pre>
+  </fieldset>
+
+</form>
+
+<script type="module">
+const $  = (sel, root = document) => root.querySelector(sel);
+const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+
+// ────────────────────── Tom Select on-demand load ─────────────────────
+async function loadScript(src) {
+  return new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = src; s.onload = res; s.onerror = rej;
+    document.head.appendChild(s);
+  });
+}
+if (!window.TomSelect) await loadScript('./lib/tom-select.complete.min.js');
+const TomSelect = window.TomSelect;
+
+// ────────────────────── Constantes RDF ───────────────────────────────
+const PH_NS  = 'https://pedalhidrografi.co/terms#';
+const PHD_NS = 'https://pedalhidrografi.co/data/';
+const SCHEMA = 'https://schema.org/';
+const DCT    = 'http://purl.org/dc/terms/';
+const RDF_TYPE = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
+
+// ────────────────────── Helpers ──────────────────────────────────────
+function turtleEscape(s) {
+  return (s || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n');
+}
+function turtleEscapeMultiline(s) {
+  return (s || '').replace(/\\/g, '\\\\').replace(/"""/g, '\\"\\"\\"');
+}
+function slugify(s, { upperFirst = false } = {}) {
+  const parts = s.normalize('NFKD').replace(/\p{Diacritic}/gu, '')
+    .split(/\s+/).map(w => w.replace(/[^A-Za-z0-9]/g, '')).filter(Boolean);
+  return parts.map(w =>
+    upperFirst ? (w[0].toUpperCase() + w.slice(1).toLowerCase()) : w.toLowerCase()
+  ).join('');
+}
+function shortIRI(iri) {
+  if (iri.startsWith(PHD_NS)) return 'phd:' + iri.slice(PHD_NS.length);
+  if (iri.startsWith(PH_NS))  return 'ph:'  + iri.slice(PH_NS.length);
+  return `<${iri}>`;
+}
+function fmtDateTime(value) {
+  if (!value) return null;
+  return value.length === 16 ? `${value}:00-03:00` : `${value}-03:00`;
+}
+function intensityFor(kj) {
+  if (kj == null) return null;
+  if (kj < 150)  return 'De boa';
+  if (kj < 300)  return 'Ok';
+  if (kj < 500)  return 'Endorfinado';
+  if (kj < 1000) return 'Frito';
+  return 'Insano';
+}
+function parseDuration(value) {
+  if (!value) return null;
+  const parts = value.split(':').map(p => parseInt(p, 10));
+  if (parts.some(n => !Number.isFinite(n) || n < 0)) return null;
+  const [h, m, s = 0] = parts.length === 2 ? [...parts, 0] : parts;
+  return `PT${h}H${m}M${s}S`;
+}
+function notice(html, level = 'ok') {
+  const el = document.createElement('div');
+  el.className = `notice ${level}`;
+  el.innerHTML = html;
+  $('#notices').appendChild(el);
+}
+function clearNotices() { $('#notices').innerHTML = ''; }
+
+// Auto-detect provider from URL.
+$('#t-route-url').addEventListener('input', (e) => {
+  const u = e.target.value;
+  let detected = null;
+  if (u.includes('ridewithgps.com')) detected = 'ph:rwgps';
+  else if (u.includes('strava.com')) detected = 'ph:strava';
+  if (detected && providerTs.options[detected]) {
+    providerTs.setValue(detected, /*silent*/ true);
+  }
+});
+
+// ────────────────────── Catálogo ─────────────────────────────────────
+const personOptions   = [];
+const orgOptions      = [];
+const seriesOptions   = [];
+const providerOptions = [];
+const newPersons      = new Map(); // iri → name
+const newOrgs         = new Map(); // iri → name
+const newSeries       = new Map(); // iri → code
+
+providerOptions.push({ value: 'ph:rwgps',  text: 'RideWithGPS' });
+providerOptions.push({ value: 'ph:strava', text: 'Strava' });
+
+async function loadCatalog() {
+  let Parser;
+  try {
+    ({ Parser } = await import('https://esm.sh/n3@1.17.4?bundle'));
+  } catch { return; }
+  const types = new Map(), names = new Map(), titles = new Map();
+  const providers = new Set();
+  for (const url of ['./data/tours.ttl', './data/uploads.ttl']) {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) continue;
+      const text = await res.text();
+      for (const q of new Parser().parse(text)) {
+        const s = q.subject.value, p = q.predicate.value, o = q.object.value;
+        if (p === RDF_TYPE) { if (!types.has(s)) types.set(s, new Set()); types.get(s).add(o); }
+        else if (p === SCHEMA + 'alternateName' || p === SCHEMA + 'name') names.set(s, o);
+        else if (p === DCT + 'title') titles.set(s, o);
+        else if (p === SCHEMA + 'provider' && o.startsWith(PH_NS)) providers.add(o);
+      }
+    } catch {}
+  }
+  for (const [iri, ts] of types) {
+    if (ts.has(SCHEMA + 'Person')) {
+      personOptions.push({ value: shortIRI(iri), text: names.get(iri) || iri });
+      orgOptions.push({ value: shortIRI(iri), text: (names.get(iri) || iri) + ' (pessoa)' });
+    }
+    if (ts.has(SCHEMA + 'Organization')) {
+      orgOptions.push({ value: shortIRI(iri), text: names.get(iri) || titles.get(iri) || iri });
+    }
+    if (ts.has(SCHEMA + 'EventSeries')) {
+      const code = iri.slice(PHD_NS.length);
+      seriesOptions.push({
+        value: code,
+        text: `${code} — ${titles.get(iri) || code}`,
+      });
+    }
+  }
+  for (const iri of providers) {
+    if (!providerOptions.some(o => o.value === shortIRI(iri))) {
+      providerOptions.push({ value: shortIRI(iri), text: iri.slice(PH_NS.length) });
+    }
+  }
+  personOptions.sort((a, b) => a.text.localeCompare(b.text, 'pt-BR'));
+  orgOptions.sort((a, b) => a.text.localeCompare(b.text, 'pt-BR'));
+  seriesOptions.sort((a, b) => a.value.localeCompare(b.value));
+  providerOptions.sort((a, b) => a.text.localeCompare(b.text, 'pt-BR'));
+}
+
+await loadCatalog();
+
+// ────────────────────── Mints ────────────────────────────────────────
+function mintPerson(input) {
+  const slug = slugify(input, { upperFirst: true });
+  if (!slug) return null;
+  const iri = `phd:pessoa${slug}`;
+  if (!newPersons.has(iri)) newPersons.set(iri, input.trim());
+  return { value: iri, text: input.trim() };
+}
+function mintOrg(input) {
+  const slug = slugify(input);
+  if (!slug) return null;
+  const iri = `phd:org_${slug}`;
+  if (!newOrgs.has(iri)) newOrgs.set(iri, input.trim());
+  return { value: iri, text: input.trim() };
+}
+function mintSeries(input) {
+  const code = input.trim().replace(/[^A-Za-z0-9]/g, '');
+  if (!code) return null;
+  if (!newSeries.has(`phd:${code}`)) newSeries.set(`phd:${code}`, code);
+  return { value: code, text: `${code} — ${code}` };
+}
+function mintProvider(input) {
+  const slug = slugify(input);
+  if (!slug) return null;
+  return { value: `ph:${slug}`, text: slug };
+}
+
+function tsConfig(opts, mintFn, multiple = false) {
+  const cfg = {
+    options: opts,
+    valueField: 'value',
+    labelField: 'text',
+    searchField: ['text'],
+    persist: false,
+    sortField: { field: 'text', direction: 'asc' },
+    maxOptions: 500,
+    create: mintFn ? (input) => mintFn(input) || false : false,
+    render: mintFn ? {
+      option_create: (data, escape) =>
+        `<div class="create">+ adicionar <strong>${escape(data.input)}</strong></div>`,
+    } : {},
+  };
+  if (multiple) cfg.plugins = ['remove_button'];
+  return cfg;
+}
+function moveCreateToBottom(ts) {
+  const orig = ts.refreshOptions.bind(ts);
+  ts.refreshOptions = function (triggerDropdown) {
+    orig(triggerDropdown);
+    const create = this.dropdown_content.querySelector('.create');
+    if (create && create !== this.dropdown_content.lastElementChild) {
+      this.dropdown_content.appendChild(create);
+    }
+  };
+  return ts;
+}
+
+// Pessoa pickers ficam dois — sincronizamos mints.
+const authorTs    = moveCreateToBottom(new TomSelect($('#t-authors'),   tsConfig(personOptions, mintPerson, true)));
+const providerTs2 = moveCreateToBottom(new TomSelect($('#t-providers'), tsConfig(personOptions, mintPerson, true)));
+const orgTs       = moveCreateToBottom(new TomSelect($('#t-organizer'), tsConfig(orgOptions,    mintOrg,    true)));
+const providerTs  = moveCreateToBottom(new TomSelect($('#t-route-provider'), tsConfig(providerOptions, mintProvider, false)));
+
+const personPickers = [authorTs, providerTs2];
+function broadcastNewPerson(opt) {
+  for (const ts of personPickers) ts.addOption(opt);
+}
+for (const ts of personPickers) {
+  ts.settings.create = (input) => {
+    const opt = mintPerson(input);
+    if (opt) broadcastNewPerson(opt);
+    return opt || false;
+  };
+}
+
+// ────────────────────── Séries: linhas dinâmicas ────────────────────
+const seriesTsList = [];   // [{ ts, editionEl, rowEl }]
+
+function addSeriesRow() {
+  const row = document.createElement('div');
+  row.className = 'series-row';
+  row.innerHTML = `
+    <div>
+      <label>Série</label>
+      <select placeholder="busca ou digita um código novo…"></select>
+    </div>
+    <div>
+      <label>Número</label>
+      <input type="number" min="1" step="1" placeholder="ex.: 103">
+    </div>
+    <button type="button" class="danger" title="Remover esta série">✕</button>
+  `;
+  $('#series-rows').appendChild(row);
+
+  const sel  = row.querySelector('select');
+  const num  = row.querySelector('input[type="number"]');
+  const del  = row.querySelector('button.danger');
+
+  const ts = moveCreateToBottom(new TomSelect(sel, tsConfig(seriesOptions, mintSeries, false)));
+
+  const entry = { ts, editionEl: num, rowEl: row };
+  seriesTsList.push(entry);
+
+  del.addEventListener('click', () => {
+    if (seriesTsList.length === 1) {
+      // Pelo menos uma linha precisa existir (série é obrigatória).
+      return;
+    }
+    ts.destroy();
+    row.remove();
+    const idx = seriesTsList.indexOf(entry);
+    if (idx >= 0) seriesTsList.splice(idx, 1);
+  });
+}
+$('#add-series').addEventListener('click', addSeriesRow);
+addSeriesRow();    // primeira linha sempre presente
+
+// ────────────────────── Construção do TTL ────────────────────────────
+function buildTtl() {
+  const id        = $('#t-id').value.trim();
+  const title     = $('#t-title').value.trim();
+  const date      = fmtDateTime($('#t-date').value);
+  const instagram = $('#t-instagram').value.trim();
+  const narrative = $('#t-narrative').value.trim();
+  const organizers = orgTs.getValue();
+  const routeUrl  = $('#t-route-url').value.trim();
+  const routeProv = providerTs.getValue();
+  const attendees = $('#t-attendees').value;
+  const newcomers = $('#t-newcomers').value;
+  const energyKj  = $('#t-energy-kj').value;
+  const departed  = fmtDateTime($('#t-departed').value);
+  const arrived   = fmtDateTime($('#t-arrived').value);
+  const movingDur = parseDuration($('#t-moving-time').value);
+  const measured  = $('#t-measured-kj').value;
+  const hadBonde  = $('#t-had-bonde').checked;
+  const hadRain   = $('#t-had-rain').checked;
+  const incidents = $('#t-incidents').value.split('\n')
+    .map(l => l.trim()).filter(Boolean);
+  const authors   = authorTs.getValue();
+  const providers = providerTs2.getValue();
+
+  if (!id) throw new Error('id ausente');
+  if (!title) throw new Error('título ausente');
+  if (!date) throw new Error('data ausente');
+
+  // Coleta séries+editions; valida que pelo menos uma é válida.
+  const seriesPairs = [];   // [{ code, edition }]
+  for (const { ts, editionEl } of seriesTsList) {
+    const code = ts.getValue();
+    const edn  = parseInt(editionEl.value, 10);
+    if (!code) continue;
+    if (!Number.isInteger(edn) || edn < 1) {
+      throw new Error(`série "${code}" sem número de edição válido`);
+    }
+    seriesPairs.push({ code, edition: edn });
+  }
+  if (seriesPairs.length === 0) {
+    throw new Error('pelo menos uma série + edição é obrigatória');
+  }
+
+  const tourIri = `phd:tour_${id}`;
+  const props = [
+    'a ph:Tour',
+    `dcterms:title "${turtleEscape(title)}"`,
+    `dcterms:date "${date}"^^xsd:dateTime`,
+  ];
+  for (const { code, edition } of seriesPairs) {
+    props.push(`ph:inSeriesEdition phd:assoc_${code}_${edition}`);
+  }
+  for (const org of organizers) props.push(`schema:organizer ${org}`);
+  if (routeUrl) {
+    props.push(
+      'ph:linkRoute [\n' +
+      '        a ph:RouteReference ;\n' +
+      `        schema:url <${routeUrl}> ;\n` +
+      `        schema:provider ${routeProv || 'ph:rwgps'}\n` +
+      '    ]'
+    );
+  }
+  if (instagram) props.push(`ph:linkInstagram "${turtleEscape(instagram)}"^^xsd:anyURI`);
+  if (narrative) props.push(`dcterms:description """${turtleEscapeMultiline(narrative)}"""@pt`);
+
+  if (attendees !== '') props.push(`ph:countAttendee ${parseInt(attendees, 10)}`);
+  if (newcomers !== '') props.push(`ph:countNewcomer ${parseInt(newcomers, 10)}`);
+  if (energyKj !== '') {
+    const kj = parseFloat(energyKj);
+    if (Number.isFinite(kj) && kj >= 0) {
+      const cls = intensityFor(kj);
+      props.push(
+        'ph:energyEstimate [\n' +
+        '        a qudt:QuantityValue ;\n' +
+        `        qudt:numericValue "${kj}"^^xsd:decimal ;\n` +
+        '        qudt:hasUnit unit:KiloJ ;\n' +
+        `        ph:intensityClassification "${turtleEscape(cls)}"\n` +
+        '    ]'
+      );
+    }
+  }
+  if (departed)  props.push(`ph:departedAt "${departed}"^^xsd:dateTime`);
+  if (arrived)   props.push(`ph:arrivedAt "${arrived}"^^xsd:dateTime`);
+  if (movingDur) props.push(`ph:movingDuration "${movingDur}"^^xsd:duration`);
+  if (measured !== '') {
+    const kj = parseFloat(measured);
+    if (Number.isFinite(kj) && kj >= 0) {
+      props.push(
+        'ph:measuredEnergy [\n' +
+        '        a qudt:QuantityValue ;\n' +
+        `        qudt:numericValue "${kj}"^^xsd:decimal ;\n` +
+        '        qudt:hasUnit unit:KiloJ\n' +
+        '    ]'
+      );
+    }
+  }
+  if (hadBonde) props.push('ph:hadBonde true');
+  if (hadRain)  props.push('ph:hadRain true');
+  for (const inc of incidents) {
+    props.push(`ph:hadIncident "${turtleEscape(inc)}"@pt`);
+  }
+  for (const p of authors)   props.push(`prov:wasAttributedTo ${p}`);
+  for (const p of providers) props.push(`pav:providedBy ${p}`);
+
+  // Declarações auxiliares (associações, séries novas, pessoas novas, orgs novas).
+  let auxDecls = '\n# Associações à série(s)\n';
+  for (const { code, edition } of seriesPairs) {
+    auxDecls += `phd:assoc_${code}_${edition} a ph:Association ;\n` +
+                `    ph:inEventSeries phd:${code} ;\n` +
+                `    ph:sequenceInSeries ${edition} .\n`;
+  }
+  if (newSeries.size) {
+    const usedCodes = new Set(seriesPairs.map(p => p.code));
+    const usedSeriesIris = [...newSeries].filter(([_iri, code]) => usedCodes.has(code));
+    if (usedSeriesIris.length) {
+      auxDecls += '\n# Séries novas\n';
+      for (const [iri, code] of usedSeriesIris) {
+        auxDecls += `${iri} a schema:EventSeries ;\n` +
+                    `    dcterms:title "${turtleEscape(code)}" .\n`;
+      }
+    }
+  }
+  const allPeople = new Set([...authors, ...providers]);
+  const newPeopleUsed = [...newPersons].filter(([iri]) => allPeople.has(iri));
+  if (newPeopleUsed.length) {
+    auxDecls += '\n# Pessoas novas\n';
+    for (const [iri, name] of newPeopleUsed) {
+      auxDecls += `${iri} a schema:Person ;\n` +
+                  `    schema:alternateName "${turtleEscape(name)}" .\n`;
+    }
+  }
+  const usedOrgs = organizers.filter(o => newOrgs.has(o));
+  if (usedOrgs.length) {
+    auxDecls += '\n# Organização(ões) nova(s)\n';
+    for (const iri of usedOrgs) {
+      auxDecls += `${iri} a schema:Organization ;\n` +
+                  `    schema:name "${turtleEscape(newOrgs.get(iri))}" .\n`;
+    }
+  }
+
+  const prefixes = `\
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix pav:     <http://purl.org/pav/> .
+@prefix ph:      <https://pedalhidrografi.co/terms#> .
+@prefix phd:     <https://pedalhidrografi.co/data/> .
+@prefix prov:    <http://www.w3.org/ns/prov#> .
+@prefix qudt:    <http://qudt.org/schema/qudt/> .
+@prefix schema:  <https://schema.org/> .
+@prefix unit:    <http://qudt.org/vocab/unit/> .
+@prefix xsd:     <http://www.w3.org/2001/XMLSchema#> .
+`;
+
+  const tourBlock = `\n# Passeio\n${tourIri}\n    ${props.join(' ;\n    ')} .\n`;
+  return prefixes + auxDecls + tourBlock;
+}
+
+// ────────────────────── Preview + envio ──────────────────────────────
+$('#preview').addEventListener('click', () => {
+  clearNotices();
+  try {
+    const ttl = buildTtl();
+    $('#ttl-out').textContent = ttl;
+    $('#ttl-zone').hidden = false;
+    notice('Preview gerado. Confirme antes de enviar.', 'ok');
+  } catch (e) {
+    notice(`Erro: ${e.message}`, 'err');
+  }
+});
+
+$('#form').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  clearNotices();
+  let ttl;
+  try {
+    ttl = buildTtl();
+  } catch (e) {
+    notice(`Erro: ${e.message}`, 'err');
+    return;
+  }
+  $('#ttl-out').textContent = ttl;
+  $('#ttl-zone').hidden = false;
+
+  $('#send').disabled = true;
+  $('#send').textContent = 'Enviando…';
+  try {
+    const fd = new FormData();
+    fd.append('ttl', ttl);
+    const announceFile = $('#t-announcement').files?.[0];
+    if (announceFile) fd.append('announcement', announceFile);
+    const res = await fetch('./upload-tour', { method: 'POST', body: fd });
+    const json = await res.json().catch(() => ({}));
+    if (res.ok && json.ok) {
+      const aurl = json.announcement_url
+        ? ` · <a href="${json.announcement_url}" target="_blank">imagem</a>`
+        : '';
+      notice(`✓ Salvo: <code>phd:tour_${json.tour_id}</code>${aurl}. Catálogo recarregado.`, 'ok');
+    } else if (json.error === 'shacl') {
+      notice(`SHACL rejeitou (${json.details?.length || 0} violação(ões)):`, 'err');
+      for (const d of json.details || []) notice(`• ${d}`, 'err');
+    } else {
+      notice(`Erro do servidor (${res.status}): ${json.error || res.statusText}`, 'err');
+    }
+  } catch (e) {
+    notice(`Falha de rede: ${e.message}`, 'err');
+  } finally {
+    $('#send').disabled = false;
+    $('#send').textContent = 'Enviar →';
+  }
+});
+
+notice(
+  `Catálogo: ${personOptions.length} pessoas, ${seriesOptions.length} séries, ` +
+  `${orgOptions.length} possíveis organizadores, ${providerOptions.length} provedores.`,
+  'ok'
+);
+
+// ────────────────────── Modo edição: prefill via ?id=<tour_id> ──────────
+// Quando aberto com ?id=foo, busca o bloco de phd:tour_foo em tours.ttl,
+// popula todos os campos com os valores atuais e tranca o ID (pra não
+// trocar acidentalmente). Submit faz upsert (mesmo endpoint).
+async function prefillFromId(tourId) {
+  let Parser;
+  try {
+    ({ Parser } = await import('https://esm.sh/n3@1.17.4?bundle'));
+  } catch {
+    notice('Não consegui carregar parser N3 pra prefill.', 'err');
+    return;
+  }
+  let text;
+  try {
+    const res = await fetch('./data/tours.ttl', { cache: 'no-cache' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    text = await res.text();
+  } catch (e) {
+    notice(`Tours.ttl indisponível: ${e.message}`, 'err');
+    return;
+  }
+  const tourIri = `${PHD_NS}tour_${tourId}`;
+  const triples = [];
+  const subjBy = new Map();   // subject IRI → quads (pra resolver bnodes)
+  try {
+    for (const q of new Parser().parse(text)) {
+      triples.push(q);
+      const sval = q.subject.value;
+      if (!subjBy.has(sval)) subjBy.set(sval, []);
+      subjBy.get(sval).push(q);
+    }
+  } catch (e) {
+    notice(`Parser falhou: ${e.message}`, 'err');
+    return;
+  }
+  const own = (subjBy.get(tourIri) || []);
+  if (!own.length) {
+    notice(`Tour <code>${tourIri}</code> não encontrado em tours.ttl.`, 'warn');
+    return;
+  }
+
+  // Preenche o ID e trava o campo.
+  $('#t-id').value = tourId;
+  $('#t-id').readOnly = true;
+  $('#t-id').title = 'Modo edição — ID não pode ser trocado';
+
+  // Map de uma só passada sobre triples do tour.
+  // Múltiplos valores acumulam (organizers, authors, providers, incidents, series).
+  const series = [];        // [{ code, edition }]
+  const organizers = [];
+  const authors = [];
+  const providers = [];
+  const incidents = [];
+  let title = '', date = '', narrative = '', instagram = '';
+  let attendees = '', newcomers = '', energyKj = '';
+  let departed = '', arrived = '', moving = '', measured = '';
+  let hadBonde = false, hadRain = false;
+  let routeUrl = '', routeProv = '';
+  let announceUrl = '';
+
+  function objIri(q) {
+    return q.object.termType === 'NamedNode' ? q.object.value : null;
+  }
+  function objLit(q) { return q.object.value; }
+  function objBnode(q) { return q.object.termType === 'BlankNode' ? q.object.value : null; }
+
+  for (const q of own) {
+    const p = q.predicate.value;
+    if (p === DCT + 'title') title = objLit(q);
+    else if (p === DCT + 'date') date = objLit(q).slice(0, 16);
+    else if (p === DCT + 'description') narrative = objLit(q);
+    else if (p === PH_NS + 'linkInstagram') instagram = objLit(q);
+    else if (p === SCHEMA + 'image') announceUrl = objLit(q);
+    else if (p === PH_NS + 'countAttendee') attendees = objLit(q);
+    else if (p === PH_NS + 'countNewcomer') newcomers = objLit(q);
+    else if (p === PH_NS + 'departedAt') departed = objLit(q).slice(0, 16);
+    else if (p === PH_NS + 'arrivedAt')  arrived  = objLit(q).slice(0, 16);
+    else if (p === PH_NS + 'hadBonde')   hadBonde = objLit(q) === 'true';
+    else if (p === PH_NS + 'hadRain')    hadRain  = objLit(q) === 'true';
+    else if (p === PH_NS + 'hadIncident') incidents.push(objLit(q));
+    else if (p === SCHEMA + 'organizer') {
+      const iri = objIri(q); if (iri) organizers.push(shortIRI(iri));
+    }
+    else if (p === 'http://www.w3.org/ns/prov#wasAttributedTo') {
+      const iri = objIri(q); if (iri) authors.push(shortIRI(iri));
+    }
+    else if (p === 'http://purl.org/pav/providedBy') {
+      const iri = objIri(q); if (iri) providers.push(shortIRI(iri));
+    }
+    else if (p === PH_NS + 'inSeriesEdition') {
+      // Resolve a associação → {code, edition} via subjBy.
+      const assocIri = objIri(q);
+      if (!assocIri) continue;
+      const inEv = subjBy.get(assocIri)?.find(x =>
+        x.predicate.value === PH_NS + 'inEventSeries');
+      const seq  = subjBy.get(assocIri)?.find(x =>
+        x.predicate.value === PH_NS + 'sequenceInSeries');
+      if (inEv && seq) {
+        const code = inEv.object.value.slice(PHD_NS.length);
+        series.push({ code, edition: parseInt(seq.object.value, 10) });
+      }
+    }
+    else if (p === PH_NS + 'linkRoute') {
+      // Blank node — resolve via subjBy.
+      const bn = objBnode(q);
+      if (!bn) continue;
+      const url  = subjBy.get(bn)?.find(x => x.predicate.value === SCHEMA + 'url');
+      const prov = subjBy.get(bn)?.find(x => x.predicate.value === SCHEMA + 'provider');
+      if (url)  routeUrl  = url.object.value;
+      if (prov) routeProv = shortIRI(prov.object.value);
+    }
+    else if (p === PH_NS + 'energyEstimate') {
+      const bn = objBnode(q);
+      if (!bn) continue;
+      const num = subjBy.get(bn)?.find(x =>
+        x.predicate.value === 'http://qudt.org/schema/qudt/numericValue');
+      if (num) energyKj = num.object.value;
+    }
+    else if (p === PH_NS + 'measuredEnergy') {
+      const bn = objBnode(q);
+      if (!bn) continue;
+      const num = subjBy.get(bn)?.find(x =>
+        x.predicate.value === 'http://qudt.org/schema/qudt/numericValue');
+      if (num) measured = num.object.value;
+    }
+    else if (p === PH_NS + 'movingDuration') {
+      // "PT2H35M0S" → "2:35:00" pra exibir; aceita H, M, S.
+      const lit = objLit(q);
+      const m = lit.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/);
+      if (m) {
+        const h = m[1] || '0', mn = m[2] || '0', s = m[3] || '0';
+        moving = `${h}:${mn.padStart(2,'0')}:${s.padStart(2,'0')}`;
+      }
+    }
+  }
+
+  // Preenche os inputs simples.
+  $('#t-title').value     = title;
+  $('#t-date').value      = date;
+  $('#t-narrative').value = narrative;
+  $('#t-instagram').value = instagram;
+  $('#t-attendees').value = attendees;
+  $('#t-newcomers').value = newcomers;
+  $('#t-energy-kj').value = energyKj;
+  $('#t-departed').value  = departed;
+  $('#t-arrived').value   = arrived;
+  $('#t-moving-time').value = moving;
+  $('#t-measured-kj').value = measured;
+  $('#t-had-bonde').checked = hadBonde;
+  $('#t-had-rain').checked  = hadRain;
+  $('#t-incidents').value = incidents.join('\n');
+  $('#t-route-url').value = routeUrl;
+
+  // Select e multi-selects.
+  if (routeProv && providerTs.options[routeProv]) providerTs.setValue(routeProv, true);
+  for (const v of authors)    if (authorTs.options[v])    authorTs.addItem(v, true);
+  for (const v of providers)  if (providerTs2.options[v]) providerTs2.addItem(v, true);
+  for (const v of organizers) if (orgTs.options[v])       orgTs.addItem(v, true);
+
+  // Séries: limpa as linhas e cria uma por par encontrado.
+  for (const e of [...seriesTsList]) {
+    e.ts.destroy(); e.rowEl.remove();
+  }
+  seriesTsList.length = 0;
+  if (!series.length) {
+    addSeriesRow();
+  } else {
+    for (const { code, edition } of series) {
+      addSeriesRow();
+      const entry = seriesTsList[seriesTsList.length - 1];
+      if (entry.ts.options[code]) entry.ts.setValue(code, true);
+      else { entry.ts.addOption({ value: code, text: `${code} — ${code}` }); entry.ts.setValue(code, true); }
+      entry.editionEl.value = String(edition);
+    }
+  }
+
+  // Anúncio: mostra link pra imagem existente (não dá pra prefilar <input type=file>
+  // por segurança do browser).
+  if (announceUrl) {
+    const small = document.createElement('small');
+    small.innerHTML = `Anúncio atual: <a href="${announceUrl}" target="_blank">${announceUrl}</a>. ` +
+                      `Selecione um arquivo novo aqui pra substituir.`;
+    $('#t-announcement').parentElement.insertBefore(small, $('#t-announcement').nextSibling);
+  }
+
+  // Reflete modo edição no título da página + botão.
+  document.title = `Editando ${tourId} — Pedal Hidrográfico`;
+  $('h1').textContent = `Editar passeio (${tourId})`;
+  $('#send').textContent = 'Atualizar ⟳';
+
+  // Botão de delete só faz sentido em modo edição (precisa de um ID
+  // existente). Mostra e registra o handler aqui.
+  const delBtn = $('#delete-tour');
+  delBtn.hidden = false;
+  delBtn.addEventListener('click', async () => {
+    if (!confirm(`Apagar passeio phd:tour_${tourId} de tours.ttl + assets do bucket? Esta ação não pode ser desfeita pelo form.`)) return;
+    delBtn.disabled = true;
+    const orig = delBtn.textContent;
+    delBtn.textContent = 'Apagando…';
+    try {
+      const res = await fetch(`./delete-tour/${encodeURIComponent(tourId)}`, { method: 'POST' });
+      const json = await res.json().catch(() => ({}));
+      if (res.ok) {
+        notice(`✓ Apagado: ${json.triples || 0} triples, ${json.assets || 0} arquivo(s).`, 'ok');
+        // Trava o form pra evitar submit acidental de um tour fantasma.
+        $$('input, select, textarea, button').forEach(el => { el.disabled = true; });
+      } else {
+        notice(`Erro ao apagar: ${json.error || res.statusText}`, 'err');
+        delBtn.disabled = false;
+        delBtn.textContent = orig;
+      }
+    } catch (e) {
+      notice(`Falha de rede: ${e.message}`, 'err');
+      delBtn.disabled = false;
+      delBtn.textContent = orig;
+    }
+  });
+
+  notice(`Carregado <code>phd:tour_${tourId}</code> em modo edição. Submit faz upsert.`, 'ok');
+}
+
+const editId = new URLSearchParams(location.search).get('id');
+if (editId) prefillFromId(editId);
+</script>
+</body>
+</html>

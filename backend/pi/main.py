@@ -76,6 +76,7 @@ STORE = make_store_from_env(WEB)
 # Keys de estado mutável (usados como `STORE.read_text(...)` etc.)
 KEY_UPLOADS  = "data/uploads.ttl"
 KEY_MANIFEST = "data/data_graphs.ttl"
+KEY_TOURS    = "data/tours.ttl"
 
 VOID_NS = "http://rdfs.org/ns/void#"
 
@@ -413,6 +414,108 @@ def remove_image_from_uploads(phash):
     return n
 
 
+# ── Tour upserts ─────────────────────────────────────────────────────────
+# Mesma mecânica de validação/merge das imagens, mas pra phd:tour_<id>
+# e gravando em tours.ttl em vez de uploads.ttl. Pra dar suporte ao form
+# upload_tour.html, que cria/edita 1 tour por vez.
+
+def validate_tour_ttl(ttl_text):
+    """Verifica que o TTL contém exatamente 1 ph:Tour e satisfaz TourShape.
+
+    Retorna (ok, tour_id, errors). `tour_id` é o sufixo após `phd:tour_`.
+    """
+    v = _load_validator()
+    from rdflib import URIRef, Namespace, BNode
+    data = v["Graph"]().parse(data=ttl_text, format="turtle")
+
+    RDFT = URIRef("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
+    tours = list(data.subjects(RDFT, URIRef(PH_NS + "Tour")))
+    if len(tours) != 1:
+        return False, None, [
+            f"TTL deve conter exatamente 1 ph:Tour (achou {len(tours)})"
+        ]
+    tour_iri = str(tours[0])
+    if not tour_iri.startswith(PHD_NS + "tour_"):
+        return False, None, [
+            f"IRI do Tour deve começar com phd:tour_ (atual: {tour_iri})"
+        ]
+    tour_id = tour_iri[len(PHD_NS + "tour_"):]
+    if not tour_id:
+        return False, tour_id, ["IRI do Tour vazio"]
+
+    # Mescla com ontology + catálogo (excluindo o próprio tour pra evitar
+    # cardinalidade falsa por sobreposição de re-upload).
+    tour_uri = URIRef(tour_iri)
+    catalog = _load_catalog()
+    tour_bnodes = set()
+    queue = [tour_uri]
+    while queue:
+        cur = queue.pop()
+        for _s, _p, o in catalog.triples((cur, None, None)):
+            if isinstance(o, BNode) and o not in tour_bnodes:
+                tour_bnodes.add(o)
+                queue.append(o)
+    exclude = tour_bnodes | {tour_uri}
+    merged = data + v["ont"]
+    for s, p, o in catalog:
+        if s not in exclude:
+            merged.add((s, p, o))
+
+    conforms, results_graph, _txt = v["pyshacl"].validate(
+        merged, shacl_graph=v["shapes"], inference="rdfs", advanced=True)
+    if conforms:
+        return True, tour_id, []
+
+    own_subjects = set(data.subjects())
+    SH = Namespace("http://www.w3.org/ns/shacl#")
+    errors = []
+    for r in results_graph.subjects(SH.resultSeverity, SH.Violation):
+        focus = next(results_graph.objects(r, SH.focusNode), None)
+        if focus is None or focus in own_subjects:
+            msg = next(results_graph.objects(r, SH.resultMessage), None)
+            errors.append(str(msg) if msg else "(sem mensagem)")
+    if not errors:
+        # Só warnings (severidade != Violation) — tratamos como ok.
+        return True, tour_id, []
+    return False, tour_id, errors
+
+
+def upsert_tour_in_tours_ttl(tour_ttl, tour_id):
+    """Mescla os blocos do tour novo em tours.ttl, sobrescrevendo qualquer
+    dado prévio para o mesmo tour IRI. Mantém pessoas/associações antigas
+    intactas (não cleanup orfanizados — git history preserva)."""
+    v = _load_validator()
+    Graph = v["Graph"]
+    from rdflib import URIRef
+    tour_iri = URIRef(PHD_NS + "tour_" + tour_id)
+    catalog = Graph()
+    existing = _load_dump_text("tours.ttl")
+    if existing:
+        catalog.parse(data=existing, format="turtle")
+    _purge_subject(catalog, tour_iri)
+    # Mescla os novos blocos (tour + eventual associação/pessoa nova).
+    catalog += Graph().parse(data=tour_ttl, format="turtle")
+    STORE.write_text(KEY_TOURS, catalog.serialize(format="turtle"))
+
+
+def remove_tour_from_tours_ttl(tour_id):
+    """Remove o tour (e bnodes alcançáveis) do tours.ttl. Não toca em pessoas
+    nem associações — git history preserva e elas podem ser referenciadas
+    por outros tours. Retorna nº de triples removidos."""
+    existing = _load_dump_text("tours.ttl")
+    if not existing:
+        return 0
+    v = _load_validator()
+    Graph = v["Graph"]
+    from rdflib import URIRef
+    tour_iri = URIRef(PHD_NS + "tour_" + tour_id)
+    catalog = Graph()
+    catalog.parse(data=existing, format="turtle")
+    n = _purge_subject(catalog, tour_iri)
+    STORE.write_text(KEY_TOURS, catalog.serialize(format="turtle"))
+    return n
+
+
 # ── Rotas ────────────────────────────────────────────────────────────────
 @app.get("/health")
 def health():
@@ -467,6 +570,23 @@ def get_data_ttl(filename):
                     headers={"Cache-Control": "no-cache"})
 
 
+@app.get("/tour_assets/<path:p>")
+def get_tour_asset(p):
+    """Imagens de anúncio + qualquer arquivo associado a um tour. Mesma
+    lógica de /photos: redireciona pra GCS público quando o store tiver
+    URL, stream local caso contrário."""
+    key = f"tour_assets/{p}"
+    url = STORE.public_url(key)
+    if url:
+        return redirect(url, code=302)
+    local = WEB / "tour_assets" / p
+    if local.is_file():
+        resp = send_from_directory(WEB / "tour_assets", p)
+        resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return resp
+    abort(404)
+
+
 @app.get("/photos/<path:p>")
 def get_photo(p):
     key = f"photos/{p}"
@@ -478,6 +598,24 @@ def get_photo(p):
     # Fallback: serve diretamente do filesystem (modo local).
     if (WEB / "photos" / p).is_file():
         resp = send_from_directory(WEB / "photos", p)
+        resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return resp
+    abort(404)
+
+
+@app.get("/clips/<path:p>")
+def get_clip(p):
+    """Mesma lógica do /photos/<p>: redireciona pro bucket em modo GCS,
+    senão serve do filesystem. Cobre uploads via /upload-video (vivem em
+    gs://<bucket>/clips/<vhash>.*) E os transcodes de build-clips.py (que
+    em modo local ficam em web/clips/<stem>.* / web/clips/audio/<stem>.m4a;
+    em modo GCS o sync push-eles via deploy-cloudrun.sh --state)."""
+    key = f"clips/{p}"
+    url = STORE.public_url(key)
+    if url:
+        return redirect(url, code=302)
+    if (WEB / "clips" / p).is_file():
+        resp = send_from_directory(WEB / "clips", p)
         resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
         return resp
     abort(404)
@@ -769,6 +907,102 @@ def delete_image(phash):
         ), 500
     print(f"[delete-image] phash={phash} files={removed_files} triples={removed_triples}")
     return jsonify(phash=phash, files=removed_files, triples=removed_triples)
+
+
+@app.post("/upload-tour")
+def upload_tour():
+    """Cria/atualiza 1 ph:Tour em tours.ttl.
+
+    Espera `ttl` (form field ou file) com exatamente 1 `phd:tour_<id> a ph:Tour`
+    + opcionalmente declarações novas de `phd:assoc_*`, `phd:pessoa*`, etc.
+
+    Opcionalmente, `announcement` (file): salvo em
+    `tour_assets/<tour_id>/announcement.<ext>` no store e injetado como
+    `schema:image <URL>` no TTL antes de persistir.
+
+    Sem auth — mesma política do resto da API.
+    """
+    ttl_text = request.form.get("ttl")
+    if not ttl_text:
+        f = request.files.get("ttl")
+        if f:
+            ttl_text = f.read().decode("utf-8", errors="replace")
+    if not ttl_text:
+        return jsonify(error="ttl ausente"), 400
+
+    try:
+        ok, tour_id, errors = validate_tour_ttl(ttl_text)
+    except Exception as e:  # noqa: BLE001
+        return jsonify(error=f"parse: {e}"), 400
+    if not ok:
+        return jsonify(error="shacl", details=errors, tour_id=tour_id), 400
+
+    # Upload opcional do anúncio: salva no store e injeta `schema:image`.
+    announcement_url = None
+    f = request.files.get("announcement")
+    if f and f.filename:
+        ext = (os.path.splitext(f.filename or "")[1].lstrip(".") or "jpg").lower()
+        if ext not in ("jpg", "jpeg", "png", "webp", "gif", "heic", "heif"):
+            ext = "jpg"
+        if ext == "jpeg":
+            ext = "jpg"
+        key = f"tour_assets/{tour_id}/announcement.{ext}"
+        ct = {
+            "jpg": "image/jpeg", "png": "image/png",
+            "webp": "image/webp", "gif": "image/gif",
+            "heic": "image/heic", "heif": "image/heif",
+        }.get(ext, "application/octet-stream")
+        try:
+            STORE.write_bytes(key, f.read(), content_type=ct)
+        except Exception as e:  # noqa: BLE001
+            return jsonify(
+                error=f"persistência announcement: {e}", tour_id=tour_id,
+            ), 500
+        announcement_url = STORE.public_url(key) or f"./tour_assets/{tour_id}/announcement.{ext}"
+        # Injeta schema:image se ainda não estiver no TTL (cliente pode
+        # ter posto um URL externo; respeitamos a escolha do cliente).
+        if "schema:image" not in ttl_text and "schema:image" not in (ttl_text or ""):
+            inject = (
+                f"\n# Imagem do anúncio (uploaded server-side)\n"
+                f'phd:tour_{tour_id} <https://schema.org/image> <{announcement_url}> .\n'
+            )
+            ttl_text = ttl_text + inject
+
+    try:
+        upsert_tour_in_tours_ttl(ttl_text, tour_id)
+        _invalidate_catalog()
+    except Exception as e:  # noqa: BLE001
+        return jsonify(
+            error=f"persistência ttl: {e}", tour_id=tour_id,
+        ), 500
+    print(f"[upload-tour] tour_id={tour_id} announcement={announcement_url}")
+    return jsonify(tour_id=tour_id, announcement_url=announcement_url, ok=True)
+
+
+@app.post("/delete-tour/<tour_id>")
+def delete_tour(tour_id):
+    """Remove um ph:Tour (e seus bnodes) do tours.ttl + apaga seus assets
+    (tour_assets/<id>/) do store. Não toca em pessoas/séries — git history
+    preserva e elas podem ser referenciadas por outros tours."""
+    tour_id = (tour_id or "").strip()
+    if not tour_id or not all(c.isalnum() or c in "_-" for c in tour_id):
+        return jsonify(error="tour_id inválido"), 400
+    asset_prefix = f"tour_assets/{tour_id}/"
+    removed_assets = len(STORE.list_keys(asset_prefix)) if hasattr(STORE, "list_keys") else 0
+    try:
+        STORE.delete_prefix(asset_prefix)
+    except Exception as e:  # noqa: BLE001
+        print(f"[delete-tour] erro removendo {asset_prefix}: {e}")
+    try:
+        removed_triples = remove_tour_from_tours_ttl(tour_id)
+        _invalidate_catalog()
+    except Exception as e:  # noqa: BLE001
+        return jsonify(
+            error=f"persistência ttl: {e}", tour_id=tour_id,
+            assets=removed_assets,
+        ), 500
+    print(f"[delete-tour] tour_id={tour_id} assets={removed_assets} triples={removed_triples}")
+    return jsonify(tour_id=tour_id, assets=removed_assets, triples=removed_triples)
 
 
 if __name__ == "__main__":

@@ -235,6 +235,23 @@ body.header-hidden .topbar { display: none; }
   color: var(--muted);
   letter-spacing: 1px;
 }
+.sidebar-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+.sidebar-head h2 { margin-bottom: 0; }
+.sidebar-link {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 600;
+}
+.sidebar-link:hover { color: var(--accent-hover); }
 
 #routes-list {
   list-style: none;
@@ -549,8 +566,46 @@ body.header-hidden .topbar { display: none; }
   color: var(--muted);
 }
 .route-modal-meta a { color: var(--accent); }
+/* View legível do passeio dentro do modal — id antigo `#route-modal-ig`
+   foi repurposed; estilo agora é `.tour-summary` em vez do bloco TTL bruto. */
 .route-modal-ig { display: grid; gap: 8px; }
 .route-modal-ig .muted { color: var(--muted); font-size: 13px; }
+.tour-summary {
+  margin: 0;
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 14px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.tour-summary dt {
+  color: var(--muted);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.tour-summary dd {
+  margin: 0;
+  color: var(--text);
+  word-break: break-word;
+}
+.tour-summary a { color: var(--accent); }
+.tour-summary .muted { color: var(--muted); }
+.tour-announce-img {
+  max-width: 100%;
+  max-height: 220px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  display: block;
+}
+.tour-incidents {
+  margin: 0;
+  padding-left: 18px;
+}
+.tour-incidents li { margin: 2px 0; }
+.tour-narrative {
+  white-space: normal;
+  color: var(--text);
+}
 .ig-embed {
   display: block;
   width: 100%;

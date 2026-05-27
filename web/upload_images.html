@@ -619,6 +619,19 @@ function populateTourSelect(selectEl) {
 }
 populateTourSelect($('#d-tour'));
 
+// Pré-seleciona o passeio default a partir de `?tour=phd:tour_N` na URL —
+// usado pelos botões "+ mídias" do censo.html pra abrir o form já apontando
+// pro passeio em questão. Se o valor não bater com nenhuma opção do select,
+// é silenciosamente ignorado (e o usuário escolhe na mão).
+(() => {
+  const want = new URLSearchParams(location.search).get('tour');
+  if (!want) return;
+  const sel = $('#d-tour');
+  for (const opt of sel.options) {
+    if (opt.value === want) { sel.value = want; return; }
+  }
+})();
+
 // ===================== Mint pessoa nova ================================
 function mintPerson(input) {
   const slug = slugifyPerson(input);
@@ -1583,13 +1596,21 @@ $('#clearAll').addEventListener('click', () => {
 });
 
 // ===================== Geração do Turtle ===============================
+// Inputs `type=number` retornam valor canônico (com `.`), MAS quando o
+// usuário cola ou digita com vírgula em locale pt-BR alguns browsers
+// engolem como texto. Normaliza vírgula → ponto antes de emitir xsd:decimal
+// no Turtle (parser RDF rejeita "-23,55" e a serialização SHACL falha).
+function num(s) {
+  return String(s ?? '').trim().replace(',', '.');
+}
+
 function buildImageBlock(card) {
   const elem    = card.elem;
   const dateXsd = localToXsdDateTime($('[data-field="date"]',    elem).value);
-  const lat     = $('[data-field="lat"]',     elem).value;
-  const lon     = $('[data-field="lon"]',     elem).value;
-  const bearing = $('[data-field="bearing"]', elem).value;
-  const focal   = $('[data-field="focal"]',   elem).value;
+  const lat     = num($('[data-field="lat"]',     elem).value);
+  const lon     = num($('[data-field="lon"]',     elem).value);
+  const bearing = num($('[data-field="bearing"]', elem).value);
+  const focal   = num($('[data-field="focal"]',   elem).value);
   const tour    = $('[data-field="tour"]',    elem).value.trim();
   const license = $('[data-field="license"]', elem).value;
   const anon    = $('[data-field="anon"]',    elem).checked;
@@ -1647,8 +1668,9 @@ function buildSingleImageTtl(card) {
 function buildClipBlock(card) {
   const elem = card.elem;
   const dateXsd = localToXsdDateTime($('[data-field="date"]', elem).value);
-  const lat   = $('[data-field="lat"]', elem).value;
-  const lon   = $('[data-field="lon"]', elem).value;
+  // Vírgula → ponto antes de emitir xsd:decimal — ver buildImageBlock.
+  const lat   = num($('[data-field="lat"]', elem).value);
+  const lon   = num($('[data-field="lon"]', elem).value);
   const tour    = $('[data-field="tour"]',    elem).value.trim();
   const license = $('[data-field="license"]', elem).value;
   const audioOnly = $('[data-field="audio-only"]', elem).checked;

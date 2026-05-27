@@ -183,6 +183,13 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
   produced silently-stale content in Cloud Run despite the bucket having
   one current generation. See `GCSStateStore.read_text` in
   `backend/pi/storage.py` for the fix.
+- **Cloud Run container stays magrinho.** `.gcloudignore` /
+  `.dockerignore` exclude `web/photos/` and `web/clips/` entirely (not
+  just `raw/`). The runtime handlers `/photos/<path>` and `/clips/<path>`
+  redirect to the bucket's public URL in `gcs` mode (302 → much faster
+  than streaming through Flask). To populate the bucket with local
+  `build-clips.py` outputs and Pi-side uploads, run
+  `scripts/deploy-cloudrun.sh --state-only`.
 - Comments and UI strings are in Portuguese; code identifiers in English.
 
 ## Verify before finishing
@@ -238,7 +245,10 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
   `*.720p.mp4`, `audio/*.m4a`, `*.thumb.jpg`) are smaller and can be
   committed if you want the static mirror to ship clips, or generated in
   CI. The catalog of triples lives in `web/data/uploads.ttl` (single
-  source of truth for both images and videos).
+  source of truth for both images and videos). For Cloud Run, all of
+  `web/clips/` and `web/photos/` is excluded from the container and lives
+  in the `phidro-state` bucket — push local outputs with
+  `scripts/deploy-cloudrun.sh --state-only`.
 - **`web/upload_videos.html`** is a permanent redirect stub pointing at
   `upload_images.html` (which now handles both media types). Safe to
   delete once you're sure no bookmark uses the old URL.

@@ -31,45 +31,46 @@ Arquivos: `main.py`, `requirements.txt`, `phidro.service` (Linux),
 ## O estado vive em `web/` (Pi) ou no bucket GCS (Cloud Run)
 
 Não há SQLite. Os uploads — imagens E vídeos — viram triples no mesmo
-**`web/data/uploads.ttl`** (Turtle); cada foto vira arquivos em
-**`web/photos/<phash>/{original,large,thumb}.<ext>`**, cada vídeo em
-**`web/clips/<vhash>.{audio.webm, 360p.webm, 720p.webm, thumb.jpg}`**
-(ou `<stem>.{360p,720p}.mp4` + `audio/<stem>.m4a` + `<stem>.thumb.jpg`
-quando processado por `scripts/build-clips.py`). Um manifesto em
-**`web/data/data_graphs.ttl`** registra cada dump (`void:dataDump`), e é
-ele que o app consulta no boot pra descobrir quais grafos carregar. O Pi
-serve tudo direto como estáticos — mesma origem, sem CORS; no Cloud Run o
-storage abstrai pra GCS via `backend/pi/storage.py`.
+**`web/data/uploads.ttl`** (Turtle). Os blobs (foto/vídeo/áudio/thumb)
+vivem em `web/photos/` e `web/clips/` no Pi (modo local) ou no bucket
+GCS no Cloud Run.
+
+**No Cloud Run o container é magrinho**: `.gcloudignore` exclui
+`web/photos/` e `web/clips/` inteiros, então nada de mídia local é
+empacotado na imagem. Os handlers `/photos/<path>` e `/clips/<path>`
+redirecionam pro bucket via 302 (storage público leitura).
+
+Um manifesto em **`web/data/data_graphs.ttl`** registra cada dump
+(`void:dataDump`), e é ele que o app consulta no boot pra descobrir
+quais grafos carregar.
 
 ```text
-web/
+web/                            (no container do Cloud Run: só o que NÃO está excluído)
 ├─ index.html, app.js, style.css, sw.js, manifest.json, icons…
-├─ upload_images.html          formulário unificado de envio
-│                              (imagem → /upload-image, vídeo → /upload-video)
-├─ upload_videos.html          redirect stub → upload_images.html
-├─ lib/                        utils.js + n3.min.js + energy-worker.js +
-│                              tom-select.* (parsers/widgets vendored)
-├─ data/
-│   ├─ data_graphs.ttl         manifesto void: aponta pros dumps abaixo
-│   ├─ uploads.ttl             triples de TODA mídia (ph:Image + ph:Video)
-│   ├─ tours.ttl               catálogo de passeios (build-tours.py)
-│   ├─ shapes.ttl              SHACL — ph:ImageShape + ph:VideoShape
-│   └─ ontology.ttl            vocabulário ph:
-├─ photos/<phash>/             { original.* | large.jpg | thumb.jpg }
-└─ clips/                      clipes de vídeo curtos (Animação + galleries)
-    ├─ <stem>.360p.mp4         transcodes de build-clips.py (raw → otimizado)
-    ├─ <stem>.720p.mp4
-    ├─ <stem>.thumb.jpg        miniatura pro marker no mapa
-    ├─ audio/<stem>.m4a        trilha de áudio extraída (loop ambiente)
-    ├─ <vhash>.360p.webm       transcodes do upload form (browser-side)
-    ├─ <vhash>.720p.webm
-    ├─ <vhash>.audio.webm      opus 192k (qualidade alta, sem WAV pesado)
+├─ upload_images.html           formulário unificado (imagens + vídeos)
+├─ upload_videos.html           redirect stub → upload_images.html
+├─ lib/                         utils.js + n3.min.js + energy-worker.js +
+│                               tom-select.* (parsers/widgets vendored)
+├─ data/                        TTLs estáticos vão no container; mutáveis no bucket
+│   ├─ shapes.ttl               SHACL — ph:ImageShape + ph:VideoShape (no container)
+│   ├─ ontology.ttl             vocabulário ph:                       (no container)
+│   ├─ tours.ttl                catálogo de passeios                  (no container)
+│   ├─ uploads.ttl              triples de TODA mídia                 (bucket-only)
+│   └─ data_graphs.ttl          manifesto void:                       (bucket-only)
+├─ photos/<phash>/              { original.* | large.jpg | thumb.jpg }    (bucket-only no CR)
+└─ clips/                       clipes de vídeo curtos (Animação + galleries) (bucket-only no CR)
+    ├─ <stem>.{360p,720p}.mp4   transcodes de build-clips.py (raw → otimizado)
+    ├─ <stem>.thumb.jpg         miniatura pro marker no mapa
+    ├─ audio/<stem>.m4a         trilha de áudio extraída (loop ambiente)
+    ├─ <vhash>.{360p,720p}.webm transcodes do upload form (browser-side)
+    ├─ <vhash>.audio.webm       opus 192k (qualidade alta, sem WAV pesado)
     └─ <vhash>.thumb.jpg
 ```
 
-> O Pi só serve `web/clips/` como estático — o `build-clips.py` roda
-> localmente (precisa de `ffmpeg` + `exiftool`). O diretório de fonte
-> `web/clips/raw/` não precisa estar no Pi.
+> O Pi/macOS local serve `web/clips/` e `web/photos/` diretamente do disco —
+> o `build-clips.py` roda localmente (precisa de `ffmpeg` + `exiftool`).
+> Pra subir essas mídias pro Cloud Run, rode
+> `scripts/deploy-cloudrun.sh --state-only`.
 
 A validação SHACL acontece contra `web/data/shapes.ttl` mesclado com
 `web/data/ontology.ttl`. Imagens validam contra `ph:ImageShape` (24 triples,

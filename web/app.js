@@ -4128,11 +4128,11 @@ function formatDay(ms) {
   return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: '2-digit' });
 }
 
-// ─── Route detail modal (with IG embed) ──────────────────────────────────────
+// ─── Route detail modal (with human-friendly summary + edit) ────────────────
 const routeModal = document.getElementById('route-modal');
 const routeModalTitle = document.getElementById('route-modal-title');
 const routeModalMeta = document.getElementById('route-modal-meta');
-const routeModalIG = document.getElementById('route-modal-ig');
+const routeModalSummary = document.getElementById('route-modal-ig');  // legacy id, repurposed
 const routeModalClose = document.getElementById('route-modal-close');
 
 routeModalClose.addEventListener('click', closeRouteModal);
@@ -4143,6 +4143,232 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && !routeModal.hidden) closeRouteModal();
 });
 
+// Extrai o curtoID do passeio (sufixo após `phd:tour_` ou IRI completa).
+function _tourIdFromIri(iri) {
+  if (!iri) return null;
+  const PHD = 'https://pedalhidrografi.co/data/';
+  const PFX_SHORT = 'phd:tour_';
+  const PFX_LONG  = PHD + 'tour_';
+  if (iri.startsWith(PFX_SHORT)) return iri.slice(PFX_SHORT.length);
+  if (iri.startsWith(PFX_LONG))  return iri.slice(PFX_LONG.length);
+  return null;
+}
+
+// Constrói uma view legível do passeio: lê tours.ttl, resolve o IRI alvo e
+// seus blank nodes (route reference, energy values) e dependentes (associações
+// → série+edição), mapeia pessoas/séries pra nomes via declarações no próprio
+// arquivo e devolve HTML pronto pra render no modal.
+async function _renderTourSummary(tourId) {
+  const PH    = 'https://pedalhidrografi.co/terms#';
+  const PHD   = 'https://pedalhidrografi.co/data/';
+  const SCHEMA = 'https://schema.org/';
+  const DCT   = 'http://purl.org/dc/terms/';
+  const RDFT  = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
+  const PROV  = 'http://www.w3.org/ns/prov#';
+  const PAV   = 'http://purl.org/pav/';
+  const QUDT  = 'http://qudt.org/schema/qudt/';
+
+  let Parser;
+  try {
+    Parser = await ensureN3();
+  } catch (e) {
+    return `<p class="muted">Parser N3 indisponível: ${escapeHtml(e.message)}.</p>`;
+  }
+  let text;
+  try {
+    const res = await fetch('./data/tours.ttl', { cache: 'no-cache' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    text = await res.text();
+  } catch (e) {
+    return `<p class="muted">tours.ttl indisponível: ${escapeHtml(e.message)}.</p>`;
+  }
+
+  const tourIri = `${PHD}tour_${tourId}`;
+  const subjBy = new Map();  // subject IRI/bnode-id → array of quads
+  const types = new Map();   // subject → Set of types
+  const labels = new Map();  // subject → human label (name/title/code)
+  try {
+    for (const q of new Parser().parse(text)) {
+      const s = q.subject.value, p = q.predicate.value, o = q.object.value;
+      if (!subjBy.has(s)) subjBy.set(s, []);
+      subjBy.get(s).push(q);
+      if (p === RDFT) {
+        if (!types.has(s)) types.set(s, new Set());
+        types.get(s).add(o);
+      } else if (p === SCHEMA + 'alternateName' || p === SCHEMA + 'name'
+                 || p === DCT + 'title') {
+        if (!labels.has(s)) labels.set(s, o);
+      }
+    }
+  } catch (e) {
+    return `<p class="muted">Parser falhou: ${escapeHtml(e.message)}.</p>`;
+  }
+  const own = subjBy.get(tourIri) || [];
+  if (!own.length) {
+    return `<p class="muted">Passeio <code>phd:tour_${escapeHtml(tourId)}</code> não encontrado.</p>`;
+  }
+
+  function nameOf(iri) {
+    if (!iri) return null;
+    if (labels.has(iri)) return labels.get(iri);
+    // Fallback: parte após o último separador.
+    return iri.replace(/^.*[#/]/, '');
+  }
+
+  // Coleta valores agrupados por predicado.
+  const get = (pred, kind = 'lit') => {
+    const out = [];
+    for (const q of own) {
+      if (q.predicate.value !== pred) continue;
+      if (kind === 'iri' && q.object.termType !== 'NamedNode') continue;
+      if (kind === 'lit' && q.object.termType !== 'Literal') continue;
+      if (kind === 'bn'  && q.object.termType !== 'BlankNode') continue;
+      out.push(q.object.value);
+    }
+    return out;
+  };
+  const first = (pred, kind = 'lit') => get(pred, kind)[0] || null;
+  const bnodeProps = (bn) => {
+    const m = new Map();
+    for (const q of subjBy.get(bn) || []) m.set(q.predicate.value, q.object.value);
+    return m;
+  };
+
+  const title       = first(DCT + 'title');
+  const date        = first(DCT + 'date');
+  const description = first(DCT + 'description');
+  const instagram   = first(PH + 'linkInstagram');
+  const announce    = first(SCHEMA + 'image', 'iri') || first(SCHEMA + 'image');
+  const attendees   = first(PH + 'countAttendee');
+  const newcomers   = first(PH + 'countNewcomer');
+  const departed    = first(PH + 'departedAt');
+  const arrived     = first(PH + 'arrivedAt');
+  const moving      = first(PH + 'movingDuration');
+  const hadBonde    = first(PH + 'hadBonde');
+  const hadRain     = first(PH + 'hadRain');
+  const incidents   = get(PH + 'hadIncident');
+
+  // Série + edição via ph:inSeriesEdition → resolve associações.
+  const seriesPairs = [];
+  for (const assocIri of get(PH + 'inSeriesEdition', 'iri')) {
+    const m = bnodeProps(assocIri);
+    const evIri = m.get(PH + 'inEventSeries');
+    const seq   = m.get(PH + 'sequenceInSeries');
+    if (evIri && seq) {
+      seriesPairs.push({
+        code: evIri.replace(/^.*[#/]/, ''),
+        title: nameOf(evIri),
+        n: seq,
+      });
+    }
+  }
+
+  // Rota via blank node ph:linkRoute.
+  let route = null;
+  const routeBn = first(PH + 'linkRoute', 'bn');
+  if (routeBn) {
+    const m = bnodeProps(routeBn);
+    route = {
+      url: m.get(SCHEMA + 'url'),
+      provider: m.get(SCHEMA + 'provider'),
+    };
+  }
+
+  // Energia estimada via blank node ph:energyEstimate (qudt:QuantityValue).
+  function readQuantity(pred) {
+    const bn = first(pred, 'bn');
+    if (!bn) return null;
+    const m = bnodeProps(bn);
+    const num = m.get(QUDT + 'numericValue');
+    const cls = m.get(PH + 'intensityClassification');
+    return num ? { value: num, class: cls } : null;
+  }
+  const energyEst  = readQuantity(PH + 'energyEstimate');
+  const energyMeas = readQuantity(PH + 'measuredEnergy');
+
+  // Pessoas (autoras + provedores).
+  const authors   = get(PROV + 'wasAttributedTo', 'iri').map(nameOf);
+  const providers = get(PAV  + 'providedBy',      'iri').map(nameOf);
+  const organizers= get(SCHEMA + 'organizer',     'iri').map(nameOf);
+
+  // Helpers de formatação.
+  function fmtDate(s) {
+    if (!s) return '—';
+    // "2024-09-09T20:00:00-03:00" → "09/09/2024 20:00"
+    const m = s.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+    if (m) return `${m[3]}/${m[2]}/${m[1]} ${m[4]}:${m[5]}`;
+    return s;
+  }
+  function fmtDuration(s) {
+    if (!s) return '—';
+    const m = s.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/);
+    if (!m) return s;
+    const h = parseInt(m[1] || '0', 10);
+    const mn = parseInt(m[2] || '0', 10);
+    const sc = parseInt(m[3] || '0', 10);
+    const parts = [];
+    if (h) parts.push(`${h}h`);
+    if (mn) parts.push(`${mn}min`);
+    if (sc && !h) parts.push(`${sc}s`);
+    return parts.join(' ') || '0min';
+  }
+  function row(label, html) {
+    return `<dt>${escapeHtml(label)}</dt><dd>${html}</dd>`;
+  }
+
+  // Monta o HTML.
+  const rows = [];
+  if (title) rows.push(row('Título', escapeHtml(title)));
+  if (date)  rows.push(row('Quando', escapeHtml(fmtDate(date))));
+  if (seriesPairs.length) {
+    rows.push(row('Série', seriesPairs.map(s =>
+      `<strong>${escapeHtml(s.code)}</strong> ${escapeHtml(s.n)}` +
+      (s.title && s.title !== s.code ? ` — ${escapeHtml(s.title)}` : '')
+    ).join(' · ')));
+  }
+  if (organizers.length) rows.push(row('Organização', organizers.map(escapeHtml).join(', ')));
+  if (route?.url) {
+    const provName = route.provider ? route.provider.replace(/^.*[#/]/, '') : '';
+    rows.push(row('Rota',
+      `<a href="${escapeHtml(route.url)}" target="_blank" rel="noopener">${escapeHtml(route.url)}</a>` +
+      (provName ? ` <span class="muted">(${escapeHtml(provName)})</span>` : '')));
+  }
+  if (instagram) rows.push(row('Instagram',
+    `<a href="${escapeHtml(instagram)}" target="_blank" rel="noopener">${escapeHtml(instagram)}</a>`));
+  if (announce) {
+    rows.push(row('Anúncio',
+      `<a href="${escapeHtml(announce)}" target="_blank" rel="noopener"><img src="${escapeHtml(announce)}" alt="anúncio" class="tour-announce-img"></a>`));
+  }
+  if (authors.length)   rows.push(row('Autoras',  authors.map(escapeHtml).join(', ')));
+  if (providers.length) rows.push(row('Quem subiu', providers.map(escapeHtml).join(', ')));
+
+  // Métricas — só mostra se tiver pelo menos um valor.
+  const metricsParts = [];
+  if (attendees)  metricsParts.push(`${escapeHtml(attendees)} participantes`);
+  if (newcomers)  metricsParts.push(`${escapeHtml(newcomers)} iniciantes`);
+  if (energyEst)  metricsParts.push(`~${escapeHtml(energyEst.value)} kJ${energyEst.class ? ` <span class="muted">(${escapeHtml(energyEst.class)})</span>` : ''}`);
+  if (metricsParts.length) rows.push(row('Métricas estimadas', metricsParts.join(' · ')));
+
+  const realParts = [];
+  if (departed) realParts.push(`Partiu ${escapeHtml(fmtDate(departed))}`);
+  if (arrived)  realParts.push(`Chegou ${escapeHtml(fmtDate(arrived))}`);
+  if (moving)   realParts.push(`Movimento ${escapeHtml(fmtDuration(moving))}`);
+  if (energyMeas) realParts.push(`${escapeHtml(energyMeas.value)} kJ medidos`);
+  if (hadBonde === 'true') realParts.push('🚇 bonde');
+  if (hadRain  === 'true') realParts.push('🌧️ choveu');
+  if (realParts.length) rows.push(row('Métricas reais', realParts.join(' · ')));
+
+  if (incidents.length) {
+    rows.push(row('Incidentes',
+      `<ul class="tour-incidents">${incidents.map(i => `<li>${escapeHtml(i)}</li>`).join('')}</ul>`));
+  }
+  if (description) {
+    rows.push(row('Narrativa', `<div class="tour-narrative">${escapeHtml(description).replace(/\n/g, '<br>')}</div>`));
+  }
+
+  return `<dl class="tour-summary">${rows.join('')}</dl>`;
+}
+
 function openRouteModal(id) {
   const r = routes.get(id);
   if (!r) return;
@@ -4150,6 +4376,7 @@ function openRouteModal(id) {
 
   const entry = r.entry;
   const numberLabel = formatNumbers(entry);
+  const tourId = _tourIdFromIri(entry.tourIri);
 
   routeModalTitle.textContent = buildLabel(entry);
 
@@ -4161,7 +4388,12 @@ function openRouteModal(id) {
   );
   if (Array.isArray(entry.latlngs) && entry.latlngs.length >= 2) {
     metaParts.push(
-      `<button type="button" class="linkbtn edit-route-btn" data-route-id="${escapeHtml(entry.tourIri || entry.id)}">Editar este traçado ✎</button>`,
+      `<button type="button" class="linkbtn edit-route-btn">Editar este traçado ✎</button>`,
+    );
+  }
+  if (tourId) {
+    metaParts.push(
+      `<a class="linkbtn" href="./upload_tour.html?id=${encodeURIComponent(tourId)}" target="_blank">Editar passeio ✎</a>`,
     );
   }
   routeModalMeta.innerHTML = metaParts.join(' · ');
@@ -4170,25 +4402,19 @@ function openRouteModal(id) {
     editEntryInDrawingTool(entry);
   });
 
-  const ig = parseInstagramUrl(entry.igPost);
-  if (ig) {
-    routeModalIG.innerHTML = `
-      <iframe
-        class="ig-embed"
-        src="${ig.embedUrl}"
-        loading="lazy"
-        allow="encrypted-media"
-        allowtransparency="true"
-        allowfullscreen
-        scrolling="auto"
-        frameborder="0"></iframe>
-    `;
-  } else if (entry.igPost) {
-    routeModalIG.innerHTML = `
-      <p class="muted">Could not parse Instagram URL: <code>${escapeHtml(entry.igPost)}</code></p>
-    `;
+  // Resumo do passeio: view legível a partir de tours.ttl. Sem tour vinculado,
+  // mostra placeholder.
+  if (tourId) {
+    routeModalSummary.innerHTML = `<p class="muted">carregando…</p>`;
+    const reqId = tourId;
+    _renderTourSummary(tourId).then((html) => {
+      // Evita corrida se o usuário trocou de modal antes da resposta.
+      if (_tourIdFromIri(routes.get(id)?.entry?.tourIri) !== reqId) return;
+      routeModalSummary.innerHTML = html;
+    });
   } else {
-    routeModalIG.innerHTML = `<p class="muted">No Instagram post linked for this route.</p>`;
+    routeModalSummary.innerHTML =
+      `<p class="muted">Sem Tour vinculado a esta rota — provavelmente importação legada.</p>`;
   }
 
   renderRoutePhotos(entry);
@@ -4197,26 +4423,10 @@ function openRouteModal(id) {
 
 function closeRouteModal() {
   routeModal.hidden = true;
-  routeModalIG.innerHTML = ''; // stop the iframe loading
+  routeModalSummary.innerHTML = '';
   document.getElementById('route-modal-photos').innerHTML = '';
 }
 
-// Accept full URLs to instagram posts/reels/IGTV; return embed URL.
-function parseInstagramUrl(raw) {
-  if (!raw) return null;
-  const s = String(raw).trim();
-  // shortcode capture (post types: p, reel, reels, tv)
-  const m = s.match(/instagram\.com\/(p|reel|reels|tv)\/([A-Za-z0-9_-]+)/i);
-  if (!m) return null;
-  const type = m[1].toLowerCase() === 'reels' ? 'reel' : m[1].toLowerCase();
-  const code = m[2];
-  return {
-    type,
-    code,
-    url: `https://www.instagram.com/${type}/${code}/`,
-    embedUrl: `https://www.instagram.com/${type}/${code}/embed`,
-  };
-}
 
 // Popup links (rendered in Leaflet popup) need delegation since they're
 // detached from the document until popupopen.
