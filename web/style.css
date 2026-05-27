@@ -597,6 +597,21 @@ body.header-hidden .topbar { display: none; }
   border: 1px solid var(--border);
   display: block;
 }
+/* Anúncio como hero no topo do summary do passeio (acima do <dl> de
+   metadados). Mais visível que a versão antiga embutida na lista. */
+.tour-announce-hero {
+  display: block;
+  margin: 0 0 12px;
+}
+.tour-announce-hero img {
+  display: block;
+  width: 100%;
+  max-height: 360px;
+  object-fit: contain;
+  background: var(--surface);
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}
 .tour-incidents {
   margin: 0;
   padding-left: 18px;

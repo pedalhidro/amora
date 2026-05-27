@@ -1,5 +1,4 @@
 @prefix dcterms: <http://purl.org/dc/terms/> .
-@prefix pav: <http://purl.org/pav/> .
 @prefix ph: <https://pedalhidrografi.co/terms#> .
 @prefix phd: <https://pedalhidrografi.co/data/> .
 @prefix prov: <http://www.w3.org/ns/prov#> .
@@ -22,7 +21,8 @@ phd:tour_1 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/49272936> ] ;
-    ph:mediaCount 2 .
+    ph:mediaCount 2 ;
+    ph:movingDuration "PT1H"^^xsd:duration .
 
 phd:tour_10 a ph:Tour ;
     dcterms:date "2024-11-02T00:00:00-03:00"^^xsd:dateTime ;
@@ -40,7 +40,8 @@ phd:tour_10 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/49195458> ] ;
-    ph:mediaCount 467 .
+    ph:mediaCount 467 ;
+    ph:movingDuration "PT3H30M"^^xsd:duration .
 
 phd:tour_100 a ph:Tour ;
     dcterms:date "2026-05-09T20:00:00-03:00"^^xsd:dateTime ;
@@ -49,6 +50,7 @@ phd:tour_100 a ph:Tour ;
         phd:pessoaDandan,
         phd:pessoaGiovanna,
         phd:pessoaGmard ;
+    ph:arrivedAt "2026-05-10T00:00:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 13 ;
     ph:countNewcomer 2 ;
     ph:energyEstimate [ a qudt:QuantityValue ;
@@ -66,6 +68,7 @@ phd:tour_101 a ph:Tour ;
     dcterms:title "Crista do Lauzane, subir Água Fria e duas vilas escondidas" ;
     prov:wasAttributedTo phd:pessoaAlef,
         phd:pessoaGabrieltunes ;
+    ph:arrivedAt "2026-05-14T00:00:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 7 ;
     ph:countNewcomer 1 ;
     ph:energyEstimate [ a qudt:QuantityValue ;
@@ -82,7 +85,8 @@ phd:tour_102 a ph:Tour ;
     dcterms:date "2026-05-20T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Ziguezaguear a Crista do Morumbi" ;
     prov:wasAttributedTo phd:pessoaGabrieltunes ;
-    ph:countAttendee 0 ;
+    ph:arrivedAt "2026-05-21T00:00:00-03:00"^^xsd:dateTime ;
+    ph:countAttendee 7 ;
     ph:countNewcomer 0 ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
@@ -109,7 +113,8 @@ phd:tour_11 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/48970565> ] ;
-    ph:mediaCount 50 .
+    ph:mediaCount 50 ;
+    ph:movingDuration "PT1H43M"^^xsd:duration .
 
 phd:tour_12 a ph:Tour ;
     dcterms:date "2024-11-09T20:00:00-03:00"^^xsd:dateTime ;
@@ -125,14 +130,17 @@ phd:tour_12 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/49005652> ] ;
-    ph:mediaCount 222 .
+    ph:mediaCount 222 ;
+    ph:movingDuration "PT5H20M"^^xsd:duration .
 
 phd:tour_13 a ph:Tour ;
     dcterms:date "2024-11-12T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Margens Ocidentais do Baixo Ipiranga" ;
     prov:wasAttributedTo phd:pessoaDandan ;
+    ph:arrivedAt "2024-11-12T22:25:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 4 ;
     ph:countNewcomer 1 ;
+    ph:departedAt "2024-11-12T20:03:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 260.0 ;
@@ -142,14 +150,17 @@ phd:tour_13 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/49029471> ] ;
-    ph:mediaCount 79 .
+    ph:mediaCount 79 ;
+    ph:movingDuration "PT1H19M"^^xsd:duration .
 
 phd:tour_14 a ph:Tour ;
     dcterms:date "2024-11-19T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Margens Destras do Baixo Jaguaré" ;
     prov:wasAttributedTo phd:pessoaDandan ;
+    ph:arrivedAt "2024-11-19T22:17:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 1 ;
     ph:countNewcomer 0 ;
+    ph:departedAt "2024-11-19T20:21:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 523.0 ;
@@ -159,7 +170,8 @@ phd:tour_14 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/49272870> ] ;
-    ph:mediaCount 42 .
+    ph:mediaCount 42 ;
+    ph:movingDuration "PT1H52M"^^xsd:duration .
 
 phd:tour_15 a ph:Tour ;
     dcterms:date "2024-11-20T00:00:00-03:00"^^xsd:dateTime ;
@@ -172,7 +184,8 @@ phd:tour_15 a ph:Tour ;
             qudt:numericValue 520.0 ;
             ph:intensityClassification "Frito" ] ;
     ph:inSeriesEdition phd:assoc_BP_1 ;
-    ph:mediaCount 2 .
+    ph:mediaCount 2 ;
+    ph:movingDuration "PT3H"^^xsd:duration .
 
 phd:tour_16 a ph:Tour ;
     dcterms:date "2024-11-22T00:00:00-03:00"^^xsd:dateTime ;
@@ -188,14 +201,17 @@ phd:tour_16 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/49272881> ] ;
-    ph:mediaCount 16 .
+    ph:mediaCount 16 ;
+    ph:movingDuration "PT3H6M"^^xsd:duration .
 
 phd:tour_17 a ph:Tour ;
     dcterms:date "2024-11-23T00:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Parelheiros" ;
     prov:wasAttributedTo phd:pessoaDandan ;
+    ph:arrivedAt "2024-11-23T16:36:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 8 ;
     ph:countNewcomer 3 ;
+    ph:departedAt "2024-11-23T08:13:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 789.0 ;
@@ -205,14 +221,17 @@ phd:tour_17 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/49106874> ] ;
-    ph:mediaCount 227 .
+    ph:mediaCount 227 ;
+    ph:movingDuration "PT3H15M"^^xsd:duration .
 
 phd:tour_18 a ph:Tour ;
     dcterms:date "2024-11-26T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Água Preta e Tiburtino" ;
     prov:wasAttributedTo phd:pessoaThiagoneves ;
+    ph:arrivedAt "2024-11-26T22:36:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 8 ;
     ph:countNewcomer 1 ;
+    ph:departedAt "2024-11-26T20:36:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 260.0 ;
@@ -222,14 +241,17 @@ phd:tour_18 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/51086192> ] ;
-    ph:mediaCount 66 .
+    ph:mediaCount 66 ;
+    ph:movingDuration "PT1H"^^xsd:duration .
 
 phd:tour_19 a ph:Tour ;
     dcterms:date "2024-11-30T00:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Paranapiacaba com Cachoeira" ;
     prov:wasAttributedTo phd:pessoaTrilheiro ;
+    ph:arrivedAt "2024-11-30T19:16:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 6 ;
     ph:countNewcomer 3 ;
+    ph:departedAt "2024-11-30T07:46:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 850.0 ;
@@ -239,7 +261,8 @@ phd:tour_19 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/49272926> ] ;
-    ph:mediaCount 103 .
+    ph:mediaCount 103 ;
+    ph:movingDuration "PT5H36M"^^xsd:duration .
 
 phd:tour_2 a ph:Tour ;
     dcterms:date "2024-09-16T20:00:00-03:00"^^xsd:dateTime ;
@@ -255,14 +278,17 @@ phd:tour_2 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/49272970> ] ;
-    ph:mediaCount 6 .
+    ph:mediaCount 6 ;
+    ph:movingDuration "PT52M"^^xsd:duration .
 
 phd:tour_20 a ph:Tour ;
     dcterms:date "2024-12-03T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Contornar Iquirim e um pouco do Pirajuçara" ;
     prov:wasAttributedTo phd:pessoaDandan ;
+    ph:arrivedAt "2024-12-04T00:29:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 9 ;
     ph:countNewcomer 4 ;
+    ph:departedAt "2024-12-03T20:29:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 400.0 ;
@@ -272,7 +298,8 @@ phd:tour_20 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/49182910> ] ;
-    ph:mediaCount 62 .
+    ph:mediaCount 62 ;
+    ph:movingDuration "PT2H30M"^^xsd:duration .
 
 phd:tour_21 a ph:Tour ;
     dcterms:date "2024-12-06T00:00:00-03:00"^^xsd:dateTime ;
@@ -288,14 +315,17 @@ phd:tour_21 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/49272994> ] ;
-    ph:mediaCount 11 .
+    ph:mediaCount 11 ;
+    ph:movingDuration "PT1H40M"^^xsd:duration .
 
 phd:tour_22 a ph:Tour ;
     dcterms:date "2024-12-10T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Nascentes da Brasilândia" ;
     prov:wasAttributedTo phd:pessoaDandan ;
+    ph:arrivedAt "2024-12-10T22:23:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 3 ;
     ph:countNewcomer 1 ;
+    ph:departedAt "2024-12-10T20:33:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 330.0 ;
@@ -305,7 +335,8 @@ phd:tour_22 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/49225969> ] ;
-    ph:mediaCount 58 .
+    ph:mediaCount 58 ;
+    ph:movingDuration "PT1H20M"^^xsd:duration .
 
 phd:tour_23 a ph:Tour ;
     dcterms:date "2024-12-13T00:00:00-03:00"^^xsd:dateTime ;
@@ -321,14 +352,17 @@ phd:tour_23 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/49195254> ] ;
-    ph:mediaCount 70 .
+    ph:mediaCount 70 ;
+    ph:movingDuration "PT2H35M"^^xsd:duration .
 
 phd:tour_24 a ph:Tour ;
     dcterms:date "2024-12-17T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Águas de Pinheiros" ;
     prov:wasAttributedTo phd:pessoaDandan ;
+    ph:arrivedAt "2024-12-18T00:12:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 13 ;
     ph:countNewcomer 2 ;
+    ph:departedAt "2024-12-17T20:17:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 436.0 ;
@@ -338,14 +372,17 @@ phd:tour_24 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/49267352> ] ;
-    ph:mediaCount 114 .
+    ph:mediaCount 114 ;
+    ph:movingDuration "PT2H15M"^^xsd:duration .
 
 phd:tour_25 a ph:Tour ;
     dcterms:date "2025-01-07T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Verde, Anhanguera e Sapateiro" ;
     prov:wasAttributedTo phd:pessoaAnaju ;
+    ph:arrivedAt "2025-01-07T23:46:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 12 ;
     ph:countNewcomer 8 ;
+    ph:departedAt "2025-01-07T20:16:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 271.0 ;
@@ -355,14 +392,17 @@ phd:tour_25 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/49195396> ] ;
-    ph:mediaCount 28 .
+    ph:mediaCount 28 ;
+    ph:movingDuration "PT2H"^^xsd:duration .
 
 phd:tour_26 a ph:Tour ;
     dcterms:date "2025-01-14T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Contornar Pacaembu e Sumaré" ;
     prov:wasAttributedTo phd:pessoaAnaju ;
+    ph:arrivedAt "2025-01-14T23:36:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 22 ;
     ph:countNewcomer 1 ;
+    ph:departedAt "2025-01-14T20:36:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 370.0 ;
@@ -372,7 +412,8 @@ phd:tour_26 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/48970565> ] ;
-    ph:mediaCount 41 .
+    ph:mediaCount 41 ;
+    ph:movingDuration "PT2H"^^xsd:duration .
 
 phd:tour_27 a ph:Tour ;
     dcterms:date "2025-01-19T00:00:00-03:00"^^xsd:dateTime ;
@@ -388,14 +429,17 @@ phd:tour_27 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/48691963> ] ;
-    ph:mediaCount 56 .
+    ph:mediaCount 56 ;
+    ph:movingDuration "PT2H50M"^^xsd:duration .
 
 phd:tour_28 a ph:Tour ;
     dcterms:date "2025-01-21T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Crista de Sapopema" ;
     prov:wasAttributedTo phd:pessoaDandan ;
+    ph:arrivedAt "2025-01-21T23:24:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 12 ;
     ph:countNewcomer 7 ;
+    ph:departedAt "2025-01-21T20:24:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 441.0 ;
@@ -404,14 +448,17 @@ phd:tour_28 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/49510455> ] ;
-    ph:mediaCount 48 .
+    ph:mediaCount 48 ;
+    ph:movingDuration "PT2H6M"^^xsd:duration .
 
 phd:tour_29 a ph:Tour ;
     dcterms:date "2025-01-28T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Contornar Anhangabaú" ;
     prov:wasAttributedTo phd:pessoaDandan ;
+    ph:arrivedAt "2025-01-28T22:50:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 5 ;
     ph:countNewcomer 1 ;
+    ph:departedAt "2025-01-28T20:20:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 340.0 ;
@@ -420,7 +467,8 @@ phd:tour_29 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/49567136> ] ;
-    ph:mediaCount 7 .
+    ph:mediaCount 7 ;
+    ph:movingDuration "PT1H40M"^^xsd:duration .
 
 phd:tour_3 a ph:Tour ;
     dcterms:date "2024-09-23T20:00:00-03:00"^^xsd:dateTime ;
@@ -436,14 +484,17 @@ phd:tour_3 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/49272915> ] ;
-    ph:mediaCount 7 .
+    ph:mediaCount 7 ;
+    ph:movingDuration "PT1H"^^xsd:duration .
 
 phd:tour_30 a ph:Tour ;
     dcterms:date "2025-02-04T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Pirajuçara, Água Podre e Crista de Osasco" ;
     prov:wasAttributedTo phd:pessoaDandan ;
+    ph:arrivedAt "2025-02-05T00:19:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 15 ;
     ph:countNewcomer 5 ;
+    ph:departedAt "2025-02-04T20:49:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 292.0 ;
@@ -452,14 +503,17 @@ phd:tour_30 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/49567174> ] ;
-    ph:mediaCount 132 .
+    ph:mediaCount 132 ;
+    ph:movingDuration "PT1H40M"^^xsd:duration .
 
 phd:tour_31 a ph:Tour ;
     dcterms:date "2025-02-11T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Cabeceiras do Ipiranga" ;
     prov:wasAttributedTo phd:pessoaDandan ;
+    ph:arrivedAt "2025-02-11T22:50:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 26 ;
     ph:countNewcomer 17 ;
+    ph:departedAt "2025-02-11T20:10:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 291.0 ;
@@ -468,14 +522,17 @@ phd:tour_31 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/49671673> ] ;
-    ph:mediaCount 45 .
+    ph:mediaCount 45 ;
+    ph:movingDuration "PT1H30M"^^xsd:duration .
 
 phd:tour_32 a ph:Tour ;
     dcterms:date "2025-02-25T19:30:00-03:00"^^xsd:dateTime ;
     dcterms:title "Sertões do Mandaqui" ;
     prov:wasAttributedTo phd:pessoaDandan ;
+    ph:arrivedAt "2025-02-25T23:21:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 12 ;
     ph:countNewcomer 1 ;
+    ph:departedAt "2025-02-25T20:06:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 307.0 ;
@@ -484,14 +541,17 @@ phd:tour_32 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/49741245> ] ;
-    ph:mediaCount 87 .
+    ph:mediaCount 87 ;
+    ph:movingDuration "PT1H51M"^^xsd:duration .
 
 phd:tour_33 a ph:Tour ;
     dcterms:date "2025-03-11T19:30:00-03:00"^^xsd:dateTime ;
     dcterms:title "Águas do Lavapés e Aclimação" ;
     prov:wasAttributedTo phd:pessoaDandan ;
+    ph:arrivedAt "2025-03-11T21:35:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 4 ;
     ph:countNewcomer 0 ;
+    ph:departedAt "2025-03-11T20:00:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 206.0 ;
@@ -500,14 +560,17 @@ phd:tour_33 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/49924264> ] ;
-    ph:mediaCount 83 .
+    ph:mediaCount 83 ;
+    ph:movingDuration "PT1H7M"^^xsd:duration .
 
 phd:tour_34 a ph:Tour ;
     dcterms:date "2025-03-26T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Águas Meridionais de Osasco" ;
     prov:wasAttributedTo phd:pessoaDandan ;
+    ph:arrivedAt "2025-03-26T23:10:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 8 ;
     ph:countNewcomer 0 ;
+    ph:departedAt "2025-03-26T20:15:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 363.0 ;
@@ -516,14 +579,17 @@ phd:tour_34 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/49999355> ] ;
-    ph:mediaCount 75 .
+    ph:mediaCount 75 ;
+    ph:movingDuration "PT1H46M"^^xsd:duration .
 
 phd:tour_35 a ph:Tour ;
     dcterms:date "2025-04-01T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Subir Pirituba, Surfar Alpes do Jaraguá e Descer Perus" ;
     prov:wasAttributedTo phd:pessoaDandan ;
+    ph:arrivedAt "2025-04-01T22:35:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 8 ;
     ph:countNewcomer 2 ;
+    ph:departedAt "2025-04-01T20:25:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 323.0 ;
@@ -532,15 +598,18 @@ phd:tour_35 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/50150417> ] ;
-    ph:mediaCount 99 .
+    ph:mediaCount 99 ;
+    ph:movingDuration "PT1H30M"^^xsd:duration .
 
 phd:tour_36 a ph:Tour ;
     dcterms:date "2025-04-08T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Tiquatira da Foz à Nascente" ;
     prov:wasAttributedTo phd:pessoaDandan,
         phd:pessoaThiagoneves ;
+    ph:arrivedAt "2025-04-08T23:26:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 12 ;
     ph:countNewcomer 3 ;
+    ph:departedAt "2025-04-08T20:51:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 294.0 ;
@@ -549,7 +618,8 @@ phd:tour_36 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/50149484> ] ;
-    ph:mediaCount 67 .
+    ph:mediaCount 67 ;
+    ph:movingDuration "PT1H36M"^^xsd:duration .
 
 phd:tour_37 a ph:Tour ;
     dcterms:date "2025-04-13T08:00:00-03:00"^^xsd:dateTime ;
@@ -567,15 +637,18 @@ phd:tour_37 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/49100612> ] ;
-    ph:mediaCount 172 .
+    ph:mediaCount 172 ;
+    ph:movingDuration "PT3H10M"^^xsd:duration .
 
 phd:tour_38 a ph:Tour ;
     dcterms:date "2025-04-15T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Moinho Velho A Outra Margem do Ipiranga" ;
     prov:wasAttributedTo phd:pessoaDandan,
         phd:pessoaPedpaula ;
+    ph:arrivedAt "2025-04-15T23:33:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 10 ;
     ph:countNewcomer 4 ;
+    ph:departedAt "2025-04-15T20:25:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 314.0 ;
@@ -584,15 +657,18 @@ phd:tour_38 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/50331319> ] ;
-    ph:mediaCount 70 .
+    ph:mediaCount 70 ;
+    ph:movingDuration "PT1H55M"^^xsd:duration .
 
 phd:tour_39 a ph:Tour ;
     dcterms:date "2025-04-22T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Crista do Campo Limpo via Corveta-Camacuã" ;
     prov:wasAttributedTo phd:pessoaAmarmo,
         phd:pessoaDandan ;
+    ph:arrivedAt "2025-04-22T23:26:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 14 ;
     ph:countNewcomer 4 ;
+    ph:departedAt "2025-04-22T20:20:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 351.0 ;
@@ -601,7 +677,8 @@ phd:tour_39 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/50411729> ] ;
-    ph:mediaCount 52 .
+    ph:mediaCount 52 ;
+    ph:movingDuration "PT1H48M"^^xsd:duration .
 
 phd:tour_4 a ph:Tour ;
     dcterms:date "2024-10-01T20:00:00-03:00"^^xsd:dateTime ;
@@ -617,15 +694,18 @@ phd:tour_4 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/49195385> ] ;
-    ph:mediaCount 43 .
+    ph:mediaCount 43 ;
+    ph:movingDuration "PT1H30M"^^xsd:duration .
 
 phd:tour_40 a ph:Tour ;
     dcterms:date "2025-05-06T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Os Vales Secos do Tietê dos Remédios à Osasco" ;
     prov:wasAttributedTo phd:pessoaDandan,
         phd:pessoaPedpaula ;
+    ph:arrivedAt "2025-05-06T23:28:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 12 ;
     ph:countNewcomer 4 ;
+    ph:departedAt "2025-05-06T20:19:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 316.0 ;
@@ -635,7 +715,8 @@ phd:tour_40 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/50480798> ] ;
-    ph:mediaCount 112 .
+    ph:mediaCount 112 ;
+    ph:movingDuration "PT1H39M"^^xsd:duration .
 
 phd:tour_41 a ph:Tour ;
     dcterms:date "2025-05-14T20:00:00-03:00"^^xsd:dateTime ;
@@ -651,8 +732,10 @@ phd:tour_42 a ph:Tour ;
     dcterms:date "2025-05-20T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Sertões de Pirituba 2 Margem Esquerda do Verde e Alto do Morro Grande" ;
     prov:wasAttributedTo phd:pessoaDandan ;
+    ph:arrivedAt "2025-05-20T23:26:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 9 ;
     ph:countNewcomer 1 ;
+    ph:departedAt "2025-05-20T20:14:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 424.0 ;
@@ -662,14 +745,17 @@ phd:tour_42 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/50844953> ] ;
-    ph:mediaCount 123 .
+    ph:mediaCount 123 ;
+    ph:movingDuration "PT1H31M"^^xsd:duration .
 
 phd:tour_43 a ph:Tour ;
     dcterms:date "2025-05-27T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Pontos de Sela do Centro-Norte" ;
     prov:wasAttributedTo phd:pessoaDandan ;
+    ph:arrivedAt "2025-05-27T23:07:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 13 ;
     ph:countNewcomer 1 ;
+    ph:departedAt "2025-05-27T20:35:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 317.0 ;
@@ -679,28 +765,34 @@ phd:tour_43 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/50957749> ] ;
-    ph:mediaCount 91 .
+    ph:mediaCount 91 ;
+    ph:movingDuration "PT1H48M"^^xsd:duration .
 
 phd:tour_44 a ph:Tour ;
     dcterms:date "2025-06-01T07:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Cânions da Brasilandia" ;
     prov:wasAttributedTo phd:pessoaThiagoneves ;
+    ph:arrivedAt "2025-06-01T14:34:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 4 ;
     ph:countNewcomer 0 ;
+    ph:departedAt "2025-06-01T07:34:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 650.0 ;
             ph:intensityClassification "Frito" ] ;
     ph:inSeriesEdition phd:assoc_S_4 ;
-    ph:mediaCount 185 .
+    ph:mediaCount 185 ;
+    ph:movingDuration "PT2H20M"^^xsd:duration .
 
 phd:tour_45 a ph:Tour ;
     dcterms:date "2025-06-03T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Água Espraiada da Foz à Nascente" ;
     prov:wasAttributedTo phd:pessoaAlef,
         phd:pessoaDandan ;
+    ph:arrivedAt "2025-06-03T23:07:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 9 ;
     ph:countNewcomer 3 ;
+    ph:departedAt "2025-06-03T20:26:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 280.0 ;
@@ -710,14 +802,17 @@ phd:tour_45 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/50943723> ] ;
-    ph:mediaCount 125 .
+    ph:mediaCount 125 ;
+    ph:movingDuration "PT1H32M"^^xsd:duration .
 
 phd:tour_46 a ph:Tour ;
     dcterms:date "2025-06-10T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Crista da Mooca e Médio-Alto Oratório" ;
     prov:wasAttributedTo phd:pessoaDandan ;
+    ph:arrivedAt "2025-06-10T23:45:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 13 ;
     ph:countNewcomer 5 ;
+    ph:departedAt "2025-06-10T20:38:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 399.0 ;
@@ -727,7 +822,8 @@ phd:tour_46 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/51051113> ] ;
-    ph:mediaCount 110 .
+    ph:mediaCount 110 ;
+    ph:movingDuration "PT2H6M"^^xsd:duration .
 
 phd:tour_47 a ph:Tour ;
     dcterms:date "2025-06-17T20:00:00-03:00"^^xsd:dateTime ;
@@ -735,6 +831,7 @@ phd:tour_47 a ph:Tour ;
     prov:wasAttributedTo phd:pessoaAlef,
         phd:pessoaDandan,
         phd:pessoaGmard ;
+    ph:arrivedAt "2025-06-18T03:03:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 16 ;
     ph:countNewcomer 0 ;
     ph:energyEstimate [ a qudt:QuantityValue ;
@@ -746,15 +843,18 @@ phd:tour_47 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/51282559> ] ;
-    ph:mediaCount 77 .
+    ph:mediaCount 77 ;
+    ph:movingDuration "PT2H"^^xsd:duration .
 
 phd:tour_48 a ph:Tour ;
     dcterms:date "2025-06-24T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Carapicuíba duma nascente à foz, vindo do espigão da usp e alto jaguaré" ;
     prov:wasAttributedTo phd:pessoaDandan,
         phd:pessoaMicaelrodrigues ;
+    ph:arrivedAt "2025-06-24T23:38:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 12 ;
     ph:countNewcomer 3 ;
+    ph:departedAt "2025-06-24T20:52:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 349.0 ;
@@ -764,15 +864,18 @@ phd:tour_48 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/51391185> ] ;
-    ph:mediaCount 81 .
+    ph:mediaCount 81 ;
+    ph:movingDuration "PT1H52M"^^xsd:duration .
 
 phd:tour_49 a ph:Tour ;
     dcterms:date "2025-07-01T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Riacho do Divisor ao Baquivu-guaçu pelos sopés da Serra do Bananal" ;
     prov:wasAttributedTo phd:pessoaBrunabom,
         phd:pessoaDandan ;
+    ph:arrivedAt "2025-07-01T22:44:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 10 ;
     ph:countNewcomer 1 ;
+    ph:departedAt "2025-07-01T20:20:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 385.0 ;
@@ -782,7 +885,11 @@ phd:tour_49 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/51486572> ] ;
-    ph:mediaCount 115 .
+    ph:measuredEnergy [ a qudt:QuantityValue ;
+            qudt:hasUnit unit:KiloJ ;
+            qudt:numericValue 421.0 ] ;
+    ph:mediaCount 115 ;
+    ph:movingDuration "PT1H44M"^^xsd:duration .
 
 phd:tour_5 a ph:Tour ;
     dcterms:date "2024-10-08T20:00:00-03:00"^^xsd:dateTime ;
@@ -798,15 +905,18 @@ phd:tour_5 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/49195389> ] ;
-    ph:mediaCount 63 .
+    ph:mediaCount 63 ;
+    ph:movingDuration "PT1H30M"^^xsd:duration .
 
 phd:tour_50 a ph:Tour ;
     dcterms:date "2025-07-08T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Foz dos Meninos à Foz do Zavuvus pelo Riacho do Taboão e o desmorrodouro do Caaguaçu" ;
     prov:wasAttributedTo phd:pessoaAlef,
         phd:pessoaDandan ;
+    ph:arrivedAt "2025-07-08T23:29:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 9 ;
     ph:countNewcomer 0 ;
+    ph:departedAt "2025-07-08T20:26:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 393.0 ;
@@ -816,7 +926,11 @@ phd:tour_50 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/51588263> ] ;
-    ph:mediaCount 77 .
+    ph:measuredEnergy [ a qudt:QuantityValue ;
+            qudt:hasUnit unit:KiloJ ;
+            qudt:numericValue 482.0 ] ;
+    ph:mediaCount 77 ;
+    ph:movingDuration "PT1H55M"^^xsd:duration .
 
 phd:tour_51 a ph:Tour ;
     dcterms:date "2025-07-15T20:00:00-03:00"^^xsd:dateTime ;
@@ -824,8 +938,10 @@ phd:tour_51 a ph:Tour ;
     prov:wasAttributedTo phd:pessoaAlef,
         phd:pessoaDandan,
         phd:pessoaGmard ;
+    ph:arrivedAt "2025-07-16T00:01:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 11 ;
     ph:countNewcomer 1 ;
+    ph:departedAt "2025-07-15T20:32:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 380.0 ;
@@ -835,7 +951,11 @@ phd:tour_51 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/51701965> ] ;
-    ph:mediaCount 64 .
+    ph:measuredEnergy [ a qudt:QuantityValue ;
+            qudt:hasUnit unit:KiloJ ;
+            qudt:numericValue 415.0 ] ;
+    ph:mediaCount 64 ;
+    ph:movingDuration "PT2H12M"^^xsd:duration .
 
 phd:tour_52 a ph:Tour ;
     dcterms:date "2025-07-22T20:00:00-03:00"^^xsd:dateTime ;
@@ -843,8 +963,10 @@ phd:tour_52 a ph:Tour ;
     prov:wasAttributedTo phd:pessoaAlef,
         phd:pessoaDandan,
         phd:pessoaPedpaula ;
+    ph:arrivedAt "2025-07-22T22:55:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 32 ;
     ph:countNewcomer 17 ;
+    ph:departedAt "2025-07-22T20:24:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 280.0 ;
@@ -854,15 +976,21 @@ phd:tour_52 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/51812173> ] ;
-    ph:mediaCount 108 .
+    ph:measuredEnergy [ a qudt:QuantityValue ;
+            qudt:hasUnit unit:KiloJ ;
+            qudt:numericValue 220.0 ] ;
+    ph:mediaCount 108 ;
+    ph:movingDuration "PT1H16M"^^xsd:duration .
 
 phd:tour_53 a ph:Tour ;
     dcterms:date "2025-07-29T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Margens destras do Jaguaré, mirante da década de 40 e pastel de Oz" ;
     prov:wasAttributedTo phd:pessoaGiucuci,
         phd:pessoaThiagoneves ;
+    ph:arrivedAt "2025-07-29T23:11:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 26 ;
     ph:countNewcomer 3 ;
+    ph:departedAt "2025-07-29T20:15:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 337.0 ;
@@ -872,14 +1000,17 @@ phd:tour_53 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/51937044> ] ;
-    ph:mediaCount 123 .
+    ph:mediaCount 123 ;
+    ph:movingDuration "PT1H30M"^^xsd:duration .
 
 phd:tour_54 a ph:Tour ;
     dcterms:date "2025-08-03T08:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Sopés da Cantareira: Tremembé, Linha Verde e Piqueri" ;
     prov:wasAttributedTo phd:pessoaThiagoneves ;
+    ph:arrivedAt "2025-08-03T12:59:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 16 ;
     ph:countNewcomer 0 ;
+    ph:departedAt "2025-08-03T08:56:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 392.0 ;
@@ -889,14 +1020,20 @@ phd:tour_54 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/50737426> ] ;
-    ph:mediaCount 70 .
+    ph:measuredEnergy [ a qudt:QuantityValue ;
+            qudt:hasUnit unit:KiloJ ;
+            qudt:numericValue 462.0 ] ;
+    ph:mediaCount 70 ;
+    ph:movingDuration "PT2H"^^xsd:duration .
 
 phd:tour_55 a ph:Tour ;
     dcterms:date "2025-08-05T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Pontos de Sela da Média Leste" ;
     prov:wasAttributedTo phd:pessoaDandan ;
+    ph:arrivedAt "2025-08-05T23:24:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 11 ;
     ph:countNewcomer 4 ;
+    ph:departedAt "2025-08-05T20:25:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 381.0 ;
@@ -906,14 +1043,20 @@ phd:tour_55 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/52046213> ] ;
-    ph:mediaCount 109 .
+    ph:measuredEnergy [ a qudt:QuantityValue ;
+            qudt:hasUnit unit:KiloJ ;
+            qudt:numericValue 420.0 ] ;
+    ph:mediaCount 109 ;
+    ph:movingDuration "PT1H42M"^^xsd:duration .
 
 phd:tour_56 a ph:Tour ;
     dcterms:date "2025-08-12T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Subir Rio Uberaba, descer rio Cupucê" ;
     prov:wasAttributedTo phd:pessoaDandan ;
+    ph:arrivedAt "2025-08-12T23:15:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 7 ;
     ph:countNewcomer 1 ;
+    ph:departedAt "2025-08-12T20:20:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 360.0 ;
@@ -923,14 +1066,20 @@ phd:tour_56 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/52162083> ] ;
-    ph:mediaCount 65 .
+    ph:measuredEnergy [ a qudt:QuantityValue ;
+            qudt:hasUnit unit:KiloJ ;
+            qudt:numericValue 410.0 ] ;
+    ph:mediaCount 65 ;
+    ph:movingDuration "PT1H52M"^^xsd:duration .
 
 phd:tour_57 a ph:Tour ;
     dcterms:date "2025-08-19T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "O Itaquera" ;
     prov:wasAttributedTo phd:pessoaDandan ;
+    ph:arrivedAt "2025-08-19T22:50:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 3 ;
     ph:countNewcomer 0 ;
+    ph:departedAt "2025-08-19T20:28:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 373.0 ;
@@ -940,15 +1089,21 @@ phd:tour_57 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/52269074> ] ;
-    ph:mediaCount 76 .
+    ph:measuredEnergy [ a qudt:QuantityValue ;
+            qudt:hasUnit unit:KiloJ ;
+            qudt:numericValue 460.0 ] ;
+    ph:mediaCount 76 ;
+    ph:movingDuration "PT1H50M"^^xsd:duration .
 
 phd:tour_58 a ph:Tour ;
     dcterms:date "2025-08-26T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Rampa do Sapateiro, Uberaba e Traição" ;
     prov:wasAttributedTo phd:pessoaDandan,
         phd:pessoaGiucuci ;
+    ph:arrivedAt "2025-08-26T23:19:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 5 ;
     ph:countNewcomer 0 ;
+    ph:departedAt "2025-08-26T20:31:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 358.0 ;
@@ -958,7 +1113,11 @@ phd:tour_58 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/52165449> ] ;
-    ph:mediaCount 64 .
+    ph:measuredEnergy [ a qudt:QuantityValue ;
+            qudt:hasUnit unit:KiloJ ;
+            qudt:numericValue 430.0 ] ;
+    ph:mediaCount 64 ;
+    ph:movingDuration "PT2H4M"^^xsd:duration .
 
 phd:tour_59 a ph:Tour ;
     dcterms:date "2025-08-30T00:00:00-03:00"^^xsd:dateTime ;
@@ -971,7 +1130,11 @@ phd:tour_59 a ph:Tour ;
             qudt:numericValue 1200.0 ;
             ph:intensityClassification "Insano" ] ;
     ph:inSeriesEdition phd:assoc_S_5 ;
-    ph:mediaCount 321 .
+    ph:measuredEnergy [ a qudt:QuantityValue ;
+            qudt:hasUnit unit:KiloJ ;
+            qudt:numericValue 1500.0 ] ;
+    ph:mediaCount 321 ;
+    ph:movingDuration "PT4H8M"^^xsd:duration .
 
 phd:tour_6 a ph:Tour ;
     dcterms:date "2024-10-15T20:00:00-03:00"^^xsd:dateTime ;
@@ -984,15 +1147,18 @@ phd:tour_6 a ph:Tour ;
             qudt:numericValue 150.0 ;
             ph:intensityClassification "Ok" ] ;
     ph:inSeriesEdition phd:assoc_PH_6 ;
-    ph:mediaCount 11 .
+    ph:mediaCount 11 ;
+    ph:movingDuration "PT1H"^^xsd:duration .
 
 phd:tour_60 a ph:Tour ;
     dcterms:date "2025-09-02T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Contornar Paraisópolis" ;
     prov:wasAttributedTo phd:pessoaAlef,
         phd:pessoaDandan ;
+    ph:arrivedAt "2025-09-02T22:20:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 9 ;
     ph:countNewcomer 2 ;
+    ph:departedAt "2025-09-02T20:28:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 276.0 ;
@@ -1002,7 +1168,8 @@ phd:tour_60 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/52165232> ] ;
-    ph:mediaCount 15 .
+    ph:mediaCount 15 ;
+    ph:movingDuration "PT1H18M"^^xsd:duration .
 
 phd:tour_61 a ph:Tour ;
     dcterms:date "2025-09-09T20:00:00-03:00"^^xsd:dateTime ;
@@ -1010,8 +1177,10 @@ phd:tour_61 a ph:Tour ;
     prov:wasAttributedTo phd:pessoaAnaju,
         phd:pessoaDandan,
         phd:pessoaLume ;
+    ph:arrivedAt "2025-09-09T23:19:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 57 ;
     ph:countNewcomer 20 ;
+    ph:departedAt "2025-09-09T20:36:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 183.0 ;
@@ -1021,14 +1190,20 @@ phd:tour_61 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/49272936> ] ;
-    ph:mediaCount 213 .
+    ph:measuredEnergy [ a qudt:QuantityValue ;
+            qudt:hasUnit unit:KiloJ ;
+            qudt:numericValue 187.0 ] ;
+    ph:mediaCount 213 ;
+    ph:movingDuration "PT1H2M"^^xsd:duration .
 
 phd:tour_62 a ph:Tour ;
     dcterms:date "2025-09-16T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Ilhota da Guapira e Alto da Cangaíba" ;
     prov:wasAttributedTo phd:pessoaDandan ;
+    ph:arrivedAt "2025-09-16T23:34:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 9 ;
     ph:countNewcomer 3 ;
+    ph:departedAt "2025-09-16T20:26:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 400.0 ;
@@ -1038,14 +1213,20 @@ phd:tour_62 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/52653389> ] ;
-    ph:mediaCount 201 .
+    ph:measuredEnergy [ a qudt:QuantityValue ;
+            qudt:hasUnit unit:KiloJ ;
+            qudt:numericValue 430.0 ] ;
+    ph:mediaCount 201 ;
+    ph:movingDuration "PT1H58M"^^xsd:duration .
 
 phd:tour_63 a ph:Tour ;
     dcterms:date "2025-09-21T08:30:00-03:00"^^xsd:dateTime ;
     dcterms:title "O Trem e o Meteoro" ;
     prov:wasAttributedTo phd:pessoaDandan ;
+    ph:arrivedAt "2025-09-21T17:25:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 16 ;
     ph:countNewcomer 4 ;
+    ph:departedAt "2025-09-21T09:21:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 801.0 ;
@@ -1056,14 +1237,20 @@ phd:tour_63 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/52515917> ] ;
-    ph:mediaCount 466 .
+    ph:measuredEnergy [ a qudt:QuantityValue ;
+            qudt:hasUnit unit:KiloJ ;
+            qudt:numericValue 840.0 ] ;
+    ph:mediaCount 466 ;
+    ph:movingDuration "PT3H44M"^^xsd:duration .
 
 phd:tour_64 a ph:Tour ;
     dcterms:date "2025-09-24T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Os Três Sopés e a Ilhota de São João" ;
     prov:wasAttributedTo phd:pessoaDandan ;
+    ph:arrivedAt "2025-09-24T23:07:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 8 ;
     ph:countNewcomer 0 ;
+    ph:departedAt "2025-09-24T20:28:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 343.0 ;
@@ -1073,13 +1260,19 @@ phd:tour_64 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/52776083> ] ;
-    ph:mediaCount 179 .
+    ph:measuredEnergy [ a qudt:QuantityValue ;
+            qudt:hasUnit unit:KiloJ ;
+            qudt:numericValue 406.0 ] ;
+    ph:mediaCount 179 ;
+    ph:movingDuration "PT1H44M"^^xsd:duration .
 
 phd:tour_65 a ph:Tour ;
     dcterms:date "2025-09-30T20:30:00-03:00"^^xsd:dateTime ;
     dcterms:title "Rampa do Sapateiro, Uberaba e Traição" ;
+    ph:arrivedAt "2025-09-30T23:34:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 7 ;
     ph:countNewcomer 2 ;
+    ph:departedAt "2025-09-30T21:08:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 358.0 ;
@@ -1088,14 +1281,17 @@ phd:tour_65 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/52165449> ] ;
-    ph:mediaCount 31 .
+    ph:mediaCount 31 ;
+    ph:movingDuration "PT1H20M"^^xsd:duration .
 
 phd:tour_66 a ph:Tour ;
     dcterms:date "2025-10-07T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Bico do Caaguaçu" ;
     prov:wasAttributedTo phd:pessoaGmard ;
+    ph:arrivedAt "2025-10-07T22:56:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 6 ;
     ph:countNewcomer 1 ;
+    ph:departedAt "2025-10-07T20:17:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 387.0 ;
@@ -1105,15 +1301,18 @@ phd:tour_66 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/52939892> ] ;
-    ph:mediaCount 12 .
+    ph:mediaCount 12 ;
+    ph:movingDuration "PT1H30M"^^xsd:duration .
 
 phd:tour_67 a ph:Tour ;
     dcterms:date "2025-10-17T17:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Oakland: Lake Merritt Up and down stream with a diversion by the Sausal Canyon" ;
     prov:wasAttributedTo phd:pessoaDandan,
         phd:pessoaDelaram ;
+    ph:arrivedAt "2025-10-17T22:13:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 36 ;
     ph:countNewcomer 33 ;
+    ph:departedAt "2025-10-17T17:39:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 416.0 ;
@@ -1123,7 +1322,11 @@ phd:tour_67 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/52981759> ] ;
-    ph:mediaCount 165 .
+    ph:measuredEnergy [ a qudt:QuantityValue ;
+            qudt:hasUnit unit:KiloJ ;
+            qudt:numericValue 707.0 ] ;
+    ph:mediaCount 165 ;
+    ph:movingDuration "PT2H3M"^^xsd:duration .
 
 phd:tour_68 a ph:Tour ;
     dcterms:date "2025-10-21T20:00:00-03:00"^^xsd:dateTime ;
@@ -1131,8 +1334,10 @@ phd:tour_68 a ph:Tour ;
     prov:wasAttributedTo phd:pessoaAlef,
         phd:pessoaGmard,
         phd:pessoaZito ;
+    ph:arrivedAt "2025-10-21T23:53:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 10 ;
     ph:countNewcomer 0 ;
+    ph:departedAt "2025-10-21T20:21:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 340.0 ;
@@ -1142,15 +1347,18 @@ phd:tour_68 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/51282559> ] ;
-    ph:mediaCount 55 .
+    ph:mediaCount 55 ;
+    ph:movingDuration "PT1H50M"^^xsd:duration .
 
 phd:tour_69 a ph:Tour ;
     dcterms:date "2025-10-26T07:30:00-03:00"^^xsd:dateTime ;
     dcterms:title "Cubatão e a Foz dos Pilões" ;
     prov:wasAttributedTo phd:pessoaDandan,
         phd:pessoaEricalatina ;
+    ph:arrivedAt "2025-10-26T17:38:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 40 ;
     ph:countNewcomer 25 ;
+    ph:departedAt "2025-10-26T07:38:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 694.0 ;
@@ -1160,7 +1368,8 @@ phd:tour_69 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/53123125> ] ;
-    ph:mediaCount 110 .
+    ph:mediaCount 110 ;
+    ph:movingDuration "PT4H38M"^^xsd:duration .
 
 phd:tour_7 a ph:Tour ;
     dcterms:date "2024-10-22T20:00:00-03:00"^^xsd:dateTime ;
@@ -1176,15 +1385,18 @@ phd:tour_7 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/49195396> ] ;
-    ph:mediaCount 56 .
+    ph:mediaCount 56 ;
+    ph:movingDuration "PT2H"^^xsd:duration .
 
 phd:tour_70 a ph:Tour ;
     dcterms:date "2025-10-28T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "O arco das cumeeiras do Caaguaçu" ;
     prov:wasAttributedTo phd:pessoaFetiche,
         phd:pessoaGmard ;
+    ph:arrivedAt "2025-10-28T23:41:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 5 ;
     ph:countNewcomer 0 ;
+    ph:departedAt "2025-10-28T20:29:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 392.0 ;
@@ -1194,14 +1406,20 @@ phd:tour_70 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/53113256> ] ;
-    ph:mediaCount 36 .
+    ph:measuredEnergy [ a qudt:QuantityValue ;
+            qudt:hasUnit unit:KiloJ ;
+            qudt:numericValue 428.0 ] ;
+    ph:mediaCount 36 ;
+    ph:movingDuration "PT2H22M"^^xsd:duration .
 
 phd:tour_71 a ph:Tour ;
     dcterms:date "2025-11-04T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Pontes da Ponte Rasa via Várzea do Carandiru e Baixo Cangaíba" ;
     prov:wasAttributedTo phd:pessoaDandan ;
+    ph:arrivedAt "2025-11-04T23:24:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 5 ;
     ph:countNewcomer 0 ;
+    ph:departedAt "2025-11-04T20:24:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 390.0 ;
@@ -1211,14 +1429,20 @@ phd:tour_71 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/53205838> ] ;
-    ph:mediaCount 159 .
+    ph:measuredEnergy [ a qudt:QuantityValue ;
+            qudt:hasUnit unit:KiloJ ;
+            qudt:numericValue 586.0 ] ;
+    ph:mediaCount 159 ;
+    ph:movingDuration "PT2H12M"^^xsd:duration .
 
 phd:tour_72 a ph:Tour ;
     dcterms:date "2025-11-11T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Pelos Alpes do Jaraguá ao Subir Rio Pirituba e descer Rio Perus" ;
     prov:wasAttributedTo phd:pessoaDandan ;
+    ph:arrivedAt "2025-11-11T22:17:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 9 ;
     ph:countNewcomer 1 ;
+    ph:departedAt "2025-11-11T20:21:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 306.0 ;
@@ -1228,14 +1452,20 @@ phd:tour_72 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/50150417> ] ;
-    ph:mediaCount 135 .
+    ph:measuredEnergy [ a qudt:QuantityValue ;
+            qudt:hasUnit unit:KiloJ ;
+            qudt:numericValue 324.0 ] ;
+    ph:mediaCount 135 ;
+    ph:movingDuration "PT1H21M"^^xsd:duration .
 
 phd:tour_73 a ph:Tour ;
     dcterms:date "2025-11-25T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Marcos das antigas rotas de SP (seus relevos e relevâncias)" ;
     prov:wasAttributedTo phd:pessoaGmard ;
+    ph:arrivedAt "2025-11-25T22:59:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 12 ;
     ph:countNewcomer 3 ;
+    ph:departedAt "2025-11-25T20:27:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 267.0 ;
@@ -1245,15 +1475,21 @@ phd:tour_73 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/53386705> ] ;
-    ph:mediaCount 37 .
+    ph:measuredEnergy [ a qudt:QuantityValue ;
+            qudt:hasUnit unit:KiloJ ;
+            qudt:numericValue 215.0 ] ;
+    ph:mediaCount 37 ;
+    ph:movingDuration "PT1H26M"^^xsd:duration .
 
 phd:tour_74 a ph:Tour ;
     dcterms:date "2025-11-30T08:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Recosturando Tietê e Paraíba do Sul" ;
     prov:wasAttributedTo phd:pessoaAndrio,
         phd:pessoaGmard ;
+    ph:arrivedAt "2025-11-30T17:59:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 11 ;
     ph:countNewcomer 3 ;
+    ph:departedAt "2025-11-30T09:31:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 918.0 ;
@@ -1263,15 +1499,21 @@ phd:tour_74 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/53380438> ] ;
-    ph:mediaCount 100 .
+    ph:measuredEnergy [ a qudt:QuantityValue ;
+            qudt:hasUnit unit:KiloJ ;
+            qudt:numericValue 856.0 ] ;
+    ph:mediaCount 100 ;
+    ph:movingDuration "PT3H18M"^^xsd:duration .
 
 phd:tour_75 a ph:Tour ;
     dcterms:date "2025-12-03T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Contornando Capão do Embira e Tatuapé pela Crista de Sapopemba e Vila Formosa" ;
     prov:wasAttributedTo phd:pessoaFetiche,
         phd:pessoaGiucuci ;
+    ph:arrivedAt "2025-12-03T22:18:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 8 ;
     ph:countNewcomer 2 ;
+    ph:departedAt "2025-12-03T20:26:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 297.0 ;
@@ -1281,14 +1523,20 @@ phd:tour_75 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/53428447> ] ;
-    ph:mediaCount 23 .
+    ph:measuredEnergy [ a qudt:QuantityValue ;
+            qudt:hasUnit unit:KiloJ ;
+            qudt:numericValue 263.0 ] ;
+    ph:mediaCount 23 ;
+    ph:movingDuration "PT1H28M"^^xsd:duration .
 
 phd:tour_76 a ph:Tour ;
     dcterms:date "2025-12-10T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Tiburtino e córrego das corujas" ;
     prov:wasAttributedTo phd:pessoaLume ;
+    ph:arrivedAt "2025-12-10T22:41:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 7 ;
     ph:countNewcomer 3 ;
+    ph:departedAt "2025-12-10T20:20:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 287.0 ;
@@ -1298,15 +1546,21 @@ phd:tour_76 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/54149967> ] ;
-    ph:mediaCount 12 .
+    ph:measuredEnergy [ a qudt:QuantityValue ;
+            qudt:hasUnit unit:KiloJ ;
+            qudt:numericValue 215.0 ] ;
+    ph:mediaCount 12 ;
+    ph:movingDuration "PT1H26M"^^xsd:duration .
 
 phd:tour_77 a ph:Tour ;
     dcterms:date "2025-12-17T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Cabeçeiras do Ipiranga ou Desmorrodouro do Caaguaçu" ;
     prov:wasAttributedTo phd:pessoaAlef,
         phd:pessoaDandan ;
+    ph:arrivedAt "2025-12-17T23:23:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 6 ;
     ph:countNewcomer 1 ;
+    ph:departedAt "2025-12-17T20:58:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 275.0 ;
@@ -1316,15 +1570,21 @@ phd:tour_77 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/53524909> ] ;
-    ph:mediaCount 64 .
+    ph:measuredEnergy [ a qudt:QuantityValue ;
+            qudt:hasUnit unit:KiloJ ;
+            qudt:numericValue 303.0 ] ;
+    ph:mediaCount 64 ;
+    ph:movingDuration "PT1H22M"^^xsd:duration .
 
 phd:tour_78 a ph:Tour ;
     dcterms:date "2025-12-23T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Bonde, Pedra e Cachoeira" ;
     prov:wasAttributedTo phd:pessoaBrunotitton,
         phd:pessoaFetiche ;
+    ph:arrivedAt "2025-12-24T00:19:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 19 ;
     ph:countNewcomer 4 ;
+    ph:departedAt "2025-12-23T20:20:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 378.0 ;
@@ -1334,12 +1594,17 @@ phd:tour_78 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/53564416> ] ;
-    ph:mediaCount 184 .
+    ph:measuredEnergy [ a qudt:QuantityValue ;
+            qudt:hasUnit unit:KiloJ ;
+            qudt:numericValue 309.0 ] ;
+    ph:mediaCount 184 ;
+    ph:movingDuration "PT2H16M"^^xsd:duration .
 
 phd:tour_79 a ph:Tour ;
     dcterms:date "2026-01-07T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Selas, Divisas e Divisores" ;
     prov:wasAttributedTo phd:pessoaFetiche ;
+    ph:arrivedAt "2026-01-08T00:00:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 7 ;
     ph:countNewcomer 1 ;
     ph:energyEstimate [ a qudt:QuantityValue ;
@@ -1368,12 +1633,14 @@ phd:tour_8 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/49195439> ] ;
-    ph:mediaCount 45 .
+    ph:mediaCount 45 ;
+    ph:movingDuration "PT1H26M"^^xsd:duration .
 
 phd:tour_80 a ph:Tour ;
     dcterms:date "2026-01-14T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Contornando Carandiru e Paciência" ;
     prov:wasAttributedTo phd:pessoaFetiche ;
+    ph:arrivedAt "2026-01-15T00:00:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 13 ;
     ph:countNewcomer 0 ;
     ph:energyEstimate [ a qudt:QuantityValue ;
@@ -1390,6 +1657,7 @@ phd:tour_80 a ph:Tour ;
 phd:tour_81 a ph:Tour ;
     dcterms:date "2026-01-21T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Pontes do Itororó" ;
+    ph:arrivedAt "2026-01-22T00:00:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 10 ;
     ph:countNewcomer 0 ;
     ph:inSeriesEdition phd:assoc_PH_74 ;
@@ -1404,6 +1672,7 @@ phd:tour_82 a ph:Tour ;
     prov:wasAttributedTo phd:pessoaAlef,
         phd:pessoaDandan,
         phd:pessoaGiucuci ;
+    ph:arrivedAt "2026-01-29T00:00:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 18 ;
     ph:countNewcomer 6 ;
     ph:energyEstimate [ a qudt:QuantityValue ;
@@ -1437,10 +1706,17 @@ phd:tour_83 a ph:Tour ;
 phd:tour_84 a ph:Tour ;
     dcterms:date "2026-02-01T00:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "SESC Consolação" ;
+    ph:arrivedAt "2026-02-01T13:38:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 55 ;
     ph:countNewcomer 45 ;
+    ph:departedAt "2026-02-01T09:38:00-03:00"^^xsd:dateTime ;
+    ph:energyEstimate [ a qudt:QuantityValue ;
+            qudt:hasUnit unit:KiloJ ;
+            qudt:numericValue 298.0 ;
+            ph:intensityClassification "Ok" ] ;
+    ph:inSeriesEdition phd:assoc_SESC_1 ;
     ph:linkInstagram "https://www.instagram.com/p/DUBptxLEW6g/?img_index=1"^^xsd:anyURI ;
-    ph:mediaCount 65 .
+    ph:movingDuration "PT2H"^^xsd:duration .
 
 phd:tour_85 a ph:Tour ;
     dcterms:date "2026-02-04T00:00:00-03:00"^^xsd:dateTime ;
@@ -1501,8 +1777,10 @@ phd:tour_89 a ph:Tour ;
     dcterms:title "Planalto de Taipas e os Cânions da Brasilândia" ;
     prov:wasAttributedTo phd:pessoaDandan,
         phd:pessoaGiucuci ;
+    ph:arrivedAt "2026-02-24T23:15:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 18 ;
     ph:countNewcomer 2 ;
+    ph:departedAt "2026-02-24T20:35:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 280.0 ;
@@ -1512,7 +1790,11 @@ phd:tour_89 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/53947457> ] ;
-    ph:mediaCount 104 .
+    ph:measuredEnergy [ a qudt:QuantityValue ;
+            qudt:hasUnit unit:KiloJ ;
+            qudt:numericValue 328.0 ] ;
+    ph:mediaCount 104 ;
+    ph:movingDuration "PT1H29M"^^xsd:duration .
 
 phd:tour_9 a ph:Tour ;
     dcterms:date "2024-10-29T20:15:00-03:00"^^xsd:dateTime ;
@@ -1529,77 +1811,40 @@ phd:tour_9 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/49195401> ] ;
-    ph:mediaCount 94 .
+    ph:mediaCount 94 ;
+    ph:movingDuration "PT1H20M"^^xsd:duration .
 
 phd:tour_90 a ph:Tour ;
     dcterms:date "2026-03-04T20:00:00-03:00"^^xsd:dateTime ;
-    dcterms:description """Para deleite dos amantes de subidas, temos mais uma rota que percorre os divisores de águas, as fronteiras entre bacias hidrográficas, as cristas e cumeeiras que limitam dois córregos: Aricanduva e Gamelinho... Mas vamos até onde os morros vão se juntando, antes mesmo de chegar ao cume chamado O Itaquera.\r
-\r
-Após descer a crista, sempre pelos pontos mais altos e divisores de afluentes, cruzamos o Córrego Aricanduva e acessamos a foz do Riacho dos Machados. Subiremos todo o curso desta água, que em sua maior parte é aberta e visível aos olhos mais atentos. Chegar à sua nascente será chegar à Crista de Sapopemba, que também delimita a Bacia do Córrego do Aricanduva."""@pt ;
     dcterms:title "Colina da Matilde e Riacho dos Machados" ;
-    pav:providedBy phd:pessoaDandan ;
     prov:wasAttributedTo phd:pessoaFetiche ;
+    ph:arrivedAt "2026-03-05T00:00:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 7 ;
     ph:countNewcomer 1 ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 352.0 ;
-            ph:intensityClassification "Endorfinado" ] ;
-    ph:hadBonde true ;
-    ph:hasNewcomer phd:pessoaAnabe ;
     ph:inSeriesEdition phd:assoc_PH_82 ;
     ph:linkInstagram "https://www.instagram.com/p/DVbP7QsDiYA/"^^xsd:anyURI ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/53755124> ] ;
-    schema:attendee phd:pessoaAnabe,
-        phd:pessoaDandan,
-        phd:pessoaFetiche,
-        phd:pessoaGabrielfixarolo,
-        phd:pessoaHenriquejaportuga,
-        phd:pessoaJosepelegrini,
-        phd:pessoaTiagoruf ;
-    schema:image <file:///app/tour_assets/90/announcement.jpg> ;
-    schema:organizer phd:pessoaFetiche .
+            schema:url <https://ridewithgps.com/routes/53755124> ] .
 
 phd:tour_91 a ph:Tour ;
     dcterms:date "2026-03-18T20:00:00-03:00"^^xsd:dateTime ;
-    dcterms:description """Um passeio por prédios históricos, alguns em ruínas, pela região do córrego Cassandoca, passando pelos bairros do Brás, Mooca, Belém e Pari.\r
-\r
-A rota tem 20 km com apenas 112 m de subida bem distribuídos, o que a torna uma rota bem suave, passando pelos seguintes pontos de interesse:\r
-Edifício "Caveirão"\r
-Trilhos do bonde na Rua General Carneiro\r
-Parque Dom Pedro\r
-Palácio das Indústrias (passa ao lado)\r
-Casa das Retortas Gasómetro\r
-Museu da Imigração (passa ao lado)\r
-Fábrica da Antártica\r
-Estádio Conde Rodolfo Crespi\r
-Cotonifício Rodolfo Crespi\r
-Vila Maria Zélia\r
-Portal do Presídio Tiradentes\r
-\r
-Material Complementar: https://drive.google.com/file/d/1l_9_BI7GijPmMcdtt2IE8rbg9B0awI3j/view?usp=sharing"""@pt ;
     dcterms:title "Histórico pelo entorno do Cassandoca" ;
     prov:wasAttributedTo phd:pessoaAlex ;
+    ph:arrivedAt "2026-03-19T00:00:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 15 ;
     ph:countNewcomer 5 ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 298.0 ;
-            ph:intensityClassification "Ok" ] ;
     ph:inSeriesEdition phd:assoc_PH_83 ;
     ph:linkInstagram "https://www.instagram.com/p/DWB1tpeDqJO/"^^xsd:anyURI ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/54024668> ] ;
-    schema:attendee phd:pessoaAlex,
-        phd:pessoaFetiche .
+            schema:url <https://ridewithgps.com/routes/54024668> ] .
 
 phd:tour_92 a ph:Tour ;
     dcterms:date "2026-03-22T00:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Horta do Parque do Rio Bixiga" ;
     prov:wasAttributedTo phd:pessoaYas ;
+    ph:arrivedAt "2026-03-22T00:00:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 0 ;
     ph:countNewcomer 0 ;
     ph:inSeriesEdition phd:assoc_PH_84 ;
@@ -1611,6 +1856,7 @@ phd:tour_92 a ph:Tour ;
 phd:tour_93 a ph:Tour ;
     dcterms:date "2025-03-25T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "A Voçoroca e o Pântano" ;
+    ph:arrivedAt "2025-03-26T00:00:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 1 ;
     ph:countNewcomer 0 ;
     ph:energyEstimate [ a qudt:QuantityValue ;
@@ -1628,6 +1874,7 @@ phd:tour_94 a ph:Tour ;
     dcterms:title "Águas de Março: povo, éguas, lágrimas, alagados" ;
     prov:wasAttributedTo phd:pessoaDandan,
         phd:pessoaGmard ;
+    ph:arrivedAt "2026-04-01T00:00:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 9 ;
     ph:countNewcomer 1 ;
     ph:energyEstimate [ a qudt:QuantityValue ;
@@ -1644,6 +1891,7 @@ phd:tour_95 a ph:Tour ;
     dcterms:date "2026-04-11T00:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Dar tchau pra quem migra" ;
     prov:wasAttributedTo phd:pessoaAnaju ;
+    ph:arrivedAt "2026-04-11T00:00:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 0 ;
     ph:countNewcomer 0 ;
     ph:energyEstimate [ a qudt:QuantityValue ;
@@ -1660,8 +1908,9 @@ phd:tour_96 a ph:Tour ;
     dcterms:date "2026-04-14T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Várzea do Tietê e as origens do Futebol" ;
     prov:wasAttributedTo phd:pessoaAlef ;
-    ph:countAttendee 0 ;
-    ph:countNewcomer 0 ;
+    ph:arrivedAt "2026-04-15T00:00:00-03:00"^^xsd:dateTime ;
+    ph:countAttendee 23 ;
+    ph:countNewcomer 9 ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 336.0 ;
@@ -1677,7 +1926,8 @@ phd:tour_97 a ph:Tour ;
     dcterms:title "Da Cantareira ao Tremembé" ;
     prov:wasAttributedTo phd:pessoaDandan,
         phd:pessoaGa ;
-    ph:countAttendee 0 ;
+    ph:arrivedAt "2026-04-21T00:00:00-03:00"^^xsd:dateTime ;
+    ph:countAttendee 4 ;
     ph:countNewcomer 0 ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
@@ -1693,6 +1943,7 @@ phd:tour_98 a ph:Tour ;
     dcterms:date "2026-04-28T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Pontos de Sela dos afluentes de Tamanduateí" ;
     prov:wasAttributedTo phd:pessoaGabrieltunes ;
+    ph:arrivedAt "2026-04-29T00:00:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 6 ;
     ph:countNewcomer 2 ;
     ph:energyEstimate [ a qudt:QuantityValue ;
@@ -1711,6 +1962,7 @@ phd:tour_99 a ph:Tour ;
     prov:wasAttributedTo phd:pessoaAlef,
         phd:pessoaDandan,
         phd:pessoaGabrieltunes ;
+    ph:arrivedAt "2026-05-07T00:00:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 6 ;
     ph:countNewcomer 1 ;
     ph:energyEstimate [ a qudt:QuantityValue ;
@@ -1722,6 +1974,9 @@ phd:tour_99 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/54984116> ] .
+
+phd:SESC a schema:EventSeries ;
+    dcterms:title "SESC" .
 
 phd:assoc_BP_1 a ph:Association ;
     ph:inEventSeries phd:BP ;
@@ -2119,6 +2374,10 @@ phd:assoc_PH_93 a ph:Association ;
     ph:inEventSeries phd:PH ;
     ph:sequenceInSeries 93 .
 
+phd:assoc_SESC_1 a ph:Association ;
+    ph:inEventSeries phd:SESC ;
+    ph:sequenceInSeries 1 .
+
 phd:assoc_S_1 a ph:Association ;
     ph:inEventSeries phd:S ;
     ph:sequenceInSeries 1 .
@@ -2142,6 +2401,9 @@ phd:assoc_S_5 a ph:Association ;
 phd:assoc_S_6 a ph:Association ;
     ph:inEventSeries phd:S ;
     ph:sequenceInSeries 6 .
+
+phd:pessoaAlex a schema:Person ;
+    schema:alternateName "alex" .
 
 phd:pessoaAmarmo a schema:Person ;
     schema:alternateName "amarmo" .
@@ -2183,9 +2445,6 @@ phd:assoc_BP_4 a ph:Association ;
     ph:inEventSeries phd:BP ;
     ph:sequenceInSeries 4 .
 
-phd:pessoaAlex a schema:Person ;
-    schema:alternateName "alex" .
-
 phd:pessoaLume a schema:Person ;
     schema:alternateName "lume" .
 
@@ -2213,6 +2472,9 @@ phd:pessoaGiucuci a schema:Person ;
 phd:S a schema:EventSeries ;
     dcterms:title "Pedais Hidrográficos Suados" .
 
+phd:pessoaFetiche a schema:Person ;
+    schema:alternateName "fetiche" .
+
 phd:pessoaThiagoneves a schema:Person ;
     schema:alternateName "thiagoneves" .
 
@@ -2221,9 +2483,6 @@ phd:pessoaAnaju a schema:Person ;
 
 phd:pessoaGmard a schema:Person ;
     schema:alternateName "gmard" .
-
-phd:pessoaFetiche a schema:Person ;
-    schema:alternateName "fetiche" .
 
 phd:pessoaAlef a schema:Person ;
     schema:alternateName "alef" .

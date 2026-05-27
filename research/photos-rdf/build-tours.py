@@ -31,6 +31,39 @@ def to_xsd_datetime(v):
     if not m: return None
     return f'{m.group(1)}T{m.group(2)}:00-03:00'
 
+DUR_RE = re.compile(r'^(\d{1,3}):(\d{1,2})(?::(\d{1,2}))?$')
+
+def to_xsd_duration(v):
+    """'1:00' / '0:52' / '2:35:30' → 'PT1H0M0S' / 'PT0H52M0S' / 'PT2H35M30S'.
+    Anything else (including '100%' garbage from misaligned cells) → None."""
+    if blank(v): return None
+    m = DUR_RE.match(v.strip())
+    if not m: return None
+    h  = int(m.group(1))
+    mn = int(m.group(2))
+    sc = int(m.group(3) or 0)
+    if mn >= 60 or sc >= 60: return None
+    return f'PT{h}H{mn}M{sc}S'
+
+HHMM_RE = re.compile(r'^(\d{1,2}):(\d{2})$')
+
+def parse_hhmm(v):
+    """'20:35' → (20, 35); rejeita coisas tipo '20:00:00', '100%', '?'."""
+    if blank(v): return None
+    m = HHMM_RE.match(v.strip())
+    if not m: return None
+    h, mn = int(m.group(1)), int(m.group(2))
+    if h >= 24 or mn >= 60: return None
+    return (h, mn)
+
+def combine_date_time(date_str, hm, day_offset=0):
+    """date_str='2024-09-09', hm=(20, 35), day_offset=0|1 → '2024-09-09T20:35:00-03:00'.
+    day_offset=1 desloca pro dia seguinte (caso Chegada cruze meia-noite)."""
+    from datetime import date as Date, timedelta
+    y, m, d = (int(x) for x in date_str.split('-'))
+    base = Date(y, m, d) + timedelta(days=day_offset)
+    return f'{base.isoformat()}T{hm[0]:02d}:{hm[1]:02d}:00-03:00'
+
 def slug(name):
     s = re.sub(r'[^a-z0-9]', '', name.strip().lower())
     return s
@@ -139,6 +172,18 @@ def main():
                 '    ]'
             )
 
+        # energia medida (kJ med. — col 25) → ph:measuredEnergy.
+        kj_meas = to_dec(r[25])
+        if kj_meas is not None and kj_meas >= 0:
+            kj_meas_lit = f'{kj_meas:g}'
+            props.append(
+                'ph:measuredEnergy [\n'
+                '        a qudt:QuantityValue ;\n'
+                f'        qudt:numericValue "{kj_meas_lit}"^^xsd:decimal ;\n'
+                '        qudt:hasUnit unit:KiloJ\n'
+                '    ]'
+            )
+
         # atribuição (🗺️ + 📝 + 🎨 → prov:wasAttributedTo)
         attribs = set()
         for col in (11, 12, 13):
@@ -155,6 +200,29 @@ def main():
         midias = to_int(r[34])
         if midias is not None and midias > 0:
             props.append(f'ph:mediaCount {midias}')
+
+        # Tempo de movimento (col 28, 'Tempo Mov') → ph:movingDuration.
+        mov = to_xsd_duration(r[28])
+        if mov:
+            props.append(f'ph:movingDuration "{mov}"^^xsd:duration')
+
+        # Partida (col 19) / Chegada (col 20) → ph:departedAt / ph:arrivedAt.
+        # São hora-do-dia (HH:MM); combinamos com a data de `Data-hora`. Se a
+        # Chegada parecer anterior à Partida (cruzou meia-noite), avança 1 dia.
+        # Sem Partida, usa Horário (col 18) como referência pra wrap-detection.
+        date_only = dt[:10]  # 'YYYY-MM-DD' a partir de dt 'YYYY-MM-DDT…'
+        partida = parse_hhmm(r[19])
+        chegada = parse_hhmm(r[20])
+        if partida:
+            props.append(
+                f'ph:departedAt "{combine_date_time(date_only, partida)}"^^xsd:dateTime'
+            )
+        if chegada:
+            ref = partida or parse_hhmm(r[18])  # Horário planejado como fallback
+            wrap = 1 if (ref and (chegada[0]*60 + chegada[1]) < (ref[0]*60 + ref[1])) else 0
+            props.append(
+                f'ph:arrivedAt "{combine_date_time(date_only, chegada, wrap)}"^^xsd:dateTime'
+            )
 
         body = ' ;\n    '.join(props)
         tour_ttls.append(f'{tour_id}\n    {body} .\n')

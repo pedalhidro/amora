@@ -4438,10 +4438,6 @@ async function _renderTourSummary(tourId) {
   }
   if (instagram) rows.push(row('Instagram',
     `<a href="${escapeHtml(instagram)}" target="_blank" rel="noopener">${escapeHtml(instagram)}</a>`));
-  if (announce) {
-    rows.push(row('Anúncio',
-      `<a href="${escapeHtml(announce)}" target="_blank" rel="noopener"><img src="${escapeHtml(announce)}" alt="anúncio" class="tour-announce-img"></a>`));
-  }
   if (authors.length)   rows.push(row('Autoras',  authors.map(escapeHtml).join(', ')));
   if (providers.length) rows.push(row('Quem subiu', providers.map(escapeHtml).join(', ')));
   if (attendeeList.length) rows.push(row('Participantes', attendeeList.map(escapeHtml).join(', ')));
@@ -4471,7 +4467,21 @@ async function _renderTourSummary(tourId) {
     rows.push(row('Narrativa', `<div class="tour-narrative">${escapeHtml(description).replace(/\n/g, '<br>')}</div>`));
   }
 
-  return `<dl class="tour-summary">${rows.join('')}</dl>`;
+  // Hero do anúncio. URL pode vir como `file:///app/tour_assets/<id>/...`
+  // (caminho server-side de scripts antigos) — remapeamos pro path web
+  // servido pelo backend (`/tour_assets/...`). URLs http(s) passam direto.
+  let announceUrl = announce || null;
+  if (announceUrl && announceUrl.startsWith('file:///app/tour_assets/')) {
+    announceUrl = './' + announceUrl.slice('file:///app/'.length);
+  }
+  const heroHtml = announceUrl
+    ? `<a class="tour-announce-hero" href="${escapeHtml(announceUrl)}" ` +
+      `target="_blank" rel="noopener" title="Abrir imagem em tamanho real">` +
+      `<img src="${escapeHtml(announceUrl)}" alt="anúncio" ` +
+      `onerror="this.parentElement.style.display='none'"></a>`
+    : '';
+
+  return heroHtml + `<dl class="tour-summary">${rows.join('')}</dl>`;
 }
 
 function openRouteModal(id) {
