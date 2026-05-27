@@ -159,8 +159,15 @@ class GCSStateStore(StateStore):
         return "application/octet-stream"
 
     def read_text(self, key):
-        blob = self._bucket.blob(key)
-        if not blob.exists():
+        # IMPORTANTE: usar get_blob() (que faz HEAD + popula a generation)
+        # ao invés de bucket.blob() + download_as_text(). Sem isso, a SDK
+        # do google-cloud-storage pode devolver um snapshot stale do conteúdo
+        # — observado empiricamente em produção (Cloud Run): mesmo bucket,
+        # mesma chave, gcloud storage cat retornava 205KB, mas
+        # blob.download_as_text() retornava 232KB de uma versão anterior.
+        # `get_blob` ancora a generation antes do download e elimina o bug.
+        blob = self._bucket.get_blob(key)
+        if blob is None:
             return None
         return blob.download_as_text()
 

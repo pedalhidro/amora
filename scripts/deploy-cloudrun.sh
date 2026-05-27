@@ -7,8 +7,17 @@
 # deploy do service.
 #
 # Usage:
-#   scripts/deploy-cloudrun.sh             # build + deploy
-#   scripts/deploy-cloudrun.sh --dry-run   # imprime configs sem executar
+#   scripts/deploy-cloudrun.sh                # build + deploy
+#   scripts/deploy-cloudrun.sh --dry-run      # imprime configs sem executar
+#   scripts/deploy-cloudrun.sh --state        # build + deploy + também
+#                                             # sincroniza estado mutável
+#                                             # (uploads.ttl, data_graphs.ttl,
+#                                             #  photos/, clips/) pro bucket
+#   scripts/deploy-cloudrun.sh --state-only   # SÓ sincroniza estado mutável,
+#                                             # sem rebuild/redeploy
+#   scripts/deploy-cloudrun.sh --state --mirror   # sync com espelho exato
+#                                                 # (apaga no bucket o que
+#                                                 #  não existe localmente)
 #
 # Overridable via env:
 #   GCP_PROJECT        default: pedal-hidrografico
@@ -40,9 +49,21 @@ MAX_INSTANCES="${CLOUDRUN_MAX_INSTANCES:-5}"
 MIN_INSTANCES="${CLOUDRUN_MIN_INSTANCES:-0}"
 
 DRY=""
-if [[ "${1:-}" == "--dry-run" ]]; then
-  DRY="echo DRY: "
-  echo "↻ DRY RUN — nenhuma mudança real será aplicada."
+SYNC_STATE=0
+DEPLOY_CODE=1
+MIRROR_FLAG=""
+for arg in "$@"; do
+  case "$arg" in
+    --dry-run)    DRY="echo DRY: "; echo "↻ DRY RUN — nenhuma mudança real será aplicada." ;;
+    --state)      SYNC_STATE=1 ;;
+    --state-only) SYNC_STATE=1; DEPLOY_CODE=0 ;;
+    --mirror)     MIRROR_FLAG="--delete-unmatched-destination-objects" ;;
+    -h|--help)    sed -n '2,35p' "$0"; exit 0 ;;
+    *) echo "Unknown arg: $arg" >&2; exit 1 ;;
+  esac
+done
+if [[ "$MIRROR_FLAG" != "" && "$SYNC_STATE" == 0 ]]; then
+  echo "WARN: --mirror sem --state/--state-only não tem efeito." >&2
 fi
 
 echo "→ Project:  $PROJECT"
@@ -114,37 +135,82 @@ for f in shapes.ttl ontology.ttl tours.ttl; do
 done
 
 # ── 3. Deploy ───────────────────────────────────────────────────────────
-echo "→ Deploy do service $SERVICE (build pelo Cloud Build a partir de $REPO_ROOT/Dockerfile)…"
-$DRY gcloud run deploy "$SERVICE" \
-  --source="$REPO_ROOT" \
-  --region="$REGION" \
-  --project="$PROJECT" \
-  --allow-unauthenticated \
-  --memory="$MEMORY" \
-  --cpu="$CPU" \
-  --timeout=120 \
-  --concurrency=80 \
-  --max-instances="$MAX_INSTANCES" \
-  --min-instances="$MIN_INSTANCES" \
-  --set-env-vars="STORAGE_BACKEND=gcs,GCS_BUCKET=$BUCKET"
+if [[ "$DEPLOY_CODE" == 1 ]]; then
+  echo "→ Deploy do service $SERVICE (build pelo Cloud Build a partir de $REPO_ROOT/Dockerfile)…"
+  $DRY gcloud run deploy "$SERVICE" \
+    --source="$REPO_ROOT" \
+    --region="$REGION" \
+    --project="$PROJECT" \
+    --allow-unauthenticated \
+    --memory="$MEMORY" \
+    --cpu="$CPU" \
+    --timeout=120 \
+    --concurrency=80 \
+    --max-instances="$MAX_INSTANCES" \
+    --min-instances="$MIN_INSTANCES" \
+    --set-env-vars="STORAGE_BACKEND=gcs,GCS_BUCKET=$BUCKET"
+else
+  echo "→ Pulando deploy de código (--state-only)."
+fi
+
+# ── 4. Estado mutável (--state / --state-only) ──────────────────────────
+# Sync de uploads.ttl + data_graphs.ttl + photos/ + clips/ pro bucket.
+# Por padrão o deploy NÃO faz isso pra não clobberar uploads server-side;
+# rode com a flag quando quiser espelhar o local pra cloud.
+if [[ "$SYNC_STATE" == 1 ]]; then
+  echo ""
+  echo "→ Sincronizando estado mutável pra gs://$BUCKET"
+  [[ -n "$MIRROR_FLAG" ]] && echo "  (modo --mirror: deleta no bucket o que não existe local)"
+
+  for f in uploads.ttl data_graphs.ttl; do
+    if [[ -f "$REPO_ROOT/web/data/$f" ]]; then
+      $DRY gcloud storage cp "$REPO_ROOT/web/data/$f" "gs://$BUCKET/data/$f" \
+        --project="$PROJECT"
+    else
+      echo "  ⚠ web/data/$f não existe localmente — skip"
+    fi
+  done
+
+  if [[ -d "$REPO_ROOT/web/photos" ]]; then
+    echo "→ photos/"
+    $DRY gcloud storage rsync --recursive $MIRROR_FLAG \
+      "$REPO_ROOT/web/photos" "gs://$BUCKET/photos" \
+      --project="$PROJECT"
+  fi
+
+  # web/clips/raw/ é fonte (originais ~800MB) — não vai pro bucket.
+  if [[ -d "$REPO_ROOT/web/clips" ]]; then
+    echo "→ clips/ (excluindo raw/)"
+    $DRY gcloud storage rsync --recursive $MIRROR_FLAG \
+      --exclude='^raw/.*$' \
+      "$REPO_ROOT/web/clips" "gs://$BUCKET/clips" \
+      --project="$PROJECT"
+  fi
+fi
 
 if [[ -z "$DRY" ]]; then
   URL=$(gcloud run services describe "$SERVICE" \
     --region="$REGION" --project="$PROJECT" \
-    --format='value(status.url)')
+    --format='value(status.url)' 2>/dev/null || true)
 
-  # Limpa caches in-memory na nova revisão. (Revisões novas começam frias
-  # de qualquer jeito, mas se min-instances>0 ou tráfego ainda for split,
-  # vale forçar.)
-  curl -fsS -X POST "$URL/reload" >/dev/null 2>&1 || true
+  if [[ -n "$URL" ]]; then
+    # Limpa caches in-memory (validator + manifesto). Vale tanto pra deploy
+    # novo (que já começa frio, mas talvez tenha tráfego split) quanto pra
+    # --state-only (no qual o service em si não muda, mas o catálogo sim).
+    curl -fsS -X POST "$URL/reload" >/dev/null 2>&1 || true
+  fi
 
   echo ""
-  echo "✓ Deployed."
-  echo "  Cloud Run URL: $URL"
-  echo "  Custom domain (se mapeado): https://amora.pedalhidrografi.co/"
-  echo ""
-  echo "Pra mapear domínio custom (uma única vez):"
-  echo "  gcloud beta run domain-mappings create \\"
-  echo "    --service=$SERVICE --domain=amora.pedalhidrografi.co \\"
-  echo "    --region=$REGION --project=$PROJECT"
+  if [[ "$DEPLOY_CODE" == 1 ]]; then
+    echo "✓ Deployed."
+    echo "  Cloud Run URL: $URL"
+    echo "  Custom domain (se mapeado): https://amora.pedalhidrografi.co/"
+    echo ""
+    echo "Pra mapear domínio custom (uma única vez):"
+    echo "  gcloud beta run domain-mappings create \\"
+    echo "    --service=$SERVICE --domain=amora.pedalhidrografi.co \\"
+    echo "    --region=$REGION --project=$PROJECT"
+  else
+    echo "✓ Estado sincronizado."
+  fi
 fi

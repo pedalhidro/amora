@@ -7,47 +7,64 @@ persiste tudo em arquivos**, sem dependência de nuvem nem SQLite.
 > igual num **Raspberry Pi** ou num **macOS** (ver o fim).
 
 ```text
-Raspberry Pi
+Raspberry Pi  (ou Cloud Run — mesmo main.py, STATE_BACKEND escolhe storage)
   └─ gunicorn → main.py (Flask)
-        ├─ GET  /                      → web/index.html (o app)
-        ├─ GET  /<path>                → estáticos de web/ (app.js, fotos,
-        │                                data/*.ttl, …)
-        ├─ POST /upload-image          → multipart: ttl + variantes;
-        │                                valida com pyshacl, grava em web/
-        └─ POST /delete-image/<phash>  → apaga arquivos + triples
-  └─ cloudflared → túnel HTTPS público
+        ├─ GET  /                       → web/index.html (o app)
+        ├─ GET  /<path>                 → estáticos de web/ (app.js, fotos,
+        │                                 data/*.ttl, …)
+        ├─ GET  /data/<filename>        → uploads.ttl / data_graphs.ttl
+        │                                 (bucket-first, container fallback)
+        ├─ POST /upload-image           → multipart: ttl + variantes;
+        │                                 valida com pyshacl, grava em web/
+        ├─ POST /upload-video           → multipart: ttl + audio.webm +
+        │                                 (opcional) video360/720.webm +
+        │                                 thumb.jpg; valida via VideoShape
+        ├─ POST /delete-image/<phash>   → apaga arquivos + triples
+        ├─ POST /delete-video/<vhash>   → apaga clipes + thumb + triples
+        └─ POST /reload                 → invalida caches in-memory
+  └─ cloudflared → túnel HTTPS público (Pi) ou Cloud Run domain mapping
 ```
 
 Arquivos: `main.py`, `requirements.txt`, `phidro.service` (Linux),
 `phidro.plist` (macOS).
 
-## O estado vive em `web/`
+## O estado vive em `web/` (Pi) ou no bucket GCS (Cloud Run)
 
-Não há mais SQLite nem `PHIDRO_DATA` separado. Os uploads viram triples em
+Não há SQLite. Os uploads — imagens E vídeos — viram triples no mesmo
 **`web/data/uploads.ttl`** (Turtle); cada foto vira arquivos em
-**`web/photos/<phash>/{original,large,thumb}.<ext>`**. Um manifesto em
+**`web/photos/<phash>/{original,large,thumb}.<ext>`**, cada vídeo em
+**`web/clips/<vhash>.{audio.webm, 360p.webm, 720p.webm, thumb.jpg}`**
+(ou `<stem>.{360p,720p}.mp4` + `audio/<stem>.m4a` + `<stem>.thumb.jpg`
+quando processado por `scripts/build-clips.py`). Um manifesto em
 **`web/data/data_graphs.ttl`** registra cada dump (`void:dataDump`), e é
 ele que o app consulta no boot pra descobrir quais grafos carregar. O Pi
-serve tudo direto como estáticos — mesma origem, sem CORS.
+serve tudo direto como estáticos — mesma origem, sem CORS; no Cloud Run o
+storage abstrai pra GCS via `backend/pi/storage.py`.
 
 ```text
 web/
 ├─ index.html, app.js, style.css, sw.js, manifest.json, icons…
-├─ upload_images.html          formulário de envio (POSTa em /upload-image)
+├─ upload_images.html          formulário unificado de envio
+│                              (imagem → /upload-image, vídeo → /upload-video)
+├─ upload_videos.html          redirect stub → upload_images.html
 ├─ lib/                        utils.js + n3.min.js + energy-worker.js +
 │                              tom-select.* (parsers/widgets vendored)
 ├─ data/
 │   ├─ data_graphs.ttl         manifesto void: aponta pros dumps abaixo
-│   ├─ uploads.ttl             triples de cada imagem + activity de upload
+│   ├─ uploads.ttl             triples de TODA mídia (ph:Image + ph:Video)
 │   ├─ tours.ttl               catálogo de passeios (build-tours.py)
-│   ├─ shapes.ttl              SHACL — validação do /upload-image
+│   ├─ shapes.ttl              SHACL — ph:ImageShape + ph:VideoShape
 │   └─ ontology.ttl            vocabulário ph:
-├─ photos/<phash>/             { original.jpg | large.jpg | thumb.jpg }
-└─ clips/                      clipes de vídeo curtos (Animação)
-    ├─ clips.json              índice (gerado por scripts/build-clips.py)
-    ├─ <stem>.360p.mp4         vídeo otimizado pra preview
-    ├─ <stem>.720p.mp4         vídeo opt-in via `clipsGhost.useHd`
-    └─ audio/<stem>.m4a        trilha de áudio extraída (loop ambiente)
+├─ photos/<phash>/             { original.* | large.jpg | thumb.jpg }
+└─ clips/                      clipes de vídeo curtos (Animação + galleries)
+    ├─ <stem>.360p.mp4         transcodes de build-clips.py (raw → otimizado)
+    ├─ <stem>.720p.mp4
+    ├─ <stem>.thumb.jpg        miniatura pro marker no mapa
+    ├─ audio/<stem>.m4a        trilha de áudio extraída (loop ambiente)
+    ├─ <vhash>.360p.webm       transcodes do upload form (browser-side)
+    ├─ <vhash>.720p.webm
+    ├─ <vhash>.audio.webm      opus 192k (qualidade alta, sem WAV pesado)
+    └─ <vhash>.thumb.jpg
 ```
 
 > O Pi só serve `web/clips/` como estático — o `build-clips.py` roda
@@ -55,11 +72,16 @@ web/
 > `web/clips/raw/` não precisa estar no Pi.
 
 A validação SHACL acontece contra `web/data/shapes.ttl` mesclado com
-`web/data/ontology.ttl`. O Pi lê esses arquivos do próprio diretório `web/`
-que serve.
+`web/data/ontology.ttl`. Imagens validam contra `ph:ImageShape` (24 triples,
+exige date/location/license/author etc.); vídeos contra `ph:VideoShape`
+(NÃO subclasse de `ph:Image` — não exige bearing/focal-35), que adiciona
+`schema:duration`, `ph:availableResolution`, `ph:audio`, opcionalmente
+`ph:video360p`/`ph:video720p`/`schema:thumbnail`.
 
-**Backup é copiar `web/data/` + `web/photos/`** — não há mais nada de
-estado. (`web/routes.json` é regenerado por `scripts/build-routes.py`.)
+**Backup é copiar `web/data/` + `web/photos/` + `web/clips/`** — não há
+mais nada de estado. (`web/routes.json` é regenerado por
+`scripts/build-routes.py`; clipes transcodados podem ser re-gerados de
+`web/clips/raw/` com `scripts/build-clips.py`.)
 
 ## 1. Sistema
 
@@ -155,6 +177,31 @@ API na **mesma origem**, funciona sem CORS e sem configurar URLs.
 - **HEIC:** o Pi não decodifica mais imagem — `upload_images.html` converte
   HEIC para JPEG no browser (via `heic2any`) e envia variantes prontas.
   Servidor não precisa de `pillow-heif`.
+
+## Rodar no Cloud Run em vez do Pi
+
+`main.py` é o mesmo container; só a camada de storage muda. Em vez de
+filesystem, `STATE_BACKEND=gcs` faz tudo passar por
+`google-cloud-storage` num bucket (default `phidro-state`). A leitura usa
+`bucket.get_blob(key)` (e não `bucket.blob(key)` puro) pra evitar um bug
+silencioso onde o blob retorna conteúdo de uma geração desatualizada
+mesmo com uma única geração corrente — ver
+`GCSStateStore.read_text` em `backend/pi/storage.py`.
+
+Deploy completo (build + push + rota + bucket bootstrap):
+
+```sh
+scripts/deploy-cloudrun.sh                # build + deploy
+scripts/deploy-cloudrun.sh --state        # idem + sync uploads.ttl/photos/clips
+scripts/deploy-cloudrun.sh --state-only   # só sync, sem rebuild
+scripts/deploy-cloudrun.sh --dry-run      # preview
+```
+
+O sync push `web/photos/` e `web/clips/` (excluindo `raw/`) e os TTLs
+mutáveis (`uploads.ttl`, `data_graphs.ttl`) pro bucket via
+`gcloud storage rsync`. Os TTLs estáticos (shapes/ontology/tours) já
+vão em todo deploy, independente das flags. No fim, faz `POST /reload`
+pra invalidar caches in-memory do validador + manifesto.
 
 ## Rodar no macOS em vez do Pi
 

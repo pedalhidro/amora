@@ -9,7 +9,7 @@
 //                    their second visit.
 //   RUNTIME_CACHE — map tiles, OSRM, elevation, etc. Same strategy.
 
-const VERSION = 'phidro-v203';
+const VERSION = 'phidro-v205';
 const STATIC_CACHE = `${VERSION}-static`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 
@@ -79,11 +79,14 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(req.url);
 
-  // Same-origin: dynamic catalogs (data_graphs.ttl) precisam de network-first
-  // — qualquer upload novo já aparece no próximo refresh sem o dance de
-  // dois-refreshes do stale-while-revalidate.
+  // Same-origin: catálogos dinâmicos (data_graphs.ttl, uploads.ttl) usam
+  // network-first — qualquer upload/sync novo aparece no próximo refresh
+  // sem o dance de dois-refreshes do stale-while-revalidate. Idem pra
+  // tours.ttl (raramente muda, mas é fonte de gallery/markers).
   if (url.origin === self.location.origin) {
-    if (url.pathname === '/data/data_graphs.ttl') {
+    if (url.pathname === '/data/data_graphs.ttl'
+        || url.pathname === '/data/uploads.ttl'
+        || url.pathname === '/data/tours.ttl') {
       event.respondWith(networkFirst(req, STATIC_CACHE));
     } else {
       event.respondWith(staleWhileRevalidate(req, STATIC_CACHE));

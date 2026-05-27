@@ -1184,8 +1184,8 @@ function fadeClipVolume(v, target, durationMs)  { return fadeProp(v, 'volume',  
 async function loadClipsCatalog() {
   if (clipsCatalog) return clipsCatalog;
   // Fonte única: ph:Video em web/data/uploads.ttl. Clipes processados por
-  // build-clips.py vivem em web/clips/ e são listados no TTL pelo importer
-  // scripts/import-clips-to-uploads.py (autoridade pra autoria/licença).
+  // scripts/build-clips.py vivem em web/clips/ — o próprio build-clips.py
+  // escreve as triples no uploads.ttl com autoria/licença default.
   try {
     clipsCatalog = await loadClipsFromUploadsTtl();
   } catch (err) {
@@ -1195,11 +1195,13 @@ async function loadClipsCatalog() {
   return clipsCatalog;
 }
 
-// Lê `web/data/uploads.ttl` e extrai ph:Video → entradas no mesmo formato
-// do clips.json: {file, file720, audio, lat, lng, duration, …}. Arquivos
-// vivem em `web/clips/<vhash>.{audio,360p,720p}.webm`. Quando o vídeo é
-// audio-only, ph:video360p/ph:video720p ficam ausentes — o app renderiza
-// só como fonte sonora (audio loop), não como ghost-video no mapa.
+// Lê `web/data/uploads.ttl` e extrai ph:Video → entradas no formato
+// {file, file720, audio, thumb, lat, lng, duration, datetime, vhash, …}.
+// Arquivos vivem em `web/clips/<id>.{360p.mp4,720p.mp4,audio.webm,thumb.jpg}`
+// (clipes locais de build-clips.py usam stem original; uploads do form
+// usam o vhash de 16 hex). Quando o vídeo é audio-only, ph:video360p/720p
+// ficam ausentes — o app renderiza só como fonte sonora (audio loop), não
+// como ghost-video no mapa.
 async function loadClipsFromUploadsTtl() {
   const res = await fetch('./data/uploads.ttl', { cache: 'no-cache' });
   if (!res.ok) return [];
@@ -1223,8 +1225,8 @@ async function loadClipsFromUploadsTtl() {
           if (!geo || !Number.isFinite(geo.lat) || !Number.isFinite(geo.lng)) continue;
           // Sem áudio = não tem o que tocar; ignora.
           if (!props.audio) continue;
-          // Mesmo schema que clips.json: paths relativos a ./clips/ (sem
-          // prefixo). playClipAt() prepende CLIPS_DIR antes de usar.
+          // Paths relativos a ./clips/ (sem prefixo) — playClipAt() e o
+          // popup builder prepende CLIPS_DIR antes de usar.
           const file360 = props.video360p;
           const file720 = props.video720p;
           const audio   = props.audio;

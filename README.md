@@ -23,15 +23,19 @@ backend in [backend/pi/README.md](backend/pi/README.md).
 - **Traçar GPX** button: click the map to drop trackpoints, drag them to
   move, Undo/Redo (also ⌘/Ctrl+Z / ⌘/Ctrl+Shift+Z), then **Salvar GPX**
   downloads a `.gpx` file. Esc cancels.
-- Geo-tagged photo overlay loaded from `web/data/uploads.ttl`. Click a
-  photo dot → centered modal preview (auto-fallback when the popup won't
-  fit the viewport).
-- **Animação** — toggles a photo-marker spotlight pulse and a translucent
-  ghost-video overlay on the map (clips from `web/clips/`, segments
+- Geo-tagged photo AND video overlay loaded from `web/data/uploads.ttl`
+  (both kinds live in the same RDF catalog). Click a marker → centered
+  modal preview (popup near the marker when it fits; falls back to a
+  bottom-sheet modal otherwise). Photo markers have a white border;
+  video markers have a red-orange border and a small play glyph; both
+  share the same density-based clustering layout.
+- **Animação** — toggles a marker spotlight pulse and a translucent
+  ghost-video overlay on the map (clips with video tracks, segments
   picked at random with audio + image cross-fading). Each clip's GPS
-  marker is a white ring that pulses with the audio's RMS amplitude;
-  bracketed by a 1-second green intro and orange outro to flag the
-  handoff between clips.
+  marker pulses with the audio's RMS amplitude; bracketed by a 1-second
+  green intro and orange outro to flag the handoff between clips.
+  Audio-only clips participate only in the audio loop, not the ghost
+  video.
 - **Loop de áudio** — same clip catalog, ambient audio-only mode with
   longer crossfades. Independent of Animação.
 - Mobile-first UI: bottom-sheet dialogs (Camadas, Rotas, Enviar,
@@ -54,9 +58,10 @@ Two stages:
      (e.g. anniversary re-rides). This is the only place RWGPS credentials
      are needed — the browser never sees them.
    - `python scripts/build-clips.py` (optional) re-encodes any source
-     videos in `web/clips/raw/` to 360p + 720p mp4 plus an `.m4a` audio
-     extract, and writes `web/clips/clips.json`. Requires `ffmpeg` and
-     `exiftool` in PATH.
+     videos in `web/clips/raw/` to 360p + 720p mp4 + `.m4a` audio +
+     thumbnail jpg, and upserts each as a `ph:Video` in
+     `web/data/uploads.ttl` (with `ph:capturedDuring` set to the closest
+     tour within ±12 h). Requires `ffmpeg` and `exiftool` in PATH.
 
 2. **Runtime (browser only).** `web/index.html` loads `routes.json` and
    resolves data graphs via `web/data/data_graphs.ttl`. No backend

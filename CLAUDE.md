@@ -32,29 +32,40 @@ local-first.
   JSON-LD context. Superseded by `web/data/ontology.ttl`; kept for
   reference.
 - `scripts/` — `build-routes.py` (bakes `routes.json` from
-  `web/data/tours.ttl` + RideWithGPS), `build-clips.py` (re-encodes the
-  raw videos in `web/clips/raw/` to 360p/720p mp4 + `.m4a` audio and
-  writes `web/clips/clips.json`), `deploy.sh` (legacy GCS static mirror),
-  `deploy-amora.sh` / `pull-amora.sh` / `pi-deploy.sh` /
-  `gcloud-ssh-rsync.sh` (Pi deploy helpers), `gen-synthetic-rdf.py`,
-  `exiftool_ph.config`. `coletor_*.py` / `build-photos.py` /
-  `build-routes.mjs` are legacy artefacts pending removal — see
-  "Open loose ends".
+  `web/data/tours.ttl` + RideWithGPS), `build-clips.py` (re-encodes raw
+  videos in `web/clips/raw/` to 360p/720p mp4 + `.m4a` audio + thumbnail
+  and writes the triples directly into `web/data/uploads.ttl` as
+  `ph:Video`), `deploy.sh` (legacy GCS static mirror),
+  `deploy-cloudrun.sh` (Cloud Run deploy + `--state` flag to sync mutable
+  state), `deploy-amora.sh` / `pull-amora.sh` / `pi-deploy.sh` /
+  `gcloud-ssh-rsync.sh` / `push-clips.sh` (Pi/amora deploy helpers),
+  `gen-synthetic-rdf.py`, `exiftool_ph.config`. `coletor_*.py` /
+  `build-photos.py` / `build-routes.mjs` are legacy artefacts pending
+  removal — see "Open loose ends".
 
 ## Architecture
 
 The app is fully static and works offline (service worker). It reads
 pre-baked `routes.json` and resolves Turtle dumps via the manifest at
 `web/data/data_graphs.ttl` (which currently lists `tours.ttl` and
-`uploads.ttl`). When served by the Pi backend, uploads hit
-`POST /upload-image` same-origin; on a static-only host (CDN) the form is
-offline-friendly but uploads have nowhere to go.
+`uploads.ttl`). When served by the Pi/Cloud Run backend, uploads hit
+`POST /upload-image` or `POST /upload-video` same-origin; on a static-only
+host (CDN) the form is offline-friendly but uploads have nowhere to go.
 
-**Photos are described in RDF/Turtle** per the SHACL shapes in
-`web/data/shapes.ttl` (notably `ph:ImageShape`). One photo =
-one `phd:image_<phash16>` IRI. `phash` is a 64-bit perceptual hash (pHash,
-DCT-based, computed in the browser); near-duplicate uploads share an IRI
-and naturally cluster.
+**Photos and videos are described in RDF/Turtle** in a single
+`web/data/uploads.ttl` catalog. SHACL shapes live in `web/data/shapes.ttl`:
+
+- `ph:Image` — `phd:image_<phash16>` IRI; `phash` is a 64-bit perceptual
+  hash (DCT-based, computed in the browser); near-duplicate uploads share
+  an IRI and naturally cluster.
+- `ph:Video` — `phd:video_<vhash16>` IRI; `vhash` is computed by sampling
+  N=8 evenly-spaced frames, taking each frame's pHash, and majority-voting
+  per bit into a single 16-hex fingerprint. Standalone class (NOT a
+  subclass of `ph:Image`) so it doesn't inherit bearing/focal warnings
+  which don't apply to video. Adds `schema:duration`,
+  `ph:availableResolution` (`sh:in` of `audio/360p/480p/720p/1080p`),
+  `ph:audio`, optional `ph:video360p` / `ph:video720p`, and
+  `schema:thumbnail`.
 
 Key flows:
 
@@ -62,35 +73,54 @@ Key flows:
   `void:dataDump` IRI to load the constituent graphs (currently `tours.ttl`
   and `uploads.ttl`), parses them with the bundled N3.js
   (`web/lib/n3.min.js`), and renders one Leaflet marker per `ph:Image`
-  (GPS from `schema:locationCreated`, popup from triples). The
-  **Configurações** modal (gear icon in the topbar) lets the user switch
-  between Pi (same-origin), CDN, or Local (kit ZIP file picker — stored in
-  memory, image URLs become blob URLs). Import/export buttons live there.
-- **Upload.** `web/upload_images.html` is the operational form. Each card =
-  one photo with EXIF auto-fill, tour auto-detect, multi-select people
-  (Tom Select w/ create-on-the-fly), license + anonymize/compress toggles.
-  Each card POSTs `multipart/form-data` to `/upload-image` with a
-  self-contained single-image TTL block + `original`/`large`/`thumb`
-  variants. The Pi validates with pyshacl, writes files into
-  `web/photos/<phash>/`, and merges the triples into `web/data/uploads.ttl`
-  (deduping by IRI). The manifest at `web/data/data_graphs.ttl` registers
-  the dump (idempotent). pHash dedup prevents accidental re-uploads in the
-  same batch.
+  AND `ph:Video` (videos use the same `photoDivIcon` markup as photos with
+  a red-orange border modifier `.photo-dot-video`; both participate in the
+  same density-based clustering via `relaxPhotoMarkers`). GPS from
+  `schema:locationCreated`, popup from triples. The **Configurações** modal
+  (gear icon in the topbar) lets the user switch between Pi (same-origin),
+  CDN, or Local (kit ZIP file picker — stored in memory, image URLs become
+  blob URLs). Import/export buttons live there.
+- **Upload (unified — images AND videos in one page).**
+  `web/upload_images.html` accepts `image/*,video/*` via a single picker;
+  each card detects media type from the file MIME and renders the
+  appropriate body. Image cards: EXIF auto-fill, anonymize/compress
+  toggles, three variants (`original`/`large`/`thumb`) POSTed to
+  `/upload-image`. Video cards: trim sliders + steppers, GPS extraction
+  from moov ISO 6709 atom, recording-date extraction from
+  `com.apple.quicktime.creationdate` (ISO 8601 with TZ regex; falls back
+  to mvhd binary uint32 seconds-since-1904), browser-side transcoding to
+  webm/vp8+opus 360p+720p (audio stripped from webm and emitted as a
+  separate `audio.webm` opus@192k file), thumbnail from frame ~5% in,
+  per-card "Apenas áudio" toggle for audio-only clips, POSTed to
+  `/upload-video`. Both flows share tour auto-detection (±2h/+12h window)
+  and the Tom Select people picker with create-on-the-fly. pHash/vHash
+  dedup prevents accidental re-uploads in the same batch AND against
+  what's already on the server (catalog includes both hash sets at boot).
+  `upload_videos.html` is a permanent redirect stub to
+  `upload_images.html` for bookmarked URLs.
 - **Validation.** `pyshacl` loads `web/data/shapes.ttl` +
   `web/data/ontology.ttl` once per process. The validator merges the
   incoming TTL with the ontology before checking — `pyshacl`'s `ont_graph`
   parameter does NOT expose ontology-declared instances (like
   `ph:rwgps a schema:Organization`) to `sh:class` checks, so manual
   merging is mandatory. See `research/photos-rdf/DESIGN.md` §2 for the
-  full gotcha.
+  full gotcha. `validate_image_ttl` and `validate_video_ttl` are siblings
+  that each pin to their target class + IRI prefix.
 - **Clips / Animação.** The "Animação" topbar button toggles both the
-  photo-marker spotlight pulse AND a ghost-video overlay (`web/clips/`
-  → translucent `<video>` over the map). The app fetches
-  `./clips/clips.json`, places a marker per clip at its EXIF GPS, and
-  plays through clips in random order with a 5-state marker handoff
-  (green intro → pulsing white → orange outro). An independent "Loop de
-  áudio" plays the same clips' audio-only tracks with a longer crossfade
-  for ambient use. Both have controls in Ajustes and the layer panel.
+  marker spotlight pulse AND a ghost-video overlay (translucent `<video>`
+  over the map). The app reads `ph:Video` entries from `uploads.ttl` via
+  `loadClipsFromUploadsTtl()` — files live under `./clips/`. Plays through
+  clips in random order with a 5-state marker handoff (green intro →
+  pulsing white → orange outro). Clips with `audioOnly: true` (no
+  `ph:video360p`/`ph:video720p`) are skipped by the ghost-video player but
+  still participate in the audio loop. An independent "Loop de áudio"
+  plays the same clips' audio-only tracks with a longer crossfade for
+  ambient use. Both have controls in Ajustes and the layer panel.
+- **Deletion.** `POST /delete-image/<phash>` and
+  `POST /delete-video/<vhash>` purge the IRI's triples (plus reachable
+  bnodes) from `uploads.ttl` AND delete the underlying blobs from the
+  store. The frontend popups have a red-orange Excluir button gated by a
+  `confirm()` dialog.
 
 ## Clips workflow
 
@@ -103,16 +133,28 @@ python scripts/build-clips.py
 Requires `ffmpeg` and `exiftool` in `$PATH` (Homebrew on macOS, `apt` on
 Pi). For each source the script:
 
-- Reads GPS + duration + dimensions via `exiftool` (clips with no GPS are
-  skipped).
+- Reads GPS via `exiftool` (clips with no GPS are skipped); reads both
+  `CreateDate` (mvhd) and Apple `CreationDate` (iOS, with TZ) and prefers
+  the Apple value — Apple's is the real recording time; mvhd is the save
+  time and is often misleading. Pass `-api QuickTimeUTC=0` so the TZ is
+  preserved.
 - Transcodes a `<stem>.360p.mp4` (always) and `<stem>.720p.mp4`
   (best-effort, opt-in via `clipsGhost.useHd`) into `web/clips/`.
 - Extracts the audio track to `web/clips/audio/<stem>.m4a` (AAC 96k).
-- Writes the index `web/clips/clips.json` with `{file, file720, audio,
-  lat, lng, duration, ...}` per clip.
+- Extracts a thumbnail from the middle of the clip into
+  `web/clips/<stem>.thumb.jpg` (~256px short side, JPEG quality 4).
+- Reads `web/data/tours.ttl` and associates each clip with the closest
+  tour within ±12 h via `ph:capturedDuring` (skipped if no tour matches).
+- Writes the triples directly into `web/data/uploads.ttl` as a `ph:Video`
+  with deterministic IRI `phd:video_<md5(stem)[:16]>`, with default
+  author/provider `phd:pessoaDandan` and CC BY-SA 4.0 license. Idempotent
+  upsert — re-running purges + rewrites the same IRI's triples cleanly.
 
-The mtime check makes re-runs cheap. Adding a new clip = drop into
-`raw/` and re-run.
+The mtime check on the transcoded files makes re-runs cheap. Adding a new
+clip = drop into `raw/` and re-run.
+
+There is **no `clips.json`** — that intermediary was removed; `build-clips.py`
+writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
 
 ## Conventions — please follow
 
@@ -129,9 +171,18 @@ The mtime check makes re-runs cheap. Adding a new clip = drop into
 - **Ontology:** reuse consolidated vocabularies (schema.org, PROV-O, QUDT,
   GeoSPARQL, Dublin Core); mint `ph:` terms only for what is specific to
   Pedal Hidrográfico.
-- **No GCP.** The `scripts/deploy.sh` GCS path still exists for a read-only
-  static mirror at `tiles.pedalhidrografi.co/rotas_app`, but the live system
-  is the Pi. Don't add cloud dependencies.
+- **Two deploy targets live now: Pi and Cloud Run.** Pi is the local-first
+  default; Cloud Run is hosted at `https://amora.pedalhidrografi.co/` via
+  `scripts/deploy-cloudrun.sh`. The backend (`backend/pi/main.py`) is the
+  same for both — `storage.py` abstracts state via `STATE_BACKEND=local`
+  (filesystem) vs `gcs` (bucket). `scripts/deploy.sh` (the old read-only
+  static mirror at `tiles.pedalhidrografi.co/rotas_app`) is still around
+  but largely superseded.
+- **GCS read gotcha (Cloud Run).** Always use `bucket.get_blob(key)`
+  rather than `bucket.blob(key) + download_as_text()` — the bare-blob form
+  produced silently-stale content in Cloud Run despite the bucket having
+  one current generation. See `GCSStateStore.read_text` in
+  `backend/pi/storage.py` for the fix.
 - Comments and UI strings are in Portuguese; code identifiers in English.
 
 ## Verify before finishing
@@ -152,10 +203,20 @@ The mtime check makes re-runs cheap. Adding a new clip = drop into
   `web/data/tours.ttl` from `research/photos-rdf/data/tours.csv`. Run this
   whenever the spreadsheet changes; `build-routes.py` consumes its output.
 - `python scripts/build-clips.py` — re-encode anything in `web/clips/raw/`
-  to 360p/720p mp4 + `.m4a` audio and rewrite `web/clips/clips.json`. See
-  "Clips workflow" above. Requires `ffmpeg` + `exiftool`.
+  to 360p/720p mp4 + `.m4a` audio + thumbnail, and upsert each as a
+  `ph:Video` in `web/data/uploads.ttl` (associates with nearest tour
+  within ±12 h). See "Clips workflow" above. Requires `ffmpeg` + `exiftool`.
+- `bash scripts/deploy-cloudrun.sh` — build + deploy backend to Cloud Run
+  (project `pedal-hidrografico`, region `southamerica-east1`, service
+  `phidro`, bucket `phidro-state`). Flags:
+  - `--state` build + deploy + sync mutable state (`uploads.ttl`,
+    `data_graphs.ttl`, `photos/`, `clips/`) to the bucket
+  - `--state-only` just sync mutable state, skip rebuild
+  - `--mirror` make the bucket an exact mirror of local (deletes objects
+    that no longer exist locally; pairs with `--state`/`--state-only`)
+  - `--dry-run` preview without executing
 - `bash scripts/deploy.sh` (or `bash scripts/deploy.sh --dry-run`) — sync
-  `web/` to the GCS static mirror (read-only; needs `gcloud` auth).
+  `web/` to the legacy GCS static mirror (read-only; needs `gcloud` auth).
 - Pi: `pip install -r backend/pi/requirements.txt && python backend/pi/main.py`
   (defaults to port 8000; override with `PORT=…`). See `backend/pi/README.md`.
 
@@ -172,10 +233,15 @@ The mtime check makes re-runs cheap. Adding a new clip = drop into
 - **`web/data/uploads.ttl` and `web/photos/<phash>/`** are runtime artifacts
   of the Pi — gitignore or commit per your deploy strategy. The CDN mirror
   shows no photos until those files exist at the destination.
-- **`web/clips/raw/`** holds source videos (large). Probably want
-  gitignored. The build artifacts (`*.360p.mp4`, `*.720p.mp4`, `audio/*.m4a`,
-  `clips.json`) are smaller and can be committed if you want the static
-  mirror to ship clips, or generated in CI.
+- **`web/clips/raw/`** holds source videos (large; ~800 MB total).
+  Probably want gitignored. The build artifacts (`*.360p.mp4`,
+  `*.720p.mp4`, `audio/*.m4a`, `*.thumb.jpg`) are smaller and can be
+  committed if you want the static mirror to ship clips, or generated in
+  CI. The catalog of triples lives in `web/data/uploads.ttl` (single
+  source of truth for both images and videos).
+- **`web/upload_videos.html`** is a permanent redirect stub pointing at
+  `upload_images.html` (which now handles both media types). Safe to
+  delete once you're sure no bookmark uses the old URL.
 
 ## Notes
 
