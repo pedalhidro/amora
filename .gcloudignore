@@ -1,0 +1,48 @@
+# Build context pra `gcloud run deploy --source=.`.
+#
+# Sem este arquivo, gcloud herda do .gitignore — que exclui web/data/
+# inteiro. Isso é certo pro git (uploads.ttl/data_graphs.ttl são runtime
+# state) mas ERRADO pro container, que precisa de shapes.ttl, ontology.ttl
+# e tours.ttl pra validar uploads e carregar o catálogo.
+#
+# Este arquivo lista APENAS o que de fato não deve ir pro container; o
+# estado mutável (web/photos/, uploads.ttl, data_graphs.ttl) vive no GCS.
+
+# Estado mutável — vive no STORE (GCS), nunca no container
+web/photos/
+web/data/uploads.ttl
+web/data/data_graphs.ttl
+web/data/photos.ttl
+web/clips/raw/
+backend/pi/data/
+
+# Git / tooling
+.git/
+.gitignore
+.github/
+.vscode/
+.idea/
+.claude/
+
+# Pastas não usadas no container
+research/
+scripts/
+
+# Python lixo
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.pytest_cache/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# Docs (não precisam no container)
+ICON_DESIGN.md
+CLAUDE.md
+README.md

@@ -2058,6 +2058,8 @@ body.drawing .trackpoint-marker:active { cursor: grabbing !important; }
 }
 .photo-cone {
   fill: #fff;
-  fill-opacity: 0.45;
+  /* `--photo-cone-opacity` é setado em JS via `applyFovConeSettings` a
+     partir de `settings.fovCone.opacity`. */
+  fill-opacity: var(--photo-cone-opacity, 0.45);
   stroke: none;
 }

@@ -1,8 +1,10 @@
 """
-Pedal Hidrográfico — backend Pi.
+Pedal Hidrográfico — backend Flask.
 
-Flask service, sem nuvem. Serve o app estático em `web/` e recebe uploads de
-foto (uma de cada vez) já modelados em RDF/Turtle no upload-form-live.html.
+Mesmo código serve dois alvos:
+
+  STORAGE_BACKEND=local (padrão)  — Pi/dev: estado mutável no filesystem
+  STORAGE_BACKEND=gcs              — Cloud Run: estado num bucket GCS
 
 Cada upload contém:
   - `ttl`        : bloco Turtle com exatamente 1 `ph:Image` (texto ou arquivo)
@@ -10,44 +12,70 @@ Cada upload contém:
   - `large`      : foto reduzida (~500 KB). Opcional.
   - `thumb`      : miniatura. Opcional.
 
-O backend valida o TTL contra `web/data/shapes.ttl` + a ontologia,
-grava as variantes em `web/photos/<phash>/{original|large|thumb}.<ext>` e
-anexa as triples ao catálogo único em `web/data/uploads.ttl` (deduplicando
-por IRI da imagem). O dump fica registrado no manifesto
-`web/data/data_graphs.ttl` (idempotente).
+Validação SHACL contra `web/data/shapes.ttl` (sempre do filesystem do
+container/repo); variantes vão para `photos/<phash>/...` no store; triples
+deduplicadas em `data/uploads.ttl` no store; manifesto em
+`data/data_graphs.ttl` no store.
 
 Rotas:
-  GET  /                     serve web/index.html
-  GET  /health               "ok"
-  GET  /<path>               estáticos de web/ (app.js, fotos, data/*.ttl, …)
-  POST /upload-image         multipart com `ttl` + variantes; valida e grava
-  POST /delete-image/<phash> remove arquivos + triples
+  GET  /                          serve web/index.html
+  GET  /health                    "ok"
+  GET  /data/uploads.ttl          do store (mutável)
+  GET  /data/data_graphs.ttl      do store (mutável)
+  GET  /photos/<path>             do store (redirect p/ URL pública em GCS,
+                                  stream local em modo local)
+  GET  /<path>                    estáticos de web/ (app.js, shapes.ttl, …)
+  POST /upload-image              multipart com `ttl` + variantes
+  POST /delete-image/<phash>      remove arquivos + triples
 
-Sem auth — quem alcança o servidor é de confiança. Restrinja na borda se
-precisar.
+Sem auth — quem alcança o servidor é de confiança.
 
 Variáveis de ambiente:
-  PHIDRO_WEB    pasta do app   (padrão: ../../web)
-  PORT          porta HTTP     (padrão: 8000)
+  STORAGE_BACKEND   local | gcs                 (padrão: local)
+  GCS_BUCKET        nome do bucket (modo gcs)
+  PHIDRO_WEB        pasta do app                (padrão: ../../web)
+  PORT              porta HTTP                  (padrão: 8000)
+  STORAGE_EMULATOR_HOST   p/ rodar contra fake-gcs-server localmente
+                          (https://github.com/fsouza/fake-gcs-server)
 """
 import os
 from pathlib import Path
 
 from datetime import datetime, timezone
-from flask import Flask, abort, jsonify, request, send_from_directory
+from flask import Flask, Response, abort, jsonify, redirect, request, send_from_directory
+
+from storage import make_store_from_env
 
 # ── Caminhos ─────────────────────────────────────────────────────────────
-WEB = Path(os.environ.get(
-    "PHIDRO_WEB",
-    Path(__file__).resolve().parents[2] / "web")).resolve()
+# WEB é o filesystem read-only do container/repo: HTML/JS/CSS/icons + os
+# TTLs estáticos (shapes, ontology, tours). Resolve em duas tentativas:
+#   1. Pi/dev: backend/pi/main.py → repo_root/web ( parents[2] / "web" )
+#   2. Container: /app/main.py    → /app/web      ( parent  / "web" )
+# `os.environ.get(k, default)` avalia `default` SEMPRE — não dá pra confiar
+# em parents[2] cru porque dá IndexError no container.
+def _default_web_path():
+    here = Path(__file__).resolve()
+    try:
+        repo_layout = here.parents[2] / "web"
+        if repo_layout.is_dir():
+            return repo_layout
+    except IndexError:
+        pass
+    return here.parent / "web"
+
+WEB = Path(os.environ.get("PHIDRO_WEB") or _default_web_path()).resolve()
 DATA_DIR      = WEB / "data"
 SHAPES_PATH   = DATA_DIR / "shapes.ttl"
 ONTOLOGY_PATH = DATA_DIR / "ontology.ttl"
-MANIFEST_PATH = DATA_DIR / "data_graphs.ttl"
-UPLOADS_TTL   = DATA_DIR / "uploads.ttl"
-PHOTOS_DIR    = WEB / "photos"
-DATA_DIR.mkdir(parents=True, exist_ok=True)
-PHOTOS_DIR.mkdir(parents=True, exist_ok=True)
+
+# Store = estado mutável. Em modo local, raiz = PHIDRO_WEB (mesma layout
+# que o Pi: data/uploads.ttl, photos/<phash>/...); em modo gcs, raiz é o
+# bucket GCS. Os "keys" são strings relativas, mesmas em ambos os modos.
+STORE = make_store_from_env(WEB)
+
+# Keys de estado mutável (usados como `STORE.read_text(...)` etc.)
+KEY_UPLOADS  = "data/uploads.ttl"
+KEY_MANIFEST = "data/data_graphs.ttl"
 
 VOID_NS = "http://rdfs.org/ns/void#"
 
@@ -72,8 +100,17 @@ def _load_validator():
         return _validator
     import pyshacl
     from rdflib import Graph
-    shapes = Graph().parse(SHAPES_PATH, format="turtle")
-    ont    = Graph().parse(ONTOLOGY_PATH, format="turtle")
+    # Lê via _load_dump_text — bucket-first (permite override sem redeploy),
+    # com fallback pro arquivo baked-in no container. Mesma semântica que
+    # o catálogo: bucket é a fonte vigente, container é o seed inicial.
+    shapes_text = _load_dump_text("shapes.ttl")
+    ont_text    = _load_dump_text("ontology.ttl")
+    if not shapes_text:
+        raise RuntimeError("shapes.ttl ausente em bucket e container")
+    if not ont_text:
+        raise RuntimeError("ontology.ttl ausente em bucket e container")
+    shapes = Graph().parse(data=shapes_text, format="turtle")
+    ont    = Graph().parse(data=ont_text, format="turtle")
     _validator = {
         "pyshacl": pyshacl,
         "Graph":   Graph,
@@ -97,6 +134,23 @@ def _invalidate_catalog():
     _catalog_cache = None
 
 
+def _load_dump_text(fname):
+    """Resolve um dump TTL — bucket primeiro, container como fallback.
+
+    Bucket-first permite override de shapes/ontology/tours sem redeploy do
+    container: basta `gcloud storage cp` pro bucket. O container traz uma
+    cópia "seed" usada quando o bucket ainda não tem o arquivo (boot inicial,
+    rollback, dev local sem GCS).
+    """
+    text = STORE.read_text(f"data/{fname}")
+    if text:
+        return text
+    static_path = DATA_DIR / fname
+    if static_path.exists() and static_path.stat().st_size > 0:
+        return static_path.read_text()
+    return None
+
+
 def _load_catalog():
     global _catalog_cache
     if _catalog_cache is not None:
@@ -104,25 +158,24 @@ def _load_catalog():
     v = _load_validator()
     Graph = v["Graph"]
     catalog = Graph()
-    if not MANIFEST_PATH.exists():
+    manifest_text = STORE.read_text(KEY_MANIFEST)
+    if manifest_text is None:
         _catalog_cache = catalog
         return catalog
     manifest = Graph().parse(
-        MANIFEST_PATH, format="turtle", publicID=MANIFEST_BASE)
+        data=manifest_text, format="turtle", publicID=MANIFEST_BASE)
     from rdflib import URIRef
     pred = URIRef(VOID_NS + "dataDump")
     loaded = 0
     for _s, _p, o in manifest.triples((None, pred, None)):
         url = str(o)
-        # Resolve para Path local: o objeto está sob MANIFEST_BASE; o que
-        # vier depois é o nome do arquivo em web/data/.
         fname = url[len(MANIFEST_BASE):] if url.startswith(MANIFEST_BASE) \
                 else url.rsplit("/", 1)[-1]
-        path = DATA_DIR / fname
-        if not (path.exists() and path.stat().st_size > 0):
+        text = _load_dump_text(fname)
+        if not text:
             continue
         try:
-            catalog.parse(path, format="turtle")
+            catalog.parse(data=text, format="turtle")
             loaded += 1
         except Exception as e:  # noqa: BLE001
             print(f"[validator] não consegui parsear {fname}: {e}")
@@ -244,8 +297,9 @@ def _load_manifest():
     v = _load_validator()
     Graph = v["Graph"]
     g = Graph()
-    if MANIFEST_PATH.exists() and MANIFEST_PATH.stat().st_size > 0:
-        g.parse(MANIFEST_PATH, format="turtle", publicID=MANIFEST_BASE)
+    text = STORE.read_text(KEY_MANIFEST)
+    if text is not None:
+        g.parse(data=text, format="turtle", publicID=MANIFEST_BASE)
     else:
         g.parse(data=MANIFEST_SEED, format="turtle", publicID=MANIFEST_BASE)
     return g
@@ -254,14 +308,8 @@ def _load_manifest():
 def _save_manifest(g):
     import re
     out = g.serialize(format="turtle", base=MANIFEST_BASE)
-    # rdflib injeta `@base <...>` no topo; isso é necessário internamente para
-    # produzir URIs relativas (`<tours.ttl>`), mas se o arquivo ficar com a
-    # diretiva o browser resolve as URIs contra o base opaco
-    # (https://pedalhidrografi.co/.manifest/) em vez do URL real de fetch.
-    # Removemos a primeira linha @base para que `<tours.ttl>` etc. resolvam
-    # contra a URL onde o arquivo está servido (web/data/data_graphs.ttl).
     out = re.sub(r'^@base\s+<[^>]*>\s*\.\s*\n', '', out, count=1, flags=re.MULTILINE)
-    MANIFEST_PATH.write_text(out)
+    STORE.write_text(KEY_MANIFEST, out)
 
 
 def _manifest_root():
@@ -288,7 +336,7 @@ def register_upload_in_manifest(filename):
 
 def unregister_upload_in_manifest(filename):
     """Remove a linha `void:dataDump <filename>` do manifesto."""
-    if not MANIFEST_PATH.exists():
+    if not STORE.exists(KEY_MANIFEST):
         return False
     from rdflib import URIRef
     g = _load_manifest()
@@ -335,8 +383,9 @@ def upsert_image_in_uploads(image_ttl, phash, audit_ttl):
     from rdflib import URIRef
     image_iri = URIRef(PHD_NS + "image_" + phash)
     catalog = Graph()
-    if UPLOADS_TTL.exists() and UPLOADS_TTL.stat().st_size > 0:
-        catalog.parse(UPLOADS_TTL, format="turtle")
+    existing = STORE.read_text(KEY_UPLOADS)
+    if existing:
+        catalog.parse(data=existing, format="turtle")
     # 1) Tira da imagem (+ bnodes de hash/loc).
     _purge_subject(catalog, image_iri)
     # 2) Tira qualquer ph:Upload activity que tenha gerado essa imagem.
@@ -344,22 +393,23 @@ def upsert_image_in_uploads(image_ttl, phash, audit_ttl):
         _purge_subject(catalog, s)
     # 3) Mescla os novos blocos (imagem + nova activity).
     catalog += Graph().parse(data=image_ttl + audit_ttl, format="turtle")
-    UPLOADS_TTL.write_text(catalog.serialize(format="turtle"))
+    STORE.write_text(KEY_UPLOADS, catalog.serialize(format="turtle"))
 
 
 def remove_image_from_uploads(phash):
     """Remove triples da imagem + da sua activity de envio. Retorna nº de triples."""
-    if not UPLOADS_TTL.exists() or UPLOADS_TTL.stat().st_size == 0:
+    existing = STORE.read_text(KEY_UPLOADS)
+    if not existing:
         return 0
     v = _load_validator()
     from rdflib import URIRef
     image_iri = URIRef(PHD_NS + "image_" + phash)
     catalog = v["Graph"]()
-    catalog.parse(UPLOADS_TTL, format="turtle")
+    catalog.parse(data=existing, format="turtle")
     n = _purge_subject(catalog, image_iri)
     for s in list(catalog.subjects(URIRef(PROV_GEN_URI), image_iri)):
         n += _purge_subject(catalog, s)
-    UPLOADS_TTL.write_text(catalog.serialize(format="turtle"))
+    STORE.write_text(KEY_UPLOADS, catalog.serialize(format="turtle"))
     return n
 
 
@@ -369,20 +419,79 @@ def health():
     return "ok\n"
 
 
+@app.post("/reload")
+def reload_caches():
+    """Invalida os caches do validador (shapes/ontology) e do catálogo
+    (uploads, tours). Chame após mexer manualmente em qualquer TTL no
+    bucket pra forçar a próxima requisição a re-ler do GCS.
+
+    Sem auth — quem alcança o servidor é de confiança (mesma política
+    do resto da API). Restrinja na borda (Cloudflare Worker / Access)
+    se isso deixar de valer.
+
+    Em Cloud Run com múltiplas instâncias, isto só invalida o cache
+    *desta* instância. Pra forçar todas as instâncias a recarregar,
+    role um novo deploy ou:
+       gcloud run services update-traffic phidro --to-latest \\
+         --region=southamerica-east1 --project=pedal-hidrografico
+    (Touchar o traffic recria todas as instâncias.)"""
+    global _validator
+    _validator = None
+    _invalidate_catalog()
+    return jsonify(ok=True, reloaded=["validator", "catalog"])
+
+
 @app.get("/")
 def index():
     return send_from_directory(WEB, "index.html")
 
 
+@app.get("/data/<filename>")
+def get_data_ttl(filename):
+    """Handler único pra /data/*.ttl — bucket-first, container fallback.
+
+    Inclui os mutáveis (uploads.ttl, data_graphs.ttl) e os estáticos
+    overrideables (shapes.ttl, ontology.ttl, tours.ttl). Quando o arquivo
+    não existe em nenhum dos dois lugares, devolve um seed razoável pros
+    dois mutáveis ou 404 pros demais.
+    """
+    text = _load_dump_text(filename)
+    if text is None:
+        if filename == "uploads.ttl":
+            text = ""             # catálogo vazio — válido
+        elif filename == "data_graphs.ttl":
+            text = MANIFEST_SEED  # manifesto mínimo
+        else:
+            abort(404)
+    return Response(text, mimetype="text/turtle",
+                    headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/photos/<path:p>")
+def get_photo(p):
+    key = f"photos/{p}"
+    # Se o store expõe URL pública (GCS), redireciona — muito mais eficiente
+    # que streamar via Flask. Local store retorna None e cai no fallback.
+    url = STORE.public_url(key)
+    if url:
+        return redirect(url, code=302)
+    # Fallback: serve diretamente do filesystem (modo local).
+    if (WEB / "photos" / p).is_file():
+        resp = send_from_directory(WEB / "photos", p)
+        resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return resp
+    abort(404)
+
+
 @app.get("/<path:p>")
 def web_files(p):
-    """Estáticos de web/ — inclui ./data/*.ttl e ./photos/<phash>/*.jpg."""
+    """Estáticos de web/ — inclui ./data/{shapes,ontology,tours}.ttl e tudo
+    o que não é mutável. Os mutáveis (uploads, data_graphs, photos/*) têm
+    handlers próprios acima e nunca caem aqui."""
     if (WEB / p).is_file():
         resp = send_from_directory(WEB, p)
         if p.endswith(".ttl") or p.endswith(".json"):
             resp.headers["Cache-Control"] = "no-cache"
-        elif p.startswith("photos/"):
-            resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
         return resp
     abort(404)
 
@@ -406,8 +515,6 @@ def upload_image():
         return jsonify(error="shacl", details=errors, phash=phash), 400
 
     # Variantes — pelo menos uma é obrigatória.
-    folder = PHOTOS_DIR / phash
-    folder.mkdir(parents=True, exist_ok=True)
     written = []
     for variant in ("original", "large", "thumb"):
         f = request.files.get(variant)
@@ -419,16 +526,19 @@ def upload_image():
             ext = (os.path.splitext(f.filename or "")[1].lstrip(".") or "jpg").lower()
             if ext not in ("jpg", "jpeg", "png", "heic", "heif"):
                 ext = "jpg"
-            # Normaliza pra `.jpg` — o cliente resolve URLs como `original.jpg`
-            # e não tem como descobrir extensões alternativas; sem isso, fotos
-            # salvas como `original.jpeg` 404am no download/preview.
             if ext == "jpeg":
                 ext = "jpg"
         else:
             ext = "jpg"
-        out = folder / f"{variant}.{ext}"
-        f.save(str(out))
-        written.append(out.name)
+        key = f"photos/{phash}/{variant}.{ext}"
+        # MIME por extensão; deixamos o store inferir se ausente.
+        ct = {
+            "jpg": "image/jpeg", "png": "image/png",
+            "heic": "image/heic", "heif": "image/heif",
+        }.get(ext)
+        data = f.read()
+        STORE.write_bytes(key, data, content_type=ct)
+        written.append(f"{variant}.{ext}")
     if not written:
         return jsonify(error="nenhuma variante de imagem enviada"), 400
 
@@ -454,19 +564,12 @@ def delete_image(phash):
     phash = (phash or "").strip().lower()
     if not phash or not all(c in "0123456789abcdef" for c in phash):
         return jsonify(error="phash inválido"), 400
-    folder = PHOTOS_DIR / phash
-    removed_files = 0
-    if folder.is_dir():
-        for f in folder.iterdir():
-            try:
-                f.unlink()
-                removed_files += 1
-            except OSError:
-                pass
-        try:
-            folder.rmdir()
-        except OSError:
-            pass
+    prefix = f"photos/{phash}/"
+    removed_files = len(STORE.list_keys(prefix)) if hasattr(STORE, "list_keys") else 0
+    try:
+        STORE.delete_prefix(prefix)
+    except Exception as e:  # noqa: BLE001
+        print(f"[delete-image] erro removendo {prefix}: {e}")
     try:
         removed_triples = remove_image_from_uploads(phash)
         _invalidate_catalog()

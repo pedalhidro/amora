@@ -70,6 +70,11 @@ const SETTINGS_DEFAULTS = {
     segmentSec: 12,                     // tempo por trilha antes do crossfade
     crossfadeSec: 5,                    // duração do crossfade entre trilhas
   },
+  fovCone: {
+    enabled: true,                      // mostra cone de visada quando há EXIF bearing
+    sizeScale: 1.0,                     // multiplica o raio do cone (1 = default ~38 SVG units)
+    opacity: 0.45,                      // 0..1, aplicado em fill-opacity via custom property
+  },
   images: {
     // Markers usam `image-set(thumb 1x, large 2x)` por padrão — em retina
     // o browser baixa a versão `large` (~500 KB) pra nitidez. Com dezenas
@@ -714,7 +719,10 @@ function photoDivIcon(thumbUrl, bearing, fov, extraClass, largeUrl) {
     `background-image: -webkit-image-set(url('${url1x}') 1x, url('${url2x}') 2x); ` +
     `background-image: image-set(url('${url1x}') 1x, url('${url2x}') 2x);`;
   const dot = `<div class="${dotClass}" style="${bg}"></div>`;
-  if (!Number.isFinite(bearing)) {
+  // Cone só aparece quando: EXIF traz `bearing` E o usuário não desligou
+  // em Ajustes. Sem cone, cai pro ícone redondo padrão.
+  const wantCone = Number.isFinite(bearing) && settings.fovCone?.enabled !== false;
+  if (!wantCone) {
     return L.divIcon({
       className: 'photo-dot-wrap',
       html: dot,
@@ -726,12 +734,15 @@ function photoDivIcon(thumbUrl, bearing, fov, extraClass, largeUrl) {
   const SZ = 120;
   const C = SZ / 2;
   const f = Number.isFinite(fov) ? Math.max(10, Math.min(170, fov)) : 70;
+  const scale = Number.isFinite(settings.fovCone?.sizeScale)
+    ? Math.max(0.25, Math.min(2, settings.fovCone.sizeScale)) : 1;
+  const r = 38 * scale;
   return L.divIcon({
     className: 'photo-dot-wrap',
     html:
       `<div class="photo-aim" style="width:${SZ}px;height:${SZ}px">` +
       `<svg width="${SZ}" height="${SZ}" viewBox="0 0 ${SZ} ${SZ}">` +
-      `<path d="${conePath(C, C, 38, bearing, f)}" class="photo-cone"/>` +
+      `<path d="${conePath(C, C, r, bearing, f)}" class="photo-cone"/>` +
       `</svg>${dot}</div>`,
     iconSize: [SZ, SZ],
     iconAnchor: [C, C],
@@ -1132,6 +1143,12 @@ async function loadClipsCatalog() {
 }
 
 function makeClipMarkers(clips) {
+  // Pane dedicado pra clipes — z-index acima do markerPane (600) faz com
+  // que os anéis pulsando fiquem ACIMA das fotos quando se sobrepõem.
+  if (!map.getPane('clipMarkers')) {
+    const pane = map.createPane('clipMarkers');
+    pane.style.zIndex = '650';
+  }
   for (const { marker } of clipsMarkers) map.removeLayer(marker);
   clipsMarkers = [];
   for (let i = 0; i < clips.length; i++) {
@@ -1143,7 +1160,7 @@ function makeClipMarkers(clips) {
       iconSize: [24, 24],
       iconAnchor: [12, 12],
     });
-    const m = L.marker([c.lat, c.lng], { icon, interactive: true });
+    const m = L.marker([c.lat, c.lng], { icon, interactive: true, pane: 'clipMarkers' });
     m.on('click', () => playClipAt(i));
     m.addTo(map);
     clipsMarkers.push({ clip: c, marker: m });
@@ -2363,6 +2380,27 @@ function applyAllSettings() {
   applyClipMarkerSettings();
   applyAudioLoopSettings();
   applyImagesSettings();
+  applyFovConeSettings();
+}
+// Cone de visada: a opacidade pega efeito via CSS var (live), mas o
+// enable/disable e a escala reconstroem o ícone — então recarregamos as
+// fotos quando esses dois mudam. Igual ao truque do useLarge.
+let _lastFovEnabled = null;
+let _lastFovScale = null;
+function applyFovConeSettings() {
+  const op = Number.isFinite(settings.fovCone?.opacity) ? settings.fovCone.opacity : 0.45;
+  document.documentElement.style.setProperty('--photo-cone-opacity', String(op));
+  const enabled = settings.fovCone?.enabled !== false;
+  const scale = Number.isFinite(settings.fovCone?.sizeScale) ? settings.fovCone.sizeScale : 1;
+  const structuralChange = (_lastFovEnabled !== null && _lastFovEnabled !== enabled)
+                        || (_lastFovScale   !== null && _lastFovScale   !== scale);
+  _lastFovEnabled = enabled;
+  _lastFovScale   = scale;
+  if (structuralChange
+      && typeof reloadPhotos === 'function'
+      && typeof photoMarkers !== 'undefined' && photoMarkers.length) {
+    reloadPhotos();
+  }
 }
 // `images.useLarge` é lido em tempo de criação dos markers — pra refletir
 // uma mudança no toggle, precisamos reconstruir. `reloadPhotos` faz isso.

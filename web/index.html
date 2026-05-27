@@ -423,6 +423,26 @@
             </label>
           </section>
 
+          <!-- Cone de visada (FOV) — leque translúcido apontando pra onde a foto foi feita -->
+          <section class="settings-section" data-section="fovCone">
+            <h3>Cone de visada</h3>
+            <p class="muted">Leque translúcido apontando para a direção em que a foto foi tirada (extraído do EXIF — bússola e distância focal).</p>
+            <label class="settings-row">
+              <span>Mostrar cones</span>
+              <input type="checkbox" data-setting="fovCone.enabled">
+            </label>
+            <label class="settings-row">
+              <span>Tamanho relativo (×)</span>
+              <input type="range" data-setting="fovCone.sizeScale" min="0.25" max="2" step="0.05">
+              <output></output>
+            </label>
+            <label class="settings-row">
+              <span>Opacidade</span>
+              <input type="range" data-setting="fovCone.opacity" min="0" max="1" step="0.05">
+              <output></output>
+            </label>
+          </section>
+
           <!-- Marker do clipe (anel branco que pulsa com a intensidade do áudio) -->
           <section class="settings-section" data-section="clipMarker">
             <h3>Marcador do clipe</h3>
