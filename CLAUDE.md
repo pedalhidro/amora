@@ -43,7 +43,11 @@ local-first.
   back to local), `dev-cloudrun.sh` (run the Cloud Run image locally),
   `deploy-amora.sh` / `pull-amora.sh` / `pi-deploy.sh` /
   `gcloud-ssh-rsync.sh` / `push-clips.sh` (Pi/amora deploy helpers),
-  `gen-synthetic-rdf.py`, `exiftool_ph.config`. `build-photos.py` and
+  `remux-clips-audio.py` (one-shot migration: muxes audio back into
+  pre-v225 silent `web/clips/*.webm` that were transcoded before audio
+  was embedded — see the upload-flow note below; removable once all
+  clips are re-encoded), `gen-synthetic-rdf.py`, `exiftool_ph.config`.
+  `build-photos.py` and
   `build-routes.mjs` are legacy artefacts pending removal — see "Open
   loose ends".
 - `docs/` — design-reference notes not loaded at runtime. `DESIGN.md`
@@ -96,8 +100,11 @@ Key flows:
   from moov ISO 6709 atom, recording-date extraction from
   `com.apple.quicktime.creationdate` (ISO 8601 with TZ regex; falls back
   to mvhd binary uint32 seconds-since-1904), browser-side transcoding to
-  webm/vp8+opus 360p+720p (audio stripped from webm and emitted as a
-  separate `audio.webm` opus@192k file), thumbnail from frame ~5% in,
+  webm/(vp9 or vp8)+opus 360p+720p with the **audio embedded in the video
+  webm** (so the ghost-video player has sound on iOS Safari, which mutes
+  `MediaElementAudioSourceNode` in some configs); a separate `audio.webm`
+  (opus) is *also* emitted so the audio loop can play without downloading
+  the full video. Thumbnail from frame ~5% in,
   per-card "Apenas áudio" toggle for audio-only clips, POSTed to
   `/upload-video`. Both flows share tour auto-detection (±2h/+12h window)
   and the Tom Select people picker with create-on-the-fly. pHash/vHash
@@ -110,7 +117,7 @@ Key flows:
   incoming TTL with the ontology before checking — `pyshacl`'s `ont_graph`
   parameter does NOT expose ontology-declared instances (like
   `ph:rwgps a schema:Organization`) to `sh:class` checks, so manual
-  merging is mandatory. See `research/photos-rdf/DESIGN.md` §2 for the
+  merging is mandatory. See `docs/DESIGN.md` §2 for the
   full gotcha. `validate_image_ttl` and `validate_video_ttl` are siblings
   that each pin to their target class + IRI prefix.
 - **Clips / Animação.** The "Animação" topbar button toggles both the
@@ -263,9 +270,9 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
 ## Open loose ends
 
 - **Retire legacy build scripts.** `scripts/build-routes.mjs` (the old
-  Node port; `package.json`'s `build:routes` script still points at it)
-  and `scripts/build-photos.py` (predates the upload form) are both
-  superseded. User-deletes when ready:
+  Node port — now orphaned; `package.json`'s `build:routes` already points
+  at `build-routes.py`) and `scripts/build-photos.py` (predates the upload
+  form) are both superseded. User-deletes when ready:
   `git rm scripts/build-routes.mjs scripts/build-photos.py`. The
   `coletor_*.py` family was already removed.
 - **Phantom path in ignore files.** `.gcloudignore` and `.dockerignore`

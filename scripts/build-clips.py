@@ -20,6 +20,7 @@ Roda:
 """
 from __future__ import annotations
 import hashlib
+import os
 import re
 import subprocess
 import sys
@@ -168,21 +169,47 @@ def parse_exiftool(path: Path) -> dict | None:
     }
 
 
+def _run_ffmpeg_atomic(build_args, dst: Path, src_name: str, label: str) -> bool:
+    """Roda ffmpeg gravando num temp e renomeia atomicamente no sucesso.
+
+    Sem isto, um ffmpeg interrompido (Ctrl-C / OOM / queda de energia) deixa
+    um arquivo parcial no destino final com mtime fresco — e o check de
+    `mtime >=` em cada função pula esse arquivo pra sempre, shippando um
+    clipe truncado. `build_args(tmp)` devolve o argv com o destino temp.
+    """
+    # Preserva a extensão real (ffmpeg infere o muxer dela): foo.360p.mp4
+    # → foo.360p.part.mp4; foo.m4a → foo.part.m4a.
+    tmp = dst.with_name(dst.stem + ".part" + dst.suffix)
+    try:
+        subprocess.check_call(build_args(tmp))
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        print(f"  [{src_name}] {label} failed: {e}", file=sys.stderr)
+        _safe_unlink(tmp)
+        return False
+    except BaseException:  # Ctrl-C etc. — não deixa parcial pra trás
+        _safe_unlink(tmp)
+        raise
+    os.replace(tmp, dst)
+    return True
+
+
+def _safe_unlink(p: Path) -> None:
+    try:
+        p.unlink()
+    except OSError:
+        pass
+
+
 def extract_audio(src: Path, dst: Path) -> bool:
     if dst.exists() and dst.stat().st_mtime >= src.stat().st_mtime:
         return True
-    try:
-        subprocess.check_call([
-            "ffmpeg", "-y", "-i", str(src),
-            "-vn", "-c:a", "aac", "-b:a", "96k",
-            "-movflags", "+faststart",
-            "-loglevel", "error",
-            str(dst),
-        ])
-        return True
-    except (subprocess.CalledProcessError, FileNotFoundError) as e:
-        print(f"  [{src.name}] audio extract failed: {e}", file=sys.stderr)
-        return False
+    return _run_ffmpeg_atomic(lambda out: [
+        "ffmpeg", "-y", "-i", str(src),
+        "-vn", "-c:a", "aac", "-b:a", "96k",
+        "-movflags", "+faststart",
+        "-loglevel", "error",
+        str(out),
+    ], dst, src.name, "audio extract")
 
 
 def extract_thumb(src: Path, dst: Path, duration: float | None) -> bool:
@@ -194,39 +221,29 @@ def extract_thumb(src: Path, dst: Path, duration: float | None) -> bool:
     # Seek pro meio: muitos clipes têm primeiros frames pretos / com letra-
     # box. Cai pra 0.5s se a duração for desconhecida.
     seek = max(0.5, (duration or 1.0) * 0.5)
-    try:
-        subprocess.check_call([
-            "ffmpeg", "-y", "-ss", f"{seek}", "-i", str(src),
-            "-vframes", "1",
-            "-vf", "scale='if(gt(iw,ih),-2,256)':'if(gt(iw,ih),256,-2)'",
-            "-q:v", "4",  # qualidade JPEG razoável
-            "-loglevel", "error",
-            str(dst),
-        ])
-        return True
-    except (subprocess.CalledProcessError, FileNotFoundError) as e:
-        print(f"  [{src.name}] thumb extract failed: {e}", file=sys.stderr)
-        return False
+    return _run_ffmpeg_atomic(lambda out: [
+        "ffmpeg", "-y", "-ss", f"{seek}", "-i", str(src),
+        "-vframes", "1",
+        "-vf", "scale='if(gt(iw,ih),-2,256)':'if(gt(iw,ih),256,-2)'",
+        "-q:v", "4",  # qualidade JPEG razoável
+        "-loglevel", "error",
+        str(out),
+    ], dst, src.name, "thumb extract")
 
 
 def transcode(src: Path, dst: Path, target_short_side: int) -> bool:
     if dst.exists() and dst.stat().st_mtime >= src.stat().st_mtime:
         return True
     s = target_short_side
-    try:
-        subprocess.check_call([
-            "ffmpeg", "-y", "-i", str(src),
-            "-vf", f"scale='if(gt(iw,ih),-2,{s})':'if(gt(iw,ih),{s},-2)'",
-            "-c:v", "libx264", "-preset", "fast", "-crf", "28",
-            "-movflags", "+faststart",
-            "-c:a", "aac", "-b:a", "96k",
-            "-loglevel", "error",
-            str(dst),
-        ])
-        return True
-    except (subprocess.CalledProcessError, FileNotFoundError) as e:
-        print(f"  [{src.name}] ffmpeg failed ({s}p): {e}", file=sys.stderr)
-        return False
+    return _run_ffmpeg_atomic(lambda out: [
+        "ffmpeg", "-y", "-i", str(src),
+        "-vf", f"scale='if(gt(iw,ih),-2,{s})':'if(gt(iw,ih),{s},-2)'",
+        "-c:v", "libx264", "-preset", "fast", "-crf", "28",
+        "-movflags", "+faststart",
+        "-c:a", "aac", "-b:a", "96k",
+        "-loglevel", "error",
+        str(out),
+    ], dst, src.name, f"ffmpeg ({s}p)")
 
 
 def load_tour_catalog() -> list[tuple[str, float]]:
@@ -376,7 +393,7 @@ def main() -> int:
         print(f"  ok {share_name}  vhash={vhash} lat={meta['lat']} lng={meta['lng']} "
               f"dur={meta['duration']}  {size_kb:.0f} KB{tag}")
 
-    UPLOADS_TTL.write_text(g.serialize(format="turtle"))
+    UPLOADS_TTL.write_text(g.serialize(format="turtle"), encoding="utf-8")
     print(f"\nUploads.ttl atualizado: {ok} clipe(s) ok, {skipped} pulado(s), "
           f"{matched_tour} associado(s) a passeio. Total triples: {len(g)}.")
     return 0

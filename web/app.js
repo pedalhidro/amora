@@ -841,7 +841,7 @@ function relaxPhotoMarkers() {
   // `_spotIntensity`, então o boost da animação não os afeta.
   const allMarkers = [];
   for (const m of photoMarkers) allMarkers.push(m);
-  for (const { marker } of clipsMarkers) allMarkers.push(marker);
+  for (const e of clipsMarkers) { if (e) allMarkers.push(e.marker); }
   for (const m of allMarkers) {
     if (!m._icon) continue;                     // ainda não adicionado ao mapa
     if (!bounds.contains(m.getLatLng())) {
@@ -1075,6 +1075,14 @@ function ensureClipsGhostVideo() {
   v.hidden = true;
   v.style.opacity = '0';
   v.volume = 0;
+  // CORS: o backend redireciona /clips/<x> pra gs://phidro-state/clips/<x>
+  // (different-origin). Sem `crossOrigin=anonymous`, o browser não faz
+  // CORS request, e quando `createMediaElementSource` engata o vídeo
+  // no Web Audio graph (pro pulse de RMS), o áudio fica TAINTED e o
+  // graph emite silêncio — embora a tag <video> sozinha tocaria normal.
+  // Bucket já tem CORS Access-Control-Allow-Origin:* configurado no
+  // deploy-cloudrun.sh, então a request CORS passa limpa.
+  v.crossOrigin = 'anonymous';
   // No `.leaflet-container` (sibling do `.leaflet-map-pane`). Não tentamos
   // mais empilhar com z-index entre tiles e markers porque o map-pane do
   // Leaflet cria seu próprio stacking context (transform), o que torna
@@ -1359,7 +1367,7 @@ function makeClipMarkers(clips) {
     const pane = map.createPane('clipMarkers');
     pane.style.zIndex = '650';
   }
-  for (const { marker } of clipsMarkers) map.removeLayer(marker);
+  for (const e of clipsMarkers) { if (e) map.removeLayer(e.marker); }
   clipsMarkers = [];
   for (let i = 0; i < clips.length; i++) {
     const c = clips[i];
@@ -1398,12 +1406,19 @@ function makeClipMarkers(clips) {
       }
     });
     m.addTo(map);
-    clipsMarkers.push({ clip: c, marker: m });
+    // Indexado pelo índice de `clipsCatalog` (não `push`) pra manter
+    // clipsMarkers[i] alinhado com clipsCatalog[i] — setActiveMarkerIntensity
+    // e getMarkerEl indexam por índice de catálogo. Hoje nenhum clipe é
+    // pulado (loadClipsFromUploadsTtl já filtra geo-less/audio-less), mas se
+    // o `continue` acima disparar, a entrada vira um buraco e os consumidores
+    // tratam com guarda em vez de desalinhar silenciosamente.
+    clipsMarkers[i] = { clip: c, marker: m };
   }
 }
 
 function highlightClipMarker(index) {
   for (let i = 0; i < clipsMarkers.length; i++) {
+    if (!clipsMarkers[i]) continue;
     const dot = clipsMarkers[i].marker.getElement()?.querySelector('.clip-marker');
     if (!dot) continue;
     dot.classList.toggle('active', i === index);
@@ -1575,8 +1590,9 @@ function stopClipsGhost() {
   }
   stopClipsIntensityLoop();
   // Limpa as classes residuais antes de soltar o `.active`.
-  for (const { marker } of clipsMarkers) {
-    const dot = marker.getElement()?.querySelector('.clip-marker');
+  for (const e of clipsMarkers) {
+    if (!e) continue;
+    const dot = e.marker.getElement()?.querySelector('.clip-marker');
     if (dot) { dot.classList.remove('intro'); dot.classList.remove('outro'); }
   }
   highlightClipMarker(-1);
@@ -2060,6 +2076,12 @@ async function reloadPhotos() {
 // ─── Fonte (Pi / CDN / Local) ─────────────────────────────────────────────
 function setPhotoSource(src) {
   if (!['auto', 'pi', 'cdn', 'local'].includes(src)) return;
+  // Saindo do modo `local`: revoga as blob URLs do kit pra não vazar memória
+  // (só eram revogadas ao importar um novo kit).
+  if (src !== 'local' && localKit) {
+    for (const u of localKit.files.values()) try { URL.revokeObjectURL(u); } catch {}
+    localKit = null;
+  }
   photoSource = src;
   try { localStorage.setItem('phidro:photoSource', src); } catch {}
   settings.photoSource = src;
@@ -2904,7 +2926,7 @@ function audioLoopAdvance() {
 
   // Próxima trilha carrega no elemento "next" e sobe de 0 até 1; current
   // desce simultaneamente. Depois trocamos papel.
-  audioLoopNext.src = CLIPS_DIR + c.audio;
+  audioLoopNext.src = CLIPS_DIR + c.audio.split('/').map(encodeURIComponent).join('/');
   audioLoopNext.currentTime = 0;
   audioLoopNext.volume = 0;
   audioLoopNext.play().catch(() => {});
@@ -5145,14 +5167,27 @@ function getEnergyWorker() {
 function runEnergyWorker(payload) {
   const w = getEnergyWorker();
   return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      w.removeEventListener('message', onmsg);
+      w.removeEventListener('error', onerr);
+    };
     const onmsg = (ev) => {
       const m = ev.data;
       if (m.kind === 'progress') return;
-      w.removeEventListener('message', onmsg);
+      cleanup();
       if (m.kind === 'error') reject(new Error(m.message));
       else resolve(m);
     };
+    // Sem isto, uma exceção não-tratada no worker deixava a promise pendurada
+    // pra sempre (o caller de estimateEnergy travava). O worker pode ter
+    // crashado, então o descartamos pra forçar recriação no próximo uso.
+    const onerr = (ev) => {
+      cleanup();
+      _energyWorker = null;
+      reject(new Error(ev.message || 'energy worker error'));
+    };
     w.addEventListener('message', onmsg);
+    w.addEventListener('error', onerr);
     w.postMessage({ kind: 'run', ...payload });
   });
 }

@@ -262,7 +262,7 @@ phd:BT a schema:EventSeries ; dcterms:title "Bondes / Trips" .
 
     tours_block = '\n# Passeios\n' + '\n'.join(tour_ttls)
 
-    TTL_PATH.write_text(prefixes + series_block + persons_block + assocs_block + tours_block)
+    TTL_PATH.write_text(prefixes + series_block + persons_block + assocs_block + tours_block, encoding="utf-8")
 
     print(f'✓ {len(tour_ttls)} passeios, {len(assocs)} associações, {len(persons)} pessoas → {TTL_PATH.relative_to(REPO_ROOT)}')
     if missing_route:
