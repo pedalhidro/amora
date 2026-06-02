@@ -841,7 +841,7 @@ function relaxPhotoMarkers() {
   // `_spotIntensity`, então o boost da animação não os afeta.
   const allMarkers = [];
   for (const m of photoMarkers) allMarkers.push(m);
-  for (const { marker } of clipsMarkers) allMarkers.push(marker);
+  for (const e of clipsMarkers) { if (e) allMarkers.push(e.marker); }
   for (const m of allMarkers) {
     if (!m._icon) continue;                     // ainda não adicionado ao mapa
     if (!bounds.contains(m.getLatLng())) {
@@ -1075,6 +1075,14 @@ function ensureClipsGhostVideo() {
   v.hidden = true;
   v.style.opacity = '0';
   v.volume = 0;
+  // CORS: o backend redireciona /clips/<x> pra gs://phidro-state/clips/<x>
+  // (different-origin). Sem `crossOrigin=anonymous`, o browser não faz
+  // CORS request, e quando `createMediaElementSource` engata o vídeo
+  // no Web Audio graph (pro pulse de RMS), o áudio fica TAINTED e o
+  // graph emite silêncio — embora a tag <video> sozinha tocaria normal.
+  // Bucket já tem CORS Access-Control-Allow-Origin:* configurado no
+  // deploy-cloudrun.sh, então a request CORS passa limpa.
+  v.crossOrigin = 'anonymous';
   // No `.leaflet-container` (sibling do `.leaflet-map-pane`). Não tentamos
   // mais empilhar com z-index entre tiles e markers porque o map-pane do
   // Leaflet cria seu próprio stacking context (transform), o que torna
@@ -1359,7 +1367,7 @@ function makeClipMarkers(clips) {
     const pane = map.createPane('clipMarkers');
     pane.style.zIndex = '650';
   }
-  for (const { marker } of clipsMarkers) map.removeLayer(marker);
+  for (const e of clipsMarkers) { if (e) map.removeLayer(e.marker); }
   clipsMarkers = [];
   for (let i = 0; i < clips.length; i++) {
     const c = clips[i];
@@ -1398,12 +1406,19 @@ function makeClipMarkers(clips) {
       }
     });
     m.addTo(map);
-    clipsMarkers.push({ clip: c, marker: m });
+    // Indexado pelo índice de `clipsCatalog` (não `push`) pra manter
+    // clipsMarkers[i] alinhado com clipsCatalog[i] — setActiveMarkerIntensity
+    // e getMarkerEl indexam por índice de catálogo. Hoje nenhum clipe é
+    // pulado (loadClipsFromUploadsTtl já filtra geo-less/audio-less), mas se
+    // o `continue` acima disparar, a entrada vira um buraco e os consumidores
+    // tratam com guarda em vez de desalinhar silenciosamente.
+    clipsMarkers[i] = { clip: c, marker: m };
   }
 }
 
 function highlightClipMarker(index) {
   for (let i = 0; i < clipsMarkers.length; i++) {
+    if (!clipsMarkers[i]) continue;
     const dot = clipsMarkers[i].marker.getElement()?.querySelector('.clip-marker');
     if (!dot) continue;
     dot.classList.toggle('active', i === index);
@@ -1575,8 +1590,9 @@ function stopClipsGhost() {
   }
   stopClipsIntensityLoop();
   // Limpa as classes residuais antes de soltar o `.active`.
-  for (const { marker } of clipsMarkers) {
-    const dot = marker.getElement()?.querySelector('.clip-marker');
+  for (const e of clipsMarkers) {
+    if (!e) continue;
+    const dot = e.marker.getElement()?.querySelector('.clip-marker');
     if (dot) { dot.classList.remove('intro'); dot.classList.remove('outro'); }
   }
   highlightClipMarker(-1);
@@ -2060,6 +2076,12 @@ async function reloadPhotos() {
 // ─── Fonte (Pi / CDN / Local) ─────────────────────────────────────────────
 function setPhotoSource(src) {
   if (!['auto', 'pi', 'cdn', 'local'].includes(src)) return;
+  // Saindo do modo `local`: revoga as blob URLs do kit pra não vazar memória
+  // (só eram revogadas ao importar um novo kit).
+  if (src !== 'local' && localKit) {
+    for (const u of localKit.files.values()) try { URL.revokeObjectURL(u); } catch {}
+    localKit = null;
+  }
   photoSource = src;
   try { localStorage.setItem('phidro:photoSource', src); } catch {}
   settings.photoSource = src;
@@ -2904,7 +2926,7 @@ function audioLoopAdvance() {
 
   // Próxima trilha carrega no elemento "next" e sobe de 0 até 1; current
   // desce simultaneamente. Depois trocamos papel.
-  audioLoopNext.src = CLIPS_DIR + c.audio;
+  audioLoopNext.src = CLIPS_DIR + c.audio.split('/').map(encodeURIComponent).join('/');
   audioLoopNext.currentTime = 0;
   audioLoopNext.volume = 0;
   audioLoopNext.play().catch(() => {});
@@ -5101,12 +5123,17 @@ function straightPath(fromLatLng, toLatLng) {
 
 // Re-fetch the routed path arriving at trackpoints[idx] from trackpoints[idx-1].
 // Falls back to a straight line on any failure.
-async function refetchPath(idx) {
+// `seqOverride`: as chamadas em lote (restaurar rota salva/compartilhada via
+// mapConcurrent) DEVEM compartilhar UM único seq, senão cada chamada
+// concorrente incrementa o contador global e invalida as irmãs — só o último
+// segmento commitava e o resto ficava na reta. Sem override, cada chamada
+// (edição interativa) pega seu próprio seq pra invalidar in-flight antigos.
+async function refetchPath(idx, seqOverride) {
   const tp = trackpoints[idx];
   const prev = trackpoints[idx - 1];
   if (!tp || !prev) return;
 
-  const seq = ++pendingRouteSeq;
+  const seq = seqOverride !== undefined ? seqOverride : ++pendingRouteSeq;
   const tpId = tp.id;
   try {
     let path;
@@ -5145,14 +5172,27 @@ function getEnergyWorker() {
 function runEnergyWorker(payload) {
   const w = getEnergyWorker();
   return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      w.removeEventListener('message', onmsg);
+      w.removeEventListener('error', onerr);
+    };
     const onmsg = (ev) => {
       const m = ev.data;
       if (m.kind === 'progress') return;
-      w.removeEventListener('message', onmsg);
+      cleanup();
       if (m.kind === 'error') reject(new Error(m.message));
       else resolve(m);
     };
+    // Sem isto, uma exceção não-tratada no worker deixava a promise pendurada
+    // pra sempre (o caller de estimateEnergy travava). O worker pode ter
+    // crashado, então o descartamos pra forçar recriação no próximo uso.
+    const onerr = (ev) => {
+      cleanup();
+      _energyWorker = null;
+      reject(new Error(ev.message || 'energy worker error'));
+    };
     w.addEventListener('message', onmsg);
+    w.addEventListener('error', onerr);
     w.postMessage({ kind: 'run', ...payload });
   });
 }
@@ -5283,7 +5323,10 @@ async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
     return straightPath(fromLatLng, toLatLng);
   }
 
-  const margin = Math.max(0, params.energySearchMarginPct / 100);
+  // Clampa nos dois lados: sem teto, um valor corrompido importado inflaria
+  // a bbox do mosaico FABDEM e alocaria um Float32Array gigante. 200% é
+  // folga de sobra pro segmento de até 2 km.
+  const margin = Math.min(2, Math.max(0, (params.energySearchMarginPct || 0) / 100));
   let west  = Math.min(fromLatLng.lng, toLatLng.lng);
   let east  = Math.max(fromLatLng.lng, toLatLng.lng);
   let south = Math.min(fromLatLng.lat, toLatLng.lat);
@@ -6073,17 +6116,23 @@ function paramsToJsonLd(p) {
 // Accept either a JSON-LD doc (detected by `@context`) or our older plain JSON.
 function paramsFromAnyJson(obj) {
   if (!obj || typeof obj !== 'object') throw new Error('JSON inválido');
+  const out = { ...DEFAULT_PARAMS };
   if (obj['@context']) {
-    const out = { ...DEFAULT_PARAMS };
     for (const [key, prof] of Object.entries(QUDT_PROFILE)) {
       const node = obj[prof.iri];
-      if (node && typeof node === 'object' && typeof node.value === 'number') {
+      if (node && typeof node === 'object' && Number.isFinite(node.value)) {
         out[key] = node.value;
       }
     }
     return out;
   }
-  return { ...DEFAULT_PARAMS, ...obj };
+  // JSON simples (formato antigo): aceita só chaves conhecidas com número
+  // finito. O spread cru `{...obj}` deixava string/NaN escorrer pro
+  // energyRoute e pro worker de energia.
+  for (const key of Object.keys(DEFAULT_PARAMS)) {
+    if (Number.isFinite(obj[key])) out[key] = obj[key];
+  }
+  return out;
 }
 
 const paramsExport = document.getElementById('params-export');
@@ -6121,6 +6170,7 @@ paramsImport.addEventListener('change', () => {
       alert(`Não foi possível carregar os parâmetros: ${err.message}`);
     }
   };
+  reader.onerror = () => alert('Não foi possível ler o arquivo de parâmetros.');
   reader.readAsText(file);
 });
 
@@ -6331,14 +6381,20 @@ async function tryLoadFromShareHash() {
     for (let i = 0; i < state.wp.length; i++) {
       const wp = state.wp[i];
       const [lat, lng, name = '', isPoi = 0, sym] = wp;
+      // Valida coords antes de criar o marker — um link corrompido com
+      // lat/lng não-numérico geraria L.latLng(NaN,NaN), bounds inválido e
+      // métricas quebradas. Pula o waypoint inválido.
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
       const tp = createTrackpoint(L.latLng(lat, lng), {
         name: name || '',
         isPoi: !!isPoi,
         sym: sym || (isPoi ? 'Flag, Blue' : 'Flag, Blue'),
       });
-      if (i > 0) {
+      // Usa o último trackpoint REALMENTE adicionado (não índice i) — um
+      // waypoint inválido pulado acima deixaria trackpoints[i-1] desalinhado.
+      if (trackpoints.length > 0) {
         tp.pathFromPrev = straightPath(
-          trackpoints[i - 1].marker.getLatLng(),
+          trackpoints[trackpoints.length - 1].marker.getLatLng(),
           tp.marker.getLatLng(),
         );
       }
@@ -6360,7 +6416,8 @@ async function tryLoadFromShareHash() {
       // Up to 4 OSRM requests in flight at once — keeps within the public
       // demo's rate limit while cutting end-to-end load by ~4× on long routes.
       const indices = Array.from({ length: trackpoints.length - 1 }, (_, i) => i + 1);
-      await mapConcurrent(indices, 4, refetchPath);
+      const routeSeq = ++pendingRouteSeq;
+      await mapConcurrent(indices, 4, (idx) => refetchPath(idx, routeSeq));
       redrawAndMetrics();
     }
     pushHistory();
@@ -6911,7 +6968,8 @@ async function loadGpxIntoEditor(gpxText) {
   // Re-route in the background if the loaded mode wants OSRM.
   if (routingMode !== 'straight') {
     const indices = Array.from({ length: trackpoints.length - 1 }, (_, i) => i + 1);
-    await mapConcurrent(indices, 4, refetchPath);
+    const routeSeq = ++pendingRouteSeq;
+    await mapConcurrent(indices, 4, (idx) => refetchPath(idx, routeSeq));
     redrawAndMetrics();
   }
   pushHistory();

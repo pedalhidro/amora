@@ -31,6 +31,8 @@ Estado estático (sempre servido pelo Flask a partir do container):
 """
 from __future__ import annotations
 
+import os
+import tempfile
 from pathlib import Path
 
 
@@ -69,26 +71,44 @@ class LocalStateStore(StateStore):
 
     def _p(self, key: str) -> Path:
         # Bloqueia escape do root via "../" — defesa em profundidade.
+        # `is_relative_to` compara componentes de path (não prefixo de string),
+        # então um dir irmão tipo `<root>_evil` não passa — diferente de um
+        # `startswith(str(self.root))` ingênuo.
         p = (self.root / key).resolve()
-        if not str(p).startswith(str(self.root)):
+        if not p.is_relative_to(self.root):
             raise ValueError(f"key escapa do root: {key}")
         return p
+
+    def _atomic_write(self, p: Path, write_fn) -> None:
+        # Grava num temp no mesmo diretório e faz os.replace (rename atômico
+        # no mesmo filesystem). Evita que um leitor concorrente — ou um crash
+        # no meio da escrita — veja um catálogo TTL truncado/meia-boca.
+        p.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=str(p.parent), prefix=".tmp-", suffix=p.suffix)
+        try:
+            with os.fdopen(fd, "wb") as f:
+                write_fn(f)
+            os.replace(tmp, p)
+        except BaseException:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
 
     def read_text(self, key):
         p = self._p(key)
         if not (p.exists() and p.is_file() and p.stat().st_size > 0):
             return None
-        return p.read_text()
+        return p.read_text(encoding="utf-8")
 
     def write_text(self, key, text, content_type="text/turtle"):
         p = self._p(key)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(text)
+        self._atomic_write(p, lambda f: f.write(text.encode("utf-8")))
 
     def write_bytes(self, key, data, content_type=None):
         p = self._p(key)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_bytes(data)
+        self._atomic_write(p, lambda f: f.write(data))
 
     def delete(self, key):
         p = self._p(key)

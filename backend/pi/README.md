@@ -10,17 +10,23 @@ persiste tudo em arquivos**, sem dependência de nuvem nem SQLite.
 Raspberry Pi  (ou Cloud Run — mesmo main.py, STATE_BACKEND escolhe storage)
   └─ gunicorn → main.py (Flask)
         ├─ GET  /                       → web/index.html (o app)
+        ├─ GET  /health                 → "ok" (liveness)
         ├─ GET  /<path>                 → estáticos de web/ (app.js, fotos,
         │                                 data/*.ttl, …)
         ├─ GET  /data/<filename>        → uploads.ttl / data_graphs.ttl
         │                                 (bucket-first, container fallback)
+        ├─ GET  /tour_assets/<path>     → arte de anúncio dos passeios
+        │                                 (302 pro bucket em modo gcs)
         ├─ POST /upload-image           → multipart: ttl + variantes;
         │                                 valida com pyshacl, grava em web/
         ├─ POST /upload-video           → multipart: ttl + audio.webm +
         │                                 (opcional) video360/720.webm +
         │                                 thumb.jpg; valida via VideoShape
+        ├─ POST /upload-tour            → upsert de 1 ph:Tour em tours.ttl
+        │                                 (+ anúncio opcional em tour_assets/)
         ├─ POST /delete-image/<phash>   → apaga arquivos + triples
         ├─ POST /delete-video/<vhash>   → apaga clipes + thumb + triples
+        ├─ POST /delete-tour/<tour_id>  → apaga triples do tour + assets
         └─ POST /reload                 → invalida caches in-memory
   └─ cloudflared → túnel HTTPS público (Pi) ou Cloud Run domain mapping
 ```
@@ -62,8 +68,9 @@ web/                            (no container do Cloud Run: só o que NÃO está
     ├─ <stem>.{360p,720p}.mp4   transcodes de build-clips.py (raw → otimizado)
     ├─ <stem>.thumb.jpg         miniatura pro marker no mapa
     ├─ audio/<stem>.m4a         trilha de áudio extraída (loop ambiente)
-    ├─ <vhash>.{360p,720p}.webm transcodes do upload form (browser-side)
-    ├─ <vhash>.audio.webm       opus 192k (qualidade alta, sem WAV pesado)
+    ├─ <vhash>.{360p,720p}.webm transcodes do upload form (browser-side,
+    │                           áudio opus EMBUTIDO no webm de vídeo)
+    ├─ <vhash>.audio.webm       opus avulso pro audio loop (não baixa o vídeo)
     └─ <vhash>.thumb.jpg
 ```
 
@@ -78,6 +85,15 @@ exige date/location/license/author etc.); vídeos contra `ph:VideoShape`
 (NÃO subclasse de `ph:Image` — não exige bearing/focal-35), que adiciona
 `schema:duration`, `ph:availableResolution`, `ph:audio`, opcionalmente
 `ph:video360p`/`ph:video720p`/`schema:thumbnail`.
+
+Passeios (`ph:Tour`) seguem a mesma mecânica, mas gravam em
+**`web/data/tours.ttl`**: `POST /upload-tour` faz upsert de exatamente 1
+tour (mais quaisquer `phd:pessoa*`/`phd:assoc_*` novos que ele referencie)
+e, se vier um campo `announcement`, salva a arte em
+`tour_assets/<tour_id>/` e injeta `schema:image`. `POST /delete-tour/<id>`
+remove os triples do tour + seus assets (mas NÃO as pessoas/séries, que
+podem ser referenciadas por outros tours). O form é `web/upload_tour.html`;
+`web/censo.html` mostra métricas agregadas + roster editável.
 
 **Backup é copiar `web/data/` + `web/photos/` + `web/clips/`** — não há
 mais nada de estado. (`web/routes.json` é regenerado por

@@ -24,21 +24,33 @@ Rotas:
   GET  /data/data_graphs.ttl      do store (mutável)
   GET  /photos/<path>             do store (redirect p/ URL pública em GCS,
                                   stream local em modo local)
+  GET  /clips/<path>              idem (vídeo/áudio/thumb)
+  GET  /tour_assets/<path>        idem (arte de anúncio de passeios)
   GET  /<path>                    estáticos de web/ (app.js, shapes.ttl, …)
   POST /upload-image              multipart com `ttl` + variantes
+  POST /upload-video              multipart com `ttl` + audio/vídeo/thumb
+  POST /upload-tour               upsert de 1 ph:Tour em tours.ttl
   POST /delete-image/<phash>      remove arquivos + triples
+  POST /delete-video/<vhash>      remove clipes + triples
+  POST /delete-tour/<tour_id>     remove triples do tour + assets
+  POST /reload                    invalida caches in-memory
 
-Sem auth — quem alcança o servidor é de confiança.
+Sem auth — quem alcança o servidor é de confiança. Todas as mutações são
+serializadas por um lock global (ver `serialized` / `_state_lock`) pra que
+POSTs concorrentes não corrompam os catálogos TTL compartilhados.
 
 Variáveis de ambiente:
   STORAGE_BACKEND   local | gcs                 (padrão: local)
   GCS_BUCKET        nome do bucket (modo gcs)
   PHIDRO_WEB        pasta do app                (padrão: ../../web)
   PORT              porta HTTP                  (padrão: 8000)
+  MAX_UPLOAD_BYTES  teto do multipart por req   (padrão: 256 MiB)
   STORAGE_EMULATOR_HOST   p/ rodar contra fake-gcs-server localmente
                           (https://github.com/fsouza/fake-gcs-server)
 """
+import functools
 import os
+import threading
 from pathlib import Path
 
 from datetime import datetime, timezone
@@ -83,10 +95,33 @@ VOID_NS = "http://rdfs.org/ns/void#"
 PH_NS  = "https://pedalhidrografi.co/terms#"
 PHD_NS = "https://pedalhidrografi.co/data/"
 
-MAX_PER_UPLOAD = 32 * 1024 * 1024  # 32 MB por requisição
+# Limite por requisição. Um upload de vídeo manda 360p + 720p (webm) +
+# áudio + thumb num único multipart, então o teto precisa acomodar a soma.
+# Override via env pra hosts com clipes mais longos.
+MAX_PER_UPLOAD = int(os.environ.get("MAX_UPLOAD_BYTES") or (256 * 1024 * 1024))
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = MAX_PER_UPLOAD
+
+# Todas as mutações fazem read-modify-write num único catálogo TTL
+# compartilhado (uploads.ttl / tours.ttl / data_graphs.ttl) sem CAS. Sem
+# serialização, dois POSTs concorrentes (o servidor Flask é threaded, e o
+# form de upload manda os cards em paralelo) intercalam: o segundo writer
+# sobrescreve os triples do primeiro (lost update) ou um leitor pega o
+# arquivo truncado no meio da escrita. Um lock global serializa as mutações;
+# combinado com a escrita atômica do LocalStateStore, o catálogo fica íntegro.
+# (Em Cloud Run multi-instância isto cobre só uma instância — ali ainda
+# faltaria precondição de generation no GCS; ver storage.py.)
+_state_lock = threading.RLock()
+
+
+def serialized(fn):
+    """Serializa o handler inteiro sob `_state_lock` (validação + escrita)."""
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        with _state_lock:
+            return fn(*args, **kwargs)
+    return wrapper
 
 
 # ── Validador SHACL (lazy) ───────────────────────────────────────────────
@@ -206,8 +241,11 @@ def validate_image_ttl(ttl_text):
             f"IRI da Image deve começar com phd:image_ (atual: {image_iri})"
         ]
     phash = image_iri[len(PHD_NS + "image_"):]
-    if not phash or not all(c in "0123456789abcdef" for c in phash.lower()):
-        return False, phash, [f"phash inválido na IRI: {phash}"]
+    # phash é um pHash de 64 bits → exatamente 16 hex. Espelha o check do
+    # video (len==16) pra que um cliente não consiga cunhar diretórios
+    # photos/<phash>/ de tamanho arbitrário nem poluir o catálogo.
+    if len(phash) != 16 or not all(c in "0123456789abcdef" for c in phash.lower()):
+        return False, phash, [f"phash inválido na IRI (esperado 16 hex): {phash}"]
 
     # Mescla data + ontology + catálogo, MAS exclui triples do catálogo cujo
     # subject é a imagem em curso (ou bnodes alcançáveis a partir dela). Sem
@@ -635,6 +673,7 @@ def web_files(p):
 
 
 @app.post("/upload-image")
+@serialized
 def upload_image():
     # `ttl` pode vir como campo de formulário ou como arquivo.
     ttl_text = request.form.get("ttl")
@@ -756,6 +795,7 @@ def validate_video_ttl(ttl_text):
 
 
 @app.post("/upload-video")
+@serialized
 def upload_video():
     """Recebe um clipe já processado no browser:
       - `audio`     : opus dentro de webm (sempre presente, alta qualidade)
@@ -784,7 +824,12 @@ def upload_video():
         return jsonify(error="audio ausente (sempre obrigatório)"), 400
 
     # Valida antes de gravar — evita lixo em disco se o TTL não bate com a id.
-    ok, vhash, errors = validate_video_ttl(ttl_text)
+    # Wrap igual ao upload_image: um TTL malformado faz o parse de
+    # validate_video_ttl levantar, e sem isto virava 500 em vez de 400 limpo.
+    try:
+        ok, vhash, errors = validate_video_ttl(ttl_text)
+    except Exception as e:  # noqa: BLE001
+        return jsonify(error=f"parse: {e}"), 400
     if not ok and not vhash:
         return jsonify(error="; ".join(errors)), 400
     if vhash != vid_id:
@@ -865,6 +910,7 @@ def remove_video_from_uploads(vhash):
 
 
 @app.post("/delete-video/<vhash>")
+@serialized
 def delete_video(vhash):
     vhash = (vhash or "").strip().lower()
     if not vhash or len(vhash) != 16 or not all(c in "0123456789abcdef" for c in vhash):
@@ -888,10 +934,11 @@ def delete_video(vhash):
 
 
 @app.post("/delete-image/<phash>")
+@serialized
 def delete_image(phash):
     phash = (phash or "").strip().lower()
-    if not phash or not all(c in "0123456789abcdef" for c in phash):
-        return jsonify(error="phash inválido"), 400
+    if len(phash) != 16 or not all(c in "0123456789abcdef" for c in phash):
+        return jsonify(error="phash inválido (esperado 16 hex)"), 400
     prefix = f"photos/{phash}/"
     removed_files = len(STORE.list_keys(prefix)) if hasattr(STORE, "list_keys") else 0
     try:
@@ -910,6 +957,7 @@ def delete_image(phash):
 
 
 @app.post("/upload-tour")
+@serialized
 def upload_tour():
     """Cria/atualiza 1 ph:Tour em tours.ttl.
 
@@ -961,7 +1009,18 @@ def upload_tour():
         announcement_url = STORE.public_url(key) or f"./tour_assets/{tour_id}/announcement.{ext}"
         # Injeta schema:image se ainda não estiver no TTL (cliente pode
         # ter posto um URL externo; respeitamos a escolha do cliente).
-        if "schema:image" not in ttl_text and "schema:image" not in (ttl_text or ""):
+        # Checagem via triple (não substring): um TTL usando a IRI completa
+        # `<https://schema.org/image>` passava no teste antigo de substring
+        # `"schema:image" in ttl_text` e ganhava um image duplicado.
+        from rdflib import Graph as _RdfGraph, URIRef as _URIRef
+        _tour_uri = _URIRef(PHD_NS + f"tour_{tour_id}")
+        _img_preds = (_URIRef("https://schema.org/image"), _URIRef("http://schema.org/image"))
+        try:
+            _g = _RdfGraph().parse(data=ttl_text, format="turtle")
+            _has_image = any((_tour_uri, p, None) in _g for p in _img_preds)
+        except Exception:  # noqa: BLE001
+            _has_image = "schema:image" in ttl_text  # fallback conservador
+        if not _has_image:
             inject = (
                 f"\n# Imagem do anúncio (uploaded server-side)\n"
                 f'phd:tour_{tour_id} <https://schema.org/image> <{announcement_url}> .\n'
@@ -980,6 +1039,7 @@ def upload_tour():
 
 
 @app.post("/delete-tour/<tour_id>")
+@serialized
 def delete_tour(tour_id):
     """Remove um ph:Tour (e seus bnodes) do tours.ttl + apaga seus assets
     (tour_assets/<id>/) do store. Não toca em pessoas/séries — git history

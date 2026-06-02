@@ -102,6 +102,11 @@ fi
 DEST="${AMORA_USER}@${AMORA_INSTANCE}:${AMORA_PATH}/"
 echo "→ Syncing $REPO_ROOT  →  $DEST  (via IAP)"
 
+# `web/clips/` inteiro é excluído (não só raw/): os clipes são gerenciados
+# pelo canal dedicado `push-clips.sh` (sem --delete). Se o deploy geral aqui
+# (que usa --delete) também tocasse web/clips/, um transcode presente no
+# servidor mas ausente local seria apagado.
+#
 # --rsync-path='sudo rsync' faz o rsync remoto rodar como root, contornando
 # qualquer conflito de ownership/perms (a árvore pode ter mistura de donos
 # entre o serviço, o usuário do home, e o OS Login user). Requer passwordless
@@ -121,7 +126,7 @@ rsync -avz --human-readable --rsync-path='sudo rsync' "${PROGRESS[@]}" \
   --exclude='node_modules/' \
   --exclude='web/data/' \
   --exclude='web/photos/' \
-  --exclude='web/clips/raw/' \
+  --exclude='web/clips/' \
   --exclude='backend/pi/data/' \
   $RSYNC_EXTRA \
   "$REPO_ROOT/" "$DEST"

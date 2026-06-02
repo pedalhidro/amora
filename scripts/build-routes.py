@@ -31,6 +31,7 @@ import math
 import os
 import re
 import sys
+import urllib.error
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
@@ -81,6 +82,11 @@ def http_get(url: str, accept: str | None = None) -> tuple[int, str]:
         except Exception:
             body = ""
         return e.code, body
+    except urllib.error.URLError as e:
+        # Falha de rede/DNS/timeout (a parente de HTTPError). Antes escapava
+        # como exceção e matava a cadeia de fallback GPX→JSON; devolvemos um
+        # status sentinela 0 pra que o caller tente o próximo endpoint.
+        return 0, str(getattr(e, "reason", e))
 
 
 # ─── Leitura do tours.ttl ─────────────────────────────────────────────────────
@@ -449,7 +455,7 @@ def main() -> int:
         "source": {"file": str(TOURS_TTL.relative_to(REPO_ROOT))},
         "routes": results,
     }
-    OUTPUT_PATH.write_text(json.dumps(payload, indent=2, ensure_ascii=False))
+    OUTPUT_PATH.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
     size_kb = OUTPUT_PATH.stat().st_size / 1024
     print(f"Wrote {OUTPUT_PATH.relative_to(REPO_ROOT)} ({size_kb:.1f} KB)")
     return 0

@@ -33,7 +33,10 @@ for arg in "$@"; do
 done
 
 run() {
-  if [[ $DRY_RUN -eq 1 ]]; then echo "  (dry-run) $*"; else eval "$@"; fi
+  # Sem `eval`: recebe o comando como palavras separadas e executa direto,
+  # evitando re-parsing frágil de strings (espaços/metachars). Comandos
+  # compostos (com || etc.) são tratados inline pelos seus callers.
+  if [[ $DRY_RUN -eq 1 ]]; then echo "  (dry-run) $*"; else "$@"; fi
 }
 
 # ─── 1. git pull ─────────────────────────────────────────────────────────────
@@ -46,7 +49,7 @@ if [[ $DO_PULL -eq 1 ]]; then
     [[ $DRY_RUN -eq 0 ]] && exit 1
   fi
   echo "▸ git pull --ff-only"
-  run "git pull --ff-only"
+  run git pull --ff-only
 else
   echo "▸ pulando git pull (--no-pull)"
 fi
@@ -69,7 +72,7 @@ fi
 restart_service() {
   if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files 2>/dev/null | grep -q '^phidro\.service'; then
     echo "▸ systemctl restart phidro.service"
-    run "sudo systemctl restart phidro.service"
+    run sudo systemctl restart phidro.service
     sleep 1
     echo "▸ systemctl status phidro.service --no-pager"
     systemctl --no-pager status phidro.service | head -12 || true
@@ -77,7 +80,13 @@ restart_service() {
   fi
   if command -v launchctl >/dev/null 2>&1 && launchctl list 2>/dev/null | grep -q phidro; then
     echo "▸ launchctl kickstart -k (macOS)"
-    run "launchctl kickstart -k system/co.pedalhidrografi.phidro || launchctl kickstart -k gui/$(id -u)/co.pedalhidrografi.phidro"
+    # Compound (||) — tratado inline em vez de via run().
+    if [[ $DRY_RUN -eq 1 ]]; then
+      echo "  (dry-run) launchctl kickstart -k system/... || gui/$(id -u)/..."
+    else
+      launchctl kickstart -k system/co.pedalhidrografi.phidro \
+        || launchctl kickstart -k "gui/$(id -u)/co.pedalhidrografi.phidro"
+    fi
     return
   fi
   echo "AVISO: nem systemd nem launchctl têm o phidro registrado. Reinicie o serviço manualmente." >&2

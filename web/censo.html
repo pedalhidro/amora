@@ -543,8 +543,10 @@ function attachSort(tours) {
       // null/'' vão sempre pro fim (independente de asc/desc).
       tours.sort((a, b) => {
         const av = a[key], bv = b[key];
-        const aE = (av === null || av === '' || av === undefined);
-        const bE = (bv === null || bv === '' || bv === undefined);
+        // Trata NaN como vazio também — senão `av - bv` daria NaN e o
+        // comparador ficaria inconsistente (sort não-determinístico).
+        const aE = (av === null || av === '' || av === undefined || (isNum && Number.isNaN(Number(av))));
+        const bE = (bv === null || bv === '' || bv === undefined || (isNum && Number.isNaN(Number(bv))));
         if (aE && bE) return 0;
         if (aE) return 1;
         if (bE) return -1;

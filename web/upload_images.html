@@ -232,7 +232,8 @@ try {
 
 // ===================== Helpers básicos =================================
 function turtle_escape(s) {
-  return s.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n');
+  return (s || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+    .replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t');
 }
 function slugifyPerson(s) {
   return s.normalize('NFKD').replace(/\p{Diacritic}/gu, '')
@@ -327,10 +328,7 @@ async function computeVideoPHash(file, N = 8) {
   const url = URL.createObjectURL(file);
   v.src = url; v.muted = true; v.playsInline = true; v.preload = 'auto';
   try {
-    await new Promise((res, rej) => {
-      v.addEventListener('loadedmetadata', res, { once: true });
-      v.addEventListener('error', () => rej(new Error('vídeo não carregou pro pHash')), { once: true });
-    });
+    await waitVideoEvent(v, 'loadedmetadata', 'vídeo não carregou pro pHash');
     const dur = Math.max(0.1, v.duration || 0.1);
     const C = document.createElement('canvas');
     const SIDE = 32;
@@ -341,7 +339,7 @@ async function computeVideoPHash(file, N = 8) {
       // Pula o frame inicial absoluto (muitas vezes preto) e o final-final.
       const t = Math.min(Math.max(0.05, ((i + 0.5) / N) * dur), Math.max(0.05, dur - 0.05));
       v.currentTime = t;
-      await new Promise((r) => v.addEventListener('seeked', r, { once: true }));
+      await waitVideoEvent(v, 'seeked', 'seek falhou no pHash');
       ctx.drawImage(v, 0, 0, SIDE, SIDE);
       const data = ctx.getImageData(0, 0, SIDE, SIDE).data;
       const hex = pHashFromRgba(data, SIDE);
@@ -917,6 +915,9 @@ function removeCard(card) {
   try { URL.revokeObjectURL($('.card-thumb', card.elem).src); } catch (_) {}
   const previewEl = $('.card-video-preview', card.elem);
   if (previewEl?.src) { try { URL.revokeObjectURL(previewEl.src); } catch (_) {} }
+  // Fecha o ImageBitmap decodificado (memória nativa/GPU) — antes só era
+  // fechado nos caminhos de rejeição por dedup, vazando em cards aceitos.
+  try { card.bitmap?.close?.(); } catch (_) {}
   card.elem.remove();
   const i = cards.indexOf(card);
   if (i >= 0) cards.splice(i, 1);
@@ -1068,13 +1069,10 @@ async function videoFirstFrameBlob(file) {
   const url = URL.createObjectURL(file);
   v.src = url; v.muted = true; v.playsInline = true; v.preload = 'metadata';
   try {
-    await new Promise((res, rej) => {
-      v.addEventListener('loadedmetadata', res, { once: true });
-      v.addEventListener('error', () => rej(new Error('vídeo não pôde carregar')), { once: true });
-    });
+    await waitVideoEvent(v, 'loadedmetadata', 'vídeo não pôde carregar');
     // Seek pra ~5% da duração — evita o frame todo preto da partida.
     v.currentTime = Math.min(Math.max(0.2, v.duration * 0.05), Math.max(0.2, v.duration - 0.1));
-    await new Promise((res) => v.addEventListener('seeked', res, { once: true }));
+    await waitVideoEvent(v, 'seeked', 'seek falhou no thumb');
     const W = Math.min(320, v.videoWidth || 320);
     const H = Math.round((v.videoHeight || 180) * (W / (v.videoWidth || 320)));
     const c = document.createElement('canvas');
@@ -1093,6 +1091,21 @@ async function videoFirstFrameBlob(file) {
 // em algumas configs — som embutido contorna isso). Mantemos extractAudio
 // gerando `<vhash>.audio.webm` separado pra o audio loop usar sem precisar
 // baixar o webm de vídeo cheio.
+// Aguarda um evento de mídia com timeout + tratamento de 'error' — sem isto,
+// um `seeked`/`loadedmetadata` que nunca dispara (codec problemático, aba em
+// background) pendurava o transcode pra sempre e travava a UI de upload.
+function waitVideoEvent(el, name, errMsg, timeoutMs = 15000) {
+  return new Promise((resolve, reject) => {
+    let to = 0;
+    const off = () => { clearTimeout(to); el.removeEventListener(name, ok); el.removeEventListener('error', bad); };
+    const ok  = () => { off(); resolve(); };
+    const bad = () => { off(); reject(new Error(errMsg)); };
+    el.addEventListener(name, ok, { once: true });
+    el.addEventListener('error', bad, { once: true });
+    to = setTimeout(bad, timeoutMs);
+  });
+}
+
 async function transcodeAtShortSide(blob, startSec, endSec, shortSide, onProgress) {
   return new Promise(async (resolve, reject) => {
     const video = document.createElement('video');
@@ -1101,12 +1114,25 @@ async function transcodeAtShortSide(blob, startSec, endSec, shortSide, onProgres
     video.muted = false;
     video.playsInline = true;
     video.preload = 'auto';
-    let audioCtx = null, audioSrc = null;
+    let audioCtx = null, audioSrc = null, videoStream = null, combined = null;
+    let raf = 0, watchdog = 0, settled = false;
+    // Cleanup ÚNICO e idempotente, alcançado por onstop, onerror, o catch E o
+    // watchdog. Antes o cleanup vivia só no onstop, então um erro async do
+    // recorder vazava AudioContext (browsers limitam a ~6) + blob URL.
+    const cleanup = () => {
+      cancelAnimationFrame(raf);
+      clearTimeout(watchdog);
+      try { videoStream?.getTracks().forEach(t => t.stop()); } catch (_) {}
+      try { combined?.getTracks().forEach(t => t.stop()); } catch (_) {}
+      try { audioSrc?.disconnect(); } catch (_) {}
+      try { audioCtx?.close(); } catch (_) {}
+      try { video.pause(); } catch (_) {}
+      URL.revokeObjectURL(url);
+    };
+    const done = (out) => { if (settled) return; settled = true; cleanup(); resolve(out); };
+    const fail = (err) => { if (settled) return; settled = true; cleanup(); reject(err instanceof Error ? err : new Error(String(err))); };
     try {
-      await new Promise((r, rej) => {
-        video.addEventListener('loadedmetadata', r, { once: true });
-        video.addEventListener('error', () => rej(new Error('vídeo não carregou')), { once: true });
-      });
+      await waitVideoEvent(video, 'loadedmetadata', 'vídeo não carregou');
       const iw = video.videoWidth, ih = video.videoHeight;
       if (!iw || !ih) throw new Error('vídeo sem dimensões');
       const aspect = iw / ih;
@@ -1117,14 +1143,14 @@ async function transcodeAtShortSide(blob, startSec, endSec, shortSide, onProgres
       const canvas = document.createElement('canvas');
       canvas.width = outW; canvas.height = outH;
       const ctx = canvas.getContext('2d');
-      const videoStream = canvas.captureStream(30);
+      videoStream = canvas.captureStream(30);
       // Grafo de áudio: source → destination stream (sem tocar enquanto
       // transcoda). Combinado com o videoStream num único MediaStream.
       audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       audioSrc = audioCtx.createMediaElementSource(video);
       const audioDest = audioCtx.createMediaStreamDestination();
       audioSrc.connect(audioDest);
-      const combined = new MediaStream([
+      combined = new MediaStream([
         ...videoStream.getVideoTracks(),
         ...audioDest.stream.getAudioTracks(),
       ]);
@@ -1139,20 +1165,22 @@ async function transcodeAtShortSide(blob, startSec, endSec, shortSide, onProgres
       });
       const chunks = [];
       recorder.ondataavailable = (e) => { if (e.data?.size) chunks.push(e.data); };
-      recorder.onerror = (e) => reject(e.error || new Error('recorder error'));
+      recorder.onerror = (e) => fail(e.error || new Error('recorder error'));
+      recorder.onstop = () => done(new Blob(chunks, { type: 'video/webm' }));
       video.currentTime = startSec;
-      await new Promise((r) => video.addEventListener('seeked', r, { once: true }));
+      await waitVideoEvent(video, 'seeked', 'seek falhou');
       let stopped = false;
-      recorder.start(250);
-      video.play();
-      let raf = 0;
       const dur = Math.max(0.001, endSec - startSec);
+      recorder.start(250);
+      // Watchdog: se o playback nunca avançar (play() rejeitado/travado), o
+      // loop de render nunca encerraria — aborta após o tempo real + folga.
+      watchdog = setTimeout(() => fail(new Error('transcode timeout')), dur * 1000 + 8000);
+      video.play().catch((e) => fail(new Error('play() rejeitado: ' + (e?.message || e))));
       const render = () => {
-        if (stopped) return;
+        if (stopped || settled) return;
         if (video.currentTime >= endSec || video.ended) {
           stopped = true;
           recorder.stop();
-          try { video.pause(); } catch (_) {}
           return;
         }
         ctx.drawImage(video, 0, 0, outW, outH);
@@ -1160,18 +1188,8 @@ async function transcodeAtShortSide(blob, startSec, endSec, shortSide, onProgres
         raf = requestAnimationFrame(render);
       };
       raf = requestAnimationFrame(render);
-      recorder.onstop = () => {
-        cancelAnimationFrame(raf);
-        try { audioSrc?.disconnect(); } catch (_) {}
-        try { audioCtx?.close(); } catch (_) {}
-        URL.revokeObjectURL(url);
-        resolve(new Blob(chunks, { type: 'video/webm' }));
-      };
     } catch (e) {
-      try { audioSrc?.disconnect(); } catch (_) {}
-      try { audioCtx?.close(); } catch (_) {}
-      URL.revokeObjectURL(url);
-      reject(e);
+      fail(e);
     }
   });
 }
@@ -1188,14 +1206,26 @@ async function extractAudio(blob, startSec, endSec, onProgress) {
     video.muted = false;
     video.playsInline = true;
     video.preload = 'auto';
+    let audioCtx = null, audioSrc = null, audioDest = null;
+    let raf = 0, watchdog = 0, settled = false;
+    const cleanup = () => {
+      cancelAnimationFrame(raf);
+      clearTimeout(watchdog);
+      try { audioDest?.stream.getTracks().forEach(t => t.stop()); } catch (_) {}
+      try { audioSrc?.disconnect(); } catch (_) {}
+      try { audioCtx?.close(); } catch (_) {}
+      try { video.pause(); } catch (_) {}
+      URL.revokeObjectURL(url);
+    };
+    const done = (out) => { if (settled) return; settled = true; cleanup(); resolve(out); };
+    const fail = (err) => { if (settled) return; settled = true; cleanup(); reject(err instanceof Error ? err : new Error(String(err))); };
     try {
-      await new Promise((r, rej) => {
-        video.addEventListener('loadedmetadata', r, { once: true });
-        video.addEventListener('error', () => rej(new Error('mídia não carregou')), { once: true });
-      });
-      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      const audioSrc = audioCtx.createMediaElementSource(video);
-      const audioDest = audioCtx.createMediaStreamDestination();
+      await waitVideoEvent(video, 'loadedmetadata', 'mídia não carregou');
+      // audioCtx hoisted (declarado fora do try) pra que o cleanup feche o
+      // contexto mesmo se a falha vier depois da criação dele.
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      audioSrc = audioCtx.createMediaElementSource(video);
+      audioDest = audioCtx.createMediaStreamDestination();
       audioSrc.connect(audioDest);
       const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
         ? 'audio/webm;codecs=opus'
@@ -1206,36 +1236,28 @@ async function extractAudio(blob, startSec, endSec, onProgress) {
       });
       const chunks = [];
       recorder.ondataavailable = (e) => { if (e.data?.size) chunks.push(e.data); };
-      recorder.onerror = (e) => reject(e.error || new Error('audio recorder error'));
+      recorder.onerror = (e) => fail(e.error || new Error('audio recorder error'));
+      recorder.onstop = () => done(new Blob(chunks, { type: 'audio/webm' }));
       video.currentTime = startSec;
-      await new Promise((r) => video.addEventListener('seeked', r, { once: true }));
+      await waitVideoEvent(video, 'seeked', 'seek falhou');
       let stopped = false;
-      recorder.start(250);
-      video.play();
       const dur = Math.max(0.001, endSec - startSec);
-      let raf = 0;
+      recorder.start(250);
+      watchdog = setTimeout(() => fail(new Error('audio extract timeout')), dur * 1000 + 8000);
+      video.play().catch((e) => fail(new Error('play() rejeitado: ' + (e?.message || e))));
       const tick = () => {
-        if (stopped) return;
+        if (stopped || settled) return;
         if (video.currentTime >= endSec || video.ended) {
           stopped = true;
           recorder.stop();
-          try { video.pause(); } catch (_) {}
           return;
         }
         if (onProgress) onProgress(Math.min(1, (video.currentTime - startSec) / dur));
         raf = requestAnimationFrame(tick);
       };
       raf = requestAnimationFrame(tick);
-      recorder.onstop = () => {
-        cancelAnimationFrame(raf);
-        try { audioSrc.disconnect(); } catch (_) {}
-        try { audioCtx.close(); } catch (_) {}
-        URL.revokeObjectURL(url);
-        resolve(new Blob(chunks, { type: 'audio/webm' }));
-      };
     } catch (e) {
-      URL.revokeObjectURL(url);
-      reject(e);
+      fail(e);
     }
   });
 }

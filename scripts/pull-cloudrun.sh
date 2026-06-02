@@ -60,6 +60,16 @@ echo "→ Project: $PROJECT"
 echo "→ Bucket:  gs://$BUCKET"
 [[ -n "$MIRROR_FLAG" ]] && echo "  (modo --mirror: deleta LOCAL o que não existe no bucket)"
 
+# --mirror deleta arquivos locais ausentes no bucket. Confirmação obrigatória
+# (exceto em dry-run) — clips/raw/ é protegido pelo --exclude abaixo, mas o
+# resto de photos/ e clips/ transcodados ainda some se o bucket estiver
+# incompleto.
+if [[ -n "$MIRROR_FLAG" && -z "$DRY" ]]; then
+  echo "  ⚠ --mirror vai DELETAR arquivos locais que não existam no bucket."
+  read -r -p "  Continuar? [y/N] " _ans
+  [[ "$_ans" == "y" || "$_ans" == "Y" ]] || { echo "Abortado."; exit 1; }
+fi
+
 # ── Dados mutáveis (uploads.ttl + data_graphs.ttl) ──────────────────────
 if [[ "$SYNC_DATA" == 1 ]]; then
   mkdir -p "$REPO_ROOT/web/data"
@@ -85,11 +95,15 @@ if [[ "$SYNC_PHOTOS" == 1 ]]; then
 fi
 
 # ── clips/ ──────────────────────────────────────────────────────────────
-# raw/ não existe no bucket (deploy exclui), então sync limpo é seguro.
+# raw/ NÃO existe no bucket (deploy exclui). Por isso o --exclude abaixo é
+# OBRIGATÓRIO: sem ele, `--mirror` (--delete-unmatched-destination-objects)
+# apagaria web/clips/raw/ inteiro — centenas de MB de vídeos-fonte
+# insubstituíveis — por estarem "ausentes na origem".
 if [[ "$SYNC_CLIPS" == 1 ]]; then
   mkdir -p "$REPO_ROOT/web/clips"
-  echo "→ clips/"
+  echo "→ clips/ (raw/ protegido)"
   $DRY gcloud storage rsync --recursive $MIRROR_FLAG \
+    --exclude='^raw/.*$' \
     "gs://$BUCKET/clips" "$REPO_ROOT/web/clips" \
     --project="$PROJECT"
 fi

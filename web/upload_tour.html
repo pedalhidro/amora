@@ -254,10 +254,20 @@ const RDF_TYPE = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
 
 // ────────────────────── Helpers ──────────────────────────────────────
 function turtleEscape(s) {
-  return (s || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n');
+  return (s || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+    .replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t');
 }
 function turtleEscapeMultiline(s) {
-  return (s || '').replace(/\\/g, '\\\\').replace(/"""/g, '\\"\\"\\"');
+  // Escapa `"""` interno e qualquer aspa no fim (que estenderia o delimitador
+  // de fechamento `"""`), além de CR/barra. \n é permitido literal aqui.
+  return (s || '').replace(/\\/g, '\\\\').replace(/\r/g, '\\r')
+    .replace(/"""/g, '\\"\\"\\"').replace(/"+$/, m => m.replace(/"/g, '\\"'));
+}
+function escapeIri(u) {
+  // Percent-encoda chars que não podem aparecer crus num IRI Turtle <...>.
+  // O campo é type="url", mas isto garante RDF válido mesmo com input estranho.
+  return (u || '').replace(/[\s<>"{}|^`\\]/g, c =>
+    '%' + c.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0'));
 }
 function slugify(s, { upperFirst = false } = {}) {
   const parts = s.normalize('NFKD').replace(/\p{Diacritic}/gu, '')
@@ -286,8 +296,13 @@ function intensityFor(kj) {
 function parseDuration(value) {
   if (!value) return null;
   const parts = value.split(':').map(p => parseInt(p, 10));
+  // Aceita só HH:MM:SS ou MM:SS. Sem isto, um valor de campo único (ex.: "45")
+  // virava parts.length===1 → m=undefined → "PT45HundefinedM0S" (xsd:duration
+  // inválido) enviado pro servidor; 4+ segmentos descartavam o resto silencioso.
+  if (parts.length !== 2 && parts.length !== 3) return null;
   if (parts.some(n => !Number.isFinite(n) || n < 0)) return null;
-  const [h, m, s = 0] = parts.length === 2 ? [...parts, 0] : parts;
+  // 2 partes = HH:MM (conforme o placeholder do campo), 3 = HH:MM:SS.
+  const [h, m, s = 0] = parts;
   return `PT${h}H${m}M${s}S`;
 }
 function notice(html, level = 'ok') {
@@ -569,7 +584,7 @@ function buildTtl() {
     props.push(
       'ph:linkRoute [\n' +
       '        a ph:RouteReference ;\n' +
-      `        schema:url <${routeUrl}> ;\n` +
+      `        schema:url <${escapeIri(routeUrl)}> ;\n` +
       `        schema:provider ${routeProv || 'ph:rwgps'}\n` +
       '    ]'
     );
@@ -577,8 +592,15 @@ function buildTtl() {
   if (instagram) props.push(`ph:linkInstagram "${turtleEscape(instagram)}"^^xsd:anyURI`);
   if (narrative) props.push(`dcterms:description """${turtleEscapeMultiline(narrative)}"""@pt`);
 
-  if (attendees !== '') props.push(`ph:countAttendee ${parseInt(attendees, 10)}`);
-  if (newcomers !== '') props.push(`ph:countNewcomer ${parseInt(newcomers, 10)}`);
+  // Guarda NaN/negativo: o campo é type="number", mas um valor que parseInt
+  // não resolve por inteiro (ex.: "-") emitiria `ph:countAttendee NaN`,
+  // RDF inválido. Só emite inteiro >= 0.
+  const attendeeN = parseInt(attendees, 10);
+  if (attendees !== '' && Number.isInteger(attendeeN) && attendeeN >= 0)
+    props.push(`ph:countAttendee ${attendeeN}`);
+  const newcomerN = parseInt(newcomers, 10);
+  if (newcomers !== '' && Number.isInteger(newcomerN) && newcomerN >= 0)
+    props.push(`ph:countNewcomer ${newcomerN}`);
   if (energyKj !== '') {
     const kj = parseFloat(energyKj);
     if (Number.isFinite(kj) && kj >= 0) {

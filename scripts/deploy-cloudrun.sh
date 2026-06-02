@@ -107,17 +107,22 @@ else
     --member=allUsers \
     --role=roles/storage.objectViewer \
     --project="$PROJECT"
+fi
 
-  echo "→ Configurando CORS no bucket…"
-  CORS_FILE="$(mktemp)"
-  cat > "$CORS_FILE" <<EOF
+# CORS: aplicado em TODO deploy (idempotente), não só na criação do bucket.
+# Buckets criados antes desta config não tinham CORS — e o player ghost-video
+# usa `crossOrigin=anonymous` pro pulse de áudio via Web Audio, que SÓ recebe
+# sinal se a resposta vier com Access-Control-Allow-Origin. Sem isto, áudio
+# silencioso no modo gcs em qualquer bucket pré-existente.
+echo "→ Configurando CORS no bucket (idempotente)…"
+CORS_FILE="$(mktemp)"
+cat > "$CORS_FILE" <<EOF
 [{"origin":["*"],"method":["GET","HEAD"],"responseHeader":["Content-Type"],"maxAgeSeconds":3600}]
 EOF
-  $DRY gcloud storage buckets update "gs://$BUCKET" \
-    --cors-file="$CORS_FILE" \
-    --project="$PROJECT"
-  rm -f "$CORS_FILE"
-fi
+$DRY gcloud storage buckets update "gs://$BUCKET" \
+  --cors-file="$CORS_FILE" \
+  --project="$PROJECT"
+rm -f "$CORS_FILE"
 
 # ── 2b. Sync TTLs estáticos pro bucket ──────────────────────────────────
 # shapes.ttl, ontology.ttl, tours.ttl ficam tanto baked-in no container
