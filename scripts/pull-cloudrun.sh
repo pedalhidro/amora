@@ -2,20 +2,26 @@
 #
 # Inverso de scripts/deploy-cloudrun.sh --state-only: puxa do bucket GCS
 # (`phidro-state`) pro repo local o estado vivo do serviço — uploads.ttl,
-# data_graphs.ttl, photos/, clips/. Útil pra desenvolver localmente com
-# o catálogo atual de produção, ou pra ter backup do que foi enviado via
-# upload_images.html / upload_tour.html.
+# data_graphs.ttl, tours.ttl, photos/, clips/. Útil pra desenvolver
+# localmente com o catálogo atual de produção, ou pra ter backup do que foi
+# enviado via upload_images.html / upload_tour.html.
 #
-# NÃO baixa shapes.ttl/ontology.ttl/tours.ttl: esses ficam versionados no
-# git e o deploy é que sobe pro bucket — invertendo a direção corromperia
-# o source-of-truth.
+# tours.ttl é baixado porque os endpoints de Tour CRUD (/upload-tour,
+# /delete-tour) o mutam server-side: edições feitas pelo upload_tour.html /
+# Censo vivem só no bucket até o próximo deploy sobrescrevê-las com a cópia
+# do git. Puxe e reconcilie antes de commitar — lembrando que tours.ttl
+# também é regenerado por build-tours.py a partir do CSV.
+#
+# NÃO baixa shapes.ttl/ontology.ttl: esses ficam versionados no git e o
+# deploy é que sobe pro bucket — invertendo a direção corromperia o
+# source-of-truth.
 #
 # Usage:
-#   scripts/pull-cloudrun.sh                # uploads.ttl + data_graphs.ttl + photos/ + clips/
+#   scripts/pull-cloudrun.sh                # uploads.ttl + data_graphs.ttl + tours.ttl + photos/ + clips/
 #   scripts/pull-cloudrun.sh --dry-run      # preview, sem baixar
 #   scripts/pull-cloudrun.sh --photos-only  # só photos/
 #   scripts/pull-cloudrun.sh --clips-only   # só clips/
-#   scripts/pull-cloudrun.sh --data-only    # só uploads.ttl + data_graphs.ttl
+#   scripts/pull-cloudrun.sh --data-only    # só uploads.ttl + data_graphs.ttl + tours.ttl
 #   scripts/pull-cloudrun.sh --mirror       # espelho exato: deleta local o que
 #                                           # não existe no bucket (perigoso)
 #
@@ -70,10 +76,10 @@ if [[ -n "$MIRROR_FLAG" && -z "$DRY" ]]; then
   [[ "$_ans" == "y" || "$_ans" == "Y" ]] || { echo "Abortado."; exit 1; }
 fi
 
-# ── Dados mutáveis (uploads.ttl + data_graphs.ttl) ──────────────────────
+# ── Dados mutáveis (uploads.ttl + data_graphs.ttl + tours.ttl) ──────────
 if [[ "$SYNC_DATA" == 1 ]]; then
   mkdir -p "$REPO_ROOT/web/data"
-  for f in uploads.ttl data_graphs.ttl; do
+  for f in uploads.ttl data_graphs.ttl tours.ttl; do
     src="gs://$BUCKET/data/$f"
     dst="$REPO_ROOT/web/data/$f"
     if gcloud storage objects describe "$src" --project="$PROJECT" >/dev/null 2>&1; then

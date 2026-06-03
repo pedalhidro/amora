@@ -1,4 +1,5 @@
 @prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix ns1: <http://purl.org/pav/> .
 @prefix ph: <https://pedalhidrografi.co/terms#> .
 @prefix phd: <https://pedalhidrografi.co/data/> .
 @prefix prov: <http://www.w3.org/ns/prov#> .
@@ -1975,6 +1976,37 @@ phd:tour_99 a ph:Tour ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/54984116> ] .
 
+phd:tour_Ph94 a ph:Tour ;
+    dcterms:date "2026-06-02T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """O palco (em sentido quase literal) do nosso pedal serão alguns teatros de São Paulo com importância nos movimentos da história e da memória paulistana e brasileira.\r
+\r
+No pedal, da mesma maneira que no teatro, precisamos nos deslocar para estar onde o espetáculo vai acontecer, contrastando com comodidade e passividade da televisão e do celular.\r
+\r
+Iniciaremos no TUCA, o teatro da PUC. De lá seguiremos, acompanhando o córrego Pacaembu, até o Teatro São Pedro. Então partiremos para o Teatro Popular União e Olho Vivo, cruzando o córrego Anhanguera e seguindo pelo córrego da Luz.\r
+\r
+Seguiremos rumo ao local onde estava o Teatro de Container Mungunzá, removido pela Prefeitura em março. Ali também passa o córrego da Luz.\r
+\r
+A próxima parada será no Theatro Municipal, instalado no alto do vale do córrego Anhangabaú. \r
+Dali iremos até o Teatro de Arena, já próximo à nascente do córrego Anhanguera, que corre por baixo do Minhocão.\r
+\r
+Nosso próximo destino é o Teatro Renault, ao qual chegaremos cruzando o córrego Saracura. Deseceremos rumo ao o córrego Bixiga, ansioso por tornar a ver a luz, para chegarmos ao Teatro Oficina. Ainda seguindo um pouco deste córrego, chegaremos ao Teatro Ruth Escobar.\r
+\r
+Por fim, margeando o córrego Boa Vista, sufocado pela Av. 23 de maio, cruzando o córrego do Sapateiro e seguindo o córrego Uberaba, vamos nos dirigir ao Parque do Povo, onde esteve o Teatro Vento Forte, demolido pela Prefeitura em 2025. Ali nos dispersaremos, mas não se esqueça: Vá ao Teatro!"""@pt ;
+    dcterms:title "Teatros num contexto histórico" ;
+    ns1:providedBy phd:pessoaDandan ;
+    prov:wasAttributedTo phd:pessoaEstevam ;
+    ph:countAttendee 22 ;
+    ph:countNewcomer 6 ;
+    ph:energyEstimate [ a qudt:QuantityValue ;
+            qudt:hasUnit unit:KiloJ ;
+            qudt:numericValue 343.0 ;
+            ph:intensityClassification "Endorfinado" ] ;
+    ph:inSeriesEdition phd:assoc_PH_94 ;
+    ph:linkInstagram "https://www.instagram.com/p/DY7f96pDuCJ/?igsh=ZXlwYnVtczR6cWwy"^^xsd:anyURI ;
+    ph:linkRoute [ a ph:RouteReference ;
+            schema:provider ph:rwgps ;
+            schema:url <https://ridewithgps.com/routes/55298600> ] .
+
 phd:SESC a schema:EventSeries ;
     dcterms:title "SESC" .
 
@@ -2374,6 +2406,10 @@ phd:assoc_PH_93 a ph:Association ;
     ph:inEventSeries phd:PH ;
     ph:sequenceInSeries 93 .
 
+phd:assoc_PH_94 a ph:Association ;
+    ph:inEventSeries phd:PH ;
+    ph:sequenceInSeries 94 .
+
 phd:assoc_SESC_1 a ph:Association ;
     ph:inEventSeries phd:SESC ;
     ph:sequenceInSeries 1 .
@@ -2422,6 +2458,9 @@ phd:pessoaDelaram a schema:Person ;
 
 phd:pessoaEricalatina a schema:Person ;
     schema:alternateName "ericalatina" .
+
+phd:pessoaEstevam a schema:Person ;
+    schema:alternateName "estevam" .
 
 phd:pessoaGa a schema:Person ;
     schema:alternateName "ga" .
