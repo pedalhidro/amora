@@ -1405,7 +1405,8 @@ function makeClipMarkers(clips) {
         m.openPopup();
       }
     });
-    m.addTo(map);
+    // Visibilidade efetiva (dot estático vs. anel pulsante) é resolvida por
+    // applyClipMarkersVisibility logo abaixo, depois que o array está pronto.
     // Indexado pelo índice de `clipsCatalog` (não `push`) pra manter
     // clipsMarkers[i] alinhado com clipsCatalog[i] — setActiveMarkerIntensity
     // e getMarkerEl indexam por índice de catálogo. Hoje nenhum clipe é
@@ -1414,6 +1415,7 @@ function makeClipMarkers(clips) {
     // tratam com guarda em vez de desalinhar silenciosamente.
     clipsMarkers[i] = { clip: c, marker: m };
   }
+  applyClipMarkersVisibility();
 }
 
 function highlightClipMarker(index) {
@@ -1576,6 +1578,9 @@ async function startClipsGhost() {
   await loadClipsCatalog();
   if (!clipsCatalog || clipsCatalog.length === 0) return;
   if (clipsMarkers.length === 0) makeClipMarkers(clipsCatalog);
+  // Animação acabou de ligar: traz os markers pro mapa mesmo se "Imagens
+  // contribuídas" estiver desligada, pra que o anel pulsante apareça.
+  applyClipMarkersVisibility();
   const start = pickNextClipIndex();
   if (start >= 0) playClipAt(start);
 }
@@ -1596,6 +1601,9 @@ function stopClipsGhost() {
     if (dot) { dot.classList.remove('intro'); dot.classList.remove('outro'); }
   }
   highlightClipMarker(-1);
+  // Animação desligou: se "Imagens contribuídas" também estiver off, retira
+  // os markers do mapa (não há mais nada pra mostrar).
+  applyClipMarkersVisibility();
 }
 
 // Carrega marcadores na boot pra mostrar onde existem clipes mesmo com
@@ -2206,8 +2214,38 @@ function applyPhotoVisibility() {
     if (shouldShow && !map.hasLayer(m)) m.addTo(map);
     else if (!shouldShow && map.hasLayer(m)) map.removeLayer(m);
   }
+  applyClipMarkersVisibility();
   renderPhotoFilterChip();
   relaxPhotoMarkers();
+}
+
+// Cada marcador de clipe carrega DUAS camadas visuais no mesmo Leaflet
+// marker: o dot estático (`.photo-dot-video`) e o anel pulsante
+// (`.clip-marker`, branco/verde/laranja durante a animação). Cada uma segue
+// um controle diferente:
+//   • dot estático  → camada "Imagens contribuídas" (photosVisible)
+//   • anel pulsante → "Vídeo fantasma" / Animação (clipsAnimationActive)
+// Por isso o Leaflet marker fica no mapa quando QUALQUER um dos dois está
+// ligado; quando só a animação está ligada, escondemos o dot estático via
+// CSS (`.clip-dot-hidden`) e deixamos só o anel pulsar.
+function clipsAnimationActive() {
+  return !!(settings.spotlight?.enabled && settings.clipsGhost?.enabled);
+}
+function applyClipMarkersVisibility() {
+  const animOn = clipsAnimationActive();
+  for (const e of clipsMarkers) {
+    if (!e) continue;
+    const m = e.marker;
+    const onMap = photosVisible || animOn;
+    if (onMap && !map.hasLayer(m)) m.addTo(map);
+    else if (!onMap && map.hasLayer(m)) map.removeLayer(m);
+    if (!map.hasLayer(m)) continue;
+    const el = m.getElement();
+    if (el) el.classList.toggle('clip-dot-hidden', !photosVisible);
+    // Com fotos ligadas o dot acompanha a opacidade do slider; com só a
+    // animação no ar, o anel pulsa em opacidade cheia.
+    m.setOpacity(photosVisible ? photosOpacity : 1);
+  }
 }
 
 function showPhotos() {
@@ -2227,6 +2265,11 @@ function hidePhotos() {
 function setPhotosOpacity(frac) {
   photosOpacity = frac;
   for (const m of photoMarkers) m.setOpacity(frac);
+  // Só atenua o clipe quando o dot estático está no ar; com fotos desligadas
+  // o marker existe apenas pra animação e o anel deve pulsar em opacidade cheia.
+  if (photosVisible) {
+    for (const e of clipsMarkers) { if (e && map.hasLayer(e.marker)) e.marker.setOpacity(frac); }
+  }
 }
 
 // Liga a camada já filtrada para um pedal (usado pelo modal de rota).

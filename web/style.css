@@ -1894,6 +1894,11 @@ body.drawing .trackpoint-marker:active { cursor: grabbing !important; }
    photos pra não pesar no marker quando há thumb por baixo. */
 .photo-dot-video { border: 1.5px solid #ff5722; box-shadow: 0 0 0 1px rgba(0,0,0,0.35), 0 1px 4px rgba(0, 0, 0, 0.5); }
 
+/* "Imagens contribuídas" desligada: esconde só o dot estático do clipe; o
+   anel pulsante (`.clip-marker`) segue a "Vídeo fantasma"/Animação e
+   continua aparecendo por cima do marker mesmo sem o dot. */
+.photo-dot-wrap.clip-dot-hidden .photo-dot-video { display: none; }
+
 /* Linha de vozes no painel de camadas — só abre o modal (Parte B). */
 .layer-row.voice-row {
   margin-top: 4px;
