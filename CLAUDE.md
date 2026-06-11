@@ -44,9 +44,13 @@ local-first.
   `ph:Video`), `deploy.sh` (legacy GCS static mirror),
   `deploy-cloudrun.sh` (Cloud Run deploy + `--state` flag to sync mutable
   state), `pull-cloudrun.sh` (pull mutable state from the GCS bucket
-  back to local), `dev-cloudrun.sh` (run the Cloud Run image locally),
-  `deploy-amora.sh` / `pull-amora.sh` / `pi-deploy.sh` /
-  `gcloud-ssh-rsync.sh` / `push-clips.sh` (Pi/amora deploy helpers),
+  back to local), `sync-guard.sh` (anti-clobber guard sourced by the two
+  previous scripts — see Conventions), `dev-cloudrun.sh` (run the Cloud
+  Run image locally),
+  `pi-deploy.sh` (runs on the Pi: git pull + restart + smoke check —
+  the `deploy-amora.sh` / `pull-amora.sh` / `push-clips.sh` /
+  `gcloud-ssh-rsync.sh` rsync-over-SSH family for the old GCE VM was
+  removed; amora is Cloud Run now),
   `remux-clips-audio.py` (one-shot migration: muxes audio back into
   pre-v225 silent `web/clips/*.webm` that were transcoded before audio
   was embedded — see the upload-flow note below; removable once all
@@ -257,6 +261,17 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
   read-modify-write of the TTL catalogs silently discards the first (lost
   update). Concurrency comes from threads; Cloud Run scales by instances.
   Don't "tune" the worker count up.
+- **Local↔bucket sync is guarded against lost updates.** The four
+  dual-writer state files (`uploads.ttl`, `data_graphs.ttl`, `tours.ttl`,
+  `routes.json`) are mutated both locally (build scripts, edits) and
+  server-side (uploads, Tour CRUD via the bucket). `scripts/sync-guard.sh`
+  (sourced by `deploy-cloudrun.sh` and `pull-cloudrun.sh`) stashes the MD5
+  of the last successful sync in `.sync-state/` (gitignored, per-machine)
+  and refuses any copy whose destination changed since that baseline AND
+  differs from the source — exit 3 with reconciliation instructions.
+  `--force` overrides (and establishes the baseline on first use on a new
+  machine). Don't bypass the guard with raw `gcloud storage cp`; photos/
+  and clips/ are content-addressed and additive, so they stay unguarded.
 - **GCS read gotcha (Cloud Run).** Always use `bucket.get_blob(key)`
   rather than `bucket.blob(key) + download_as_text()` — the bare-blob form
   produced silently-stale content in Cloud Run despite the bucket having
@@ -302,6 +317,7 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
   - `--state-only` just sync mutable state, skip rebuild
   - `--mirror` make the bucket an exact mirror of local (deletes objects
     that no longer exist locally; pairs with `--state`/`--state-only`)
+  - `--force` override the anti-clobber guard (see Conventions)
   - `--dry-run` preview without executing
 - `bash scripts/deploy.sh` (or `bash scripts/deploy.sh --dry-run`) — sync
   `web/` to the legacy GCS static mirror (read-only; needs `gcloud` auth).
