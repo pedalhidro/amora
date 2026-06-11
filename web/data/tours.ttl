@@ -101,6 +101,7 @@ phd:tour_102 a ph:Tour ;
 
 phd:tour_11 a ph:Tour ;
     dcterms:date "2024-11-05T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description "Nesta rota, iremos ficar principalmente nos altos que contornam as águas e que dão luz para as nascentes! Iniciaremos descendo da Praça dos Arcos até o patamar médio dos morros que circundam o Rio Pacaembu, pegando inicialmente a margem esquerda do córrego localizado acima do estádio. Lá, contornamos o morro no qual se localiza o Asilo dos Expostos e continuamos a contornar pelos fundos do cemitério do Araçá, onde se formam dois braços promenientes do rio. Contornados estes, passamos por uma região de de penhascos até eles cederem, no qual viramos para a esquerda e cruzamos o divisor de águas com o Sumaré para então contornamos então a margem direita deste com breve devaneio para conhecer uma nascente no médio curso. Atravessamos a margem direita para a margem esquerda logo abaixo da ponte no qual a Avenida Doutor Arnaldo passa por cima da Avenida Sumaré. Feito todo o contorno pela margem esquerda, descemos por uma das nascentes no baixo curso do rio e voltamos para as águas do Pacaembu pegando ruas por de trás do parque da Água Branca. Entramos na margem direita do Pacaembu, no qual fazemos um gradual ascenso até seu médio curso, o qual fica plano até a boca de onde fizemos a partida."@pt ;
     dcterms:title "Contornar Pacaembu e Sumaré" ;
     prov:wasAttributedTo phd:pessoaDandan ;
     ph:countAttendee 9 ;
@@ -115,7 +116,8 @@ phd:tour_11 a ph:Tour ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/48970565> ] ;
     ph:mediaCount 50 ;
-    ph:movingDuration "PT1H43M"^^xsd:duration .
+    ph:movingDuration "PT1H43M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/11/announcement.jpg> .
 
 phd:tour_12 a ph:Tour ;
     dcterms:date "2024-11-09T20:00:00-03:00"^^xsd:dateTime ;
@@ -136,6 +138,9 @@ phd:tour_12 a ph:Tour ;
 
 phd:tour_13 a ph:Tour ;
     dcterms:date "2024-11-12T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Nesta rota, passaremos ao lado de locais onde serão desapropriados terrenos para o túnel da Sena Madureira, e iremos andar pelos bairros de Cambuci, Vila Monumento, Vila Glória e Vila Mariana. A rota começa por descer o Caaguaçu até o planalto onde está o bairro Vila Deodordo. Desce-se um córrego enterrado na Avenida Lins de Vasconcelos, no qual se contorna o morro pela várzea após o Largo do Cambuci até chegar no corrego enterra da Rua Oliveira Lima, o qual se segue água acima até sua nascente na Praça José Vicente Nóbrega.
+
+De lá, cruza-se o braço da crista parapegar o último córrego ocidental do Rio Ipiranga, cuja nascente está na Rua Maranjaí. Indo água abaixo, tem-se o primeiro contato com o Rio Ipiranga, e é feito um movimento de se contornar os morros por baixo tendo em vista alcançar as nacentes dos três córregos seguintes. Após isso ser feito, passamos reto pelo córrego enterrado da Avenida Prefeito Fábio Prado tendo em vista retornar pelo córrego enterra da rua Embuaçu, que é onde será construido o túnel de ligação com a Sena Madureira. Subimos água acima para passar por trechos que serão desapropriados, incluindo a rua Sousa Ramos. De lá, estamos de volta para o Metrô Vila Mariana."""@pt ;
     dcterms:title "Margens Ocidentais do Baixo Ipiranga" ;
     prov:wasAttributedTo phd:pessoaDandan ;
     ph:arrivedAt "2024-11-12T22:25:00-03:00"^^xsd:dateTime ;
@@ -152,10 +157,12 @@ phd:tour_13 a ph:Tour ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/49029471> ] ;
     ph:mediaCount 79 ;
-    ph:movingDuration "PT1H19M"^^xsd:duration .
+    ph:movingDuration "PT1H19M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/13/announcement.jpg> .
 
 phd:tour_14 a ph:Tour ;
     dcterms:date "2024-11-19T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description "Descrição nas palavras do @thiagonevesbike : “Pedal de 21km seguindo o Jaguaré e subindo alguns córregos até a crista. Vamos encontrar uma nascente no muro de uma escola com alta espectativa de tocar na água. Terminamos o pedal subindo o último córrego até a divisa com a bacia do Continental. Lá podemos parar no Pasteco o forrar o bucho com o melhor pastel do Brasil.”"@pt ;
     dcterms:title "Margens Destras do Baixo Jaguaré" ;
     prov:wasAttributedTo phd:pessoaDandan ;
     ph:arrivedAt "2024-11-19T22:17:00-03:00"^^xsd:dateTime ;
@@ -172,7 +179,8 @@ phd:tour_14 a ph:Tour ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/49272870> ] ;
     ph:mediaCount 42 ;
-    ph:movingDuration "PT1H52M"^^xsd:duration .
+    ph:movingDuration "PT1H52M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/14/announcement.jpg> .
 
 phd:tour_15 a ph:Tour ;
     dcterms:date "2024-11-20T00:00:00-03:00"^^xsd:dateTime ;
@@ -207,6 +215,9 @@ phd:tour_16 a ph:Tour ;
 
 phd:tour_17 a ph:Tour ;
     dcterms:date "2024-11-23T00:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Neste pedal, visitaremos o Parque Jurubatuba, pegaremos o Ônibus Aquático da Billings, conheceremos o projeto social Navegando nas Artes (@navegandonasartes), presenciaremos o Festival Anual do Cambuci em Parelheiros, e passearemos pelas margens do Rio Caulim, o qual forma uma várzea antes de desembocar na represa do Guarapiranga.
+
+A rota começa por estar junto com as águas do Guarapiranga até desembarcar de ônibus aquático no Parque Linear Cantinho do Céu, lá contornarmos a penísula para chegar na casinha do Navegando nas Artes, onde estará acontecendo oficinas educacionais. Após uma breve interação, pedalamos para Parelheiros por meio do caminho da crista, o qual inicialmente divide as águas do Rio Cocaia e do Billings, mas que passa a dividir as águas do Guarapiranga e do Billings após o Bairro Varginha. Continuamos nesta crista até chega em Parelheiros, para então descer do alto numa das nascentes do Rio Caulim, no Parque Linear de Parelheiros. Lá, vamos para a praça principal no qual está sendo realizada a Rota do Cambuci. Após satisfeitos, passamos a descer o Rio Caulim até o ponto no qual o nível da represa engole a várzea deste. Passamos pelo Parque Linear do Caulim, que está em vias de implantação. Uma vez no Guarapiranga, subimos e descemos um dos morros ortogonais para o . Guarapiranga, e estamos na estação de trem, no qual se despedimos"""@pt ;
     dcterms:title "Parelheiros" ;
     prov:wasAttributedTo phd:pessoaDandan ;
     ph:arrivedAt "2024-11-23T16:36:00-03:00"^^xsd:dateTime ;
@@ -223,7 +234,8 @@ phd:tour_17 a ph:Tour ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/49106874> ] ;
     ph:mediaCount 227 ;
-    ph:movingDuration "PT3H15M"^^xsd:duration .
+    ph:movingDuration "PT3H15M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/17/announcement.jpg> .
 
 phd:tour_18 a ph:Tour ;
     dcterms:date "2024-11-26T20:00:00-03:00"^^xsd:dateTime ;
@@ -284,6 +296,9 @@ phd:tour_2 a ph:Tour ;
 
 phd:tour_20 a ph:Tour ;
     dcterms:date "2024-12-03T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Neste pedal, contornaremos toda a micro bacia do Iquiririm com algumas visitas para as águas do Pirajuçara! Partiremos do Metro Butantã até a Vila Indiana passando pela confluência do Iquiririm (ou Pirajuçara-Mirim) com o Pirajuçara, e começamos o contorno do Iquiririm navegando por seu divisor de águas com as Águas Uspianas, mas sempre na drenagem do Iquirim. Ao chegar na localidade conhecida como Banca de Frutas, temos contato com o divisor Iquirim-Jaguaré, o qual delimita as fronteiras ocidentais do contorno.
+
+Ao chegar no divisor triplo de águas Iquiririm-Jaguaré-Pirajuçara. Lá, pegamos um desvio para três das nascentes do Pirajuçara, para então retornar ao Iquiririm em ponto similar e continuar o contorno no seu divisor meridional. Ao chegar no Morro do Querosene, testemunho final das águas do Iquiririm, contornos o morro desviando dos obstáculos rodoviários para então seguir as águas do Pirajuçara de volta para o nosso ponto de partida."""@pt ;
     dcterms:title "Contornar Iquirim e um pouco do Pirajuçara" ;
     prov:wasAttributedTo phd:pessoaDandan ;
     ph:arrivedAt "2024-12-04T00:29:00-03:00"^^xsd:dateTime ;
@@ -300,7 +315,8 @@ phd:tour_20 a ph:Tour ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/49182910> ] ;
     ph:mediaCount 62 ;
-    ph:movingDuration "PT2H30M"^^xsd:duration .
+    ph:movingDuration "PT2H30M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/20/announcement.jpg> .
 
 phd:tour_21 a ph:Tour ;
     dcterms:date "2024-12-06T00:00:00-03:00"^^xsd:dateTime ;
@@ -321,6 +337,9 @@ phd:tour_21 a ph:Tour ;
 
 phd:tour_22 a ph:Tour ;
     dcterms:date "2024-12-10T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Neste pedal, visitaremos as nascentes do Rio das Pedras e do braço mais canhoto do Verde que estão na Brasilândia, e voltaremos pela crista e água que dão acesso para Freguesia do Ó enquanto visita-se pontos tombados.
+
+Iniciaremos a partida da praça no Terminal Lapa, no qual acessamos a confluência dos braços destros e canhotos do Verde, água que contorna a área de influência do Pedal Hidrográfico 9 Sertões de Pirituba. De lá, seguimos a avenida-rio até a mesma metaformizar numa rua-nascente e então na avenida-crista do Morro Grande, o coração da Brasilândia e que cuja grande formação divide as águas, setentrionalmente, de Perus, Taguaçu e Jaguaré (Vermelho) e meridionalmente metade parte dos rios da Zona Norte, os quais desaguam diretamente no Tietê - Pirituba, Tanque, Verde, Guami, das Pedras e Cabuçu. Lá no alto, seguimos pela crista até se posicionar para descer na nascente mais remota do Rio das Pedras. Feito isso, subimos para a crista que o divide com o Verde, e fazemos um breve passeio para então descer algumas das escadas históricas do bairro. Lá, pedalamos rio abaixo até chegar nas ladeiras para acessar a Matriz da Freguesia do Ó, no qual finalizamos o nosso passeio para confraternizar nesta praça histórica de tamanha significância."""@pt ;
     dcterms:title "Nascentes da Brasilândia" ;
     prov:wasAttributedTo phd:pessoaDandan ;
     ph:arrivedAt "2024-12-10T22:23:00-03:00"^^xsd:dateTime ;
@@ -337,7 +356,8 @@ phd:tour_22 a ph:Tour ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/49225969> ] ;
     ph:mediaCount 58 ;
-    ph:movingDuration "PT1H20M"^^xsd:duration .
+    ph:movingDuration "PT1H20M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/22/announcement.jpg> .
 
 phd:tour_23 a ph:Tour ;
     dcterms:date "2024-12-13T00:00:00-03:00"^^xsd:dateTime ;
@@ -358,6 +378,9 @@ phd:tour_23 a ph:Tour ;
 
 phd:tour_24 a ph:Tour ;
     dcterms:date "2024-12-17T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Neste pedal - o último do ano - faremos a re-edição do Pedal Hidrográfico 3 com o 7, e iremos passar por todas as águas que passam pelos bairros de Pinheiros, Vila Madalena e Alto de Pinheiros. A rota consiste em descer e subir as águas sequencialmente enquanto se utiliza das várzeas de Pinheiros e das cristas divisoras de águas para se acessar a próxima água, para então voltar pela crista do Caaguaçu.
+
+Começamos descendo do Caaguaçu até o Rio Verde II pegando um atalho no Hospital das Clínicas para acessar sua nascente, de lá, descemos a água toda até o começo varzea do Tietê, no qual acessamos o Verde I - rio que irriga o Beco do Batman. Subimos toda a água até chegar no Metro Vila Madalena, no qual cruzamos e contornamos uma das cristas para acessar a nascente do Rio das Corujas, o qual seguimos água abaixo até a varzea que se inicia logo apoós a praça por do sol. Lá, pegamos água acima para o Bellini e ao chegar no alto, fazemos um contorno da crista para que possamos visitar cada uma das 6 nascentes esculpidas no penhasco do Caaguaçu Ocidental. Terminamos no Mirante da Lapa, no qual fazemos o caminho da crista para estar de volta para a Praça dos Arcos, o que envolve passar pelo miolo do bairro denominado de Perdizes."""@pt ;
     dcterms:title "Águas de Pinheiros" ;
     prov:wasAttributedTo phd:pessoaDandan ;
     ph:arrivedAt "2024-12-18T00:12:00-03:00"^^xsd:dateTime ;
@@ -374,10 +397,12 @@ phd:tour_24 a ph:Tour ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/49267352> ] ;
     ph:mediaCount 114 ;
-    ph:movingDuration "PT2H15M"^^xsd:duration .
+    ph:movingDuration "PT2H15M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/24/announcement.jpg> .
 
 phd:tour_25 a ph:Tour ;
     dcterms:date "2025-01-07T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description "🏞️🫰🫰 Fala, galera!!!! Amanhã primeiro pedal hidrográfico do ano terça, 7/01, 20h, saindo da praça dos arcos Vamos fazer o córrego verde II, dois córregos lá no deserto dos jardins e subir uma das águas do ibira vindo do parque do povo, passando por vila mariana e voltando pela paulista reaja com joinha pra dizer que vai"@pt ;
     dcterms:title "Verde, Anhanguera e Sapateiro" ;
     prov:wasAttributedTo phd:pessoaAnaju ;
     ph:arrivedAt "2025-01-07T23:46:00-03:00"^^xsd:dateTime ;
@@ -394,10 +419,14 @@ phd:tour_25 a ph:Tour ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/49195396> ] ;
     ph:mediaCount 28 ;
-    ph:movingDuration "PT2H"^^xsd:duration .
+    ph:movingDuration "PT2H"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/25/announcement.jpg> .
 
 phd:tour_26 a ph:Tour ;
     dcterms:date "2025-01-14T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """🌝🌝🌝 Fala, tchurma! Pedal hidrográfico ataca em noite de lua cheia terça, 14/01, 20h, praça dos arcos Vamos fazer Praça dos Arcos > morros que circundam o Rio Pacaembu indo acima do estádio > continuamos a contornar pelos fundos do cemitério do Araçá > cruzamos da microbacia do Pacaembu pra do rio Sumaré para conhecer uma nascente no médio curso > cruzamos a Avenida Doutor Arnaldo por cima da Avenida Sumaré > descemos por uma das nascentes no baixo curso do rio e voltamos para as águas do Pacaembu por trás do parque da Água Branca > entramos na margem direita do Pacaembu, no qual faremos um gradual ascenso até seu médio curso até voltar ao ponto inicial do rolê. No trajeto tem vários possíveis mirantes dos quais pretendemos contemplar a lua
+
+👍👍👍👍 Reaja com joinha pra dizer que vamo ver você na sua versão lobizome pedalante hoje"""@pt ;
     dcterms:title "Contornar Pacaembu e Sumaré" ;
     prov:wasAttributedTo phd:pessoaAnaju ;
     ph:arrivedAt "2025-01-14T23:36:00-03:00"^^xsd:dateTime ;
@@ -414,7 +443,8 @@ phd:tour_26 a ph:Tour ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/48970565> ] ;
     ph:mediaCount 41 ;
-    ph:movingDuration "PT2H"^^xsd:duration .
+    ph:movingDuration "PT2H"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/26/announcement.jpg> .
 
 phd:tour_27 a ph:Tour ;
     dcterms:date "2025-01-19T00:00:00-03:00"^^xsd:dateTime ;
@@ -435,6 +465,9 @@ phd:tour_27 a ph:Tour ;
 
 phd:tour_28 a ph:Tour ;
     dcterms:date "2025-01-21T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Neste pedal, o primeiro hidrográfico a ser só ida e com direção leste, pedalaremos todo o divisor das águas do Aricanduva e Tatuapé em relação ao Tamanduateí e seus afluentes Mooca e Oratório.
+
+A rota terá inicio nas proximidades da colina histórica paulistana, nos quais usaremos pontes para atravessar as águas dos confluentes do Anhangabaú: Saracura, Bixiga e Itororó. Feito isso, mergulhamos para a várzea do Tamanduateí e pedalamos diretamente para a colina mais próxima, que nos dará acesso ao anti-rio que dividirá o Tietê e o Tamanduateí. Lá, estaremos ora no topo, ora nas encostas, a fim de aproveitar algumas das ciclovias e parques da região. A rota será finalizada na estação São Mateus da Linha 11 do metrô, um ponto proeminente deste anti-rio. Nos despedimos dele para pegar o monotrilho elevado, e ele se despede de nós para anti-fluir para a Serra dos Guaianases."""@pt ;
     dcterms:title "Crista de Sapopema" ;
     prov:wasAttributedTo phd:pessoaDandan ;
     ph:arrivedAt "2025-01-21T23:24:00-03:00"^^xsd:dateTime ;
@@ -450,10 +483,14 @@ phd:tour_28 a ph:Tour ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/49510455> ] ;
     ph:mediaCount 48 ;
-    ph:movingDuration "PT2H6M"^^xsd:duration .
+    ph:movingDuration "PT2H6M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/28/announcement.jpg> .
 
 phd:tour_29 a ph:Tour ;
     dcterms:date "2025-01-28T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Neste pedal, iremos contornar o curso principal do Rio Anhangabaú bem como o seu trio afluente formado: Saracura, Bixiga e Itororó!
+
+Sairemos na Praça Roosevelt - o fundão da nascente do Córrego Anhanguera, e de lá seguimos pelas margens canhotas do Anhangabaú até chegar em sua foz que está na margem oposta do Largo do Pari. De lá, acompanhamos brevemente o rio tamponado até acessar a anti-nascente da Colina Histórica dos Campos de Piratininga. Lá, pegamos sua encosta na margem direita do Anhangabaú e a seguimos até sua confluência dos braços Itororó-Bixiga-Saracura, no qual seguimos a montante sempre pela margem direita. Um pouco antes de chegar na nascente do Itororó, cruzamos uma ponte para a outra margem e seguir a jusante até chegar novamente nas proximidades da confluência, o qual prontamente seguimos a montante até a nascente do Bixiga para então ir para a outra margem, seguir a jusante e repetir o mesmo com o Saracura. Em algum momento, estamos de volta no nosso local de partida e o contorno é concluído!"""@pt ;
     dcterms:title "Contornar Anhangabaú" ;
     prov:wasAttributedTo phd:pessoaDandan ;
     ph:arrivedAt "2025-01-28T22:50:00-03:00"^^xsd:dateTime ;
@@ -469,7 +506,8 @@ phd:tour_29 a ph:Tour ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/49567136> ] ;
     ph:mediaCount 7 ;
-    ph:movingDuration "PT1H40M"^^xsd:duration .
+    ph:movingDuration "PT1H40M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/29/announcement.jpg> .
 
 phd:tour_3 a ph:Tour ;
     dcterms:date "2024-09-23T20:00:00-03:00"^^xsd:dateTime ;
@@ -490,6 +528,9 @@ phd:tour_3 a ph:Tour ;
 
 phd:tour_30 a ph:Tour ;
     dcterms:date "2025-02-04T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Neste pedal, visitaremos adentraremos o rio Pirajuçara e de lá seguiremos para a planície da foz do Tietê-Pinheiros pelos sertões das cristas e córregos que bordeiam e alimentam os rios Pirajuçara, Jaguaré e Continental.
+
+Começamos no metrô, no qual rapidamente subimos parte do Pirajuçara até chegar num córrego sem denominação cujas varzeas bordeiam as cabeçeiras do Iquiririm, separados por uma extensão do Morro da Querosene. Lá, subimos para a Crista da USP - formação que começa na cidade universitária, finaliza no Morro Grande de Cotia e representa o ramo principal do labirinto das cristas que dividem os rios que desaguam na margem esquerda do Rio Pinheiros após a barragem do Guarapiranga. Lá no alto, descemos o Rio Água Podre, afluente do Jaguaré, que é prontalmente cruzado para então subir um afluente sem nome. Lá, pegamos carona topográfica na Crista de Osasco, ramo primário da Crista da USP, até chegar nas cabeçeiras do Rio Continental, divisa política dos munícipios de Osasco e São Paulo. Descemos-o e estamos na estação de trem, famintos para avaliar o conhecido Pastel de Osasco."""@pt ;
     dcterms:title "Pirajuçara, Água Podre e Crista de Osasco" ;
     prov:wasAttributedTo phd:pessoaDandan ;
     ph:arrivedAt "2025-02-05T00:19:00-03:00"^^xsd:dateTime ;
@@ -505,10 +546,14 @@ phd:tour_30 a ph:Tour ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/49567174> ] ;
     ph:mediaCount 132 ;
-    ph:movingDuration "PT1H40M"^^xsd:duration .
+    ph:movingDuration "PT1H40M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/30/announcement.jpg> .
 
 phd:tour_31 a ph:Tour ;
     dcterms:date "2025-02-11T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Neste pedal, contornaremos por cima toda a região de cabeceiras do Rio Ipiranga e teremos contato com a seção do Caaguaçu onde este conflui com as diversas cristas que se unem e formam um labirinto de morros que eventualmente correm para o leste-nordeste-leste enquanto dividem as águas do Tamanduateí-Tietê e Pinheiros! A seleção desta rota levou em conta a altitude e o alinhamento de morros e várzeas a fim de maximizar a possibilidade de encontrar mirantes para a lua cheia com o horizonte limpo.
+
+Começamos no metro Conceição, Linha Azul, no alto do Caaguaçu, com o Ipiranga e suas dezenas de micro-córregos sem denominação a esquerda, e o Rio Pinheirinho, afluente da Água Espraiada, para a nossa direita. Enquanto seguimos crista acima, corre o Rio Jabaquara para a nossa direita e após este, corre o Rio Cupucê, cujas nascentes são de uma rara declividade e teor paisagístico. Lá, o Caaguaçu se funde com duas crista-morros de significante magnitude: a do Ipiranga e a do Domitilia. Após lá, cada rio que se segue traz consigo uma nova grande crista, formando o labirinto de morros no limbo entre o território político-municipal de Diadema e da Capital. Usamos esse raro momento para observar a lua cheia, e no divisor triplo das águas do Ipiranga, Cupucê e Taboão, iniciamos nosso movimento para contornar a outra metade, no qual a crista do Ipiranga se confunde com as cercas que separam o Zoológico e a Cidade. Após as nascentes do Jardim Botânico, iniciamos nossa descida pelo Córrego sem Denominação até as margens altas do Ipiranga, o qual prontamente cruzamos para então subir pelo Córrego Sem Nome. Lá, estamos de volta ao começo e terminamos nosso contorno."""@pt ;
     dcterms:title "Cabeceiras do Ipiranga" ;
     prov:wasAttributedTo phd:pessoaDandan ;
     ph:arrivedAt "2025-02-11T22:50:00-03:00"^^xsd:dateTime ;
@@ -524,10 +569,14 @@ phd:tour_31 a ph:Tour ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/49671673> ] ;
     ph:mediaCount 45 ;
-    ph:movingDuration "PT1H30M"^^xsd:duration .
+    ph:movingDuration "PT1H30M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/31/announcement.jpg> .
 
 phd:tour_32 a ph:Tour ;
     dcterms:date "2025-02-25T19:30:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Neste pedal, subiremos o rio Mandaqui por seus afluentes Tabatinguera e Lauzane até chegar em suas cabeceiras, no qual um divisor triplo de águas é formado dando origem aos rios Tremembé - afluente do Cabuçu de Cima, e Índio, afluente do Cabuçu de baixo. Lá, descemos as águas do Horto rumo ao Tremembé, para então subir o Córrego Lavrinha que divide com o Rio Carandiru para então pegarmos o trem Tucuruvi lá no alto da Crista.
+
+Começamos na Barra Funda - no Instituto de Física Teórica, nas bordas dos antigos meandros do Rio Tietê. Lá, atravessamos este grande rio para acessar diretamente a foz enterrada do rio Mandaqui, o qual pedalamos acima até chegar nas bordas das várzeas deste, que coincide ser a foz do Rio Tabatinguera, o qual seguimos acima até suas cabeceiras, subindo-as e descendo para estar de volta para as águas do Mandaqui, desta vez em sua confluência com o seu braço direito - o Rio Lauzane. Continuamos nossa jornada em busca das cabeceiras desta água, e ao chegar nas nascentes deste, estamos na crista no qual está localizada o Horto Florestal, divisora tripla de águas para as quais fluem rumo ao Cabuçu de Baixo, de Cima, e para o Mandaqui. Pegamos a água do Cabuçu de Cima, o qual nasce como sendo o córrego do horto e conflui para virar o Rio Tremembé. Tornamos para a margem direita deste em seu médio curso para subir o Córrego Lavrinha, cujo divisor de suas nascentes o separa do Rio Carandiru. Lá, neste divisor, pegamos o metrô Tucuruvi para regressar desta zona norte."""@pt ;
     dcterms:title "Sertões do Mandaqui" ;
     prov:wasAttributedTo phd:pessoaDandan ;
     ph:arrivedAt "2025-02-25T23:21:00-03:00"^^xsd:dateTime ;
@@ -543,10 +592,18 @@ phd:tour_32 a ph:Tour ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/49741245> ] ;
     ph:mediaCount 87 ;
-    ph:movingDuration "PT1H51M"^^xsd:duration .
+    ph:movingDuration "PT1H51M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/32/announcement.jpg> .
 
 phd:tour_33 a ph:Tour ;
     dcterms:date "2025-03-11T19:30:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Semana passada choveu e a demanda popular pediu para fazer denovo!
+
+Neste pedal, mergulharemos descendo e subindo as águas que fazem o rio Lavapés e Aclimação!
+
+Começamos no largo da Liberdade, a garganta que divide o maciço principal do Caaguaçu com a Colina de Piratininga, este do qual descemos para a várzea do Tamanduatéi através da nascente do Pátio do Colégio. Lá, rodeamos a várzea para acessar a Bica do Azulejo, no fundão do Vai-Vai. Feito isso, acessamos a parte alta do Córrego Moringuinho, primeiro afluente do Lavapés, e que ao descer nos dará acesso para a confluência deste para então subirmos por seu braço canhoto, onde jaz o mítico Poço de Água Fria, do qual bebê-lo implica na cantoria de samba por noites e dias.
+
+Devidamente hidratados, cruzamos um nano divisor de águas para acessar o braço direito do Lavapés, o qual contém uma Banheira Pública e Aquecida de Hidromassagem, o qual inspecionamos e continuamos nossa descida até chegar numa anomalia hidrográfica, a qual imediatamente nos leva para a bacia da Aclimação. Lá, subimos seu curso principal até chegar no Córrego da Pedra Azul, o qual subimos até o Alto do Caaguaçu. Lá, descemos pela crista e estamos de volta ao começo!"""@pt ;
     dcterms:title "Águas do Lavapés e Aclimação" ;
     prov:wasAttributedTo phd:pessoaDandan ;
     ph:arrivedAt "2025-03-11T21:35:00-03:00"^^xsd:dateTime ;
@@ -562,10 +619,18 @@ phd:tour_33 a ph:Tour ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/49924264> ] ;
     ph:mediaCount 83 ;
-    ph:movingDuration "PT1H7M"^^xsd:duration .
+    ph:movingDuration "PT1H7M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/33/announcement.jpg> .
 
 phd:tour_34 a ph:Tour ;
     dcterms:date "2025-03-26T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Neste pedal, navegaremos pelas águas de Osasco que afluem aos rios Tietê por sua margem esquerda e para alguns do Carapicuiba pela margem direita!
+
+Começamos na Estação Comandante Sampaio, localizada na antiga área de várzea do rio Tietê, e subimos as águas do córrego Tijuco Preto até sua cabeceira.
+
+De lá, avançamos rumo ao topo de um afluente do ribeirão Carapicuíba, o córrego São Pedro, o qual descemos pelo braço direto e subimos pelo braço esquerdo para acessar o divisor triplo das águas do Padroeira-São Pedro-João Alves, no qual optamos em descer em direção às águas dum afluente deste último, que cai direto no rio Tietê, mas que ao chegar na confluência com o curso principal passamos a subir até sua nascente, que nos conecta com o mais alto do nosso trajeto, um raro divisor quádruplo, onde se dividem as micro bacias dos rios Carapicuíba via Metalúrgicos, Pinheiros via Jaguaré e Tietê via João Alves e Bussocaba.
+
+Dali, surfamos água abaixo pelas paisagens abertas e fechadas do córrego Bussocaba, até seu encontro com o córrego do Golfe Clube, o qual subimos rumo a uma das elevações da Crista de Osasco onde nasce o córrego Continental - limite natural e político entre Osasco e a capital e último corpo d'água da nossa jornada. Acompanhamos seu curso até a foz, mas não sem antes revisitarmos a Horta Comunitária de Osasco, e concluímos nosso percurso na Estação de Trem Presidente Altino, de onde regressamos, uns intermodalmente de trem e bicicleta, e outros unimodalmente por este último, com breve conferência do Pastel de Osasco caso o tempo assim permita."""@pt ;
     dcterms:title "Águas Meridionais de Osasco" ;
     prov:wasAttributedTo phd:pessoaDandan ;
     ph:arrivedAt "2025-03-26T23:10:00-03:00"^^xsd:dateTime ;
@@ -581,10 +646,16 @@ phd:tour_34 a ph:Tour ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/49999355> ] ;
     ph:mediaCount 75 ;
-    ph:movingDuration "PT1H46M"^^xsd:duration .
+    ph:movingDuration "PT1H46M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/34/announcement.jpg> .
 
 phd:tour_35 a ph:Tour ;
     dcterms:date "2025-04-01T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Neste pedal, acessaremos a parte baixa do Rio Perus por meio do único caminho viário mapeado que utiliza-se de somente um único divisor de água!
+
+Saindo da planície do Tietê, seguimos pelas várzeas do Rio Pirituba até suas cabeçeiras no Planalto de Taipas, região alta, cárstica e de raros morros globulares e que é circunscrita pela Cantareira, Morro Grande, Alto de Pirituba, Alpes do Jaraguá e o Morro de Shangrila. Suas águas majoritariamente fluem abaixo até o Rio Juqueri por meio do Rio dos Perus e do Rio Ajuá, com relevante exceção para o Corrego Corumbé, alimentador do Córrego da Onça e que margeia os Cânions da Brasilândia.
+
+Lá no alto deste planalto, seguimos pelos Alpes do Jaraguá, que separa as águas do Rio de Perus dos afluentes das planície: o Ribeirão Vermelho, que drena o sudeste do Pico do Jaraguá, e o Rio São Miguel, que drena o nordeste deste. Descendo-se este alpes, continuamos no divisor até acessar o primeiro afluente que nos conduz para o Baixo Perus em sua confluência principal. Lá, estamos na estação de trem e regressamos."""@pt ;
     dcterms:title "Subir Pirituba, Surfar Alpes do Jaraguá e Descer Perus" ;
     prov:wasAttributedTo phd:pessoaDandan ;
     ph:arrivedAt "2025-04-01T22:35:00-03:00"^^xsd:dateTime ;
@@ -600,10 +671,22 @@ phd:tour_35 a ph:Tour ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/50150417> ] ;
     ph:mediaCount 99 ;
-    ph:movingDuration "PT1H30M"^^xsd:duration .
+    ph:movingDuration "PT1H30M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/35/announcement.jpg> .
 
 phd:tour_36 a ph:Tour ;
     dcterms:date "2025-04-08T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """No coração pulsante da Zona Leste de São Paulo, entre as margens resilientes do córrego Tiquatira, vive a história inspiradora do senhor Hélio – morador local e guardião da natureza urbana que com as mãos firmes e um olhar visionário plantou, ao longo de décadas, cerca de 25 mil árvores, transformando um antigo cenário de abandono em um dos parques urbanos dos mais encantadores: o linear do Tiquatira
+
+É entre jequitibás altivos, imbaúbas acolhedoras, ingás que perfumam o ar, pitangueiras frutíferas e jacarandás floridos que a vida pulsa — não só verde, mas também alada. São 65 espécies de aves que hoje encontram abrigo neste corredor ecológico transformados por esta ação. A história de Hélio mostra que a cidade pode florescer quando há amor pela terra e compromisso com o futuro
+
+Para celebrar esta floresta urbana, nasce o Pedal Hidrográfico da Foz à Nascente Tiquatira, um trajeto celebrando a educação ambiental e contemplação da biodiversidade. Parte-se da Várzea do Tietê, nas imediações do Metrô Carrão, e segue margeando o córrego Tiquatira, na divisa entre os bairros da Penha e do Cangaíba, revelando o reencontro com as águas e as matas
+
+Esse pedal poderia ser um Bicipassarinhar. À medida que nos aproximamos da nascente do córrego, nos despedimos do concreto e nos aproximamos da essência – com o trajeto culminando nas imediações do Metrô Itaquera, passando pelo icônico Estádio do Corinthians, testemunha silenciosa dessa jornada de reconexão com o território
+
+Este pedal é um ato de reconhecimento. Um agradecimento em movimento ao senhor Hélio, cuja vida nos ensina que plantar uma árvore é semear um amanhã mais digno, mais verde e mais justo
+
+Vamos pedalar pelo senhor Hélio. Vamos pedalar pelo Tiquatira. Vamos pedalar pela vida"""@pt ;
     dcterms:title "Tiquatira da Foz à Nascente" ;
     prov:wasAttributedTo phd:pessoaDandan,
         phd:pessoaThiagoneves ;
@@ -620,10 +703,26 @@ phd:tour_36 a ph:Tour ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/50149484> ] ;
     ph:mediaCount 67 ;
-    ph:movingDuration "PT1H36M"^^xsd:duration .
+    ph:movingDuration "PT1H36M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/36/announcement.jpg> .
 
 phd:tour_37 a ph:Tour ;
     dcterms:date "2025-04-13T08:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Neste pedal percorreremos os caminhos das seguintes águas: Apiaí, Guarará, Itrapoã, Tamanduateí, Guaixaya, Cemitério, Itororó, Araçatuba, Taióca e Carapetuba.
+
+Serão 46 kms e 437 metros de subidas acumuladas, com previsão de 3 a 4 horas de atividade e encerramento no mesmo local de início, Estação Santo André da CPTM.
+
+A energia de movimento estimada é de 715 quilojaules por pessoa, o que posiciona esse rolê como “fritasso” nos parâmetros da CHIP - Classificação Hidrográfica Interplanetária de Pedais.
+
+Traduzindo: pode ser um pedal desafiador para iniciantes, mas tranquilo para experientes.
+
+De qualquer forma, incentivamos que todos participem!
+
+Será um passeio democrático, aberto a todos, sem necessidade de inscrição prévia. É só chegar com sua bike revisada, água e lanchos.
+
+Reforçando: bike revisada(!), água e lanchos.
+
+Também contaremos com a presença das equipes da 1ª Gincana Climática de Santo André ( @gincanaclimatica ), que registrarão a atividade para produção de conteúdo sobre mobilidade ativa, resiliência urbana e ancestralidade."""@pt ;
     dcterms:title "Rios Indígenas de Santo André" ;
     prov:wasAttributedTo phd:pessoaBrunoperandin,
         phd:pessoaDandan ;
@@ -639,10 +738,16 @@ phd:tour_37 a ph:Tour ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/49100612> ] ;
     ph:mediaCount 172 ;
-    ph:movingDuration "PT3H10M"^^xsd:duration .
+    ph:movingDuration "PT3H10M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/37/announcement.jpg> .
 
 phd:tour_38 a ph:Tour ;
     dcterms:date "2025-04-15T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Partindo do metrô Liberdade rumo a uma confluência histórica da cidade, as cinco esquinas, o pedal “a outra margem do Ipiranga” segue um afluente menos famoso do Tamanduateí, o Moinho Velho, drenante de boa parte do que se denomina como bairro do Ipiranga.
+
+Das nascentes do Lavapés, no começo do nosso caminho, passamos pelo Poço de Água Fria, onde quem bebe de suas águas cantará samba noite e dia, como diz uma clássica canção. Cruzaremos o rio Aclimação, bordeando os antigos meandros da planície do Tamanduateí e passando pela foz do Ipiranga, até margear o próprio Tamanduateí, com toda sua fauna e flora orgânica e sintética associada.
+
+Chegando à foz do Moinho Velho, o lado canhoto e ignorado do morro do Ipiranga, seguiremos margeando seus córregos e subindo suas águas. Contornaremos os córregos do Senai, Pastorzinho, Aduana, Alto Ipiranga, Macaxás, João, Chaveiro e Complexo, todos esses denominados através da imaginação e que nos incentivam a imaginar realidades paralelas enquanto subimos e descemos estes morretes rumo ao final dessa pedalada de lua minguante, na estação São Judas de metrô logo após atravessarmos o vale do rio Ipiranga e sua complexidade."""@pt ;
     dcterms:title "Moinho Velho A Outra Margem do Ipiranga" ;
     prov:wasAttributedTo phd:pessoaDandan,
         phd:pessoaPedpaula ;
@@ -659,10 +764,22 @@ phd:tour_38 a ph:Tour ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/50331319> ] ;
     ph:mediaCount 70 ;
-    ph:movingDuration "PT1H55M"^^xsd:duration .
+    ph:movingDuration "PT1H55M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/38/announcement.jpg> .
 
 phd:tour_39 a ph:Tour ;
     dcterms:date "2025-04-22T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Descrição por Adriana Marmo:
+
+Partimos do sopé do Morro da Querosene, nas proximidades da foz do córrego Pirajussara — em um ponto onde este corre escondido sob a ciclovia da Eliseu de Almeida, uma das mais movimentadas de São Paulo.
+
+Logo adiante, cruzamos com o Antonico, que nasce em Paraisópolis e carrega o peso da negligência: sem coleta adequada, o esgoto da comunidade corre por suas águas, que também passam sob o gramado do hoje chamado Morumbis. Desde janeiro de 2024, a região virou canteiro de obras — estão enterrando o córrego, construindo um piscinão e ainda planejam mudar seu curso para rebaixar o gramado do estádio.
+
+Mais à frente, do Antonico se bifurca a direita o Corveta Camacuã, nosso guia até as alturas. O córrego leva o nome de um navio da Marinha dos anos 1950 — aliás São Paulo está assim desses lugares com este tipo de homenagem.
+
+Subimos pelo Corveta até a Crista do Morumbi, onde a cidade se dobra em colinas: Alto do Itararé, Morro do Ingá… De lá, seguimos por caminhos altos, até encontrar o afluente que deságua perto do Córrego do Morro do S., já no Capão Redondo.
+
+No caminho, cruzamos nomes que soam como versos: Itararé, Poesia, Charque Grande, Pires, Olária, Diniz… Córregos invisíveis ao olhar apressado, mas que gritam quando chove. Subimos a corrente da cidade para lembrar que cada córrego tem nome, tem origem, tem dor, mas que também pode ter futuro."""@pt ;
     dcterms:title "Crista do Campo Limpo via Corveta-Camacuã" ;
     prov:wasAttributedTo phd:pessoaAmarmo,
         phd:pessoaDandan ;
@@ -679,7 +796,8 @@ phd:tour_39 a ph:Tour ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/50411729> ] ;
     ph:mediaCount 52 ;
-    ph:movingDuration "PT1H48M"^^xsd:duration .
+    ph:movingDuration "PT1H48M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/39/announcement.jpg> .
 
 phd:tour_4 a ph:Tour ;
     dcterms:date "2024-10-01T20:00:00-03:00"^^xsd:dateTime ;
@@ -700,6 +818,13 @@ phd:tour_4 a ph:Tour ;
 
 phd:tour_40 a ph:Tour ;
     dcterms:date "2025-05-06T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Inspirados pela obra de Aziz Ab’Saber - Geomorfologia do Sítio Urbano de São Paulo - faremos esta rota que circunda o Braço Morto do Tietê, listado pelo autor como a primeira entre cinco das notórias anomalias de drenagem paulistanas. Passaremos por vales secos onde a água já passou por milênios e teremos contato com as águas que brotam das nascentes do Pico do Jaraguá.
+
+Encontramo-nos na estação de trem Vila Leopoldina para logo depois atravessar o Rio Tietê. Vamos pedalar pela sua planície direita até a foz do Riacho da Cintra, o qual subiremos suas águas por uma parte até o passo dos Remédios. Lá, deslocamos para o Ribeirão Vermelho, cujas águas se originam do Pico do Jaraguá, e que passamos a descê-lo, contornando a sua planície desalagada, adjacente com a face norte do Morro dos Remédios. Em sua paleo-foz, chegaremos ao Braço Morto do Tietê.
+
+Contornamos todo o Braço Morto, seguindo a margem inexistente de um rio que de certa maneira definiu a ocupação deste território e, talvez por isso, exista através da sua ausência.
+
+Ao chegar no leito do Tietê que ainda existe, retornamos pela sua margem direita margeando a Ilhota de São João, uma licença poética ao nome dado por Ab’Saber ao Morro de São João, a qual poderemos ver e imaginar. Vamos seguir na planície direita do Tietê, do lado oposto ao Morro dos Remédios, numa área de transição entre municípios e geografias e por um paleovale que já afunilou estreitamente o rio para então cruzar novamente o Tietê em direção ao final desse pedal de realidades borradas."""@pt ;
     dcterms:title "Os Vales Secos do Tietê dos Remédios à Osasco" ;
     prov:wasAttributedTo phd:pessoaDandan,
         phd:pessoaPedpaula ;
@@ -717,20 +842,32 @@ phd:tour_40 a ph:Tour ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/50480798> ] ;
     ph:mediaCount 112 ;
-    ph:movingDuration "PT1H39M"^^xsd:duration .
+    ph:movingDuration "PT1H39M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/40/announcement.jpg> .
 
 phd:tour_41 a ph:Tour ;
     dcterms:date "2025-05-14T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Neste Pedal, visitaremos o circuito Linha Verde nos sopés da Cantareira, o qual contorna as cabeçeiras Rio Piqueri em suas encostas com a Serra da Cantareira. Para ir lá, nos encontraremos no Metrô Tucuruvi e desceremos água abaixo com vistas a acessar o córrego Engorda-Sapo, afluente primário do Rio Tremembé.
+
+Um pouco após a foz deste, acessamos o divisor Cantareira - Engorda Sapo o qual eventualmente conflui com o divisor Tremembé - Piqueri. Lá, acessamos a linha verde! o qual andamos numa curva de nível elevada até oportunamente descer ao Ribeirão Piqueri e então acessar um ponto de sela para prosseguir ao Baixo Piqueri. Lá, voltamos ao nosso ponto de regresso ao seguir pelas planícies do Tremembé.
+
+Cantareira foi o nome dado à Serra pelos tropeiros que faziam o comércio entre São Paulo e as outras regiões do país, nos Séculos XVI e XVII, devido à grande quantidade de nascentes e córregos encontrados na região.Pedal que segue o escoamento das águas na Zona Norte e acessa a Linha Verde do futuro trecho do Rodoanel. Obra que esta parada há muito tempo e hoje a população local ocupou na forma de lazer."""@pt ;
     dcterms:title "Sopés da Cantareira: Alto Piqueri e Tremembé" ;
     prov:wasAttributedTo phd:pessoaThiagoneves ;
     ph:inSeriesEdition phd:assoc_PH_36 ;
     ph:linkInstagram "https://www.instagram.com/p/DJmCzVGuRwK/"^^xsd:anyURI ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:strava ;
-            schema:url <https://www.strava.com/routes/3350848210103869176> ] .
+            schema:url <https://www.strava.com/routes/3350848210103869176> ] ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/41/announcement.jpg> .
 
 phd:tour_42 a ph:Tour ;
     dcterms:date "2025-05-20T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Neste pedal, uma continuação do Pedal Hidrográfico 8 Sertões de Pirituba, iremos explorar novos afluentes do Ribeirão Verde e iremos acompanhar a crista da face sudestina do Morro Grande, divisor geomorfológico triplo entre planície aluvial do Tietê ao sul, com os morrotes cársticos do Alto Cabuçu ao nordeste, e o Planalto de Taipas ao noroeste.
+
+Começamos no Largo da Lapa de Baixo, um charmoso canto para encontrar amigos. Lá, atravessamos o Tietê para se encontrar com a foz do Ribeirão Verde, cujo subterrâneo braço direito delimita a fronteira política de Pirituba. Seguimos por estas bordas fluvio-territóriais até a Foz do Congo, no qual seguimos o riacho com o dito nome até sua nascente, para então subir ao Morro Grande pelas encostas que circundam esta nascente.
+
+Uma vez separados da planície e estando situados neste divisor de águas e solos, passamos a seguir a crista até findado de circundar a antiga pedreira no qual hoje se constrói um metrô. Lá, descemos por um braço de um anti-córrego para cair na córrego do Tanque. Seguimos água abaixo até a confluência do segundo riacho a direita para subir este e então se aproveitar do Passo de Pirituba para ter uma subida conveniente para a Crista de Pirituba, região localmente alta que divide as águas dos Ribeirões Pirituba e Verde. Seguimos por este anti-ribeirão ao alto até sua anti-nascente, no qual se encontramos novamente no Tietê para então regressar ao largo da lapa de baixa e aproveitarmos de seus encantos boêmios com prosas e contos."""@pt ;
     dcterms:title "Sertões de Pirituba 2 Margem Esquerda do Verde e Alto do Morro Grande" ;
     prov:wasAttributedTo phd:pessoaDandan ;
     ph:arrivedAt "2025-05-20T23:26:00-03:00"^^xsd:dateTime ;
@@ -747,10 +884,16 @@ phd:tour_42 a ph:Tour ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/50844953> ] ;
     ph:mediaCount 123 ;
-    ph:movingDuration "PT1H31M"^^xsd:duration .
+    ph:movingDuration "PT1H31M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/42/announcement.jpg> .
 
 phd:tour_43 a ph:Tour ;
     dcterms:date "2025-05-27T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Neste pedal, cruzaremos os vales da Foz do Carandiru, Alto ao Baixo Mandaqui, Baixo Cabuçu, e Médio das Pedras. Para cada separação entre-vales, opta-se por atravessar o divisor de água por meio de seus pontos de sela, ou passos. Cada passo é também a menor elevação em que se é possível cruzar um morro sem que se faça um a grande volta até a confluência das águas, neste caso, as Várzeas do Tietê.
+
+Iniciamos o pedal no Bar da Dona Nilza, ao lado do Instituto de Física Teórica e do Metrô da Barra Funda. Lá, prontamente passamos para a outra margem do Tietê para breve inspeção do Córrego Tenente num espaço aberto que outrora já foi meandro do Tietê. Feito isso, buscamos o primeiro ponto de sela, conectando-nos da Várzea do Carandiru para um estreito vale no Alto Mandaqui. Lá, descemos esta água até atingir o seo último afluente de maior magnitude na margem direita, que se encontra sem denominação mas que passa rente ao Morro da Vaca, nomenclatura fornecida pelos populares ao interagir com este durante o Pedal Hidrográfico 27 Sertões do Mandaqui.
+
+No Passo da Vaca, transportamo-nos para o vale do Baixo Cabuçu sem sequer notar de tão baixa diferença de elevação neste passo. Descemos o seu curso principal para novamente acessar um estratégico e estrieito passo no qual a crista divisora de água é excepcionalmente estreita. Agora, estamos do lado do morro da Nossa Senhora do Ó. Subimos a sua crista para então surfar em seu estreito altiplano diretamente para uma festa de aniversário no antiquo largo."""@pt ;
     dcterms:title "Pontos de Sela do Centro-Norte" ;
     prov:wasAttributedTo phd:pessoaDandan ;
     ph:arrivedAt "2025-05-27T23:07:00-03:00"^^xsd:dateTime ;
@@ -767,7 +910,8 @@ phd:tour_43 a ph:Tour ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/50957749> ] ;
     ph:mediaCount 91 ;
-    ph:movingDuration "PT1H48M"^^xsd:duration .
+    ph:movingDuration "PT1H48M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/43/announcement.jpg> .
 
 phd:tour_44 a ph:Tour ;
     dcterms:date "2025-06-01T07:00:00-03:00"^^xsd:dateTime ;
@@ -787,6 +931,11 @@ phd:tour_44 a ph:Tour ;
 
 phd:tour_45 a ph:Tour ;
     dcterms:date "2025-06-03T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Por adrn_alef ✍️ Dentre as inúmeras paisagens que compõem a cidade-colagem conhecida como São Paulo, os territórios que rodeiam o córrego da Água Espraiada se mostram como um espaço privilegiado para observar e compreender as tensões, as cisões e as especulações que ocorrem na cidade em suas mais diversas formas.
+
+Começamos pela foz do rio, na altura da famosa Ponte Estaiada, ícone rodoviarista tratado pela mídia hegemônica como cartão-postal da cidade (embora não haja notícias de alguém que tenha vindo à cidade para conhecê-la). Seguimos pela atual Avenida Roberto Marinho (inicialmente nomeada como Avenida Água Espraiada). Vista hoje como uma área "nobre", trata-se de uma ferida aberta em meio ao tecido sangrante da urbe, concebida para desalojar uma série de favelas que existiam na região até as décadas de 90 e 2000, uma delas, a do Canão, imortalizada nas letras do grande rapper Sabotage.
+
+Após o fim da Av. Roberto Marinho, a paisagem se altera: saem de cena os prédios de luxo e de classe média, e chega a quebrada, mostrando que mesmo com os apagamentos, as letras de Sabota ainda se mostram presentes. Passando por várias favelas, como a do Vietnã, o curso d'água segue um traçado mais próximo ao de um córrego antes de uma canalização; até que chegamos em sua nascente, nas proximidades do pátio da estação Jabaquara da Linha 1 Azul do metrô."""@pt ;
     dcterms:title "Água Espraiada da Foz à Nascente" ;
     prov:wasAttributedTo phd:pessoaAlef,
         phd:pessoaDandan ;
@@ -804,10 +953,16 @@ phd:tour_45 a ph:Tour ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/50943723> ] ;
     ph:mediaCount 125 ;
-    ph:movingDuration "PT1H32M"^^xsd:duration .
+    ph:movingDuration "PT1H32M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/45/announcement.jpg> .
 
 phd:tour_46 a ph:Tour ;
     dcterms:date "2025-06-10T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Nesta rota, embarcaremos da boca da ampla planície aluvial do Tietê-Tamanduateí, histórico ponto convergência dos povos do planalto, para chegar até o passo fluvial que fura a Serra de Guaianazes que é a região de Mauá.
+
+O caminho se dará em sua primeira metade por um dos morro-braços da Crista de Sapopema: a Crista da Mooca, que divide as águas do Rio Oratório e do Rio Mooca. Seguiremos por este braço até sua anti-foz com o ramo principal dos divisores. Mas imediatamente antes de anti-confluir com este, descemos para o Rio Oratório, para então subir por suas margens até sua nascente, tendo como ponto de partida o local assim denominado como a Ilha do Iguaçu - circundada por dois córregos com uma estreita e declivosa passagem terrestre entre eles.
+
+Subimos o Rio Oratório, enquanto testemunhamos o mosaico do estado e transições do uso de solo junto com suas sobreposições de diferentes concepções para o entorno da cidade. Já lá no alto, nas beiradeiras da Serra de Guaianazes, testemunha do Maciço da Bonilha, descemos a fundo até a margem do Tamanduateí, a fim de usufruir do serviço 710 enquanto ele ainda sobrevive."""@pt ;
     dcterms:title "Crista da Mooca e Médio-Alto Oratório" ;
     prov:wasAttributedTo phd:pessoaDandan ;
     ph:arrivedAt "2025-06-10T23:45:00-03:00"^^xsd:dateTime ;
@@ -824,10 +979,20 @@ phd:tour_46 a ph:Tour ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/51051113> ] ;
     ph:mediaCount 110 ;
-    ph:movingDuration "PT2H6M"^^xsd:duration .
+    ph:movingDuration "PT2H6M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/46/announcement.jpg> .
 
 phd:tour_47 a ph:Tour ;
     dcterms:date "2025-06-17T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Anhangabaú. Rio do feitiço ou espíritos. É o que indicam interpretações dessa toponímia que nomeia o vasto vale que centraliza a metrópole das incontáveis águas. De produção de chá, quando sítio, hoje sofre com o surto privatizatório que empobrece a cidade. “anhangabaú da infeliz cidade”, provoca o também encantado Zé Celso. Nos roteiros da farsa, de outro tipo, desmembraram o outrora verdejante vale em não um, mas pelo menos quatro camadas: é enclausurada tubulação de águas ancestrais; é trilho para o impassível metrô; é triste túnel de estúpido rodoviarismo; e, superficialmente, uma enorme praça de concreto, sob disputa renhida entre espíritos vivos, mortos e redivivos. O rio ainda resiste, e eventualmente se abre e se esparrama no vale sobre qual já reinou, deixando atônita a cidade ‘funcional’
+
+Seria mau agouro sufocar um enfeitiçado rio? O que teriam percebido seus ancestrais? Usariam tais espíritos bicicletas, como nós, habitantes deste perplexo segundo quartil do século XXI? É sobre esse solo permeado de muita de(re)composição históricas que parte o pedal
+
+Do que é feito um pedal? Rotas, suor, perrengues: partilha. Vivências que inevitavelmente criam algo que se assemelha a mitos. O Pedal Hidrográfico vai criando, à revelia de seus intrépidos pedalantes, seus mitos e espíritos. Espíritos esses certamente já originados amalgados às suas bicicletas fantasmagóricas, perscrutando as almas dos rios. Uma das mitos fala sobre o rumo desta rota: a icônica Lavapés-Aclimação. Um trajeto que em nossas derivas sempre choveu; embora a presença dela já tenha provocado a refeitura dele mais de uma vez
+
+Agora será diferente, pois temos fé (ou feitiços) de que as chuvas não vão endossar as águas do Lavapés durante a passagem da deriva Hidrográfica
+
+Convictos que somos estendeu-se a rota, mesclando-a com o roteiro do referido rio enfeitiçado. Quem não conhece a palavra medo e enxerga o espírito das águas nos mais inóspitos sítios urbanos irá se aventurar conosco"""@pt ;
     dcterms:title "Águas Meridionais da Colina Histórica" ;
     prov:wasAttributedTo phd:pessoaAlef,
         phd:pessoaDandan,
@@ -845,10 +1010,16 @@ phd:tour_47 a ph:Tour ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/51282559> ] ;
     ph:mediaCount 77 ;
-    ph:movingDuration "PT2H"^^xsd:duration .
+    ph:movingDuration "PT2H"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/47/announcement.jpg> .
 
 phd:tour_48 a ph:Tour ;
     dcterms:date "2025-06-24T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Encontraremos aos pés da torre do relógio na praça da USP, projetada por Rino Levi, arquiteto responsável por icônicas estruturas na cidade, do prestigiado Teatro Cultura Artística, que renasceu das cinzas, e pelo esquecido edifício Guarani, às margens de um Tamanduateí que pouco remete ao que era em décadas atrás.
+
+O relógio localizado na zona oeste da cidade, além das águas do Pinheiros, é o ponto inicial da nossa jornada. Subiremos o espigão da USP, um divisor das águas do Pirajuçara e do Jaguaré. Nos pontos mais altos, passaremos por locais próximos aos afluentes dos córregos Doce, Mil e Dez, Caramazal, Água Podre e Sapé. Depois de subir e acompanhar de perto esses afluentes, será o momento de descer e subir o Jaguaré por meio de seu riacho formador à direita, o Itaim. No alto deste, já no Espigão de Osasco, ultrapassaremos o limite de São Paulo com Osasco, e ao descer o Riacho dos Metalúrgicos e transpor sua foz com o Rio Carapicuíba, passamos para o território político de Carapícuiba.
+
+Já tendo percorrido metade do caminho, transpostamo-nos ao riacho da aldeia, afluente a direita do Carapicuíba, no qual temos contato com a antiga Aldeía Jesuítica de Carapícuiba. Após breve vistoria, passamos a descer o Rio, onde cruzaremos as colossais estruturas viárias do Rodoanel. Seguiremos junto a ele nas imediações, com as águas fazendo um caminho natural tão próximo que seria estranho não suspeitar que a estrutura foi construída seguindo as formações naturais do espaço. Concluiremos na estação Miguel Costa da CPTM, já quase na foz com o Tietê."""@pt ;
     dcterms:title "Carapicuíba duma nascente à foz, vindo do espigão da usp e alto jaguaré" ;
     prov:wasAttributedTo phd:pessoaDandan,
         phd:pessoaMicaelrodrigues ;
@@ -866,10 +1037,18 @@ phd:tour_48 a ph:Tour ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/51391185> ] ;
     ph:mediaCount 81 ;
-    ph:movingDuration "PT1H52M"^^xsd:duration .
+    ph:movingDuration "PT1H52M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/48/announcement.jpg> .
 
 phd:tour_49 a ph:Tour ;
     dcterms:date "2025-07-01T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Vamos sair da Praça dos Trotadores, uma área que já foi alagada na várzea do Tietê e que é conhecida por ter sido usada para corridas de cavalos em charretes. Seguimos pela parte baixa do riacho do Divisor, ponto que separa a Vila Guilherme do Tucuruvi, e subimos o espigão logo no começo do pedal.
+
+No alto da crista do Tucuruvi, descemos acompanhando o curso do córrego Maria Paula até o encontro com o riacho Paciência, que se junta ao rio Cabuçu de Cima, antes chamado de Guapira - que significa “cipó vermelho” ou “cipó encarnado”. A região também era usada para o famoso Trem das Onze, de Adoniran Barbosa, a linha ligava o bairro do Pari à Serra da Cantareira e tinha um trecho até Guarulhos.
+
+No rio Cabuçu de Cima encontramos o último afluente antes da Serra do Bananal, que é um braço mais afastado da Serra da Cantareira. O pedal sobe e desce os morros que separam essa área das águas do rio Baquirivu-Guaçu, evitando os córregos menores e seguindo o fluxo do rio principal.
+
+Passamos ainda pelas nascentes dos córregos das Cubas e da Cocaia, que conta com um parque linear em parte do percurso onde o córrego corria antes da urbanização. No fim do trajeto, a gente encontra o último afluente que deságua próximo à estação de trem da região. Dali, é como se fosse possível escorregar com a água e voltar para a cidade."""@pt ;
     dcterms:title "Riacho do Divisor ao Baquivu-guaçu pelos sopés da Serra do Bananal" ;
     prov:wasAttributedTo phd:pessoaBrunabom,
         phd:pessoaDandan ;
@@ -890,7 +1069,8 @@ phd:tour_49 a ph:Tour ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 421.0 ] ;
     ph:mediaCount 115 ;
-    ph:movingDuration "PT1H44M"^^xsd:duration .
+    ph:movingDuration "PT1H44M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/49/announcement.jpg> .
 
 phd:tour_5 a ph:Tour ;
     dcterms:date "2024-10-08T20:00:00-03:00"^^xsd:dateTime ;
@@ -911,6 +1091,13 @@ phd:tour_5 a ph:Tour ;
 
 phd:tour_50 a ph:Tour ;
     dcterms:date "2025-07-08T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """No hidrográfico desta semana, margeando o feriado, vamos começar no Rio Tamanduateí, protagonista na história da cidade, e seguir para as bordas do ABCD; iniciando por São Caetano pelo Ribeirão dos Meninos, o qual foi estrategicamente utilizado pelo município para separar a Favela do Heliópolis de seu território político e fazer com que os indicadores do IDH da cidade parecessem consideravelmente maiores (sim, nem sempre se pode confiar nesses índices).
+
+Depois chegamos em São Bernardo, onde passado a foz do Ribeirão dos Meninos com o dos Couros, cruzaremos a Via Anchieta para buscarmos o Riacho do Taboão, que continua por Diadema, o terceiro município do ABCD em nossa rota (que já foi um bairro de São Bernardo); antes, porém, teremos que dar uma grande volta para contornarmos o extenso pátio industrial da Mercedez-Benz, o qual obstrui a foz do Taboão e a foz dos Couros, obrigando-nos a escalar dois morros que lhe contornam e e impossibilitando fluxos planos para quem sai de Diadema.
+
+ABCD, terra de indústrias, de operários: as chaminés e o cinza-industrial são uma constante na paisagem; tornando alguns dos municípios verdadeiras cidades dormitórios, como é o caso de Diadema.
+
+Ainda na cidade, cruzaremos a Rodovia dos Imigrantes por baixo - a segunda rodovia do trajeto e viário marcante do ABCD Paulista, no alto do desmorrodouro do Caaguaçu - região onde conflui colinas por todas as direções. Após isto, já de volta à São Paulo, descemos o ribeirão do Zavuvu cujo curso d'água nos leva às inevitáveis águas do Jurubatuba, que encerra a nossa jornada (e posteriormente se torna o Rio Pinheiros)."""@pt ;
     dcterms:title "Foz dos Meninos à Foz do Zavuvus pelo Riacho do Taboão e o desmorrodouro do Caaguaçu" ;
     prov:wasAttributedTo phd:pessoaAlef,
         phd:pessoaDandan ;
@@ -931,10 +1118,16 @@ phd:tour_50 a ph:Tour ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 482.0 ] ;
     ph:mediaCount 77 ;
-    ph:movingDuration "PT1H55M"^^xsd:duration .
+    ph:movingDuration "PT1H55M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/50/announcement.jpg> .
 
 phd:tour_51 a ph:Tour ;
     dcterms:date "2025-07-15T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """No encontro desta semana, vamos acompanhar o Rio Pirajuçara, um dos mais importantes da atual zona oeste da megalópole paulistana; começaremos pela foz do Rio, Junto à Ponte Cidade Universitária, e entraremos brevemente na USP para acessarmos a atual Avenida Eliseu de Almeida, onde encontraremos os inúmeros cursos d'água que deságuam por aqui: Caxingui, Antonico, Itararé, Charque Grande e Poá.
+
+Em sequência, o rio ganha contornos mais incertos, desafiando a geografia política ao alternar entre a fronteira municipal (arbitrária, como toda e qualquer fronteira) entre a capital e Taboão da Serra, encontrando pelo caminho mais alguns afluentes, e subindo para o bairro do Capão Redondo, eternizado pelas letras dos Racionais MC's, rumo à nascente do Pirajuçara.
+
+A descida dos morros nos levará para o final do pedal, no metrô do Capão, na confluência com as águas do Riacho do Branco, próximo ao Parque Santo Dias; espaço cujo nome homenageia o grande líder operário da zona sul da megalópole, assassinado pela polícia em meio à uma greve."""@pt ;
     dcterms:title "Pirajuçara da Foz à Nascente e Cabeçeiras do rio do Morro do S" ;
     prov:wasAttributedTo phd:pessoaAlef,
         phd:pessoaDandan,
@@ -956,10 +1149,14 @@ phd:tour_51 a ph:Tour ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 415.0 ] ;
     ph:mediaCount 64 ;
-    ph:movingDuration "PT2H12M"^^xsd:duration .
+    ph:movingDuration "PT2H12M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/51/announcement.jpg> .
 
 phd:tour_52 a ph:Tour ;
     dcterms:date "2025-07-22T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Na década de 1920, São Paulo crescia em um ritmo frenético; e a expansão da cidade acabou conferindo à empresa britânica Light um poder sobre o território poucas vezes visto em uma grande cidade brasileira até então. Aproveitando de sua influência política, e do controle que ela tinha sobre as barragens do Rio Pinheiros, ela promoveu uma grande inundação em 1929, que, a partir de um acordo secreto com o Governo Municipal onde as áreas alagadas pela enchente demarcaria os territórios pertencentes à empresa, uma manobra política que moldaria profundamente a trajetória do crescimento da cidade nas décadas seguintes.
+
+No encontro desta semana, o Hidrográfico rememora a história da enchente de 1929, revisitando alguns dos espaços da cidade que foram atingidos por ela. E se, pelo ditado popular, muitas coisas no nosso país terminam em pizza, vamos finalizar o pedal provando uma pizza no Brás, concretizando o desejo coletivo em criar uma espécie de Pedal Pizzográfico."""@pt ;
     dcterms:title "Contorno Central da Enchente de 1929 e pizza no brás" ;
     prov:wasAttributedTo phd:pessoaAlef,
         phd:pessoaDandan,
@@ -981,10 +1178,18 @@ phd:tour_52 a ph:Tour ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 220.0 ] ;
     ph:mediaCount 108 ;
-    ph:movingDuration "PT1H16M"^^xsd:duration .
+    ph:movingDuration "PT1H16M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/52/announcement.jpg> .
 
 phd:tour_53 a ph:Tour ;
     dcterms:date "2025-07-29T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Neste pedal, redescobriremos o Jaguaré, um bairro que pulsa com a memória de um passado sonhador. Transportem-se no tempo, até 1935, quando Henrique Dumont Villares, sobrinho de Santos Dumont, sonhou com uma São Paulo navegável. Para selar essa aspiração, ergueu um farol em 1940. Hoje, o Farol do Jaguaré é um guardião silencioso, um elo poético entre a terra e o rio.
+
+Nossos caminhos se entrelaçarão com os veios d'água que desenham a alma do Jaguaré: Pirajuçara-Mirim, Jaguaré, Sapé e Água Podre. Cada córrego, um fio de vida que narra a história da urbanização, revelando cicatrizes e a resiliência de um ecossistema que clama por nosso olhar.
+
+A magia se revelará ao visitarmos nascentes, fontes puras que brotam do coração da terra. Uma delas, um tesouro escondido em uma CEI da Prefeitura de São Paulo, nos lembrará da vida que insiste em florescer.
+
+Este Pedal Hidrográfico é um convite à contemplação e a prova de que a natureza ainda resiste. É a oportunidade de pedalar e sentir a história sob nossos pés e a esperança fluindo em cada gota d'água. Juntem-se a nós nesta ode à natureza urbana, onde cada nascente é um novo fôlego para o futuro."""@pt ;
     dcterms:title "Margens destras do Jaguaré, mirante da década de 40 e pastel de Oz" ;
     prov:wasAttributedTo phd:pessoaGiucuci,
         phd:pessoaThiagoneves ;
@@ -1002,10 +1207,16 @@ phd:tour_53 a ph:Tour ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/51937044> ] ;
     ph:mediaCount 123 ;
-    ph:movingDuration "PT1H30M"^^xsd:duration .
+    ph:movingDuration "PT1H30M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/53/announcement.jpg> .
 
 phd:tour_54 a ph:Tour ;
     dcterms:date "2025-08-03T08:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Neste Pedal, visitaremos o circuito Linha Verde nos sopés da Cantareira, o qual contorna as cabeçeiras Rio Piqueri em suas encostas com a Serra da Cantareira. Para ir lá, nos encontraremos no Metrô Tucuruvi e desceremos água abaixo com vistas a acessar o córrego Engorda-Sapo, afluente primário do Rio Tremembé. Um pouco após a foz deste, acessamos o divisor Cantareira - Engorda Sapo, o qual eventualmente conflui com o divisor Tremembé - Piqueri. Lá, acessamos a Linha Verde, a qual andamos numa curva de nível elevada até oportunamente descer ao Ribeirão Piqueri e então acessar um ponto de sela para prosseguir ao Baixo Piqueri. Lá, voltamos ao nosso ponto de regresso ao seguir pelas planícies do Tremembé.
+
+Cantareira foi o nome dado à Serra pelos tropeiros que faziam o comércio entre São Paulo e as outras regiões do país, nos Séculos XVI e XVII, devido à grande quantidade de nascentes e córregos encontrados na região.
+
+Pedal que segue o escoamento das águas na Zona Norte e acessa a Linha Verde do futuro trecho do Rodoanel. Obra que está parada há muito tempo e que a população local ocupou na forma de lazer."""@pt ;
     dcterms:title "Sopés da Cantareira: Tremembé, Linha Verde e Piqueri" ;
     prov:wasAttributedTo phd:pessoaThiagoneves ;
     ph:arrivedAt "2025-08-03T12:59:00-03:00"^^xsd:dateTime ;
@@ -1025,10 +1236,14 @@ phd:tour_54 a ph:Tour ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 462.0 ] ;
     ph:mediaCount 70 ;
-    ph:movingDuration "PT2H"^^xsd:duration .
+    ph:movingDuration "PT2H"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/54/announcement.jpg> .
 
 phd:tour_55 a ph:Tour ;
     dcterms:date "2025-08-05T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Neste criteriosamente aleatório trajeto pelas regiões orientais da cidade, cruzaremos por quatro pontos de sela, cada qual uma subida média, com o objetivo de ir mais ao leste possível mas ainda assim partindo das bordas centristas e ainda assim estando abaixo dos quatrocentos quilojaules.
+
+É a mediana espacial entre a fluvial rota do Tiquatira, número 31, e a colineira rota da Crista de Sapopemba, número 23. Este pedal não será nem rio e nem morro: será sim a contínua intermitência dos Pontos de Sela, os quais se listam: o Passo Cassondoca-Tatuapé, o Passo Embira-Aricanduva, o Divisor Fazenda-Guaiauna e o Divisor Guaiauna-Tiquatira-Jacu, este último que se localiza já próximo ao desmorrodouro do Itaquera"""@pt ;
     dcterms:title "Pontos de Sela da Média Leste" ;
     prov:wasAttributedTo phd:pessoaDandan ;
     ph:arrivedAt "2025-08-05T23:24:00-03:00"^^xsd:dateTime ;
@@ -1048,10 +1263,16 @@ phd:tour_55 a ph:Tour ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 420.0 ] ;
     ph:mediaCount 109 ;
-    ph:movingDuration "PT1H42M"^^xsd:duration .
+    ph:movingDuration "PT1H42M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/55/announcement.jpg> .
 
 phd:tour_56 a ph:Tour ;
     dcterms:date "2025-08-12T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Neste quinquagésimo passeio paisagístico pelo organismo-mosaico denominado de São Paulo, pedalar-nos-emos duas águas ao sudoeste da esporosa colina do Caaguaçu: o Uberaba-Paraguai, e o Cordeiro-Cupucê.
+
+Partimos de um antigo meandro seco do Pinheiros, no qual subimos brevemente por sua antiga margem direita pela paleo-várzea concretada e espelhada, repleta de espetos-escritórios que apunhalam este sedimentar solo. Não demora para termos contato com a antiga foz do Uberaba, o qual subimos. Alguma hora o nome muda para Paraguai em seu encontro com o Uberabinha, sinal da proximidade das cabeçeiras. Vamos até o topo, onde o Caaguaçu dá uma abiruta volta como se tomasse um susto com o nascer do Ipiranga.
+
+Contornado este seco e alto meandro de terra, não demora para termos contato com o Desmorrodouro - local de confluências de colinas no qual por todo lado brotam morros. Já no alto do Desmorrodouro, pegamos o seu esporão que parte o Rio Cupucê em dois, e descemos para o braço direito do recém-nascido Cupucê. Lá, é água abaixo até nosso destino, onde a colina dá lugar aos terraços."""@pt ;
     dcterms:title "Subir Rio Uberaba, descer rio Cupucê" ;
     prov:wasAttributedTo phd:pessoaDandan ;
     ph:arrivedAt "2025-08-12T23:15:00-03:00"^^xsd:dateTime ;
@@ -1071,10 +1292,14 @@ phd:tour_56 a ph:Tour ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 410.0 ] ;
     ph:mediaCount 65 ;
-    ph:movingDuration "PT1H52M"^^xsd:duration .
+    ph:movingDuration "PT1H52M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/56/announcement.jpg> .
 
 phd:tour_57 a ph:Tour ;
     dcterms:date "2025-08-19T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Iniciamos o passeio afluindo pelo córrego Itapeva para o encontro dos rios Verde e Jacu na originária estação de trem Itaquera, da Estrada de Ferro Central do Brasil. Lá, subimos a Colina do Jacu, divisor das águas que acabamos de encontrar. Seguimos por este anti-rio acima até as suaves colinas darem origem para escarpas abruptas com topos aplainados amplos. Trata-se do Itaquera. Pedra dura e adormecida, que circunda as cabeceiras dos rios Verde, Jacu e Itaquera, e ocupa boa parte da margem direita do Aricanduva. Suas planuras altas são um respiro panorâmico antes da crista convergir na declivosa Serra das Guaianases, testemunha solitária do Maciço da Bonilha rasgada em seu meio pelo Rio Guaió, e que cuja crista articula os limites orientais do organismo-cidade.
+
+Passeamos por estes altos no meio do luar crescente pelo tempo e caminho que é possível nesta peculiar paisagem rural e altaneira. Em algum momento, varrido o Morro das Guaianases, descemos para encontrar o confluir do riacho da água doce com o rio Itaquera em sua fase adolescente-riacho da vida, para então acompanhá-lo enquanto vemos de longe traumas terrestres e profundos das outrora olarias e presentes pedreiras. Ao encontrar o Rio Guaratiba, presenciamos a transformação do Itaquera, antes pedra e córrego, para um grande rio, volumoso tal quais seus parentes Jaguaré, Ipiranga, Oratório e Mandaqui."""@pt ;
     dcterms:title "O Itaquera" ;
     prov:wasAttributedTo phd:pessoaDandan ;
     ph:arrivedAt "2025-08-19T22:50:00-03:00"^^xsd:dateTime ;
@@ -1094,10 +1319,20 @@ phd:tour_57 a ph:Tour ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 460.0 ] ;
     ph:mediaCount 76 ;
-    ph:movingDuration "PT1H50M"^^xsd:duration .
+    ph:movingDuration "PT1H50M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/57/announcement.jpg> .
 
 phd:tour_58 a ph:Tour ;
     dcterms:date "2025-08-26T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """"Quem, de avião, deixa o aeroporto de Congonhas, situado ao sul da cidade, tem oportunidade de observar um dos mais característicos elementos do sítio urbano de São Paulo: trata-se do que denominamos de Espigão Central, alongado e estreito divisor de águas entre as bacias do Tietê e do Pinheiros. Nada mais é do que uma plataforma interfluvial, disposta em forma de uma irregular abóboda ravinada, cujos flancos descaem para nordeste e sudoeste, em patamares escalonados, até atingir as vastas calhas aluviais, de fundo achatado, por onde correm as águas do Tietê e do Pinheiros. A avenida Paulista superpôs-se exatamente ao eixo principal desse espigão, enquanto o interminável casario dos bairros recobre seus dois flancos."
+
+Passados 68 anos da redação desta epígrafe, o casario dos bairros deu lugar a um mar cinza e vertical, que ofusca a base primordial do sítio urbano que nos abriga. Engajados na tarefa de resgatar essa cidade invisível, pedalaremos pelas cabeceiras dos declives do flanco sudoeste do Espigão Central, vertente do Rio Pinheiros.
+
+Sairemos da Praça dos Arcos, situada nas cabeceiras do Córrego Pacaembu, e seguiremos rumo aos sopés do eixo principal do espigão e de suas colinas de topo aplainado, de onde nascem os córregos Iguatemi, Sapateiro, Uberaba e outros tributários menores do Rio Pinheiros, característicos da face pouco festonada que percorreremos.
+
+Atravessaremos o Córrego da Traição, corpo hídrico de grande especulação etimológica e poética, e chegaremos a Congonhas, onde as colinas tabulares se alargam em suaves seções de topo plano - esculpidas quase como sob demanda para um grupo hipotético de engenheiros da década de 30.
+
+Seguiremos pelo último braço do divisor que visitaremos no passeio e pegaremos carona topográfica pelo Água Espraiada para, enfim, desaguarmos na estação Campo Belo, ponto onde se encerrará este pedal hidrográfico."""@pt ;
     dcterms:title "Rampa do Sapateiro, Uberaba e Traição" ;
     prov:wasAttributedTo phd:pessoaDandan,
         phd:pessoaGiucuci ;
@@ -1118,7 +1353,8 @@ phd:tour_58 a ph:Tour ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 430.0 ] ;
     ph:mediaCount 64 ;
-    ph:movingDuration "PT2H4M"^^xsd:duration .
+    ph:movingDuration "PT2H4M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/58/announcement.jpg> .
 
 phd:tour_59 a ph:Tour ;
     dcterms:date "2025-08-30T00:00:00-03:00"^^xsd:dateTime ;
@@ -1153,6 +1389,11 @@ phd:tour_6 a ph:Tour ;
 
 phd:tour_60 a ph:Tour ;
     dcterms:date "2025-09-02T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Contornando a bacia de um dos mais discrepantes cenários sociais da cidade, o Córrego Antonico é, antes de tudo, inocente por seus densos arredores.
+
+O curso d'água atravessa os bairros de Paraisópolis e do Morumbi, dois contextos urbanos cuja discrepância e proximidade resultou em uma famosa fotografia de Tuca Vieira que até hoje é utilizada para ilustrar a extrema desigualdade social do Brasil.
+
+O Antonico nasce em Paraisópolis, passando sob a área do Estádio do Morumbi(s), e é conhecido por causar enchentes na região, sendo alvo de algumas obras públicas (como um piscinão), em um esforço para conter o sempre incontível curso das águas."""@pt ;
     dcterms:title "Contornar Paraisópolis" ;
     prov:wasAttributedTo phd:pessoaAlef,
         phd:pessoaDandan ;
@@ -1170,10 +1411,14 @@ phd:tour_60 a ph:Tour ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/52165232> ] ;
     ph:mediaCount 15 ;
-    ph:movingDuration "PT1H18M"^^xsd:duration .
+    ph:movingDuration "PT1H18M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/60/announcement.jpg> .
 
 phd:tour_61 a ph:Tour ;
     dcterms:date "2025-09-09T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """O Pedal Hidrográfico tá completando um ano de existência! Pra celebrar, vamos revisitar a rota inaugural: descer e subir o curso dos Rios Água Preta e Tiburtino, que banham a região da Vila Anglo e Lapa, com uma parada na casa de Tarsila, como ocorreu ocasionalmente naquele dia. Foi um ano reunindo um bando de gente legal que topou a poesia-esquisita de pedalar margens esquecidas, rios soterrados e se inundar de amizades improváveis e descobertas sensíveis. Um coletivo que brotou do afeto pela cidade, pela bicicleta e pela água e que acredita que esses elementos são também um fluxo para um futuro possível para todes. Bora redescobrir São Paulo pelas frestas do relevo em trilhas urbanas!
+
+📸✨ Esse pedal é feito por cada presença e encontro. Não importa se você colou uma vez ou em todas as terças: tudo isso compõe a nossa história. Compartilhe suas fotos dos pedais para montarmos um carrossel cheio de memórias e paisagens!"""@pt ;
     dcterms:title "1 ano" ;
     prov:wasAttributedTo phd:pessoaAnaju,
         phd:pessoaDandan,
@@ -1195,10 +1440,16 @@ phd:tour_61 a ph:Tour ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 187.0 ] ;
     ph:mediaCount 213 ;
-    ph:movingDuration "PT1H2M"^^xsd:duration .
+    ph:movingDuration "PT1H2M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/61/announcement.jpg> .
 
 phd:tour_62 a ph:Tour ;
     dcterms:date "2025-09-16T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Neste primeiro pedal após um ciclo solar de Pedal Hidrográfico, partiremos das proximidades da Foz de Carandiru com vistas para o desmorrodouro ao oriente que separa as águas da Paciência e seus afluentes vizinhos da Guapira em relação aos afluentes diretos do Tietê, incluindo o Carandiru.
+
+Já lá no alto deste desmorrodouro, com esporões subindo a nós de todos os lados, descemos por um destes do qual a colina já na ponta de seu ramo forma um glóbulo tal qual uma planta forma um botão antes da flor. Trata-se da Ilhota da Guapira, localizada na boca das fozes de Cabuçu de Cima e da Tiquatira. O morro final onde se sepulta as originárias várzeas do Tietê para estas suspirarem de vida só lá antes do que já foram as Sete Quedas da Guaíra.
+
+Transladamos para o outro lado deste grande rio, fazendo breve passagem pela Guapira. Subimos novamente para o alto, desta vez na colina divisora de águas do Tiquatira com o Tietê. Subimos e descemos por pontos de sela e topos colineares. Trata-se do Alto de Cangaíba, onde oportunamente olhamos de forma distantes para as peculiares e geométricas pontes do Riacho da Ponte Rasa, por onde contemplamos alguns meses atrás em outro pedal. No momento que esta colina começa a se desmorrodourar e se entortar junto com as águas da Ponte Rasa, tomamos a direção contrária e caímos no Riacho do Mongaguá, até estarmos no serviço de trem que permanece público e operante para nos levar de volta para casa."""@pt ;
     dcterms:title "Ilhota da Guapira e Alto da Cangaíba" ;
     prov:wasAttributedTo phd:pessoaDandan ;
     ph:arrivedAt "2025-09-16T23:34:00-03:00"^^xsd:dateTime ;
@@ -1218,10 +1469,22 @@ phd:tour_62 a ph:Tour ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 430.0 ] ;
     ph:mediaCount 201 ;
-    ph:movingDuration "PT1H58M"^^xsd:duration .
+    ph:movingDuration "PT1H58M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/62/announcement.jpg> .
 
 phd:tour_63 a ph:Tour ;
     dcterms:date "2025-09-21T08:30:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Partindo das margens do Riacho Água das Pedras duma das estações que ainda vive do Ramal Jurubatuba, da Estrada de Ferro Sorocabana, seguimos por seus enterrados trilhos até a demolida estação da Colônia, onde se localiza um dos mais notórios geossítios do entorno paulistano: A CRATERA.
+
+Lá, um meteoro aterrissou e permaneceu conosco desde o Plioceno e seu impacto formou dois anéis concêntricos, com amplitude para separar e entortar o Rio Capivari de seu originário fluxo vindo das nascentes da Serra do Mar para uma conexão livre e desamarrada com o Jurubatuba. Nocauteado, o Capivari se vê envolvido com o Rio Embu Guaçu, mas de tão desfalecido, eventualmente este se torna vítima da captura fluvial dos afluentes altaneiros do Itanhaém para hoje afluir ao oceano. Na volta, visitamos o túmulo de sua vazão que hoje é o Ribeirão Cauim, testemunho-planície de águas que já vazaram dos afloramentos rochosos da Borda da Serra.
+
+Na cratera avistamos panorâmicos muros verdes por todas as direções. Por onde os alemães de Santo Amaro ao se depararem com os solos cristalinos de bate pronto se reconheceram como jecas descalços, com milho e feijão na cumbuca. Estaremos lá para almoçar e apreciar as paisagens e as matas deste singelo ambiente. Quem sabe não conseguimos voltar a tempo para o protesto: não à pec da blindagem e não à anistia!
+
+Inspirações usadas para este devaneio:
+
+A. H. B. D. Santos e D. D. Oliveira, “Trajetórias do Rio Capivari: implicações de um impacto meteorítico na drenagem no reverso da Serra do Mar, São Paulo, Brasil,” GEOgrafias, vol. 4, no. 2, pp. 69–76, Oct. 2022, doi: 10.35699/2237-549X..13253.
+
+A. N. Ab’Saber, Geomorfologia do sítio urbano de São Paulo. USP-FFCL, 1957."""@pt ;
     dcterms:title "O Trem e o Meteoro" ;
     prov:wasAttributedTo phd:pessoaDandan ;
     ph:arrivedAt "2025-09-21T17:25:00-03:00"^^xsd:dateTime ;
@@ -1242,10 +1505,16 @@ phd:tour_63 a ph:Tour ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 840.0 ] ;
     ph:mediaCount 466 ;
-    ph:movingDuration "PT3H44M"^^xsd:duration .
+    ph:movingDuration "PT3H44M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/63/announcement.jpg> .
 
 phd:tour_64 a ph:Tour ;
     dcterms:date "2025-09-24T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Neste pedal, lançarmo-nos-ei para para os pés das três montanhas que fazem o panorama ao norte da cidade. Citam-se: A Serra da Cantareira e seu embaixador Planalto de Taipas, o Pico do Jaraguá, e o Morro Doce, que se dividem em profundos vales separados pelos afluentes do notório Ribeirão Vermelho.
+
+Partindo do lado de cá do Tietê, onde fatalmente desmorra o Caaguaçu, vamos para o lado de lá com vistas a pegar uma carona topográfica até os primeiros testemunhos do Pico do Jaraguá via o Desmorrodouro de Pirituba, rasgado em seu miolo pela bandeirante rodovia. A fim de economizar quilojaules, um ponto de sela se apresenta para nos transladar para o desfalecido riacho da Olaria, que segue junto de outra outra rodovia bandeirante. Enjoados da proximidade com estes, escalamos o Morrinho Doce, na toponímia osasquense conhecida como Jardim Três Montanhas.
+
+Lá, testemunhamos um aterramento vultoso que soterra o riacho Clara. Continuamos o passeio para então seguir pelo divisor dos riachos da Bonança e Rico. Temos um breve contato com o Braço Morto, aquele lugar saudoso do Pedal Hidrográfico 35. Entramos nele pelo acesso da Horta Urbana para então visitarmos a ilhota que antes já foi morro. Lá, atravessamos o grande rio e estamos no trem, prontos para voltar de mais outro memorável passeio."""@pt ;
     dcterms:title "Os Três Sopés e a Ilhota de São João" ;
     prov:wasAttributedTo phd:pessoaDandan ;
     ph:arrivedAt "2025-09-24T23:07:00-03:00"^^xsd:dateTime ;
@@ -1265,7 +1534,8 @@ phd:tour_64 a ph:Tour ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 406.0 ] ;
     ph:mediaCount 179 ;
-    ph:movingDuration "PT1H44M"^^xsd:duration .
+    ph:movingDuration "PT1H44M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/64/announcement.jpg> .
 
 phd:tour_65 a ph:Tour ;
     dcterms:date "2025-09-30T20:30:00-03:00"^^xsd:dateTime ;
@@ -1287,6 +1557,15 @@ phd:tour_65 a ph:Tour ;
 
 phd:tour_66 a ph:Tour ;
     dcterms:date "2025-10-07T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """"Caaguaçu" era o nome dado pelos indígenas para o espigão central dos campos de Piratininga. A toponímia significa mata grande, devido às araucárias que "surgiam isoladamente na mata e varavam o céu" (Ab'Saber), e que ainda podem ser encontradas em alguns pontos da periferia. Apesar da altura destacada em relação às várzeas que o circundam (quase 100m acima do Tietê), esse divisor de águas - ocupado desde priscas eras - não está ali por ser composto de material resistente. Pelo contrário: assim como toda a região do centro expandido, essa espinha dorsal da cidade é material sedimentar e, portanto, mais instável.
+
+Para além da curiosidade geológica, a presença desse extenso maciço nos faz entender essa região da cidade como uma mega escultura entalhada pelas águas de dezenas de milhões de anos. Não a toa possui uma formato alongado - que vem de Diadema ou ainda além. Se trata de um interflúvio (entre rios) escavado principalmente pelos três maiores rios da cidade que nascem na serra em direção ao interior do estado: Pinheiros, Tietê e Tamanduateí.
+
+Apesar de ter escapado da erosão do entorno, suas vertentes passaram a ser cavadas, quase que perpendicularmente, pelos riachos abastecidos pela profusão de nascentes, formando sulcos sobre os quais a cidade foi se estabelecendo. Na rota de hoje, atravessaremos alguns deles: pacaembu, sumaré, água preta, tiburtino e fortunato ferraz. Esse último atravessa o peculiar bairro da Vila Anastácio, uma vizinhança entre ferrovias que se estabeceu num fragmento de planície fluvial que marca o fim do maciço e está próximo do encontro dos rios.
+
+Ao pedalar pelos sopés dessa colina geohistórica, nos propomos mais uma vez a fiar as linhas imaginárias de outros tempos e outras paisagens.
+
+Referências: Caio Prado Jr. "A cidade de São Paulo - Geografia e História" (1935)"""@pt ;
     dcterms:title "Bico do Caaguaçu" ;
     prov:wasAttributedTo phd:pessoaGmard ;
     ph:arrivedAt "2025-10-07T22:56:00-03:00"^^xsd:dateTime ;
@@ -1303,10 +1582,20 @@ phd:tour_66 a ph:Tour ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/52939892> ] ;
     ph:mediaCount 12 ;
-    ph:movingDuration "PT1H30M"^^xsd:duration .
+    ph:movingDuration "PT1H30M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/66/announcement.jpg> .
 
 phd:tour_67 a ph:Tour ;
     dcterms:date "2025-10-17T17:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """On this ride, we’ll circumnavigate most of the watershed that makes up Lake Merritt - an old tidal arm of Oakland Estuary that was dammed into the current lake.
+
+We start by following the estuary upstream until arriving at the mouth of the undefined water body that connects Lake Merritt to the sea. It is neither an artificial canal nor a natural river, but rather a testimony of the geological forces of the Anthropocene that can narrow and widen landscapes at will.
+
+We follow that undefined water body until Lake Merritt - an amputated arm of the Oakland estuary, and then we proceed through its right margin until the mouth of the Glen Echo Creek, which becomes our route up until its springs at the Western Slope of the Oakland Hills.
+
+The water divide at the headwaters of Glen Echo is conveniently located at a saddle point connecting us to the earthquake-y Hayward Fault, which is visible as being a large valley on which the Temescal creek and others flow through. That fault also provides us a convenient place to start going back by diverting towards the Sausal Creek, which springs on the Oakland Hills while forming canyons through the slopes. We use that as the reference for our way back.
+
+As hills forming the canyons around Sausal Creek dissipate away, the time is near for us to get back into the Lake Merritt watershed. We then opportunistically detour to the headwaters of the Trestle Glen creek, which we use as our guide for getting back to the lake, and finally get to our destination which is by the side of the lake mouth into the undefined water body."""@en ;
     dcterms:title "Oakland: Lake Merritt Up and down stream with a diversion by the Sausal Canyon" ;
     prov:wasAttributedTo phd:pessoaDandan,
         phd:pessoaDelaram ;
@@ -1327,10 +1616,12 @@ phd:tour_67 a ph:Tour ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 707.0 ] ;
     ph:mediaCount 165 ;
-    ph:movingDuration "PT2H3M"^^xsd:duration .
+    ph:movingDuration "PT2H3M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/67/announcement.jpg> .
 
 phd:tour_68 a ph:Tour ;
     dcterms:date "2025-10-21T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description "O Vale do Anhangabaú, cujo nome significa \"rio do feitiço ou dos espíritos\", é um espaço central na metrópole que passou de um sítio de produção de chá para uma arena de concreto, onde se desmembrou o outrora verdejante vale em múltiplas camadas: uma tubulação que enclausura suas águas ancestrais, os trilhos do metrô, um túnel rodoviário e, superficialmente, uma enorme praça de concreto. No entanto, o rio resiste e occasionalmente transborda, desafiando a cidade funcional. É sobre este solo permeado de histórias e transformações que se realizará o 60º Pedal Hidrográfico, um passeio ciclístico que já criou suas próprias mitologias, incluindo a da rota Lavapés-Aclimação, que curiosamente nunca foi realizada sem chuva. Confiantes nesta edição, os organizadores estenderam o trajeto, mesclando-o com o curso do rio enfeitiçado, e convidam aqueles que não temem e enxergam o espírito das águas mesmo nos locais mais improváveis a se juntarem a esta aventura."@pt ;
     dcterms:title "Águas Meridionais da Colina Histórica" ;
     prov:wasAttributedTo phd:pessoaAlef,
         phd:pessoaGmard,
@@ -1349,10 +1640,24 @@ phd:tour_68 a ph:Tour ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/51282559> ] ;
     ph:mediaCount 55 ;
-    ph:movingDuration "PT1H50M"^^xsd:duration .
+    ph:movingDuration "PT1H50M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/68/announcement.jpg> .
 
 phd:tour_69 a ph:Tour ;
     dcterms:date "2025-10-26T07:30:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Em um pedal de aproximadamente 51km e 694 quilojaules (frito!), confluirmos junto das vastas e variadas águas que compõem os estuários e manguezais da região.
+
+O trajeto permeia por trechos da planície litorânea que compõe as cidades de Santos, São Vicente e Cubatão, sendo uma pedalada predominantemente plana, bom para quem está iniciando no meio e quer viver aventuras de cicloviagem, afinal, passamos também pelas famosas rodovias que ligam a planície ao planalto: Imigrantes e Anchieta.
+
+Veremos a olho nu a contradição de alguns ambientes que fazem desta região uma das mais movimentadas e importantes na economia do país: atividades industriais, rodovias ruidosas e a mata virgem que compõem as escarpas de serras e vales da região.
+
+Chegando literalmente aos pés de nossa poderosa Serra do Mar, desfrutaremos de seu silêncio e nos conectarmos com toda sua beleza, grandeza e pureza de seu ar, água, fauna e flora local. Entraremos em uma estrada natural (de terra) perfeita para este contato, com muita sombra, água fresca e corrente bem ao lado para então chegaremos ao grande encontro de duas águas, onde poderemos nos banhar em suas forças e sentir uma conexão ímpar com este sagrado ambiente.
+
+Este pedal é perfeito para quem busca união, interação, compartilhamento de sabedorias, boas energias, coletividade e a importante conexão com a natureza e suas forças.
+
+Se sentir, bote sua bicicleta no busão e venha!
+
+Aho!"""@pt ;
     dcterms:title "Cubatão e a Foz dos Pilões" ;
     prov:wasAttributedTo phd:pessoaDandan,
         phd:pessoaEricalatina ;
@@ -1370,7 +1675,8 @@ phd:tour_69 a ph:Tour ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/53123125> ] ;
     ph:mediaCount 110 ;
-    ph:movingDuration "PT4H38M"^^xsd:duration .
+    ph:movingDuration "PT4H38M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/69/announcement.jpg> .
 
 phd:tour_7 a ph:Tour ;
     dcterms:date "2024-10-22T20:00:00-03:00"^^xsd:dateTime ;
@@ -1391,6 +1697,15 @@ phd:tour_7 a ph:Tour ;
 
 phd:tour_70 a ph:Tour ;
     dcterms:date "2025-10-28T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Seria a zona norte um pedacinho de Belo Horizonte na capital paulista? Seu relevo de sobe-e-desce-ladeira instiga essas transposições geográficas e, por óbvio, atrai os radares de pedalantes hidrográficos, interessados em suas saliências. Emoldurada pela imponente Serra da Cantareira (afluente da Mantiqueira), essa porção da cidade é marcada por uma complexidade de bacias hidrográficas, muitas das quais já exploradas em pedais anteriores.
+
+Pedalar por São Paulo exige, necessariamente, fluir por suas águas, estejam elas enterradas ou não, esteja o pedalante consciente disso ou não. Pode-se aproveitar seus vales e várzeas, ou surfar pelo avesso das águas: seus divisores, ou cristas, ou cumeeiras, ou cumeadas, ou interflúvios.... São esses polos do relevo que inspiram as rotas do pedal hidrográfico.
+
+Na rota de hoje, traçamos um arco de cumeeiras que se estende, tal qual um anfiteatro, por toda as várzeas aterradas do córrego do Carandiru, onde hoje estão Campo de Marte, Complexo Center Norte e Vila Maria.
+
+Iniciamos na Estação Barra Funda, atravessamos a Ponte do Limão (que dá na Casa Verde), seguimos diretamente ao sopé dos morros que dividem Córrego Mandaqui e Córrego Tenente Rocha (Campo de Marte). Pedalamos a cumeeira até chegar no Desmorrodouro do Tucuruvi, nosso ponto mais alto. A partir de então, bairros com traçado ortogonal seguem no topo acidentado desses morros, até chegar no Jardim Japão, onde o traçado das ruas acompanham o desenho de rios e morros.
+
+Descemos tudo até chegar no Parque Novo Mundo, várzea do Tietê, que cruzaremos para acompanhar o curso final do Ribeirão Aricanduva, para chegarmos no sopé da Colina da Penha"""@pt ;
     dcterms:title "O arco das cumeeiras do Caaguaçu" ;
     prov:wasAttributedTo phd:pessoaFetiche,
         phd:pessoaGmard ;
@@ -1411,10 +1726,18 @@ phd:tour_70 a ph:Tour ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 428.0 ] ;
     ph:mediaCount 36 ;
-    ph:movingDuration "PT2H22M"^^xsd:duration .
+    ph:movingDuration "PT2H22M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/70/announcement.jpg> .
 
 phd:tour_71 a ph:Tour ;
     dcterms:date "2025-11-04T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """As trinta pontes da Ponte Rasa! Com seus entrelaçamentos de concreto onde o preenchimento e o vazio se revezam de forma distinta em cada ponte. Umas pintadas, algumas cruas e outras correio de pixo. Vizinho do seu Tiquatira, cartão postal esponjoso e famoso, o Riacho da Ponte Rasa deságua após uma confluência à esquerda onde acaba a imponente neo-floresta e onde começa o ecótono onde chocam esculturas calca-argilosos com as ora canalizadas ora meândricas águas.
+
+Vamos para este notório museu a céu aberto a partir do terraço onde começam as elevações do lado de lá do Tamanduateí. Nesta centralidade singular que é o Pari, transladamos para o lado de lá do Tietê como se estivéssemos ainda no século retrasado. Atravessamos pela Várzea do Carandiru pelas margens das encostas de seus morros, garantindo-nos segurança de eventuais enchentes tal como foi em 1929.
+
+Já na base da Ilhota de Guapira, d’onde o mirante vislumbra por todo o vale do Tiquatira, passamos novamente para o lado de cá do Tietê, porém num lampejo hidrofóbico corremos rapidamente para o alto do Morro do Cangaíba, dividindo a neo-floresta para lá e o parque ecológico para cá. Seguimos pelo alto de sua crista até localizarmos um conveniente córrego para nos dar acesso direto para a confluência. Descemos!
+
+A partir daí, não se pedala duas ou três quadras sem antes avistar uma ponte. Uma vez superado essa quantidade de pontes, finalizamos o passeio pegando uma última ponte para nos dar acesso ao trem do Itaquera."""@pt ;
     dcterms:title "Pontes da Ponte Rasa via Várzea do Carandiru e Baixo Cangaíba" ;
     prov:wasAttributedTo phd:pessoaDandan ;
     ph:arrivedAt "2025-11-04T23:24:00-03:00"^^xsd:dateTime ;
@@ -1434,10 +1757,18 @@ phd:tour_71 a ph:Tour ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 586.0 ] ;
     ph:mediaCount 159 ;
-    ph:movingDuration "PT2H12M"^^xsd:duration .
+    ph:movingDuration "PT2H12M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/71/announcement.jpg> .
 
 phd:tour_72 a ph:Tour ;
     dcterms:date "2025-11-11T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Repetição do Pedal Hidrográfico 30 Subir Pirituba, Surfar Alpes do Jaraguá e Descer Perus
+
+Neste pedal, acessaremos a parte baixa do Rio Perus por meio do único caminho viário mapeado que utiliza-se de somente um único divisor de água!
+
+Saindo da planície do Tietê, seguimos pelas várzeas do Rio Pirituba até suas cabeçeiras no Planalto de Taipas, região alta, cárstica e de raros morros globulares e que é circunscrita pela Cantareira, Morro Grande, Alto de Pirituba, Alpes do Jaraguá e o Morro de Shangrila. Suas águas majoritariamente fluem abaixo até o Rio Juqueri por meio do Rio dos Perus e do Rio Ajuá, com relevante exceção para o Corrego Corumbé, alimentador do Córrego da Onça e que margeia os Cânions da Brasilândia.
+
+Lá no alto deste planalto, seguimos pelos Alpes do Jaraguá, que separa as águas do Rio de Perus dos afluentes das planície: o Ribeirão Vermelho, que drena o sudeste do Pico do Jaraguá, e o Rio São Miguel, que drena o nordeste deste. Descendo-se este alpes, continuamos no divisor até acessar o primeiro afluente que nos conduz para o Baixo Perus em sua confluência principal. Lá, estamos na estação de trem e regressamos."""@pt ;
     dcterms:title "Pelos Alpes do Jaraguá ao Subir Rio Pirituba e descer Rio Perus" ;
     prov:wasAttributedTo phd:pessoaDandan ;
     ph:arrivedAt "2025-11-11T22:17:00-03:00"^^xsd:dateTime ;
@@ -1457,10 +1788,20 @@ phd:tour_72 a ph:Tour ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 324.0 ] ;
     ph:mediaCount 135 ;
-    ph:movingDuration "PT1H21M"^^xsd:duration .
+    ph:movingDuration "PT1H21M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/72/announcement.jpg> .
 
 phd:tour_73 a ph:Tour ;
     dcterms:date "2025-11-25T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Idealizado por @g_mardegan, @giovannacstn e @giulianacucciolito, o pedal de hoje vai perseguir dois dos marcos remanescentes das antigas rotas e limites da cidade de São Paulo: Vila Mariana e Ipiranga.
+
+Apesar de terem sido implementados no final do século passado, esses memoriais se referem a rotas muito mais antigas, que ligavam a vila de Piratininga às regiões adjacentes do planalto e do litoral (Santo Amaro e baixada santista).
+
+Iniciaremos o pedal na praça dos arcores, de onde surfaremos pela crista do caaguaçu rumo à vila mariana (Rua França Pinto). De lá, mergulharemos no vale do Ipiranga, cujas margens pálidas nos conduzirão ao segundo marco (Rua Silva Bueno).
+
+Seguiremos então ao final da rota, num totem canônico da cidade: o marco zero da Praça da Sé (provavelmente cercado devido às intervenções natalinas).
+
+Para finalizar, desceremos ao Anhangabaú, palco da celebração, neste 25 de novembro de 2025, da LIBERDADE de todas as águas, e o devido isolamento de elementos nocivos àquilo que nos dá vida."""@pt ;
     dcterms:title "Marcos das antigas rotas de SP (seus relevos e relevâncias)" ;
     prov:wasAttributedTo phd:pessoaGmard ;
     ph:arrivedAt "2025-11-25T22:59:00-03:00"^^xsd:dateTime ;
@@ -1480,10 +1821,14 @@ phd:tour_73 a ph:Tour ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 215.0 ] ;
     ph:mediaCount 37 ;
-    ph:movingDuration "PT1H26M"^^xsd:duration .
+    ph:movingDuration "PT1H26M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/73/announcement.jpg> .
 
 phd:tour_74 a ph:Tour ;
     dcterms:date "2025-11-30T08:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """A rota passa pela Antiga Ligação entre os Rios Tietê e Paraíba do Sul em que este seguia um curso diferente: após passar por Paraibuna, ele fluía em direção a Mogi das Cruzes e desaguava no Rio Tietê. Essa antiga conexão foi interrompida pelo surgimento do Terraço de Arujá, forçando o Paraíba a fazer uma curva de 180º e seguir para Jacareí, deixando um "vale seco" entre Mogi e Guararema. Esse vale, hoje desativado, foi aproveitado por animais, indígenas e, mais tarde, engenheiros ferroviários como rota natural — originando o Caminho dos Puris, a primeira estrada para Minas Gerais e atual Rodovia Rio-SP. No local existe a falha geológica de Santa Isabel, um corredor natural entre o Planalto de Piratininga e o Vale do Paraíba.
+
+Se o vale ainda estivesse ativo, a nascente do Rio Tietê poderia ser considerada na Serra da Bocaina, onde hoje nasce o Paraíba do Sul, e não em Salesópolis."""@pt ;
     dcterms:title "Recosturando Tietê e Paraíba do Sul" ;
     prov:wasAttributedTo phd:pessoaAndrio,
         phd:pessoaGmard ;
@@ -1504,10 +1849,20 @@ phd:tour_74 a ph:Tour ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 856.0 ] ;
     ph:mediaCount 100 ;
-    ph:movingDuration "PT3H18M"^^xsd:duration .
+    ph:movingDuration "PT3H18M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/74/announcement.jpg> .
 
 phd:tour_75 a ph:Tour ;
     dcterms:date "2025-12-03T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Há tempos que a Zona Leste tem nos sido interesse pessoal, dias e dias olhando mapas, seus morros, seus córregos e toda esta morfologia. E hoje é dia de aproveitar e pedalar suavemente pelas cristas que contornam dois de seus principais córregos: Capão do Embira e Tatuapé.
+
+A pedalada começa na Mooca, ainda na região plana do bairro, para começarmos a subir pelos divisores de água que delimitam Tamanduateí dos córregos à leste. Antes de sairmos da Mooca, encontraremos o Parque da Sabesp, onde há uma grande caixa d'água urbana. Dali, iremos pedalar paralelamente à linha da Adutora Rio Claro, que traz água desde a Serra das Guaianazes até a Mooca.
+
+Esta subida vai dar de encontro à Crista de Sapopemba, por onde percorre esta avenida de mesmo nome, que também é a maior avenida de São Paulo: a Avenida Sapopemba percorre toda esta crista, desde seu encontro com a Rua do Oratório, até o Desmorrodouro de São Mateus. Aqui, pedalaremos conjuntamente com a linha da Adutora Rio Claro, seja em linha reta, seja em linhas sinuosas, mas sempre pedalando junto à crista, ao divisor de águas.
+
+Num dado momento, faremos um desvio ao norte, porque contornaremos as cabeceiras do Córrego Capão do Embira para chegar aos divisores deste córrego com seu vizinho Aricanduva. Adentraremos então à Crista da Vila Formosa, onde suas ruas se deitam conforme o relevo: todas as ruas são curvas e sinuosas! Desceremos suavemente enquanto percorreremos Vila Formosa, contornando Jardim Anália Franco até chegar aos traçados ortogonais da Vila Gomes Cardim.
+
+A descida do morro finalizará no Tatuapé, com um belo encontro de ciclistas no Bar do Wilson, famoso bar do bairro que iremos hoje!"""@pt ;
     dcterms:title "Contornando Capão do Embira e Tatuapé pela Crista de Sapopemba e Vila Formosa" ;
     prov:wasAttributedTo phd:pessoaFetiche,
         phd:pessoaGiucuci ;
@@ -1528,10 +1883,14 @@ phd:tour_75 a ph:Tour ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 263.0 ] ;
     ph:mediaCount 23 ;
-    ph:movingDuration "PT1H28M"^^xsd:duration .
+    ph:movingDuration "PT1H28M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/75/announcement.jpg> .
 
 phd:tour_76 a ph:Tour ;
     dcterms:date "2025-12-10T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Uma rota bem fofinha e com queridinhos do PH aprox. 19km e 180m de elevação. Cruzando as duas bacias dos grandes rios do centro de São Paulo (tiete a pinheiros) com um caminho hidrografico tranquilo em rios destanponados e terminando num barzinho tranquilo no ritmo fim de ano
+
+Daí surfamos um pouco na crista até pegarmos o curso do córrego das corujas cruzando um parque linear e vendo sua parte destamponada. Descemos até sua foz no pinheiros, entramos pela USP e seguimos o pirajuraçara até chegarmos perto do nosso ponto final e terminar o pedal com uma brejinha hidrográfica."""@pt ;
     dcterms:title "Tiburtino e córrego das corujas" ;
     prov:wasAttributedTo phd:pessoaLume ;
     ph:arrivedAt "2025-12-10T22:41:00-03:00"^^xsd:dateTime ;
@@ -1551,10 +1910,16 @@ phd:tour_76 a ph:Tour ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 215.0 ] ;
     ph:mediaCount 12 ;
-    ph:movingDuration "PT1H26M"^^xsd:duration .
+    ph:movingDuration "PT1H26M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/76/announcement.jpg> .
 
 phd:tour_77 a ph:Tour ;
     dcterms:date "2025-12-17T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Repetição do Pedal Hidrográfico 26 Cabeceiras do Ipiranga adrn_alef 🗺️🎨 @dandanlessa Neste pedal, contornaremos por cima toda a região de cabeceiras do Rio Ipiranga e teremos contato com a seção do Caaguaçu onde este conflui com as diversas cristas que se unem e formam um labirinto de morros que eventualmente correm para o leste-nordeste-leste enquanto dividem as águas do Tamanduateí-Tietê e Pinheiros! A seleção desta rota levou em conta a altitude e o alinhamento de morros e várzeas a fim de maximizar a possibilidade de encontrar mirantes para a lua cheia com o horizonte limpo.
+
+Começamos no metro Conceição, Linha Azul, no alto do Caaguaçu, com o Ipiranga e suas dezenas de micro-córregos sem denominação a esquerda, e o Rio Pinheirinho, afluente da Água Espraiada, para a nossa direita. Enquanto seguimos crista acima, corre o Rio Jabaquara para a nossa direita e após este, corre o Rio Cupucê, cujas nascentes são de uma rara declividade e teor paisagístico. Lá, o Caaguaçu se funde com duas crista-morros de significante magnitude: a do Ipiranga e a do Domitilia.
+
+Após isso, cada rio que se segue traz consigo uma nova grande crista, formando o labirinto de morros no limbo entre o território político-municipal de Diadema e da Capital. No divisor triplo das águas do Ipiranga, Cupucê e Taboão, iniciamos nosso movimento para contornar a outra metade, no qual a crista do Ipiranga se confunde com as cercas que separam o Zoológico e a Cidade. Após as nascentes do Jardim Botânico, iniciamos nossa descida pelo Córrego sem Denominação até as margens altas do Ipiranga, o qual prontamente cruzamos para então subir pelo Água Funda. Lá, estamos de volta ao começo e terminamos nosso contorno."""@pt ;
     dcterms:title "Cabeçeiras do Ipiranga ou Desmorrodouro do Caaguaçu" ;
     prov:wasAttributedTo phd:pessoaAlef,
         phd:pessoaDandan ;
@@ -1575,10 +1940,18 @@ phd:tour_77 a ph:Tour ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 303.0 ] ;
     ph:mediaCount 64 ;
-    ph:movingDuration "PT1H22M"^^xsd:duration .
+    ph:movingDuration "PT1H22M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/77/announcement.jpg> .
 
 phd:tour_78 a ph:Tour ;
     dcterms:date "2025-12-23T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Uma região que já foi habitada por povos originários e, a partir do início do século XVII, passou a ser habitada também por europeus e nipo-orientais. Onde já se plantou muito trigo, cana, cevada, vinheiras, batatas, entre outros. Inclusive, a primeira construção foi um moinho para moer trigo, seguido por um pilão de água. A região tem um certo bucolismo, justamente pelos sítios e fazendas que existiam, e que ainda nos remete a cidades do interior.
+
+As bacias hidrográficas dos Córregos Cabuçu de Baixo e Mandaqui hoje estão com muitos córregos ocultos, o que dificulta a visualização. Porém, neste pedal, iremos explorar e procurar pelos vestígios da cachoeira que deu nome à região da Cachoeirinha. O local da existência da cachoeira é próximo ao Hospital Maternidade Cachoeirinha, dizem que ainda existe uma pedra, a qual fazia parte da mesma.
+
+Nossa rota se inicia na Barra Funda, iremos passar pela Ponte da Casa Verde, próxima de onde foi construída a primeira ponte de madeira do bairro por volta de 1915. Após curvar um meandro soterrado do Tietê, subiremos o Córrego Mandaqui de sua foz até seu encontro com a antiga rota do Tramway. O desvio Hidrográfico se torna Ferrográfico, Historiográfico, até o ponto final: uma antiga pedreira!
+
+Pedreira adentro, pedalamos um córrego até o ponto de sela entre bacias para descer pelo Córrego Água Preta do Cabuçu de Baixo, indo até o Largo do Japonês, onde existe um afluente (I) que deságua no Cabuçu de Baixo, subimos este e voltamos o mais próximo possível do antigo afluente (II), local da famosa cachoeira, até a Avenida Inajar de Souza para procurar por esta pedra e por fim descemos pelo Córrego Cabuçu de Baixo, cruzaremos Tietê, para seguir rumo ao Metrô Água Branca."""@pt ;
     dcterms:title "Bonde, Pedra e Cachoeira" ;
     prov:wasAttributedTo phd:pessoaBrunotitton,
         phd:pessoaFetiche ;
@@ -1599,7 +1972,8 @@ phd:tour_78 a ph:Tour ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 309.0 ] ;
     ph:mediaCount 184 ;
-    ph:movingDuration "PT2H16M"^^xsd:duration .
+    ph:movingDuration "PT2H16M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/78/announcement.jpg> .
 
 phd:tour_79 a ph:Tour ;
     dcterms:date "2026-01-07T20:00:00-03:00"^^xsd:dateTime ;
@@ -1621,6 +1995,9 @@ phd:tour_79 a ph:Tour ;
 
 phd:tour_8 a ph:Tour ;
     dcterms:date "2024-10-24T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Vamos descer o Rio Itororó no alto de sua encosta esquerda até chegar na foz do Anhangabaú. De lá, subimos o morro do Inhapuambuçu e seguimos sua crista até a nascente do Moranguinho (Liberdade), o qual descemos até a Rio Glicério, para então subir o braço direito deste até sua na nascente (São Joaquim). Lá, cruzamos o divisor de águas para a micro bacia do Cambuci e pegamos um córrego para descer em sua confluência principal, próxima ao bairro do Cambuci. Finalmente, subimos o rio com alguns desvios para explorar os córregos da Aclimação. Damos uma volta ao redor do antigo alagado e subimos de volta ao Caaguaçu pelo braço esquerdo do rio.
+
+Reaja com joinha pra dizer que vai! E com chuva pra dizer que vai mesmo com chuva!"""@pt ;
     dcterms:title "Itororó, Lavapés/Glicério e Aclimação/Cambuci" ;
     prov:wasAttributedTo phd:pessoaDandan ;
     ph:countAttendee 4 ;
@@ -1635,7 +2012,8 @@ phd:tour_8 a ph:Tour ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/49195439> ] ;
     ph:mediaCount 45 ;
-    ph:movingDuration "PT1H26M"^^xsd:duration .
+    ph:movingDuration "PT1H26M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/8/announcement.jpg> .
 
 phd:tour_80 a ph:Tour ;
     dcterms:date "2026-01-14T20:00:00-03:00"^^xsd:dateTime ;
@@ -1775,6 +2153,13 @@ phd:tour_88 a ph:Tour ;
 
 phd:tour_89 a ph:Tour ;
     dcterms:date "2026-02-24T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Partimos da colina histórica de Vila da Freguesia de Ó e tomamos o rumo da estreita e sinuosa crista para os sertões que se colocam no horizonte: um sopé xistoso onde há a dominância esmagadora de vertentes convexas, drenagem dendríticas e pequenas planícies alveolares, já dizia Aziz em 1952.
+
+O Planalto de Taipas! De solo meta carbonático e que cujo patamar se coloca acima dos Caaguaçus e demais colinas dos campos de Piratininga. Seria lá uma dissolução da Cantareira onde cavernas e dolinas nos aguardam nos fundos de vale? Ou seria algo de particularidade própria, conforme suas declividades e morros arredondados denunciam?
+
+Adentramos ao Planalto pela sua desgastada face ao sudeste, por onde as pedreiras extraíram há muito suas veias calcárias. Por lá, na confluência do Riacho Carumbé com o da Onça, o teto do Planalto desabou e deu origem a algumas das maiores declividades da cidade: os Cânions da Brasilândia. Subimos pelo mais bolotudo morro da região a fim de acessar o ponto de sela da Onça com o Rio Ajoá: principal curso que drena este Planalto. Seguimos por ele até sermos impedidos por outra pedreira, esta que está ativa e em sua fome calcária ousou desviar e isolar o Rio Ajoá e sua cachoeira com queda de 20 metros.
+
+Mudamos o curso a fim de acessar o Rio Perus enquanto este está acima do planalto. Vamos de encontro ao salto que estas águas fazem para se encontrar com as planícies do Juqueri que se colocam abaixo e a distância. Contemplamos a vida nas bordas desta transição geológica, e pegamos o trem de volta."""@pt ;
     dcterms:title "Planalto de Taipas e os Cânions da Brasilândia" ;
     prov:wasAttributedTo phd:pessoaDandan,
         phd:pessoaGiucuci ;
@@ -1795,10 +2180,16 @@ phd:tour_89 a ph:Tour ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 328.0 ] ;
     ph:mediaCount 104 ;
-    ph:movingDuration "PT1H29M"^^xsd:duration .
+    ph:movingDuration "PT1H29M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/89/announcement.jpg> .
 
 phd:tour_9 a ph:Tour ;
     dcterms:date "2024-10-29T20:15:00-03:00"^^xsd:dateTime ;
+    dcterms:description """O pedal se inicia na estação de trem de Pirituba, construido acima do Rio Pirituba. Começamos por subir este para subir o primeiro córrego de sua margem esquerda que brota da crista de morro que dá origem para a Avenida Raimundo Pereira, o que é feito para poder acessar as nascentes do braço direito do córrego Verde de Pirituba, o qual o descemos até sua confluência para então subir seu braço esquerdo até sua nascente, relativamente próximo da Pedra da Baleia.
+
+De lá, subimos e descemos uma crista em sua margem esquerda para poder xchegar no braço esquerdo do braço esquerdo deste mesmo córrego, para descer um pouco estas águas e novamente subir outra crista na margem esquerda, desta vez tendo em vista acessar as águas do… Córrego Verde!
+
+Todos os córregos por aqui são verdes no nome! Felizmente, o córrego irmão deste é o Congo, de tal modo que irei chamá-lo de Córrego do Irmão do Congo. Descemos ele até chegar na confluência com o Córrego do Congo, o qual supostamente forma outro Córrego Verde. Continuamos. Ao chegar na confluência com o córrego Tanque, pegamos este água acima até chegar em seu divisor que forma um passo para acessar as águas do Rio Pirituba. Subimos e descemos, e subimos um pouco de água acima, e estamos de volta!"""@pt ;
     dcterms:title "Sertões de Pirituba" ;
     prov:wasAttributedTo phd:pessoaThiagoneves ;
     ph:countAttendee 8 ;
@@ -1813,7 +2204,8 @@ phd:tour_9 a ph:Tour ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/49195401> ] ;
     ph:mediaCount 94 ;
-    ph:movingDuration "PT1H20M"^^xsd:duration .
+    ph:movingDuration "PT1H20M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/9/announcement.jpg> .
 
 phd:tour_90 a ph:Tour ;
     dcterms:date "2026-03-04T20:00:00-03:00"^^xsd:dateTime ;
@@ -1826,7 +2218,8 @@ phd:tour_90 a ph:Tour ;
     ph:linkInstagram "https://www.instagram.com/p/DVbP7QsDiYA/"^^xsd:anyURI ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/53755124> ] .
+            schema:url <https://ridewithgps.com/routes/53755124> ] ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/90/announcement.jpg> .
 
 phd:tour_91 a ph:Tour ;
     dcterms:date "2026-03-18T20:00:00-03:00"^^xsd:dateTime ;
@@ -1856,6 +2249,13 @@ phd:tour_92 a ph:Tour ;
 
 phd:tour_93 a ph:Tour ;
     dcterms:date "2025-03-25T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Como fazer para empacotar a metrópole numa caixa topográfica? Em sentido horário, inicia-se pelos granitos da Serra da Cantareira, percorrendo-se pelos calcários do Planalto de Taipas e os gêmeos Pico do Jaraguá e Morro Doce para então escorrer o Tietê para a depressão interiorana. Morro Grande de Cotia se apresenta ao oeste. Ao nordeste, a abiruta captura das cabeceiras pelo Rio Paraíba.
+
+O que se apresenta nos limites do hemisfério sul, de leste a oeste? A resposta poderia vir ao caminhar indefinidamente o Caaguaçu, testemunha das grandes várzeas de altitude que fazem a originalidade deste sítio urbano. De lá, prolonga-se no Maciço da Bonilha ao Sul, para então este se transformar na Serra das Guaianazes, grande articuladora do leste da cidade.
+
+Neste pedal, partimos oportunamente de onde nasce esta oriental serra, n’onde as colinas que formam o Desmorrodouro de Itaquá passam a expressar sua xistosa montanhosidade. Por lá, apresenta-se a única e grande Voçoroca do Itaquera-Mirim com profundidades de até vinte metros e comprimento de duzentos metros, num polígono - única deste sítio urbano - onde estes peculiares cânions se reproduzem.
+
+A bifurcação se apresenta: deveríamos seguir ao alto pelo esporão que se bifurca da Serra das Guaianazes? Ou ao baixo mergulhando no riacho de nome desconhecido? Inevitavelmente, nos encontraremos no alto dum pântano no meio da noite: no Pantanal de Itaquá, expressão máxima da singularidade geomorfológica deste sítio urbano, onde banhados e colinas preenchem o horizonte e o vertical, num mosaico de eras contemporâneas e geológicas."""@pt ;
     dcterms:title "A Voçoroca e o Pântano" ;
     ph:arrivedAt "2025-03-26T00:00:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 1 ;
@@ -1907,6 +2307,13 @@ phd:tour_95 a ph:Tour ;
 
 phd:tour_96 a ph:Tour ;
     dcterms:date "2026-04-14T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Paixão nacional, o futebol espalhou-se pelo Brasil como um dos mais notórios símbolos de uma volátil (e questionável) identidade nacional. Na cidade de São Paulo, a aparição e difusão do esporte esteve intimamente ligada com o uso dos terrenos das várzea dos rios: amplos espaços, secundarizados pelo desenvolvimento urbano da virada entre os séculos XIX e XX, mas que se mostraram de suma importância para a formação da identidade popular da cidade.
+
+Nesta semana, o Pedal Hidrográfico vai percorrer alguns dos pontos mais importantes deste cruzamento entre o Tietê e o futebol. Começando pelo terreno do antigo estádio do Parque Antártica, atual Allianz Parque, epicentro de identidade do Palmeiras, antigo Palestra Itália. Tais mudanças de nomes não são meras coincidências, pois revelam tensionamentos entre distintas concepções sobre o futebol, a vida e o mundo.
+
+Em sequência, encontraremos clubes que, apesar de serem menos conhecidos, marcaram a história do desenvolvimento de São Paulo e da várzea do Tietê: o Nacional Atlético Clube e o Anhanguera e o União dos Operários. Entre eles, as frestas da cidade nos presenteiam com o marco inicial do mais popular time de São Paulo e do país, bem como com o estádio da Portuguesa, um de seus clubes mais tradicionais.
+
+As curvas do Tietê nos levam para as origens operárias da expansão da cidade, tendo uma de suas possíveis fozes (reconhecemos que ela não é definitiva) em um largo terreno na várzea do Tietê, que abriga o mais antigo estádio do Sport Club Corinthians Paulista."""@pt ;
     dcterms:title "Várzea do Tietê e as origens do Futebol" ;
     prov:wasAttributedTo phd:pessoaAlef ;
     ph:arrivedAt "2026-04-15T00:00:00-03:00"^^xsd:dateTime ;
@@ -1924,6 +2331,7 @@ phd:tour_96 a ph:Tour ;
 
 phd:tour_97 a ph:Tour ;
     dcterms:date "2026-04-21T00:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description "Nós e o outono paulistano convidamos para uma rota diurna endorfinada, num dia ensolarado de clima ameno, para mergulhar pelas águas da Cantareira. A saída será às 9:00h no metrô Tucuruvi, seguindo pela Avenida Nova Cantareira, sentido bairro, onde cruzaremos, pela primeira vez no dia, o Rio Tremembé. Seguiremos sentido Cantareira, ladeando o Córrego Engorda Sapo, até chegarmos ao Lago do Cassununga. Retornaremos pela Sezefredo Fagundes, até nos aproximarmos novamente ao Rio Tremembé. Acompanharemos suas águas até nos aproximarmos do Córrego Tucuruvi, que nos guiará até o ponto final desta rota."@pt ;
     dcterms:title "Da Cantareira ao Tremembé" ;
     prov:wasAttributedTo phd:pessoaDandan,
         phd:pessoaGa ;
@@ -1959,6 +2367,7 @@ phd:tour_98 a ph:Tour ;
 
 phd:tour_99 a ph:Tour ;
     dcterms:date "2026-05-06T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description "Em sua vasta extensão, a Zona Leste da megalópole paulista revela, revela e esconde formações geológicas e hidrográficas das mais diversas feições. Na região da Penha, O Córrego da Gamelinha, cuja nascente fica próxima ao Parque do Carmo, nos leva em seu contrafluxo para a longa Crista da Penha. Trata-se de um percurso que termina por contornar as águas do Rincão, em um trajeto circular que pode remeter tanto ao eterno fluxo renovador das águas quanto com o desejo de pegar o metrô antes que ele feche."@pt ;
     dcterms:title "Subir Gamelinha e Contornar Rincão pela Crista da Penha" ;
     prov:wasAttributedTo phd:pessoaAlef,
         phd:pessoaDandan,
@@ -1974,7 +2383,8 @@ phd:tour_99 a ph:Tour ;
     ph:linkInstagram "https://www.instagram.com/p/DX-3psUjtYV/"^^xsd:anyURI ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/54984116> ] .
+            schema:url <https://ridewithgps.com/routes/54984116> ] ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/99/announcement.jpg> .
 
 phd:tour_Ph94 a ph:Tour ;
     dcterms:date "2026-06-02T20:00:00-03:00"^^xsd:dateTime ;

@@ -1088,6 +1088,99 @@ def get_feed():
                                  headers={"Cache-Control": "no-cache"}))
 
 
+# Sitemap dinâmico (sobrepõe o web/sitemap.xml estático, que fica como
+# fallback de host estático): home + uma URL por passeio (/?tour=<id> — o
+# app abre o modal da rota via deep link). Passeios com data nas últimas
+# 48 h ganham o bloco <news:news> do Google News; o cache expira em 1 h
+# pra essa janela deslizar mesmo sem mudança no tours.ttl.
+_NEWS_WINDOW_S = 48 * 3600
+_sitemap_cache = {"digest": None, "xml": None, "built_at": None}
+
+
+def _build_sitemap_xml(tours_text):
+    from xml.sax.saxutils import escape
+    from rdflib import Graph, Namespace, RDF
+
+    PH = Namespace(PH_NS)
+    DCT = Namespace("http://purl.org/dc/terms/")
+
+    tours = []
+    if tours_text:
+        g = Graph().parse(data=tours_text, format="turtle")
+        for t in g.subjects(RDF.type, PH.Tour):
+            date = g.value(t, DCT.date)
+            try:
+                dt = datetime.fromisoformat(str(date)) if date else None
+            except ValueError:
+                dt = None
+            tour_id = str(t).rsplit("tour_", 1)[-1]
+            title = str(g.value(t, DCT.title) or tour_id).strip()
+            tours.append((dt, tour_id, title))
+    tours.sort(key=lambda x: (x[0] is not None, x[0] or datetime.min), reverse=True)
+
+    now = datetime.now(timezone.utc)
+    urls = [
+        "  <url>\n"
+        f"    <loc>{escape(SITE_URL)}</loc>\n"
+        "    <changefreq>weekly</changefreq>\n"
+        "  </url>"
+    ]
+    for dt, tour_id, title in tours:
+        lines = ["  <url>",
+                 f"    <loc>{escape(f'{SITE_URL}?tour={tour_id}')}</loc>"]
+        if dt:
+            lines.append(f"    <lastmod>{dt.date().isoformat()}</lastmod>")
+            # Google News só considera artigos das últimas ~48 h; usamos a
+            # data do passeio como publication_date (anúncios futuros dentro
+            # da janela também entram — o |Δ| cobre os dois lados).
+            if (dt.tzinfo is not None
+                    and abs((now - dt.astimezone(timezone.utc)).total_seconds())
+                    < _NEWS_WINDOW_S):
+                lines.append(
+                    "    <news:news>\n"
+                    "      <news:publication>\n"
+                    "        <news:name>Pedal Hidrográfico</news:name>\n"
+                    "        <news:language>pt</news:language>\n"
+                    "      </news:publication>\n"
+                    f"      <news:publication_date>{escape(dt.isoformat())}</news:publication_date>\n"
+                    f"      <news:title>{escape(title)}</news:title>\n"
+                    "    </news:news>"
+                )
+        lines.append("  </url>")
+        urls.append("\n".join(lines))
+
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"\n'
+        '        xmlns:news="http://www.google.com/schemas/sitemap-news/0.9">\n'
+        + "\n".join(urls) + "\n"
+        "</urlset>\n"
+    )
+
+
+@app.get("/sitemap.xml")
+def get_sitemap():
+    """Sitemap (com extensão Google News) renderizado de tours.ttl.
+
+    Mesma mecânica de cache do feed, mais um TTL de 1 h porque o bloco
+    de news depende do relógio, não só do conteúdo do catálogo."""
+    import hashlib
+    text = _load_dump_text("tours.ttl") or ""
+    digest = hashlib.sha1(text.encode("utf-8")).hexdigest()
+    now = datetime.now(timezone.utc)
+    with _feed_lock:
+        stale = (_sitemap_cache["digest"] != digest
+                 or _sitemap_cache["built_at"] is None
+                 or (now - _sitemap_cache["built_at"]).total_seconds() > 3600)
+        if stale:
+            _sitemap_cache["xml"] = _build_sitemap_xml(text)
+            _sitemap_cache["digest"] = digest
+            _sitemap_cache["built_at"] = now
+        xml = _sitemap_cache["xml"]
+    return _conditional(Response(xml, mimetype="application/xml",
+                                 headers={"Cache-Control": "no-cache"}))
+
+
 @app.get("/<path:p>")
 def web_files(p):
     """Estáticos de web/ — inclui ./data/{shapes,ontology,tours}.ttl e tudo

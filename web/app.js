@@ -3957,7 +3957,25 @@ boot()
     tryLoadFromShareHash().catch((err) =>
       console.warn('[share] hash load failed:', err),
     );
+    tryOpenTourFromQuery();
   });
+
+// Deep link por passeio: /?tour=<id> abre o modal da rota correspondente
+// (e ajusta o canonical, já que o estático aponta tudo pra home). São as
+// URLs que o sitemap dinâmico do backend anuncia — inclusive no bloco
+// Google News dos passeios recentes.
+function tryOpenTourFromQuery() {
+  const id = new URLSearchParams(location.search).get('tour');
+  if (!id) return;
+  for (const [key, r] of routes) {
+    if (_tourIdFromIri(r.entry?.tourIri) !== id) continue;
+    const canon = document.querySelector('link[rel="canonical"]');
+    if (canon) canon.href = `https://amora.pedalhidrografi.co/?tour=${encodeURIComponent(id)}`;
+    openRouteModal(key);
+    return;
+  }
+  console.warn(`[tour] deep link ?tour=${id} não encontrado em routes.json`);
+}
 
 // Lê o corpo da resposta em streaming, chamando onProgress(bytesRecebidos)
 // a cada chunk. Reporta bytes *descomprimidos* — com gzip no servidor o

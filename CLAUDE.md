@@ -30,8 +30,12 @@ local-first.
   (macOS/Linux) or on Cloud Run. (Was `backend/pi/` — the Raspberry Pi
   deploy was retired; the systemd unit + `pi-deploy.sh` were removed.)
 - `research/photos-rdf/` — the RDF research lab. Currently holds
-  `build-tours.py` (writes `web/data/tours.ttl` from `data/tours.csv`),
-  the seed `data/initial-data.ttl`, `decisions.ttl`, `design.ttl`,
+  the seed `data/initial-data.ttl`, `data/tours.csv` (historical
+  spreadsheet dump — `build-tours.py`, which regenerated `tours.ttl`
+  from it, was removed: `tours.ttl` is now maintained solely via
+  `upload_tour.html` / the Tour CRUD endpoints, and a CSV rebuild would
+  wipe the backfilled narratives and announcement images),
+  `decisions.ttl`, `design.ttl`,
   `conversion-notes.md`, and the legacy `upload-form.html` (kit-download
   form — superseded in production by `web/upload_images.html`). The
   active SHACL `shapes.ttl` and `ontology.ttl` live alongside the data
@@ -181,8 +185,11 @@ Key flows:
   `GET /tour_assets/<path:p>` (in `gcs` mode the last three 302-redirect
   to the bucket's public URL), `GET /feed.xml` (RSS 2.0 dos passeios,
   renderizado de `tours.ttl` e cacheado por hash do catálogo — atualiza
-  sozinho a cada tour CRUD). Ops: `GET /health`, `POST /reload` (force
-  re-read of the on-disk TTL catalog after an out-of-band edit).
+  sozinho a cada tour CRUD), `GET /sitemap.xml` (dinâmico, sobrepõe o
+  estático: home + `/?tour=<id>` por passeio — deep link que o app abre
+  no modal da rota — com bloco Google News pros passeios das últimas
+  48 h; cache por hash + TTL de 1 h). Ops: `GET /health`, `POST /reload`
+  (force re-read of the on-disk TTL catalog after an out-of-band edit).
   Mutations: `POST /upload-image`, `POST /upload-video`,
   `POST /upload-tour`, `POST /delete-image/<phash>`,
   `POST /delete-video/<vhash>`, `POST /delete-tour/<tour_id>`.
@@ -298,9 +305,6 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
   reading `web/data/tours.ttl` (the Tour catalog) and fetching each
   referenced GPX from RideWithGPS. Requires `python-dotenv` plus
   `RWGPS_API_KEY` / `RWGPS_AUTH_TOKEN` in `.env`.
-- `python research/photos-rdf/build-tours.py` — regenerate
-  `web/data/tours.ttl` from `research/photos-rdf/data/tours.csv`. Run this
-  whenever the spreadsheet changes; `build-routes.py` consumes its output.
 - `python scripts/build-clips.py` — re-encode anything in `web/clips/raw/`
   to 360p/720p mp4 + `.m4a` audio + thumbnail, and upsert each as a
   `ph:Video` in `web/data/uploads.ttl` (associates with nearest tour
@@ -311,7 +315,8 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
   from the local `.env` and injects them as service env vars (the `.env`
   itself never enters the build context — it's in `.gcloudignore`). Flags:
   - `--state` build + deploy + sync mutable state (`uploads.ttl`,
-    `data_graphs.ttl`, `routes.json`, `photos/`, `clips/`) to the bucket
+    `data_graphs.ttl`, `routes.json`, `photos/`, `clips/`, `tour_assets/`)
+    to the bucket
   - `--state-only` just sync mutable state, skip rebuild
   - `--mirror` make the bucket an exact mirror of local (deletes objects
     that no longer exist locally; pairs with `--state`/`--state-only`)

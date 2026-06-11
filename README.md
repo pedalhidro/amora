@@ -48,9 +48,11 @@ It's a fully static site with an optional self-hosted backend for uploads.
 Two stages:
 
 1. **Build steps (Python, with credentials).**
-   - `python research/photos-rdf/build-tours.py` reads
-     `research/photos-rdf/data/tours.csv` and writes
-     `web/data/tours.ttl` (the Tour catalog).
+   - `web/data/tours.ttl` (the Tour catalog) is maintained through the
+     app itself: `web/upload_tour.html` posts to the backend's Tour CRUD
+     endpoints. (The old `build-tours.py` CSV pipeline was removed — the
+     catalog now carries hand-written narratives and announcement images
+     that a spreadsheet rebuild would wipe.)
    - `python scripts/build-routes.py` reads `web/data/tours.ttl`, fetches
      every referenced GPX from RideWithGPS, downsamples each track to
      ≤400 points, and writes everything into `web/routes.json`. Unique
@@ -76,7 +78,6 @@ pip install python-dotenv rdflib pyshacl       # build + backend deps
 cp .env.example .env
 # fill in RWGPS_API_KEY and RWGPS_AUTH_TOKEN — see "Credentials" below
 
-python research/photos-rdf/build-tours.py      # writes web/data/tours.ttl
 python scripts/build-routes.py                 # writes web/routes.json
 ```
 
@@ -89,8 +90,8 @@ cd web && python -m http.server 8000
 
 Python 3.10+ recommended (uses `str | None` annotations and `urllib`).
 
-Re-run `build-tours.py` whenever the spreadsheet changes, then
-`build-routes.py` to refresh `routes.json`.
+Re-run `build-routes.py` to refresh `routes.json` after tour edits
+(the backend also upserts routes incrementally on every `/upload-tour`).
 
 ### Static deploy
 

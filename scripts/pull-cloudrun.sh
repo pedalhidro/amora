@@ -9,8 +9,7 @@
 # tours.ttl é baixado porque os endpoints de Tour CRUD (/upload-tour,
 # /delete-tour) o mutam server-side: edições feitas pelo upload_tour.html /
 # Censo vivem só no bucket até o próximo deploy sobrescrevê-las com a cópia
-# do git. Puxe e reconcilie antes de commitar — lembrando que tours.ttl
-# também é regenerado por build-tours.py a partir do CSV.
+# do git. Puxe e reconcilie antes de commitar.
 #
 # NÃO baixa shapes.ttl/ontology.ttl: esses ficam versionados no git e o
 # deploy é que sobe pro bucket — invertendo a direção corromperia o
@@ -135,6 +134,17 @@ if [[ "$SYNC_DATA" == 1 ]]; then
   # incremental server-side (bucket-first); sem o pull, o próximo
   # deploy --state clobbera essas edições com a cópia local stale.
   guarded_pull "gs://$BUCKET/routes.json" "$REPO_ROOT/web/routes.json"
+
+  # tour_assets/: artes de anúncio que o /upload-tour salva no bucket —
+  # viajam junto com o tours.ttl que as referencia. Aditivo (sem --mirror
+  # aqui: anúncios são imutáveis por tour, deleção só via /delete-tour).
+  if gcloud storage ls "gs://$BUCKET/tour_assets" --project="$PROJECT" >/dev/null 2>&1; then
+    mkdir -p "$REPO_ROOT/web/tour_assets"
+    echo "→ tour_assets/"
+    $DRY gcloud storage rsync --recursive \
+      "gs://$BUCKET/tour_assets" "$REPO_ROOT/web/tour_assets" \
+      --project="$PROJECT"
+  fi
 fi
 
 # ── photos/ ─────────────────────────────────────────────────────────────
@@ -164,7 +174,7 @@ echo ""
 if [[ -n "$GUARD_CONFLICTS" ]]; then
   echo "⚠ PULL RECUSADO (lost update) para:$GUARD_CONFLICTS"
   echo "  O local mudou desde o último sync e difere do bucket — provavelmente"
-  echo "  um build (build-tours.py / build-routes.py / build-clips.py) ou"
+  echo "  um build (build-routes.py / build-clips.py) ou"
   echo "  edição local ainda não empurrado. Pra reconciliar:"
   echo "    1. faça backup/commit do arquivo local"
   echo "    2. rode com --force pra trazer o lado do bucket, e faça o merge"

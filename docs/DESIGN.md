@@ -5,8 +5,10 @@ the active vocabulary at [../../web/data/ontology.ttl](../../web/data/ontology.t
 and shapes at [../../web/data/shapes.ttl](../../web/data/shapes.ttl) (both
 moved out of this folder so the backend can read them directly),
 [data/initial-data.ttl](data/initial-data.ttl) (seed graph),
-[data/tours.csv](data/tours.csv) → [../../web/data/tours.ttl](../../web/data/tours.ttl)
-via [build-tours.py](build-tours.py), and the legacy kit-export form at
+[data/tours.csv](data/tours.csv) (historical seed — converted to
+[../../web/data/tours.ttl](../../web/data/tours.ttl) by the now-removed
+`build-tours.py`; today the catalog is maintained via the Tour CRUD
+endpoints), and the legacy kit-export form at
 [upload-form.html](upload-form.html). The production upload path is
 [../../web/upload_images.html](../../web/upload_images.html), served by the
 backend.
@@ -128,11 +130,18 @@ Association reification carries the per-series sequence number cleanly.
 - **Upload provenance**: `pav:providedBy` (who actually uploaded). Often the
   same person as the author; data file has them separate.
 
-## 4. Build pipeline (build-tours.py)
+## 4. Build pipeline (build-tours.py) — HISTORICAL
 
-Converts a TSV dump of the spreadsheet (`data/tours.csv` in this folder)
+> `build-tours.py` was removed (recoverable from git history). The CSV
+> conversion below documents how the seed catalog was produced; since
+> then `tours.ttl` gained data with no CSV counterpart (narratives,
+> announcement images, server-side edits), so a rebuild would lose data.
+> The catalog is maintained via `upload_tour.html` / the Tour CRUD
+> endpoints today.
+
+Converted a TSV dump of the spreadsheet (`data/tours.csv` in this folder)
 into `web/data/tours.ttl` (at the repo root, where the backend and the
-web app read it). Reproducible: `python3 build-tours.py`.
+web app read it).
 
 **Sentinels treated as "no value":** `''`, `-`, `n/a`, `?`, `sumiu`, `#DIV/0!`,
 `#REF!`, `#N/A`.

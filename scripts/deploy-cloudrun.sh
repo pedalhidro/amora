@@ -278,6 +278,15 @@ if [[ "$SYNC_STATE" == 1 ]]; then
       "$REPO_ROOT/web/clips" "gs://$BUCKET/clips" \
       --project="$PROJECT"
   fi
+
+  # tour_assets/: artes de anúncio (schema:image dos tours). Mutável dos
+  # dois lados — /upload-tour escreve no bucket, backfills escrevem local.
+  if [[ -d "$REPO_ROOT/web/tour_assets" ]]; then
+    echo "→ tour_assets/"
+    $DRY gcloud storage rsync --recursive $MIRROR_FLAG \
+      "$REPO_ROOT/web/tour_assets" "gs://$BUCKET/tour_assets" \
+      --project="$PROJECT"
+  fi
 fi
 
 if [[ -z "$DRY" ]]; then

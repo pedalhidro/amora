@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Só a home é indexável (os formulários e o censo são noindex); o
-     conteúdo vivo sai pelo feed.xml, não por URLs novas. -->
+<!-- Fallback estático: quando servido pelo backend, GET /sitemap.xml é
+     gerado dinamicamente de tours.ttl (home + /?tour=<id> por passeio,
+     com extensão Google News pros passeios das últimas 48 h). Este
+     arquivo só responde em host estático puro (mirror legado). -->
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://amora.pedalhidrografi.co/</loc>
