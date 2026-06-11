@@ -1034,7 +1034,8 @@ def _build_feed_xml(tours_text):
     return (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         '<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" '
-        'xmlns:content="http://purl.org/rss/1.0/modules/content/">\n'
+        'xmlns:content="http://purl.org/rss/1.0/modules/content/" '
+        'xmlns:webfeeds="http://webfeeds.org/rss/1.0">\n'
         "  <channel>\n"
         "    <title>Passeios Pedal Hidrográfico</title>\n"
         f"    <link>{escape(SITE_URL)}</link>\n"
@@ -1054,6 +1055,12 @@ def _build_feed_xml(tours_text):
         "      <width>144</width>\n"
         "      <height>144</height>\n"
         "    </image>\n"
+        # A maioria dos leitores modernos IGNORA o <image> do RSS 2.0 e usa
+        # a extensão webfeeds (Feedly & cia) ou o favicon do domínio do
+        # <link>. O webfeeds:icon cobre o primeiro grupo; derivado 512px
+        # (buscado uma vez só pelo agregador, peso importa menos).
+        f"    <webfeeds:icon>{escape(SITE_URL)}logo-phidro-512.jpg</webfeeds:icon>\n"
+        f"    <webfeeds:accentColor>0f1721</webfeeds:accentColor>\n"
         + (f"    <lastBuildDate>{format_datetime(newest)}</lastBuildDate>\n" if newest else "")
         + "\n".join(items) + "\n"
         "  </channel>\n"
