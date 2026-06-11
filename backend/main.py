@@ -792,6 +792,22 @@ def reload_caches():
 
 @app.get("/")
 def index():
+    """index.html — com SSR mínimo por passeio quando há ?tour=<id>.
+
+    O render é best-effort: qualquer falha (catálogo corrompido, tour sem
+    os campos esperados) degrada pro index estático, que é o comportamento
+    de sempre. Ver _render_tour_index lá embaixo."""
+    import re
+    tour_id = (request.args.get("tour") or "").strip()
+    if tour_id and re.fullmatch(r"[A-Za-z0-9_\-]+", tour_id):
+        try:
+            page = _render_tour_index(tour_id)
+        except Exception as e:  # noqa: BLE001
+            print(f"[tour-page] render falhou pra tour_{tour_id}: {e}")
+            page = None
+        if page is not None:
+            return _conditional(Response(page, mimetype="text/html",
+                                         headers={"Cache-Control": "no-cache"}))
     return send_from_directory(WEB, "index.html")
 
 
@@ -913,6 +929,43 @@ def _fmt_moving_duration(dur):
     return f"{h}h{mi:02d}" if h else f"{mi}min"
 
 
+def _person_name(g, p):
+    """Nome de exibição: schema:alternateName, senão o slug da IRI
+    sem o prefixo 'pessoa' (phd:pessoaAnaju → 'anaju')."""
+    from rdflib import Namespace
+    SCHEMA = Namespace("https://schema.org/")
+    alt = g.value(p, SCHEMA.alternateName)
+    if alt:
+        return str(alt)
+    slug = str(p).split("/")[-1].split("#")[-1]
+    return (slug[6:] if slug.startswith("pessoa") else slug).lower() or slug
+
+
+def _tour_display_title(g, t):
+    """dcterms:title com prefixo de série(s): "PH 95: …" / "PH 79 & BP 4: …".
+    Código = slug da IRI da série (phd:PH → "PH"), como no app. Ordena por
+    sequência decrescente pra série de longa data vir primeiro — o grafo RDF
+    não preserva a ordem do Turtle."""
+    from rdflib import Namespace
+    PH = Namespace(PH_NS)
+    DCT = Namespace("http://purl.org/dc/terms/")
+    title = str(g.value(t, DCT.title) or t).strip()
+    editions = []
+    for assoc in g.objects(t, PH.inSeriesEdition):
+        ev = g.value(assoc, PH.inEventSeries)
+        seq = g.value(assoc, PH.sequenceInSeries)
+        if ev is not None and seq is not None:
+            code = str(ev).split("/")[-1].split("#")[-1]
+            try:
+                editions.append((code, int(seq)))
+            except (TypeError, ValueError):
+                pass
+    editions.sort(key=lambda e: e[1], reverse=True)
+    if editions:
+        title = " & ".join(f"{c} {n}" for c, n in editions) + f": {title}"
+    return title
+
+
 def _build_feed_xml(tours_text):
     import re
     from email.utils import format_datetime
@@ -927,15 +980,6 @@ def _build_feed_xml(tours_text):
 
     g = Graph().parse(data=tours_text, format="turtle")
 
-    def person_name(p):
-        """Nome de exibição: schema:alternateName, senão o slug da IRI
-        sem o prefixo 'pessoa' (phd:pessoaAnaju → 'anaju')."""
-        alt = g.value(p, SCHEMA.alternateName)
-        if alt:
-            return str(alt)
-        slug = str(p).split("/")[-1].split("#")[-1]
-        return (slug[6:] if slug.startswith("pessoa") else slug).lower() or slug
-
     tours = []
     for t in g.subjects(RDF.type, PH.Tour):
         date = g.value(t, DCT.date)
@@ -948,25 +992,7 @@ def _build_feed_xml(tours_text):
 
     items = []
     for dt, t in tours[:50]:
-        title = str(g.value(t, DCT.title) or t).strip()
-
-        # Prefixo de série(s): "PH 95: …" / "PH 79 & BP 4: …". Código = slug
-        # da IRI da série (phd:PH → "PH"), como no app. Ordena por sequência
-        # decrescente pra série de longa data vir primeiro — o grafo RDF não
-        # preserva a ordem do Turtle.
-        editions = []
-        for assoc in g.objects(t, PH.inSeriesEdition):
-            ev = g.value(assoc, PH.inEventSeries)
-            seq = g.value(assoc, PH.sequenceInSeries)
-            if ev is not None and seq is not None:
-                code = str(ev).split("/")[-1].split("#")[-1]
-                try:
-                    editions.append((code, int(seq)))
-                except (TypeError, ValueError):
-                    pass
-        editions.sort(key=lambda e: e[1], reverse=True)
-        if editions:
-            title = " & ".join(f"{c} {n}" for c, n in editions) + f": {title}"
+        title = _tour_display_title(g, t)
 
         ig = g.value(t, PH.linkInstagram)
         link = str(ig) if ig else SITE_URL
@@ -1012,7 +1038,7 @@ def _build_feed_xml(tours_text):
             html.append("<p>" + "<br/>".join(route_block) + "</p>")
         if metrics:
             html.append(f"<p>{escape(' · '.join(metrics))}</p>")
-        authors = sorted(person_name(p) for p in g.objects(t, PROV.wasAttributedTo))
+        authors = sorted(_person_name(g, p) for p in g.objects(t, PROV.wasAttributedTo))
         if authors:
             html.append(f"<p>Alguns elaboradores: {escape(', '.join(authors))}</p>")
         # "]]>" dentro de CDATA encerraria a seção — quebra o token em duas.
@@ -1179,6 +1205,177 @@ def get_sitemap():
         xml = _sitemap_cache["xml"]
     return _conditional(Response(xml, mimetype="application/xml",
                                  headers={"Cache-Control": "no-cache"}))
+
+
+# ── Página por passeio (SSR mínimo) ───────────────────────────────────────
+# GET /?tour=<id> devolve o index.html com <title>/description/canonical/OG
+# trocados pros do passeio, um JSON-LD NewsArticle e um <article> com o
+# corpo renderizado de tours.ttl — é o que crawlers e bots de preview (que
+# não rodam JS) leem. No browser o app abre o modal da rota (deep link) e
+# remove o <article>; o conteúdo SSR fica abaixo do mapa (grid 100vh),
+# então não pisca pra usuários com JS.
+_tours_graph_cache = {"digest": None, "graph": None}
+
+_MONTHS_PT = ["janeiro", "fevereiro", "março", "abril", "maio", "junho",
+              "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"]
+
+
+def _tours_graph():
+    """Grafo parseado de tours.ttl, cacheado por hash do texto (parsear
+    100 KB de Turtle por request seria o custo dominante da página)."""
+    import hashlib
+    from rdflib import Graph
+    text = _load_dump_text("tours.ttl") or ""
+    digest = hashlib.sha1(text.encode("utf-8")).hexdigest()
+    with _feed_lock:
+        if _tours_graph_cache["digest"] != digest:
+            _tours_graph_cache["graph"] = Graph().parse(data=text, format="turtle")
+            _tours_graph_cache["digest"] = digest
+        return _tours_graph_cache["graph"]
+
+
+def _render_tour_index(tour_id):
+    """index.html com meta/OG/JSON-LD/<article> do passeio — None se o
+    tour não existe no catálogo."""
+    import json
+    import re
+    from html import escape as h
+    from rdflib import Namespace, RDF, URIRef
+
+    PH = Namespace(PH_NS)
+    SCHEMA = Namespace("https://schema.org/")
+    DCT = Namespace("http://purl.org/dc/terms/")
+    PROV = Namespace("http://www.w3.org/ns/prov#")
+    QUDT = Namespace("http://qudt.org/schema/qudt/")
+
+    g = _tours_graph()
+    t = URIRef(PHD_NS + "tour_" + tour_id)
+    if (t, RDF.type, PH.Tour) not in g:
+        return None
+
+    title = _tour_display_title(g, t)
+    page_url = f"{SITE_URL}?tour={tour_id}"
+
+    date = g.value(t, DCT.date)
+    try:
+        dt = datetime.fromisoformat(str(date)) if date else None
+    except ValueError:
+        dt = None
+    date_label = f"{dt.day} de {_MONTHS_PT[dt.month - 1]} de {dt.year}" if dt else None
+
+    narrative = str(g.value(t, DCT.description) or "").strip()
+    img = g.value(t, SCHEMA.image)
+    img_url = str(img) if img else None
+
+    energy_line = None
+    energy = g.value(t, PH.energyEstimate)
+    if energy is not None:
+        kj = g.value(energy, QUDT.numericValue)
+        intensity = g.value(energy, PH.intensityClassification)
+        if kj is not None:
+            energy_line = (f"{float(kj):.0f} quilojaules"
+                           + (f" ({intensity})" if intensity else ""))
+    route_ref = g.value(t, PH.linkRoute)
+    route_url = g.value(route_ref, SCHEMA.url) if route_ref else None
+    ig_url = g.value(t, PH.linkInstagram)
+    authors = sorted(_person_name(g, p) for p in g.objects(t, PROV.wasAttributedTo))
+
+    # Descrição pra <meta>/OG: primeiro parágrafo da narrativa (truncado),
+    # senão um resumo do que houver.
+    if narrative:
+        first = re.split(r"\r?\n+", narrative)[0].strip()
+        meta_desc = first if len(first) <= 200 else first[:197].rstrip() + "…"
+    else:
+        bits = [b for b in (date_label, energy_line) if b]
+        meta_desc = ("Passeio do Pedal Hidrográfico"
+                     + (" — " + " · ".join(bits) if bits else "."))
+
+    # <article> que o crawler lê (e quem está sem JS).
+    a = ['<article id="tour-article" class="tour-article">',
+         f"  <h1>{h(title)}</h1>"]
+    meta_bits = []
+    if dt:
+        meta_bits.append(f'<time datetime="{h(dt.isoformat())}">{h(date_label)}</time>')
+    meta_bits.append("Pedal Hidrográfico")
+    a.append('  <p class="tour-article-meta">' + " · ".join(meta_bits) + "</p>")
+    if img_url:
+        a.append(f'  <figure><img src="{h(img_url)}" alt="{h(title)}"/></figure>')
+    for para in re.split(r"\r?\n+", narrative):
+        if para.strip():
+            a.append(f"  <p>{h(para.strip())}</p>")
+    facts = []
+    if route_url:
+        facts.append(f'Rota: <a href="{h(str(route_url))}">{h(str(route_url))}</a>')
+    if energy_line:
+        facts.append(h(energy_line))
+    if ig_url:
+        facts.append(f'<a href="{h(str(ig_url))}">Post no Instagram</a>')
+    if facts:
+        a.append("  <p>" + "<br/>".join(facts) + "</p>")
+    if authors:
+        a.append(f"  <p>Alguns elaboradores: {h(', '.join(authors))}</p>")
+    a.append(f'  <p><a href="{h(SITE_URL)}">← mapa do Pedal Hidrográfico</a></p>')
+    a.append("</article>")
+    article = "\n".join(a)
+
+    jsonld = {
+        "@context": "https://schema.org",
+        "@type": "NewsArticle",
+        "headline": title,
+        "mainEntityOfPage": page_url,
+        "url": page_url,
+        "inLanguage": "pt-BR",
+        "publisher": {
+            "@type": "Organization",
+            "name": "Pedal Hidrográfico",
+            "url": "https://pedalhidrografi.co/",
+            "logo": {"@type": "ImageObject",
+                     "url": f"{SITE_URL}logo-phidro-512.jpg"},
+        },
+    }
+    if dt:
+        jsonld["datePublished"] = dt.isoformat()
+        jsonld["dateModified"] = dt.isoformat()
+    if img_url:
+        jsonld["image"] = [img_url]
+    if meta_desc:
+        jsonld["description"] = meta_desc
+    if authors:
+        jsonld["author"] = [{"@type": "Person", "name": n} for n in authors]
+    jsonld_tag = ('<script type="application/ld+json">'
+                  + json.dumps(jsonld, ensure_ascii=False) + "</script>")
+
+    html_text = (WEB / "index.html").read_text(encoding="utf-8")
+
+    def attr(pattern, value, text):
+        # lambda no replacement: o valor pode conter '\' e '\1' literais.
+        return re.sub(pattern, lambda m: m.group(1) + value + m.group(2),
+                      text, count=1)
+
+    full_title = f"{title} — amora · Pedal Hidrográfico"
+    html_text = re.sub(r"<title>.*?</title>",
+                       lambda m: f"<title>{h(full_title)}</title>",
+                       html_text, count=1, flags=re.S)
+    html_text = attr(r'(<meta name="description" content=")[^"]*(")',
+                     h(meta_desc), html_text)
+    html_text = attr(r'(<link rel="canonical" href=")[^"]*(")',
+                     h(page_url), html_text)
+    html_text = attr(r'(<meta property="og:title" content=")[^"]*(")',
+                     h(full_title), html_text)
+    html_text = attr(r'(<meta property="og:description" content=")[^"]*(")',
+                     h(meta_desc), html_text)
+    html_text = attr(r'(<meta property="og:url" content=")[^"]*(")',
+                     h(page_url), html_text)
+    if img_url:
+        html_text = attr(r'(<meta property="og:image" content=")[^"]*(")',
+                         h(img_url), html_text)
+        # As dimensões fixas são do ícone 512×512 — não valem pra arte.
+        html_text = re.sub(
+            r'\s*<meta property="og:image:(?:width|height)" content="[^"]*" />',
+            "", html_text)
+    html_text = html_text.replace("</head>", "    " + jsonld_tag + "\n  </head>", 1)
+    html_text = html_text.replace("</body>", article + "\n</body>", 1)
+    return html_text
 
 
 @app.get("/<path:p>")

@@ -180,7 +180,11 @@ Key flows:
   "Censo →" sidebar link in the Routes panel — and the iframe is
   re-pointed to `./censo.html` on every open so navigating into the edit
   form internally doesn't strand the user there on re-open.
-- **Backend endpoint summary.** Static: `GET /`, `GET /<path:p>`,
+- **Backend endpoint summary.** Static: `GET /` (com SSR mínimo por
+  passeio quando há `?tour=<id>`: troca title/description/canonical/OG,
+  injeta JSON-LD NewsArticle + um `<article>` renderizado de `tours.ttl`
+  pra crawlers/no-JS — o app remove o nó ao abrir o modal do deep link;
+  render é best-effort e degrada pro index estático), `GET /<path:p>`,
   `GET /data/<filename>`, `GET /photos/<path:p>`, `GET /clips/<path:p>`,
   `GET /tour_assets/<path:p>` (in `gcs` mode the last three 302-redirect
   to the bucket's public URL), `GET /feed.xml` (RSS 2.0 dos passeios,

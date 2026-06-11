@@ -3971,6 +3971,10 @@ function tryOpenTourFromQuery() {
     if (_tourIdFromIri(r.entry?.tourIri) !== id) continue;
     const canon = document.querySelector('link[rel="canonical"]');
     if (canon) canon.href = `https://amora.pedalhidrografi.co/?tour=${encodeURIComponent(id)}`;
+    // O backend injeta um <article> SSR pra crawlers/no-JS; com o modal
+    // aberto ele é redundante — remove. Se o tour NÃO está em routes.json
+    // (sem rota), o article fica como conteúdo de fallback abaixo do mapa.
+    document.getElementById('tour-article')?.remove();
     openRouteModal(key);
     return;
   }

@@ -1427,6 +1427,22 @@ body.drawing .trackpoint-marker:active { cursor: grabbing !important; }
   font-style: italic;
 }
 
+/* Página por passeio (SSR do backend em /?tour=<id>): conteúdo pra
+   crawlers e visitantes sem JS. Fica abaixo do mapa (o grid do body tem
+   100% de altura, então não aparece pra quem tem JS); o app remove o nó
+   ao abrir o modal do deep link. */
+.tour-article {
+  grid-column: 1 / -1;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 24px 18px 48px;
+  line-height: 1.65;
+}
+.tour-article h1 { font-size: 22px; line-height: 1.3; }
+.tour-article img { max-width: 100%; border-radius: 8px; }
+.tour-article-meta { color: var(--muted); font-size: 13px; }
+.tour-article a { color: var(--accent); }
+
 /* Trackpoint marker: small filled circle with a white ring. */
 .trackpoint-marker {
   background: transparent !important;
