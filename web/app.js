@@ -4845,6 +4845,10 @@ document.addEventListener('keydown', (e) => {
     e.preventDefault();
     if (e.shiftKey) redo(); else undo();
   } else if (e.key === 'Escape') {
+    // Esc com um modal aberto (QR do link, Ajuda, …) é do modal — cada um
+    // fecha o seu no próprio listener. Sem este guard o mesmo keydown
+    // também derrubava o modo de edição e o traçado ia embora junto.
+    if (document.querySelector('.modal:not([hidden])')) return;
     exitDrawingMode();
   }
 });
@@ -6437,7 +6441,11 @@ function performSave(name) {
   a.click();
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 1000);
-  exitDrawingMode();
+  // Exportar é um checkpoint, não um fim: o traçado continua aberto pra
+  // seguir editando (era exitDrawingMode() aqui — a rota "sumia do mapa"
+  // na hora que era salva). Esc ou ✕ Cancelar saem quando o usuário quiser.
+  defaultSaveName = name;
+  showToast('GPX salvo — o traçado segue aberto pra edição (Esc sai).');
 }
 
 function filenameFromName(name, ts) {
@@ -6863,6 +6871,11 @@ saveQrBtn?.addEventListener('click', async () => {
 qrClose?.addEventListener('click', () => (qrModal.hidden = true));
 qrModal?.addEventListener('click', (e) => {
   if (e.target === qrModal) qrModal.hidden = true;
+});
+// Esc fecha só o QR — o keydown do modo de edição ignora Esc com modal
+// aberto, então sem isto o Esc ficava sem efeito aqui.
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && qrModal && !qrModal.hidden) qrModal.hidden = true;
 });
 qrCopyBtn?.addEventListener('click', async () => {
   if (!qrCurrentUrl) return;

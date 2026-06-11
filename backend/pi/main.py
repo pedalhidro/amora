@@ -724,10 +724,25 @@ def _sync_tour_route(tour_id, tour_ttl):
         if _current_tour_route_id(tour_id) != entry["id"]:
             return {"status": "stale", "rwgpsId": entry["id"]}
         payload = _load_routes_payload()
+        old = next((r for r in payload["routes"] if r.get("tourIri") == tour_iri), None)
+        # Fetch falhou mas a entrada antiga tem geometria DA MESMA rota →
+        # preserva (metadados novos, latlngs/pois antigos). Clobberar com
+        # null fazia a rota sumir do mapa a cada save com o RWGPS fora do
+        # ar / sem credenciais. Geometria de rota é quase imutável; se um
+        # dia precisar forçar, scripts/build-routes.py rebuilda do zero.
+        kept = False
+        if (not entry.get("latlngs") and old and old.get("latlngs")
+                and old.get("id") == entry["id"]):
+            entry["latlngs"] = old["latlngs"]
+            entry["pois"] = old.get("pois") or []
+            kept = True
         payload["routes"] = [r for r in payload["routes"] if r.get("tourIri") != tour_iri]
         payload["routes"].append(entry)
         _write_routes_payload(payload["routes"])
 
+    if kept:
+        return {"status": "fetch_failed", "rwgpsId": entry["id"],
+                "error": entry.get("error"), "kept": True}
     if entry.get("latlngs"):
         return {"status": "ok", "rwgpsId": entry["id"], "points": len(entry["latlngs"])}
     return {"status": "fetch_failed", "rwgpsId": entry["id"], "error": entry.get("error")}

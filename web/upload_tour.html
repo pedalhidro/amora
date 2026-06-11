@@ -814,6 +814,9 @@ $('#form').addEventListener('submit', async (ev) => {
         notice(`✓ Rota sincronizada: ${escapeHtml(r.points)} pontos do RideWithGPS (${escapeHtml(r.rwgpsId)}).`, 'ok');
       } else if (r.status === 'removed') {
         notice('Rota removida do routes.json (passeio sem linkRoute).', 'ok');
+      } else if (r.status === 'fetch_failed' && r.kept) {
+        notice(`Passeio salvo. O RideWithGPS falhou (${escapeHtml(r.error || 'erro')}), `
+          + 'mas a geometria anterior da rota foi preservada no mapa.', 'warn');
       } else if (r.status === 'fetch_failed') {
         notice(`Passeio salvo, mas a geometria da rota falhou (${escapeHtml(r.error || 'erro')}). `
           + 'Rode <code>python scripts/build-routes.py</code> pra tentar de novo.', 'err');
