@@ -120,6 +120,39 @@ MAX_PER_UPLOAD = int(os.environ.get("MAX_UPLOAD_BYTES") or (256 * 1024 * 1024))
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = MAX_PER_UPLOAD
 
+# Compressão transparente (gzip/brotli) — routes.json sai de ~2 MB pra
+# ~210 KB e app.js de ~280 KB pra ~90 KB. Import best-effort (mesmo
+# espírito do load do .env): um Pi que ainda não rodou pip install
+# continua servindo, só que sem compressão.
+app.config["COMPRESS_MIMETYPES"] = [
+    "text/html", "text/css", "text/plain",
+    "text/javascript", "application/javascript",
+    "application/json", "text/turtle", "image/svg+xml",
+    "application/manifest+json", "application/gpx+xml",
+    "application/rss+xml", "application/xml", "text/xml",
+]
+# send_from_directory devolve resposta *streamed* (file wrapper) e o
+# flask-compress pula essas por padrão — sem isto app.js/style.css sairiam
+# crus. Só afeta os mimetypes de texto acima; mídia (mp4/webm/jpg) segue
+# fora da lista e mantém range requests intactos.
+app.config["COMPRESS_STREAMS"] = True
+try:
+    from flask_compress import Compress
+    Compress(app)
+except ImportError:                                   # pragma: no cover
+    print("[main] flask-compress ausente — servindo sem compressão "
+          "(pip install -r backend/pi/requirements.txt)")
+
+
+def _conditional(resp):
+    """ETag + suporte a If-None-Match nas respostas construídas de string
+    (routes.json e /data/*.ttl). Elas são `Cache-Control: no-cache`, ou
+    seja, o browser revalida a cada visita — sem ETag a revalidação baixa
+    o corpo inteiro de novo; com ela, vira um 304 vazio. (Os estáticos via
+    send_from_directory já ganham ETag/conditional do próprio Flask.)"""
+    resp.add_etag()
+    return resp.make_conditional(request)
+
 # Todas as mutações fazem read-modify-write num único catálogo TTL
 # compartilhado (uploads.ttl / tours.ttl / data_graphs.ttl) sem CAS. Sem
 # serialização, dois POSTs concorrentes (o servidor Flask é threaded, e o
@@ -769,8 +802,8 @@ def get_data_ttl(filename):
             text = MANIFEST_SEED  # manifesto mínimo
         else:
             abort(404)
-    return Response(text, mimetype="text/turtle",
-                    headers={"Cache-Control": "no-cache"})
+    return _conditional(Response(text, mimetype="text/turtle",
+                                 headers={"Cache-Control": "no-cache"}))
 
 
 @app.get("/tour_assets/<path:p>")
@@ -839,8 +872,128 @@ def get_routes_json():
             text = baked.read_text(encoding="utf-8")
     if text is None:
         text = '{"routes": []}'
-    return Response(text, mimetype="application/json",
-                    headers={"Cache-Control": "no-cache"})
+    return _conditional(Response(text, mimetype="application/json",
+                                 headers={"Cache-Control": "no-cache"}))
+
+
+# URL pública canônica — usada no feed RSS (links absolutos). Override por
+# env pra quem servir o app em outro domínio.
+SITE_URL = (os.environ.get("PUBLIC_BASE_URL")
+            or "https://amora.pedalhidrografi.co").rstrip("/") + "/"
+
+# Cache do XML do feed, chaveado pelo hash do tours.ttl — parsear 100 KB de
+# Turtle por request seria caro no Pi; assim só re-renderiza quando o
+# catálogo de tours muda (upload/delete de tour ou edição out-of-band).
+_feed_cache = {"digest": None, "xml": None}
+_feed_lock = threading.Lock()
+
+
+def _fmt_moving_duration(dur):
+    """xsd:duration 'PT3H30M' → '3h30' / 'PT45M' → '45min'. None se não parsear."""
+    import re
+    m = re.fullmatch(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:[\d.]+S)?", str(dur))
+    if not m or (m.group(1) is None and m.group(2) is None):
+        return None
+    h, mi = int(m.group(1) or 0), int(m.group(2) or 0)
+    return f"{h}h{mi:02d}" if h else f"{mi}min"
+
+
+def _build_feed_xml(tours_text):
+    from email.utils import format_datetime
+    from xml.sax.saxutils import escape
+    from rdflib import Graph, Namespace, RDF
+
+    PH = Namespace(PH_NS)
+    SCHEMA = Namespace("https://schema.org/")
+    DCT = Namespace("http://purl.org/dc/terms/")
+
+    g = Graph().parse(data=tours_text, format="turtle")
+    tours = []
+    for t in g.subjects(RDF.type, PH.Tour):
+        date = g.value(t, DCT.date)
+        try:
+            dt = datetime.fromisoformat(str(date)) if date else None
+        except ValueError:
+            dt = None
+        tours.append((dt, t))
+    tours.sort(key=lambda x: (x[0] is not None, x[0] or datetime.min), reverse=True)
+
+    items = []
+    for dt, t in tours[:50]:
+        title = str(g.value(t, DCT.title) or t).strip()
+        ig = g.value(t, PH.linkInstagram)
+        link = str(ig) if ig else SITE_URL
+
+        parts = []
+        att, new = g.value(t, PH.countAttendee), g.value(t, PH.countNewcomer)
+        if att is not None:
+            parts.append(f"{att} participantes" + (f" ({new} novat@s)" if new else ""))
+        energy = g.value(t, PH.energyEstimate)
+        if energy is not None:
+            from rdflib import Namespace as _NS
+            QUDT = _NS("http://qudt.org/schema/qudt/")
+            kj = g.value(energy, QUDT.numericValue)
+            intensity = g.value(energy, PH.intensityClassification)
+            if kj is not None:
+                parts.append(f"{float(kj):.0f} kJ" + (f" ({intensity})" if intensity else ""))
+        moving = _fmt_moving_duration(g.value(t, PH.movingDuration) or "")
+        if moving:
+            parts.append(f"{moving} em movimento")
+        media = g.value(t, PH.mediaCount)
+        if media is not None:
+            parts.append(f"{media} mídias no acervo")
+        desc = " · ".join(parts) or "Passeio do Pedal Hidrográfico."
+        img = g.value(t, SCHEMA.image)
+        if img:
+            desc += f'<br/><img src="{escape(str(img))}" alt=""/>'
+
+        items.append(
+            "    <item>\n"
+            f"      <title>{escape(title)}</title>\n"
+            f"      <link>{escape(link)}</link>\n"
+            f"      <guid isPermaLink=\"false\">{escape(str(t))}</guid>\n"
+            + (f"      <pubDate>{format_datetime(dt)}</pubDate>\n" if dt else "")
+            + f"      <description>{escape(desc)}</description>\n"
+            "    </item>"
+        )
+
+    newest = next((dt for dt, _ in tours if dt), None)
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">\n'
+        "  <channel>\n"
+        "    <title>amora — pedais do Pedal Hidrográfico</title>\n"
+        f"    <link>{escape(SITE_URL)}</link>\n"
+        "    <description>Passeios do coletivo de ciclismo urbano Pedal "
+        "Hidrográfico na Grande São Paulo — rotas, fotos e histórias.</description>\n"
+        "    <language>pt-br</language>\n"
+        f"    <atom:link href=\"{escape(SITE_URL)}feed.xml\" rel=\"self\" "
+        "type=\"application/rss+xml\"/>\n"
+        + (f"    <lastBuildDate>{format_datetime(newest)}</lastBuildDate>\n" if newest else "")
+        + "\n".join(items) + "\n"
+        "  </channel>\n"
+        "</rss>\n"
+    )
+
+
+@app.get("/feed.xml")
+def get_feed():
+    """Feed RSS 2.0 dos passeios, derivado de tours.ttl (50 mais recentes).
+
+    Cada item: título + data do tour, link pro post do IG quando houver
+    (senão a home), métricas no description e a arte de anúncio quando o
+    tour tiver schema:image. ETag igual aos demais mutáveis — leitores de
+    feed revalidam de graça."""
+    import hashlib
+    text = _load_dump_text("tours.ttl") or ""
+    digest = hashlib.sha1(text.encode("utf-8")).hexdigest()
+    with _feed_lock:
+        if _feed_cache["digest"] != digest:
+            _feed_cache["xml"] = _build_feed_xml(text)
+            _feed_cache["digest"] = digest
+        xml = _feed_cache["xml"]
+    return _conditional(Response(xml, mimetype="application/rss+xml",
+                                 headers={"Cache-Control": "no-cache"}))
 
 
 @app.get("/<path:p>")

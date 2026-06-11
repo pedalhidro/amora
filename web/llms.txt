@@ -1,0 +1,43 @@
+# amora — Pedal Hidrográfico
+
+> Mapa-PWA do Pedal Hidrográfico, coletivo de ciclismo urbano da Grande São
+> Paulo (Brasil). Rotas dos passeios, fotos e vídeos georreferenciados,
+> traçado/edição de GPX e simulação energética de pedaladas. Todo o acervo é
+> publicado como dados abertos em RDF/Turtle — esta é provavelmente a parte
+> mais útil para um agente.
+
+Fatos rápidos:
+
+- Idioma do site: português (pt-BR). App estático (uma página, sem build),
+  funciona offline via service worker.
+- O acervo (passeios, fotos, vídeos) é descrito em RDF com vocabulários
+  consolidados (schema.org, PROV-O, QUDT, Dublin Core, GeoSPARQL) e termos
+  próprios no namespace `https://pedalhidrografi.co/terms#` (prefixo `ph:`).
+- Fotos e clipes são, em geral, licenciados CC BY-SA 4.0 — cada item carrega
+  sua própria licença nos triples.
+
+## Dados (RDF/Turtle)
+
+- [Manifesto VoID](https://amora.pedalhidrografi.co/data/data_graphs.ttl):
+  ponto de entrada; lista todos os dumps via `void:dataDump`.
+- [tours.ttl](https://amora.pedalhidrografi.co/data/tours.ttl): catálogo de
+  passeios (`ph:Tour`) — data, título, participantes, energia estimada
+  (QUDT), link do post no Instagram e da rota no RideWithGPS.
+- [uploads.ttl](https://amora.pedalhidrografi.co/data/uploads.ttl): fotos
+  (`ph:Image`) e vídeos (`ph:Video`) georreferenciados, com hash perceptual,
+  autoria e associação ao passeio (`ph:capturedDuring`).
+- [ontology.ttl](https://amora.pedalhidrografi.co/data/ontology.ttl): a
+  ontologia `ph:`. [shapes.ttl](https://amora.pedalhidrografi.co/data/shapes.ttl):
+  shapes SHACL usadas na validação dos uploads.
+- [routes.json](https://amora.pedalhidrografi.co/routes.json): geometria das
+  rotas (polylines lat/lng) + POIs, pré-processada para o mapa.
+
+## Conteúdo
+
+- [Página principal](https://amora.pedalhidrografi.co/): o mapa.
+- [feed.xml](https://amora.pedalhidrografi.co/feed.xml): RSS 2.0 com os
+  passeios mais recentes.
+
+## Opcional
+
+- [Instagram do coletivo](https://www.instagram.com/pedalhidrografico/)

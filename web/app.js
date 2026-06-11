@@ -3947,7 +3947,7 @@ boot()
   .catch((err) => {
     console.error(err);
     routesStatus.classList.add('error');
-    routesStatus.textContent = `Failed: ${err.message}`;
+    routesStatus.textContent = `Falha: ${err.message}`;
   })
   .finally(() => {
     // After the page is ready, decode any #st=... shared route from the URL.
@@ -3956,22 +3956,51 @@ boot()
     );
   });
 
+// Lê o corpo da resposta em streaming, chamando onProgress(bytesRecebidos)
+// a cada chunk. Reporta bytes *descomprimidos* — com gzip no servidor o
+// Content-Length é o tamanho comprimido, então uma % seria mentirosa; o
+// contador absoluto não. Fallback pro .text() quando não há body stream.
+async function readBodyWithProgress(res, onProgress) {
+  if (!res.body || typeof res.body.getReader !== 'function') return res.text();
+  const reader = res.body.getReader();
+  const chunks = [];
+  let received = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    received += value.byteLength;
+    onProgress(received);
+  }
+  const all = new Uint8Array(received);
+  let off = 0;
+  for (const c of chunks) { all.set(c, off); off += c.byteLength; }
+  return new TextDecoder().decode(all);
+}
+
 async function boot() {
-  routesStatus.textContent = 'Loading routes.json…';
+  routesStatus.textContent = 'Carregando rotas…';
   let data;
   try {
-    const res = await fetch(ROUTES_JSON_URL, { cache: 'no-cache' });
+    // Sem `cache: 'no-cache'` de propósito: precisa casar com o
+    // <link rel="preload" as="fetch"> do index.html (modos de cache
+    // diferentes não casam e o download duplicaria). A revalidação fica
+    // por conta do Cache-Control: no-cache + ETag que o backend manda.
+    const res = await fetch(ROUTES_JSON_URL);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    data = await res.json();
+    data = JSON.parse(await readBodyWithProgress(res, (received) => {
+      routesStatus.textContent =
+        `Carregando rotas… ${(received / 1048576).toFixed(1).replace('.', ',')} MB`;
+    }));
   } catch (err) {
     throw new Error(
-      `Could not load ${ROUTES_JSON_URL} (${err.message}). ` +
-        `Run \`python scripts/build-routes.py\` to generate it.`,
+      `Não foi possível carregar ${ROUTES_JSON_URL} (${err.message}). ` +
+        `Rode \`python scripts/build-routes.py\` para gerá-lo.`,
     );
   }
 
   const all = Array.isArray(data?.routes) ? data.routes : [];
-  if (all.length === 0) throw new Error('routes.json contains no routes');
+  if (all.length === 0) throw new Error('routes.json não contém rotas');
 
   // Sort by Data descending; rows without a date sink to the bottom.
   all.sort((a, b) => (b.dateMs ?? -Infinity) - (a.dateMs ?? -Infinity));

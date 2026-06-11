@@ -19,6 +19,16 @@
 #   scripts/deploy-cloudrun.sh --state --mirror   # sync com espelho exato
 #                                                 # (apaga no bucket o que
 #                                                 #  não existe localmente)
+#   scripts/deploy-cloudrun.sh --state --force    # ignora a guarda anti-
+#                                                 # clobber (ver abaixo)
+#
+# Guarda anti-clobber: uploads.ttl, data_graphs.ttl, tours.ttl e routes.json
+# também são mutados server-side (uploads, Tour CRUD). O push desses
+# arquivos é recusado se o bucket mudou desde o último sync E difere do
+# local — senão edições feitas via upload_*.html seriam descartadas.
+# Nesse caso: scripts/pull-cloudrun.sh --data-only, reconcilie, e rode de
+# novo. `--force` pula a checagem (e estabelece o baseline no primeiro uso).
+# Ver scripts/sync-guard.sh.
 #
 # Overridable via env:
 #   GCP_PROJECT        default: pedal-hidrografico
@@ -53,13 +63,15 @@ DRY=""
 SYNC_STATE=0
 DEPLOY_CODE=1
 MIRROR_FLAG=""
+FORCE=0
 for arg in "$@"; do
   case "$arg" in
     --dry-run)    DRY="echo DRY: "; echo "↻ DRY RUN — nenhuma mudança real será aplicada." ;;
     --state)      SYNC_STATE=1 ;;
     --state-only) SYNC_STATE=1; DEPLOY_CODE=0 ;;
     --mirror)     MIRROR_FLAG="--delete-unmatched-destination-objects" ;;
-    -h|--help)    sed -n '2,35p' "$0"; exit 0 ;;
+    --force)      FORCE=1 ;;
+    -h|--help)    sed -n '2,46p' "$0"; exit 0 ;;
     *) echo "Unknown arg: $arg" >&2; exit 1 ;;
   esac
 done
@@ -81,6 +93,39 @@ if [[ ! -f "$REPO_ROOT/Dockerfile" ]]; then
   echo "ERROR: Dockerfile não encontrado em $REPO_ROOT" >&2
   exit 1
 fi
+
+# ── Guarda anti-clobber (ver scripts/sync-guard.sh) ─────────────────────
+[[ -n "$DRY" ]] && SYNC_GUARD_DRY=1
+# shellcheck source=scripts/sync-guard.sh
+source "$REPO_ROOT/scripts/sync-guard.sh"
+
+GUARD_CONFLICTS=""
+# Push guardado de um arquivo de estado dual-writer: local → bucket.
+guarded_push() {
+  local local_path="$1" gs_url="$2"
+  local name local_md5 remote_md5 verdict
+  name="$(basename "$local_path")"
+  local_md5="$(sync_guard_local_md5 "$local_path")"
+  remote_md5="$(sync_guard_remote_md5 "$gs_url")"
+  verdict="$(sync_guard_verdict "$name" "$local_md5" "$remote_md5")"
+  case "$verdict" in
+    insync)
+      echo "  = $name já em sync com o bucket."
+      sync_guard_stash_write "$name" "$local_md5"
+      return 0
+      ;;
+    conflict)
+      if [[ "$FORCE" == 0 ]]; then
+        echo "  ✗ $name: bucket mudou desde o último sync E difere do local — push RECUSADO."
+        GUARD_CONFLICTS="$GUARD_CONFLICTS $name"
+        return 0
+      fi
+      echo "  ⚠ $name: conflito ignorado (--force) — sobrescrevendo o bucket."
+      ;;
+  esac
+  $DRY gcloud storage cp "$local_path" "$gs_url" --project="$PROJECT"
+  sync_guard_stash_write "$name" "$local_md5"
+}
 
 # ── 1. Enable APIs (idempotente) ────────────────────────────────────────
 echo "→ Ativando APIs necessárias…"
@@ -130,8 +175,13 @@ rm -f "$CORS_FILE"
 # (seed/fallback) quanto no bucket (fonte vigente — bucket-first read).
 # Re-upload em cada deploy garante que git é a source-of-truth e o bucket
 # nunca fica permanentemente desatualizado.
+#
+# shapes.ttl/ontology.ttl são unidirecionais (só o deploy escreve no
+# bucket) — push incondicional. tours.ttl é dual-writer (/upload-tour e
+# /delete-tour mutam o bucket) — push guardado, senão todo deploy
+# clobberava edições feitas via Censo.
 echo "→ Sincronizando TTLs estáticos pro bucket…"
-for f in shapes.ttl ontology.ttl tours.ttl; do
+for f in shapes.ttl ontology.ttl; do
   if [[ -f "$REPO_ROOT/web/data/$f" ]]; then
     $DRY gcloud storage cp "$REPO_ROOT/web/data/$f" "gs://$BUCKET/data/$f" \
       --project="$PROJECT"
@@ -139,6 +189,11 @@ for f in shapes.ttl ontology.ttl tours.ttl; do
     echo "  ⚠ $REPO_ROOT/web/data/$f não existe localmente — skip"
   fi
 done
+if [[ -f "$REPO_ROOT/web/data/tours.ttl" ]]; then
+  guarded_push "$REPO_ROOT/web/data/tours.ttl" "gs://$BUCKET/data/tours.ttl"
+else
+  echo "  ⚠ $REPO_ROOT/web/data/tours.ttl não existe localmente — skip"
+fi
 
 # ── 3. Deploy ───────────────────────────────────────────────────────────
 if [[ "$DEPLOY_CODE" == 1 ]]; then
@@ -193,8 +248,7 @@ if [[ "$SYNC_STATE" == 1 ]]; then
 
   for f in uploads.ttl data_graphs.ttl; do
     if [[ -f "$REPO_ROOT/web/data/$f" ]]; then
-      $DRY gcloud storage cp "$REPO_ROOT/web/data/$f" "gs://$BUCKET/data/$f" \
-        --project="$PROJECT"
+      guarded_push "$REPO_ROOT/web/data/$f" "gs://$BUCKET/data/$f"
     else
       echo "  ⚠ web/data/$f não existe localmente — skip"
     fi
@@ -204,8 +258,7 @@ if [[ "$SYNC_STATE" == 1 ]]; then
   # upload de tour). Um rebuild local completo (build-routes.py) só chega na
   # cloud se empurrado aqui — mesma tensão dual-writer que uploads.ttl.
   if [[ -f "$REPO_ROOT/web/routes.json" ]]; then
-    $DRY gcloud storage cp "$REPO_ROOT/web/routes.json" "gs://$BUCKET/routes.json" \
-      --project="$PROJECT"
+    guarded_push "$REPO_ROOT/web/routes.json" "gs://$BUCKET/routes.json"
   else
     echo "  ⚠ web/routes.json não existe localmente — skip"
   fi
@@ -252,4 +305,18 @@ if [[ -z "$DRY" ]]; then
   else
     echo "✓ Estado sincronizado."
   fi
+fi
+
+if [[ -n "$GUARD_CONFLICTS" ]]; then
+  echo ""
+  echo "⚠ PUSH RECUSADO (lost update) para:$GUARD_CONFLICTS"
+  echo "  O bucket mudou desde o último sync e difere do local — provavelmente"
+  echo "  uploads/edições via upload_*.html. Pra reconciliar:"
+  echo "    1. scripts/pull-cloudrun.sh --data-only   (traz o lado do bucket)"
+  echo "    2. faça o merge manualmente (ou refaça o build local em cima)"
+  echo "    3. rode este script de novo"
+  echo "  Ou, se o local é mesmo o vigente: rode com --force."
+  echo "  (Primeiro uso sem baseline em .sync-state/ também cai aqui —"
+  echo "   confira qual lado está certo e use --force uma vez.)"
+  exit 3
 fi

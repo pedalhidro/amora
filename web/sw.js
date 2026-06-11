@@ -9,7 +9,7 @@
 //                    their second visit.
 //   RUNTIME_CACHE — map tiles, OSRM, elevation, etc. Same strategy.
 
-const VERSION = 'phidro-v236';
+const VERSION = 'phidro-v237';
 const STATIC_CACHE = `${VERSION}-static`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 
@@ -25,12 +25,23 @@ const STATIC_ASSETS = [
   './icon.svg',
   './icon-192.png',
   './icon-512.png',
+  './icon-512-maskable.png',
   './apple-touch-icon.png',
   './lib/utils.js',
   './lib/n3.min.js',
   './lib/energy-worker.js',
   './lib/tom-select.complete.min.js',
   './lib/tom-select.min.css',
+  './lib/qrcode.js',
+  './lib/leaflet/leaflet.js',
+  './lib/leaflet/leaflet.css',
+  './lib/leaflet/images/layers.png',
+  './lib/leaflet/images/layers-2x.png',
+  './lib/leaflet/images/marker-icon.png',
+  './lib/leaflet/images/marker-icon-2x.png',
+  './lib/leaflet/images/marker-shadow.png',
+  './lib/locatecontrol/L.Control.Locate.min.js',
+  './lib/locatecontrol/L.Control.Locate.min.css',
 ];
 
 self.addEventListener('install', (event) => {
@@ -69,7 +80,8 @@ const RUNTIME_HOSTS = [
   /(^|\.)raster\.geosampa\.prefeitura\.sp\.gov\.br$/,
   /(^|\.)api\.open-meteo\.com$/,
   /(^|\.)routing\.openstreetmap\.de$/,
-  /(^|\.)unpkg\.com$/,
+  // jsdelivr fica só pelos lazy-loads do app.js (exifr/heic2any/jszip/
+  // geotiff); Leaflet & cia foram vendorados pra lib/ (unpkg saiu).
   /(^|\.)cdn\.jsdelivr\.net$/,
 ];
 

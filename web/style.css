@@ -1394,6 +1394,30 @@ body.drawing .trackpoint-marker:active { cursor: grabbing !important; }
   padding: 1px 5px;
   font-size: 11px;
 }
+.help-changelog {
+  margin: 0 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  padding: 6px 10px;
+}
+.help-changelog summary {
+  cursor: pointer;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+  user-select: none;
+}
+.help-changelog[open] summary { color: var(--text); }
+.help-changelog dl { margin: 6px 0 2px; }
+.help-changelog dt {
+  font-weight: 600;
+  font-size: 12px;
+  margin-top: 8px;
+}
+.help-changelog dd { margin: 2px 0 0 0; }
+
 .help-credit {
   margin-top: 16px;
   padding-top: 10px;

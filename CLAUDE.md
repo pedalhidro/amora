@@ -9,9 +9,13 @@ local-first.
 
 - `web/` — the app. A static PWA: `index.html`, one big `app.js` (single
   file, no build step), `style.css`, `sw.js` (service worker),
-  `manifest.json`, icons, `lib/` (vendored deps: `utils.js`, `n3.min.js`,
-  `energy-worker.js`, `tom-select.complete.min.js`, `tom-select.min.css`).
-  Leaflet-based map. Also hosts `upload_images.html` (per-photo upload
+  `manifest.json`, icons, `robots.txt`, `sitemap.xml`, `llms.txt` (guia do
+  site p/ agentes LLM — aponta pros dumps TTL), `lib/` (vendored deps: `utils.js`,
+  `n3.min.js`, `energy-worker.js`, `tom-select.complete.min.js`,
+  `tom-select.min.css`, `qrcode.js`, `leaflet/` (js+css+images),
+  `locatecontrol/` — Leaflet & friends were vendored off unpkg/jsdelivr;
+  only app.js's lazy loads (exifr/heic2any/jszip/geotiff) still hit
+  jsdelivr). Leaflet-based map. Also hosts `upload_images.html` (per-photo upload
   form), `upload_tour.html` (per-tour upsert form), `censo.html`
   (aggregated tour metrics + roster, opened as a modal iframe from the
   main app), `upload_videos.html` (permanent redirect stub →
@@ -171,7 +175,9 @@ Key flows:
 - **Backend endpoint summary.** Static: `GET /`, `GET /<path:p>`,
   `GET /data/<filename>`, `GET /photos/<path:p>`, `GET /clips/<path:p>`,
   `GET /tour_assets/<path:p>` (in `gcs` mode the last three 302-redirect
-  to the bucket's public URL). Ops: `GET /health`, `POST /reload` (force
+  to the bucket's public URL), `GET /feed.xml` (RSS 2.0 dos passeios,
+  renderizado de `tours.ttl` e cacheado por hash do catálogo — atualiza
+  sozinho a cada tour CRUD). Ops: `GET /health`, `POST /reload` (force
   re-read of the on-disk TTL catalog after an out-of-band edit).
   Mutations: `POST /upload-image`, `POST /upload-video`,
   `POST /upload-tour`, `POST /delete-image/<phash>`,
@@ -216,7 +222,19 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
 - **Bump `sw.js` `VERSION`** on *any* change to files in `web/` —
   otherwise the service worker serves stale cached copies and the change
   won't reach users. It's a monotonic `phidro-vN` integer counter; just
-  increment.
+  increment. For user-visible changes, also add an entry to the collapsed
+  changelog `<details class="help-changelog">` at the top of the Ajuda
+  modal in `index.html` (dated, keyed to the new vN).
+- **Compression + ETags are load-bearing.** The backend uses
+  `flask-compress` (best-effort import; `COMPRESS_STREAMS = True` is
+  required or `send_from_directory` responses — app.js, style.css — go out
+  raw) and the string-built responses (`/routes.json`, `/data/<ttl>`) get
+  `resp.add_etag()` + `make_conditional()` via `_conditional()`. Without
+  the ETags, the SW's network-first strategy re-downloads the full 2 MB
+  `routes.json` every visit instead of getting a 304. Don't strip either
+  when touching those handlers. `index.html` also `<link rel="preload">`s
+  `routes.json`, and app.js fetches it *without* `cache: 'no-cache'` so
+  the two requests coalesce — keep them matched.
 - **No backend auth.** Anyone who can reach the Pi can upload/delete — this
   is an intentional decision (trusted access assumed). Don't reintroduce a
   token; restrict at the edge if needed.

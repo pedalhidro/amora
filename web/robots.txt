@@ -1,0 +1,14 @@
+# amora — só a página principal interessa pra busca; formulários internos
+# e o censo (iframe) ficam de fora.
+User-agent: *
+Allow: /
+Disallow: /upload_images.html
+Disallow: /upload_tour.html
+Disallow: /upload_videos.html
+Disallow: /censo.html
+Disallow: /data/
+Disallow: /photos/
+Disallow: /clips/
+Disallow: /tour_assets/
+
+Sitemap: https://amora.pedalhidrografi.co/sitemap.xml

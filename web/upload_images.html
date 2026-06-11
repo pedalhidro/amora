@@ -2,6 +2,7 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
+<meta name="robots" content="noindex">
 <title>Upload de imagens e vídeos — Pedal Hidrográfico</title>
 <style>
   body { font-family: system-ui, sans-serif; max-width: 1400px; margin: 1.5rem auto; padding: 0 1rem; color: #222; }
@@ -1958,8 +1959,8 @@ $('#uploadAll').addEventListener('click', uploadAll);
 $('#previewTtl').addEventListener('click', showTtlPreview);
 
 // ===================== Map picker (Leaflet/OSM, lazy) ==================
-const LEAFLET_CSS = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-const LEAFLET_JS  = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+const LEAFLET_CSS = './lib/leaflet/leaflet.css';
+const LEAFLET_JS  = './lib/leaflet/leaflet.js';
 const SP_CENTER   = [-23.55, -46.633];   // São Paulo, fallback quando sem coords
 
 let _leafletLoading = null;

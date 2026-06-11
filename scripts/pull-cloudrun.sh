@@ -16,6 +16,13 @@
 # deploy é que sobe pro bucket — invertendo a direção corromperia o
 # source-of-truth.
 #
+# Guarda anti-clobber: o pull dos arquivos dual-writer (uploads.ttl,
+# data_graphs.ttl, tours.ttl, routes.json) é recusado se o LOCAL mudou
+# desde o último sync E difere do bucket — senão um build/edição local
+# ainda não empurrado seria sobrescrito. Nesse caso: commit/backup do
+# local (ou deploy-cloudrun.sh --state-only pra empurrá-lo) e rode de
+# novo; `--force` pula a checagem. Ver scripts/sync-guard.sh.
+#
 # Usage:
 #   scripts/pull-cloudrun.sh                # TTLs mutáveis + routes.json + photos/ + clips/
 #   scripts/pull-cloudrun.sh --dry-run      # preview, sem baixar
@@ -24,6 +31,7 @@
 #   scripts/pull-cloudrun.sh --data-only    # só uploads.ttl + data_graphs.ttl + tours.ttl + routes.json
 #   scripts/pull-cloudrun.sh --mirror       # espelho exato: deleta local o que
 #                                           # não existe no bucket (perigoso)
+#   scripts/pull-cloudrun.sh --force        # ignora a guarda anti-clobber
 #
 # Overridable via env (mesmas defaults do deploy):
 #   GCP_PROJECT  default: pedal-hidrografico
@@ -41,6 +49,7 @@ SYNC_CLIPS=1
 SYNC_DATA=1
 MIRROR_FLAG=""
 EXPLICIT_SCOPE=0
+FORCE=0
 for arg in "$@"; do
   case "$arg" in
     --dry-run)     DRY="echo DRY: "; echo "↻ DRY RUN — nada será baixado." ;;
@@ -48,7 +57,8 @@ for arg in "$@"; do
     --clips-only)  SYNC_PHOTOS=0; SYNC_DATA=0; EXPLICIT_SCOPE=1 ;;
     --data-only)   SYNC_PHOTOS=0; SYNC_CLIPS=0; EXPLICIT_SCOPE=1 ;;
     --mirror)      MIRROR_FLAG="--delete-unmatched-destination-objects" ;;
-    -h|--help)     sed -n '2,25p' "$0"; exit 0 ;;
+    --force)       FORCE=1 ;;
+    -h|--help)     sed -n '2,34p' "$0"; exit 0 ;;
     *) echo "Argumento desconhecido: $arg" >&2; exit 2 ;;
   esac
 done
@@ -57,6 +67,44 @@ if ! command -v gcloud >/dev/null 2>&1; then
   echo "ERROR: gcloud CLI não encontrado." >&2
   exit 1
 fi
+
+# ── Guarda anti-clobber (ver scripts/sync-guard.sh) ─────────────────────
+[[ -n "$DRY" ]] && SYNC_GUARD_DRY=1
+# shellcheck source=scripts/sync-guard.sh
+source "$REPO_ROOT/scripts/sync-guard.sh"
+
+GUARD_CONFLICTS=""
+# Pull guardado de um arquivo de estado dual-writer: bucket → local.
+guarded_pull() {
+  local gs_url="$1" local_path="$2"
+  local name local_md5 remote_md5 verdict
+  name="$(basename "$local_path")"
+  remote_md5="$(sync_guard_remote_md5 "$gs_url")"
+  if [[ -z "$remote_md5" ]]; then
+    echo "  ⚠ $gs_url não existe no bucket — skip"
+    return 0
+  fi
+  local_md5="$(sync_guard_local_md5 "$local_path")"
+  verdict="$(sync_guard_verdict "$name" "$remote_md5" "$local_md5")"
+  case "$verdict" in
+    insync)
+      echo "  = $name já em sync com o bucket."
+      sync_guard_stash_write "$name" "$remote_md5"
+      return 0
+      ;;
+    conflict)
+      if [[ "$FORCE" == 0 ]]; then
+        echo "  ✗ $name: local mudou desde o último sync E difere do bucket — pull RECUSADO."
+        GUARD_CONFLICTS="$GUARD_CONFLICTS $name"
+        return 0
+      fi
+      echo "  ⚠ $name: conflito ignorado (--force) — sobrescrevendo o local."
+      ;;
+  esac
+  echo "→ $name"
+  $DRY gcloud storage cp "$gs_url" "$local_path" --project="$PROJECT"
+  sync_guard_stash_write "$name" "$remote_md5"
+}
 if ! gcloud storage buckets describe "gs://$BUCKET" --project="$PROJECT" >/dev/null 2>&1; then
   echo "ERROR: bucket gs://$BUCKET não acessível (verifique auth + projeto)." >&2
   exit 1
@@ -80,27 +128,13 @@ fi
 if [[ "$SYNC_DATA" == 1 ]]; then
   mkdir -p "$REPO_ROOT/web/data"
   for f in uploads.ttl data_graphs.ttl tours.ttl; do
-    src="gs://$BUCKET/data/$f"
-    dst="$REPO_ROOT/web/data/$f"
-    if gcloud storage objects describe "$src" --project="$PROJECT" >/dev/null 2>&1; then
-      echo "→ data/$f"
-      $DRY gcloud storage cp "$src" "$dst" --project="$PROJECT"
-    else
-      echo "  ⚠ $src não existe no bucket — skip"
-    fi
+    guarded_pull "gs://$BUCKET/data/$f" "$REPO_ROOT/web/data/$f"
   done
 
   # routes.json: mesmo racional do tours.ttl — o /upload-tour faz upsert
   # incremental server-side (bucket-first); sem o pull, o próximo
   # deploy --state clobbera essas edições com a cópia local stale.
-  src="gs://$BUCKET/routes.json"
-  dst="$REPO_ROOT/web/routes.json"
-  if gcloud storage objects describe "$src" --project="$PROJECT" >/dev/null 2>&1; then
-    echo "→ routes.json"
-    $DRY gcloud storage cp "$src" "$dst" --project="$PROJECT"
-  else
-    echo "  ⚠ $src não existe no bucket — skip"
-  fi
+  guarded_pull "gs://$BUCKET/routes.json" "$REPO_ROOT/web/routes.json"
 fi
 
 # ── photos/ ─────────────────────────────────────────────────────────────
@@ -127,4 +161,16 @@ if [[ "$SYNC_CLIPS" == 1 ]]; then
 fi
 
 echo ""
+if [[ -n "$GUARD_CONFLICTS" ]]; then
+  echo "⚠ PULL RECUSADO (lost update) para:$GUARD_CONFLICTS"
+  echo "  O local mudou desde o último sync e difere do bucket — provavelmente"
+  echo "  um build (build-tours.py / build-routes.py / build-clips.py) ou"
+  echo "  edição local ainda não empurrado. Pra reconciliar:"
+  echo "    1. faça backup/commit do arquivo local"
+  echo "    2. rode com --force pra trazer o lado do bucket, e faça o merge"
+  echo "  Ou, se o bucket é mesmo o vigente: rode com --force direto."
+  echo "  (Primeiro uso sem baseline em .sync-state/ também cai aqui —"
+  echo "   confira qual lado está certo e use --force uma vez.)"
+  exit 3
+fi
 echo "✓ Done."
