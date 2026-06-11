@@ -2,5 +2,9 @@ flask==3.*
 gunicorn==23.*
 pyshacl>=0.30,<1
 rdflib>=7.1,<8
+# Carrega RWGPS_API_KEY/RWGPS_AUTH_TOKEN do .env do repo (main.py faz um
+# load best-effort no boot). Sem isto, o Pi roda mas o sync incremental de
+# routes.json só consegue rotas públicas (privadas/unlisted dão 401).
+python-dotenv>=1,<2
 # Cloud Run / GCS path. Inerte se STORAGE_BACKEND=local (import lazy).
 google-cloud-storage>=2.18,<4

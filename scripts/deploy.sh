@@ -55,12 +55,13 @@ fi
 echo "→ Syncing $LOCAL_DIR  →  $BUCKET_DIR"
 # ${DRY[@]+"${DRY[@]}"} expands to nothing if the array is empty/unset —
 # avoids the "unbound variable" error from `set -u` on bash 3.2 (macOS).
-# --exclude is a regex; this skips macOS .DS_Store files at any depth and
-# also any text editor swap files that might be lying around.
+# --exclude is a regex; skips OS/editor junk at any depth AND web/clips/raw/
+# (~800 MB de vídeos-fonte que não pertencem ao site público — os artefatos
+# transcodados *.mp4/*.m4a/*.thumb.jpg continuam indo).
 gcloud storage rsync \
   --recursive \
   --delete-unmatched-destination-objects \
-  --exclude='(^|.*/)(\.DS_Store|Thumbs\.db|.*\.swp|.*\.swo|\.git/.*)$' \
+  --exclude='(^|.*/)(\.DS_Store|Thumbs\.db|.*\.swp|.*\.swo|\.git/.*)$|^clips/raw/.*$' \
   ${DRY[@]+"${DRY[@]}"} \
   "$LOCAL_DIR" "$BUCKET_DIR"
 

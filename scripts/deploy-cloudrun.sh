@@ -12,7 +12,8 @@
 #   scripts/deploy-cloudrun.sh --state        # build + deploy + também
 #                                             # sincroniza estado mutável
 #                                             # (uploads.ttl, data_graphs.ttl,
-#                                             #  photos/, clips/) pro bucket
+#                                             #  routes.json, photos/, clips/)
+#                                             # pro bucket
 #   scripts/deploy-cloudrun.sh --state-only   # SÓ sincroniza estado mutável,
 #                                             # sem rebuild/redeploy
 #   scripts/deploy-cloudrun.sh --state --mirror   # sync com espelho exato
@@ -141,6 +142,29 @@ done
 
 # ── 3. Deploy ───────────────────────────────────────────────────────────
 if [[ "$DEPLOY_CODE" == 1 ]]; then
+  # Credenciais RWGPS pro sync incremental de routes.json no /upload-tour.
+  # O container NÃO leva o .env (segredo, fora do build context); injetamos
+  # como env vars do service, lendo do .env local. Sem elas o backend ainda
+  # funciona — só rotas privadas/unlisted falham o fetch (latlngs:null).
+  RUN_ENV_VARS="STORAGE_BACKEND=gcs,GCS_BUCKET=$BUCKET"
+  if [[ -f "$REPO_ROOT/.env" ]]; then
+    RWGPS_API_KEY="$(grep -E '^RWGPS_API_KEY=' "$REPO_ROOT/.env" | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'")"
+    RWGPS_AUTH_TOKEN="$(grep -E '^RWGPS_AUTH_TOKEN=' "$REPO_ROOT/.env" | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'")"
+    if [[ -n "$RWGPS_API_KEY" && -n "$RWGPS_AUTH_TOKEN" ]]; then
+      if [[ -n "$DRY" ]]; then
+        # Dry-run ecoa o comando inteiro — não vaza os tokens no terminal.
+        RUN_ENV_VARS="$RUN_ENV_VARS,RWGPS_API_KEY=***,RWGPS_AUTH_TOKEN=***"
+      else
+        RUN_ENV_VARS="$RUN_ENV_VARS,RWGPS_API_KEY=$RWGPS_API_KEY,RWGPS_AUTH_TOKEN=$RWGPS_AUTH_TOKEN"
+      fi
+      echo "→ Credenciais RWGPS do .env serão injetadas no service."
+    else
+      echo "  ⚠ .env sem RWGPS_API_KEY/RWGPS_AUTH_TOKEN — sync de rotas privadas falhará."
+    fi
+  else
+    echo "  ⚠ $REPO_ROOT/.env não existe — sync de rotas privadas falhará."
+  fi
+
   echo "→ Deploy do service $SERVICE (build pelo Cloud Build a partir de $REPO_ROOT/Dockerfile)…"
   $DRY gcloud run deploy "$SERVICE" \
     --source="$REPO_ROOT" \
@@ -153,13 +177,13 @@ if [[ "$DEPLOY_CODE" == 1 ]]; then
     --concurrency=80 \
     --max-instances="$MAX_INSTANCES" \
     --min-instances="$MIN_INSTANCES" \
-    --set-env-vars="STORAGE_BACKEND=gcs,GCS_BUCKET=$BUCKET"
+    --set-env-vars="$RUN_ENV_VARS"
 else
   echo "→ Pulando deploy de código (--state-only)."
 fi
 
 # ── 4. Estado mutável (--state / --state-only) ──────────────────────────
-# Sync de uploads.ttl + data_graphs.ttl + photos/ + clips/ pro bucket.
+# Sync de uploads.ttl + data_graphs.ttl + routes.json + photos/ + clips/ pro bucket.
 # Por padrão o deploy NÃO faz isso pra não clobberar uploads server-side;
 # rode com a flag quando quiser espelhar o local pra cloud.
 if [[ "$SYNC_STATE" == 1 ]]; then
@@ -175,6 +199,16 @@ if [[ "$SYNC_STATE" == 1 ]]; then
       echo "  ⚠ web/data/$f não existe localmente — skip"
     fi
   done
+
+  # routes.json é servido bucket-first (o backend faz upsert incremental por
+  # upload de tour). Um rebuild local completo (build-routes.py) só chega na
+  # cloud se empurrado aqui — mesma tensão dual-writer que uploads.ttl.
+  if [[ -f "$REPO_ROOT/web/routes.json" ]]; then
+    $DRY gcloud storage cp "$REPO_ROOT/web/routes.json" "gs://$BUCKET/routes.json" \
+      --project="$PROJECT"
+  else
+    echo "  ⚠ web/routes.json não existe localmente — skip"
+  fi
 
   if [[ -d "$REPO_ROOT/web/photos" ]]; then
     echo "→ photos/"

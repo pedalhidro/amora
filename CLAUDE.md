@@ -145,6 +145,21 @@ Key flows:
   bnodes and purges `tour_assets/<tour_id>/`; it deliberately does NOT
   delete referenced `phd:pessoa*` or series — git history preserves
   those and they may be referenced by other tours.
+  On every `/upload-tour` and `/delete-tour`, the backend also **syncs
+  `routes.json` incrementally**: if the tour's TTL has a `ph:linkRoute`
+  pointing at a RideWithGPS route, it fetches the geometry and upserts that
+  tour's entry (keyed by `tourIri`); if the link is absent (new/edited tour
+  with no route) or the tour is deleted, it removes the entry. The RWGPS
+  fetch runs **outside** the global state lock (only the JSON read-modify-
+  write is serialized) and is best-effort — a fetch failure never fails the
+  tour save (the entry is kept with `latlngs:null` + `error`, same convention
+  as `build-routes.py`). The shared fetch/parse/entry-building logic lives in
+  `backend/pi/rwgps.py`, imported by both the backend and
+  `scripts/build-routes.py` (single source of truth). The backend reads
+  `RWGPS_API_KEY` / `RWGPS_AUTH_TOKEN` from its environment (best-effort
+  `.env` load) — required for private/unlisted routes; public routes work
+  without. `routes.json` is **mutable state served bucket-first** (like
+  `uploads.ttl`) via `GET /routes.json`, with the baked file as seed/fallback.
   `web/upload_tour.html` is the per-tour form (series, sequence, energy
   estimate, intensity, attendee/newcomer counts, announcement art);
   `web/censo.html` shows aggregated metrics + a sortable tour roster
@@ -214,10 +229,16 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
 - **Two deploy targets live now: Pi and Cloud Run.** Pi is the local-first
   default; Cloud Run is hosted at `https://amora.pedalhidrografi.co/` via
   `scripts/deploy-cloudrun.sh`. The backend (`backend/pi/main.py`) is the
-  same for both — `storage.py` abstracts state via `STATE_BACKEND=local`
+  same for both — `storage.py` abstracts state via `STORAGE_BACKEND=local`
   (filesystem) vs `gcs` (bucket). `scripts/deploy.sh` (the old read-only
   static mirror at `tiles.pedalhidrografi.co/rotas_app`) is still around
   but largely superseded.
+- **gunicorn runs with `--workers 1` everywhere** (Dockerfile,.service,
+  .plist). The mutation lock (`_state_lock`) is per-process; with 2+
+  workers, concurrent uploads land in different processes and the second
+  read-modify-write of the TTL catalogs silently discards the first (lost
+  update). Concurrency comes from threads; Cloud Run scales by instances.
+  Don't "tune" the worker count up.
 - **GCS read gotcha (Cloud Run).** Always use `bucket.get_blob(key)`
   rather than `bucket.blob(key) + download_as_text()` — the bare-blob form
   produced silently-stale content in Cloud Run despite the bucket having
@@ -255,9 +276,11 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
   within ±12 h). See "Clips workflow" above. Requires `ffmpeg` + `exiftool`.
 - `bash scripts/deploy-cloudrun.sh` — build + deploy backend to Cloud Run
   (project `pedal-hidrografico`, region `southamerica-east1`, service
-  `phidro`, bucket `phidro-state`). Flags:
+  `phidro`, bucket `phidro-state`). Reads `RWGPS_API_KEY`/`RWGPS_AUTH_TOKEN`
+  from the local `.env` and injects them as service env vars (the `.env`
+  itself never enters the build context — it's in `.gcloudignore`). Flags:
   - `--state` build + deploy + sync mutable state (`uploads.ttl`,
-    `data_graphs.ttl`, `photos/`, `clips/`) to the bucket
+    `data_graphs.ttl`, `routes.json`, `photos/`, `clips/`) to the bucket
   - `--state-only` just sync mutable state, skip rebuild
   - `--mirror` make the bucket an exact mirror of local (deletes objects
     that no longer exist locally; pairs with `--state`/`--state-only`)
@@ -275,9 +298,12 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
   form) are both superseded. User-deletes when ready:
   `git rm scripts/build-routes.mjs scripts/build-photos.py`. The
   `coletor_*.py` family was already removed.
-- **Phantom path in ignore files.** `.gcloudignore` and `.dockerignore`
-  both list `web/data/photos.ttl`, which never existed under that name
-  (the catalog is `uploads.ttl`). Harmless but worth pruning.
+- **`scripts/gen-synthetic-rdf.py` is stale.** It targets the removed
+  top-level `ontology/` dir (`--out-dir ontology/v2`) and emits the old
+  `censo/1.0/` namespace with classes absent from the current
+  `web/data/ontology.ttl` — its output can't validate against current
+  shapes. User-deletes when ready: `git rm scripts/gen-synthetic-rdf.py`
+  (or retarget it at `web/data/` if synthetic data is still useful).
 - **`research/photos-rdf/upload-form.html`** is the legacy "build a kit ZIP"
   form. Production uploads go through `web/upload_images.html`. Keep the
   research one only if you still use it for batch-export experiments.

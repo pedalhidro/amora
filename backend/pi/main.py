@@ -49,6 +49,7 @@ Variáveis de ambiente:
                           (https://github.com/fsouza/fake-gcs-server)
 """
 import functools
+import json
 import os
 import threading
 from pathlib import Path
@@ -89,6 +90,22 @@ STORE = make_store_from_env(WEB)
 KEY_UPLOADS  = "data/uploads.ttl"
 KEY_MANIFEST = "data/data_graphs.ttl"
 KEY_TOURS    = "data/tours.ttl"
+# routes.json é pré-bakado por scripts/build-routes.py mas também é atualizado
+# incrementalmente aqui (upsert/remove de 1 rota por upload/delete de tour).
+# Vira estado mutável: servido bucket-first, com o arquivo bakeado no
+# container/repo como seed/fallback. Em modo local o root do STORE é `web/`,
+# então isto grava o MESMO `web/routes.json` que o script — sem divergência.
+KEY_ROUTES   = "routes.json"
+
+# Credenciais do RideWithGPS pra buscar a geometria das rotas (privadas/
+# unlisted exigem auth; públicas funcionam sem). Lidas de `os.environ` por
+# `rwgps.decorate_rwgps`; carregamos o `.env` do repo best-effort pra que o
+# Pi/dev local pegue as mesmas chaves que o build-routes.py usa.
+try:  # python-dotenv é dep do build-routes; pode faltar no container slim.
+    from dotenv import load_dotenv as _load_dotenv
+    _load_dotenv(WEB.parent / ".env")
+except Exception:  # noqa: BLE001
+    pass
 
 VOID_NS = "http://rdfs.org/ns/void#"
 
@@ -480,6 +497,15 @@ def validate_tour_ttl(ttl_text):
     tour_id = tour_iri[len(PHD_NS + "tour_"):]
     if not tour_id:
         return False, tour_id, ["IRI do Tour vazio"]
+    # Mesmo charset que delete_tour exige. Sem isso, um IRI completo tipo
+    # <https://pedalhidrografi.co/data/tour_../x> passa (a forma full-IRI
+    # aceita "/" e "."), e o tour_id vira componente de path no store
+    # (tour_assets/<id>/...) — traversal pra qualquer lugar sob web/ — além
+    # de criar tours que o delete-tour depois recusa.
+    if not all(c.isalnum() or c in "_-" for c in tour_id):
+        return False, None, [
+            f"tour_id inválido (apenas [A-Za-z0-9_-]): {tour_id!r}"
+        ]
 
     # Mescla com ontology + catálogo (excluindo o próprio tour pra evitar
     # cardinalidade falsa por sobreposição de re-upload).
@@ -554,6 +580,140 @@ def remove_tour_from_tours_ttl(tour_id):
     return n
 
 
+# ── routes.json (geometria pré-bakada) ───────────────────────────────────
+# Atualização incremental: um upload/edit de tour faz upsert da rota daquele
+# passeio; um delete (ou edit que tira o linkRoute) remove a entrada. O fetch
+# da geometria no RideWithGPS NÃO roda sob o lock global — só o read-modify-
+# write do JSON é serializado. Assim um POST /upload-tour não trava uploads de
+# fotos concorrentes durante os (até 60 s de) IO de rede.
+def _load_routes_payload():
+    """Lê routes.json — bucket-first, arquivo bakeado como seed/fallback.
+
+    Devolve o dict `{generatedAt, source, routes:[...]}`. AUSENTE em ambos
+    os lugares → payload vazio válido (seed). CORROMPIDO/formato inesperado
+    → levanta — coagir pra vazio aqui faria o próximo upsert PERSISTIR o
+    catálogo zerado (data loss silencioso); melhor falhar o sync (que é
+    best-effort no caller) e deixar o catálogo intacto pra diagnóstico.
+    """
+    text = STORE.read_text(KEY_ROUTES)
+    if text is None:
+        baked = WEB / "routes.json"
+        if baked.exists() and baked.stat().st_size > 0:
+            text = baked.read_text(encoding="utf-8")
+    if not text:
+        return {"routes": []}
+    data = json.loads(text)
+    if not isinstance(data, dict) or not isinstance(data.get("routes"), list):
+        raise ValueError("routes.json com formato inesperado (sem lista 'routes')")
+    return data
+
+
+def _write_routes_payload(routes):
+    """Persiste a lista de entradas (ordenada por data desc, como o build-
+    routes.py), regravando metadados do envelope. Sob `_state_lock` pelo
+    caller."""
+    routes = sorted(routes, key=lambda e: e.get("dateMs") or 0, reverse=True)
+    payload = {
+        "generatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "source": {"file": "web/data/tours.ttl", "updatedBy": "backend/upload-tour"},
+        "routes": routes,
+    }
+    STORE.write_text(
+        KEY_ROUTES,
+        json.dumps(payload, indent=2, ensure_ascii=False),
+        content_type="application/json; charset=utf-8",
+    )
+
+
+def _current_tour_route_id(tour_id):
+    """Lê o tours.ttl VIGENTE e devolve o id RWGPS do tour — ou None se o
+    tour não existe ou não tem `ph:linkRoute`. Usado pra re-checar, sob o
+    lock, que o estado não mudou durante o fetch de geometria fora do lock
+    (TOCTOU: um delete-tour ou re-edit concorrente durante os até ~120 s de
+    IO de rede não pode ser ressuscitado/sobrescrito por um upsert cego)."""
+    import rwgps
+    from rdflib import Graph as _RdfGraph, URIRef as _URIRef
+    text = _load_dump_text("tours.ttl")
+    if not text:
+        return None
+    try:
+        g = _RdfGraph().parse(data=text, format="turtle")
+        meta = rwgps.tour_entry_from_graph(g, _URIRef(PHD_NS + "tour_" + tour_id))
+    except Exception:  # noqa: BLE001
+        return None
+    return meta["id"] if meta else None
+
+
+def _sync_tour_route(tour_id, tour_ttl):
+    """Sincroniza a entrada de routes.json do tour `tour_id` com o estado atual.
+
+    • Se o TTL do tour tem `ph:linkRoute` → RideWithGPS: busca a geometria
+      (fora do lock) e faz upsert da entrada (keyed por tourIri).
+    • Senão (sem linkRoute): remove qualquer entrada existente daquele tour.
+
+    Best-effort: o caller (upload_tour) envolve a chamada em try/except — o
+    tour já foi salvo no tours.ttl; uma falha aqui só significa que a
+    geometria não entrou (re-rodar build-routes.py conserta). Retorna um
+    dict de status pro handler reportar ao form.
+    """
+    import rwgps
+    from rdflib import Graph as _RdfGraph, URIRef as _URIRef
+
+    tour_iri = PHD_NS + "tour_" + tour_id
+    try:
+        g = _RdfGraph().parse(data=tour_ttl, format="turtle")
+        meta = rwgps.tour_entry_from_graph(g, _URIRef(tour_iri))
+    except Exception as e:  # noqa: BLE001
+        return {"status": "error", "error": f"parse: {e}"}
+
+    # Sem rota RWGPS → garante que a entrada não fica órfã no JSON.
+    if meta is None:
+        with _state_lock:
+            if _current_tour_route_id(tour_id) is not None:
+                # Outro edit concorrente (re)adicionou um linkRoute depois
+                # deste request; deixa o sync DELE mandar.
+                return {"status": "stale"}
+            payload = _load_routes_payload()
+            before = len(payload["routes"])
+            payload["routes"] = [r for r in payload["routes"] if r.get("tourIri") != tour_iri]
+            removed = before - len(payload["routes"])
+            if removed:
+                _write_routes_payload(payload["routes"])
+        return {"status": "removed" if removed else "absent"}
+
+    # Fetch da geometria FORA do lock (IO de rede, pode demorar).
+    entry = rwgps.build_route_entry(meta)
+
+    with _state_lock:
+        # Re-checa sob o lock: o tour ainda existe e ainda aponta pra MESMA
+        # rota? Se não (deletado ou re-editado durante o fetch), descarta —
+        # o estado vigente já foi/será sincronizado por quem o mudou.
+        if _current_tour_route_id(tour_id) != entry["id"]:
+            return {"status": "stale", "rwgpsId": entry["id"]}
+        payload = _load_routes_payload()
+        payload["routes"] = [r for r in payload["routes"] if r.get("tourIri") != tour_iri]
+        payload["routes"].append(entry)
+        _write_routes_payload(payload["routes"])
+
+    if entry.get("latlngs"):
+        return {"status": "ok", "rwgpsId": entry["id"], "points": len(entry["latlngs"])}
+    return {"status": "fetch_failed", "rwgpsId": entry["id"], "error": entry.get("error")}
+
+
+def _remove_tour_route(tour_id):
+    """Remove a entrada de routes.json do tour (chamado no delete-tour).
+    Retorna nº de entradas removidas. Sob lock curto (sem IO de rede)."""
+    tour_iri = PHD_NS + "tour_" + tour_id
+    with _state_lock:
+        payload = _load_routes_payload()
+        before = len(payload["routes"])
+        payload["routes"] = [r for r in payload["routes"] if r.get("tourIri") != tour_iri]
+        removed = before - len(payload["routes"])
+        if removed:
+            _write_routes_payload(payload["routes"])
+    return removed
+
+
 # ── Rotas ────────────────────────────────────────────────────────────────
 @app.get("/health")
 def health():
@@ -596,6 +756,11 @@ def get_data_ttl(filename):
     não existe em nenhum dos dois lugares, devolve um seed razoável pros
     dois mutáveis ou 404 pros demais.
     """
+    # O converter padrão do Flask bloqueia "/" mas não um ".." solto —
+    # `DATA_DIR / ".."` é um diretório existente e o read_text estourava
+    # IsADirectoryError → 500 feio. Só servimos *.ttl de nome simples.
+    if not filename.endswith(".ttl") or "/" in filename or ".." in filename:
+        abort(404)
     text = _load_dump_text(filename)
     if text is None:
         if filename == "uploads.ttl":
@@ -657,6 +822,25 @@ def get_clip(p):
         resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
         return resp
     abort(404)
+
+
+@app.get("/routes.json")
+def get_routes_json():
+    """routes.json — bucket-first, arquivo bakeado como seed/fallback.
+
+    Mutável: além do rebuild completo via scripts/build-routes.py, o backend
+    faz upsert/remove incremental por upload/delete de tour. Bucket-first faz
+    o Cloud Run servir a versão atualizada server-side sem redeploy; em modo
+    local o store é o próprio `web/`, então é o mesmo arquivo."""
+    text = STORE.read_text(KEY_ROUTES)
+    if text is None:
+        baked = WEB / "routes.json"
+        if baked.exists() and baked.stat().st_size > 0:
+            text = baked.read_text(encoding="utf-8")
+    if text is None:
+        text = '{"routes": []}'
+    return Response(text, mimetype="application/json",
+                    headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/<path:p>")
@@ -729,6 +913,12 @@ def upload_image():
         upsert_image_in_uploads(ttl_text, phash, audit_block)
         register_upload_in_manifest("uploads.ttl")          # idempotente
     except Exception as e:  # noqa: BLE001
+        # Blobs já gravados sem triples = órfãos invisíveis. Limpa
+        # best-effort (re-upload regrava as mesmas keys de qualquer jeito).
+        try:
+            STORE.delete_prefix(f"photos/{phash}/")
+        except Exception as e2:  # noqa: BLE001
+            print(f"[upload-image] aviso limpando órfãos de {phash}: {e2}")
         return jsonify(
             error=f"persistência ttl: {e}", phash=phash, files=written,
         ), 500
@@ -758,8 +948,8 @@ def validate_video_ttl(ttl_text):
             f"IRI do Video deve começar com phd:video_ (atual: {video_iri})"
         ]
     vhash = video_iri[len(PHD_NS + "video_"):]
-    if not vhash or not all(c in "0123456789abcdef" for c in vhash.lower()):
-        return False, vhash, [f"vhash inválido na IRI: {vhash}"]
+    if len(vhash) != 16 or not all(c in "0123456789abcdef" for c in vhash.lower()):
+        return False, vhash, [f"vhash inválido na IRI (esperado 16 hex): {vhash}"]
 
     vid_uri = URIRef(video_iri)
     catalog = _load_catalog()
@@ -880,6 +1070,12 @@ def upload_video():
         STORE.write_text(KEY_UPLOADS, catalog.serialize(format="turtle"))
         register_upload_in_manifest("uploads.ttl")  # idempotente
     except Exception as e:  # noqa: BLE001
+        # Limpa os blobs recém-gravados (órfãos sem triples) — best-effort.
+        for key in written:
+            try:
+                STORE.delete(key)
+            except Exception as e2:  # noqa: BLE001
+                print(f"[upload-video] aviso limpando órfão {key}: {e2}")
         return jsonify(error=f"persistência ttl: {e}", id=vid_id, files=written), 500
 
     print(f"[upload-video] id={vid_id} files={written}")
@@ -923,6 +1119,14 @@ def delete_video(vhash):
     removed_files = 0
     for rel in paths:
         # `rel` é relativo a web/clips/ (ex.: "audio/IMG_X.m4a", "IMG_X.360p.mp4").
+        # Vem do TTL armazenado (que qualquer cliente pode ter escrito — não
+        # há auth), então sanitiza: um valor tipo "../app.js" viraria
+        # web/app.js, dentro do root do store, e seria apagado de verdade.
+        rel = str(rel).strip()
+        if (not rel or rel.startswith(("/", "\\")) or "\\" in rel
+                or ".." in rel.split("/") or "://" in rel):
+            print(f"[delete-video] caminho suspeito ignorado: {rel!r}")
+            continue
         key = f"clips/{rel}"
         try:
             STORE.delete(key)
@@ -941,23 +1145,26 @@ def delete_image(phash):
         return jsonify(error="phash inválido (esperado 16 hex)"), 400
     prefix = f"photos/{phash}/"
     removed_files = len(STORE.list_keys(prefix)) if hasattr(STORE, "list_keys") else 0
-    try:
-        STORE.delete_prefix(prefix)
-    except Exception as e:  # noqa: BLE001
-        print(f"[delete-image] erro removendo {prefix}: {e}")
+    # Triples primeiro, blobs depois (mesma ordem do delete-video): se a
+    # purga do TTL falhar, os arquivos ainda existem e o catálogo continua
+    # consistente — um retry conserta. Na ordem inversa, uma falha deixava
+    # markers apontando pra imagens já apagadas (404 permanente).
     try:
         removed_triples = remove_image_from_uploads(phash)
         _invalidate_catalog()
     except Exception as e:  # noqa: BLE001
         return jsonify(
-            error=f"persistência ttl: {e}", phash=phash, files=removed_files,
+            error=f"persistência ttl: {e}", phash=phash, files=0,
         ), 500
+    try:
+        STORE.delete_prefix(prefix)
+    except Exception as e:  # noqa: BLE001
+        print(f"[delete-image] erro removendo {prefix}: {e}")
     print(f"[delete-image] phash={phash} files={removed_files} triples={removed_triples}")
     return jsonify(phash=phash, files=removed_files, triples=removed_triples)
 
 
 @app.post("/upload-tour")
-@serialized
 def upload_tour():
     """Cria/atualiza 1 ph:Tour em tours.ttl.
 
@@ -967,6 +1174,12 @@ def upload_tour():
     Opcionalmente, `announcement` (file): salvo em
     `tour_assets/<tour_id>/announcement.<ext>` no store e injetado como
     `schema:image <URL>` no TTL antes de persistir.
+
+    Depois de persistir, sincroniza routes.json: se o tour tem `ph:linkRoute`
+    → RideWithGPS, busca a geometria e faz upsert da rota; senão remove a
+    entrada órfã. O fetch (IO de rede) roda FORA do lock — por isso este
+    handler não usa `@serialized` no corpo inteiro, só envolve a seção crítica
+    (validação + escrita do tours.ttl) em `with _state_lock`.
 
     Sem auth — mesma política do resto da API.
     """
@@ -978,64 +1191,86 @@ def upload_tour():
     if not ttl_text:
         return jsonify(error="ttl ausente"), 400
 
-    try:
-        ok, tour_id, errors = validate_tour_ttl(ttl_text)
-    except Exception as e:  # noqa: BLE001
-        return jsonify(error=f"parse: {e}"), 400
-    if not ok:
-        return jsonify(error="shacl", details=errors, tour_id=tour_id), 400
-
-    # Upload opcional do anúncio: salva no store e injeta `schema:image`.
-    announcement_url = None
-    f = request.files.get("announcement")
-    if f and f.filename:
-        ext = (os.path.splitext(f.filename or "")[1].lstrip(".") or "jpg").lower()
-        if ext not in ("jpg", "jpeg", "png", "webp", "gif", "heic", "heif"):
-            ext = "jpg"
-        if ext == "jpeg":
-            ext = "jpg"
-        key = f"tour_assets/{tour_id}/announcement.{ext}"
-        ct = {
-            "jpg": "image/jpeg", "png": "image/png",
-            "webp": "image/webp", "gif": "image/gif",
-            "heic": "image/heic", "heif": "image/heif",
-        }.get(ext, "application/octet-stream")
+    # Seção crítica: validação + announcement + escrita do tours.ttl, tudo
+    # serializado. O fetch da rota acontece depois, sem o lock.
+    with _state_lock:
         try:
-            STORE.write_bytes(key, f.read(), content_type=ct)
+            ok, tour_id, errors = validate_tour_ttl(ttl_text)
+        except Exception as e:  # noqa: BLE001
+            return jsonify(error=f"parse: {e}"), 400
+        if not ok:
+            return jsonify(error="shacl", details=errors, tour_id=tour_id), 400
+
+        # Upload opcional do anúncio: salva no store e injeta `schema:image`.
+        announcement_url = None
+        f = request.files.get("announcement")
+        if f and f.filename:
+            ext = (os.path.splitext(f.filename or "")[1].lstrip(".") or "jpg").lower()
+            if ext not in ("jpg", "jpeg", "png", "webp", "gif", "heic", "heif"):
+                ext = "jpg"
+            if ext == "jpeg":
+                ext = "jpg"
+            key = f"tour_assets/{tour_id}/announcement.{ext}"
+            ct = {
+                "jpg": "image/jpeg", "png": "image/png",
+                "webp": "image/webp", "gif": "image/gif",
+                "heic": "image/heic", "heif": "image/heif",
+            }.get(ext, "application/octet-stream")
+            try:
+                STORE.write_bytes(key, f.read(), content_type=ct)
+            except Exception as e:  # noqa: BLE001
+                return jsonify(
+                    error=f"persistência announcement: {e}", tour_id=tour_id,
+                ), 500
+            # Fallback local: URL ABSOLUTA baseada em como o cliente chegou
+            # aqui (request.host_url). Um caminho relativo ("./tour_assets/…")
+            # injetado como IRI no TTL é resolvido pelo rdflib contra o CWD
+            # do processo na re-serialização → vira file:///… inutilizável.
+            announcement_url = STORE.public_url(key) or (
+                request.host_url.rstrip("/")
+                + f"/tour_assets/{tour_id}/announcement.{ext}")
+            # Injeta schema:image se ainda não estiver no TTL (cliente pode
+            # ter posto um URL externo; respeitamos a escolha do cliente).
+            # Checagem via triple (não substring): um TTL usando a IRI completa
+            # `<https://schema.org/image>` passava no teste antigo de substring
+            # `"schema:image" in ttl_text` e ganhava um image duplicado.
+            from rdflib import Graph as _RdfGraph, URIRef as _URIRef
+            _tour_uri = _URIRef(PHD_NS + f"tour_{tour_id}")
+            _img_preds = (_URIRef("https://schema.org/image"), _URIRef("http://schema.org/image"))
+            try:
+                _g = _RdfGraph().parse(data=ttl_text, format="turtle")
+                _has_image = any((_tour_uri, p, None) in _g for p in _img_preds)
+            except Exception:  # noqa: BLE001
+                _has_image = "schema:image" in ttl_text  # fallback conservador
+            if not _has_image:
+                inject = (
+                    f"\n# Imagem do anúncio (uploaded server-side)\n"
+                    f'phd:tour_{tour_id} <https://schema.org/image> <{announcement_url}> .\n'
+                )
+                ttl_text = ttl_text + inject
+
+        try:
+            upsert_tour_in_tours_ttl(ttl_text, tour_id)
+            _invalidate_catalog()
         except Exception as e:  # noqa: BLE001
             return jsonify(
-                error=f"persistência announcement: {e}", tour_id=tour_id,
+                error=f"persistência ttl: {e}", tour_id=tour_id,
             ), 500
-        announcement_url = STORE.public_url(key) or f"./tour_assets/{tour_id}/announcement.{ext}"
-        # Injeta schema:image se ainda não estiver no TTL (cliente pode
-        # ter posto um URL externo; respeitamos a escolha do cliente).
-        # Checagem via triple (não substring): um TTL usando a IRI completa
-        # `<https://schema.org/image>` passava no teste antigo de substring
-        # `"schema:image" in ttl_text` e ganhava um image duplicado.
-        from rdflib import Graph as _RdfGraph, URIRef as _URIRef
-        _tour_uri = _URIRef(PHD_NS + f"tour_{tour_id}")
-        _img_preds = (_URIRef("https://schema.org/image"), _URIRef("http://schema.org/image"))
-        try:
-            _g = _RdfGraph().parse(data=ttl_text, format="turtle")
-            _has_image = any((_tour_uri, p, None) in _g for p in _img_preds)
-        except Exception:  # noqa: BLE001
-            _has_image = "schema:image" in ttl_text  # fallback conservador
-        if not _has_image:
-            inject = (
-                f"\n# Imagem do anúncio (uploaded server-side)\n"
-                f'phd:tour_{tour_id} <https://schema.org/image> <{announcement_url}> .\n'
-            )
-            ttl_text = ttl_text + inject
 
+    # Fora do lock: sincroniza a geometria da rota (best-effort, IO de rede).
+    # O try/except garante que NENHUMA falha aqui (import, storage, bug)
+    # transforma um save bem-sucedido do tour em 500.
     try:
-        upsert_tour_in_tours_ttl(ttl_text, tour_id)
-        _invalidate_catalog()
+        route_status = _sync_tour_route(tour_id, ttl_text)
     except Exception as e:  # noqa: BLE001
-        return jsonify(
-            error=f"persistência ttl: {e}", tour_id=tour_id,
-        ), 500
-    print(f"[upload-tour] tour_id={tour_id} announcement={announcement_url}")
-    return jsonify(tour_id=tour_id, announcement_url=announcement_url, ok=True)
+        route_status = {"status": "error", "error": str(e)}
+        print(f"[upload-tour] erro sincronizando routes.json: {e}")
+    print(f"[upload-tour] tour_id={tour_id} announcement={announcement_url} "
+          f"route={route_status.get('status')}")
+    return jsonify(
+        tour_id=tour_id, announcement_url=announcement_url,
+        route=route_status, ok=True,
+    )
 
 
 @app.post("/delete-tour/<tour_id>")
@@ -1061,8 +1296,16 @@ def delete_tour(tour_id):
             error=f"persistência ttl: {e}", tour_id=tour_id,
             assets=removed_assets,
         ), 500
-    print(f"[delete-tour] tour_id={tour_id} assets={removed_assets} triples={removed_triples}")
-    return jsonify(tour_id=tour_id, assets=removed_assets, triples=removed_triples)
+    # Remove a entrada do tour de routes.json (sem IO de rede — lock curto).
+    try:
+        removed_routes = _remove_tour_route(tour_id)
+    except Exception as e:  # noqa: BLE001
+        removed_routes = 0
+        print(f"[delete-tour] erro removendo rota de routes.json: {e}")
+    print(f"[delete-tour] tour_id={tour_id} assets={removed_assets} "
+          f"triples={removed_triples} routes={removed_routes}")
+    return jsonify(tour_id=tour_id, assets=removed_assets,
+                   triples=removed_triples, routes=removed_routes)
 
 
 if __name__ == "__main__":

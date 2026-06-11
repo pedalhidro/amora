@@ -33,7 +33,7 @@ COPY backend/pi/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Código do backend.
-COPY backend/pi/main.py backend/pi/storage.py ./
+COPY backend/pi/main.py backend/pi/storage.py backend/pi/rwgps.py ./
 
 # Conteúdo estático do app (HTML/JS/CSS + shapes/ontology/tours).
 # Estado mutável (web/data/uploads.ttl, web/data/data_graphs.ttl,

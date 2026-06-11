@@ -210,8 +210,11 @@ class GCSStateStore(StateStore):
         for blob in self._client.list_blobs(self.bucket_name, prefix=prefix):
             try:
                 blob.delete()
-            except Exception:
-                pass
+            except Exception as e:  # noqa: BLE001
+                # Não propaga (best-effort, igual ao LocalStateStore), mas
+                # loga — silêncio total deixava blobs órfãos públicos no
+                # bucket com o handler reportando sucesso.
+                print(f"[gcs] falha apagando {blob.name}: {e}")
 
     def exists(self, key):
         return self._bucket.blob(key).exists()

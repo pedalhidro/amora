@@ -305,6 +305,18 @@ function parseDuration(value) {
   const [h, m, s = 0] = parts;
   return `PT${h}H${m}M${s}S`;
 }
+function escapeHtml(s) {
+  // notice() injeta via innerHTML — qualquer string dinâmica (URL, erro do
+  // servidor, ?id= da URL) precisa passar por aqui antes de interpolar.
+  return String(s ?? '').replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]));
+}
+function saneUrl(u) {
+  // Só rendereiza <a href> pra URLs que parecem sãs (http(s) ou relativas
+  // ao site) — bloqueia javascript: e afins vindos do servidor/TTL.
+  return typeof u === 'string' && /^(https?:\/\/|\.\/)/.test(u);
+}
 function notice(html, level = 'ok') {
   const el = document.createElement('div');
   el.className = `notice ${level}`;
@@ -521,6 +533,55 @@ function addSeriesRow() {
 $('#add-series').addEventListener('click', addSeriesRow);
 addSeriesRow();    // primeira linha sempre presente
 
+// ────────────────────── Triples não gerenciados (modo edição) ───────────
+// O upsert do backend (upsert_tour_in_tours_ttl) faz purge-and-replace: TODOS
+// os triples existentes de phd:tour_<id> são apagados antes de regravar o que
+// o form mandar. Como buildTtl() só emite os predicados que o form conhece,
+// qualquer predicado extra (ex.: ph:mediaCount, schema:image) seria perdido a
+// cada edição. Em prefillFromId() guardamos esses triples "desconhecidos" em
+// N-Triples e os reanexamos verbatim ao TTL gerado no submit.
+//
+// Predicados que buildTtl() emite (em IRI completo) — manter em sincronia.
+const MANAGED_PREDICATES = new Set([
+  RDF_TYPE,
+  DCT + 'title',
+  DCT + 'date',
+  DCT + 'description',
+  SCHEMA + 'organizer',
+  SCHEMA + 'attendee',
+  PH_NS + 'inSeriesEdition',
+  PH_NS + 'linkRoute',
+  PH_NS + 'linkInstagram',
+  PH_NS + 'countAttendee',
+  PH_NS + 'countNewcomer',
+  PH_NS + 'energyEstimate',
+  PH_NS + 'departedAt',
+  PH_NS + 'arrivedAt',
+  PH_NS + 'movingDuration',
+  PH_NS + 'measuredEnergy',
+  PH_NS + 'hadBonde',
+  PH_NS + 'hadRain',
+  PH_NS + 'hadIncident',
+  PH_NS + 'hasNewcomer',
+  'http://www.w3.org/ns/prov#wasAttributedTo',
+  'http://purl.org/pav/providedBy',
+]);
+const stashedTriples = [];       // N-Triples preservados verbatim no submit
+const stashedImageTriples = [];  // schema:image — só re-emitido se NÃO houver arquivo novo
+
+// Serializa um termo N3.js em sintaxe N-Triples (válida dentro de Turtle).
+function ntTerm(t) {
+  if (t.termType === 'NamedNode') return `<${t.value}>`;
+  if (t.termType === 'BlankNode') return `_:${t.value}`;
+  const esc = t.value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+    .replace(/\n/g, '\\n').replace(/\r/g, '\\r');
+  if (t.language) return `"${esc}"@${t.language}`;
+  const dt = t.datatype?.value;
+  if (dt && dt !== 'http://www.w3.org/2001/XMLSchema#string') return `"${esc}"^^<${dt}>`;
+  return `"${esc}"`;
+}
+function ntLine(q) { return `${ntTerm(q.subject)} ${ntTerm(q.predicate)} ${ntTerm(q.object)} .`; }
+
 // ────────────────────── Construção do TTL ────────────────────────────
 function buildTtl() {
   const id        = $('#t-id').value.trim();
@@ -689,7 +750,21 @@ function buildTtl() {
 `;
 
   const tourBlock = `\n# Passeio\n${tourIri}\n    ${props.join(' ;\n    ')} .\n`;
-  return prefixes + auxDecls + tourBlock;
+
+  // Modo edição: reanexa os triples que o form não gerencia (o backend faz
+  // purge-and-replace, então sem isto eles seriam perdidos — ver comentário
+  // em MANAGED_PREDICATES). schema:image só volta se o usuário NÃO escolheu
+  // um anúncio novo: com arquivo novo, omitimos pro backend injetar a URL
+  // fresca (ele só injeta quando nenhum schema:image está presente).
+  let preservedBlock = '';
+  const keepImage = stashedImageTriples.length && !$('#t-announcement').files?.[0];
+  const preserved = [...stashedTriples, ...(keepImage ? stashedImageTriples : [])];
+  if (preserved.length) {
+    preservedBlock = '\n# Triples preservados do tour existente (não gerenciados pelo form)\n'
+      + preserved.join('\n') + '\n';
+  }
+
+  return prefixes + auxDecls + tourBlock + preservedBlock;
 }
 
 // ────────────────────── Preview + envio ──────────────────────────────
@@ -701,7 +776,7 @@ $('#preview').addEventListener('click', () => {
     $('#ttl-zone').hidden = false;
     notice('Preview gerado. Confirme antes de enviar.', 'ok');
   } catch (e) {
-    notice(`Erro: ${e.message}`, 'err');
+    notice(`Erro: ${escapeHtml(e.message)}`, 'err');
   }
 });
 
@@ -712,7 +787,7 @@ $('#form').addEventListener('submit', async (ev) => {
   try {
     ttl = buildTtl();
   } catch (e) {
-    notice(`Erro: ${e.message}`, 'err');
+    notice(`Erro: ${escapeHtml(e.message)}`, 'err');
     return;
   }
   $('#ttl-out').textContent = ttl;
@@ -728,18 +803,30 @@ $('#form').addEventListener('submit', async (ev) => {
     const res = await fetch('./upload-tour', { method: 'POST', body: fd });
     const json = await res.json().catch(() => ({}));
     if (res.ok && json.ok) {
-      const aurl = json.announcement_url
-        ? ` · <a href="${json.announcement_url}" target="_blank">imagem</a>`
+      const aurl = saneUrl(json.announcement_url)
+        ? ` · <a href="${escapeHtml(json.announcement_url)}" target="_blank">imagem</a>`
         : '';
-      notice(`✓ Salvo: <code>phd:tour_${json.tour_id}</code>${aurl}. Catálogo recarregado.`, 'ok');
+      notice(`✓ Salvo: <code>phd:tour_${escapeHtml(json.tour_id)}</code>${aurl}. Catálogo recarregado.`, 'ok');
+      // Status da sincronização da rota (routes.json) — best-effort no backend.
+      const r = json.route || {};
+      if (r.status === 'ok') {
+        notice(`✓ Rota sincronizada: ${escapeHtml(r.points)} pontos do RideWithGPS (${escapeHtml(r.rwgpsId)}).`, 'ok');
+      } else if (r.status === 'removed') {
+        notice('Rota removida do routes.json (passeio sem linkRoute).', 'ok');
+      } else if (r.status === 'fetch_failed') {
+        notice(`Passeio salvo, mas a geometria da rota falhou (${escapeHtml(r.error || 'erro')}). `
+          + 'Rode <code>python scripts/build-routes.py</code> pra tentar de novo.', 'err');
+      } else if (r.status === 'error') {
+        notice(`Aviso ao sincronizar rota: ${escapeHtml(r.error || 'erro')}.`, 'err');
+      }
     } else if (json.error === 'shacl') {
-      notice(`SHACL rejeitou (${json.details?.length || 0} violação(ões)):`, 'err');
-      for (const d of json.details || []) notice(`• ${d}`, 'err');
+      notice(`SHACL rejeitou (${escapeHtml(json.details?.length || 0)} violação(ões)):`, 'err');
+      for (const d of json.details || []) notice(`• ${escapeHtml(d)}`, 'err');
     } else {
-      notice(`Erro do servidor (${res.status}): ${json.error || res.statusText}`, 'err');
+      notice(`Erro do servidor (${res.status}): ${escapeHtml(json.error || res.statusText)}`, 'err');
     }
   } catch (e) {
-    notice(`Falha de rede: ${e.message}`, 'err');
+    notice(`Falha de rede: ${escapeHtml(e.message)}`, 'err');
   } finally {
     $('#send').disabled = false;
     $('#send').textContent = 'Enviar →';
@@ -770,7 +857,7 @@ async function prefillFromId(tourId) {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     text = await res.text();
   } catch (e) {
-    notice(`Tours.ttl indisponível: ${e.message}`, 'err');
+    notice(`Tours.ttl indisponível: ${escapeHtml(e.message)}`, 'err');
     return;
   }
   const tourIri = `${PHD_NS}tour_${tourId}`;
@@ -784,13 +871,40 @@ async function prefillFromId(tourId) {
       subjBy.get(sval).push(q);
     }
   } catch (e) {
-    notice(`Parser falhou: ${e.message}`, 'err');
+    notice(`Parser falhou: ${escapeHtml(e.message)}`, 'err');
     return;
   }
   const own = (subjBy.get(tourIri) || []);
   if (!own.length) {
-    notice(`Tour <code>${tourIri}</code> não encontrado em tours.ttl.`, 'warn');
+    // tourIri embute o ?id= cru da URL — escapar evita XSS refletido.
+    notice(`Tour <code>${escapeHtml(tourIri)}</code> não encontrado em tours.ttl.`, 'warn');
     return;
+  }
+
+  // Guarda os triples cujo predicado o form NÃO gerencia (ex.: ph:mediaCount)
+  // — o upsert do backend apaga todos os triples do tour antes de regravar,
+  // então sem este stash eles seriam perdidos a cada edição. schema:image vai
+  // num stash separado (só re-emitido se nenhum anúncio novo for escolhido).
+  // Bnodes de predicados não gerenciados são raros hoje, mas se aparecerem
+  // os triples deles também são preservados, recursivamente.
+  stashedTriples.length = 0;
+  stashedImageTriples.length = 0;
+  const stashedBnodes = new Set();
+  function stashBnodeTriples(label, out) {
+    if (stashedBnodes.has(label)) return;
+    stashedBnodes.add(label);
+    for (const bq of subjBy.get(label) || []) {
+      out.push(ntLine(bq));
+      if (bq.object.termType === 'BlankNode') stashBnodeTriples(bq.object.value, out);
+    }
+  }
+  for (const q of own) {
+    const p = q.predicate.value;
+    const out = p === SCHEMA + 'image' ? stashedImageTriples
+              : (MANAGED_PREDICATES.has(p) ? null : stashedTriples);
+    if (!out) continue;
+    out.push(ntLine(q));
+    if (q.object.termType === 'BlankNode') stashBnodeTriples(q.object.value, out);
   }
 
   // Preenche o ID e trava o campo.
@@ -948,7 +1062,10 @@ async function prefillFromId(tourId) {
   // por segurança do browser).
   if (announceUrl) {
     const small = document.createElement('small');
-    small.innerHTML = `Anúncio atual: <a href="${announceUrl}" target="_blank">${announceUrl}</a>. ` +
+    const safeUrl = escapeHtml(announceUrl);
+    small.innerHTML = (saneUrl(announceUrl)
+                        ? `Anúncio atual: <a href="${safeUrl}" target="_blank">${safeUrl}</a>. `
+                        : `Anúncio atual: <code>${safeUrl}</code>. `) +
                       `Selecione um arquivo novo aqui pra substituir.`;
     $('#t-announcement').parentElement.insertBefore(small, $('#t-announcement').nextSibling);
   }
@@ -971,22 +1088,22 @@ async function prefillFromId(tourId) {
       const res = await fetch(`./delete-tour/${encodeURIComponent(tourId)}`, { method: 'POST' });
       const json = await res.json().catch(() => ({}));
       if (res.ok) {
-        notice(`✓ Apagado: ${json.triples || 0} triples, ${json.assets || 0} arquivo(s).`, 'ok');
+        notice(`✓ Apagado: ${escapeHtml(json.triples || 0)} triples, ${escapeHtml(json.assets || 0)} arquivo(s).`, 'ok');
         // Trava o form pra evitar submit acidental de um tour fantasma.
         $$('input, select, textarea, button').forEach(el => { el.disabled = true; });
       } else {
-        notice(`Erro ao apagar: ${json.error || res.statusText}`, 'err');
+        notice(`Erro ao apagar: ${escapeHtml(json.error || res.statusText)}`, 'err');
         delBtn.disabled = false;
         delBtn.textContent = orig;
       }
     } catch (e) {
-      notice(`Falha de rede: ${e.message}`, 'err');
+      notice(`Falha de rede: ${escapeHtml(e.message)}`, 'err');
       delBtn.disabled = false;
       delBtn.textContent = orig;
     }
   });
 
-  notice(`Carregado <code>phd:tour_${tourId}</code> em modo edição. Submit faz upsert.`, 'ok');
+  notice(`Carregado <code>phd:tour_${escapeHtml(tourId)}</code> em modo edição. Submit faz upsert.`, 'ok');
 }
 
 const editId = new URLSearchParams(location.search).get('id');

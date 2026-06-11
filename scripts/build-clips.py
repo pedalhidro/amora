@@ -84,8 +84,19 @@ def dms_to_decimal(s: str) -> float | None:
 def to_float(v: str) -> float | None:
     if not v:
         return None
+    # exiftool sem -n imprime durações longas como "H:MM:SS" (ex.: "0:00:35"
+    # pra 35 s); só clipes curtos saem como "19.53 s". O regex numérico cru
+    # parseava "0:00:35" como 0.0 → clipes ≥ ~30 s ficavam sem
+    # schema:duration e com thumbnail no frame 0.5 s.
+    m = re.match(r"^\s*(\d+):(\d\d):(\d\d(?:\.\d+)?)\s*$", v)
+    if m:
+        h, mi, s = m.groups()
+        return int(h) * 3600 + int(mi) * 60 + float(s)
     m = re.match(r"^\s*([\d.]+)", v)
-    return float(m.group(1)) if m else None
+    try:
+        return float(m.group(1)) if m else None
+    except ValueError:  # ex.: "." solto
+        return None
 
 
 def parse_create_date(s: str) -> str | None:

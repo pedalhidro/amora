@@ -235,6 +235,14 @@ function turtle_escape(s) {
   return (s || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"')
     .replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t');
 }
+function escapeHtml(s) {
+  // notify() e os status injetam via innerHTML — strings dinâmicas (nome de
+  // arquivo, título de passeio do tours.ttl, mensagem de erro) passam por
+  // aqui antes de interpolar.
+  return String(s ?? '').replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]));
+}
 function slugifyPerson(s) {
   return s.normalize('NFKD').replace(/\p{Diacritic}/gu, '')
     .split(/\s+/).map(w => w.replace(/[^A-Za-z0-9]/g, '')).filter(Boolean)
@@ -603,7 +611,7 @@ try {
     $('#catalogStatus').innerHTML = `<span class="warn">Catálogo vazio.</span>`;
   }
 } catch (e) {
-  $('#catalogStatus').innerHTML = `<span class="warn">Catálogo indisponível (${e.message}).</span>`;
+  $('#catalogStatus').innerHTML = `<span class="warn">Catálogo indisponível (${escapeHtml(e.message)}).</span>`;
 }
 
 // Popula os painéis de Padrões (lote 1 + append)
@@ -707,7 +715,7 @@ function autoDetectTour(card) {
   matches.sort((a, b) => Math.abs(ms - a.ms) - Math.abs(ms - b.ms));
   const best = matches[0];
   tourSelect.value = best.value;
-  status.innerHTML = `<span class="ok">Detectado: ${best.label}</span>` +
+  status.innerHTML = `<span class="ok">Detectado: ${escapeHtml(best.label)}</span>` +
     (matches.length > 1 ? ` <span class="warn">(${matches.length - 1} outros)</span>` : '');
 }
 
@@ -1274,7 +1282,7 @@ async function createImageCard(file, defaults) {
   //    os metadados, então o splicer continua propagando-os para large/original.
   if (isHeicFile(file)) {
     if (!heic2any) {
-      notify(`<strong>${file.name}</strong>: HEIC requer heic2any (CDN indisponível).`, 'err');
+      notify(`<strong>${escapeHtml(file.name)}</strong>: HEIC requer heic2any (CDN indisponível).`, 'err');
       return { ok: false, reason: 'heic-unavailable' };
     }
     try {
@@ -1283,7 +1291,7 @@ async function createImageCard(file, defaults) {
       const newName = file.name.replace(/\.(heic|heif)$/i, '.jpg');
       file = new File([blob], newName, { type: 'image/jpeg' });
     } catch (e) {
-      notify(`<strong>${file.name}</strong>: conversão HEIC falhou (${e.message}).`, 'err');
+      notify(`<strong>${escapeHtml(file.name)}</strong>: conversão HEIC falhou (${escapeHtml(e.message)}).`, 'err');
       return { ok: false, reason: 'heic-convert-failed' };
     }
   }
@@ -1298,7 +1306,7 @@ async function createImageCard(file, defaults) {
     bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
     phash  = computePHash(bitmap);
   } catch (e) {
-    notify(`<strong>${file.name}</strong>: não consegui ler (${e.message}).`, 'err');
+    notify(`<strong>${escapeHtml(file.name)}</strong>: não consegui ler (${escapeHtml(e.message)}).`, 'err');
     return { ok: false, reason: 'decode-error' };
   }
 
@@ -1308,8 +1316,8 @@ async function createImageCard(file, defaults) {
     const dist = hammingDistance(phash, existing.phash);
     if (dist <= PHASH_DUP_THRESHOLD) {
       notify(
-        `<strong>${file.name}</strong> rejeitada — pHash similar a ` +
-        `<em>${existing.file.name}</em> (distância ${dist} ≤ ${PHASH_DUP_THRESHOLD}).`,
+        `<strong>${escapeHtml(file.name)}</strong> rejeitada — pHash similar a ` +
+        `<em>${escapeHtml(existing.file.name)}</em> (distância ${dist} ≤ ${PHASH_DUP_THRESHOLD}).`,
         'warn'
       );
       try { bitmap.close?.(); } catch (_) {}
@@ -1321,7 +1329,7 @@ async function createImageCard(file, defaults) {
     const dist = hammingDistance(phash, srv);
     if (dist <= PHASH_DUP_THRESHOLD) {
       notify(
-        `<strong>${file.name}</strong> rejeitada — já existe no servidor ` +
+        `<strong>${escapeHtml(file.name)}</strong> rejeitada — já existe no servidor ` +
         `(<code>image_${srv}</code>, distância pHash ${dist} ≤ ${PHASH_DUP_THRESHOLD}).`,
         'warn'
       );
@@ -1418,7 +1426,7 @@ async function createVideoCard(file, defaults) {
   try {
     vhash = await computeVideoPHash(file, 8);
   } catch (e) {
-    notify(`<strong>${file.name}</strong>: não consegui calcular pHash de vídeo (${e.message}).`, 'err');
+    notify(`<strong>${escapeHtml(file.name)}</strong>: não consegui calcular pHash de vídeo (${escapeHtml(e.message)}).`, 'err');
     return { ok: false, reason: 'vhash-failed' };
   }
   // Dedup contra cards do lote já criados.
@@ -1427,8 +1435,8 @@ async function createVideoCard(file, defaults) {
     const dist = hammingDistance(vhash, existing.phash);
     if (dist <= PHASH_DUP_THRESHOLD) {
       notify(
-        `<strong>${file.name}</strong> rejeitado — pHash de vídeo similar a ` +
-        `<em>${existing.file.name}</em> (distância ${dist} ≤ ${PHASH_DUP_THRESHOLD}).`,
+        `<strong>${escapeHtml(file.name)}</strong> rejeitado — pHash de vídeo similar a ` +
+        `<em>${escapeHtml(existing.file.name)}</em> (distância ${dist} ≤ ${PHASH_DUP_THRESHOLD}).`,
         'warn',
       );
       return { ok: false, reason: 'duplicate' };
@@ -1439,7 +1447,7 @@ async function createVideoCard(file, defaults) {
     const dist = hammingDistance(vhash, srv);
     if (dist <= PHASH_DUP_THRESHOLD) {
       notify(
-        `<strong>${file.name}</strong> rejeitado — já existe no servidor ` +
+        `<strong>${escapeHtml(file.name)}</strong> rejeitado — já existe no servidor ` +
         `(<code>video_${srv}</code>, distância pHash ${dist} ≤ ${PHASH_DUP_THRESHOLD}).`,
         'warn',
       );

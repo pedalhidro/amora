@@ -9,7 +9,7 @@
 //                    their second visit.
 //   RUNTIME_CACHE — map tiles, OSRM, elevation, etc. Same strategy.
 
-const VERSION = 'phidro-v232';
+const VERSION = 'phidro-v236';
 const STATIC_CACHE = `${VERSION}-static`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 
@@ -68,7 +68,7 @@ const RUNTIME_HOSTS = [
   /(^|\.)telhas\.pedalhidrografi\.co$/,
   /(^|\.)raster\.geosampa\.prefeitura\.sp\.gov\.br$/,
   /(^|\.)api\.open-meteo\.com$/,
-  /(^|\.)router\.project-osrm\.org$/,
+  /(^|\.)routing\.openstreetmap\.de$/,
   /(^|\.)unpkg\.com$/,
   /(^|\.)cdn\.jsdelivr\.net$/,
 ];
@@ -79,14 +79,17 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(req.url);
 
-  // Same-origin: catálogos dinâmicos (data_graphs.ttl, uploads.ttl) usam
-  // network-first — qualquer upload/sync novo aparece no próximo refresh
-  // sem o dance de dois-refreshes do stale-while-revalidate. Idem pra
-  // tours.ttl (raramente muda, mas é fonte de gallery/markers).
+  // Same-origin: estado mutável usa network-first — qualquer upload/sync
+  // novo aparece no próximo refresh sem o dance de dois-refreshes do
+  // stale-while-revalidate. Inclui routes.json: o backend faz upsert
+  // incremental nele a cada /upload-tour //delete-tour, então é tão "vivo"
+  // quanto os TTLs. `endsWith` (e não ===) pra funcionar também sob
+  // hosting com subpath (ex.: o mirror legado em /rotas_app/).
   if (url.origin === self.location.origin) {
-    if (url.pathname === '/data/data_graphs.ttl'
-        || url.pathname === '/data/uploads.ttl'
-        || url.pathname === '/data/tours.ttl') {
+    if (url.pathname.endsWith('/data/data_graphs.ttl')
+        || url.pathname.endsWith('/data/uploads.ttl')
+        || url.pathname.endsWith('/data/tours.ttl')
+        || url.pathname.endsWith('/routes.json')) {
       event.respondWith(networkFirst(req, STATIC_CACHE));
     } else {
       event.respondWith(staleWhileRevalidate(req, STATIC_CACHE));

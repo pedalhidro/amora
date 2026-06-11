@@ -23,15 +23,17 @@
     <string>/Users/danilo/phidro-data</string>
   </dict>
 
+  <!-- workers=1 OBRIGATORIO: o lock global de mutacao e per-processo;
+       2+ workers = lost updates nos catalogos TTL (ver phidro.service). -->
   <key>ProgramArguments</key>
   <array>
     <string>/Users/danilo/pedalhidrografico/backend/pi/venv/bin/gunicorn</string>
     <string>--bind</string>
     <string>127.0.0.1:8000</string>
     <string>--workers</string>
-    <string>2</string>
+    <string>1</string>
     <string>--threads</string>
-    <string>4</string>
+    <string>8</string>
     <string>--timeout</string>
     <string>120</string>
     <string>main:app</string>

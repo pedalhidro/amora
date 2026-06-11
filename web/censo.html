@@ -416,7 +416,7 @@ function renderMetrics(tours) {
   // Total agregado: kJ × participantes em cada passeio. Conta só passeios
   // que TÊM os dois valores; outros entram com "?" no card.
   let totalKj = 0, totalAttendees = 0, totalNewcomers = 0;
-  let toursWithEnergy = 0, toursWithAttendees = 0;
+  let toursWithEnergy = 0, toursWithAttendees = 0, toursWithTotalKj = 0;
   let collectiveH = 0, collectiveMovingH = 0;
   let toursWithCollective = 0, toursWithMoving = 0;
   let firstDate = null, lastDate = null;
@@ -430,7 +430,10 @@ function renderMetrics(tours) {
     }
     if (!isMissing(t.newcomers)) totalNewcomers += t.newcomers;
     if (!isMissing(t.energy))    toursWithEnergy++;
-    if (!isMissing(t.totalKj))   totalKj += t.totalKj;
+    if (!isMissing(t.totalKj)) {
+      totalKj += t.totalKj;
+      toursWithTotalKj++;
+    }
     if (!isMissing(t.collectiveH)) {
       collectiveH += t.collectiveH;
       toursWithCollective++;
@@ -454,9 +457,12 @@ function renderMetrics(tours) {
     { v: fmtInt(tours.length),                  l: 'Passeios catalogados', h: span },
     { v: fmtInt(totalAttendees),                l: 'Participantes (soma)', h: `em ${toursWithAttendees} passeios` },
     { v: fmtInt(totalNewcomers),                l: 'Iniciantes (soma)' },
-    { v: fmtKJ(totalKj),                        l: 'kJ coletivos',         h: `Σ participantes × kJ/passeio (${toursWithEnergy} c/ energia)` },
-    { v: fmtKJ(toursWithAttendees ? totalKj / toursWithAttendees : null),
-                                                l: 'Média kJ/passeio',     h: `coletivo ÷ passeios` },
+    { v: fmtKJ(totalKj),                        l: 'kJ coletivos',         h: `Σ participantes × kJ/passeio (${toursWithTotalKj} c/ energia e participantes)` },
+    // Média só sobre os passeios que de fato contribuíram pro totalKj
+    // (têm energia E participantes) — dividir por toursWithAttendees
+    // subestimava a média quando faltava energia em alguns.
+    { v: fmtKJ(toursWithTotalKj ? totalKj / toursWithTotalKj : null),
+                                                l: 'Média kJ/passeio',     h: `coletivo ÷ ${toursWithTotalKj} passeios c/ dados` },
     { v: fmtInt(toursWithAttendees ? Math.round(totalAttendees / toursWithAttendees) : null),
                                                 l: 'Média participantes',  h: 'por passeio' },
     { v: fmtH(toursWithCollective ? collectiveH : null),
@@ -496,7 +502,7 @@ function renderTable(tours) {
   }
   const rows = tours.map(t => {
     const intensityCell = t.intensity
-      ? `<span class="intensity" data-c="${t.intensity}">${t.intensity}</span>`
+      ? `<span class="intensity" data-c="${escapeHtml(t.intensity)}">${escapeHtml(t.intensity)}</span>`
       : '<span class="missing">—</span>';
     // Link pro upload_tour.html com `?id=<tour_id>` — o formulário lê o
     // param via prefillFromId() e abre em modo edição (upsert).
@@ -505,8 +511,8 @@ function renderTable(tours) {
     const editHref = `./upload_tour.html?id=${encodeURIComponent(tourId)}`;
     return (
       `<tr>` +
-        `<td class="muted">${fmtDate(t.date)}</td>` +
-        `<td>${t.code || '<span class="missing">—</span>'}</td>` +
+        `<td class="muted">${escapeHtml(fmtDate(t.date))}</td>` +
+        `<td>${escapeHtml(t.code) || '<span class="missing">—</span>'}</td>` +
         `<td class="wrap">${escapeHtml(t.title)}</td>` +
         numCell(t.attendees,         fmtInt) +
         numCell(t.newcomers,         fmtInt) +

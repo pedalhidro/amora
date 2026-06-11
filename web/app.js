@@ -629,6 +629,10 @@ let photoMarkers   = [];
 let clipsMarkers   = [];
 let photosLoaded   = false;
 let photosLoading  = null;
+// Mesmo padrão de overpassFetchSeq/cycloinfraFetchSeq: cada carga captura o
+// contador no início e abandona o resultado se outro reload começou depois —
+// senão uma carga lenta em voo sobrescreveria dados mais novos ao terminar.
+let photosFetchSeq = 0;
 let photosVisible  = false;
 let photosOpacity  = 1;
 // Quando setado ({date, label}), só as fotos daquele pedal ficam visíveis.
@@ -1053,6 +1057,17 @@ let clipsAdvanceTimer = null;
 let clipsAudioOutTimer = null;
 let clipsCurrentIndex = -1;
 let clipsGhostVideo  = null;      // <video> element, criado preguiçosamente
+// Token de sessão de playback: incrementado a cada playClipAt/stopClipsGhost.
+// Um `loadedmetadata` atrasado (clipe anterior ainda carregando quando o
+// usuário parou/pulou) compara seu token e vira no-op em vez de tocar áudio
+// de um vídeo escondido e agendar timers órfãos.
+let clipsPlaySession = 0;
+// Listener `loadedmetadata` pendente ({el, handler}) — removido explicitamente
+// no próximo playClipAt / stopClipsGhost pra não acumular handlers órfãos.
+let clipsPendingMeta = null;
+// Erros consecutivos de mídia sem nenhum playback bem-sucedido — quando um
+// ciclo inteiro da playlist falha, paramos em vez de loopar requests 404.
+let clipsErrorStreak = 0;
 // Valor inicial vem do `defaultPct` da entrada `clips-ghost` no OVERLAY_LAYERS
 // — uma única fonte de verdade pro fade-in do primeiro clipe e pra posição
 // inicial do slider do painel Camadas.
@@ -1098,7 +1113,27 @@ function ensureClipsGhostVideo() {
   // usuário desativou o ghost via Camadas/Ajustes.
   const wantAdvance = () => settings.spotlight?.enabled && settings.clipsGhost?.enabled !== false;
   v.addEventListener('ended', () => { if (wantAdvance()) advanceClip(); });
-  v.addEventListener('error', () => { if (wantAdvance()) advanceClip(); });
+  v.addEventListener('error', () => {
+    if (!wantAdvance()) return;
+    // Backoff pro caso degenerado: se TODOS os clipes da playlist falharem
+    // em sequência (ex.: URLs 404 num host sem os arquivos), avançar pra
+    // sempre viraria um loop infinito de requests. Após um ciclo completo
+    // de erros sem nenhum playback bem-sucedido, desligamos a Animação
+    // limpa (mesmo caminho do clique no botão).
+    clipsErrorStreak++;
+    const playable = (clipsCatalog || []).filter((c) => c.audioOnly !== true).length;
+    if (playable > 0 && clipsErrorStreak >= playable) {
+      console.warn('[clips] nenhum clipe pôde ser carregado — desligando a Animação.');
+      settings.spotlight.enabled = false;
+      saveSettings();
+      applyPhotoAnim();   // re-sincroniza o botão Animação (aria-pressed)
+      stopClipsGhost();
+      return;
+    }
+    advanceClip();
+  });
+  // Qualquer playback que realmente começa zera a contagem de falhas.
+  v.addEventListener('playing', () => { clipsErrorStreak = 0; });
   clipsGhostVideo = v;
   return v;
 }
@@ -1477,6 +1512,13 @@ function playClipAt(index) {
   // clicado durante a Animação, simplesmente avança pro próximo vídeo.
   if (clipsCatalog[index].audioOnly === true) { advanceClip(); return; }
   const v = ensureClipsGhostVideo();
+  // Nova sessão de playback: invalida qualquer `startAt` pendente do clipe
+  // anterior (ver guarda no início de startAt) e remove o listener órfão.
+  const session = ++clipsPlaySession;
+  if (clipsPendingMeta) {
+    clipsPendingMeta.el.removeEventListener('loadedmetadata', clipsPendingMeta.handler);
+    clipsPendingMeta = null;
+  }
   const c = clipsCatalog[index];
   const prevIndex = clipsCurrentIndex;
   clipsCurrentIndex = index;
@@ -1531,6 +1573,12 @@ function playClipAt(index) {
   v.volume = 0;
 
   const startAt = () => {
+    // O listener foi consumido (once) — solta a referência pendente.
+    if (clipsPendingMeta?.handler === startAt) clipsPendingMeta = null;
+    // Guarda anti-stale: se o usuário parou o ghost ou pulou de clipe
+    // enquanto os metadados carregavam, este startAt atrasado não pode
+    // tocar áudio de um vídeo escondido nem agendar timers.
+    if (session !== clipsPlaySession) return;
     const segS = clipSegmentS();
     const fadeS = clipFadeS();
     const audioFadeS = clipAudioFadeS();
@@ -1564,7 +1612,10 @@ function playClipAt(index) {
     // (overlap entre marker antigo e novo), não pelo próprio clipe.
   };
   if (v.readyState >= 1) startAt();
-  else v.addEventListener('loadedmetadata', startAt, { once: true });
+  else {
+    clipsPendingMeta = { el: v, handler: startAt };
+    v.addEventListener('loadedmetadata', startAt, { once: true });
+  }
 }
 
 function advanceClip() {
@@ -1586,6 +1637,13 @@ async function startClipsGhost() {
 }
 
 function stopClipsGhost() {
+  // Invalida sessões de playback em voo e remove o `loadedmetadata` pendente
+  // — sem isto um startAt atrasado tocaria áudio com o vídeo já escondido.
+  clipsPlaySession++;
+  if (clipsPendingMeta) {
+    clipsPendingMeta.el.removeEventListener('loadedmetadata', clipsPendingMeta.handler);
+    clipsPendingMeta = null;
+  }
   if (clipsAdvanceTimer)  { clearTimeout(clipsAdvanceTimer);  clipsAdvanceTimer = null; }
   if (clipsAudioOutTimer) { clearTimeout(clipsAudioOutTimer); clipsAudioOutTimer = null; }
   clearMarkerStateTimers();
@@ -1958,8 +2016,12 @@ async function loadPhotos() {
   if (photosLoaded) return;
   if (photosLoading) { await photosLoading; return; }
   photosLoading = (async () => {
+    const seq = ++photosFetchSeq;
     try {
       const r = await loadAllGraphs();
+      // Outro reload começou enquanto este carregava — descarta o resultado
+      // obsoleto sem tocar em nenhum estado.
+      if (seq !== photosFetchSeq) return;
       lastTtlText  = r.text;
       lastTtlOrigin = `${r.origin} · ${r.sources.length} grafo(s)`;
       const photos = buildModelFromQuads(r.quads);
@@ -1967,6 +2029,7 @@ async function loadPhotos() {
       photosLoaded = true;
       updatePhotoSourceStatus(`${photos.length} foto(s), ${r.sources.length} grafo(s).`);
     } catch (err) {
+      if (seq !== photosFetchSeq) return;
       console.warn('[photos] falha:', err);
       showToast(`Falha ao carregar imagens: ${err.message}`);
       updatePhotoSourceStatus(`Erro: ${err.message}`);
@@ -2110,6 +2173,7 @@ async function importPhotosLocal(file) {
     lastTtlText = await file.text();
     lastTtlOrigin = `local: ${file.name}`;
     const photos = buildModelFromQuads(await parseTtlToQuads(lastTtlText));
+    photosFetchSeq++; // invalida qualquer loadPhotos em voo — o import vence
     buildPhotoMarkers(photos);
     photosLoaded = true;
     applyPhotoVisibility();
@@ -2141,6 +2205,7 @@ async function importPhotosLocal(file) {
     photoSource = 'local';
     try { localStorage.setItem('phidro:photoSource', 'local'); } catch {}
     const photos = buildModelFromQuads(await parseTtlToQuads(ttlText));
+    photosFetchSeq++; // invalida qualquer loadPhotos em voo — o import vence
     buildPhotoMarkers(photos);
     photosLoaded = true;
     applyPhotoVisibility();
@@ -4633,8 +4698,8 @@ function wireUpPopupLinks() {
 // ─── GPX drawing tool ────────────────────────────────────────────────────────
 // Each click is a USER WAYPOINT. Between consecutive waypoints we render a
 // path; when the "Rotear via OSM" toggle is on, that path is fetched from the
-// OSRM public demo (cycling profile) so the line follows real streets.
-// Otherwise the path is a straight segment.
+// FOSSGIS OSRM instance (real bike/foot profiles) so the line follows real
+// streets. Otherwise the path is a straight segment.
 //
 // Drag a waypoint to move it — the two segments touching it get re-fetched.
 // Undo/Redo walk a snapshot history (waypoint positions + cached paths).
@@ -4714,7 +4779,9 @@ let layersWasVisible = false; // remembers panel state across drawing sessions
 //   pathFromPrev: [[lat,lng], ...] inclusive of both endpoints.
 //                 null for the first waypoint.
 let trackpoints = [];
-let history = [[]];          // snapshots of [{ lat, lng, pathFromPrev }, ...]
+// `drawHistory` (e não `history`) — um identificador module-level chamado
+// `history` sombrearia window.history e quebraria history.replaceState().
+let drawHistory = [[]];      // snapshots of [{ lat, lng, pathFromPrev }, ...]
 let historyIndex = 0;
 let draftPolyline = null;
 let draftCasing = null;
@@ -4771,7 +4838,7 @@ function enterDrawingMode() {
   }
 
   trackpoints = [];
-  history = [[]];
+  drawHistory = [[]];
   historyIndex = 0;
   if (draftPolyline) { map.removeLayer(draftPolyline); draftPolyline = null; }
   if (draftCasing)   { map.removeLayer(draftCasing);   draftCasing = null; }
@@ -4805,7 +4872,7 @@ function exitDrawingMode() {
   trackpoints = [];
   if (draftPolyline) { map.removeLayer(draftPolyline); draftPolyline = null; }
   if (draftCasing)   { map.removeLayer(draftCasing);   draftCasing = null; }
-  history = [[]];
+  drawHistory = [[]];
   historyIndex = 0;
 
   for (const [key, r] of routes) {
@@ -5212,8 +5279,14 @@ function getEnergyWorker() {
   return _energyWorker;
 }
 
+// Contador de requisições pro worker singleton — chamadas concorrentes
+// (ex.: mapConcurrent com 4 em voo no restore de share-link/GPX) adicionam
+// um listener cada; sem o reqId todas resolveriam com o PRIMEIRO `done`.
+let energyReqSeq = 0;
+
 function runEnergyWorker(payload) {
   const w = getEnergyWorker();
+  const reqId = ++energyReqSeq;
   return new Promise((resolve, reject) => {
     const cleanup = () => {
       w.removeEventListener('message', onmsg);
@@ -5221,6 +5294,10 @@ function runEnergyWorker(payload) {
     };
     const onmsg = (ev) => {
       const m = ev.data;
+      // Mensagem de outra requisição concorrente — não é nossa, ignora.
+      // reqId ausente = worker antigo em cache (pré-eco): aceita pra não
+      // pendurar a promise (compatível com chamadas isoladas).
+      if (m.reqId !== undefined && m.reqId !== reqId) return;
       if (m.kind === 'progress') return;
       cleanup();
       if (m.kind === 'error') reject(new Error(m.message));
@@ -5236,7 +5313,7 @@ function runEnergyWorker(payload) {
     };
     w.addEventListener('message', onmsg);
     w.addEventListener('error', onerr);
-    w.postMessage({ kind: 'run', ...payload });
+    w.postMessage({ kind: 'run', reqId, ...payload });
   });
 }
 
@@ -5458,8 +5535,14 @@ async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
 }
 
 async function osrmRoute(fromLatLng, toLatLng, profile = 'cycling') {
+  // FOSSGIS (routing.openstreetmap.de) roda uma instância OSRM POR PERFIL —
+  // o perfil real é escolhido pelo path (routed-bike / routed-foot); o
+  // segmento /driving/ é ignorado pelo OSRM e fica só por convenção da API.
+  // O demo antigo (router.project-osrm.org) só tem o perfil de CARRO e
+  // ignorava silenciosamente o /cycling/ da URL — por isso a troca.
+  const instance = profile === 'foot' ? 'routed-foot' : 'routed-bike';
   const url =
-    `https://router.project-osrm.org/route/v1/${profile}/` +
+    `https://routing.openstreetmap.de/${instance}/route/v1/driving/` +
     `${fromLatLng.lng},${fromLatLng.lat};${toLatLng.lng},${toLatLng.lat}` +
     `?overview=full&geometries=geojson`;
   const res = await fetch(url);
@@ -6231,22 +6314,22 @@ function snapshot() {
 }
 
 function pushHistory() {
-  history = history.slice(0, historyIndex + 1);
-  history.push(snapshot());
-  historyIndex = history.length - 1;
+  drawHistory = drawHistory.slice(0, historyIndex + 1);
+  drawHistory.push(snapshot());
+  historyIndex = drawHistory.length - 1;
   updateTraceControls();
 }
 
 function undo() {
   if (historyIndex <= 0) return;
   historyIndex--;
-  restoreSnapshot(history[historyIndex]);
+  restoreSnapshot(drawHistory[historyIndex]);
 }
 
 function redo() {
-  if (historyIndex >= history.length - 1) return;
+  if (historyIndex >= drawHistory.length - 1) return;
   historyIndex++;
-  restoreSnapshot(history[historyIndex]);
+  restoreSnapshot(drawHistory[historyIndex]);
 }
 
 function restoreSnapshot(snap) {
@@ -6268,7 +6351,7 @@ function restoreSnapshot(snap) {
 
 function updateTraceControls() {
   traceUndo.disabled = historyIndex <= 0;
-  traceRedo.disabled = historyIndex >= history.length - 1;
+  traceRedo.disabled = historyIndex >= drawHistory.length - 1;
   if (traceCount) {
     const n = trackpoints.length;
     traceCount.textContent = `${n} ponto${n === 1 ? '' : 's'}`;
@@ -6347,10 +6430,91 @@ const PHIDRO_NS = 'https://pedalhidrografi.co/ns/gpx/1.0';
 // Encodes the current trackpoints + routing mode into a tiny URL that, when
 // opened, repopulates the editor with the same draft. Hash fragment so it
 // stays client-side (no server logs, no CDN caching).
-const SHARE_STATE_VERSION = 1;
+// v2: além dos waypoints, embute a GEOMETRIA roteada de cada segmento
+// (polyline5 simplificada, ver abaixo) — quem abre o link vê EXATAMENTE a
+// rota de quem compartilhou, sem re-rotear via OSRM (reprodutível, abre mais
+// rápido e funciona offline). Links v1 (sem `sg`) seguem funcionando: caem
+// no caminho antigo de re-roteamento.
+const SHARE_STATE_VERSION = 2;
+
+// Tolerância do Douglas-Peucker (em graus, ~5 m) aplicada à geometria antes
+// de codificar — invisível nos zooms de uso e corta 50–70% dos pontos.
+const SHARE_SIMPLIFY_TOLERANCE = 5e-5;
+
+// Hash maior que isso → refaz o link sem geometria embutida (formato v1):
+// browsers aguentam bem mais, mas QR codes ficam densos e messengers feios.
+const SHARE_HASH_MAX_CHARS = 12000;
+
+// Codec polyline5 (algoritmo Google/OSRM): deltas entre pontos consecutivos
+// em inteiros de 1e-5 grau, varint base-32 deslocado de 63. ~2 bytes/ponto
+// em geometria urbana — muito menor que floats em JSON, mesmo após gzip.
+function encodePolylineValue(v) {
+  v = v < 0 ? ~(v << 1) : v << 1;
+  let out = '';
+  while (v >= 0x20) {
+    out += String.fromCharCode((0x20 | (v & 0x1f)) + 63);
+    v >>= 5;
+  }
+  return out + String.fromCharCode(v + 63);
+}
+
+function encodePolyline(latlngs) {
+  let out = '';
+  let prevLat = 0;
+  let prevLng = 0;
+  for (const pt of latlngs) {
+    // Aceita [lat,lng] (pathFromPrev) ou L.LatLng, por robustez.
+    const iLat = Math.round((pt.lat ?? pt[0]) * 1e5);
+    const iLng = Math.round((pt.lng ?? pt[1]) * 1e5);
+    out += encodePolylineValue(iLat - prevLat) + encodePolylineValue(iLng - prevLng);
+    prevLat = iLat;
+    prevLng = iLng;
+  }
+  return out;
+}
+
+// Retorna null em vez de lançar — segmento corrompido degrada pra reta.
+function decodePolylineSafe(str) {
+  if (typeof str !== 'string' || str.length < 2) return null;
+  const pts = [];
+  let i = 0;
+  let lat = 0;
+  let lng = 0;
+  while (i < str.length) {
+    for (const axis of ['lat', 'lng']) {
+      let shift = 0;
+      let result = 0;
+      let b;
+      do {
+        if (i >= str.length) return null;
+        b = str.charCodeAt(i++) - 63;
+        if (b < 0) return null;
+        result |= (b & 0x1f) << shift;
+        shift += 5;
+      } while (b >= 0x20);
+      const delta = result & 1 ? ~(result >> 1) : result >> 1;
+      if (axis === 'lat') lat += delta;
+      else lng += delta;
+    }
+    pts.push([lat / 1e5, lng / 1e5]);
+  }
+  if (pts.length < 2) return null;
+  for (const [a, b] of pts) {
+    if (!Number.isFinite(a) || !Number.isFinite(b) || Math.abs(a) > 90 || Math.abs(b) > 180) {
+      return null;
+    }
+  }
+  return pts;
+}
+
+function simplifyForShare(path) {
+  if (path.length <= 2) return path;
+  const pts = path.map((pt) => L.point(pt.lat ?? pt[0], pt.lng ?? pt[1]));
+  return L.LineUtil.simplify(pts, SHARE_SIMPLIFY_TOLERANCE).map((p) => [p.x, p.y]);
+}
 
 function snapshotForShare(name) {
-  return {
+  const state = {
     v: SHARE_STATE_VERSION,
     rm: routingMode,
     n: name || '',
@@ -6368,6 +6532,17 @@ function snapshotForShare(name) {
       return out;
     }),
   };
+  if (routingMode !== 'straight') {
+    // Geometria por segmento: sg[k] é o caminho que CHEGA em wp[k+1].
+    // Segmentos em reta (fallback de fetch falho, ou ainda em voo na hora do
+    // share) codificam a reta mesmo — o que o remetente vê é o que vale.
+    state.sg = trackpoints.slice(1).map((t) => {
+      const path = t.pathFromPrev;
+      if (!Array.isArray(path) || path.length < 2) return '';
+      return encodePolyline(simplifyForShare(path));
+    });
+  }
+  return state;
 }
 
 async function gzipB64Url(text) {
@@ -6394,8 +6569,13 @@ async function gzipB64UrlDecode(b64url) {
 
 async function buildShareUrl(name) {
   const state = snapshotForShare(name);
-  const json = JSON.stringify(state);
-  const compressed = await gzipB64Url(json);
+  let compressed = await gzipB64Url(JSON.stringify(state));
+  // Rota muito longa → hash gigante: refaz sem a geometria embutida (vira um
+  // link estilo v1 — quem abrir re-roteia via OSRM, como antes).
+  if (state.sg && compressed.length > SHARE_HASH_MAX_CHARS) {
+    delete state.sg;
+    compressed = await gzipB64Url(JSON.stringify(state));
+  }
   const base = location.href.split('#')[0];
   return `${base}#st=${compressed}`;
 }
@@ -6421,6 +6601,11 @@ async function tryLoadFromShareHash() {
       traceRoutingMode.value = state.rm;
     }
 
+    // Links v2 trazem a geometria roteada por segmento (sg[i-1] = caminho
+    // que chega no waypoint original i). Decodifica direto e pula o
+    // re-roteamento OSRM lá embaixo — a rota fica idêntica à compartilhada.
+    const segs = Array.isArray(state.sg) ? state.sg : null;
+    let prevOriginalIdx = -1; // índice ORIGINAL do último waypoint adicionado
     for (let i = 0; i < state.wp.length; i++) {
       const wp = state.wp[i];
       const [lat, lng, name = '', isPoi = 0, sym] = wp;
@@ -6436,11 +6621,19 @@ async function tryLoadFromShareHash() {
       // Usa o último trackpoint REALMENTE adicionado (não índice i) — um
       // waypoint inválido pulado acima deixaria trackpoints[i-1] desalinhado.
       if (trackpoints.length > 0) {
-        tp.pathFromPrev = straightPath(
-          trackpoints[trackpoints.length - 1].marker.getLatLng(),
-          tp.marker.getLatLng(),
-        );
+        // A geometria embutida só vale se o waypoint anterior não foi pulado
+        // (senão o segmento ligaria outro par de pontos). Decodificação
+        // falha/corrompida degrada pra reta.
+        const embedded =
+          segs && prevOriginalIdx === i - 1 ? decodePolylineSafe(segs[i - 1]) : null;
+        tp.pathFromPrev =
+          embedded ||
+          straightPath(
+            trackpoints[trackpoints.length - 1].marker.getLatLng(),
+            tp.marker.getLatLng(),
+          );
       }
+      prevOriginalIdx = i;
       trackpoints.push(tp);
     }
 
@@ -6448,16 +6641,18 @@ async function tryLoadFromShareHash() {
     // Strip the #st=… so a later page reload doesn't clobber edits with the
     // original shared route. The state lives in localStorage / drawing
     // session memory now; the URL has done its job.
-    history.replaceState(null, '', location.pathname + location.search);
+    window.history.replaceState(null, '', location.pathname + location.search);
     redrawAndMetrics();
     updateTraceControls();
 
     const bounds = L.latLngBounds(trackpoints.map((t) => t.marker.getLatLng()));
     if (bounds.isValid()) map.fitBounds(bounds, { padding: [40, 40] });
 
-    if (routingMode !== 'straight') {
-      // Up to 4 OSRM requests in flight at once — keeps within the public
-      // demo's rate limit while cutting end-to-end load by ~4× on long routes.
+    // Só re-roteia em links v1 (sem geometria embutida) — nos v2 os caminhos
+    // já foram restaurados acima.
+    if (routingMode !== 'straight' && !segs) {
+      // Up to 4 OSRM requests in flight at once — keeps within the FOSSGIS
+      // server's fair use while cutting end-to-end load by ~4× on long routes.
       const indices = Array.from({ length: trackpoints.length - 1 }, (_, i) => i + 1);
       const routeSeq = ++pendingRouteSeq;
       await mapConcurrent(indices, 4, (idx) => refetchPath(idx, routeSeq));

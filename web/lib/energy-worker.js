@@ -9,6 +9,12 @@
 // If a destination cell is given, also returns the reconstructed path
 // (array of [r, c] pairs) and its energy/length.
 
+// Request id echoed back on every outgoing message so the main thread can
+// match responses to requests on the shared (singleton) worker. Set once at
+// the top of onmessage; safe as module state because the worker processes
+// one "run" synchronously at a time.
+let currentReqId;
+
 // ------- Binary heap on a flat typed array (priority, payload) -------
 // We pack each entry as two Float64 + Int32 in parallel arrays.
 // Heap ordered by `priorities[i]`.
@@ -150,7 +156,7 @@ function dijkstra(opts) {
       // Coarse progress: fraction of mask cells settled (approximation),
       // scaled into the caller's slice of the overall progress bar.
       const local = progressed / N;
-      postMessage({ kind: "progress", progress: progressBase + local * progressScale });
+      postMessage({ kind: "progress", reqId: currentReqId, progress: progressBase + local * progressScale });
     }
 
     const r = (idx / W) | 0;
@@ -654,7 +660,7 @@ function maxCostPathOfLength(opts) {
 
     // Coarse progress per layer.
     if (t === L || t % Math.max(1, Math.floor(L / 25)) === 0) {
-      postMessage({ kind: "progress", progress: progressBase + progressScale * (t / L) });
+      postMessage({ kind: "progress", reqId: currentReqId, progress: progressBase + progressScale * (t / L) });
     }
   }
 
@@ -718,6 +724,7 @@ function maxCostPathOfLength(opts) {
 self.onmessage = (ev) => {
   const msg = ev.data;
   if (msg.kind !== "run") return;
+  currentReqId = msg.reqId;
 
   const t0 = performance.now();
   const {
@@ -878,7 +885,7 @@ self.onmessage = (ev) => {
         // bar lines up with the "ref X/K" status text the main thread
         // shows. The per-cell ticks above already cover the slice
         // monotonically; this is just a clean checkpoint.
-        postMessage({ kind: "progress", progress: (k + 1) / K });
+        postMessage({ kind: "progress", reqId: currentReqId, progress: (k + 1) / K });
       }
       // Second density normalisation.
       for (let i = 0; i < N; i++) density[i] /= N;
@@ -1005,7 +1012,7 @@ self.onmessage = (ev) => {
           if (usedMask) usedMask[res.path[j]] = 1;
         }
         // Coarse progress per iteration
-        postMessage({ kind: "progress", progress: (r + 1) / k });
+        postMessage({ kind: "progress", reqId: currentReqId, progress: (r + 1) / k });
       }
     }
 
@@ -1041,6 +1048,7 @@ self.onmessage = (ev) => {
         // so the user still sees the field.
         postMessage({
           kind: "warning",
+          reqId: currentReqId,
           message: `Length-constrained DP did not run (${dp.error}). ` +
                    `Showing the inverted-Dijkstra path instead — try a larger L ` +
                    `(at minimum ~Chebyshev distance between src and dst).`,
@@ -1068,6 +1076,7 @@ self.onmessage = (ev) => {
     const t1 = performance.now();
     const out = {
       kind: "done",
+      reqId: currentReqId,
       energy,
       passes,
       path,                  // null or array of flat indices
@@ -1080,6 +1089,6 @@ self.onmessage = (ev) => {
     if (passes) transfer.push(passes.buffer);
     postMessage(out, transfer);
   } catch (err) {
-    postMessage({ kind: "error", message: err.message });
+    postMessage({ kind: "error", reqId: currentReqId, message: err.message });
   }
 };

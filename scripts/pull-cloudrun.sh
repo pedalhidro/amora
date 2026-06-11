@@ -2,7 +2,7 @@
 #
 # Inverso de scripts/deploy-cloudrun.sh --state-only: puxa do bucket GCS
 # (`phidro-state`) pro repo local o estado vivo do serviço — uploads.ttl,
-# data_graphs.ttl, tours.ttl, photos/, clips/. Útil pra desenvolver
+# data_graphs.ttl, tours.ttl, routes.json, photos/, clips/. Útil pra desenvolver
 # localmente com o catálogo atual de produção, ou pra ter backup do que foi
 # enviado via upload_images.html / upload_tour.html.
 #
@@ -17,11 +17,11 @@
 # source-of-truth.
 #
 # Usage:
-#   scripts/pull-cloudrun.sh                # uploads.ttl + data_graphs.ttl + tours.ttl + photos/ + clips/
+#   scripts/pull-cloudrun.sh                # TTLs mutáveis + routes.json + photos/ + clips/
 #   scripts/pull-cloudrun.sh --dry-run      # preview, sem baixar
 #   scripts/pull-cloudrun.sh --photos-only  # só photos/
 #   scripts/pull-cloudrun.sh --clips-only   # só clips/
-#   scripts/pull-cloudrun.sh --data-only    # só uploads.ttl + data_graphs.ttl + tours.ttl
+#   scripts/pull-cloudrun.sh --data-only    # só uploads.ttl + data_graphs.ttl + tours.ttl + routes.json
 #   scripts/pull-cloudrun.sh --mirror       # espelho exato: deleta local o que
 #                                           # não existe no bucket (perigoso)
 #
@@ -89,6 +89,18 @@ if [[ "$SYNC_DATA" == 1 ]]; then
       echo "  ⚠ $src não existe no bucket — skip"
     fi
   done
+
+  # routes.json: mesmo racional do tours.ttl — o /upload-tour faz upsert
+  # incremental server-side (bucket-first); sem o pull, o próximo
+  # deploy --state clobbera essas edições com a cópia local stale.
+  src="gs://$BUCKET/routes.json"
+  dst="$REPO_ROOT/web/routes.json"
+  if gcloud storage objects describe "$src" --project="$PROJECT" >/dev/null 2>&1; then
+    echo "→ routes.json"
+    $DRY gcloud storage cp "$src" "$dst" --project="$PROJECT"
+  else
+    echo "  ⚠ $src não existe no bucket — skip"
+  fi
 fi
 
 # ── photos/ ─────────────────────────────────────────────────────────────

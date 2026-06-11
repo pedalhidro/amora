@@ -2007,6 +2007,25 @@ Por fim, margeando o córrego Boa Vista, sufocado pela Av. 23 de maio, cruzando 
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/55298600> ] .
 
+phd:tour_ph95 a ph:Tour ;
+    dcterms:date "2026-06-09T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description "Neste pedal vamos percorrer de cabo a rabo o antirrío, aquele que foi o primeiro nome da Av. Paulista, o grande espigão, o elevado, a cordilheira, aquele que determina quais águas escorrerão pro rio Pinheiros ou pro Tietê, aquele de onde sempre haverá descida pra sua direita e pra sua esquerda e planura à sua frente e às suas costas, ele: o glorioso Caaguaçu. Convide uma mana ou pessoa nb pra beber vinho quente e ser feliz contigo neste rolê gostoso com previsão de chegada 22h30 no metrô Jabaquara (essa hora já pode colocar a bike no metrô)."@pt ;
+    dcterms:title "Caaguaçu de caabo a raabo" ;
+    ns1:providedBy phd:pessoaDandan ;
+    prov:wasAttributedTo phd:pessoaAnaju ;
+    ph:countAttendee 15 ;
+    ph:countNewcomer 1 ;
+    ph:energyEstimate [ a qudt:QuantityValue ;
+            qudt:hasUnit unit:KiloJ ;
+            qudt:numericValue 346.0 ;
+            ph:intensityClassification "Endorfinado" ] ;
+    ph:hadIncident "Anajú trouxe vinho quente"@pt ;
+    ph:inSeriesEdition phd:assoc_PH_95 ;
+    ph:linkInstagram "https://www.instagram.com/p/DZWWbtIDr0i"^^xsd:anyURI ;
+    ph:linkRoute [ a ph:RouteReference ;
+            schema:provider ph:rwgps ;
+            schema:url <https://ridewithgps.com/routes/55563620> ] .
+
 phd:SESC a schema:EventSeries ;
     dcterms:title "SESC" .
 
@@ -2410,6 +2429,10 @@ phd:assoc_PH_94 a ph:Association ;
     ph:inEventSeries phd:PH ;
     ph:sequenceInSeries 94 .
 
+phd:assoc_PH_95 a ph:Association ;
+    ph:inEventSeries phd:PH ;
+    ph:sequenceInSeries 95 .
+
 phd:assoc_SESC_1 a ph:Association ;
     ph:inEventSeries phd:SESC ;
     ph:sequenceInSeries 1 .
@@ -2517,11 +2540,11 @@ phd:pessoaFetiche a schema:Person ;
 phd:pessoaThiagoneves a schema:Person ;
     schema:alternateName "thiagoneves" .
 
-phd:pessoaAnaju a schema:Person ;
-    schema:alternateName "anaju" .
-
 phd:pessoaGmard a schema:Person ;
     schema:alternateName "gmard" .
+
+phd:pessoaAnaju a schema:Person ;
+    schema:alternateName "anaju" .
 
 phd:pessoaAlef a schema:Person ;
     schema:alternateName "alef" .
