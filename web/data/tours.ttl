@@ -2024,7 +2024,8 @@ phd:tour_ph95 a ph:Tour ;
     ph:linkInstagram "https://www.instagram.com/p/DZWWbtIDr0i"^^xsd:anyURI ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/55563620> ] .
+            schema:url <https://ridewithgps.com/routes/55563620> ] ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/ph95/announcement.jpg> .
 
 phd:SESC a schema:EventSeries ;
     dcterms:title "SESC" .

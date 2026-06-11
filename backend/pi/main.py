@@ -914,6 +914,7 @@ def _fmt_moving_duration(dur):
 
 
 def _build_feed_xml(tours_text):
+    import re
     from email.utils import format_datetime
     from xml.sax.saxutils import escape
     from rdflib import Graph, Namespace, RDF
@@ -921,8 +922,20 @@ def _build_feed_xml(tours_text):
     PH = Namespace(PH_NS)
     SCHEMA = Namespace("https://schema.org/")
     DCT = Namespace("http://purl.org/dc/terms/")
+    PROV = Namespace("http://www.w3.org/ns/prov#")
+    QUDT = Namespace("http://qudt.org/schema/qudt/")
 
     g = Graph().parse(data=tours_text, format="turtle")
+
+    def person_name(p):
+        """Nome de exibição: schema:alternateName, senão o slug da IRI
+        sem o prefixo 'pessoa' (phd:pessoaAnaju → 'anaju')."""
+        alt = g.value(p, SCHEMA.alternateName)
+        if alt:
+            return str(alt)
+        slug = str(p).split("/")[-1].split("#")[-1]
+        return (slug[6:] if slug.startswith("pessoa") else slug).lower() or slug
+
     tours = []
     for t in g.subjects(RDF.type, PH.Tour):
         date = g.value(t, DCT.date)
@@ -939,28 +952,61 @@ def _build_feed_xml(tours_text):
         ig = g.value(t, PH.linkInstagram)
         link = str(ig) if ig else SITE_URL
 
-        parts = []
+        # Métricas pós-pedal (sem energia — ela vai junto da rota no corpo).
+        metrics = []
         att, new = g.value(t, PH.countAttendee), g.value(t, PH.countNewcomer)
         if att is not None:
-            parts.append(f"{att} participantes" + (f" ({new} novat@s)" if new else ""))
+            metrics.append(f"{att} participantes" + (f" ({new} novat@s)" if new else ""))
+        moving = _fmt_moving_duration(g.value(t, PH.movingDuration) or "")
+        if moving:
+            metrics.append(f"{moving} em movimento")
+        media = g.value(t, PH.mediaCount)
+        if media is not None:
+            metrics.append(f"{media} mídias no acervo")
+
+        energy_line = None
         energy = g.value(t, PH.energyEstimate)
         if energy is not None:
-            from rdflib import Namespace as _NS
-            QUDT = _NS("http://qudt.org/schema/qudt/")
             kj = g.value(energy, QUDT.numericValue)
             intensity = g.value(energy, PH.intensityClassification)
             if kj is not None:
-                parts.append(f"{float(kj):.0f} kJ" + (f" ({intensity})" if intensity else ""))
-        moving = _fmt_moving_duration(g.value(t, PH.movingDuration) or "")
-        if moving:
-            parts.append(f"{moving} em movimento")
-        media = g.value(t, PH.mediaCount)
-        if media is not None:
-            parts.append(f"{media} mídias no acervo")
-        desc = " · ".join(parts) or "Passeio do Pedal Hidrográfico."
+                energy_line = (f"{float(kj):.0f} quilojaules"
+                               + (f" ({intensity})" if intensity else ""))
+
+        # <description>: resumo plano — fallback pra leitores que ignoram
+        # content:encoded.
+        desc = " · ".join(metrics + ([energy_line] if energy_line else [])) \
+            or "Passeio do Pedal Hidrográfico."
+
+        # <content:encoded>: corpo rico em HTML — arte do anúncio, narrativa,
+        # rota + energia, métricas, elaboradores.
+        html = []
         img = g.value(t, SCHEMA.image)
         if img:
-            desc += f'<br/><img src="{escape(str(img))}" alt=""/>'
+            html.append(f'<p><img src="{escape(str(img))}" '
+                        f'alt="{escape(title)}" style="max-width:100%"/></p>')
+        narrative = g.value(t, DCT.description)
+        if narrative:
+            for para in re.split(r"\r?\n+", str(narrative).strip()):
+                if para.strip():
+                    html.append(f"<p>{escape(para.strip())}</p>")
+        route_ref = g.value(t, PH.linkRoute)
+        route_url = g.value(route_ref, SCHEMA.url) if route_ref else None
+        route_block = []
+        if route_url:
+            u = escape(str(route_url))
+            route_block.append(f'Rota: <a href="{u}">{u}</a>')
+        if energy_line:
+            route_block.append(escape(energy_line))
+        if route_block:
+            html.append("<p>" + "<br/>".join(route_block) + "</p>")
+        if metrics:
+            html.append(f"<p>{escape(' · '.join(metrics))}</p>")
+        authors = sorted(person_name(p) for p in g.objects(t, PROV.wasAttributedTo))
+        if authors:
+            html.append(f"<p>alguns dos elaboradores: {escape(', '.join(authors))}</p>")
+        # "]]>" dentro de CDATA encerraria a seção — quebra o token em duas.
+        content = "\n".join(html).replace("]]>", "]]]]><![CDATA[>")
 
         items.append(
             "    <item>\n"
@@ -969,13 +1015,16 @@ def _build_feed_xml(tours_text):
             f"      <guid isPermaLink=\"false\">{escape(str(t))}</guid>\n"
             + (f"      <pubDate>{format_datetime(dt)}</pubDate>\n" if dt else "")
             + f"      <description>{escape(desc)}</description>\n"
-            "    </item>"
+            + (f"      <content:encoded><![CDATA[{content}]]></content:encoded>\n"
+               if content else "")
+            + "    </item>"
         )
 
     newest = next((dt for dt, _ in tours if dt), None)
     return (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
-        '<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">\n'
+        '<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" '
+        'xmlns:content="http://purl.org/rss/1.0/modules/content/">\n'
         "  <channel>\n"
         "    <title>amora — pedais do Pedal Hidrográfico</title>\n"
         f"    <link>{escape(SITE_URL)}</link>\n"

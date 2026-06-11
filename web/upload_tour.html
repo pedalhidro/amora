@@ -89,7 +89,10 @@
     <div class="row">
       <div>
         <label class="required" for="t-date">Data + hora agendada</label>
-        <input type="datetime-local" id="t-date" required>
+        <input type="text" id="t-date" required inputmode="numeric"
+               pattern="\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2})?"
+               placeholder="2026-06-11 20:00">
+        <small>Formato 24h: <code>AAAA-MM-DD HH:MM</code>.</small>
       </div>
       <div>
         <label for="t-instagram">Link do Instagram (opcional)</label>
@@ -135,11 +138,11 @@
 
   <fieldset>
     <legend>Pessoas</legend>
-    <label for="t-authors" class="required">Autoras (organizam / dirigem)</label>
+    <label for="t-authors">Autoras (organizam / dirigem) — opcional</label>
     <select multiple id="t-authors" placeholder="busca ou digita…"></select>
     <small>Vira <code>prov:wasAttributedTo</code>. Novas pessoas: digite o nome e <em>Enter</em>.</small>
 
-    <label for="t-providers" class="required">Quem subiu (pav:providedBy)</label>
+    <label for="t-providers">Quem subiu (pav:providedBy) — opcional</label>
     <select multiple id="t-providers" placeholder="busca ou digita…"></select>
 
     <!-- Listagem nominal de participantes e iniciantes — só visível
@@ -180,13 +183,17 @@
     <div class="row">
       <div>
         <label for="t-departed">Partiu em</label>
-        <input type="datetime-local" id="t-departed">
-        <small>Vira <code>ph:departedAt</code>.</small>
+        <input type="text" id="t-departed" inputmode="numeric"
+               pattern="\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2})?"
+               placeholder="2026-06-11 20:05">
+        <small>Vira <code>ph:departedAt</code>. Formato 24h: <code>AAAA-MM-DD HH:MM</code>.</small>
       </div>
       <div>
         <label for="t-arrived">Chegou em</label>
-        <input type="datetime-local" id="t-arrived">
-        <small>Vira <code>ph:arrivedAt</code>.</small>
+        <input type="text" id="t-arrived" inputmode="numeric"
+               pattern="\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2})?"
+               placeholder="2026-06-11 23:40">
+        <small>Vira <code>ph:arrivedAt</code>. Formato 24h: <code>AAAA-MM-DD HH:MM</code>.</small>
       </div>
     </div>
     <div class="row">
@@ -284,7 +291,14 @@ function shortIRI(iri) {
 }
 function fmtDateTime(value) {
   if (!value) return null;
-  return value.length === 16 ? `${value}:00-03:00` : `${value}-03:00`;
+  // Inputs agora são texto livre "AAAA-MM-DD HH:MM" (24h) — o
+  // datetime-local antigo renderizava mm/dd/yyyy + AM/PM em locale en-US,
+  // sem como forçar formato. Aceita ' ' ou 'T' como separador.
+  const v = value.trim().replace(' ', 'T');
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(v)) {
+    throw new Error(`data inválida: "${value}" — use AAAA-MM-DD HH:MM (24h)`);
+  }
+  return v.length === 16 ? `${v}:00-03:00` : `${v}-03:00`;
 }
 function intensityFor(kj) {
   if (kj == null) return null;
@@ -1016,14 +1030,14 @@ async function prefillFromId(tourId) {
 
   // Preenche os inputs simples.
   $('#t-title').value     = title;
-  $('#t-date').value      = date;
+  $('#t-date').value      = date.replace('T', ' ');
   $('#t-narrative').value = narrative;
   $('#t-instagram').value = instagram;
   $('#t-attendees').value = attendees;
   $('#t-newcomers').value = newcomers;
   $('#t-energy-kj').value = energyKj;
-  $('#t-departed').value  = departed;
-  $('#t-arrived').value   = arrived;
+  $('#t-departed').value  = departed.replace('T', ' ');
+  $('#t-arrived').value   = arrived.replace('T', ' ');
   $('#t-moving-time').value = moving;
   $('#t-measured-kj').value = measured;
   $('#t-had-bonde').checked = hadBonde;

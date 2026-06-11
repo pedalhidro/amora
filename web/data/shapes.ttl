@@ -235,16 +235,14 @@ ph:TourShape a sh:NodeShape ;
     sh:property [
         sh:path prov:wasAttributedTo ;
         sh:severity sh:Warning ;
-        sh:minCount 1 ;
         sh:class schema:Person ;
-        sh:message "Passeio de autores (prov:wasAttributedTo)."@pt ;
+        sh:message "Se declarado, prov:wasAttributedTo deve apontar para schema:Person."@pt ;
     ] ;
     sh:property [
         sh:path pav:providedBy ;
         sh:severity sh:Warning ;
-        sh:minCount 1 ;
         sh:class schema:Person ;
-        sh:message "Passeio precisa de proveniência (pav:providedBy)."@pt ;
+        sh:message "Se declarado, pav:providedBy deve apontar para schema:Person."@pt ;
     ] ;
     sh:property [
         sh:path ph:linkInstagram ;
