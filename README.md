@@ -6,7 +6,7 @@ the linked Instagram post embedded on click. Includes an in-browser GPX
 drawing tool and a photo overlay sourced from RDF/Turtle. Architecture and
 conventions in [CLAUDE.md](CLAUDE.md); ontology notes in
 [research/photos-rdf/DESIGN.md](research/photos-rdf/DESIGN.md); self-hosted
-backend in [backend/pi/README.md](backend/pi/README.md).
+backend in [backend/README.md](backend/README.md).
 
 ## What it does
 
@@ -67,7 +67,7 @@ Two stages:
    resolves data graphs via `web/data/data_graphs.ttl`. No backend
    required at runtime; serve `web/` from any static host. For uploads
    and photo storage, run the backend — see
-   [backend/pi/README.md](backend/pi/README.md).
+   [backend/README.md](backend/README.md).
 
 ## Run it
 

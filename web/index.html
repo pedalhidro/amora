@@ -193,6 +193,7 @@
                   <li>Feed RSS dos passeios (<a href="./feed.xml">feed.xml</a>), sitemap, llms.txt e dados estruturados schema.org (identidade do coletivo + catálogo RDF como Dataset).</li>
                   <li>Salvar/exportar um traçado (arquivo, link ou QR) não fecha mais o editor — o traçado continua na tela até você sair (Esc ou ✕).</li>
                   <li>Form de passeio: datas em <code>AAAA-MM-DD HH:MM</code> (24h, sem AM/PM) e Autoras/Quem subiu agora são opcionais.</li>
+                  <li>Fonte de imagens "Pi" renomeada pra "Servidor" nos Ajustes (a preferência salva migra sozinha).</li>
                   <li>Este changelog. 🎉</li>
                 </ul>
               </dd>
@@ -408,8 +409,8 @@
             <h3>Acervo de imagens</h3>
             <p class="muted">De onde o app puxa o arquivo TTL.</p>
             <div class="photos-source-options">
-              <label><input type="radio" name="photos-source" value="auto"> Auto (tenta Pi → CDN)</label>
-              <label><input type="radio" name="photos-source" value="pi"> Pi (mesma origem)</label>
+              <label><input type="radio" name="photos-source" value="auto"> Auto (tenta servidor → CDN)</label>
+              <label><input type="radio" name="photos-source" value="server"> Servidor (mesma origem)</label>
               <label><input type="radio" name="photos-source" value="cdn"> CDN</label>
               <label><input type="radio" name="photos-source" value="local"> Local (importar kit .zip ou .ttl)</label>
             </div>

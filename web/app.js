@@ -29,7 +29,7 @@ import {
 // em localStorage e exportável/importável como JSON-LD.
 const SETTINGS_KEY = 'phidro:settings';
 const SETTINGS_DEFAULTS = {
-  photoSource: 'pi',                    // 'pi' | 'cdn' | 'auto' | 'local'
+  photoSource: 'server',                // 'server' | 'cdn' | 'auto' | 'local'
   spotlight: {
     enabled: false,
     boost: 10.0,
@@ -126,6 +126,9 @@ const settings = loadSettings();
   if (legacy && settings.photoSource === SETTINGS_DEFAULTS.photoSource) {
     settings.photoSource = legacy;
   }
+  // 'pi' era o nome antigo da fonte same-origin (backend rodava num
+  // Raspberry Pi). Renomeada pra 'server'; mapeia valores persistidos.
+  if (settings.photoSource === 'pi') settings.photoSource = 'server';
 }
 // Animação NÃO persiste entre sessões — sempre arranca desligada. Se o
 // usuário ligar no Ajustes/botão, vale só pra sessão atual.
@@ -609,13 +612,13 @@ function setOverpassOpacity(frac) {
 // `data/shapes.ttl` (ph:ImageShape). O app lê `data/data_graphs.ttl` (um
 // void:Dataset) pra descobrir quais dumps carregar — atualmente
 // `uploads.ttl` (imagens) e `tours.ttl` (passeios). N3.js parseia tudo
-// no browser; a fonte pode ser o Pi, a CDN, ou um kit local (.zip).
+// no browser; a fonte pode ser o servidor, a CDN, ou um kit local (.zip).
 const PHOTOS_DIR_REL    = 'photos/';                       // <phash>/{original,large,thumb}.jpg
 const PHOTOS_CDN_BASE   = 'https://tiles.pedalhidrografi.co/rotas_app/';
 const TOURS_TTL_REL     = 'data/tours.ttl';                // catálogo de passeios (opcional)
 
-// Origem persistida em localStorage: 'auto' | 'pi' | 'cdn' | 'local'.
-// Default 'pi' (mesma origem). 'auto' tentaria CDN também — útil em prod,
+// Origem persistida em localStorage: 'auto' | 'server' | 'cdn' | 'local'.
+// Default 'server' (mesma origem). 'auto' tentaria CDN também — útil em prod,
 // mas pra dev local gera DNS errors barulhentos quando o CDN não existe.
 // O usuário pode trocar via 🗂 Fonte….
 let photoSource = settings.photoSource;
@@ -1953,7 +1956,7 @@ const MANIFEST_REL = 'data/data_graphs.ttl';
 
 async function fetchManifest(originBase, originLabel) {
   // Resolve para URL absoluta — `new URL(rel, base)` exige base absoluta,
-  // então `./data/data_graphs.ttl` (modo Pi) precisa virar
+  // então `./data/data_graphs.ttl` (modo servidor) precisa virar
   // `http://host/.../data/data_graphs.ttl` primeiro.
   const url = new URL(originBase + MANIFEST_REL, location.href).href;
   const res = await fetch(url, { cache: 'no-cache' });
@@ -1981,9 +1984,9 @@ async function loadAllGraphs() {
       sources: ['(kit local)'],
     };
   }
-  // Pi e CDN: tenta cada base na ordem; o primeiro manifesto que responder vence.
+  // Servidor e CDN: tenta cada base na ordem; o primeiro manifesto que responder vence.
   const bases = [];
-  if (photoSource === 'pi'  || photoSource === 'auto') bases.push({ base: './',              label: 'pi' });
+  if (photoSource === 'server' || photoSource === 'auto') bases.push({ base: './',            label: 'server' });
   if (photoSource === 'cdn' || photoSource === 'auto') bases.push({ base: PHOTOS_CDN_BASE,   label: 'cdn' });
   let lastErr = '';
   for (const b of bases) {
@@ -2118,9 +2121,9 @@ function buildPhotoMarkers(photos) {
     const dlBtn = ph.full
       ? `<a class="photo-dl" href="${escapeHtml(ph.full)}" download="${escapeHtml(dlName)}" target="_blank" rel="noopener">Baixar original ↓</a>`
       : '';
-    // Botão de excluir: bate em POST /delete-image/<phash> (backend Pi).
+    // Botão de excluir: bate em POST /delete-image/<phash> (backend).
     // Requer phash e fonte same-origin; em CDN/local só mostra "Baixar".
-    const delBtn = (ph.phash && (photoSource === 'pi' || photoSource === 'auto'))
+    const delBtn = (ph.phash && (photoSource === 'server' || photoSource === 'auto'))
       ? `<button type="button" class="photo-del" data-phash="${escapeHtml(ph.phash)}">Excluir ✕</button>`
       : '';
     const actions = [dlBtn, delBtn].filter(Boolean).join('');
@@ -2144,9 +2147,9 @@ async function reloadPhotos() {
   applyPhotoVisibility();
 }
 
-// ─── Fonte (Pi / CDN / Local) ─────────────────────────────────────────────
+// ─── Fonte (Servidor / CDN / Local) ───────────────────────────────────────
 function setPhotoSource(src) {
-  if (!['auto', 'pi', 'cdn', 'local'].includes(src)) return;
+  if (!['auto', 'server', 'cdn', 'local'].includes(src)) return;
   // Saindo do modo `local`: revoga as blob URLs do kit pra não vazar memória
   // (só eram revogadas ao importar um novo kit).
   if (src !== 'local' && localKit) {
@@ -2520,7 +2523,7 @@ const HEIC2ANY_URL =
 const JSZIP_URL =
   'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js';
 // Envio ao acervo agora acontece pela upload_images.html (POST /upload-image
-// no Pi). Aqui no app o upload é apenas preview de sessão.
+// no backend). Aqui no app o upload é apenas preview de sessão.
 let uploadedMarkers = [];
 let uploadedData = [];
 

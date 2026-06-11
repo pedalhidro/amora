@@ -3,13 +3,13 @@
 Notes accumulated across the design of the photos/tours RDF substrate:
 the active vocabulary at [../../web/data/ontology.ttl](../../web/data/ontology.ttl)
 and shapes at [../../web/data/shapes.ttl](../../web/data/shapes.ttl) (both
-moved out of this folder so the Pi backend can read them directly),
+moved out of this folder so the backend can read them directly),
 [data/initial-data.ttl](data/initial-data.ttl) (seed graph),
 [data/tours.csv](data/tours.csv) → [../../web/data/tours.ttl](../../web/data/tours.ttl)
 via [build-tours.py](build-tours.py), and the legacy kit-export form at
 [upload-form.html](upload-form.html). The production upload path is
 [../../web/upload_images.html](../../web/upload_images.html), served by the
-Pi backend.
+backend.
 
 ## 1. Vocabulary strategy
 
@@ -131,7 +131,7 @@ Association reification carries the per-series sequence number cleanly.
 ## 4. Build pipeline (build-tours.py)
 
 Converts a TSV dump of the spreadsheet (`data/tours.csv` in this folder)
-into `web/data/tours.ttl` (at the repo root, where the Pi backend and the
+into `web/data/tours.ttl` (at the repo root, where the backend and the
 web app read it). Reproducible: `python3 build-tours.py`.
 
 **Sentinels treated as "no value":** `''`, `-`, `n/a`, `?`, `sumiu`, `#DIV/0!`,
@@ -156,7 +156,7 @@ in the script if better titles emerge.
 
 ## 5. Upload form (upload-form.html — legacy / kit-export)
 
-The production upload path is `web/upload_images.html`, served by the Pi
+The production upload path is `web/upload_images.html`, served by the
 backend (POSTs each card to `/upload-image`). The `upload-form.html` in
 this folder is the older "build a ZIP kit" variant: same UI primitives,
 but the output is a downloadable archive instead of live POSTs. It's

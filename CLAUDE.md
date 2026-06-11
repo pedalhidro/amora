@@ -21,20 +21,21 @@ local-first.
   main app), `upload_videos.html` (permanent redirect stub →
   `upload_images.html`), and the `data/`, `photos/`, `clips/`, and
   `tour_assets/<tour_id>/` directories the app reads from at runtime.
-- `backend/pi/` — the self-hosted backend. One Flask service (`main.py`)
+- `backend/` — the self-hosted backend. One Flask service (`main.py`)
   that serves `web/` as static files **and** validates+stores incoming
   photos. No SQLite; state lives in `web/data/uploads.ttl` (per-image
   triples), `web/data/data_graphs.ttl` (manifest pointing at every dump),
   and `web/photos/<phash>/{original,large,thumb}.*` (image variants).
-  `phidro.service` (systemd) / `phidro.plist` (launchd),
-  `requirements.txt`, `README.md`. Runs on a Raspberry Pi or macOS.
+  `phidro.plist` (launchd), `requirements.txt`, `README.md`. Runs locally
+  (macOS/Linux) or on Cloud Run. (Was `backend/pi/` — the Raspberry Pi
+  deploy was retired; the systemd unit + `pi-deploy.sh` were removed.)
 - `research/photos-rdf/` — the RDF research lab. Currently holds
   `build-tours.py` (writes `web/data/tours.ttl` from `data/tours.csv`),
   the seed `data/initial-data.ttl`, `decisions.ttl`, `design.ttl`,
   `conversion-notes.md`, and the legacy `upload-form.html` (kit-download
   form — superseded in production by `web/upload_images.html`). The
   active SHACL `shapes.ttl` and `ontology.ttl` live alongside the data
-  in `web/data/`; the Pi reads them from there at startup. The
+  in `web/data/`; the backend reads them from there at startup. The
   former top-level `ontology/` dir (v1.1 `pedalhidrografico.ttl` +
   JSON-LD context) was removed — git history is the only reference.
 - `scripts/` — `build-routes.py` (bakes `routes.json` from
@@ -46,11 +47,9 @@ local-first.
   state), `pull-cloudrun.sh` (pull mutable state from the GCS bucket
   back to local), `sync-guard.sh` (anti-clobber guard sourced by the two
   previous scripts — see Conventions), `dev-cloudrun.sh` (run the Cloud
-  Run image locally),
-  `pi-deploy.sh` (runs on the Pi: git pull + restart + smoke check —
-  the `deploy-amora.sh` / `pull-amora.sh` / `push-clips.sh` /
-  `gcloud-ssh-rsync.sh` rsync-over-SSH family for the old GCE VM was
-  removed; amora is Cloud Run now),
+  Run image locally — the `deploy-amora.sh` / `pull-amora.sh` /
+  `push-clips.sh` / `gcloud-ssh-rsync.sh` / `pi-deploy.sh` family for the
+  old GCE VM and Raspberry Pi deploys was removed; amora is Cloud Run now),
   `remux-clips-audio.py` (one-shot migration: muxes audio back into
   pre-v225 silent `web/clips/*.webm` that were transcoded before audio
   was embedded — see the upload-flow note below; removable once all
@@ -67,7 +66,7 @@ local-first.
 The app is fully static and works offline (service worker). It reads
 pre-baked `routes.json` and resolves Turtle dumps via the manifest at
 `web/data/data_graphs.ttl` (which currently lists `tours.ttl` and
-`uploads.ttl`). When served by the Pi/Cloud Run backend, uploads hit
+`uploads.ttl`). When served by the backend (local or Cloud Run), uploads hit
 `POST /upload-image` or `POST /upload-video` same-origin; on a static-only
 host (CDN) the form is offline-friendly but uploads have nowhere to go.
 
@@ -96,9 +95,10 @@ Key flows:
   a red-orange border modifier `.photo-dot-video`; both participate in the
   same density-based clustering via `relaxPhotoMarkers`). GPS from
   `schema:locationCreated`, popup from triples. The **Configurações** modal
-  (gear icon in the topbar) lets the user switch between Pi (same-origin),
-  CDN, or Local (kit ZIP file picker — stored in memory, image URLs become
-  blob URLs). Import/export buttons live there.
+  (gear icon in the topbar) lets the user switch between Servidor
+  (same-origin; persisted source value `'server'`, legacy `'pi'` is migrated
+  on load), CDN, or Local (kit ZIP file picker — stored in memory, image
+  URLs become blob URLs). Import/export buttons live there.
 - **Upload (unified — images AND videos in one page).**
   `web/upload_images.html` accepts `image/*,video/*` via a single picker;
   each card detects media type from the file MIME and renders the
@@ -162,7 +162,7 @@ Key flows:
   write is serialized) and is best-effort — a fetch failure never fails the
   tour save (the entry is kept with `latlngs:null` + `error`, same convention
   as `build-routes.py`). The shared fetch/parse/entry-building logic lives in
-  `backend/pi/rwgps.py`, imported by both the backend and
+  `backend/rwgps.py`, imported by both the backend and
   `scripts/build-routes.py` (single source of truth). The backend reads
   `RWGPS_API_KEY` / `RWGPS_AUTH_TOKEN` from its environment (best-effort
   `.env` load) — required for private/unlisted routes; public routes work
@@ -196,7 +196,7 @@ python scripts/build-clips.py
 ```
 
 Requires `ffmpeg` and `exiftool` in `$PATH` (Homebrew on macOS, `apt` on
-Pi). For each source the script:
+Linux). For each source the script:
 
 - Reads GPS via `exiftool` (clips with no GPS are skipped); reads both
   `CreateDate` (mvhd) and Apple `CreationDate` (iOS, with TZ) and prefers
@@ -239,24 +239,22 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
   when touching those handlers. `index.html` also `<link rel="preload">`s
   `routes.json`, and app.js fetches it *without* `cache: 'no-cache'` so
   the two requests coalesce — keep them matched.
-- **No backend auth.** Anyone who can reach the Pi can upload/delete — this
-  is an intentional decision (trusted access assumed). Don't reintroduce a
-  token; restrict at the edge if needed.
-- **The Pi serves its own git clone.** Deploying changes = `git pull` on the
-  Pi + restart the service + hard-reload the browser. There is no separate
-  build/upload step for the self-hosted path.
+- **No backend auth.** Anyone who can reach the server can upload/delete —
+  this is an intentional decision (trusted access assumed). Don't reintroduce
+  a token; restrict at the edge if needed.
 - **Ontology:** reuse consolidated vocabularies (schema.org, PROV-O, QUDT,
   GeoSPARQL, Dublin Core); mint `ph:` terms only for what is specific to
   Pedal Hidrográfico.
-- **Two deploy targets live now: Pi and Cloud Run.** Pi is the local-first
-  default; Cloud Run is hosted at `https://amora.pedalhidrografi.co/` via
-  `scripts/deploy-cloudrun.sh`. The backend (`backend/pi/main.py`) is the
-  same for both — `storage.py` abstracts state via `STORAGE_BACKEND=local`
-  (filesystem) vs `gcs` (bucket). `scripts/deploy.sh` (the old read-only
-  static mirror at `tiles.pedalhidrografi.co/rotas_app`) is still around
-  but largely superseded.
-- **gunicorn runs with `--workers 1` everywhere** (Dockerfile,.service,
-  .plist). The mutation lock (`_state_lock`) is per-process; with 2+
+- **Cloud Run is the hosted deploy target** at
+  `https://amora.pedalhidrografi.co/` via `scripts/deploy-cloudrun.sh`;
+  the same backend (`backend/main.py`) also runs locally for dev or
+  self-hosting — `storage.py` abstracts state via `STORAGE_BACKEND=local`
+  (filesystem) vs `gcs` (bucket). The old Raspberry Pi deploy was retired.
+  `scripts/deploy.sh` (the old read-only static mirror at
+  `tiles.pedalhidrografi.co/rotas_app`) is still around but largely
+  superseded.
+- **gunicorn runs with `--workers 1` everywhere** (Dockerfile, .plist).
+  The mutation lock (`_state_lock`) is per-process; with 2+
   workers, concurrent uploads land in different processes and the second
   read-modify-write of the TTL catalogs silently discards the first (lost
   update). Concurrency comes from threads; Cloud Run scales by instances.
@@ -276,13 +274,13 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
   rather than `bucket.blob(key) + download_as_text()` — the bare-blob form
   produced silently-stale content in Cloud Run despite the bucket having
   one current generation. See `GCSStateStore.read_text` in
-  `backend/pi/storage.py` for the fix.
+  `backend/storage.py` for the fix.
 - **Cloud Run container stays magrinho.** `.gcloudignore` /
   `.dockerignore` exclude `web/photos/` and `web/clips/` entirely (not
   just `raw/`). The runtime handlers `/photos/<path>` and `/clips/<path>`
   redirect to the bucket's public URL in `gcs` mode (302 → much faster
   than streaming through Flask). To populate the bucket with local
-  `build-clips.py` outputs and Pi-side uploads, run
+  `build-clips.py` outputs and locally-collected uploads, run
   `scripts/deploy-cloudrun.sh --state-only`.
 - Comments and UI strings are in Portuguese; code identifiers in English.
 
@@ -291,7 +289,7 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
 - JS in `web/`: load it in a browser (or the existing dev server) — the
   browser surfaces syntax errors immediately. No standalone JS tooling here.
 - Bump `web/sw.js` `VERSION` if any file under `web/` changed.
-- `python -m py_compile backend/pi/main.py`
+- `python -m py_compile backend/main.py`
 - Ontology / shapes / data: parse with `rdflib` after editing `*.ttl`.
 
 ## Build & deploy
@@ -321,8 +319,8 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
   - `--dry-run` preview without executing
 - `bash scripts/deploy.sh` (or `bash scripts/deploy.sh --dry-run`) — sync
   `web/` to the legacy GCS static mirror (read-only; needs `gcloud` auth).
-- Pi: `pip install -r backend/pi/requirements.txt && python backend/pi/main.py`
-  (defaults to port 8000; override with `PORT=…`). See `backend/pi/README.md`.
+- Local backend: `pip install -r backend/requirements.txt && python backend/main.py`
+  (defaults to port 8000; override with `PORT=…`). See `backend/README.md`.
 
 ## Open loose ends
 
@@ -342,8 +340,8 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
   form. Production uploads go through `web/upload_images.html`. Keep the
   research one only if you still use it for batch-export experiments.
 - **`web/data/uploads.ttl` and `web/photos/<phash>/`** are runtime artifacts
-  of the Pi — gitignore or commit per your deploy strategy. The CDN mirror
-  shows no photos until those files exist at the destination.
+  of the backend — gitignore or commit per your deploy strategy. The CDN
+  mirror shows no photos until those files exist at the destination.
 - **`web/clips/raw/`** holds source videos (large; ~800 MB total).
   Probably want gitignored. The build artifacts (`*.360p.mp4`,
   `*.720p.mp4`, `audio/*.m4a`, `*.thumb.jpg`) are smaller and can be

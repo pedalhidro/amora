@@ -38,10 +38,10 @@ from rdflib import Graph, Namespace, RDF
 REPO_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(REPO_ROOT / ".env")
 
-# A lógica de fetch/parsing/montagem de entrada vive em `backend/pi/rwgps.py`
+# A lógica de fetch/parsing/montagem de entrada vive em `backend/rwgps.py`
 # (fonte única compartilhada com o backend, que faz a atualização incremental
 # por upload/delete de tour). Adicionamos o dir ao path pra importar.
-sys.path.insert(0, str(REPO_ROOT / "backend" / "pi"))
+sys.path.insert(0, str(REPO_ROOT / "backend"))
 from rwgps import (  # noqa: E402
     downsample_and_round,
     fetch_route_data,

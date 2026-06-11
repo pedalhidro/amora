@@ -1206,7 +1206,7 @@ async function transcodeAtShortSide(blob, startSec, endSec, shortSide, onProgres
 // Extrai o áudio do trecho [startSec, endSec] como opus dentro de webm
 // — 192 kbps é perceptualmente transparente pra material falado/ambiente
 // e mantém arquivos pequenos. Sem WAV: arquivos seriam ~5 MB por 30 s,
-// e o gateway de upload do Pi tem ceiling baixo.
+// e o gateway de upload do backend tem ceiling baixo.
 async function extractAudio(blob, startSec, endSec, onProgress) {
   return new Promise(async (resolve, reject) => {
     const video = document.createElement('video');
@@ -1689,7 +1689,7 @@ function buildImageBlock(card) {
 
 // ===================== Empacotamento single-image TTL ==================
 // Gera um TTL auto-suficiente para 1 foto: prefixos + declarações de pessoas
-// novas usadas + bloco da imagem. O Pi valida com SHACL e mescla em
+// novas usadas + bloco da imagem. O backend valida com SHACL e mescla em
 // web/data/photos.ttl deduplicando pelo IRI.
 function buildSingleImageTtl(card) {
   const prefixes = [
@@ -1811,7 +1811,7 @@ async function buildVariants(card) {
 }
 
 // ===================== Upload de uma foto ==============================
-const UPLOAD_URL = './upload-image';   // mesma origem (Pi serve este HTML)
+const UPLOAD_URL = './upload-image';   // mesma origem (o backend serve este HTML)
 
 function setCardStatus(card, label, kind = '') {
   const el = $('.card-send-status', card.elem);
