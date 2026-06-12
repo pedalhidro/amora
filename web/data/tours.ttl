@@ -66,6 +66,7 @@ phd:tour_100 a ph:Tour ;
 
 phd:tour_101 a ph:Tour ;
     dcterms:date "2026-05-13T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description "Na zona norte, espaço etéreo de vasta profusão de colinas digna da famosa canção de Beth Carvalho, é possível avistar paisagens dos tipos mais peculiares. Saindo do metrô Santana, os pontos de cela, assim como as regiões mais desniveladas, revelam que os traçados das ruas não se dão ao acaso: seguem uma lógica coerente ao que oferecem os terrenos e as águas. Mas constantemente o progresso do capital desrespeita o que estava ali antes; uma nascente cerceada por militares e uma estação de metrô cravada em meio a vários cursos d'água são a prova disso."@pt ;
     dcterms:title "Crista do Lauzane, subir Água Fria e duas vilas escondidas" ;
     prov:wasAttributedTo phd:pessoaAlef,
         phd:pessoaGabrieltunes ;
@@ -80,10 +81,22 @@ phd:tour_101 a ph:Tour ;
     ph:linkInstagram "https://www.instagram.com/p/DYQyPoYDlVe/"^^xsd:anyURI ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/55083392> ] .
+            schema:url <https://ridewithgps.com/routes/55083392> ] ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/101/announcement.jpg> .
 
 phd:tour_102 a ph:Tour ;
     dcterms:date "2026-05-20T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """O início clássico se dá na passarela da Estação Cidade Universitária, onde se pode ver a foz do Córrego Pirajussara no canal do que seria o Rio Pinheiros. Acompanhamos paralelo o Pirajussara até pedalarmos em cima de sua calha tamponada pela Av. Eliseu de Almeida antes de começar o sobe-desce.\r
+\r
+Primeiro subiremos o Córrego Caxingui, com suas águas meio escondidas atrás de lotes, estacionamentos, casas. Conforme subimos, suas águas passam a escoer abaixo do asfalto das ruas. Após atingir sua nascente, pedalamos um pouco pela Crista.\r
+\r
+Segundo desceremos o Córrego Divisor, cujas nascentes se encontram na Praça Vinícuis de Moraes, um exemplo de projeto de paisagismo com águas aflorando pelos gramados, plantas fitoremediadoras e mobiliário urbano bem integrado ao terreno. Córrego Divisor desagua no Córrego do Antonico, então subiremos ele, contornando o famoso estádio projetado pelo arqto. Vilanova Artigas.\r
+\r
+Após pular a Crista, chegaremos ao Córrego Itararé, desvendando onde se encontra este córrego, meio escondido entre ruas e terrenos baldios. Buscaremos pedalar o mais próximo possível dele até chegarmos à sua foz, junto ao Córrego Pirajussara.\r
+\r
+Pedalando novamente Pirajussara acima, chegaremos no grande Piscinão, infraestrutura de pensamento oposto àquele que inspira a Praça Vinícius de Moraes. Neste ponto, subiremos o Córrego Pires para atingir sua nascente e também o ponto mais alto de toda nossa pedalada.\r
+\r
+Por fim, desceremos o córrego cujo nome desconheço, mas que escorre abaixo do asfalto da Av. Giovanni Gronchi. Finalizamos na estação de mesmo nome, já cansados e com aquele suor de blusas de frio."""@pt ;
     dcterms:title "Ziguezaguear a Crista do Morumbi" ;
     prov:wasAttributedTo phd:pessoaGabrieltunes ;
     ph:arrivedAt "2026-05-21T00:00:00-03:00"^^xsd:dateTime ;
@@ -97,7 +110,8 @@ phd:tour_102 a ph:Tour ;
     ph:linkInstagram "https://www.instagram.com/p/DYfyG_IDhaM/"^^xsd:anyURI ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/55184087> ] .
+            schema:url <https://ridewithgps.com/routes/55184087> ] ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/102/announcement.jpg> .
 
 phd:tour_11 a ph:Tour ;
     dcterms:date "2024-11-05T20:00:00-03:00"^^xsd:dateTime ;
@@ -2415,7 +2429,36 @@ Por fim, margeando o córrego Boa Vista, sufocado pela Av. 23 de maio, cruzando 
     ph:linkInstagram "https://www.instagram.com/p/DY7f96pDuCJ/?igsh=ZXlwYnVtczR6cWwy"^^xsd:anyURI ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/55298600> ] .
+            schema:url <https://ridewithgps.com/routes/55298600> ] ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/Ph94/announcement.jpg> .
+
+phd:tour_bp5 a ph:Tour ;
+    dcterms:date "2026-05-01T08:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description "Pirajussara encontra Pinheiros - e ali nos encontramos também, na altura da Ponte da Cidade Universitária (Coffee Run Bike). Seguimos no contrafluxo do grande rio até chegar em seu passado-presente-permanente: os afluentes que lhe dão matéria - Rio Guarapiranga e Rio Jurubatuba. Damos tchau a este último para percorrer o Parque Barragem da Guarapiranga e passar por uma série de pontos excelentes para observação de aves aquáticas. Ao longo do percurso observaremos mais de 30 espécies. Paramos na frutaria para um coco melancia e seguimos para a Praia do Sol, onde esticaremos cangamapas-agora-no-modo-canga para desenhar aves e partilhar comidinhas."@pt ;
+    dcterms:title "Guarapiranga desenhar pássaros" ;
+    ph:energyEstimate [ a qudt:QuantityValue ;
+            qudt:hasUnit unit:KiloJ ;
+            qudt:numericValue 270.0 ;
+            ph:intensityClassification "Ok" ] ;
+    ph:inSeriesEdition phd:assoc_BP_5 ;
+    ph:linkRoute [ a ph:RouteReference ;
+            schema:provider ph:rwgps ;
+            schema:url <https://ridewithgps.com/routes/54884080> ] ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/bp5/announcement.jpg> .
+
+phd:tour_bp6 a ph:Tour ;
+    dcterms:date "2026-06-04T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description "Começamos contemplando os passarinhos que amam os brejinhos do Jurubatubaçu. Dali, seguimos asfalto, fazendo um apêndice em estradinha de terra para escutar o canto de paz da Mata Atlântica. Voltamos pro liso até chegar ao mirante da Serra do Mar. Passamos na igrejinha pra Oli e Theo darem um beijinho com vista para a Vila Histórica de Paranapiacaba. Tomamos sorvete de cambuci e almoçamos à vontade no Cantinho do Beija-flor. Dali, procuramos chocolate quente e voltamos pra estação. Levar: bike revisada, câmara extra, casaco, luvinha e binóculo. Este não é um pedal pra correr e nem ir com caixa de som: vamo ouvir o que o mato tem a dizer 🙏🍃🍄"@pt ;
+    dcterms:title "Paranapiacaba: brejinhos e beijinhos" ;
+    ph:energyEstimate [ a qudt:QuantityValue ;
+            qudt:hasUnit unit:KiloJ ;
+            qudt:numericValue 504.0 ;
+            ph:intensityClassification "Frito" ] ;
+    ph:inSeriesEdition phd:assoc_BP_6 ;
+    ph:linkRoute [ a ph:RouteReference ;
+            schema:provider ph:rwgps ;
+            schema:url <https://ridewithgps.com/routes/55460240> ] ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/bp6/announcement.jpg> .
 
 phd:tour_ph95 a ph:Tour ;
     dcterms:date "2026-06-09T20:00:00-03:00"^^xsd:dateTime ;
@@ -2451,6 +2494,14 @@ phd:assoc_BP_2 a ph:Association ;
 phd:assoc_BP_3 a ph:Association ;
     ph:inEventSeries phd:BP ;
     ph:sequenceInSeries 3 .
+
+phd:assoc_BP_5 a ph:Association ;
+    ph:inEventSeries phd:BP ;
+    ph:sequenceInSeries 5 .
+
+phd:assoc_BP_6 a ph:Association ;
+    ph:inEventSeries phd:BP ;
+    ph:sequenceInSeries 6 .
 
 phd:assoc_BT_1 a ph:Association ;
     ph:inEventSeries phd:BT ;
@@ -2930,9 +2981,6 @@ phd:BT a schema:EventSeries ;
 phd:pessoaPedpaula a schema:Person ;
     schema:alternateName "pedpaula" .
 
-phd:BP a schema:EventSeries ;
-    dcterms:title "Bicipassarinhadas" .
-
 phd:pessoaBrunoperandin a schema:Person ;
     schema:alternateName "brunoperandin" .
 
@@ -2941,6 +2989,9 @@ phd:pessoaGabrieltunes a schema:Person ;
 
 phd:pessoaGiucuci a schema:Person ;
     schema:alternateName "giucuci" .
+
+phd:BP a schema:EventSeries ;
+    dcterms:title "Bicipassarinhadas" .
 
 phd:S a schema:EventSeries ;
     dcterms:title "Pedais Hidrográficos Suados" .

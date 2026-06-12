@@ -16,11 +16,12 @@ local-first.
   `locatecontrol/` — Leaflet & friends were vendored off unpkg/jsdelivr;
   only app.js's lazy loads (exifr/heic2any/jszip/geotiff) still hit
   jsdelivr). Leaflet-based map. Also hosts `upload_images.html` (per-photo upload
-  form), `upload_tour.html` (per-tour upsert form), `censo.html`
-  (aggregated tour metrics + roster, opened as a modal iframe from the
-  main app), `upload_videos.html` (permanent redirect stub →
-  `upload_images.html`), and the `data/`, `photos/`, `clips/`, and
-  `tour_assets/<tour_id>/` directories the app reads from at runtime.
+  form), `upload_tour.html` (per-tour upsert form),
+  `backfill_tours.html` (mass-backfill applet for missing tour fields),
+  `censo.html` (aggregated tour metrics + roster, opened as a modal
+  iframe from the main app), `upload_videos.html` (permanent redirect
+  stub → `upload_images.html`), and the `data/`, `photos/`, `clips/`,
+  and `tour_assets/<tour_id>/` directories the app reads from at runtime.
 - `backend/` — the self-hosted backend. One Flask service (`main.py`)
   that serves `web/` as static files **and** validates+stores incoming
   photos. No SQLite; state lives in `web/data/uploads.ttl` (per-image
@@ -150,9 +151,21 @@ Key flows:
 - **Tour CRUD & Censo.** `POST /upload-tour` accepts a TTL fragment
   describing exactly one `phd:tour_<id> a ph:Tour` (plus any new
   `phd:pessoa*` / `phd:assoc_*` declarations it references) and upserts
-  it into `web/data/tours.ttl`. An optional `announcement` file field
-  is saved under `tour_assets/<tour_id>/announcement.<ext>` and wired
-  in as `schema:image <URL>` before the triples are persisted.
+  it into `web/data/tours.ttl`. Two modes via the `mode` form field:
+  `replace` (default — the TTL is the tour's complete new state,
+  purge-and-replace; right for creation) and `patch` (predicate-level
+  merge-patch — only predicates asserted in the TTL, plus those listed
+  in the comma-separated `remove` form field as CURIEs/IRIs, replace
+  the existing ones; everything else survives, so clients don't have
+  to round-trip predicates they don't know about). Patch is synthesized
+  server-side into the equivalent full document inside the state lock
+  (`synthesize_tour_patch`), so SHACL validates the FINAL state and the
+  rest of the pipeline (announcement injection, route sync) is shared.
+  Both forms use patch for edits; creation stays on replace. An optional
+  `announcement` file field is saved under
+  `tour_assets/<tour_id>/announcement.<ext>` and wired in as
+  `schema:image <URL>` before the triples are persisted (under `patch`,
+  a new file also replaces the current `schema:image`).
   `POST /delete-tour/<tour_id>` removes the tour's triples + reachable
   bnodes and purges `tour_assets/<tour_id>/`; it deliberately does NOT
   delete referenced `phd:pessoa*` or series — git history preserves
@@ -173,9 +186,14 @@ Key flows:
   without. `routes.json` is **mutable state served bucket-first** (like
   `uploads.ttl`) via `GET /routes.json`, with the baked file as seed/fallback.
   `web/upload_tour.html` is the per-tour form (series, sequence, energy
-  estimate, intensity, attendee/newcomer counts, announcement art);
-  `web/censo.html` shows aggregated metrics + a sortable tour roster
-  with "Editar" links pointing at `upload_tour.html?id=<tour_id>`.
+  estimate, intensity, attendee/newcomer counts, announcement art; edit
+  mode via `?id=` submits `mode=patch` + a `remove` list of the form-
+  managed predicates left empty); `web/backfill_tours.html` is the
+  mass-backfill applet (one card per tour, only the seven backfill
+  fields — description, departed/arrived, moving duration, energies,
+  announcement image — sends a per-tour patch of just the changed
+  fields); `web/censo.html` shows aggregated metrics + a sortable tour
+  roster with "Editar" links pointing at `upload_tour.html?id=<tour_id>`.
   The main app exposes Censo through a modal iframe — opened by the
   "Censo →" sidebar link in the Routes panel — and the iframe is
   re-pointed to `./censo.html` on every open so navigating into the edit
@@ -195,8 +213,9 @@ Key flows:
   48 h; cache por hash + TTL de 1 h). Ops: `GET /health`, `POST /reload`
   (force re-read of the on-disk TTL catalog after an out-of-band edit).
   Mutations: `POST /upload-image`, `POST /upload-video`,
-  `POST /upload-tour`, `POST /delete-image/<phash>`,
-  `POST /delete-video/<vhash>`, `POST /delete-tour/<tour_id>`.
+  `POST /upload-tour` (`mode=replace|patch` + `remove` — see Tour CRUD),
+  `POST /delete-image/<phash>`, `POST /delete-video/<vhash>`,
+  `POST /delete-tour/<tour_id>`.
 
 ## Clips workflow
 

@@ -507,6 +507,39 @@ def remove_image_from_uploads(phash):
 # e gravando em tours.ttl em vez de uploads.ttl. Pra dar suporte ao form
 # upload_tour.html, que cria/edita 1 tour por vez.
 
+def _single_tour_id(data):
+    """Acha exatamente 1 ph:Tour no graph `data` e devolve (tour_id, errors).
+
+    `tour_id` é o sufixo após `phd:tour_`. Compartilhado entre a validação e
+    a síntese de patch (que precisa do ID antes de montar o resultado).
+    """
+    from rdflib import URIRef
+    RDFT = URIRef("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
+    tours = list(data.subjects(RDFT, URIRef(PH_NS + "Tour")))
+    if len(tours) != 1:
+        return None, [
+            f"TTL deve conter exatamente 1 ph:Tour (achou {len(tours)})"
+        ]
+    tour_iri = str(tours[0])
+    if not tour_iri.startswith(PHD_NS + "tour_"):
+        return None, [
+            f"IRI do Tour deve começar com phd:tour_ (atual: {tour_iri})"
+        ]
+    tour_id = tour_iri[len(PHD_NS + "tour_"):]
+    if not tour_id:
+        return None, ["IRI do Tour vazio"]
+    # Mesmo charset que delete_tour exige. Sem isso, um IRI completo tipo
+    # <https://pedalhidrografi.co/data/tour_../x> passa (a forma full-IRI
+    # aceita "/" e "."), e o tour_id vira componente de path no store
+    # (tour_assets/<id>/...) — traversal pra qualquer lugar sob web/ — além
+    # de criar tours que o delete-tour depois recusa.
+    if not all(c.isalnum() or c in "_-" for c in tour_id):
+        return None, [
+            f"tour_id inválido (apenas [A-Za-z0-9_-]): {tour_id!r}"
+        ]
+    return tour_id, []
+
+
 def validate_tour_ttl(ttl_text):
     """Verifica que o TTL contém exatamente 1 ph:Tour e satisfaz TourShape.
 
@@ -516,33 +549,13 @@ def validate_tour_ttl(ttl_text):
     from rdflib import URIRef, Namespace, BNode
     data = v["Graph"]().parse(data=ttl_text, format="turtle")
 
-    RDFT = URIRef("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
-    tours = list(data.subjects(RDFT, URIRef(PH_NS + "Tour")))
-    if len(tours) != 1:
-        return False, None, [
-            f"TTL deve conter exatamente 1 ph:Tour (achou {len(tours)})"
-        ]
-    tour_iri = str(tours[0])
-    if not tour_iri.startswith(PHD_NS + "tour_"):
-        return False, None, [
-            f"IRI do Tour deve começar com phd:tour_ (atual: {tour_iri})"
-        ]
-    tour_id = tour_iri[len(PHD_NS + "tour_"):]
-    if not tour_id:
-        return False, tour_id, ["IRI do Tour vazio"]
-    # Mesmo charset que delete_tour exige. Sem isso, um IRI completo tipo
-    # <https://pedalhidrografi.co/data/tour_../x> passa (a forma full-IRI
-    # aceita "/" e "."), e o tour_id vira componente de path no store
-    # (tour_assets/<id>/...) — traversal pra qualquer lugar sob web/ — além
-    # de criar tours que o delete-tour depois recusa.
-    if not all(c.isalnum() or c in "_-" for c in tour_id):
-        return False, None, [
-            f"tour_id inválido (apenas [A-Za-z0-9_-]): {tour_id!r}"
-        ]
+    tour_id, id_errors = _single_tour_id(data)
+    if tour_id is None:
+        return False, None, id_errors
 
     # Mescla com ontology + catálogo (excluindo o próprio tour pra evitar
     # cardinalidade falsa por sobreposição de re-upload).
-    tour_uri = URIRef(tour_iri)
+    tour_uri = URIRef(PHD_NS + "tour_" + tour_id)
     catalog = _load_catalog()
     tour_bnodes = set()
     queue = [tour_uri]
@@ -593,6 +606,104 @@ def upsert_tour_in_tours_ttl(tour_ttl, tour_id):
     # Mescla os novos blocos (tour + eventual associação/pessoa nova).
     catalog += Graph().parse(data=tour_ttl, format="turtle")
     STORE.write_text(KEY_TOURS, catalog.serialize(format="turtle"))
+
+
+# Prefixos aceitos no campo `remove` do mode=patch (CURIEs → IRIs).
+TOUR_PATCH_PREFIXES = {
+    "ph":      PH_NS,
+    "phd":     PHD_NS,
+    "schema":  "https://schema.org/",
+    "dcterms": "http://purl.org/dc/terms/",
+    "dct":     "http://purl.org/dc/terms/",
+    "prov":    "http://www.w3.org/ns/prov#",
+    "pav":     "http://purl.org/pav/",
+    "qudt":    "http://qudt.org/schema/qudt/",
+}
+
+
+def _expand_remove_preds(remove_field):
+    """Expande o form field `remove` ("ph:departedAt,dcterms:description")
+    num set de URIRefs. Aceita CURIEs dos prefixos conhecidos ou IRIs
+    completas; `schema:` expande pras formas https E http (catálogos antigos
+    podem carregar qualquer uma). Levanta ValueError em token inválido."""
+    from rdflib import URIRef
+    preds = set()
+    for tok in (remove_field or "").split(","):
+        tok = tok.strip()
+        if not tok:
+            continue
+        if tok.startswith("http://") or tok.startswith("https://"):
+            preds.add(URIRef(tok))
+            continue
+        pfx, sep, local = tok.partition(":")
+        ns = TOUR_PATCH_PREFIXES.get(pfx)
+        if not sep or ns is None or not local:
+            raise ValueError(f"predicado inválido em remove: {tok!r}")
+        preds.add(URIRef(ns + local))
+        if pfx == "schema":
+            preds.add(URIRef("http://schema.org/" + local))
+    return preds
+
+
+def synthesize_tour_patch(patch_ttl, remove_preds, replace_image=False):
+    """Transforma um patch (mode=patch) no documento full-replace equivalente.
+
+    Merge-patch por predicado: cada predicado afirmado no patch sobre o tour
+    (ou listado em `remove_preds`) substitui os triples existentes desse
+    predicado — incluindo a closure de bnodes dos objetos descartados (um
+    ph:energyEstimate antigo não deixa órfãos). Todo o resto do tour atual é
+    copiado verbatim pro documento sintetizado, então clientes não precisam
+    round-tripar predicados que não conhecem. Sujeitos auxiliares do patch
+    (pessoas/assocs/séries novas) passam adiante intactos, como no replace.
+
+    `replace_image=True` (announcement novo no request) descarta também o
+    schema:image atual, pro handler injetar a URL fresca do upload.
+
+    O resultado segue o pipeline normal (validate_tour_ttl → upsert →
+    route-sync), ou seja, o SHACL valida o ESTADO FINAL do tour.
+
+    Retorna (tour_id, result_ttl). Levanta ValueError se o patch não contém
+    exatamente 1 ph:Tour com IRI phd:tour_<id> válido.
+    """
+    v = _load_validator()
+    Graph = v["Graph"]
+    from rdflib import URIRef, BNode
+
+    patch = Graph().parse(data=patch_ttl, format="turtle")
+    tour_id, errors = _single_tour_id(patch)
+    if tour_id is None:
+        raise ValueError("; ".join(errors))
+    tour_uri = URIRef(PHD_NS + "tour_" + tour_id)
+
+    preds_to_replace = set(patch.predicates(tour_uri)) | set(remove_preds)
+    if replace_image:
+        preds_to_replace.add(URIRef("https://schema.org/image"))
+        preds_to_replace.add(URIRef("http://schema.org/image"))
+
+    # Closure atual do tour (subject + bnodes alcançáveis) em tours.ttl.
+    result = Graph()
+    existing = _load_dump_text("tours.ttl")
+    if existing:
+        catalog = Graph().parse(data=existing, format="turtle")
+        seen, queue = set(), [tour_uri]
+        while queue:
+            cur = queue.pop()
+            for s, p, o in catalog.triples((cur, None, None)):
+                result.add((s, p, o))
+                if isinstance(o, BNode) and o not in seen:
+                    seen.add(o)
+                    queue.append(o)
+
+    # Substituição por predicado: tira (tour, p, *) + closure dos bnodes
+    # descartados, depois soma o patch inteiro.
+    for p in preds_to_replace:
+        for o in list(result.objects(tour_uri, p)):
+            result.remove((tour_uri, p, o))
+            if isinstance(o, BNode):
+                _purge_subject(result, o)
+    for triple in patch:
+        result.add(triple)
+    return tour_id, result.serialize(format="turtle")
 
 
 def remove_tour_from_tours_ttl(tour_id):
@@ -1706,6 +1817,16 @@ def upload_tour():
     Espera `ttl` (form field ou file) com exatamente 1 `phd:tour_<id> a ph:Tour`
     + opcionalmente declarações novas de `phd:assoc_*`, `phd:pessoa*`, etc.
 
+    Dois modos (form field `mode`):
+      - `replace` (padrão): o TTL é o estado COMPLETO do tour — purge-and-
+        replace de todos os triples do IRI. Certo pra criação.
+      - `patch`: merge-patch por predicado — só os predicados afirmados no
+        TTL (mais os listados no form field `remove`, CURIEs/IRIs separados
+        por vírgula) substituem os existentes; o resto do tour sobrevive
+        intacto. Certo pra edição: o cliente não precisa round-tripar
+        predicados que não conhece. Com `announcement`, o schema:image atual
+        também é substituído pela URL fresca. O SHACL valida o estado final.
+
     Opcionalmente, `announcement` (file): salvo em
     `tour_assets/<tour_id>/announcement.<ext>` no store e injetado como
     `schema:image <URL>` no TTL antes de persistir.
@@ -1726,9 +1847,26 @@ def upload_tour():
     if not ttl_text:
         return jsonify(error="ttl ausente"), 400
 
+    mode = (request.form.get("mode") or "replace").strip().lower()
+    if mode not in ("replace", "patch"):
+        return jsonify(error=f"mode inválido: {mode!r} (replace|patch)"), 400
+
     # Seção crítica: validação + announcement + escrita do tours.ttl, tudo
-    # serializado. O fetch da rota acontece depois, sem o lock.
+    # serializado. O fetch da rota acontece depois, sem o lock. O patch é
+    # sintetizado aqui dentro (lê tours.ttl) pra não perder updates entre a
+    # leitura do estado atual e a escrita do resultado.
     with _state_lock:
+        if mode == "patch":
+            ann = request.files.get("announcement")
+            try:
+                remove_preds = _expand_remove_preds(request.form.get("remove"))
+                _tid, ttl_text = synthesize_tour_patch(
+                    ttl_text, remove_preds,
+                    replace_image=bool(ann and ann.filename))
+            except ValueError as e:
+                return jsonify(error=str(e)), 400
+            except Exception as e:  # noqa: BLE001
+                return jsonify(error=f"patch: {e}"), 400
         try:
             ok, tour_id, errors = validate_tour_ttl(ttl_text)
         except Exception as e:  # noqa: BLE001
@@ -1778,9 +1916,13 @@ def upload_tour():
             except Exception:  # noqa: BLE001
                 _has_image = "schema:image" in ttl_text  # fallback conservador
             if not _has_image:
+                # IRI completa no subject: o TTL pode ser sintetizado pelo
+                # mode=patch (serialização rdflib), que não garante o
+                # prefixo phd: — a forma <...> é válida em qualquer doc.
                 inject = (
                     f"\n# Imagem do anúncio (uploaded server-side)\n"
-                    f'phd:tour_{tour_id} <https://schema.org/image> <{announcement_url}> .\n'
+                    f"<{PHD_NS}tour_{tour_id}> <https://schema.org/image> "
+                    f"<{announcement_url}> .\n"
                 )
                 ttl_text = ttl_text + inject
 
@@ -1804,7 +1946,7 @@ def upload_tour():
           f"route={route_status.get('status')}")
     return jsonify(
         tour_id=tour_id, announcement_url=announcement_url,
-        route=route_status, ok=True,
+        route=route_status, mode=mode, ok=True,
     )
 
 

@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="robots" content="noindex">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Backfill de passeios — Pedal Hidrográfico</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 1100px; margin: 1.5rem auto; padding: 0 1rem; color: #222; }
+  h1 { font-size: 1.4rem; margin: 0 0 .25rem; }
+  p.lede { color: #666; margin: 0 0 1rem; font-size: .9rem; }
+  code { background: #eee; padding: 0 .25rem; border-radius: 2px; font-size: .9em; }
+
+  #toolbar {
+    position: sticky; top: 0; z-index: 5; background: #fff;
+    border-bottom: 1px solid #ddd; padding: .6rem 0; margin-bottom: 1rem;
+    display: flex; flex-wrap: wrap; gap: .5rem 1rem; align-items: center;
+  }
+  #chips { display: flex; flex-wrap: wrap; gap: .35rem; }
+  #chips label {
+    display: inline-flex; align-items: center; gap: .3rem;
+    border: 1px solid #ccc; border-radius: 999px; padding: .15rem .6rem;
+    font-size: .8rem; cursor: pointer; user-select: none; background: #f8f8f8;
+  }
+  #chips label:has(input:checked) { background: #e6f0fa; border-color: #69c; }
+  #toolbar .spacer { flex: 1; }
+  #stats { font-size: .8rem; color: #666; width: 100%; }
+
+  button { padding: .4rem .8rem; font-size: .9rem; cursor: pointer; border: 1px solid #888; background: #f8f8f8; border-radius: 4px; }
+  button.primary { background: #06c; border-color: #05a; color: #fff; font-weight: 600; }
+  button[disabled] { opacity: .5; cursor: not-allowed; }
+  button.mini { font-size: .7rem; padding: .05rem .4rem; border: 1px dashed #999; background: transparent; color: #06c; }
+
+  .card { border: 1px solid #ccc; border-radius: 6px; padding: .8rem 1rem; margin-bottom: .8rem; }
+  .card.dirty { border-color: #c80; box-shadow: 0 0 0 2px #fff3cd; }
+  .card-head { display: flex; flex-wrap: wrap; gap: .3rem .8rem; align-items: baseline; margin-bottom: .5rem; }
+  .card-head .tid { font-weight: 700; font-family: ui-monospace, monospace; font-size: .9rem; }
+  .card-head .ttitle { font-weight: 600; }
+  .card-head .tdate { color: #666; font-size: .85rem; }
+  .card-head a { font-size: .8rem; }
+
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem .8rem; }
+  .grid .full { grid-column: 1 / -1; }
+  .field label { display: block; font-size: .75rem; color: #555; margin-bottom: .15rem; }
+  .field input[type="text"], .field input[type="number"], .field textarea, .field input[type="file"] {
+    width: 100%; padding: .35rem; box-sizing: border-box; font-size: .9rem; font-family: inherit;
+    border: 1px solid #bbb; border-radius: 3px;
+  }
+  .field textarea { min-height: 3.2rem; resize: vertical; }
+  .field input.missing, .field textarea.missing { background: #fff8e1; border-color: #d4a017; }
+  .field .img-current { font-size: .75rem; color: #666; display: block; margin-bottom: .2rem;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .card-foot { display: flex; gap: .5rem; align-items: center; margin-top: .6rem; flex-wrap: wrap; }
+  .card-foot .status { font-size: .8rem; }
+  .status.ok { color: #080; }
+  .status.warn { color: #c80; }
+  .status.err { color: #c00; }
+  pre.ttl { background: #f4f4f4; padding: .6rem; overflow-x: auto; font-size: .75rem;
+    border-radius: 4px; white-space: pre-wrap; word-break: break-word; margin: .5rem 0 0; }
+
+  @media (max-width: 720px) { .grid { grid-template-columns: 1fr 1fr; } }
+</style>
+</head>
+<body>
+
+<h1>Backfill de passeios</h1>
+<p class="lede">
+  Completa em massa os campos faltantes dos passeios de <code>tours.ttl</code>:
+  descrição, partida, chegada, tempo de movimento, energia estimada/medida e
+  imagem do anúncio. Cada "Salvar" envia um patch por predicado via
+  <code>POST /upload-tour</code> (<code>mode=patch</code>) — só os campos
+  alterados são tocados; o resto do passeio sobrevive intacto no servidor.
+</p>
+
+<div id="toolbar">
+  <div id="chips"></div>
+  <label style="font-size:.8rem"><input type="checkbox" id="show-all"> mostrar todos</label>
+  <span class="spacer"></span>
+  <button id="reload">Recarregar ⟳</button>
+  <button id="save-all" class="primary" disabled>Salvar todos (0)</button>
+  <div id="stats"></div>
+</div>
+
+<div id="cards"></div>
+
+<script src="./lib/n3.min.js"></script>
+<script type="module">
+// ═══════════════════════ [pure] lógica de TTL (sem DOM) ═══════════════════
+// Mesmo dialeto do upload_tour.html. O save usa mode=patch: o documento só
+// afirma os campos que MUDARAM (mais `a ph:Tour` pra identificar o alvo) e
+// lista em `remove` os que foram esvaziados — o backend substitui predicado
+// a predicado e preserva todo o resto do tour, então não há round-trip.
+const PH_NS  = 'https://pedalhidrografi.co/terms#';
+const PHD_NS = 'https://pedalhidrografi.co/data/';
+const SCHEMA = 'https://schema.org/';
+const DCT    = 'http://purl.org/dc/terms/';
+const RDF_TYPE = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
+const QUDT_NUM = 'http://qudt.org/schema/qudt/numericValue';
+
+const FIELD_PREDS = {
+  desc:     [DCT + 'description'],
+  departed: [PH_NS + 'departedAt'],
+  arrived:  [PH_NS + 'arrivedAt'],
+  moving:   [PH_NS + 'movingDuration'],
+  estimate: [PH_NS + 'energyEstimate'],
+  measured: [PH_NS + 'measuredEnergy'],
+  // schema http e https — tours.ttl usa https, mas o backend aceita ambos.
+  image:    [SCHEMA + 'image', 'http://schema.org/image'],
+};
+const PRED_TO_FIELD = {};
+for (const [k, preds] of Object.entries(FIELD_PREDS))
+  for (const p of preds) PRED_TO_FIELD[p] = k;
+
+const PREFIXES = `\
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix ph:      <https://pedalhidrografi.co/terms#> .
+@prefix phd:     <https://pedalhidrografi.co/data/> .
+@prefix qudt:    <http://qudt.org/schema/qudt/> .
+@prefix schema:  <https://schema.org/> .
+@prefix unit:    <http://qudt.org/vocab/unit/> .
+@prefix xsd:     <http://www.w3.org/2001/XMLSchema#> .
+`;
+
+function turtleEscape(s) {
+  return (s || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+    .replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t');
+}
+function turtleEscapeMultiline(s) {
+  return (s || '').replace(/\\/g, '\\\\').replace(/\r/g, '\\r')
+    .replace(/"""/g, '\\"\\"\\"').replace(/"+$/, m => m.replace(/"/g, '\\"'));
+}
+function fmtDateTime(value) {
+  const v = value.trim().replace(' ', 'T');
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(v)) {
+    throw new Error(`data inválida: "${value}" — use AAAA-MM-DD HH:MM (24h)`);
+  }
+  return v.length === 16 ? `${v}:00-03:00` : `${v}-03:00`;
+}
+function intensityFor(kj) {
+  if (kj == null) return null;
+  if (kj < 150)  return 'De boa';
+  if (kj < 300)  return 'Ok';
+  if (kj < 500)  return 'Endorfinado';
+  if (kj < 1000) return 'Frito';
+  return 'Insano';
+}
+function parseDuration(value) {
+  if (!value) return null;
+  const parts = value.split(':').map(p => parseInt(p, 10));
+  if (parts.length !== 2 && parts.length !== 3) return null;
+  if (parts.some(n => !Number.isFinite(n) || n < 0)) return null;
+  const [h, m, s = 0] = parts;
+  return `PT${h}H${m}M${s}S`;
+}
+function durToDisplay(lit) {
+  const m = lit.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?$/);
+  if (!m) return '';
+  const h = m[1] || '0', mn = (m[2] || '0').padStart(2, '0');
+  const s = Math.round(parseFloat(m[3] || '0'));
+  return s > 0 ? `${h}:${mn}:${String(s).padStart(2, '0')}` : `${h}:${mn}`;
+}
+// Extrai o estado editável de um tour: valor de exibição por campo.
+function extractTour(own, subjBy) {
+  const fields = {};
+  for (const k of Object.keys(FIELD_PREDS)) fields[k] = { orig: '' };
+  let title = '', date = '';
+  for (const q of own) {
+    const p = q.predicate.value;
+    if (p === DCT + 'title') title = q.object.value;
+    else if (p === DCT + 'date') date = q.object.value;
+    const key = PRED_TO_FIELD[p];
+    if (!key || fields[key].orig) continue;
+    if (key === 'desc' || key === 'image') fields[key].orig = q.object.value;
+    else if (key === 'departed' || key === 'arrived')
+      fields[key].orig = q.object.value.slice(0, 16).replace('T', ' ');
+    else if (key === 'moving') fields[key].orig = durToDisplay(q.object.value);
+    else if (q.object.termType === 'BlankNode') {
+      const num = (subjBy.get(q.object.value) || [])
+        .find(x => x.predicate.value === QUDT_NUM);
+      if (num) fields[key].orig = num.object.value;
+    } else fields[key].orig = q.object.value;
+  }
+  return { fields, title, date };
+}
+
+// CURIEs dos predicados editáveis (pro campo `remove` do patch).
+const FIELD_CURIES = {
+  desc: 'dcterms:description', departed: 'ph:departedAt',
+  arrived: 'ph:arrivedAt', moving: 'ph:movingDuration',
+  estimate: 'ph:energyEstimate', measured: 'ph:measuredEnergy',
+};
+
+// Monta o patch do tour: afirma só os campos que mudaram (campo esvaziado
+// vai pra lista `remove`). `cur.imageFile` é tratado no backend (announcement
+// novo substitui o schema:image atual). Retorna { ttl, remove }.
+function buildTourPatch(id, tour, cur) {
+  const f = tour.fields;
+  const newProps = ['a ph:Tour'];
+  const remove = [];
+
+  function handle(key, emit) {
+    const v = (cur[key] ?? '').trim();
+    if (v === f[key].orig.trim()) return;        // intocado → fora do patch
+    if (v === '') { remove.push(FIELD_CURIES[key]); return; }
+    emit(v);
+  }
+  handle('desc', v =>
+    newProps.push(`dcterms:description """${turtleEscapeMultiline(v)}"""@pt`));
+  handle('departed', v =>
+    newProps.push(`ph:departedAt "${fmtDateTime(v)}"^^xsd:dateTime`));
+  handle('arrived', v =>
+    newProps.push(`ph:arrivedAt "${fmtDateTime(v)}"^^xsd:dateTime`));
+  handle('moving', v => {
+    const d = parseDuration(v);
+    if (!d) throw new Error(`tempo de movimento inválido: "${v}" — use HH:MM ou HH:MM:SS`);
+    newProps.push(`ph:movingDuration "${d}"^^xsd:duration`);
+  });
+  handle('estimate', v => {
+    const kj = parseFloat(v);
+    if (!Number.isFinite(kj) || kj < 0) throw new Error(`energia estimada inválida: "${v}"`);
+    newProps.push(
+      'ph:energyEstimate [\n' +
+      '        a qudt:QuantityValue ;\n' +
+      `        qudt:numericValue "${kj}"^^xsd:decimal ;\n` +
+      '        qudt:hasUnit unit:KiloJ ;\n' +
+      `        ph:intensityClassification "${turtleEscape(intensityFor(kj))}"\n` +
+      '    ]');
+  });
+  handle('measured', v => {
+    const kj = parseFloat(v);
+    if (!Number.isFinite(kj) || kj < 0) throw new Error(`energia medida inválida: "${v}"`);
+    newProps.push(
+      'ph:measuredEnergy [\n' +
+      '        a qudt:QuantityValue ;\n' +
+      `        qudt:numericValue "${kj}"^^xsd:decimal ;\n` +
+      '        qudt:hasUnit unit:KiloJ\n' +
+      '    ]');
+  });
+  const ttl = PREFIXES +
+    `\n# Patch do backfill — só os campos alterados\nphd:tour_${id}\n    ${newProps.join(' ;\n    ')} .\n`;
+  return { ttl, remove };
+}
+// ═══════════════════════ [/pure] ══════════════════════════════════════════
+
+const $ = (sel, root = document) => root.querySelector(sel);
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]));
+}
+
+const FIELD_LABELS = {
+  desc: 'descrição', departed: 'partida', arrived: 'chegada',
+  moving: 'duração', estimate: 'energia est.', measured: 'energia med.',
+  image: 'imagem',
+};
+
+// ───────────────────────── Carrega tours.ttl ──────────────────────────────
+const tours = [];   // [{ id, iri, state, els, fileInput, card }]
+
+async function loadTours() {
+  const res = await fetch('./data/tours.ttl', { cache: 'no-cache' });
+  if (!res.ok) throw new Error(`tours.ttl HTTP ${res.status}`);
+  const text = await res.text();
+  const subjBy = new Map();
+  const tourIris = [];
+  for (const q of new N3.Parser().parse(text)) {
+    const sval = q.subject.value;
+    if (!subjBy.has(sval)) subjBy.set(sval, []);
+    subjBy.get(sval).push(q);
+    if (q.predicate.value === RDF_TYPE && q.object.value === PH_NS + 'Tour'
+        && q.subject.value.startsWith(PHD_NS + 'tour_')) {
+      tourIris.push(q.subject.value);
+    }
+  }
+  for (const iri of tourIris) {
+    const state = extractTour(subjBy.get(iri), subjBy);
+    tours.push({ id: iri.slice((PHD_NS + 'tour_').length), iri, state });
+  }
+  // Mais recentes primeiro — é onde o backfill costuma acontecer.
+  tours.sort((a, b) => (b.state.date || '').localeCompare(a.state.date || ''));
+}
+
+function missingOf(t) {
+  return Object.keys(FIELD_PREDS).filter(k => !t.state.fields[k].orig);
+}
+function isDirty(t) {
+  if (t.fileInput?.files?.[0]) return true;
+  return Object.keys(t.els).some(k => t.els[k].value !== t.state.fields[k].orig);
+}
+function currentValues(t) {
+  const cur = {};
+  for (const k of Object.keys(t.els)) cur[k] = t.els[k].value;
+  cur.imageFile = !!t.fileInput?.files?.[0];
+  return cur;
+}
+
+// ───────────────────────── Render ─────────────────────────────────────────
+function fieldEl(t, key, label, opts = {}) {
+  const wrap = document.createElement('div');
+  wrap.className = 'field' + (opts.full ? ' full' : '');
+  const lab = document.createElement('label');
+  lab.textContent = label;
+  wrap.appendChild(lab);
+  let input;
+  if (opts.textarea) input = document.createElement('textarea');
+  else {
+    input = document.createElement('input');
+    input.type = opts.type || 'text';
+    if (opts.type === 'number') { input.min = '0'; input.step = 'any'; }
+  }
+  if (opts.placeholder) input.placeholder = opts.placeholder;
+  input.value = t.state.fields[key].orig;
+  if (!t.state.fields[key].orig) input.classList.add('missing');
+  input.addEventListener('input', () => {
+    input.classList.toggle('missing', !input.value);
+    refreshDirty(t);
+  });
+  wrap.appendChild(input);
+  t.els[key] = input;
+  if (opts.after) wrap.appendChild(opts.after);
+  return wrap;
+}
+
+function renderCard(t) {
+  const card = document.createElement('div');
+  card.className = 'card';
+  t.card = card;
+  t.els = {};
+
+  const head = document.createElement('div');
+  head.className = 'card-head';
+  const dateStr = (t.state.date || '').slice(0, 10);
+  head.innerHTML =
+    `<span class="tid">tour_${escapeHtml(t.id)}</span>` +
+    `<span class="ttitle">${escapeHtml(t.state.title)}</span>` +
+    `<span class="tdate">${escapeHtml(dateStr)}</span>` +
+    `<a href="./upload_tour.html?id=${encodeURIComponent(t.id)}" target="_blank">form completo ↗</a>`;
+  card.appendChild(head);
+
+  const grid = document.createElement('div');
+  grid.className = 'grid';
+  grid.appendChild(fieldEl(t, 'desc', 'Descrição (narrativa)', { textarea: true, full: true }));
+
+  // Botãozinho pra copiar o horário agendado pra partida.
+  const schedBtn = document.createElement('button');
+  schedBtn.type = 'button';
+  schedBtn.className = 'mini';
+  schedBtn.textContent = '← usar agendado';
+  schedBtn.title = 'Copia a data+hora agendada (dcterms:date)';
+  schedBtn.addEventListener('click', () => {
+    t.els.departed.value = (t.state.date || '').slice(0, 16).replace('T', ' ');
+    t.els.departed.dispatchEvent(new Event('input'));
+  });
+  grid.appendChild(fieldEl(t, 'departed', 'Partiu em', {
+    placeholder: 'AAAA-MM-DD HH:MM', after: schedBtn }));
+  grid.appendChild(fieldEl(t, 'arrived', 'Chegou em', { placeholder: 'AAAA-MM-DD HH:MM' }));
+  grid.appendChild(fieldEl(t, 'moving', 'Tempo de movimento', { placeholder: 'HH:MM' }));
+  grid.appendChild(fieldEl(t, 'estimate', 'Energia estimada (kJ)', { type: 'number' }));
+  grid.appendChild(fieldEl(t, 'measured', 'Energia medida (kJ)', { type: 'number' }));
+
+  // Imagem do anúncio — arquivo (a URL vem do backend após o upload).
+  const imgWrap = document.createElement('div');
+  imgWrap.className = 'field';
+  const imgLab = document.createElement('label');
+  imgLab.textContent = 'Imagem do anúncio';
+  imgWrap.appendChild(imgLab);
+  const cur = document.createElement('a');
+  cur.className = 'img-current';
+  t.imgLink = cur;
+  updateImgLink(t);
+  imgWrap.appendChild(cur);
+  const file = document.createElement('input');
+  file.type = 'file';
+  file.accept = 'image/jpeg,image/png,image/webp,image/gif,image/heic';
+  if (!t.state.fields.image.orig) file.classList.add('missing');
+  file.addEventListener('change', () => {
+    file.classList.toggle('missing', !file.files?.[0] && !t.state.fields.image.orig);
+    refreshDirty(t);
+  });
+  imgWrap.appendChild(file);
+  t.fileInput = file;
+  grid.appendChild(imgWrap);
+  card.appendChild(grid);
+
+  const foot = document.createElement('div');
+  foot.className = 'card-foot';
+  const previewBtn = document.createElement('button');
+  previewBtn.type = 'button';
+  previewBtn.textContent = 'ver TTL';
+  const saveBtn = document.createElement('button');
+  saveBtn.type = 'button';
+  saveBtn.className = 'primary';
+  saveBtn.textContent = 'Salvar';
+  saveBtn.disabled = true;
+  t.saveBtn = saveBtn;
+  const status = document.createElement('span');
+  status.className = 'status';
+  t.statusEl = status;
+  const pre = document.createElement('pre');
+  pre.className = 'ttl';
+  pre.hidden = true;
+  previewBtn.addEventListener('click', () => {
+    try {
+      const { ttl, remove } = buildTourPatch(t.id, t.state, currentValues(t));
+      pre.textContent = ttl +
+        (remove.length ? `\n# remove: ${remove.join(', ')}\n` : '');
+      pre.hidden = !pre.hidden;
+    } catch (e) { setStatus(t, e.message, 'err'); }
+  });
+  saveBtn.addEventListener('click', () => saveTour(t));
+  foot.append(previewBtn, saveBtn, status);
+  card.appendChild(foot);
+  card.appendChild(pre);
+  return card;
+}
+
+function updateImgLink(t) {
+  const url = t.state.fields.image.orig;
+  if (url && /^(https?:\/\/|\.\/)/.test(url)) {
+    t.imgLink.href = url;
+    t.imgLink.target = '_blank';
+    t.imgLink.textContent = url;
+  } else {
+    t.imgLink.removeAttribute('href');
+    t.imgLink.textContent = url || '(sem imagem)';
+  }
+}
+function setStatus(t, msg, level) {
+  t.statusEl.className = `status ${level || ''}`;
+  t.statusEl.textContent = msg;
+}
+function refreshDirty(t) {
+  const dirty = isDirty(t);
+  t.card.classList.toggle('dirty', dirty);
+  t.saveBtn.disabled = !dirty;
+  refreshToolbar();
+}
+
+// ───────────────────────── Salvar ─────────────────────────────────────────
+async function saveTour(t) {
+  let patch;
+  try {
+    patch = buildTourPatch(t.id, t.state, currentValues(t));
+  } catch (e) {
+    setStatus(t, `✗ ${e.message}`, 'err');
+    return false;
+  }
+  t.saveBtn.disabled = true;
+  setStatus(t, 'Salvando…', 'warn');
+  try {
+    const fd = new FormData();
+    fd.append('ttl', patch.ttl);
+    fd.append('mode', 'patch');
+    if (patch.remove.length) fd.append('remove', patch.remove.join(','));
+    const f = t.fileInput.files?.[0];
+    if (f) fd.append('announcement', f);
+    const res = await fetch('./upload-tour', { method: 'POST', body: fd });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || !json.ok) {
+      const det = json.error === 'shacl'
+        ? `SHACL: ${(json.details || []).join(' · ')}`
+        : (json.error || res.statusText);
+      setStatus(t, `✗ ${det}`, 'err');
+      t.saveBtn.disabled = false;
+      return false;
+    }
+    // Sucesso: o que foi enviado vira o novo "original".
+    for (const k of Object.keys(t.els)) {
+      t.state.fields[k].orig = t.els[k].value;
+    }
+    if (f && json.announcement_url) {
+      t.state.fields.image.orig = json.announcement_url;
+      t.fileInput.value = '';
+      t.fileInput.classList.remove('missing');
+      updateImgLink(t);
+    }
+    const r = json.route || {};
+    const routeNote = r.status === 'ok' ? ' · rota sincronizada'
+      : r.status === 'fetch_failed' ? ' · ⚠ rota não sincronizou'
+      : '';
+    setStatus(t, `✓ salvo${routeNote}`, 'ok');
+    refreshDirty(t);
+    applyFilter();
+    return true;
+  } catch (e) {
+    setStatus(t, `✗ rede: ${e.message}`, 'err');
+    t.saveBtn.disabled = false;
+    return false;
+  }
+}
+
+// ───────────────────────── Toolbar / filtros ──────────────────────────────
+function refreshToolbar() {
+  const dirtyN = tours.filter(isDirty).length;
+  const btn = $('#save-all');
+  btn.textContent = `Salvar todos (${dirtyN})`;
+  btn.disabled = dirtyN === 0;
+  const missingN = tours.filter(t => missingOf(t).length).length;
+  $('#stats').textContent =
+    `${tours.length} passeios · ${missingN} com campo(s) faltando`;
+  for (const k of Object.keys(FIELD_PREDS)) {
+    const n = tours.filter(t => missingOf(t).includes(k)).length;
+    const span = $(`#chip-count-${k}`);
+    if (span) span.textContent = n;
+  }
+}
+
+function applyFilter() {
+  const showAll = $('#show-all').checked;
+  const active = Object.keys(FIELD_PREDS)
+    .filter(k => $(`#chip-${k}`)?.checked);
+  for (const t of tours) {
+    const missing = missingOf(t);
+    t.card.hidden = !showAll && !missing.some(k => active.includes(k));
+  }
+  refreshToolbar();
+}
+
+function buildChips() {
+  const chips = $('#chips');
+  for (const k of Object.keys(FIELD_PREDS)) {
+    const lab = document.createElement('label');
+    lab.innerHTML =
+      `<input type="checkbox" id="chip-${k}" checked> ` +
+      `${escapeHtml(FIELD_LABELS[k])} (<span id="chip-count-${k}">0</span>)`;
+    lab.querySelector('input').addEventListener('change', applyFilter);
+    chips.appendChild(lab);
+  }
+  $('#show-all').addEventListener('change', applyFilter);
+  $('#reload').addEventListener('click', () => location.reload());
+  $('#save-all').addEventListener('click', async () => {
+    const btn = $('#save-all');
+    btn.disabled = true;
+    const dirty = tours.filter(isDirty);
+    let okN = 0, failN = 0;
+    // Sequencial de propósito: o backend serializa as mutações com um lock
+    // global, e cada save pode disparar um fetch no RideWithGPS.
+    for (let i = 0; i < dirty.length; i++) {
+      btn.textContent = `Salvando ${i + 1}/${dirty.length}…`;
+      (await saveTour(dirty[i])) ? okN++ : failN++;
+    }
+    $('#stats').textContent = `Salvamento em massa: ${okN} ok` +
+      (failN ? `, ${failN} com erro (veja os cards)` : '') + '.';
+    refreshToolbar();
+  });
+}
+
+// ───────────────────────── Boot ───────────────────────────────────────────
+try {
+  await loadTours();
+  buildChips();
+  const cardsEl = $('#cards');
+  for (const t of tours) cardsEl.appendChild(renderCard(t));
+  applyFilter();
+} catch (e) {
+  $('#cards').innerHTML =
+    `<p class="status err">Falha ao carregar tours.ttl: ${escapeHtml(e.message)}</p>`;
+}
+</script>
+</body>
+</html>

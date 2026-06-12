@@ -221,7 +221,7 @@ ph:TourShape a sh:NodeShape ;
     ] ;
     sh:property [
         sh:path schema:organizer ;
-        sh:severity sh:Warning ;
+        sh:severity sh:Info ;
         sh:nodeKind sh:IRI ;
         sh:message "Se declarado, schema:organizer deve apontar para uma Pessoa/Organização."@pt ;
     ] ;
@@ -234,13 +234,13 @@ ph:TourShape a sh:NodeShape ;
     ] ;
     sh:property [
         sh:path prov:wasAttributedTo ;
-        sh:severity sh:Warning ;
+        sh:severity sh:Info ;
         sh:class schema:Person ;
         sh:message "Se declarado, prov:wasAttributedTo deve apontar para schema:Person."@pt ;
     ] ;
     sh:property [
         sh:path pav:providedBy ;
-        sh:severity sh:Warning ;
+        sh:severity sh:Info ;
         sh:class schema:Person ;
         sh:message "Se declarado, pav:providedBy deve apontar para schema:Person."@pt ;
     ] ;

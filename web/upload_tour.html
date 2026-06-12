@@ -548,54 +548,39 @@ function addSeriesRow() {
 $('#add-series').addEventListener('click', addSeriesRow);
 addSeriesRow();    // primeira linha sempre presente
 
-// ────────────────────── Triples não gerenciados (modo edição) ───────────
-// O upsert do backend (upsert_tour_in_tours_ttl) faz purge-and-replace: TODOS
-// os triples existentes de phd:tour_<id> são apagados antes de regravar o que
-// o form mandar. Como buildTtl() só emite os predicados que o form conhece,
-// qualquer predicado extra (ex.: ph:mediaCount, schema:image) seria perdido a
-// cada edição. Em prefillFromId() guardamos esses triples "desconhecidos" em
-// N-Triples e os reanexamos verbatim ao TTL gerado no submit.
-//
-// Predicados que buildTtl() emite (em IRI completo) — manter em sincronia.
-const MANAGED_PREDICATES = new Set([
-  RDF_TYPE,
-  DCT + 'title',
-  DCT + 'date',
-  DCT + 'description',
-  SCHEMA + 'organizer',
-  SCHEMA + 'attendee',
-  PH_NS + 'inSeriesEdition',
-  PH_NS + 'linkRoute',
-  PH_NS + 'linkInstagram',
-  PH_NS + 'countAttendee',
-  PH_NS + 'countNewcomer',
-  PH_NS + 'energyEstimate',
-  PH_NS + 'departedAt',
-  PH_NS + 'arrivedAt',
-  PH_NS + 'movingDuration',
-  PH_NS + 'measuredEnergy',
-  PH_NS + 'hadBonde',
-  PH_NS + 'hadRain',
-  PH_NS + 'hadIncident',
-  PH_NS + 'hasNewcomer',
-  'http://www.w3.org/ns/prov#wasAttributedTo',
-  'http://purl.org/pav/providedBy',
-]);
-const stashedTriples = [];       // N-Triples preservados verbatim no submit
-const stashedImageTriples = [];  // schema:image — só re-emitido se NÃO houver arquivo novo
+// ────────────────────── Modo edição: patch por predicado ────────────────
+// Em modo edição (carregado via ?id=…) o submit usa mode=patch: o backend
+// substitui só os predicados que o TTL afirma (mais os listados em `remove`)
+// e preserva todo o resto do tour — predicados que o form não conhece
+// (ph:mediaCount, schema:image, etc.) sobrevivem sem round-trip. Criação
+// continua no replace (default), que é o certo pra um tour novo.
+let editMode = false;
 
-// Serializa um termo N3.js em sintaxe N-Triples (válida dentro de Turtle).
-function ntTerm(t) {
-  if (t.termType === 'NamedNode') return `<${t.value}>`;
-  if (t.termType === 'BlankNode') return `_:${t.value}`;
-  const esc = t.value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
-    .replace(/\n/g, '\\n').replace(/\r/g, '\\r');
-  if (t.language) return `"${esc}"@${t.language}`;
-  const dt = t.datatype?.value;
-  if (dt && dt !== 'http://www.w3.org/2001/XMLSchema#string') return `"${esc}"^^<${dt}>`;
-  return `"${esc}"`;
+// Predicados que o form gerencia e que podem ficar vazios — quando vazios
+// em modo edição, entram na lista `remove` (sob patch, ausência = "mantém",
+// então apagar precisa ser explícito).
+function buildRemoveList() {
+  const rm = [];
+  if (!$('#t-narrative').value.trim())   rm.push('dcterms:description');
+  if (!orgTs.getValue().length)          rm.push('schema:organizer');
+  if (!$('#t-route-url').value.trim())   rm.push('ph:linkRoute');
+  if (!$('#t-instagram').value.trim())   rm.push('ph:linkInstagram');
+  if ($('#t-attendees').value === '')    rm.push('ph:countAttendee');
+  if ($('#t-newcomers').value === '')    rm.push('ph:countNewcomer');
+  if ($('#t-energy-kj').value === '')    rm.push('ph:energyEstimate');
+  if (!$('#t-departed').value.trim())    rm.push('ph:departedAt');
+  if (!$('#t-arrived').value.trim())     rm.push('ph:arrivedAt');
+  if (!$('#t-moving-time').value.trim()) rm.push('ph:movingDuration');
+  if ($('#t-measured-kj').value === '')  rm.push('ph:measuredEnergy');
+  if (!$('#t-had-bonde').checked)        rm.push('ph:hadBonde');
+  if (!$('#t-had-rain').checked)         rm.push('ph:hadRain');
+  if (!$('#t-incidents').value.trim())   rm.push('ph:hadIncident');
+  if (!authorTs.getValue().length)       rm.push('prov:wasAttributedTo');
+  if (!providerTs2.getValue().length)    rm.push('pav:providedBy');
+  if (!attendeesTs.getValue().length)    rm.push('schema:attendee');
+  if (!newcomersTs.getValue().length)    rm.push('ph:hasNewcomer');
+  return rm;
 }
-function ntLine(q) { return `${ntTerm(q.subject)} ${ntTerm(q.predicate)} ${ntTerm(q.object)} .`; }
 
 // ────────────────────── Construção do TTL ────────────────────────────
 function buildTtl() {
@@ -766,27 +751,18 @@ function buildTtl() {
 
   const tourBlock = `\n# Passeio\n${tourIri}\n    ${props.join(' ;\n    ')} .\n`;
 
-  // Modo edição: reanexa os triples que o form não gerencia (o backend faz
-  // purge-and-replace, então sem isto eles seriam perdidos — ver comentário
-  // em MANAGED_PREDICATES). schema:image só volta se o usuário NÃO escolheu
-  // um anúncio novo: com arquivo novo, omitimos pro backend injetar a URL
-  // fresca (ele só injeta quando nenhum schema:image está presente).
-  let preservedBlock = '';
-  const keepImage = stashedImageTriples.length && !$('#t-announcement').files?.[0];
-  const preserved = [...stashedTriples, ...(keepImage ? stashedImageTriples : [])];
-  if (preserved.length) {
-    preservedBlock = '\n# Triples preservados do tour existente (não gerenciados pelo form)\n'
-      + preserved.join('\n') + '\n';
-  }
-
-  return prefixes + auxDecls + tourBlock + preservedBlock;
+  return prefixes + auxDecls + tourBlock;
 }
 
 // ────────────────────── Preview + envio ──────────────────────────────
 $('#preview').addEventListener('click', () => {
   clearNotices();
   try {
-    const ttl = buildTtl();
+    let ttl = buildTtl();
+    if (editMode) {
+      const rm = buildRemoveList();
+      if (rm.length) ttl += `\n# patch — remove: ${rm.join(', ')}\n`;
+    }
     $('#ttl-out').textContent = ttl;
     $('#ttl-zone').hidden = false;
     notice('Preview gerado. Confirme antes de enviar.', 'ok');
@@ -813,6 +789,11 @@ $('#form').addEventListener('submit', async (ev) => {
   try {
     const fd = new FormData();
     fd.append('ttl', ttl);
+    if (editMode) {
+      fd.append('mode', 'patch');
+      const rm = buildRemoveList();
+      if (rm.length) fd.append('remove', rm.join(','));
+    }
     const announceFile = $('#t-announcement').files?.[0];
     if (announceFile) fd.append('announcement', announceFile);
     const res = await fetch('./upload-tour', { method: 'POST', body: fd });
@@ -899,31 +880,9 @@ async function prefillFromId(tourId) {
     return;
   }
 
-  // Guarda os triples cujo predicado o form NÃO gerencia (ex.: ph:mediaCount)
-  // — o upsert do backend apaga todos os triples do tour antes de regravar,
-  // então sem este stash eles seriam perdidos a cada edição. schema:image vai
-  // num stash separado (só re-emitido se nenhum anúncio novo for escolhido).
-  // Bnodes de predicados não gerenciados são raros hoje, mas se aparecerem
-  // os triples deles também são preservados, recursivamente.
-  stashedTriples.length = 0;
-  stashedImageTriples.length = 0;
-  const stashedBnodes = new Set();
-  function stashBnodeTriples(label, out) {
-    if (stashedBnodes.has(label)) return;
-    stashedBnodes.add(label);
-    for (const bq of subjBy.get(label) || []) {
-      out.push(ntLine(bq));
-      if (bq.object.termType === 'BlankNode') stashBnodeTriples(bq.object.value, out);
-    }
-  }
-  for (const q of own) {
-    const p = q.predicate.value;
-    const out = p === SCHEMA + 'image' ? stashedImageTriples
-              : (MANAGED_PREDICATES.has(p) ? null : stashedTriples);
-    if (!out) continue;
-    out.push(ntLine(q));
-    if (q.object.termType === 'BlankNode') stashBnodeTriples(q.object.value, out);
-  }
+  // Submit passa a usar mode=patch — o backend preserva os predicados que
+  // o form não conhece (ph:mediaCount, schema:image, …) sem round-trip.
+  editMode = true;
 
   // Preenche o ID e trava o campo.
   $('#t-id').value = tourId;
