@@ -11,11 +11,13 @@
       hosts are unrestricted (img-src https:) since the user can add custom
       XYZ/WMS layers at runtime. IG embed iframe is whitelisted explicitly.
       cdn.jsdelivr.net continua no script-src só pelos lazy-loads do app.js
-      (exifr/heic2any/jszip/geotiff); Leaflet & cia agora são vendorados.
+      (exifr/heic2any/jszip/geotiff/sql.js/proj4); Leaflet & cia agora são
+      vendorados. 'wasm-unsafe-eval' libera só a compilação do WebAssembly do
+      sql.js (leitor do gpkg do viário) — não habilita eval() de JS.
     -->
     <meta http-equiv="Content-Security-Policy" content="
       default-src 'self';
-      script-src 'self' https://cdn.jsdelivr.net;
+      script-src 'self' 'wasm-unsafe-eval' https://cdn.jsdelivr.net;
       style-src 'self' 'unsafe-inline';
       img-src 'self' data: blob: https:;
       connect-src 'self' https: blob:;
@@ -184,6 +186,12 @@
           <details class="help-changelog">
             <summary>Novidades (changelog)</summary>
             <dl>
+              <dt>15/06/2026 · v245</dt>
+              <dd>
+                <ul>
+                  <li>O <strong>Menor energia pelo viário</strong> agora puxa a malha de ruas de um GeoPackage vetorial de São Paulo (baixado uma vez e reusado) em vez de consultar o Overpass a cada trecho — mais rápido e sem depender do servidor do OSM. O Overpass fica como reserva caso o gpkg não esteja disponível.</li>
+                </ul>
+              </dd>
               <dt>15/06/2026 · v244</dt>
               <dd>
                 <ul>

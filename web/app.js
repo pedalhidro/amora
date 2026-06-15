@@ -5577,8 +5577,10 @@ async function refetchPath(idx, seqOverride) {
 
 // ─── Roteamento por menor energia (FABDEM + Dijkstra) ────────────────────
 // Limite duro do segmento — fora dele o custo do DEM cresce demais e a
-// experiência azeda. Acima desta distância cai pra reta.
-const ENERGY_MAX_SEGMENT_KM = 5;
+// experiência azeda. Acima desta distância cai pra reta. Atenção: o custo
+// (mosaico DEM + consulta do viário + Dijkstra) cresce ~quadrático com a
+// distância, então segmentos longos são naturalmente mais lentos.
+const ENERGY_MAX_SEGMENT_KM = 20;
 
 let _energyWorker = null;
 function getEnergyWorker() {
@@ -5810,7 +5812,358 @@ function rasterizeRoads(osm, bb, H, W, A) {
   return mask;
 }
 
-// `mode` = 'free' (qualquer célula do DEM) | 'road' (restringe ao viário OSM)
+// ─── Rede viária vetorial (gpkg de SP) ──────────────────────────────────────
+// Fonte primária do "Menor energia pelo viário": um GeoPackage do viário de
+// SP (LINESTRING, EPSG:31983) hospedado junto dos DEMs. Baixado UMA vez,
+// aberto via sql.js e reusado entre segmentos; cada rota consulta o R-tree
+// pela bbox e rasteriza só as linhas que caem nela. Substitui o Overpass
+// (que vira fallback). Parser de geometria portado do sampasimu — lida com
+// WKB ISO 3-D (1002/1005) e EWKB, o detalhe que faz gpkg do QGIS falhar.
+const VIARIO_GPKG_URL = 'https://telhas.pedalhidrografi.co/viario/sampa-viario.gpkg';
+const SQLJS_BASE = 'https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/';
+const PROJ4_URL  = 'https://cdn.jsdelivr.net/npm/proj4@2.9.0/dist/proj4.js';
+
+let _sqlJsPromise = null;
+async function ensureSqlJs() {
+  if (!_sqlJsPromise) {
+    _sqlJsPromise = (async () => {
+      if (typeof window.initSqlJs !== 'function') await loadScript(SQLJS_BASE + 'sql-wasm.js');
+      return window.initSqlJs({ locateFile: (f) => SQLJS_BASE + f });
+    })();
+  }
+  return _sqlJsPromise;
+}
+let _proj4Promise = null;
+async function ensureProj4() {
+  if (!_proj4Promise) {
+    _proj4Promise = (async () => {
+      if (!window.proj4) await loadScript(PROJ4_URL);
+      return window.proj4;
+    })();
+  }
+  return _proj4Promise;
+}
+
+// Decodifica blob StandardGeoPackageBinary → array de linhas ([x,y][]),
+// ou null quando a geometria não é (Multi)LineString. Layout do header
+// conforme OGC GeoPackage 1.4 §2.1.3.
+function parseGpkgGeom(blob) {
+  if (!(blob instanceof Uint8Array) || blob.length < 8) return null;
+  if (blob[0] !== 0x47 || blob[1] !== 0x50) return null; // "GP"
+  const flags = blob[3];
+  const envelopeType = (flags >> 1) & 0x07;
+  const envBytes = [0, 32, 48, 48, 64, 0, 0, 0][envelopeType] || 0;
+  const wkbStart = 8 + envBytes;
+  if (blob.length < wkbStart + 9) return null;
+  const view = new DataView(blob.buffer, blob.byteOffset, blob.byteLength);
+  return parseWKB(view, wkbStart);
+}
+// Tipo WKB → tipo-base 2-D + stride por vértice. Cobre as duas codificações
+// de dimensão: ISO/OGC (1002 = LineString Z, padrão do QGIS p/ fontes 3-D) e
+// EWKB (bits 0x80000000 Z / 0x40000000 M).
+function wkbTypeInfo(t) {
+  const code = t & 0x0fffffff;
+  const base = code % 1000;
+  const isoDim = Math.floor(code / 1000) | 0;
+  const hasZ = (t & 0x80000000) !== 0 || isoDim === 1 || isoDim === 3;
+  const hasM = (t & 0x40000000) !== 0 || isoDim === 2 || isoDim === 3;
+  return { base, stride: 16 + (hasZ ? 8 : 0) + (hasM ? 8 : 0) };
+}
+function parseWKB(view, off) {
+  const le = view.getUint8(off) === 1; off += 1;
+  const t = view.getUint32(off, le);   off += 4;
+  const { base: baseType, stride } = wkbTypeInfo(t);
+  if (baseType === 2) { // LineString
+    const n = view.getUint32(off, le); off += 4;
+    const out = new Array(n);
+    for (let i = 0; i < n; i++) {
+      out[i] = [view.getFloat64(off, le), view.getFloat64(off + 8, le)];
+      off += stride;
+    }
+    return [out];
+  }
+  if (baseType === 5) { // MultiLineString — cada filho repete o header
+    const k = view.getUint32(off, le); off += 4;
+    const lines = [];
+    for (let j = 0; j < k; j++) {
+      const subLE = view.getUint8(off) === 1; off += 1;
+      const subT = view.getUint32(off, subLE); off += 4;
+      const { base: subBase, stride: subStride } = wkbTypeInfo(subT);
+      if (subBase !== 2) return null;
+      const n = view.getUint32(off, subLE); off += 4;
+      const ln = new Array(n);
+      for (let i = 0; i < n; i++) {
+        ln[i] = [view.getFloat64(off, subLE), view.getFloat64(off + 8, subLE)];
+        off += subStride;
+      }
+      lines.push(ln);
+    }
+    return lines;
+  }
+  return null;
+}
+
+// Baixa + abre o gpkg do viário uma vez e cacheia o handle sql.js. Quando a
+// fonte é WGS84 (o build script reprojeta o gpkg de SP pra 4326) o caminho
+// comum NÃO carrega proj4 nem reprojeta vértice a vértice — os
+// transformadores `toWgs`/`fromWgs` viram identidade. Pra qualquer outro CRS
+// guardamos um transformador proj4 reusável (em vez de re-resolver as defs
+// por string a cada vértice, que era o gargalo). Em falha, limpa o cache
+// pra permitir nova tentativa. Timeout aborta downloads travados → fallback.
+const VIARIO_FETCH_TIMEOUT_MS = 60000;
+let _viarioDbPromise = null;
+async function ensureViarioDb() {
+  if (_viarioDbPromise) return _viarioDbPromise;
+  _viarioDbPromise = (async () => {
+    const SQL = await ensureSqlJs();
+    showToast('Baixando viário de SP (uma vez)…');
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), VIARIO_FETCH_TIMEOUT_MS);
+    let buf;
+    try {
+      const res = await fetch(VIARIO_GPKG_URL, { signal: ctrl.signal });
+      if (!res.ok) throw new Error(`gpkg ${res.status}`);
+      buf = await res.arrayBuffer();
+    } finally {
+      clearTimeout(timer);
+    }
+    const db = new SQL.Database(new Uint8Array(buf));
+    const cont = db.exec('SELECT table_name, column_name, srs_id FROM gpkg_geometry_columns LIMIT 1');
+    if (!cont.length) throw new Error('gpkg sem gpkg_geometry_columns');
+    const tableName = cont[0].values[0][0];
+    const geomCol   = cont[0].values[0][1] || 'geom';
+    const srsId     = cont[0].values[0][2];
+    const isSrcWgs = srsId === 4326 || srsId === 0 || srsId === -1;
+    let toWgs = (xy) => xy;     // fonte → [lng,lat]   (vértices)
+    let fromWgs = (xy) => xy;   // [lng,lat] → fonte   (cantos da bbox)
+    if (!isSrcWgs) {
+      const proj4 = await ensureProj4();
+      const srsRes = db.exec(`SELECT definition FROM gpkg_spatial_ref_sys WHERE srs_id = ${srsId}`);
+      if (!srsRes.length || !srsRes[0].values[0][0]) throw new Error(`SRS ${srsId} sem definição`);
+      proj4.defs(`EPSG:${srsId}`, srsRes[0].values[0][0]);
+      const tr = proj4('EPSG:4326', `EPSG:${srsId}`);  // transformador reusável
+      toWgs = (xy) => tr.inverse(xy);
+      fromWgs = (xy) => tr.forward(xy);
+    }
+    return { db, tableName, geomCol, isSrcWgs, toWgs, fromWgs };
+  })();
+  _viarioDbPromise.catch(() => { _viarioDbPromise = null; });
+  return _viarioDbPromise;
+}
+
+// Consulta o viário do gpkg que cai na bbox e devolve as linhas em WGS84
+// (array de polilinhas [[lng,lat], …]). É a matéria-prima do roteamento
+// vetorial — a rota segue a geometria real das vias, sem o serrilhado do
+// grid raster.
+async function queryViarioLines(bb) {
+  const { db, tableName, geomCol, isSrcWgs, toWgs, fromWgs } = await ensureViarioDb();
+  const t0 = performance.now();
+
+  // bbox em CRS de origem pro filtro R-tree (evita varrer o estado inteiro).
+  let xmin, xmax, ymin, ymax;
+  if (isSrcWgs) {
+    xmin = bb.west; xmax = bb.east; ymin = bb.south; ymax = bb.north;
+  } else {
+    const corners = [
+      [bb.west, bb.south], [bb.east, bb.south],
+      [bb.east, bb.north], [bb.west, bb.north],
+    ].map(fromWgs);
+    xmin = Math.min(...corners.map((p) => p[0]));
+    xmax = Math.max(...corners.map((p) => p[0]));
+    ymin = Math.min(...corners.map((p) => p[1]));
+    ymax = Math.max(...corners.map((p) => p[1]));
+  }
+
+  const rtree = `rtree_${tableName}_${geomCol}`;
+  let stmt, usedRtree = true;
+  try {
+    stmt = db.prepare(`
+      SELECT t."${geomCol}" FROM "${tableName}" t
+      WHERE t.fid IN (
+        SELECT id FROM "${rtree}"
+        WHERE minx <= ? AND maxx >= ? AND miny <= ? AND maxy >= ?
+      )`);
+    stmt.bind([xmax, xmin, ymax, ymin]);
+  } catch (e) {
+    // Sem R-tree = scan da tabela INTEIRA por segmento — o caso lento. Avisa.
+    console.warn('[viario] SEM R-tree — scan completo (lento!):', e.message);
+    usedRtree = false;
+    stmt = db.prepare(`SELECT "${geomCol}" FROM "${tableName}"`);
+  }
+
+  const lines = [];
+  let scanned = 0;
+  while (stmt.step()) {
+    scanned++;
+    const geom = parseGpkgGeom(stmt.get()[0]);
+    if (!geom) continue;
+    for (const coords of geom) {
+      const out = new Array(coords.length);
+      for (let i = 0; i < coords.length; i++) {
+        out[i] = isSrcWgs ? coords[i] : toWgs(coords[i]);   // [lng, lat]
+      }
+      lines.push(out);
+    }
+  }
+  stmt.free();
+  console.info(`[viario] consulta ${(performance.now() - t0).toFixed(0)} ms · ` +
+    `${scanned} feições · ${lines.length} linhas · rtree=${usedRtree} · ` +
+    `crs=${isSrcWgs ? 'wgs84' : 'reprojetado'}`);
+  return lines;
+}
+
+// Min-heap binário (prioridade f64 + id int) com deleção preguiçosa — o
+// suficiente pra um Dijkstra sobre o grafo do viário. Sem decrease-key:
+// reinserimos e ignoramos nós já finalizados.
+class MinHeap {
+  constructor() { this.pri = []; this.id = []; }
+  get size() { return this.id.length; }
+  push(p, i) {
+    const pri = this.pri, id = this.id;
+    let c = id.length;
+    pri.push(p); id.push(i);
+    while (c > 0) {
+      const par = (c - 1) >> 1;
+      if (pri[par] <= pri[c]) break;
+      const tp = pri[par]; pri[par] = pri[c]; pri[c] = tp;
+      const ti = id[par];  id[par]  = id[c];  id[c]  = ti;
+      c = par;
+    }
+  }
+  pop() {
+    const pri = this.pri, id = this.id;
+    const top = id[0];
+    const lp = pri.pop(), li = id.pop();
+    if (id.length) {
+      pri[0] = lp; id[0] = li;
+      let c = 0; const m = id.length;
+      while (true) {
+        const l = 2 * c + 1, r = 2 * c + 2; let s = c;
+        if (l < m && pri[l] < pri[s]) s = l;
+        if (r < m && pri[r] < pri[s]) s = r;
+        if (s === c) break;
+        const tp = pri[s]; pri[s] = pri[c]; pri[c] = tp;
+        const ti = id[s];  id[s]  = id[c];  id[c]  = ti;
+        c = s;
+      }
+    }
+    return top;
+  }
+}
+
+// Roteia origem→destino SOBRE o grafo vetorial do viário (não no grid). Monta
+// nós (vértices, junções compartilham coordenada) e arestas dirigidas com o
+// custo de energia assimétrico do modelo (mesma fórmula do energy-worker:
+// subida = alpha·dist + beta·Δh; descida = max(0, alpha·dist − eta·beta·|Δh|)),
+// amostrando a elevação do DEM por nó. Devolve a polilinha lat/lng da via, ou
+// null se não há caminho (cai pro fallback). `from`/`to` reais são costurados
+// nas pontas pra conectar com os marcadores.
+function viarioGraphRoute(lines, fromLatLng, toLatLng, dem, bb, A) {
+  const t0 = performance.now();
+  const W = dem.W, H = dem.H, height = dem.height, mask = dem.mask;
+  const nodeKey = new Map();          // "latq,lngq" → id
+  const nodeLat = [], nodeLng = [], nodeElev = [];
+  const KEY = 1e6;                    // ~0.1 m de quantização p/ junções
+
+  function sampleElev(lat, lng) {
+    const r = Math.round((bb.north - lat) / A);
+    const c = Math.round((lng - bb.west) / A);
+    if (r < 0 || r >= H || c < 0 || c >= W) return 0;
+    const i = r * W + c;
+    if (mask && !mask[i]) return 0;
+    const h = height[i];
+    return Number.isFinite(h) ? h : 0;
+  }
+  function getNode(lng, lat) {
+    const k = Math.round(lat * KEY) + ',' + Math.round(lng * KEY);
+    let id = nodeKey.get(k);
+    if (id === undefined) {
+      id = nodeLat.length;
+      nodeKey.set(k, id);
+      nodeLat.push(lat); nodeLng.push(lng); nodeElev.push(sampleElev(lat, lng));
+    }
+    return id;
+  }
+
+  const adj = [];                     // adj[u] = [v0, cost0, v1, cost1, …]
+  const alpha = params.energyAlpha, beta = params.energyBeta, eta = params.energyEta;
+  const M_DEG = 111320;
+  const edgeCost = (dist, dh) =>
+    dh >= 0 ? alpha * dist + beta * dh
+            : Math.max(0, alpha * dist - eta * beta * (-dh));
+
+  for (const line of lines) {
+    let pu = -1;
+    for (const [lng, lat] of line) {
+      const u = getNode(lng, lat);
+      if (pu !== -1 && pu !== u) {
+        const dLat = (nodeLat[u] - nodeLat[pu]) * M_DEG;
+        const dLng = (nodeLng[u] - nodeLng[pu]) * M_DEG *
+          Math.cos((nodeLat[u] + nodeLat[pu]) / 2 * Math.PI / 180);
+        const dist = Math.hypot(dLat, dLng);
+        const dh = nodeElev[u] - nodeElev[pu];
+        (adj[pu] || (adj[pu] = [])).push(u, edgeCost(dist,  dh));
+        (adj[u]  || (adj[u]  = [])).push(pu, edgeCost(dist, -dh));
+      }
+      pu = u;
+    }
+  }
+
+  const N = nodeLat.length;
+  if (!N) return null;
+
+  // Snap origem/destino no nó mais próximo (varredura linear — N pequeno).
+  function nearest(lat, lng) {
+    let best = -1, bestD = Infinity;
+    for (let i = 0; i < N; i++) {
+      const dl = nodeLat[i] - lat, dg = nodeLng[i] - lng;
+      const d = dl * dl + dg * dg;
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    return best;
+  }
+  const s = nearest(fromLatLng.lat, fromLatLng.lng);
+  const t = nearest(toLatLng.lat, toLatLng.lng);
+  if (s < 0 || t < 0) return null;
+
+  const distA = new Float64Array(N).fill(Infinity);
+  const prev  = new Int32Array(N).fill(-1);
+  const done  = new Uint8Array(N);
+  distA[s] = 0;
+  const heap = new MinHeap();
+  heap.push(0, s);
+  while (heap.size) {
+    const u = heap.pop();
+    if (done[u]) continue;
+    done[u] = 1;
+    if (u === t) break;
+    const a = adj[u];
+    if (!a) continue;
+    const du = distA[u];
+    for (let k = 0; k < a.length; k += 2) {
+      const v = a[k], w = a[k + 1];
+      if (done[v]) continue;
+      const nd = du + w;
+      if (nd < distA[v]) { distA[v] = nd; prev[v] = u; heap.push(nd, v); }
+    }
+  }
+  if (!done[t]) {
+    console.info(`[viario] grafo ${N} nós · sem caminho (origem/destino desconexos)`);
+    return null;
+  }
+
+  const path = [];
+  for (let v = t; v !== -1; v = prev[v]) path.push([nodeLat[v], nodeLng[v]]);
+  path.reverse();
+  path.unshift([fromLatLng.lat, fromLatLng.lng]);
+  path.push([toLatLng.lat, toLatLng.lng]);
+  console.info(`[viario] grafo ${N} nós · rota ${path.length} pts em ` +
+    `${(performance.now() - t0).toFixed(0)} ms`);
+  return path;
+}
+
+// `mode` = 'free' (qualquer célula do DEM) | 'road' (restringe ao viário:
+// gpkg de SP como fonte primária, Overpass como fallback)
 async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
   const distKm = fromLatLng.distanceTo(toLatLng) / 1000;
   if (distKm > ENERGY_MAX_SEGMENT_KM) {
@@ -5840,25 +6193,42 @@ async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
   };
 
   await ensureGeoTIFF();
+  const tDem = performance.now();
   const dem = await loadDemMosaic(bb);
+  console.info(`[energy] DEM ${dem.W}×${dem.H} em ${(performance.now() - tDem).toFixed(0)} ms`);
   if (!dem.W || !dem.H) {
     console.warn('[energy] DEM vazio — fallback pra reta');
     return straightPath(fromLatLng, toLatLng);
   }
 
-  // OSM road network (paralelo ao DEM, mesmo bbox).
+  // ROAD primário: roteia SOBRE o grafo vetorial do gpkg — a rota segue a
+  // geometria real das vias (linhas suaves, sem serrilhado do grid). Sucesso
+  // = retorno imediato. Falha (gpkg indisponível / sem caminho) cai pro grid
+  // raster via Overpass logo abaixo.
+  if (mode === 'road') {
+    try {
+      const lines = await queryViarioLines(bb);
+      const path = viarioGraphRoute(lines, fromLatLng, toLatLng, dem, bb, A);
+      if (path && path.length) return path;
+    } catch (e) {
+      console.warn('[energy_road] grafo gpkg falhou:', e.message);
+    }
+  }
+
+  // Fallback de rede viária no grid raster (Overpass) — o gpkg como grafo já
+  // foi tentado acima. Último caso: energia livre (networkMask = null).
   let networkMask = null;
   if (mode === 'road') {
     try {
       const osm = await fetchOsmRoadsForBbox(bb);
       if (!osm.ways.length) {
-        showToast('Sem viário OSM no bbox — caindo para menor energia livre.');
+        showToast('Sem viário no bbox — caindo para menor energia livre.');
       } else {
         networkMask = rasterizeRoads(osm, bb, dem.H, dem.W, A);
       }
-    } catch (e) {
-      console.warn('[energy_road] Overpass falhou:', e.message);
-      showToast(`Overpass falhou (${e.message}) — caindo para menor energia livre.`);
+    } catch (e2) {
+      console.warn('[energy_road] Overpass falhou:', e2.message);
+      showToast(`Viário indisponível (${e2.message}) — caindo para menor energia livre.`);
     }
   }
 
@@ -5884,6 +6254,7 @@ async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
   }
 
   try {
+    const tWork = performance.now();
     const res = await runEnergyWorker({
       height: dem.height, mask: dem.mask,
       networkMask,
@@ -5894,6 +6265,7 @@ async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
       beta:  params.energyBeta,
       eta:   params.energyEta,
     });
+    console.info(`[energy] worker em ${(performance.now() - tWork).toFixed(0)} ms`);
     if (!res.path || !res.path.length) {
       console.warn('[energy] sem caminho — fallback pra reta');
       return straightPath(fromLatLng, toLatLng);
