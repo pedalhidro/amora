@@ -8,17 +8,21 @@
 # Este arquivo lista APENAS o que de fato não deve ir pro container; o
 # estado mutável (web/photos/, uploads.ttl, data_graphs.ttl) vive no GCS.
 
+# Segredos — NUNCA no build context: sem esta linha o `gcloud run deploy
+# --source` sobe o .env (RWGPS_API_KEY/RWGPS_AUTH_TOKEN) pro bucket de
+# staging do Cloud Build, mesmo que não chegue à imagem final.
+.env
+
 # Estado mutável — vive no STORE (GCS), nunca no container.
 # Container fica magrinho: /photos/<phash>/* e /clips/<*> são redirecionados
 # pra gs://phidro-state/{photos,clips}/* pelos handlers em main.py. Pra
 # povoar o bucket com os transcodes locais de build-clips.py + as fotos
-# já uploadadas pelo Pi, rode `scripts/deploy-cloudrun.sh --state`.
+# já uploadadas localmente, rode `scripts/deploy-cloudrun.sh --state`.
 web/photos/
 web/data/uploads.ttl
 web/data/data_graphs.ttl
-web/data/photos.ttl
 web/clips/
-backend/pi/data/
+backend/data/
 
 # Git / tooling
 .git/

@@ -11,3 +11,8 @@ venv/
 web/data/
 web/photos/
 web/clips/
+
+# Checksums do último sync local<->bucket (scripts/sync-guard.sh) — por
+# máquina, não versionado.
+.sync-state/
+web/tour_assets/
