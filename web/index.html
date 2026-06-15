@@ -147,6 +147,7 @@
         </label>
         <button type="button" id="params-btn" class="params-btn" title="Parâmetros da simulação" aria-label="Parâmetros">⚙</button>
         <button type="button" id="trace-save" class="trace-save" title="Salvar GPX" aria-label="Salvar GPX">⤓🗺︎ Salvar</button>
+        <button type="button" id="trace-view" class="trace-view" title="Ver — oculta os pontos e suaviza o traçado" aria-label="Ver">👁 Ver</button>
         <span class="trace-break" aria-hidden="true"></span>
         <span class="trace-metrics" id="trace-metrics">0,00 km · 0,0 kJ</span>
       </div>
@@ -183,6 +184,34 @@
           <details class="help-changelog">
             <summary>Novidades (changelog)</summary>
             <dl>
+              <dt>15/06/2026 · v244</dt>
+              <dd>
+                <ul>
+                  <li>Nova camada <strong>Câmera Topográfica</strong> (abaixo da Topografia colorida): renderiza o relevo do FABDEM no próprio navegador — elevação na paleta cmocean.phase realçada pela declividade, igual ao sampasimu. A engrenagem ⚙ na camada abre os parâmetros (elevação mín./máx., declividade máxima, γ) com botão pra estimar pela extensão visível.</li>
+                </ul>
+              </dd>
+              <dt>14/06/2026 · v241</dt>
+              <dd>
+                <ul>
+                  <li>No editor de GPX, botão <strong>Ver</strong> (ao lado de Salvar): oculta os pontos, suaviza o traçado e esconde a barra de edição pra pré-visualizar a rota limpa. O Cancelar vira <strong>Editar</strong> pra voltar.</li>
+                  <li>Nos parâmetros da simulação, opção pra usar o <strong>DEM de São Paulo</strong> (sampa_geral, ~5 m) como fonte de elevação — mais preciso que o FABDEM dentro da região metropolitana. Desligado por padrão.</li>
+                </ul>
+              </dd>
+              <dt>14/06/2026 · v240</dt>
+              <dd>
+                <ul>
+                  <li>Painel de camadas sem divisão "Base"/"Sobreposição": tudo vira um checkbox só (dá pra ligar OSM e Satélite juntos, por exemplo).</li>
+                  <li>Novo modal "Ordem de empilhamento" (botão no rodapé do painel de camadas) pra reordenar quem é desenhado por cima — bases, topografia, SARA 1930, custom, rotas e camadas OSM. Fotos e números ficam sempre no topo. A ordem é lembrada neste dispositivo.</li>
+                </ul>
+              </dd>
+              <dt>14/06/2026 · v239</dt>
+              <dd>
+                <ul>
+                  <li>No traçado de GPX, clicar sobre a linha insere um ponto intermediário no trecho clicado — ou segure e arraste (mouse ou toque) pra soltar o ponto onde quiser. Sem mais adicionar pontos soltos no fim do percurso.</li>
+                  <li>Abrir o popup de um ponto novo já marca ele como POI Garmin e mostra o seletor de símbolo — desmarque pra deixar como ponto comum do trajeto.</li>
+                  <li>POIs no mapa agora aparecem como emoji do símbolo (💧 água, ⛰️ pico, 🍴 comida…) em vez do texto entre parênteses.</li>
+                </ul>
+              </dd>
               <dt>12/06/2026 · v238</dt>
               <dd>
                 <ul>
@@ -362,6 +391,10 @@
             <span class="param-label">Usar FABDEM para elevação</span>
             <span class="param-input"><input type="checkbox" id="param-use-fabdem"></span>
           </label>
+          <label class="param-row" title="DEM local de São Paulo (~5 m, COG). Tem prioridade sobre o FABDEM dentro da RMSP; fora dela cai pro FABDEM/Open-Meteo.">
+            <span class="param-label">Usar DEM de SP (sampa_geral, ~5 m)</span>
+            <span class="param-input"><input type="checkbox" id="param-use-sampa-dem"></span>
+          </label>
           <label class="param-row" title="Peso da distância no custo de cada aresta">
             <span class="param-label">α (peso da distância)</span>
             <span class="param-input"><input type="number" id="param-energy-alpha" step="0.5" min="0" max="100"></span>
@@ -389,6 +422,39 @@
       </div>
     </div>
 
+    <!-- Câmera Topográfica: parâmetros do relevo (engrenagem na camada) -->
+    <div id="camera-topo-modal" class="modal" hidden>
+      <div class="modal-content params-modal-content">
+        <header>
+          <h2>Câmera Topográfica</h2>
+          <button class="close" id="ctopo-close" type="button" aria-label="Fechar">&times;</button>
+        </header>
+        <div class="params-body">
+          <p class="muted">Relevo do FABDEM: elevação na paleta cmocean.phase multiplicada pela declividade. Deixe um campo em branco para automático (percentis da extensão visível).</p>
+          <label class="param-row" title="Elevação mapeada pro início da paleta (auto = p5)">
+            <span class="param-label">Elevação mín. (auto = p5)</span>
+            <span class="param-input"><input type="number" id="ctopo-min-elev" step="10" placeholder="auto"> m</span>
+          </label>
+          <label class="param-row" title="Elevação mapeada pro fim da paleta (auto = p80)">
+            <span class="param-label">Elevação máx. (auto = p80)</span>
+            <span class="param-input"><input type="number" id="ctopo-max-elev" step="10" placeholder="auto"> m</span>
+          </label>
+          <label class="param-row" title="Declividade que satura em preto (auto = p80)">
+            <span class="param-label">Declividade máx. (auto = p80)</span>
+            <span class="param-input"><input type="number" id="ctopo-max-slope" step="1" min="0" placeholder="auto"> %</span>
+          </label>
+          <label class="param-row" title="γ do realce de declividade (1 = linear; &gt;1 suaviza)">
+            <span class="param-label">γ da declividade</span>
+            <span class="param-input"><input type="number" id="ctopo-gamma" step="0.1" min="0.1" max="5"></span>
+          </label>
+          <div class="params-actions">
+            <button type="button" id="ctopo-estimate">Estimar pela extensão atual</button>
+            <button type="button" id="ctopo-reset" class="linkbtn">Restaurar padrões</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Route detail modal (embeds Instagram post when available) -->
     <div id="route-modal" class="modal" hidden>
       <div class="modal-content route-modal-content">
@@ -400,6 +466,21 @@
           <div class="route-modal-meta" id="route-modal-meta"></div>
           <div class="route-modal-photos" id="route-modal-photos"></div>
           <div class="route-modal-ig" id="route-modal-ig"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Layer stacking-order modal (aberto pelo botão dentro do painel de camadas) -->
+    <div id="layer-order-modal" class="modal" hidden>
+      <div class="modal-content layer-order-modal-content">
+        <header>
+          <h2>Ordem de empilhamento</h2>
+          <button class="close" id="layer-order-close" type="button" aria-label="Fechar">&times;</button>
+        </header>
+        <div class="layer-order-body">
+          <p class="muted layer-order-hint">O topo da lista é desenhado por cima. Marcadores (fotos, números) e tooltips ficam sempre acima. Aplicado na hora; lembrado neste dispositivo.</p>
+          <div id="layer-order-list"></div>
+          <button type="button" id="layer-order-reset" class="layer-order-reset">↺ Restaurar padrão</button>
         </div>
       </div>
     </div>

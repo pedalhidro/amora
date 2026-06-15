@@ -12,8 +12,10 @@ phd:tour_1 a ph:Tour ;
     dcterms:date "2024-09-09T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Água Preta e Tiburtino" ;
     prov:wasAttributedTo phd:pessoaDandan ;
+    ph:arrivedAt "2024-09-09T21:26:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 2 ;
     ph:countNewcomer 2 ;
+    ph:departedAt "2024-09-09T20:11:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate [ a qudt:QuantityValue ;
             qudt:hasUnit unit:KiloJ ;
             qudt:numericValue 142.0 ;
@@ -22,6 +24,9 @@ phd:tour_1 a ph:Tour ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
             schema:url <https://ridewithgps.com/routes/49272936> ] ;
+    ph:measuredEnergy [ a qudt:QuantityValue ;
+            qudt:hasUnit unit:KiloJ ;
+            qudt:numericValue 140.0 ] ;
     ph:mediaCount 2 ;
     ph:movingDuration "PT1H"^^xsd:duration .
 
@@ -46,12 +51,18 @@ phd:tour_10 a ph:Tour ;
 
 phd:tour_100 a ph:Tour ;
     dcterms:date "2026-05-09T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Rota sabática para o dia 09 de maio de 2026. Um chamado misterioso foi compartilhado no grupão do zap do pedal hidrográfico, convocando as pedaleiras inquietas da urbe desvairada para participar de um mutirão no Alto Rio Bravo, uma das cabeças da bacia do Ribeirão dos Perus, zona norte de nossa cidade.\r
+\r
+Partiremos do SESC Pompeia - templo dos encontros projetado por Lina Bô. De vela em popa com os ventos noroestes, seguiremos a montante do Rio Pirituba, cujo leito sustentou e continua sustentando os trilhos da Santos-Jundiaí. A ferrovia aproveitou a esperteza dos rios para penetrar a imponente Cantareira. E nós, persistentes pedaleiros, aproveitamos da mesma lógica para subir suas escarpas admiráveis. Quantas milhões de pessoas passaram por ali, adentrando o continente? Quantas toneladas de cargas? Quantas memórias, quantas prosas, quantas paisagens? A escala das multidões que o tempo carrega. Contudo, na perpendicular desse fluxo implacável da História, desviaremos para a ruazinha das estórias de Vó Milce (Rua Maria Zélia, 316), avó de uma de nossas queridas pedalantes. Inspecionados os tempos recônditos da memória, voltaremos nosso caminho rumo a Perus.\r
+\r
+Será uma oportunidade para construir pontes entre esta criatura-bebê de 1 ano meio de idade, em franco processo de expansão, que é o Pedal Hidrográfico com os coletivos "existe água em sp", "aqui tem nascente" entre outros que vem surgindo como mato furando os concretos de Piratininga, e que carregam a primavera nos dentes. Sim, nós já viemos criando outras cidades possíveis em nossas ações, nossas movimentações e nossas manifestações. Uma cidade, sobretudo, de ENCONTROS. Bora nessa.\r
+\r
+"[...] Sorriram-se, viram-se. Era infinitamente maio e Jó Joaquim pegou o amor" (Guimarães Rosa, "Desenredo" em "Tutameia - Terceiras Estórias")"""@pt ;
     dcterms:title "era infinitamente maio no alto rio bravo" ;
     prov:wasAttributedTo phd:pessoaAnaju,
         phd:pessoaDandan,
         phd:pessoaGiovanna,
         phd:pessoaGmard ;
-    ph:arrivedAt "2026-05-10T00:00:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 13 ;
     ph:countNewcomer 2 ;
     ph:energyEstimate [ a qudt:QuantityValue ;
@@ -62,7 +73,8 @@ phd:tour_100 a ph:Tour ;
     ph:linkInstagram "https://www.instagram.com/p/DYFi8wRDjFL/?img_index=1"^^xsd:anyURI ;
     ph:linkRoute [ a ph:RouteReference ;
             schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/55017982> ] .
+            schema:url <https://ridewithgps.com/routes/55017982> ] ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/100/announcement.jpg> .
 
 phd:tour_101 a ph:Tour ;
     dcterms:date "2026-05-13T20:00:00-03:00"^^xsd:dateTime ;
@@ -70,7 +82,6 @@ phd:tour_101 a ph:Tour ;
     dcterms:title "Crista do Lauzane, subir Água Fria e duas vilas escondidas" ;
     prov:wasAttributedTo phd:pessoaAlef,
         phd:pessoaGabrieltunes ;
-    ph:arrivedAt "2026-05-14T00:00:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 7 ;
     ph:countNewcomer 1 ;
     ph:energyEstimate [ a qudt:QuantityValue ;
@@ -99,7 +110,6 @@ Pedalando novamente Pirajussara acima, chegaremos no grande Piscinão, infraestr
 Por fim, desceremos o córrego cujo nome desconheço, mas que escorre abaixo do asfalto da Av. Giovanni Gronchi. Finalizamos na estação de mesmo nome, já cansados e com aquele suor de blusas de frio."""@pt ;
     dcterms:title "Ziguezaguear a Crista do Morumbi" ;
     prov:wasAttributedTo phd:pessoaGabrieltunes ;
-    ph:arrivedAt "2026-05-21T00:00:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 7 ;
     ph:countNewcomer 0 ;
     ph:energyEstimate [ a qudt:QuantityValue ;
@@ -2225,7 +2235,6 @@ phd:tour_90 a ph:Tour ;
     dcterms:date "2026-03-04T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Colina da Matilde e Riacho dos Machados" ;
     prov:wasAttributedTo phd:pessoaFetiche ;
-    ph:arrivedAt "2026-03-05T00:00:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 7 ;
     ph:countNewcomer 1 ;
     ph:inSeriesEdition phd:assoc_PH_82 ;
@@ -2239,7 +2248,6 @@ phd:tour_91 a ph:Tour ;
     dcterms:date "2026-03-18T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Histórico pelo entorno do Cassandoca" ;
     prov:wasAttributedTo phd:pessoaAlex ;
-    ph:arrivedAt "2026-03-19T00:00:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 15 ;
     ph:countNewcomer 5 ;
     ph:inSeriesEdition phd:assoc_PH_83 ;
@@ -2252,7 +2260,6 @@ phd:tour_92 a ph:Tour ;
     dcterms:date "2026-03-22T00:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Horta do Parque do Rio Bixiga" ;
     prov:wasAttributedTo phd:pessoaYas ;
-    ph:arrivedAt "2026-03-22T00:00:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 0 ;
     ph:countNewcomer 0 ;
     ph:inSeriesEdition phd:assoc_PH_84 ;
@@ -2262,13 +2269,13 @@ phd:tour_92 a ph:Tour ;
             schema:url <https://ridewithgps.com/routes/54320499> ] .
 
 phd:tour_93 a ph:Tour ;
-    dcterms:date "2025-03-25T20:00:00-03:00"^^xsd:dateTime ;
-    dcterms:description """Como fazer para empacotar a metrópole numa caixa topográfica? Em sentido horário, inicia-se pelos granitos da Serra da Cantareira, percorrendo-se pelos calcários do Planalto de Taipas e os gêmeos Pico do Jaraguá e Morro Doce para então escorrer o Tietê para a depressão interiorana. Morro Grande de Cotia se apresenta ao oeste. Ao nordeste, a abiruta captura das cabeceiras pelo Rio Paraíba.
-
-O que se apresenta nos limites do hemisfério sul, de leste a oeste? A resposta poderia vir ao caminhar indefinidamente o Caaguaçu, testemunha das grandes várzeas de altitude que fazem a originalidade deste sítio urbano. De lá, prolonga-se no Maciço da Bonilha ao Sul, para então este se transformar na Serra das Guaianazes, grande articuladora do leste da cidade.
-
-Neste pedal, partimos oportunamente de onde nasce esta oriental serra, n’onde as colinas que formam o Desmorrodouro de Itaquá passam a expressar sua xistosa montanhosidade. Por lá, apresenta-se a única e grande Voçoroca do Itaquera-Mirim com profundidades de até vinte metros e comprimento de duzentos metros, num polígono - única deste sítio urbano - onde estes peculiares cânions se reproduzem.
-
+    dcterms:date "2026-03-25T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Como fazer para empacotar a metrópole numa caixa topográfica? Em sentido horário, inicia-se pelos granitos da Serra da Cantareira, percorrendo-se pelos calcários do Planalto de Taipas e os gêmeos Pico do Jaraguá e Morro Doce para então escorrer o Tietê para a depressão interiorana. Morro Grande de Cotia se apresenta ao oeste. Ao nordeste, a abiruta captura das cabeceiras pelo Rio Paraíba.\r
+\r
+O que se apresenta nos limites do hemisfério sul, de leste a oeste? A resposta poderia vir ao caminhar indefinidamente o Caaguaçu, testemunha das grandes várzeas de altitude que fazem a originalidade deste sítio urbano. De lá, prolonga-se no Maciço da Bonilha ao Sul, para então este se transformar na Serra das Guaianazes, grande articuladora do leste da cidade.\r
+\r
+Neste pedal, partimos oportunamente de onde nasce esta oriental serra, n’onde as colinas que formam o Desmorrodouro de Itaquá passam a expressar sua xistosa montanhosidade. Por lá, apresenta-se a única e grande Voçoroca do Itaquera-Mirim com profundidades de até vinte metros e comprimento de duzentos metros, num polígono - única deste sítio urbano - onde estes peculiares cânions se reproduzem.\r
+\r
 A bifurcação se apresenta: deveríamos seguir ao alto pelo esporão que se bifurca da Serra das Guaianazes? Ou ao baixo mergulhando no riacho de nome desconhecido? Inevitavelmente, nos encontraremos no alto dum pântano no meio da noite: no Pantanal de Itaquá, expressão máxima da singularidade geomorfológica deste sítio urbano, onde banhados e colinas preenchem o horizonte e o vertical, num mosaico de eras contemporâneas e geológicas."""@pt ;
     dcterms:title "A Voçoroca e o Pântano" ;
     ph:arrivedAt "2025-03-26T00:00:00-03:00"^^xsd:dateTime ;
@@ -2289,7 +2296,6 @@ phd:tour_94 a ph:Tour ;
     dcterms:title "Águas de Março: povo, éguas, lágrimas, alagados" ;
     prov:wasAttributedTo phd:pessoaDandan,
         phd:pessoaGmard ;
-    ph:arrivedAt "2026-04-01T00:00:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 9 ;
     ph:countNewcomer 1 ;
     ph:energyEstimate [ a qudt:QuantityValue ;
@@ -2306,7 +2312,6 @@ phd:tour_95 a ph:Tour ;
     dcterms:date "2026-04-11T00:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Dar tchau pra quem migra" ;
     prov:wasAttributedTo phd:pessoaAnaju ;
-    ph:arrivedAt "2026-04-11T00:00:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 0 ;
     ph:countNewcomer 0 ;
     ph:energyEstimate [ a qudt:QuantityValue ;
@@ -2330,7 +2335,6 @@ Em sequência, encontraremos clubes que, apesar de serem menos conhecidos, marca
 As curvas do Tietê nos levam para as origens operárias da expansão da cidade, tendo uma de suas possíveis fozes (reconhecemos que ela não é definitiva) em um largo terreno na várzea do Tietê, que abriga o mais antigo estádio do Sport Club Corinthians Paulista."""@pt ;
     dcterms:title "Várzea do Tietê e as origens do Futebol" ;
     prov:wasAttributedTo phd:pessoaAlef ;
-    ph:arrivedAt "2026-04-15T00:00:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 23 ;
     ph:countNewcomer 9 ;
     ph:energyEstimate [ a qudt:QuantityValue ;
@@ -2349,7 +2353,6 @@ phd:tour_97 a ph:Tour ;
     dcterms:title "Da Cantareira ao Tremembé" ;
     prov:wasAttributedTo phd:pessoaDandan,
         phd:pessoaGa ;
-    ph:arrivedAt "2026-04-21T00:00:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 4 ;
     ph:countNewcomer 0 ;
     ph:energyEstimate [ a qudt:QuantityValue ;
@@ -2366,7 +2369,6 @@ phd:tour_98 a ph:Tour ;
     dcterms:date "2026-04-28T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Pontos de Sela dos afluentes de Tamanduateí" ;
     prov:wasAttributedTo phd:pessoaGabrieltunes ;
-    ph:arrivedAt "2026-04-29T00:00:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 6 ;
     ph:countNewcomer 2 ;
     ph:energyEstimate [ a qudt:QuantityValue ;
@@ -2386,7 +2388,6 @@ phd:tour_99 a ph:Tour ;
     prov:wasAttributedTo phd:pessoaAlef,
         phd:pessoaDandan,
         phd:pessoaGabrieltunes ;
-    ph:arrivedAt "2026-05-07T00:00:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 6 ;
     ph:countNewcomer 1 ;
     ph:energyEstimate [ a qudt:QuantityValue ;

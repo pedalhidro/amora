@@ -51,6 +51,16 @@ const SETTINGS_DEFAULTS = {
     startZoom: 12,                      // aplicado no load inicial
     baseLayer: 'osm',                   // 'osm' | 'satellite'
   },
+  cameraTopo: {
+    // Câmera Topográfica: relevo renderizado do FABDEM no cliente
+    // (elevação em cmocean.phase × declividade blend-multiply), igual ao
+    // sampasimu. null = automático (percentis da extensão atual).
+    minElev: null,     // m (auto = p5)
+    maxElev: null,     // m (auto = p80)
+    maxSlope: null,    // m/m (auto = p80 da declividade)
+    slopeGamma: 1.2,   // γ do realce de declividade
+    opacityPct: 85,
+  },
   clipsGhost: {
     enabled: true,                      // tocar vídeo fantasma quando Animação ligada
     segmentSec: 10,                     // duração de cada clipe em laço
@@ -137,6 +147,49 @@ if (settings.spotlight) settings.spotlight.enabled = false;
 // ─── Map ─────────────────────────────────────────────────────────────────────
 const map = L.map('map', { zoomControl: true })
   .setView(SP, settings.mapDefaults.startZoom);
+
+// ─── Ordem de empilhamento das camadas (z-index por pane) ────────────────────
+// Cada camada de mapa reordenável vive no seu próprio pane, numa faixa de
+// z-index entre o tilePane (200) e o markerPane (600) do Leaflet — assim
+// marcadores (fotos, números de rota) e tooltips ficam SEMPRE por cima. O topo
+// da lista do modal "Ordem de empilhamento" é desenhado por cima. A ordem é
+// editável ali e persiste no localStorage (por dispositivo). Camadas sem
+// presença espacial (loop de áudio, vídeo fantasma) não entram aqui.
+const LAYER_PANE = (id) => `phlyr-${id}`;
+const DEFAULT_LAYER_ORDER = [
+  'osm', 'satellite',          // mapas base (fundo)
+  'camera-topo',               // relevo FABDEM (abaixo da topografia colorida)
+  'rmsampa',                   // topografia colorida
+  'sara1930',                  // SARA 1930 (histórico)
+  'custom-wms', 'custom-xyz',  // camadas custom do usuário
+  'osm-cicloinfra',
+  'osm-overpass',
+  'routes',                    // linhas das rotas, no topo das camadas de mapa
+];
+const LAYER_ORDER_KEY = 'phidro:layerOrder';
+let layerOrder = DEFAULT_LAYER_ORDER.slice();
+try {
+  const saved = JSON.parse(localStorage.getItem(LAYER_ORDER_KEY) || 'null');
+  // Só aceita se cobrir exatamente o mesmo conjunto — senão uma camada nova
+  // (ou removida) deixaria a ordem inconsistente; cai no padrão.
+  if (Array.isArray(saved) &&
+      saved.length === DEFAULT_LAYER_ORDER.length &&
+      DEFAULT_LAYER_ORDER.every((k) => saved.includes(k))) {
+    layerOrder = saved;
+  }
+} catch { /* ignora JSON inválido */ }
+// Cria os panes ANTES de qualquer camada que os referencie. Tiles e vetores
+// herdam o pointer-events correto da CSS do Leaflet (tiles não bloqueiam
+// clique; paths interativos continuam clicáveis), então não mexemos nisso.
+for (const id of DEFAULT_LAYER_ORDER) map.createPane(LAYER_PANE(id));
+function applyLayerOrder() {
+  layerOrder.forEach((id, i) => {
+    const pane = map.getPane(LAYER_PANE(id));
+    if (pane) pane.style.zIndex = String(360 + i);
+  });
+  try { localStorage.setItem(LAYER_ORDER_KEY, JSON.stringify(layerOrder)); } catch { /* quota */ }
+}
+applyLayerOrder();
 
 // Preview de foto/vídeo: popup do Leaflet quando cabe na viewport; senão
 // (tipicamente mobile portrait), promovemos pra um modal bottom-sheet
@@ -270,12 +323,14 @@ map.on('popupopen', (e) => {
 
 const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 19,
+  pane: LAYER_PANE('osm'),
   attribution: '&copy; OpenStreetMap contributors',
 });
 const satellite = L.tileLayer(
   'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
   {
     maxZoom: 19,
+    pane: LAYER_PANE('satellite'),
     attribution:
       'Imagery © Esri, Maxar, Earthstar Geographics, and the GIS User Community',
   },
@@ -289,6 +344,7 @@ const rmsampa = L.tileLayer('https://telhas.pedalhidrografi.co/rmsampa-v2/{z}/{x
   // z=16 (interpolado) em vez de pedir z≥17 e levar 404.
   maxNativeZoom: 16,
   opacity: 0.85,
+  pane: LAYER_PANE('rmsampa'),
   attribution: 'Topografia: Pedal Hidrográfico',
 }).addTo(map);
 
@@ -305,19 +361,38 @@ const sara1930 = L.tileLayer.wms(
     version: '1.3.0',
     opacity: 0.85,
     maxZoom: 19,
+    pane: LAYER_PANE('sara1930'),
     attribution: 'SARA Brasil 1930 · GeoSampa / Prefeitura de São Paulo',
   },
 );
 
 // ─── Combined layer panel ────────────────────────────────────────────────────
-// A single control with both visibility (radio for base, checkbox for
-// overlays) and an opacity slider per layer — all clustered together.
+// A single flat list of layers — each an independent visibility checkbox plus
+// an opacity slider. There is deliberately NO "base vs overlay" distinction:
+// the basemaps are just two layers like any other (both can be on at once),
+// and their stacking — like everyone else's — is controlled by the "Ordem de
+// empilhamento" modal.
+const baseDefault = settings.mapDefaults.baseLayer === 'satellite' ? 'satellite' : 'osm';
 const BASE_LAYERS = [
-  { id: 'osm',       label: 'OpenStreetMap', layer: osm,       defaultActive: true,  defaultPct: 100 },
-  { id: 'satellite', label: 'Satélite',      layer: satellite, defaultActive: false, defaultPct: 100 },
+  { id: 'osm',       label: 'OpenStreetMap', layer: osm,       defaultVisible: baseDefault === 'osm',       defaultPct: 100 },
+  { id: 'satellite', label: 'Satélite',      layer: satellite, defaultVisible: baseDefault === 'satellite', defaultPct: 100 },
 ];
 const OVERLAY_LAYERS = [
   { id: 'rmsampa',  label: 'Topografia colorida', layer: rmsampa,  defaultVisible: true,  defaultPct: 85 },
+  // Câmera Topográfica: relevo do FABDEM renderizado no cliente (cmocean.phase
+  // × declividade), re-renderizado a cada pan/zoom. Botão de engrenagem abre o
+  // modal de parâmetros (min/max elevação, declividade máx., γ, estimar).
+  {
+    id: 'camera-topo',
+    label: 'Câmera Topográfica',
+    defaultVisible: false,
+    defaultPct: settings.cameraTopo.opacityPct,
+    gear: true,
+    show: () => showCameraTopo(),
+    hide: () => hideCameraTopo(),
+    setOpacity: (frac) => setCameraTopoOpacity(frac),
+    edit: () => openCameraTopoModal(),
+  },
   { id: 'sara1930', label: 'SARA 1930',           layer: sara1930, defaultVisible: false, defaultPct: 85 },
   // Pseudo-layer for the loaded sidebar routes. Custom show/hide/setOpacity
   // because routes are a Map of polylines + markers, not a single tileLayer.
@@ -533,7 +608,7 @@ function renderOverpass(data) {
     const tags = el.tags || {};
     const cycleRel = wayToCycleRelation.get(el.id);
     const isCycle = !!cycleRel;
-    const layer = L.polyline(latlngs, styleForOverpassWay(tags, isCycle));
+    const layer = L.polyline(latlngs, { ...styleForOverpassWay(tags, isCycle), pane: LAYER_PANE('osm-overpass') });
 
     let html;
     if (isCycle) {
@@ -3430,7 +3505,7 @@ function renderCycloinfra(data) {
     const latlngs = (el.nodes || []).map((id) => nodes.get(id)).filter(Boolean);
     if (latlngs.length < 2) continue;
     const tags = el.tags || {};
-    const layer = L.polyline(latlngs, styleForCycloinfra(tags));
+    const layer = L.polyline(latlngs, { ...styleForCycloinfra(tags), pane: LAYER_PANE('osm-cicloinfra') });
     const parts = [];
     if (tags.name) parts.push(`<strong>${escapeHtml(tags.name)}</strong>`);
     const kind = classifyCycloinfra(tags);
@@ -3511,6 +3586,7 @@ function ensureCustomXyz(url) {
   customXyzLayer = L.tileLayer(url, {
     maxZoom: 22,
     opacity: 0.8,
+    pane: LAYER_PANE('custom-xyz'),
     attribution: 'XYZ custom',
   });
   localStorage.setItem('phidro:customXyz', url);
@@ -3572,6 +3648,7 @@ function ensureCustomWms(cfg) {
     version: cfg.version || '1.3.0',
     opacity: 0.8,
     maxZoom: 22,
+    pane: LAYER_PANE('custom-wms'),
     attribution: 'WMS custom',
   });
   localStorage.setItem('phidro:customWms', JSON.stringify(cfg));
@@ -3658,50 +3735,30 @@ locateBtn?.addEventListener('click', () => {
 const layerPanel = L.control({ position: 'topright' });
 layerPanel.onAdd = function () {
   const div = L.DomUtil.create('div', 'leaflet-bar layer-panel');
+  // One flat list — no Base/Sobreposição split; every layer is a checkbox.
+  const ALL_LAYERS = [...BASE_LAYERS, ...OVERLAY_LAYERS];
   div.innerHTML =
-    `<div class="layer-section-title">Base</div>` +
-    BASE_LAYERS.map((l) => `
+    ALL_LAYERS.map((l) => `
       <div class="layer-row" data-id="${l.id}">
         <label>
-          <input type="radio" name="base" data-id="${l.id}" ${l.defaultActive ? 'checked' : ''} />
-          <span>${l.label}</span>
+          <input type="checkbox" data-id="${l.id}" ${l.defaultVisible ? 'checked' : ''} />
+          <span>${l.label}${l.editable ? ` <a href="#" class="layer-edit-link" data-id="${l.id}" title="Editar URL">✎</a>` : ''}${l.gear ? ` <a href="#" class="layer-edit-link" data-id="${l.id}" title="Configurar">⚙</a>` : ''}</span>
         </label>
         <input type="range" class="opacity-slider" data-id="${l.id}" min="0" max="100" value="${l.defaultPct}" />
         <span class="opacity-value" data-id="${l.id}">${l.defaultPct}%</span>
       </div>`).join('') +
-    `<div class="layer-section-title">Sobreposições</div>` +
-    OVERLAY_LAYERS.map((l) => `
-      <div class="layer-row" data-id="${l.id}">
-        <label>
-          <input type="checkbox" data-id="${l.id}" ${l.defaultVisible ? 'checked' : ''} />
-          <span>${l.label}${l.editable ? ` <a href="#" class="layer-edit-link" data-id="${l.id}" title="Editar URL">✎</a>` : ''}</span>
-        </label>
-        <input type="range" class="opacity-slider" data-id="${l.id}" min="0" max="100" value="${l.defaultPct}" />
-        <span class="opacity-value" data-id="${l.id}">${l.defaultPct}%</span>
-      </div>`).join('');
+    `<button type="button" class="layer-order-open" id="layer-order-open">⇅ Ordem de empilhamento…</button>`;
 
   L.DomEvent.disableClickPropagation(div);
   L.DomEvent.disableScrollPropagation(div);
 
-  // Base radios: switch which layer is active (mutually exclusive).
-  div.querySelectorAll('input[name="base"]').forEach((input) => {
-    input.addEventListener('change', () => {
-      for (const b of BASE_LAYERS) {
-        if (input.dataset.id === b.id) {
-          if (!map.hasLayer(b.layer)) b.layer.addTo(map);
-        } else if (map.hasLayer(b.layer)) {
-          map.removeLayer(b.layer);
-        }
-      }
-    });
-  });
-
-  // Overlay checkboxes: toggle visibility. Custom show/hide if the entry
-  // exposes them (used by the routes pseudo-layer); otherwise default to
-  // adding/removing the underlying tile layer.
+  // Every checkbox toggles its layer's visibility. Entries with custom
+  // show/hide (routes pseudo-layer, photos, overpass, audio/clips, custom
+  // sources) use those; the rest add/remove their underlying tile layer.
+  // Basemaps are just layers like any other now — both can be on at once.
   div.querySelectorAll('.layer-row input[type="checkbox"]').forEach((input) => {
     input.addEventListener('change', () => {
-      const o = OVERLAY_LAYERS.find((x) => x.id === input.dataset.id);
+      const o = ALL_LAYERS.find((x) => x.id === input.dataset.id);
       if (!o) return;
       if (o.show && o.hide) {
         if (input.checked) o.show(); else o.hide();
@@ -3712,8 +3769,10 @@ layerPanel.onAdd = function () {
     });
   });
 
-  // Opacity sliders for both base and overlay layers.
-  const ALL_LAYERS = [...BASE_LAYERS, ...OVERLAY_LAYERS];
+  // Open the stacking-order modal.
+  div.querySelector('#layer-order-open')?.addEventListener('click', openLayerOrderModal);
+
+  // Opacity sliders for every layer.
   div.querySelectorAll('input.opacity-slider').forEach((input) => {
     input.addEventListener('input', () => {
       const l = ALL_LAYERS.find((x) => x.id === input.dataset.id);
@@ -3788,6 +3847,70 @@ layersBtn?.addEventListener('click', () => {
   if (!nowHidden) closeOtherMobileDialogs('layers');
   applyLayersVisibility(nowHidden);
   try { localStorage.setItem(LAYERS_HIDDEN_KEY, nowHidden ? '1' : '0'); } catch {}
+});
+
+// ─── Modal "Ordem de empilhamento" ───────────────────────────────────────────
+// Lista as camadas reordenáveis (topo da lista = desenhada por cima), com
+// ↑/↓ por linha. Aplica na hora (pane z-index) e persiste. Aberto pelo botão
+// dentro do painel de camadas.
+const layerOrderModal = document.getElementById('layer-order-modal');
+const layerOrderList  = document.getElementById('layer-order-list');
+const layerLabel = (id) =>
+  [...BASE_LAYERS, ...OVERLAY_LAYERS].find((l) => l.id === id)?.label || id;
+function renderLayerOrderList() {
+  if (!layerOrderList) return;
+  layerOrderList.innerHTML = '';
+  // layerOrder é fundo→topo; exibimos topo→fundo.
+  const topToBottom = layerOrder.slice().reverse();
+  topToBottom.forEach((id, di) => {
+    const row = document.createElement('div');
+    row.className = 'layer-order-row';
+    const name = document.createElement('span');
+    name.className = 'layer-order-name';
+    name.textContent = layerLabel(id);
+    row.appendChild(name);
+    const mkBtn = (label, disabled, delta) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = label;
+      b.disabled = disabled;
+      b.className = 'layer-order-move';
+      b.addEventListener('click', () => {
+        // "Subir" visualmente = mais pro topo = mais pro fim do array fundo→topo.
+        const i = layerOrder.indexOf(id);
+        const j = i + delta;
+        if (j < 0 || j >= layerOrder.length) return;
+        [layerOrder[i], layerOrder[j]] = [layerOrder[j], layerOrder[i]];
+        applyLayerOrder();
+        renderLayerOrderList();
+      });
+      return b;
+    };
+    row.appendChild(mkBtn('↑', di === 0, +1));
+    row.appendChild(mkBtn('↓', di === topToBottom.length - 1, -1));
+    layerOrderList.appendChild(row);
+  });
+}
+function openLayerOrderModal() {
+  if (!layerOrderModal) return;
+  closeOtherMobileDialogs('layers'); // mantém o painel de camadas aberto atrás
+  renderLayerOrderList();
+  layerOrderModal.hidden = false;
+}
+function closeLayerOrderModal() {
+  if (layerOrderModal) layerOrderModal.hidden = true;
+}
+document.getElementById('layer-order-close')?.addEventListener('click', closeLayerOrderModal);
+document.getElementById('layer-order-reset')?.addEventListener('click', () => {
+  layerOrder = DEFAULT_LAYER_ORDER.slice();
+  applyLayerOrder();
+  renderLayerOrderList();
+});
+layerOrderModal?.addEventListener('click', (e) => {
+  if (e.target === layerOrderModal) closeLayerOrderModal();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && layerOrderModal && !layerOrderModal.hidden) closeLayerOrderModal();
 });
 
 // ─── Header toggle (hide/show topbar) ────────────────────────────────────────
@@ -4046,12 +4169,15 @@ async function boot() {
     const numberLabel = formatNumbers(entry);
 
     // Dark casing + white stroke for readability on top of OSM/hydrography.
+    // Both live in the reorderable 'routes' pane (number badges stay markers,
+    // so they remain above everything).
     const casing = L.polyline(entry.latlngs, {
       color: '#1a1a1a',
       weight: 3.5,
       opacity: 0.55,
       lineCap: 'round',
       lineJoin: 'round',
+      pane: LAYER_PANE('routes'),
     });
     const layer = L.polyline(entry.latlngs, {
       color: '#ffffff',
@@ -4059,6 +4185,7 @@ async function boot() {
       opacity: 1,
       lineCap: 'round',
       lineJoin: 'round',
+      pane: LAYER_PANE('routes'),
     });
 
     const nums = entryNumbers(entry);
@@ -4756,6 +4883,8 @@ function wireUpPopupLinks() {
 // streets. Otherwise the path is a straight segment.
 //
 // Drag a waypoint to move it — the two segments touching it get re-fetched.
+// Press the line itself (tap/click, or hold-and-drag) to insert an
+// intermediate waypoint into that segment — see onLinePointerDown.
 // Undo/Redo walk a snapshot history (waypoint positions + cached paths).
 // Save → assembles the full path into a GPX file and downloads it.
 
@@ -4764,7 +4893,11 @@ const traceControls = document.getElementById('trace-controls');
 const traceUndo = document.getElementById('trace-undo');
 const traceRedo = document.getElementById('trace-redo');
 const traceSave = document.getElementById('trace-save');
+const traceView = document.getElementById('trace-view');
 const traceCount = document.getElementById('trace-count');   // ausente desde a remoção do label "# pontos"
+// Modo "Ver": dentro da edição, oculta os pontos e suaviza a linha pra
+// pré-visualizar o traçado limpo. O botão Cancelar vira "Editar".
+let previewMode = false;
 
 // The floating panel sits inside the map container, so without this Leaflet
 // would treat clicks on its buttons as map clicks and add trackpoints.
@@ -4799,6 +4932,10 @@ const DEFAULT_PARAMS = {
   // Fonte de elevação: FABDEM (Range fetch de tiles 1°×1°) por padrão; cai
   // pra Open-Meteo se desligado ou se a célula vier nodata/404.
   useFabdem: true,
+  // DEM local de alta resolução de São Paulo (sampa_geral, ~5 m, COG único).
+  // Quando ligado, tem prioridade sobre o FABDEM dentro da extensão da RMSP;
+  // fora dela (ou nodata) cai pro FABDEM/Open-Meteo. Desligado por padrão.
+  useSampaDem: false,
   // Roteamento "menor energia" (FABDEM + Dijkstra assimétrico):
   energyAlpha: 0.008,       // peso da distância no custo
   energyBeta: 1,            // peso do desnível positivo
@@ -4846,10 +4983,12 @@ let routingMode = 'straight';
 let pendingRouteSeq = 0;     // increments per OSRM call; lets us discard stale results
 
 traceBtn.addEventListener('click', () => {
+  if (previewMode) { exitPreviewMode(); return; }  // "Editar" volta pra edição
   if (!drawingMode) enterDrawingMode();
   else exitDrawingMode();
 });
 traceSave.addEventListener('click', () => saveAndExit());
+traceView.addEventListener('click', () => enterPreviewMode());
 traceUndo.addEventListener('click', undo);
 traceRedo.addEventListener('click', redo);
 traceRoutingMode.addEventListener('change', () => {
@@ -4874,7 +5013,8 @@ document.addEventListener('keydown', (e) => {
     // fecha o seu no próprio listener. Sem este guard o mesmo keydown
     // também derrubava o modo de edição e o traçado ia embora junto.
     if (document.querySelector('.modal:not([hidden])')) return;
-    exitDrawingMode();
+    if (previewMode) exitPreviewMode();   // Esc no modo Ver volta pra edição
+    else exitDrawingMode();
   }
 });
 
@@ -4903,8 +5043,8 @@ function enterDrawingMode() {
 
   routingMode = traceRoutingMode.value || 'straight';
   map.on('click', onMapClickInDrawing);
-  // Map's default double-click-to-zoom would compete with our "dbl-click line
-  // to add a waypoint" gesture, so suspend it for the duration of drawing.
+  // Suspend the map's double-click-to-zoom while drawing: a double-click on
+  // empty map would otherwise fire two click-to-add points and then zoom.
   map.doubleClickZoom.disable();
   // Tuck the layer panel away while drawing so it can't crowd the trace
   // controls. Remember its prior state to restore on exit.
@@ -4922,9 +5062,59 @@ function enterDrawingMode() {
   updateMetrics();
 }
 
+// ─── Modo "Ver" (pré-visualização limpa do traçado) ──────────────────────────
+// Oculta os pontos editáveis e mostra a linha suavizada; esconde a barra de
+// edição e troca Cancelar → Editar. Editar (ou Esc) desfaz. Não altera os
+// dados — só a apresentação; sair restaura a geometria exata.
+function chaikinSmooth(points, iterations = 2) {
+  let pts = points;
+  for (let it = 0; it < iterations; it++) {
+    if (pts.length < 3) break;
+    const out = [pts[0]];
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [ax, ay] = pts[i];
+      const [bx, by] = pts[i + 1];
+      out.push([ax + 0.25 * (bx - ax), ay + 0.25 * (by - ay)]);
+      out.push([ax + 0.75 * (bx - ax), ay + 0.75 * (by - ay)]);
+    }
+    out.push(pts[pts.length - 1]);
+    pts = out;
+  }
+  return pts;
+}
+
+function enterPreviewMode() {
+  if (!drawingMode || previewMode) return;
+  previewMode = true;
+  document.body.classList.add('trace-preview');   // oculta marcadores/rótulos (CSS)
+  // Suaviza a linha exibida (Chaikin sobre o caminho montado).
+  if (draftPolyline) {
+    const smooth = chaikinSmooth(assembleLatLngs().map((ll) => [ll.lat, ll.lng]), 2);
+    if (draftCasing) draftCasing.setLatLngs(smooth);
+    draftPolyline.setLatLngs(smooth);
+  }
+  traceControls.hidden = true;
+  // Cancelar → Editar; mantém aria-pressed='true' (laranja).
+  traceBtn.textContent = '✎🗺︎ Editar';
+  traceBtn.setAttribute('aria-label', 'Editar');
+  traceBtn.setAttribute('title', 'Voltar a editar');
+}
+
+function exitPreviewMode() {
+  if (!previewMode) return;
+  previewMode = false;
+  document.body.classList.remove('trace-preview');
+  updateDraftPolyline();   // restaura a geometria exata (des-suaviza)
+  traceControls.hidden = false;
+  traceBtn.textContent = '✕🗺︎ Cancelar';
+  traceBtn.setAttribute('aria-label', 'Cancelar');
+  traceBtn.setAttribute('title', 'Cancelar (Esc)');
+}
+
 function exitDrawingMode() {
   drawingMode = false;
-  document.body.classList.remove('drawing');
+  previewMode = false;
+  document.body.classList.remove('drawing', 'trace-preview');
 
   for (const t of trackpoints) map.removeLayer(t.marker);
   trackpoints = [];
@@ -4969,6 +5159,11 @@ function exitDrawingMode() {
 }
 
 async function onMapClickInDrawing(e) {
+  if (previewMode) return;   // no modo Ver não se adiciona ponto
+  // Ignore the trailing click of a press-to-insert gesture on the draft line
+  // (its mousedown started on the line; the click can still fire on the map
+  // container) so it doesn't append a stray point at the end.
+  if (lineInsertActive) return;
   const tp = createTrackpoint(e.latlng);
   trackpoints.push(tp);
 
@@ -5066,6 +5261,52 @@ function symLabel(sym) {
   return POI_LABEL[sym] || POI_LABEL[String(sym || '').toLowerCase()] || 'POI';
 }
 
+// Emoji rendered on the map for each POI symbol — same keys as POI_LABEL
+// (Garmin vocabulary + RWGPS lowercase types). Falls back to a generic pin.
+const POI_EMOJI = {
+  // Garmin-style
+  'Flag, Blue':     '📍',
+  'Flag, Red':      '📍',
+  'Flag, Green':    '📍',
+  'Pin, Yellow':    '📍',
+  'Pin, Red':       '📍',
+  'Summit':         '⛰️',
+  'Restaurant':     '🍴',
+  'Drinking Water': '💧',
+  'Restroom':       '🚻',
+  'Picnic Area':    '🧺',
+  'Trail Head':     '🥾',
+  'Information':    '👁️',
+  'Bridge':         '🌉',
+  'Tunnel':         '🚇',
+  'Crossing':       '⚠️',
+  // RWGPS-style (lowercase)
+  'water':          '💧',
+  'summit':         '⛰️',
+  'viewpoint':      '👁️',
+  'overlook':       '👁️',
+  'food':           '🍴',
+  'restroom':       '🚻',
+  'picnic':         '🧺',
+  'parking':        '🅿️',
+  'bike_shop':      '🚲',
+  'bike_parking':   '🚲',
+  'camping':        '⛺',
+  'lodging':        '🏨',
+  'monument':       '🗿',
+  'photo':          '📷',
+  'shopping':       '🛍️',
+  'transit':        '🚇',
+  'first_aid':      '⛑️',
+  'caution':        '⚠️',
+  'crossing':       '🚸',
+  'generic':        '📍',
+  'Dot':            '📍',
+};
+function symEmoji(sym) {
+  return POI_EMOJI[sym] || POI_EMOJI[String(sym || '').toLowerCase()] || '📍';
+}
+
 // RideWithGPS exports always set <sym>Dot</sym> — the actual semantic lives
 // in <type> (water / summit / overlook / generic / etc.). Translate that to a
 // Garmin-recognized <sym> name so:
@@ -5126,9 +5367,9 @@ function tpIcon(isPoi, sym) {
   if (isPoi) {
     return L.divIcon({
       className: 'trackpoint-marker poi',
-      html: `<span class="poi-label">(${symLabel(sym)})</span>`,
-      iconSize: [90, 16],
-      iconAnchor: [45, 8],
+      html: `<span class="poi-emoji" title="${symLabel(sym)}">${symEmoji(sym)}</span>`,
+      iconSize: [26, 26],
+      iconAnchor: [13, 13],
     });
   }
   return L.divIcon({
@@ -5193,6 +5434,16 @@ function openTpPopup(id) {
     opt.value = code;
     opt.textContent = `${label} (${code})`;
     symSelect.appendChild(opt);
+  }
+
+  // Pre-check "POI Garmin" for a fresh point (no name, not yet a POI) so
+  // dropping a POI is one tap — opening the popup marks it and reveals the
+  // symbol picker. Already-configured points (named, or already a POI) keep
+  // their state; uncheck to turn it back into a plain route point.
+  if (!tp.isPoi && !tp.name) {
+    tp.isPoi = true;
+    refreshMarker(tp);
+    pushHistory();
   }
 
   nameInput.value = tp.name || '';
@@ -5327,7 +5578,7 @@ async function refetchPath(idx, seqOverride) {
 // ─── Roteamento por menor energia (FABDEM + Dijkstra) ────────────────────
 // Limite duro do segmento — fora dele o custo do DEM cresce demais e a
 // experiência azeda. Acima desta distância cai pra reta.
-const ENERGY_MAX_SEGMENT_KM = 2;
+const ENERGY_MAX_SEGMENT_KM = 5;
 
 let _energyWorker = null;
 function getEnergyWorker() {
@@ -5432,6 +5683,72 @@ async function loadFabdemMosaic(bb) {
   return { height, mask, H, W };
 }
 
+// Mosaico de elevação a partir do COG de SP, reamostrado pra MESMA grade do
+// FABDEM (A = FABDEM_ARCSEC) — assim o Dijkstra e o índice seed/goal seguem
+// idênticos, independente da fonte. Lê uma janela única do COG cobrindo a bbox
+// e amostra o vizinho mais próximo. Retorna null se a bbox não couber inteira
+// na extensão do DEM (aí o chamador cai pro FABDEM, evitando buracos).
+async function loadSampaDemMosaic(bb) {
+  const t = await openSampaDem();
+  if (!t) return null;
+  if (!(withinSampaDem(t.bounds, bb.north, bb.west) &&
+        withinSampaDem(t.bounds, bb.south, bb.east))) return null;
+  const A = FABDEM_ARCSEC;
+  const W = Math.round((bb.east  - bb.west)  / A);
+  const H = Math.round((bb.north - bb.south) / A);
+  if (!W || !H) return null;
+  const [oX, oY] = t.origin;
+  const [rX, rY] = t.resolution;   // rX>0, rY<0
+  // Janela de pixels do COG que cobre a bbox (com folga de 1).
+  const scMin = Math.max(0, Math.floor((bb.west  - oX) / rX) - 1);
+  const scMax = Math.min(t.W - 1, Math.ceil((bb.east  - oX) / rX) + 1);
+  const srMin = Math.max(0, Math.floor((bb.north - oY) / rY) - 1);
+  const srMax = Math.min(t.H - 1, Math.ceil((bb.south - oY) / rY) + 1);
+  if (scMax < scMin || srMax < srMin) return null;
+  let ras;
+  try {
+    ras = await t.image.readRasters({
+      window: [scMin, srMin, scMax + 1, srMax + 1],
+      interleave: true,
+    });
+  } catch (e) {
+    console.warn(`[sampa-dem] mosaico falhou: ${e.message}`);
+    return null;
+  }
+  const wndW = scMax - scMin + 1;
+  const wndH = srMax - srMin + 1;
+  const height = new Float32Array(W * H);
+  const mask   = new Uint8Array(W * H);
+  height.fill(NaN);
+  for (let mr = 0; mr < H; mr++) {
+    const lat = bb.north - (mr + 0.5) * A;
+    let sr = Math.round((lat - oY) / rY) - srMin;
+    if (sr < 0) sr = 0; else if (sr >= wndH) sr = wndH - 1;
+    for (let mc = 0; mc < W; mc++) {
+      const lng = bb.west + (mc + 0.5) * A;
+      let sc = Math.round((lng - oX) / rX) - scMin;
+      if (sc < 0) sc = 0; else if (sc >= wndW) sc = wndW - 1;
+      const v = ras[sr * wndW + sc];
+      if (Number.isFinite(v) && (t.nodata == null || v !== t.nodata)) {
+        const idx = mr * W + mc;
+        height[idx] = v;
+        mask[idx]   = 1;
+      }
+    }
+  }
+  return { height, mask, H, W };
+}
+
+// Escolhe a fonte do mosaico: DEM de SP quando ligado e a bbox cabe na sua
+// extensão; senão FABDEM.
+async function loadDemMosaic(bb) {
+  if (params.useSampaDem) {
+    const sampa = await loadSampaDemMosaic(bb);
+    if (sampa) return sampa;
+  }
+  return loadFabdemMosaic(bb);
+}
+
 // Overpass: ways com highway=* na bbox. Devolve { nodes: Map<id, [lat,lng]>,
 // ways: [{ nodes: [id1, id2, …] }] }.
 async function fetchOsmRoadsForBbox(bb) {
@@ -5523,7 +5840,7 @@ async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
   };
 
   await ensureGeoTIFF();
-  const dem = await loadFabdemMosaic(bb);
+  const dem = await loadDemMosaic(bb);
   if (!dem.W || !dem.H) {
     console.warn('[energy] DEM vazio — fallback pra reta');
     return straightPath(fromLatLng, toLatLng);
@@ -5651,12 +5968,18 @@ function updateDraftPolyline() {
   // base layer — same scheme as the rendered sidebar routes, for visual
   // consistency between the in-progress draft and the saved result.
   if (!draftPolyline) {
+    // `bubblingMouseEvents: false` keeps mouse events ON the line from
+    // bubbling up to the map's onMapClickInDrawing — otherwise grabbing the
+    // line to insert an intermediate waypoint would ALSO append a stray
+    // point at the end of the trace.
     draftCasing = L.polyline(latlngs, {
       color: '#1a1a1a',
       weight: 7,
       opacity: 0.55,
       lineCap: 'round',
       lineJoin: 'round',
+      bubblingMouseEvents: false,
+      className: 'draft-line',
     }).addTo(map);
     draftPolyline = L.polyline(latlngs, {
       color: '#ffffff',
@@ -5664,24 +5987,104 @@ function updateDraftPolyline() {
       opacity: 1,
       lineCap: 'round',
       lineJoin: 'round',
+      bubblingMouseEvents: false,
+      className: 'draft-line',
     }).addTo(map);
-    // Double-clicking on the line inserts a new waypoint between the two
-    // user waypoints whose segment was clicked. Bound on both casing and
-    // top stroke since either may capture the event.
-    draftPolyline.on('dblclick', onLineDblClick);
-    draftCasing.on('dblclick', onLineDblClick);
+    // Press on the line to insert an intermediate waypoint into the segment
+    // grabbed: a plain tap/click drops it where you pressed, or hold and drag
+    // to place it wherever you release. Driven by Pointer Events (unified
+    // mouse + touch + pen) bound natively on each <path> — Leaflet doesn't
+    // surface 'pointerdown' as a layer event, and its synthesized
+    // mousemove/mouseup don't fire during a touch drag. Bound on both casing
+    // and top stroke since either may be the topmost element under the press.
+    for (const layer of [draftPolyline, draftCasing]) {
+      const el = layer.getElement();
+      if (el) L.DomEvent.on(el, 'pointerdown', onLinePointerDown);
+    }
   } else {
     if (draftCasing) draftCasing.setLatLngs(latlngs);
     draftPolyline.setLatLngs(latlngs);
   }
 }
 
-// ─── Double-click on the draft line → insert intermediate POI waypoint ──────
-function onLineDblClick(e) {
+// ─── Press the draft line → insert an intermediate waypoint ─────────────────
+// A plain tap/click drops the new waypoint where you pressed; holding and
+// dragging places it wherever you release. The segment it lands in is fixed at
+// press time (the segment grabbed); only the position follows the pointer. A
+// dashed ghost previews the result during the drag. Pointer Events + pointer
+// capture make this work identically for mouse and touch — capture routes
+// every move/up to the original <path> even when the finger leaves the line.
+let lineInsertActive = false; // set while a press-to-insert gesture is in flight
+function onLinePointerDown(e) {
+  if (!drawingMode || previewMode || trackpoints.length < 2) return;
+  if (e.button != null && e.button > 0) return; // ignore right/middle click
+  if (e.isPrimary === false) return;            // ignore extra touch points
   L.DomEvent.stop(e);
-  if (!drawingMode || trackpoints.length < 2) return;
-  const idx = findInsertIndex(e.latlng);
-  insertWaypointAt(idx, e.latlng);
+
+  const startLatLng = map.mouseEventToLatLng(e);
+  const idx = findInsertIndex(startLatLng);
+  lineInsertActive = true;
+  // Suspend map panning so the drag moves the ghost, not the map.
+  map.dragging.disable();
+
+  const target = e.currentTarget; // the <path> that was pressed
+  const pointerId = e.pointerId;
+  try { target.setPointerCapture(pointerId); } catch (_) { /* ok without it */ }
+
+  const ghost = L.marker(startLatLng, {
+    icon: tpIcon(false, ''),
+    interactive: false,
+    keyboard: false,
+    zIndexOffset: 2000,
+  }).addTo(map);
+  const preview = L.polyline([], {
+    color: '#ffffff',
+    weight: 2,
+    opacity: 0.8,
+    dashArray: '4 5',
+    interactive: false,
+  }).addTo(map);
+
+  const prevLatLng = trackpoints[idx - 1]?.marker.getLatLng();
+  const nextLatLng = trackpoints[idx]?.marker.getLatLng();
+  const drawPreview = (latlng) => {
+    const segs = [];
+    if (prevLatLng) segs.push([prevLatLng, latlng]);
+    if (nextLatLng) segs.push([latlng, nextLatLng]);
+    preview.setLatLngs(segs);
+  };
+  drawPreview(startLatLng);
+
+  let lastLatLng = startLatLng;
+  const onMove = (ev) => {
+    L.DomEvent.preventDefault(ev); // stop the page from scrolling under a touch
+    lastLatLng = map.mouseEventToLatLng(ev);
+    ghost.setLatLng(lastLatLng);
+    drawPreview(lastLatLng);
+  };
+  const cleanup = () => {
+    L.DomEvent.off(target, 'pointermove', onMove);
+    L.DomEvent.off(target, 'pointerup', onUp);
+    L.DomEvent.off(target, 'pointercancel', onCancel);
+    try { target.releasePointerCapture(pointerId); } catch (_) { /* already gone */ }
+    map.removeLayer(ghost);
+    map.removeLayer(preview);
+    map.dragging.enable();
+    // The trailing `click` from a mouse press lands on the map container (the
+    // common ancestor when released off the line); swallow it next tick so
+    // onMapClickInDrawing doesn't append a point at the end.
+    setTimeout(() => { lineInsertActive = false; }, 0);
+  };
+  const onUp = (ev) => {
+    L.DomEvent.preventDefault(ev);
+    const dropLatLng = map.mouseEventToLatLng(ev);
+    cleanup();
+    insertWaypointAt(idx, dropLatLng);
+  };
+  const onCancel = () => cleanup();
+  L.DomEvent.on(target, 'pointermove', onMove);
+  L.DomEvent.on(target, 'pointerup', onUp);
+  L.DomEvent.on(target, 'pointercancel', onCancel);
 }
 
 // Find the index where a new waypoint should be inserted: between the two
@@ -5897,6 +6300,300 @@ async function sampleFabdemBatch(points /* [[lat, lng], …] */) {
   return out;
 }
 
+// ─── DEM local de SP (sampa_geral): COG único EPSG:4326 (~5 m) ───────────────
+// COG único hospedado em telhas.pedalhidrografi.co; geotiff.js puxa só os
+// blocos necessários por Range request. Mesma matemática de pixel do FABDEM
+// (ambos EPSG:4326), só que UMA imagem em vez de tiles 1°×1°. Aberto sob
+// demanda e cacheado; ativo apenas quando params.useSampaDem está ligado.
+const SAMPA_DEM_URL = 'https://telhas.pedalhidrografi.co/dem/sampa_geral.tif';
+let _sampaDemPromise = null;
+async function openSampaDem() {
+  if (_sampaDemPromise) return _sampaDemPromise;
+  _sampaDemPromise = (async () => {
+    try {
+      const GeoTIFF = await ensureGeoTIFF();
+      const tiff  = await GeoTIFF.fromUrl(SAMPA_DEM_URL);
+      const image = await tiff.getImage();
+      const origin = image.getOrigin();         // [oX(west lon), oY(north lat)]
+      const resolution = image.getResolution(); // [rX>0, rY<0]
+      const W = image.getWidth();
+      const H = image.getHeight();
+      const nodataRaw = image.fileDirectory.getValue
+        ? image.fileDirectory.getValue('GDAL_NODATA')
+        : image.fileDirectory.GDAL_NODATA;
+      const nodata = nodataRaw != null ? parseFloat(nodataRaw) : null;
+      const bounds = {
+        west:  origin[0],
+        north: origin[1],
+        east:  origin[0] + W * resolution[0],
+        south: origin[1] + H * resolution[1],
+      };
+      return { image, origin, resolution, W, H, nodata, bounds };
+    } catch (e) {
+      console.info(`[sampa-dem] indisponível: ${e.message}`);
+      return null;   // negative cache: don't keep retrying
+    }
+  })();
+  return _sampaDemPromise;
+}
+
+function withinSampaDem(b, lat, lng) {
+  return lat >= b.south && lat <= b.north && lng >= b.west && lng <= b.east;
+}
+
+// Sample many points from the single COG: one bounding-window read covering
+// every in-bounds point. Out-of-bounds (or nodata) entries stay null so the
+// caller can fall back to FABDEM/Open-Meteo.
+async function sampleSampaDemBatch(points /* [[lat,lng], …] */) {
+  const out = new Array(points.length).fill(null);
+  if (!points.length) return out;
+  const t = await openSampaDem();
+  if (!t) return out;
+  const [oX, oY] = t.origin;
+  const [rX, rY] = t.resolution;
+  let cMin = Infinity, cMax = -Infinity, rMin = Infinity, rMax = -Infinity;
+  const cells = [];
+  points.forEach(([lat, lng], i) => {
+    if (!withinSampaDem(t.bounds, lat, lng)) return;
+    const c = Math.round((lng - oX) / rX);
+    const r = Math.round((lat - oY) / rY);
+    if (c < 0 || c >= t.W || r < 0 || r >= t.H) return;
+    if (c < cMin) cMin = c; if (c > cMax) cMax = c;
+    if (r < rMin) rMin = r; if (r > rMax) rMax = r;
+    cells.push([i, r, c]);
+  });
+  if (!cells.length) return out;
+  try {
+    const wndW = cMax - cMin + 1;
+    const ras = await t.image.readRasters({
+      window: [cMin, rMin, cMax + 1, rMax + 1],
+      interleave: true,
+    });
+    for (const [i, r, c] of cells) {
+      const v = ras[(r - rMin) * wndW + (c - cMin)];
+      if (Number.isFinite(v) && (t.nodata == null || v !== t.nodata)) out[i] = v;
+    }
+  } catch (e) {
+    console.warn(`[sampa-dem] read window falhou: ${e.message}`);
+  }
+  return out;
+}
+
+// ─── Câmera Topográfica: relevo do FABDEM renderizado no cliente ─────────────
+// Igual ao sampasimu: elevação na paleta cmocean.phase (cíclica, perceptual)
+// multiplicada por um realce de declividade (branco→preto, γ-corrigido). Lê o
+// mosaico DEM (FABDEM, ou DEM de SP se ligado) da viewport e desenha num
+// <canvas> que vira um L.imageOverlay no pane reordenável 'camera-topo'.
+// Re-renderiza a cada pan/zoom (debounce). Parâmetros (min/max elevação,
+// declividade máx., γ) no modal da engrenagem; null = automático (percentis).
+
+// Paleta cmocean.phase (17 âncoras RGB), copiada do sampasimu.
+const CMO_PHASE = [
+  [168,120,13],[190,104,40],[207,86,67],[219,64,102],[223,42,147],[213,41,196],
+  [192,65,229],[162,92,243],[125,115,240],[82,133,220],[44,144,188],[25,149,156],
+  [12,152,124],[36,154,82],[94,148,32],[139,134,13],[168,120,13],
+];
+
+// Declividade (m/m) por diferença central. Bordas replicam; vizinho nodata cai
+// na própria altura (zero gradiente em vez de salto fictício na borda do DEM).
+function computeSlope(height, mask, H, W, dxM, dyM) {
+  const slope = new Float32Array(H * W);
+  for (let r = 0; r < H; r++) {
+    for (let c = 0; c < W; c++) {
+      const i = r * W + c;
+      if (!mask[i]) continue;
+      const cw = c > 0 ? c - 1 : c, ce = c < W - 1 ? c + 1 : c;
+      const rn = r > 0 ? r - 1 : r, rs = r < H - 1 ? r + 1 : r;
+      const h0 = height[i];
+      const hw = mask[r * W + cw] ? height[r * W + cw] : h0;
+      const he = mask[r * W + ce] ? height[r * W + ce] : h0;
+      const hn = mask[rn * W + c] ? height[rn * W + c] : h0;
+      const hs = mask[rs * W + c] ? height[rs * W + c] : h0;
+      const spanX = (ce - cw) * dxM, spanY = (rs - rn) * dyM;
+      const dhdx = spanX > 0 ? (he - hw) / spanX : 0;
+      const dhdy = spanY > 0 ? (hs - hn) / spanY : 0;
+      slope[i] = Math.sqrt(dhdx * dhdx + dhdy * dhdy);
+    }
+  }
+  return slope;
+}
+
+function percentileFromSorted(sorted, p) {
+  const n = sorted.length;
+  if (!n) return NaN;
+  const f = (Math.max(0, Math.min(100, p)) / 100) * (n - 1);
+  const i0 = Math.floor(f), i1 = Math.min(n - 1, i0 + 1);
+  return sorted[i0] + (sorted[i1] - sorted[i0]) * (f - i0);
+}
+
+const RELIEF_PERCENTILE_SAMPLES = 100_000;
+const RELIEF_MAX_CANVAS_PX = 4 * 1024 * 1024;   // teto do buffer; acima disso, downsample
+
+// Percentis (elev p5/p80, declividade p80) por amostragem reservatório — barato
+// e estável mesmo em mosaicos grandes. Usado pelo render (quando o parâmetro é
+// auto) e pelo botão "Estimar pela extensão atual".
+function reliefPercentiles(height, mask, slope, H, W) {
+  const N = H * W;
+  const eS = new Float32Array(RELIEF_PERCENTILE_SAMPLES);
+  const sS = new Float32Array(RELIEF_PERCENTILE_SAMPLES);
+  let collected = 0, seen = 0;
+  for (let i = 0; i < N; i++) {
+    if (!mask[i]) continue;
+    if (collected < RELIEF_PERCENTILE_SAMPLES) {
+      eS[collected] = height[i]; sS[collected] = slope[i]; collected++;
+    } else {
+      const j = Math.floor(Math.random() * (seen + 1));
+      if (j < RELIEF_PERCENTILE_SAMPLES) { eS[j] = height[i]; sS[j] = slope[i]; }
+    }
+    seen++;
+  }
+  if (!collected) return null;
+  const eSorted = eS.subarray(0, collected).slice().sort();
+  const sSorted = sS.subarray(0, collected).slice().sort();
+  return {
+    elevP5:   percentileFromSorted(eSorted, 5),
+    elevP80:  percentileFromSorted(eSorted, 80),
+    slopeP80: Math.max(1e-9, percentileFromSorted(sSorted, 80)),
+  };
+}
+
+// Renderiza o relevo num dataURL PNG. elevMin/elevMax/slopeMax/gamma explícitos.
+function renderReliefToDataURL(dem, slope, elevMin, elevMax, slopeMax, gamma) {
+  const { H, W, height, mask } = dem;
+  const N = H * W;
+  const elevSpan = elevMax - elevMin;
+  slopeMax = Math.max(1e-9, slopeMax);
+  const invGamma = 1 / Math.max(0.05, gamma || 1.2);
+
+  let stride = 1;
+  if (N > RELIEF_MAX_CANVAS_PX) stride = Math.ceil(Math.sqrt(N / RELIEF_MAX_CANVAS_PX));
+  const outW = Math.max(1, Math.floor(W / stride));
+  const outH = Math.max(1, Math.floor(H / stride));
+
+  const phaseN = CMO_PHASE.length - 1;
+  const canvas = document.createElement('canvas');
+  canvas.width = outW; canvas.height = outH;
+  const ctx = canvas.getContext('2d');
+  const imageData = ctx.createImageData(outW, outH);
+  const data = imageData.data;
+
+  for (let or = 0; or < outH; or++) {
+    const srcR = or * stride;
+    for (let oc = 0; oc < outW; oc++) {
+      const srcI = srcR * W + oc * stride;
+      const j = (or * outW + oc) * 4;
+      if (!mask[srcI]) { data[j + 3] = 0; continue; }   // transparente em nodata
+      let er, eg, eb;
+      if (elevSpan > 0) {
+        const t = Math.max(0, Math.min(1, (height[srcI] - elevMin) / elevSpan));
+        const f = t * phaseN, k = Math.floor(f), frac = f - k;
+        const a = CMO_PHASE[Math.min(k, phaseN)], b = CMO_PHASE[Math.min(k + 1, phaseN)];
+        er = a[0] + (b[0] - a[0]) * frac;
+        eg = a[1] + (b[1] - a[1]) * frac;
+        eb = a[2] + (b[2] - a[2]) * frac;
+      } else {
+        const a = CMO_PHASE[Math.floor(phaseN / 2)];
+        er = a[0]; eg = a[1]; eb = a[2];
+      }
+      // Declividade como multiplicador branco→preto γ-corrigido.
+      const sNorm = Math.min(1, slope[srcI] / slopeMax);
+      const slopeFactor = 1 - Math.pow(sNorm, invGamma);
+      data[j]     = Math.round(er * slopeFactor);
+      data[j + 1] = Math.round(eg * slopeFactor);
+      data[j + 2] = Math.round(eb * slopeFactor);
+      data[j + 3] = 255;
+    }
+  }
+  ctx.putImageData(imageData, 0, 0);
+  return canvas.toDataURL();
+}
+
+const CAMERA_TOPO_MIN_ZOOM = 12;   // abaixo disso o mosaico fica grande demais
+let cameraTopoActive = false;
+let cameraTopoOverlay = null;
+let cameraTopoOpacity = settings.cameraTopo.opacityPct / 100;
+let cameraTopoDebounce = null;
+let cameraTopoSeq = 0;
+
+function onCameraTopoMoveEnd() {
+  clearTimeout(cameraTopoDebounce);
+  cameraTopoDebounce = setTimeout(refreshCameraTopo, 600);
+}
+
+function showCameraTopo() {
+  cameraTopoActive = true;
+  map.on('moveend', onCameraTopoMoveEnd);
+  if (map.getZoom() < CAMERA_TOPO_MIN_ZOOM) {
+    showToast(`Aproxime o mapa (zoom ≥ ${CAMERA_TOPO_MIN_ZOOM}) para a Câmera Topográfica`);
+  }
+  refreshCameraTopo();
+}
+function hideCameraTopo() {
+  cameraTopoActive = false;
+  map.off('moveend', onCameraTopoMoveEnd);
+  clearTimeout(cameraTopoDebounce);
+  if (cameraTopoOverlay) { map.removeLayer(cameraTopoOverlay); cameraTopoOverlay = null; }
+}
+function setCameraTopoOpacity(frac) {
+  cameraTopoOpacity = frac;
+  settings.cameraTopo.opacityPct = Math.round(frac * 100);
+  saveSettings();
+  if (cameraTopoOverlay) cameraTopoOverlay.setOpacity(frac);
+}
+
+// Monta o mosaico DEM da viewport, computa declividade e os parâmetros (auto =
+// percentis), e devolve { dem, slope, elevMin, elevMax, slopeMax, gamma, bb }.
+async function buildCameraTopoFrame() {
+  const b = map.getBounds();
+  const bb = { north: b.getNorth(), south: b.getSouth(), east: b.getEast(), west: b.getWest() };
+  const dem = await loadDemMosaic(bb);
+  if (!dem || !dem.W || !dem.H) return null;
+  const A = FABDEM_ARCSEC;
+  const latC = (bb.north + bb.south) / 2;
+  const dyM = A * 111320;
+  const dxM = A * 111320 * Math.cos((latC * Math.PI) / 180);
+  const slope = computeSlope(dem.height, dem.mask, dem.H, dem.W, dxM, dyM);
+  const pct = reliefPercentiles(dem.height, dem.mask, slope, dem.H, dem.W);
+  if (!pct) return null;
+  const cfg = settings.cameraTopo;
+  return {
+    dem, slope, bb,
+    elevMin:  cfg.minElev  != null ? cfg.minElev  : pct.elevP5,
+    elevMax:  cfg.maxElev  != null ? cfg.maxElev  : pct.elevP80,
+    slopeMax: cfg.maxSlope != null ? cfg.maxSlope : pct.slopeP80,
+    gamma:    cfg.slopeGamma || 1.2,
+    pct,
+  };
+}
+
+async function refreshCameraTopo() {
+  if (!cameraTopoActive) return;
+  if (map.getZoom() < CAMERA_TOPO_MIN_ZOOM) {
+    if (cameraTopoOverlay) { map.removeLayer(cameraTopoOverlay); cameraTopoOverlay = null; }
+    return;
+  }
+  const seq = ++cameraTopoSeq;
+  try {
+    const frame = await buildCameraTopoFrame();
+    if (seq !== cameraTopoSeq || !cameraTopoActive) return;
+    if (!frame) return;
+    const url = renderReliefToDataURL(
+      frame.dem, frame.slope, frame.elevMin, frame.elevMax, frame.slopeMax, frame.gamma,
+    );
+    if (seq !== cameraTopoSeq || !cameraTopoActive || !url) return;
+    const { bb } = frame;
+    const bounds = [[bb.south, bb.west], [bb.north, bb.east]];
+    if (cameraTopoOverlay) map.removeLayer(cameraTopoOverlay);
+    cameraTopoOverlay = L.imageOverlay(url, bounds, {
+      opacity: cameraTopoOpacity,
+      pane: LAYER_PANE('camera-topo'),
+      interactive: false,
+    }).addTo(map);
+  } catch (err) {
+    console.warn('[camera-topo] render falhou:', err.message);
+  }
+}
+
 // ─── Elevation (FABDEM por padrão; Open-Meteo como fallback) ─────────────────
 // Cached by ~1m-rounded lat,lon so dragging/undo doesn't refetch the same
 // point. Up to 100 coords per HTTP call; debounced 400ms after user activity.
@@ -5935,22 +6632,31 @@ async function fetchMissingElevations(path, seq) {
   }
   if (missing.length === 0) return;
 
-  // Tenta FABDEM primeiro (quando ativo); o que vier null tenta Open-Meteo.
+  // Cadeia de fontes: DEM de SP (se ligado, alta-res dentro da RMSP) →
+  // FABDEM (se ligado) → Open-Meteo. Cada fonte só recebe o que sobrou null.
   let stillMissing = missing;
-  if (params.useFabdem) {
+  const drainSource = async (label, sampleFn) => {
     try {
-      const elevs = await sampleFabdemBatch(missing);
-      if (seq !== elevationFetchSeq) return;
+      const elevs = await sampleFn(stillMissing);
+      if (seq !== elevationFetchSeq) return true; // cancelado: aborta
       const remaining = [];
-      missing.forEach(([la, lo], i) => {
+      stillMissing.forEach(([la, lo], i) => {
         const e = elevs[i];
         if (Number.isFinite(e)) elevationCache.set(elevKey(la, lo), e);
         else remaining.push([la, lo]);
       });
       stillMissing = remaining;
     } catch (err) {
-      console.warn('FABDEM elevation fetch failed:', err.message);
+      console.warn(`${label} elevation fetch failed:`, err.message);
     }
+    return false;
+  };
+  if (params.useSampaDem) {
+    if (await drainSource('sampa-dem', sampleSampaDemBatch)) return;
+    if (stillMissing.length === 0) return;
+  }
+  if (params.useFabdem) {
+    if (await drainSource('FABDEM', sampleFabdemBatch)) return;
   }
   if (stillMissing.length === 0) return;
 
@@ -6111,12 +6817,32 @@ function simulateRide(p) {
   };
 }
 
+// Duração compacta pra barra de edição: uma unidade só (dias é a exceção,
+// mostra d+h). 7d14h · 3h52 · 42m59 · 30s. Sem segundos a partir de 1 h.
+function fmtDurCompact(sec) {
+  sec = Math.max(0, Math.round(sec));
+  const d = Math.floor(sec / 86400);
+  const h = Math.floor((sec % 86400) / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  if (d > 0) return `${d}d${String(h).padStart(2, '0')}h`;
+  if (h > 0) return `${h}h${String(m).padStart(2, '0')}`;
+  if (m > 0) return `${m}m${String(s).padStart(2, '0')}`;
+  return `${s}s`;
+}
+// Distância compacta: abaixo de 2 km mostra metros (1689m); senão km com 1
+// casa (16,4 km).
+function fmtDistCompact(meters) {
+  if (meters < 2000) return `${Math.round(meters)}m`;
+  return `${(meters / 1000).toFixed(1).replace('.', ',')} km`;
+}
+
 function updateMetrics() {
   const sim = simulateRide(params);
   const fmt = (n, d = 1) => n.toFixed(d).replace('.', ',');
 
   if (!sim) {
-    traceMetrics.textContent = `0,00 km · 0,0 kJ`;
+    traceMetrics.textContent = `0m · 0 kJ`;
     traceMetrics.title = '';
     return;
   }
@@ -6139,7 +6865,7 @@ function updateMetrics() {
   const effPct = (params.efficiency * 100).toFixed(0);
 
   traceMetrics.textContent =
-    `${fmt(km, 2)} km · ${ascDesc} · ${formatHMS(movingTimeSec)} mov · ${formatHMS(totalTimeSec)} tot · ${fmt(totalKJ)} kJ${elevHint}`;
+    `${fmtDistCompact(sim.distMeters)} · ${ascDesc} · ${fmtDurCompact(movingTimeSec)} mov · ${fmtDurCompact(totalTimeSec)} tot · ${Math.round(totalKJ)} kJ${elevHint}`;
   traceMetrics.title =
     `Simulação por segmento.\n` +
     `  Distância:        ${fmt(km, 2)} km\n` +
@@ -6194,6 +6920,7 @@ const PARAM_INPUTS = {
 };
 const PARAM_CHECKBOXES = {
   useFabdem: document.getElementById('param-use-fabdem'),
+  useSampaDem: document.getElementById('param-use-sampa-dem'),
 };
 
 paramsBtn.addEventListener('click', () => {
@@ -6243,6 +6970,91 @@ function fillParamInputs() {
   PARAM_INPUTS.energyEta.value             = params.energyEta;
   PARAM_INPUTS.energySearchMarginPct.value = params.energySearchMarginPct;
   PARAM_CHECKBOXES.useFabdem.checked       = params.useFabdem !== false;
+  PARAM_CHECKBOXES.useSampaDem.checked     = !!params.useSampaDem;
+}
+
+// ─── Modal da Câmera Topográfica (engrenagem na camada) ──────────────────────
+const ctopoModal    = document.getElementById('camera-topo-modal');
+const ctopoMinElev  = document.getElementById('ctopo-min-elev');
+const ctopoMaxElev  = document.getElementById('ctopo-max-elev');
+const ctopoMaxSlope = document.getElementById('ctopo-max-slope');   // em %
+const ctopoGamma    = document.getElementById('ctopo-gamma');
+
+function fillCameraTopoInputs() {
+  const c = settings.cameraTopo;
+  ctopoMinElev.value  = c.minElev  != null ? c.minElev : '';
+  ctopoMaxElev.value  = c.maxElev  != null ? c.maxElev : '';
+  ctopoMaxSlope.value = c.maxSlope != null ? +(c.maxSlope * 100).toFixed(1) : '';
+  ctopoGamma.value    = c.slopeGamma ?? 1.2;
+}
+function openCameraTopoModal() {
+  fillCameraTopoInputs();
+  ctopoModal.hidden = false;
+}
+function closeCameraTopoModal() { ctopoModal.hidden = true; }
+
+function ctopoReadNum(input) {
+  const v = input.value.trim();
+  if (v === '') return null;
+  const n = parseFloat(v.replace(',', '.'));
+  return Number.isFinite(n) ? n : null;
+}
+function applyCameraTopoInputs() {
+  const c = settings.cameraTopo;
+  c.minElev = ctopoReadNum(ctopoMinElev);
+  c.maxElev = ctopoReadNum(ctopoMaxElev);
+  const sl = ctopoReadNum(ctopoMaxSlope);
+  c.maxSlope = sl != null ? sl / 100 : null;   // % → m/m
+  const g = ctopoReadNum(ctopoGamma);
+  c.slopeGamma = g != null && g > 0 ? g : 1.2;
+  saveSettings();
+  refreshCameraTopo();
+}
+if (ctopoModal) {
+  for (const el of [ctopoMinElev, ctopoMaxElev, ctopoMaxSlope, ctopoGamma]) {
+    el.addEventListener('input', applyCameraTopoInputs);
+  }
+  document.getElementById('ctopo-close')?.addEventListener('click', closeCameraTopoModal);
+  ctopoModal.addEventListener('click', (e) => { if (e.target === ctopoModal) closeCameraTopoModal(); });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !ctopoModal.hidden) closeCameraTopoModal();
+  });
+  document.getElementById('ctopo-reset')?.addEventListener('click', () => {
+    const d = SETTINGS_DEFAULTS.cameraTopo;
+    Object.assign(settings.cameraTopo, {
+      minElev: d.minElev, maxElev: d.maxElev, maxSlope: d.maxSlope, slopeGamma: d.slopeGamma,
+    });
+    saveSettings();
+    fillCameraTopoInputs();
+    refreshCameraTopo();
+  });
+  document.getElementById('ctopo-estimate')?.addEventListener('click', async () => {
+    const btn = document.getElementById('ctopo-estimate');
+    if (map.getZoom() < CAMERA_TOPO_MIN_ZOOM) {
+      showToast(`Aproxime o mapa (zoom ≥ ${CAMERA_TOPO_MIN_ZOOM}) para estimar`);
+      return;
+    }
+    const prev = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Estimando…';
+    try {
+      const frame = await buildCameraTopoFrame();
+      if (frame && frame.pct) {
+        const c = settings.cameraTopo;
+        c.minElev  = Math.round(frame.pct.elevP5);
+        c.maxElev  = Math.round(frame.pct.elevP80);
+        c.maxSlope = frame.pct.slopeP80;
+        saveSettings();
+        fillCameraTopoInputs();
+        refreshCameraTopo();
+      } else {
+        showToast('Sem dados de elevação na extensão atual.');
+      }
+    } catch (e) {
+      showToast('Falha ao estimar: ' + e.message);
+    } finally {
+      btn.disabled = false; btn.textContent = prev;
+    }
+  });
 }
 
 // ─── Params serialization (JSON-LD with QUDT + schema.org) ───────────────────
