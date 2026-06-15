@@ -788,12 +788,21 @@ def _current_tour_route_id(tour_id):
     return meta["id"] if meta else None
 
 
-def _sync_tour_route(tour_id, tour_ttl):
+def _sync_tour_route(tour_id):
     """Sincroniza a entrada de routes.json do tour `tour_id` com o estado atual.
 
-    • Se o TTL do tour tem `ph:linkRoute` → RideWithGPS: busca a geometria
-      (fora do lock) e faz upsert da entrada (keyed por tourIri).
+    • Se o tour (no tours.ttl persistido) tem `ph:linkRoute` → RideWithGPS:
+      busca a geometria (fora do lock) e faz upsert da entrada (keyed por
+      tourIri).
     • Senão (sem linkRoute): remove qualquer entrada existente daquele tour.
+
+    Lê o CATÁLOGO persistido, não o TTL postado: a entrada precisa resolver
+    `ph:inSeriesEdition` → assoc → `ph:inEventSeries`/`ph:sequenceInSeries`
+    (a numeração de série da sidebar), e os sujeitos `phd:assoc_*` moram fora
+    do fragmento do tour — um doc sintetizado pelo mode=patch (e qualquer
+    fragmento que referencie assocs já existentes) não os carrega; parsear só
+    o fragmento zerava o `number` da entrada. Roda depois do upsert, então o
+    catálogo é a fonte da verdade.
 
     Best-effort: o caller (upload_tour) envolve a chamada em try/except — o
     tour já foi salvo no tours.ttl; uma falha aqui só significa que a
@@ -804,8 +813,11 @@ def _sync_tour_route(tour_id, tour_ttl):
     from rdflib import Graph as _RdfGraph, URIRef as _URIRef
 
     tour_iri = PHD_NS + "tour_" + tour_id
+    text = _load_dump_text("tours.ttl")
+    if not text:
+        return {"status": "error", "error": "tours.ttl ausente"}
     try:
-        g = _RdfGraph().parse(data=tour_ttl, format="turtle")
+        g = _RdfGraph().parse(data=text, format="turtle")
         meta = rwgps.tour_entry_from_graph(g, _URIRef(tour_iri))
     except Exception as e:  # noqa: BLE001
         return {"status": "error", "error": f"parse: {e}"}
@@ -1938,7 +1950,7 @@ def upload_tour():
     # O try/except garante que NENHUMA falha aqui (import, storage, bug)
     # transforma um save bem-sucedido do tour em 500.
     try:
-        route_status = _sync_tour_route(tour_id, ttl_text)
+        route_status = _sync_tour_route(tour_id)
     except Exception as e:  # noqa: BLE001
         route_status = {"status": "error", "error": str(e)}
         print(f"[upload-tour] erro sincronizando routes.json: {e}")

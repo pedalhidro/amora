@@ -171,10 +171,13 @@ Key flows:
   delete referenced `phd:pessoa*` or series — git history preserves
   those and they may be referenced by other tours.
   On every `/upload-tour` and `/delete-tour`, the backend also **syncs
-  `routes.json` incrementally**: if the tour's TTL has a `ph:linkRoute`
-  pointing at a RideWithGPS route, it fetches the geometry and upserts that
-  tour's entry (keyed by `tourIri`); if the link is absent (new/edited tour
-  with no route) or the tour is deleted, it removes the entry. The RWGPS
+  `routes.json` incrementally**: if the tour (read from the PERSISTED
+  `tours.ttl`, not the posted fragment — the entry's series numbering
+  resolves `phd:assoc_*` subjects that live outside the fragment) has a
+  `ph:linkRoute` pointing at a RideWithGPS route, it fetches the geometry
+  and upserts that tour's entry (keyed by `tourIri`); if the link is
+  absent (new/edited tour with no route) or the tour is deleted, it
+  removes the entry. The RWGPS
   fetch runs **outside** the global state lock (only the JSON read-modify-
   write is serialized) and is best-effort — a fetch failure never fails the
   tour save (the entry is kept with `latlngs:null` + `error`, same convention
