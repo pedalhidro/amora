@@ -1,0 +1,7 @@
+# Capacitor — gerados por `npm install` e `npx cap add`. Commitar só a config,
+# o package.json, o stub www/ e este README; os projetos nativos e deps são
+# recriáveis com `npm install && npx cap add ios android && npx cap sync`.
+node_modules/
+ios/
+android/
+package-lock.json

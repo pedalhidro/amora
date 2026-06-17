@@ -16,17 +16,10 @@ phd:tour_1 a ph:Tour ;
     ph:countAttendee 2 ;
     ph:countNewcomer 2 ;
     ph:departedAt "2024-09-09T20:11:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 142.0 ;
-            ph:intensityClassification "De boa" ] ;
+    ph:energyEstimate phd:tour_1_energy ;
     ph:inSeriesEdition phd:assoc_PH_1 ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/49272936> ] ;
-    ph:measuredEnergy [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 140.0 ] ;
+    ph:linkRoute phd:tour_1_route ;
+    ph:measuredEnergy phd:tour_1_measured ;
     ph:mediaCount 2 ;
     ph:movingDuration "PT1H"^^xsd:duration .
 
@@ -36,16 +29,11 @@ phd:tour_10 a ph:Tour ;
     prov:wasAttributedTo phd:pessoaBrunoperandin ;
     ph:countAttendee 8 ;
     ph:countNewcomer 5 ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 850.0 ;
-            ph:intensityClassification "Frito" ] ;
+    ph:energyEstimate phd:tour_10_energy ;
     ph:inSeriesEdition phd:assoc_BT_1,
         phd:assoc_PH_10 ;
     ph:linkInstagram "https://www.instagram.com/p/DBweYi-vMXc/?img_index=1"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/49195458> ] ;
+    ph:linkRoute phd:tour_10_route ;
     ph:mediaCount 467 ;
     ph:movingDuration "PT3H30M"^^xsd:duration .
 
@@ -65,15 +53,10 @@ Será uma oportunidade para construir pontes entre esta criatura-bebê de 1 ano 
         phd:pessoaGmard ;
     ph:countAttendee 13 ;
     ph:countNewcomer 2 ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 293.0 ;
-            ph:intensityClassification "Ok" ] ;
+    ph:energyEstimate phd:tour_100_energy ;
     ph:inSeriesEdition phd:assoc_PH_91 ;
     ph:linkInstagram "https://www.instagram.com/p/DYFi8wRDjFL/?img_index=1"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/55017982> ] ;
+    ph:linkRoute phd:tour_100_route ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/100/announcement.jpg> .
 
 phd:tour_101 a ph:Tour ;
@@ -84,15 +67,10 @@ phd:tour_101 a ph:Tour ;
         phd:pessoaGabrieltunes ;
     ph:countAttendee 7 ;
     ph:countNewcomer 1 ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 313.0 ;
-            ph:intensityClassification "Endorfinado" ] ;
+    ph:energyEstimate phd:tour_101_energy ;
     ph:inSeriesEdition phd:assoc_PH_92 ;
     ph:linkInstagram "https://www.instagram.com/p/DYQyPoYDlVe/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/55083392> ] ;
+    ph:linkRoute phd:tour_101_route ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/101/announcement.jpg> .
 
 phd:tour_102 a ph:Tour ;
@@ -112,15 +90,10 @@ Por fim, desceremos o córrego cujo nome desconheço, mas que escorre abaixo do 
     prov:wasAttributedTo phd:pessoaGabrieltunes ;
     ph:countAttendee 7 ;
     ph:countNewcomer 0 ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 396.0 ;
-            ph:intensityClassification "Endorfinado" ] ;
+    ph:energyEstimate phd:tour_102_energy ;
     ph:inSeriesEdition phd:assoc_PH_93 ;
     ph:linkInstagram "https://www.instagram.com/p/DYfyG_IDhaM/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/55184087> ] ;
+    ph:linkRoute phd:tour_102_route ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/102/announcement.jpg> .
 
 phd:tour_11 a ph:Tour ;
@@ -130,15 +103,10 @@ phd:tour_11 a ph:Tour ;
     prov:wasAttributedTo phd:pessoaDandan ;
     ph:countAttendee 9 ;
     ph:countNewcomer 3 ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 370.0 ;
-            ph:intensityClassification "Endorfinado" ] ;
+    ph:energyEstimate phd:tour_11_energy ;
     ph:inSeriesEdition phd:assoc_PH_11 ;
     ph:linkInstagram "https://www.instagram.com/p/DB-P8zUOg67/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/48970565> ] ;
+    ph:linkRoute phd:tour_11_route ;
     ph:mediaCount 50 ;
     ph:movingDuration "PT1H43M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/11/announcement.jpg> .
@@ -149,14 +117,9 @@ phd:tour_12 a ph:Tour ;
     prov:wasAttributedTo phd:pessoaBrunoperandin ;
     ph:countAttendee 4 ;
     ph:countNewcomer 0 ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 1700.0 ;
-            ph:intensityClassification "Insano" ] ;
+    ph:energyEstimate phd:tour_12_energy ;
     ph:inSeriesEdition phd:assoc_PH_12 ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/49005652> ] ;
+    ph:linkRoute phd:tour_12_route ;
     ph:mediaCount 222 ;
     ph:movingDuration "PT5H20M"^^xsd:duration .
 
@@ -171,15 +134,10 @@ De lá, cruza-se o braço da crista parapegar o último córrego ocidental do Ri
     ph:countAttendee 4 ;
     ph:countNewcomer 1 ;
     ph:departedAt "2024-11-12T20:03:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 260.0 ;
-            ph:intensityClassification "Ok" ] ;
+    ph:energyEstimate phd:tour_13_energy ;
     ph:inSeriesEdition phd:assoc_PH_13 ;
     ph:linkInstagram "https://www.instagram.com/p/DCQKAoVuD7f/?img_index=1"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/49029471> ] ;
+    ph:linkRoute phd:tour_13_route ;
     ph:mediaCount 79 ;
     ph:movingDuration "PT1H19M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/13/announcement.jpg> .
@@ -193,15 +151,10 @@ phd:tour_14 a ph:Tour ;
     ph:countAttendee 1 ;
     ph:countNewcomer 0 ;
     ph:departedAt "2024-11-19T20:21:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 523.0 ;
-            ph:intensityClassification "Frito" ] ;
+    ph:energyEstimate phd:tour_14_energy ;
     ph:inSeriesEdition phd:assoc_PH_14 ;
     ph:linkInstagram "https://www.instagram.com/p/DChWox3ObhU/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/49272870> ] ;
+    ph:linkRoute phd:tour_14_route ;
     ph:mediaCount 42 ;
     ph:movingDuration "PT1H52M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/14/announcement.jpg> .
@@ -212,10 +165,7 @@ phd:tour_15 a ph:Tour ;
     prov:wasAttributedTo phd:pessoaAnaju ;
     ph:countAttendee 4 ;
     ph:countNewcomer 1 ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 520.0 ;
-            ph:intensityClassification "Frito" ] ;
+    ph:energyEstimate phd:tour_15_energy ;
     ph:inSeriesEdition phd:assoc_BP_1 ;
     ph:mediaCount 2 ;
     ph:movingDuration "PT3H"^^xsd:duration .
@@ -226,14 +176,9 @@ phd:tour_16 a ph:Tour ;
     prov:wasAttributedTo phd:pessoaDandan ;
     ph:countAttendee 3 ;
     ph:countNewcomer 0 ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 750.0 ;
-            ph:intensityClassification "Frito" ] ;
+    ph:energyEstimate phd:tour_16_energy ;
     ph:inSeriesEdition phd:assoc_S_1 ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/49272881> ] ;
+    ph:linkRoute phd:tour_16_route ;
     ph:mediaCount 16 ;
     ph:movingDuration "PT3H6M"^^xsd:duration .
 
@@ -248,15 +193,10 @@ A rota começa por estar junto com as águas do Guarapiranga até desembarcar de
     ph:countAttendee 8 ;
     ph:countNewcomer 3 ;
     ph:departedAt "2024-11-23T08:13:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 789.0 ;
-            ph:intensityClassification "Frito" ] ;
+    ph:energyEstimate phd:tour_17_energy ;
     ph:inSeriesEdition phd:assoc_PH_15 ;
     ph:linkInstagram "https://www.instagram.com/p/DCpl4FQOqFc/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/49106874> ] ;
+    ph:linkRoute phd:tour_17_route ;
     ph:mediaCount 227 ;
     ph:movingDuration "PT3H15M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/17/announcement.jpg> .
@@ -269,15 +209,10 @@ phd:tour_18 a ph:Tour ;
     ph:countAttendee 8 ;
     ph:countNewcomer 1 ;
     ph:departedAt "2024-11-26T20:36:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 260.0 ;
-            ph:intensityClassification "Ok" ] ;
+    ph:energyEstimate phd:tour_18_energy ;
     ph:inSeriesEdition phd:assoc_PH_16 ;
     ph:linkInstagram "https://www.instagram.com/p/DC1bTVfuL0A/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/51086192> ] ;
+    ph:linkRoute phd:tour_18_route ;
     ph:mediaCount 66 ;
     ph:movingDuration "PT1H"^^xsd:duration .
 
@@ -289,15 +224,10 @@ phd:tour_19 a ph:Tour ;
     ph:countAttendee 6 ;
     ph:countNewcomer 3 ;
     ph:departedAt "2024-11-30T07:46:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 850.0 ;
-            ph:intensityClassification "Frito" ] ;
+    ph:energyEstimate phd:tour_19_energy ;
     ph:inSeriesEdition phd:assoc_BP_2,
         phd:assoc_PH_17 ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/49272926> ] ;
+    ph:linkRoute phd:tour_19_route ;
     ph:mediaCount 103 ;
     ph:movingDuration "PT5H36M"^^xsd:duration .
 
@@ -307,14 +237,9 @@ phd:tour_2 a ph:Tour ;
     prov:wasAttributedTo phd:pessoaDandan ;
     ph:countAttendee 3 ;
     ph:countNewcomer 2 ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 184.0 ;
-            ph:intensityClassification "Ok" ] ;
+    ph:energyEstimate phd:tour_2_energy ;
     ph:inSeriesEdition phd:assoc_PH_2 ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/49272970> ] ;
+    ph:linkRoute phd:tour_2_route ;
     ph:mediaCount 6 ;
     ph:movingDuration "PT52M"^^xsd:duration .
 
@@ -329,15 +254,10 @@ Ao chegar no divisor triplo de águas Iquiririm-Jaguaré-Pirajuçara. Lá, pegam
     ph:countAttendee 9 ;
     ph:countNewcomer 4 ;
     ph:departedAt "2024-12-03T20:29:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 400.0 ;
-            ph:intensityClassification "Endorfinado" ] ;
+    ph:energyEstimate phd:tour_20_energy ;
     ph:inSeriesEdition phd:assoc_PH_18 ;
     ph:linkInstagram "https://www.instagram.com/p/DDF8IjTuMaK/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/49182910> ] ;
+    ph:linkRoute phd:tour_20_route ;
     ph:mediaCount 62 ;
     ph:movingDuration "PT2H30M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/20/announcement.jpg> .
@@ -348,14 +268,9 @@ phd:tour_21 a ph:Tour ;
     prov:wasAttributedTo phd:pessoaDandan ;
     ph:countAttendee 4 ;
     ph:countNewcomer 1 ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 614.0 ;
-            ph:intensityClassification "Frito" ] ;
+    ph:energyEstimate phd:tour_21_energy ;
     ph:inSeriesEdition phd:assoc_S_2 ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/49272994> ] ;
+    ph:linkRoute phd:tour_21_route ;
     ph:mediaCount 11 ;
     ph:movingDuration "PT1H40M"^^xsd:duration .
 
@@ -370,15 +285,10 @@ Iniciaremos a partida da praça no Terminal Lapa, no qual acessamos a confluênc
     ph:countAttendee 3 ;
     ph:countNewcomer 1 ;
     ph:departedAt "2024-12-10T20:33:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 330.0 ;
-            ph:intensityClassification "Endorfinado" ] ;
+    ph:energyEstimate phd:tour_22_energy ;
     ph:inSeriesEdition phd:assoc_PH_19 ;
     ph:linkInstagram "https://www.instagram.com/p/DDXvWs7ByTI/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/49225969> ] ;
+    ph:linkRoute phd:tour_22_route ;
     ph:mediaCount 58 ;
     ph:movingDuration "PT1H20M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/22/announcement.jpg> .
@@ -389,14 +299,9 @@ phd:tour_23 a ph:Tour ;
     prov:wasAttributedTo phd:pessoaDandan ;
     ph:countAttendee 5 ;
     ph:countNewcomer 1 ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 650.0 ;
-            ph:intensityClassification "Frito" ] ;
+    ph:energyEstimate phd:tour_23_energy ;
     ph:inSeriesEdition phd:assoc_S_3 ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/49195254> ] ;
+    ph:linkRoute phd:tour_23_route ;
     ph:mediaCount 70 ;
     ph:movingDuration "PT2H35M"^^xsd:duration .
 
@@ -411,15 +316,10 @@ Começamos descendo do Caaguaçu até o Rio Verde II pegando um atalho no Hospit
     ph:countAttendee 13 ;
     ph:countNewcomer 2 ;
     ph:departedAt "2024-12-17T20:17:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 436.0 ;
-            ph:intensityClassification "Endorfinado" ] ;
+    ph:energyEstimate phd:tour_24_energy ;
     ph:inSeriesEdition phd:assoc_PH_20 ;
     ph:linkInstagram "https://www.instagram.com/p/DDrYzskuaZy/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/49267352> ] ;
+    ph:linkRoute phd:tour_24_route ;
     ph:mediaCount 114 ;
     ph:movingDuration "PT2H15M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/24/announcement.jpg> .
@@ -433,15 +333,10 @@ phd:tour_25 a ph:Tour ;
     ph:countAttendee 12 ;
     ph:countNewcomer 8 ;
     ph:departedAt "2025-01-07T20:16:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 271.0 ;
-            ph:intensityClassification "Ok" ] ;
+    ph:energyEstimate phd:tour_25_energy ;
     ph:inSeriesEdition phd:assoc_PH_21 ;
     ph:linkInstagram "https://www.instagram.com/p/DEgLpSQOj37/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/49195396> ] ;
+    ph:linkRoute phd:tour_25_route ;
     ph:mediaCount 28 ;
     ph:movingDuration "PT2H"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/25/announcement.jpg> .
@@ -457,15 +352,10 @@ phd:tour_26 a ph:Tour ;
     ph:countAttendee 22 ;
     ph:countNewcomer 1 ;
     ph:departedAt "2025-01-14T20:36:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 370.0 ;
-            ph:intensityClassification "Endorfinado" ] ;
+    ph:energyEstimate phd:tour_26_energy ;
     ph:inSeriesEdition phd:assoc_PH_22 ;
     ph:linkInstagram "https://www.instagram.com/p/DEz0L0vud94/?img_index=1"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/48970565> ] ;
+    ph:linkRoute phd:tour_26_route ;
     ph:mediaCount 41 ;
     ph:movingDuration "PT2H"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/26/announcement.jpg> .
@@ -476,14 +366,9 @@ phd:tour_27 a ph:Tour ;
     prov:wasAttributedTo phd:pessoaBrunoperandin ;
     ph:countAttendee 11 ;
     ph:countNewcomer 4 ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 600.0 ;
-            ph:intensityClassification "Frito" ] ;
+    ph:energyEstimate phd:tour_27_energy ;
     ph:inSeriesEdition phd:assoc_BT_2 ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/48691963> ] ;
+    ph:linkRoute phd:tour_27_route ;
     ph:mediaCount 56 ;
     ph:movingDuration "PT2H50M"^^xsd:duration .
 
@@ -498,14 +383,9 @@ A rota terá inicio nas proximidades da colina histórica paulistana, nos quais 
     ph:countAttendee 12 ;
     ph:countNewcomer 7 ;
     ph:departedAt "2025-01-21T20:24:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 441.0 ;
-            ph:intensityClassification "Endorfinado" ] ;
+    ph:energyEstimate phd:tour_28_energy ;
     ph:inSeriesEdition phd:assoc_PH_23 ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/49510455> ] ;
+    ph:linkRoute phd:tour_28_route ;
     ph:mediaCount 48 ;
     ph:movingDuration "PT2H6M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/28/announcement.jpg> .
@@ -521,14 +401,9 @@ Sairemos na Praça Roosevelt - o fundão da nascente do Córrego Anhanguera, e d
     ph:countAttendee 5 ;
     ph:countNewcomer 1 ;
     ph:departedAt "2025-01-28T20:20:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 340.0 ;
-            ph:intensityClassification "Endorfinado" ] ;
+    ph:energyEstimate phd:tour_29_energy ;
     ph:inSeriesEdition phd:assoc_PH_24 ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/49567136> ] ;
+    ph:linkRoute phd:tour_29_route ;
     ph:mediaCount 7 ;
     ph:movingDuration "PT1H40M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/29/announcement.jpg> .
@@ -539,14 +414,9 @@ phd:tour_3 a ph:Tour ;
     prov:wasAttributedTo phd:pessoaDandan ;
     ph:countAttendee 2 ;
     ph:countNewcomer 0 ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 179.0 ;
-            ph:intensityClassification "Ok" ] ;
+    ph:energyEstimate phd:tour_3_energy ;
     ph:inSeriesEdition phd:assoc_PH_3 ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/49272915> ] ;
+    ph:linkRoute phd:tour_3_route ;
     ph:mediaCount 7 ;
     ph:movingDuration "PT1H"^^xsd:duration .
 
@@ -561,14 +431,9 @@ Começamos no metrô, no qual rapidamente subimos parte do Pirajuçara até cheg
     ph:countAttendee 15 ;
     ph:countNewcomer 5 ;
     ph:departedAt "2025-02-04T20:49:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 292.0 ;
-            ph:intensityClassification "Ok" ] ;
+    ph:energyEstimate phd:tour_30_energy ;
     ph:inSeriesEdition phd:assoc_PH_25 ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/49567174> ] ;
+    ph:linkRoute phd:tour_30_route ;
     ph:mediaCount 132 ;
     ph:movingDuration "PT1H40M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/30/announcement.jpg> .
@@ -584,14 +449,9 @@ Começamos no metro Conceição, Linha Azul, no alto do Caaguaçu, com o Ipirang
     ph:countAttendee 26 ;
     ph:countNewcomer 17 ;
     ph:departedAt "2025-02-11T20:10:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 291.0 ;
-            ph:intensityClassification "Ok" ] ;
+    ph:energyEstimate phd:tour_31_energy ;
     ph:inSeriesEdition phd:assoc_PH_26 ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/49671673> ] ;
+    ph:linkRoute phd:tour_31_route ;
     ph:mediaCount 45 ;
     ph:movingDuration "PT1H30M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/31/announcement.jpg> .
@@ -607,14 +467,9 @@ Começamos na Barra Funda - no Instituto de Física Teórica, nas bordas dos ant
     ph:countAttendee 12 ;
     ph:countNewcomer 1 ;
     ph:departedAt "2025-02-25T20:06:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 307.0 ;
-            ph:intensityClassification "Endorfinado" ] ;
+    ph:energyEstimate phd:tour_32_energy ;
     ph:inSeriesEdition phd:assoc_PH_27 ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/49741245> ] ;
+    ph:linkRoute phd:tour_32_route ;
     ph:mediaCount 87 ;
     ph:movingDuration "PT1H51M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/32/announcement.jpg> .
@@ -634,14 +489,9 @@ Devidamente hidratados, cruzamos um nano divisor de águas para acessar o braço
     ph:countAttendee 4 ;
     ph:countNewcomer 0 ;
     ph:departedAt "2025-03-11T20:00:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 206.0 ;
-            ph:intensityClassification "Ok" ] ;
+    ph:energyEstimate phd:tour_33_energy ;
     ph:inSeriesEdition phd:assoc_PH_28 ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/49924264> ] ;
+    ph:linkRoute phd:tour_33_route ;
     ph:mediaCount 83 ;
     ph:movingDuration "PT1H7M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/33/announcement.jpg> .
@@ -661,14 +511,9 @@ Dali, surfamos água abaixo pelas paisagens abertas e fechadas do córrego Busso
     ph:countAttendee 8 ;
     ph:countNewcomer 0 ;
     ph:departedAt "2025-03-26T20:15:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 363.0 ;
-            ph:intensityClassification "Endorfinado" ] ;
+    ph:energyEstimate phd:tour_34_energy ;
     ph:inSeriesEdition phd:assoc_PH_29 ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/49999355> ] ;
+    ph:linkRoute phd:tour_34_route ;
     ph:mediaCount 75 ;
     ph:movingDuration "PT1H46M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/34/announcement.jpg> .
@@ -686,14 +531,9 @@ Lá no alto deste planalto, seguimos pelos Alpes do Jaraguá, que separa as águ
     ph:countAttendee 8 ;
     ph:countNewcomer 2 ;
     ph:departedAt "2025-04-01T20:25:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 323.0 ;
-            ph:intensityClassification "Endorfinado" ] ;
+    ph:energyEstimate phd:tour_35_energy ;
     ph:inSeriesEdition phd:assoc_PH_30 ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/50150417> ] ;
+    ph:linkRoute phd:tour_35_route ;
     ph:mediaCount 99 ;
     ph:movingDuration "PT1H30M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/35/announcement.jpg> .
@@ -718,14 +558,9 @@ Vamos pedalar pelo senhor Hélio. Vamos pedalar pelo Tiquatira. Vamos pedalar pe
     ph:countAttendee 12 ;
     ph:countNewcomer 3 ;
     ph:departedAt "2025-04-08T20:51:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 294.0 ;
-            ph:intensityClassification "Ok" ] ;
+    ph:energyEstimate phd:tour_36_energy ;
     ph:inSeriesEdition phd:assoc_PH_31 ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/50149484> ] ;
+    ph:linkRoute phd:tour_36_route ;
     ph:mediaCount 67 ;
     ph:movingDuration "PT1H36M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/36/announcement.jpg> .
@@ -751,16 +586,11 @@ Também contaremos com a presença das equipes da 1ª Gincana Climática de Sant
     prov:wasAttributedTo phd:pessoaBrunoperandin,
         phd:pessoaDandan ;
     ph:countAttendee 28 ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 750.0 ;
-            ph:intensityClassification "Frito" ] ;
+    ph:energyEstimate phd:tour_37_energy ;
     ph:inSeriesEdition phd:assoc_BT_3,
         phd:assoc_PH_32 ;
     ph:linkInstagram "https://www.instagram.com/p/DIHLiuKO-vH/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/49100612> ] ;
+    ph:linkRoute phd:tour_37_route ;
     ph:mediaCount 172 ;
     ph:movingDuration "PT3H10M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/37/announcement.jpg> .
@@ -779,14 +609,9 @@ Chegando à foz do Moinho Velho, o lado canhoto e ignorado do morro do Ipiranga,
     ph:countAttendee 10 ;
     ph:countNewcomer 4 ;
     ph:departedAt "2025-04-15T20:25:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 314.0 ;
-            ph:intensityClassification "Endorfinado" ] ;
+    ph:energyEstimate phd:tour_38_energy ;
     ph:inSeriesEdition phd:assoc_PH_33 ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/50331319> ] ;
+    ph:linkRoute phd:tour_38_route ;
     ph:mediaCount 70 ;
     ph:movingDuration "PT1H55M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/38/announcement.jpg> .
@@ -811,14 +636,9 @@ No caminho, cruzamos nomes que soam como versos: Itararé, Poesia, Charque Grand
     ph:countAttendee 14 ;
     ph:countNewcomer 4 ;
     ph:departedAt "2025-04-22T20:20:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 351.0 ;
-            ph:intensityClassification "Endorfinado" ] ;
+    ph:energyEstimate phd:tour_39_energy ;
     ph:inSeriesEdition phd:assoc_PH_34 ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/50411729> ] ;
+    ph:linkRoute phd:tour_39_route ;
     ph:mediaCount 52 ;
     ph:movingDuration "PT1H48M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/39/announcement.jpg> .
@@ -829,14 +649,9 @@ phd:tour_4 a ph:Tour ;
     prov:wasAttributedTo phd:pessoaDandan ;
     ph:countAttendee 2 ;
     ph:countNewcomer 1 ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 417.0 ;
-            ph:intensityClassification "Endorfinado" ] ;
+    ph:energyEstimate phd:tour_4_energy ;
     ph:inSeriesEdition phd:assoc_PH_4 ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/49195385> ] ;
+    ph:linkRoute phd:tour_4_route ;
     ph:mediaCount 43 ;
     ph:movingDuration "PT1H30M"^^xsd:duration .
 
@@ -856,15 +671,10 @@ Ao chegar no leito do Tietê que ainda existe, retornamos pela sua margem direit
     ph:countAttendee 12 ;
     ph:countNewcomer 4 ;
     ph:departedAt "2025-05-06T20:19:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 316.0 ;
-            ph:intensityClassification "Endorfinado" ] ;
+    ph:energyEstimate phd:tour_40_energy ;
     ph:inSeriesEdition phd:assoc_PH_35 ;
     ph:linkInstagram "https://www.instagram.com/p/DJSCz_SOyyS/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/50480798> ] ;
+    ph:linkRoute phd:tour_40_route ;
     ph:mediaCount 112 ;
     ph:movingDuration "PT1H39M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/40/announcement.jpg> .
@@ -880,9 +690,7 @@ Cantareira foi o nome dado à Serra pelos tropeiros que faziam o comércio entre
     prov:wasAttributedTo phd:pessoaThiagoneves ;
     ph:inSeriesEdition phd:assoc_PH_36 ;
     ph:linkInstagram "https://www.instagram.com/p/DJmCzVGuRwK/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:strava ;
-            schema:url <https://www.strava.com/routes/3350848210103869176> ] ;
+    ph:linkRoute phd:tour_41_route ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/41/announcement.jpg> .
 
 phd:tour_42 a ph:Tour ;
@@ -898,15 +706,10 @@ Uma vez separados da planície e estando situados neste divisor de águas e solo
     ph:countAttendee 9 ;
     ph:countNewcomer 1 ;
     ph:departedAt "2025-05-20T20:14:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 424.0 ;
-            ph:intensityClassification "Endorfinado" ] ;
+    ph:energyEstimate phd:tour_42_energy ;
     ph:inSeriesEdition phd:assoc_PH_37 ;
     ph:linkInstagram "https://www.instagram.com/p/DJ4WBFBODqO/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/50844953> ] ;
+    ph:linkRoute phd:tour_42_route ;
     ph:mediaCount 123 ;
     ph:movingDuration "PT1H31M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/42/announcement.jpg> .
@@ -924,15 +727,10 @@ No Passo da Vaca, transportamo-nos para o vale do Baixo Cabuçu sem sequer notar
     ph:countAttendee 13 ;
     ph:countNewcomer 1 ;
     ph:departedAt "2025-05-27T20:35:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 317.0 ;
-            ph:intensityClassification "Endorfinado" ] ;
+    ph:energyEstimate phd:tour_43_energy ;
     ph:inSeriesEdition phd:assoc_PH_38 ;
     ph:linkInstagram "https://www.instagram.com/p/DKKpRsjOxkw/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/50957749> ] ;
+    ph:linkRoute phd:tour_43_route ;
     ph:mediaCount 91 ;
     ph:movingDuration "PT1H48M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/43/announcement.jpg> .
@@ -945,10 +743,7 @@ phd:tour_44 a ph:Tour ;
     ph:countAttendee 4 ;
     ph:countNewcomer 0 ;
     ph:departedAt "2025-06-01T07:34:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 650.0 ;
-            ph:intensityClassification "Frito" ] ;
+    ph:energyEstimate phd:tour_44_energy ;
     ph:inSeriesEdition phd:assoc_S_4 ;
     ph:mediaCount 185 ;
     ph:movingDuration "PT2H20M"^^xsd:duration .
@@ -967,15 +762,10 @@ Após o fim da Av. Roberto Marinho, a paisagem se altera: saem de cena os prédi
     ph:countAttendee 9 ;
     ph:countNewcomer 3 ;
     ph:departedAt "2025-06-03T20:26:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 280.0 ;
-            ph:intensityClassification "Ok" ] ;
+    ph:energyEstimate phd:tour_45_energy ;
     ph:inSeriesEdition phd:assoc_PH_39 ;
     ph:linkInstagram "https://www.instagram.com/p/DKag2XjuRJd/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/50943723> ] ;
+    ph:linkRoute phd:tour_45_route ;
     ph:mediaCount 125 ;
     ph:movingDuration "PT1H32M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/45/announcement.jpg> .
@@ -993,15 +783,10 @@ Subimos o Rio Oratório, enquanto testemunhamos o mosaico do estado e transiçõ
     ph:countAttendee 13 ;
     ph:countNewcomer 5 ;
     ph:departedAt "2025-06-10T20:38:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 399.0 ;
-            ph:intensityClassification "Endorfinado" ] ;
+    ph:energyEstimate phd:tour_46_energy ;
     ph:inSeriesEdition phd:assoc_PH_40 ;
     ph:linkInstagram "https://www.instagram.com/p/DKuhIZVONOA/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/51051113> ] ;
+    ph:linkRoute phd:tour_46_route ;
     ph:mediaCount 110 ;
     ph:movingDuration "PT2H6M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/46/announcement.jpg> .
@@ -1024,15 +809,10 @@ Convictos que somos estendeu-se a rota, mesclando-a com o roteiro do referido ri
     ph:arrivedAt "2025-06-18T03:03:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 16 ;
     ph:countNewcomer 0 ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 340.0 ;
-            ph:intensityClassification "Endorfinado" ] ;
+    ph:energyEstimate phd:tour_47_energy ;
     ph:inSeriesEdition phd:assoc_PH_41 ;
     ph:linkInstagram "https://www.instagram.com/p/DLALcgZOaN7/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/51282559> ] ;
+    ph:linkRoute phd:tour_47_route ;
     ph:mediaCount 77 ;
     ph:movingDuration "PT2H"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/47/announcement.jpg> .
@@ -1051,15 +831,10 @@ Já tendo percorrido metade do caminho, transpostamo-nos ao riacho da aldeia, af
     ph:countAttendee 12 ;
     ph:countNewcomer 3 ;
     ph:departedAt "2025-06-24T20:52:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 349.0 ;
-            ph:intensityClassification "Endorfinado" ] ;
+    ph:energyEstimate phd:tour_48_energy ;
     ph:inSeriesEdition phd:assoc_PH_42 ;
     ph:linkInstagram "https://www.instagram.com/p/DLSGeNfuQk6/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/51391185> ] ;
+    ph:linkRoute phd:tour_48_route ;
     ph:mediaCount 81 ;
     ph:movingDuration "PT1H52M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/48/announcement.jpg> .
@@ -1080,18 +855,11 @@ Passamos ainda pelas nascentes dos córregos das Cubas e da Cocaia, que conta co
     ph:countAttendee 10 ;
     ph:countNewcomer 1 ;
     ph:departedAt "2025-07-01T20:20:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 385.0 ;
-            ph:intensityClassification "Endorfinado" ] ;
+    ph:energyEstimate phd:tour_49_energy ;
     ph:inSeriesEdition phd:assoc_PH_43 ;
     ph:linkInstagram "https://www.instagram.com/pedalhidrografico/p/DLipKMHuCLY/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/51486572> ] ;
-    ph:measuredEnergy [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 421.0 ] ;
+    ph:linkRoute phd:tour_49_route ;
+    ph:measuredEnergy phd:tour_49_measured ;
     ph:mediaCount 115 ;
     ph:movingDuration "PT1H44M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/49/announcement.jpg> .
@@ -1102,14 +870,9 @@ phd:tour_5 a ph:Tour ;
     prov:wasAttributedTo phd:pessoaDandan ;
     ph:countAttendee 5 ;
     ph:countNewcomer 4 ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 245.0 ;
-            ph:intensityClassification "Ok" ] ;
+    ph:energyEstimate phd:tour_5_energy ;
     ph:inSeriesEdition phd:assoc_PH_5 ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/49195389> ] ;
+    ph:linkRoute phd:tour_5_route ;
     ph:mediaCount 63 ;
     ph:movingDuration "PT1H30M"^^xsd:duration .
 
@@ -1129,18 +892,11 @@ Ainda na cidade, cruzaremos a Rodovia dos Imigrantes por baixo - a segunda rodov
     ph:countAttendee 9 ;
     ph:countNewcomer 0 ;
     ph:departedAt "2025-07-08T20:26:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 393.0 ;
-            ph:intensityClassification "Endorfinado" ] ;
+    ph:energyEstimate phd:tour_50_energy ;
     ph:inSeriesEdition phd:assoc_PH_44 ;
     ph:linkInstagram "https://www.instagram.com/pedalhidrografico/p/DL0tL4Yu7I7/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/51588263> ] ;
-    ph:measuredEnergy [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 482.0 ] ;
+    ph:linkRoute phd:tour_50_route ;
+    ph:measuredEnergy phd:tour_50_measured ;
     ph:mediaCount 77 ;
     ph:movingDuration "PT1H55M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/50/announcement.jpg> .
@@ -1160,18 +916,11 @@ A descida dos morros nos levará para o final do pedal, no metrô do Capão, na 
     ph:countAttendee 11 ;
     ph:countNewcomer 1 ;
     ph:departedAt "2025-07-15T20:32:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 380.0 ;
-            ph:intensityClassification "Endorfinado" ] ;
+    ph:energyEstimate phd:tour_51_energy ;
     ph:inSeriesEdition phd:assoc_PH_45 ;
     ph:linkInstagram "https://www.instagram.com/pedalhidrografico/p/DMGodnSO1Qc/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/51701965> ] ;
-    ph:measuredEnergy [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 415.0 ] ;
+    ph:linkRoute phd:tour_51_route ;
+    ph:measuredEnergy phd:tour_51_measured ;
     ph:mediaCount 64 ;
     ph:movingDuration "PT2H12M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/51/announcement.jpg> .
@@ -1189,18 +938,11 @@ No encontro desta semana, o Hidrográfico rememora a história da enchente de 19
     ph:countAttendee 32 ;
     ph:countNewcomer 17 ;
     ph:departedAt "2025-07-22T20:24:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 280.0 ;
-            ph:intensityClassification "Ok" ] ;
+    ph:energyEstimate phd:tour_52_energy ;
     ph:inSeriesEdition phd:assoc_PH_46 ;
     ph:linkInstagram "https://www.instagram.com/p/DMY_UtgOaoz/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/51812173> ] ;
-    ph:measuredEnergy [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 220.0 ] ;
+    ph:linkRoute phd:tour_52_route ;
+    ph:measuredEnergy phd:tour_52_measured ;
     ph:mediaCount 108 ;
     ph:movingDuration "PT1H16M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/52/announcement.jpg> .
@@ -1221,15 +963,10 @@ Este Pedal Hidrográfico é um convite à contemplação e a prova de que a natu
     ph:countAttendee 26 ;
     ph:countNewcomer 3 ;
     ph:departedAt "2025-07-29T20:15:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 337.0 ;
-            ph:intensityClassification "Endorfinado" ] ;
+    ph:energyEstimate phd:tour_53_energy ;
     ph:inSeriesEdition phd:assoc_PH_47 ;
     ph:linkInstagram "https://www.instagram.com/p/DMqJrLbu66G/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/51937044> ] ;
+    ph:linkRoute phd:tour_53_route ;
     ph:mediaCount 123 ;
     ph:movingDuration "PT1H30M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/53/announcement.jpg> .
@@ -1247,18 +984,11 @@ Pedal que segue o escoamento das águas na Zona Norte e acessa a Linha Verde do 
     ph:countAttendee 16 ;
     ph:countNewcomer 0 ;
     ph:departedAt "2025-08-03T08:56:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 392.0 ;
-            ph:intensityClassification "Endorfinado" ] ;
+    ph:energyEstimate phd:tour_54_energy ;
     ph:inSeriesEdition phd:assoc_PH_48 ;
     ph:linkInstagram "https://www.instagram.com/p/DM2jxeIOHJ6/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/50737426> ] ;
-    ph:measuredEnergy [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 462.0 ] ;
+    ph:linkRoute phd:tour_54_route ;
+    ph:measuredEnergy phd:tour_54_measured ;
     ph:mediaCount 70 ;
     ph:movingDuration "PT2H"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/54/announcement.jpg> .
@@ -1274,18 +1004,11 @@ phd:tour_55 a ph:Tour ;
     ph:countAttendee 11 ;
     ph:countNewcomer 4 ;
     ph:departedAt "2025-08-05T20:25:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 381.0 ;
-            ph:intensityClassification "Endorfinado" ] ;
+    ph:energyEstimate phd:tour_55_energy ;
     ph:inSeriesEdition phd:assoc_PH_49 ;
     ph:linkInstagram "https://www.instagram.com/p/DM9AQl_uj-j/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/52046213> ] ;
-    ph:measuredEnergy [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 420.0 ] ;
+    ph:linkRoute phd:tour_55_route ;
+    ph:measuredEnergy phd:tour_55_measured ;
     ph:mediaCount 109 ;
     ph:movingDuration "PT1H42M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/55/announcement.jpg> .
@@ -1303,18 +1026,11 @@ Contornado este seco e alto meandro de terra, não demora para termos contato co
     ph:countAttendee 7 ;
     ph:countNewcomer 1 ;
     ph:departedAt "2025-08-12T20:20:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 360.0 ;
-            ph:intensityClassification "Endorfinado" ] ;
+    ph:energyEstimate phd:tour_56_energy ;
     ph:inSeriesEdition phd:assoc_PH_50 ;
     ph:linkInstagram "https://www.instagram.com/p/DNPJZ3JOtPZ/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/52162083> ] ;
-    ph:measuredEnergy [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 410.0 ] ;
+    ph:linkRoute phd:tour_56_route ;
+    ph:measuredEnergy phd:tour_56_measured ;
     ph:mediaCount 65 ;
     ph:movingDuration "PT1H52M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/56/announcement.jpg> .
@@ -1330,18 +1046,11 @@ Passeamos por estes altos no meio do luar crescente pelo tempo e caminho que é 
     ph:countAttendee 3 ;
     ph:countNewcomer 0 ;
     ph:departedAt "2025-08-19T20:28:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 373.0 ;
-            ph:intensityClassification "Endorfinado" ] ;
+    ph:energyEstimate phd:tour_57_energy ;
     ph:inSeriesEdition phd:assoc_PH_51 ;
     ph:linkInstagram "https://www.instagram.com/p/DNgw3pBBoaV/?img_index=1"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/52269074> ] ;
-    ph:measuredEnergy [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 460.0 ] ;
+    ph:linkRoute phd:tour_57_route ;
+    ph:measuredEnergy phd:tour_57_measured ;
     ph:mediaCount 76 ;
     ph:movingDuration "PT1H50M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/57/announcement.jpg> .
@@ -1364,18 +1073,11 @@ Seguiremos pelo último braço do divisor que visitaremos no passeio e pegaremos
     ph:countAttendee 5 ;
     ph:countNewcomer 0 ;
     ph:departedAt "2025-08-26T20:31:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 358.0 ;
-            ph:intensityClassification "Endorfinado" ] ;
+    ph:energyEstimate phd:tour_58_energy ;
     ph:inSeriesEdition phd:assoc_PH_52 ;
     ph:linkInstagram "https://www.instagram.com/p/DNzHbJjWDhL/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/52165449> ] ;
-    ph:measuredEnergy [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 430.0 ] ;
+    ph:linkRoute phd:tour_58_route ;
+    ph:measuredEnergy phd:tour_58_measured ;
     ph:mediaCount 64 ;
     ph:movingDuration "PT2H4M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/58/announcement.jpg> .
@@ -1386,14 +1088,9 @@ phd:tour_59 a ph:Tour ;
     prov:wasAttributedTo phd:pessoaThiagoneves ;
     ph:countAttendee 8 ;
     ph:countNewcomer 0 ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 1200.0 ;
-            ph:intensityClassification "Insano" ] ;
+    ph:energyEstimate phd:tour_59_energy ;
     ph:inSeriesEdition phd:assoc_S_5 ;
-    ph:measuredEnergy [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 1500.0 ] ;
+    ph:measuredEnergy phd:tour_59_measured ;
     ph:mediaCount 321 ;
     ph:movingDuration "PT4H8M"^^xsd:duration .
 
@@ -1403,10 +1100,7 @@ phd:tour_6 a ph:Tour ;
     prov:wasAttributedTo phd:pessoaDandan ;
     ph:countAttendee 1 ;
     ph:countNewcomer 1 ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 150.0 ;
-            ph:intensityClassification "Ok" ] ;
+    ph:energyEstimate phd:tour_6_energy ;
     ph:inSeriesEdition phd:assoc_PH_6 ;
     ph:mediaCount 11 ;
     ph:movingDuration "PT1H"^^xsd:duration .
@@ -1425,15 +1119,10 @@ O Antonico nasce em Paraisópolis, passando sob a área do Estádio do Morumbi(s
     ph:countAttendee 9 ;
     ph:countNewcomer 2 ;
     ph:departedAt "2025-09-02T20:28:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 276.0 ;
-            ph:intensityClassification "Ok" ] ;
+    ph:energyEstimate phd:tour_60_energy ;
     ph:inSeriesEdition phd:assoc_PH_53 ;
     ph:linkInstagram "https://www.instagram.com/p/DOGOOV5joSC/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/52165232> ] ;
+    ph:linkRoute phd:tour_60_route ;
     ph:mediaCount 15 ;
     ph:movingDuration "PT1H18M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/60/announcement.jpg> .
@@ -1451,18 +1140,11 @@ phd:tour_61 a ph:Tour ;
     ph:countAttendee 57 ;
     ph:countNewcomer 20 ;
     ph:departedAt "2025-09-09T20:36:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 183.0 ;
-            ph:intensityClassification "Ok" ] ;
+    ph:energyEstimate phd:tour_61_energy ;
     ph:inSeriesEdition phd:assoc_PH_54 ;
     ph:linkInstagram "https://www.instagram.com/p/DOTyz43DjpV/?img_index=1"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/49272936> ] ;
-    ph:measuredEnergy [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 187.0 ] ;
+    ph:linkRoute phd:tour_61_route ;
+    ph:measuredEnergy phd:tour_61_measured ;
     ph:mediaCount 213 ;
     ph:movingDuration "PT1H2M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/61/announcement.jpg> .
@@ -1480,18 +1162,11 @@ Transladamos para o outro lado deste grande rio, fazendo breve passagem pela Gua
     ph:countAttendee 9 ;
     ph:countNewcomer 3 ;
     ph:departedAt "2025-09-16T20:26:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 400.0 ;
-            ph:intensityClassification "Endorfinado" ] ;
+    ph:energyEstimate phd:tour_62_energy ;
     ph:inSeriesEdition phd:assoc_PH_55 ;
     ph:linkInstagram "https://www.instagram.com/p/DOoaZqEjqKg/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/52653389> ] ;
-    ph:measuredEnergy [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 430.0 ] ;
+    ph:linkRoute phd:tour_62_route ;
+    ph:measuredEnergy phd:tour_62_measured ;
     ph:mediaCount 201 ;
     ph:movingDuration "PT1H58M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/62/announcement.jpg> .
@@ -1515,19 +1190,12 @@ A. N. Ab’Saber, Geomorfologia do sítio urbano de São Paulo. USP-FFCL, 1957."
     ph:countAttendee 16 ;
     ph:countNewcomer 4 ;
     ph:departedAt "2025-09-21T09:21:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 801.0 ;
-            ph:intensityClassification "Frito" ] ;
+    ph:energyEstimate phd:tour_63_energy ;
     ph:inSeriesEdition phd:assoc_PH_56,
         phd:assoc_S_6 ;
     ph:linkInstagram "https://www.instagram.com/p/DOzM8syATYo/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/52515917> ] ;
-    ph:measuredEnergy [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 840.0 ] ;
+    ph:linkRoute phd:tour_63_route ;
+    ph:measuredEnergy phd:tour_63_measured ;
     ph:mediaCount 466 ;
     ph:movingDuration "PT3H44M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/63/announcement.jpg> .
@@ -1545,18 +1213,11 @@ Lá, testemunhamos um aterramento vultoso que soterra o riacho Clara. Continuamo
     ph:countAttendee 8 ;
     ph:countNewcomer 0 ;
     ph:departedAt "2025-09-24T20:28:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 343.0 ;
-            ph:intensityClassification "Endorfinado" ] ;
+    ph:energyEstimate phd:tour_64_energy ;
     ph:inSeriesEdition phd:assoc_PH_57 ;
     ph:linkInstagram "https://www.instagram.com/p/DO88VWtDtJj/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/52776083> ] ;
-    ph:measuredEnergy [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 406.0 ] ;
+    ph:linkRoute phd:tour_64_route ;
+    ph:measuredEnergy phd:tour_64_measured ;
     ph:mediaCount 179 ;
     ph:movingDuration "PT1H44M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/64/announcement.jpg> .
@@ -1568,14 +1229,9 @@ phd:tour_65 a ph:Tour ;
     ph:countAttendee 7 ;
     ph:countNewcomer 2 ;
     ph:departedAt "2025-09-30T21:08:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 358.0 ;
-            ph:intensityClassification "Endorfinado" ] ;
+    ph:energyEstimate phd:tour_65_energy ;
     ph:inSeriesEdition phd:assoc_PH_58 ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/52165449> ] ;
+    ph:linkRoute phd:tour_65_route ;
     ph:mediaCount 31 ;
     ph:movingDuration "PT1H20M"^^xsd:duration .
 
@@ -1596,15 +1252,10 @@ Referências: Caio Prado Jr. "A cidade de São Paulo - Geografia e História" (1
     ph:countAttendee 6 ;
     ph:countNewcomer 1 ;
     ph:departedAt "2025-10-07T20:17:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 387.0 ;
-            ph:intensityClassification "Endorfinado" ] ;
+    ph:energyEstimate phd:tour_66_energy ;
     ph:inSeriesEdition phd:assoc_PH_59 ;
     ph:linkInstagram "https://www.instagram.com/p/DPhFHJSDthY/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/52939892> ] ;
+    ph:linkRoute phd:tour_66_route ;
     ph:mediaCount 12 ;
     ph:movingDuration "PT1H30M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/66/announcement.jpg> .
@@ -1627,18 +1278,11 @@ As hills forming the canyons around Sausal Creek dissipate away, the time is nea
     ph:countAttendee 36 ;
     ph:countNewcomer 33 ;
     ph:departedAt "2025-10-17T17:39:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 416.0 ;
-            ph:intensityClassification "Endorfinado" ] ;
+    ph:energyEstimate phd:tour_67_energy ;
     ph:inSeriesEdition phd:assoc_PH_61 ;
     ph:linkInstagram "https://www.instagram.com/p/DPzHuRhAVjW/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/52981759> ] ;
-    ph:measuredEnergy [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 707.0 ] ;
+    ph:linkRoute phd:tour_67_route ;
+    ph:measuredEnergy phd:tour_67_measured ;
     ph:mediaCount 165 ;
     ph:movingDuration "PT2H3M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/67/announcement.jpg> .
@@ -1654,15 +1298,10 @@ phd:tour_68 a ph:Tour ;
     ph:countAttendee 10 ;
     ph:countNewcomer 0 ;
     ph:departedAt "2025-10-21T20:21:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 340.0 ;
-            ph:intensityClassification "Endorfinado" ] ;
+    ph:energyEstimate phd:tour_68_energy ;
     ph:inSeriesEdition phd:assoc_PH_60 ;
     ph:linkInstagram "https://www.instagram.com/p/DQFZDYmAaCC/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/51282559> ] ;
+    ph:linkRoute phd:tour_68_route ;
     ph:mediaCount 55 ;
     ph:movingDuration "PT1H50M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/68/announcement.jpg> .
@@ -1689,15 +1328,10 @@ Aho!"""@pt ;
     ph:countAttendee 40 ;
     ph:countNewcomer 25 ;
     ph:departedAt "2025-10-26T07:38:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 694.0 ;
-            ph:intensityClassification "Frito" ] ;
+    ph:energyEstimate phd:tour_69_energy ;
     ph:inSeriesEdition phd:assoc_PH_62 ;
     ph:linkInstagram "https://www.instagram.com/p/DQPNof-DnxY/?img_index=1"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/53123125> ] ;
+    ph:linkRoute phd:tour_69_route ;
     ph:mediaCount 110 ;
     ph:movingDuration "PT4H38M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/69/announcement.jpg> .
@@ -1708,14 +1342,9 @@ phd:tour_7 a ph:Tour ;
     prov:wasAttributedTo phd:pessoaDandan ;
     ph:countAttendee 12 ;
     ph:countNewcomer 8 ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 271.0 ;
-            ph:intensityClassification "Ok" ] ;
+    ph:energyEstimate phd:tour_7_energy ;
     ph:inSeriesEdition phd:assoc_PH_7 ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/49195396> ] ;
+    ph:linkRoute phd:tour_7_route ;
     ph:mediaCount 56 ;
     ph:movingDuration "PT2H"^^xsd:duration .
 
@@ -1737,18 +1366,11 @@ Descemos tudo até chegar no Parque Novo Mundo, várzea do Tietê, que cruzaremo
     ph:countAttendee 5 ;
     ph:countNewcomer 0 ;
     ph:departedAt "2025-10-28T20:29:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 392.0 ;
-            ph:intensityClassification "Endorfinado" ] ;
+    ph:energyEstimate phd:tour_70_energy ;
     ph:inSeriesEdition phd:assoc_PH_63 ;
     ph:linkInstagram "https://www.instagram.com/p/DQW54WjjobD/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/53113256> ] ;
-    ph:measuredEnergy [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 428.0 ] ;
+    ph:linkRoute phd:tour_70_route ;
+    ph:measuredEnergy phd:tour_70_measured ;
     ph:mediaCount 36 ;
     ph:movingDuration "PT2H22M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/70/announcement.jpg> .
@@ -1768,18 +1390,11 @@ A partir daí, não se pedala duas ou três quadras sem antes avistar uma ponte.
     ph:countAttendee 5 ;
     ph:countNewcomer 0 ;
     ph:departedAt "2025-11-04T20:24:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 390.0 ;
-            ph:intensityClassification "Endorfinado" ] ;
+    ph:energyEstimate phd:tour_71_energy ;
     ph:inSeriesEdition phd:assoc_PH_64 ;
     ph:linkInstagram "https://www.instagram.com/p/DQndVvpji_q/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/53205838> ] ;
-    ph:measuredEnergy [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 586.0 ] ;
+    ph:linkRoute phd:tour_71_route ;
+    ph:measuredEnergy phd:tour_71_measured ;
     ph:mediaCount 159 ;
     ph:movingDuration "PT2H12M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/71/announcement.jpg> .
@@ -1799,18 +1414,11 @@ Lá no alto deste planalto, seguimos pelos Alpes do Jaraguá, que separa as águ
     ph:countAttendee 9 ;
     ph:countNewcomer 1 ;
     ph:departedAt "2025-11-11T20:21:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 306.0 ;
-            ph:intensityClassification "Endorfinado" ] ;
+    ph:energyEstimate phd:tour_72_energy ;
     ph:inSeriesEdition phd:assoc_PH_65 ;
     ph:linkInstagram "https://www.instagram.com/p/DQ5DpR3DkW4/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/50150417> ] ;
-    ph:measuredEnergy [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 324.0 ] ;
+    ph:linkRoute phd:tour_72_route ;
+    ph:measuredEnergy phd:tour_72_measured ;
     ph:mediaCount 135 ;
     ph:movingDuration "PT1H21M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/72/announcement.jpg> .
@@ -1832,18 +1440,11 @@ Para finalizar, desceremos ao Anhangabaú, palco da celebração, neste 25 de no
     ph:countAttendee 12 ;
     ph:countNewcomer 3 ;
     ph:departedAt "2025-11-25T20:27:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 267.0 ;
-            ph:intensityClassification "Ok" ] ;
+    ph:energyEstimate phd:tour_73_energy ;
     ph:inSeriesEdition phd:assoc_PH_66 ;
     ph:linkInstagram "https://www.instagram.com/p/DRfuROkgcc5/?img_index=1"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/53386705> ] ;
-    ph:measuredEnergy [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 215.0 ] ;
+    ph:linkRoute phd:tour_73_route ;
+    ph:measuredEnergy phd:tour_73_measured ;
     ph:mediaCount 37 ;
     ph:movingDuration "PT1H26M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/73/announcement.jpg> .
@@ -1860,18 +1461,11 @@ Se o vale ainda estivesse ativo, a nascente do Rio Tietê poderia ser considerad
     ph:countAttendee 11 ;
     ph:countNewcomer 3 ;
     ph:departedAt "2025-11-30T09:31:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 918.0 ;
-            ph:intensityClassification "Frito" ] ;
+    ph:energyEstimate phd:tour_74_energy ;
     ph:inSeriesEdition phd:assoc_PH_67 ;
     ph:linkInstagram "https://www.instagram.com/p/DRnmMqYgSxz/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/53380438> ] ;
-    ph:measuredEnergy [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 856.0 ] ;
+    ph:linkRoute phd:tour_74_route ;
+    ph:measuredEnergy phd:tour_74_measured ;
     ph:mediaCount 100 ;
     ph:movingDuration "PT3H18M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/74/announcement.jpg> .
@@ -1894,18 +1488,11 @@ A descida do morro finalizará no Tatuapé, com um belo encontro de ciclistas no
     ph:countAttendee 8 ;
     ph:countNewcomer 2 ;
     ph:departedAt "2025-12-03T20:26:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 297.0 ;
-            ph:intensityClassification "Ok" ] ;
+    ph:energyEstimate phd:tour_75_energy ;
     ph:inSeriesEdition phd:assoc_PH_68 ;
     ph:linkInstagram "https://www.instagram.com/p/DRzyPXPDuLA/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/53428447> ] ;
-    ph:measuredEnergy [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 263.0 ] ;
+    ph:linkRoute phd:tour_75_route ;
+    ph:measuredEnergy phd:tour_75_measured ;
     ph:mediaCount 23 ;
     ph:movingDuration "PT1H28M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/75/announcement.jpg> .
@@ -1921,18 +1508,11 @@ Daí surfamos um pouco na crista até pegarmos o curso do córrego das corujas c
     ph:countAttendee 7 ;
     ph:countNewcomer 3 ;
     ph:departedAt "2025-12-10T20:20:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 287.0 ;
-            ph:intensityClassification "Ok" ] ;
+    ph:energyEstimate phd:tour_76_energy ;
     ph:inSeriesEdition phd:assoc_PH_69 ;
     ph:linkInstagram "https://www.instagram.com/p/DSGJhd9geOh/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/54149967> ] ;
-    ph:measuredEnergy [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 215.0 ] ;
+    ph:linkRoute phd:tour_76_route ;
+    ph:measuredEnergy phd:tour_76_measured ;
     ph:mediaCount 12 ;
     ph:movingDuration "PT1H26M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/76/announcement.jpg> .
@@ -1951,18 +1531,11 @@ Após isso, cada rio que se segue traz consigo uma nova grande crista, formando 
     ph:countAttendee 6 ;
     ph:countNewcomer 1 ;
     ph:departedAt "2025-12-17T20:58:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 275.0 ;
-            ph:intensityClassification "Ok" ] ;
+    ph:energyEstimate phd:tour_77_energy ;
     ph:inSeriesEdition phd:assoc_PH_70 ;
     ph:linkInstagram "https://www.instagram.com/p/DSVgvNRAQu9/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/53524909> ] ;
-    ph:measuredEnergy [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 303.0 ] ;
+    ph:linkRoute phd:tour_77_route ;
+    ph:measuredEnergy phd:tour_77_measured ;
     ph:mediaCount 64 ;
     ph:movingDuration "PT1H22M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/77/announcement.jpg> .
@@ -1983,18 +1556,11 @@ Pedreira adentro, pedalamos um córrego até o ponto de sela entre bacias para d
     ph:countAttendee 19 ;
     ph:countNewcomer 4 ;
     ph:departedAt "2025-12-23T20:20:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 378.0 ;
-            ph:intensityClassification "Endorfinado" ] ;
+    ph:energyEstimate phd:tour_78_energy ;
     ph:inSeriesEdition phd:assoc_PH_71 ;
     ph:linkInstagram "https://www.instagram.com/p/DSk7MGcgTAP/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/53564416> ] ;
-    ph:measuredEnergy [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 309.0 ] ;
+    ph:linkRoute phd:tour_78_route ;
+    ph:measuredEnergy phd:tour_78_measured ;
     ph:mediaCount 184 ;
     ph:movingDuration "PT2H16M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/78/announcement.jpg> .
@@ -2006,15 +1572,10 @@ phd:tour_79 a ph:Tour ;
     ph:arrivedAt "2026-01-08T00:00:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 7 ;
     ph:countNewcomer 1 ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 301.0 ;
-            ph:intensityClassification "Endorfinado" ] ;
+    ph:energyEstimate phd:tour_79_energy ;
     ph:inSeriesEdition phd:assoc_PH_72 ;
     ph:linkInstagram "https://www.instagram.com/p/DTMEVNdDmcu/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/53660982> ] ;
+    ph:linkRoute phd:tour_79_route ;
     ph:mediaCount 9 .
 
 phd:tour_8 a ph:Tour ;
@@ -2026,15 +1587,10 @@ Reaja com joinha pra dizer que vai! E com chuva pra dizer que vai mesmo com chuv
     prov:wasAttributedTo phd:pessoaDandan ;
     ph:countAttendee 4 ;
     ph:countNewcomer 0 ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 300.0 ;
-            ph:intensityClassification "Endorfinado" ] ;
+    ph:energyEstimate phd:tour_8_energy ;
     ph:inSeriesEdition phd:assoc_PH_8 ;
     ph:linkInstagram "https://www.instagram.com/p/DBhH6IpPZO3/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/49195439> ] ;
+    ph:linkRoute phd:tour_8_route ;
     ph:mediaCount 45 ;
     ph:movingDuration "PT1H26M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/8/announcement.jpg> .
@@ -2046,15 +1602,10 @@ phd:tour_80 a ph:Tour ;
     ph:arrivedAt "2026-01-15T00:00:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 13 ;
     ph:countNewcomer 0 ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 359.0 ;
-            ph:intensityClassification "Endorfinado" ] ;
+    ph:energyEstimate phd:tour_80_energy ;
     ph:inSeriesEdition phd:assoc_PH_73 ;
     ph:linkInstagram "https://www.instagram.com/p/DTd-l-TgQyf/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/53715166> ] ;
+    ph:linkRoute phd:tour_80_route ;
     ph:mediaCount 80 .
 
 phd:tour_81 a ph:Tour ;
@@ -2064,9 +1615,7 @@ phd:tour_81 a ph:Tour ;
     ph:countAttendee 10 ;
     ph:countNewcomer 0 ;
     ph:inSeriesEdition phd:assoc_PH_74 ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/54149999> ] ;
+    ph:linkRoute phd:tour_81_route ;
     ph:mediaCount 13 .
 
 phd:tour_82 a ph:Tour ;
@@ -2078,15 +1627,10 @@ phd:tour_82 a ph:Tour ;
     ph:arrivedAt "2026-01-29T00:00:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 18 ;
     ph:countNewcomer 6 ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 330.0 ;
-            ph:intensityClassification "Endorfinado" ] ;
+    ph:energyEstimate phd:tour_82_energy ;
     ph:inSeriesEdition phd:assoc_PH_75 ;
     ph:linkInstagram "https://www.instagram.com/p/DUDeC9sjogH/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/53832056> ] ;
+    ph:linkRoute phd:tour_82_route ;
     ph:mediaCount 100 .
 
 phd:tour_83 a ph:Tour ;
@@ -2094,16 +1638,11 @@ phd:tour_83 a ph:Tour ;
     dcterms:title "Caaguaçu Emboaçu e Riacho do Ipiranga" ;
     prov:wasAttributedTo phd:pessoaAnaju ;
     ph:countAttendee 12 ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 149.0 ;
-            ph:intensityClassification "De boa" ] ;
+    ph:energyEstimate phd:tour_83_energy ;
     ph:inSeriesEdition phd:assoc_BP_3,
         phd:assoc_PH_76 ;
     ph:linkInstagram "https://www.instagram.com/p/DUJI_AnjrgP/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/53853791> ] ;
+    ph:linkRoute phd:tour_83_route ;
     ph:mediaCount 53 .
 
 phd:tour_84 a ph:Tour ;
@@ -2113,10 +1652,7 @@ phd:tour_84 a ph:Tour ;
     ph:countAttendee 55 ;
     ph:countNewcomer 45 ;
     ph:departedAt "2026-02-01T09:38:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 298.0 ;
-            ph:intensityClassification "Ok" ] ;
+    ph:energyEstimate phd:tour_84_energy ;
     ph:inSeriesEdition phd:assoc_SESC_1 ;
     ph:linkInstagram "https://www.instagram.com/p/DUBptxLEW6g/?img_index=1"^^xsd:anyURI ;
     ph:movingDuration "PT2H"^^xsd:duration .
@@ -2129,9 +1665,7 @@ phd:tour_85 a ph:Tour ;
     ph:countAttendee 7 ;
     ph:inSeriesEdition phd:assoc_PH_77 ;
     ph:linkInstagram "https://www.instagram.com/p/DUTydjOgXYq/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/53879757> ] ;
+    ph:linkRoute phd:tour_85_route ;
     ph:mediaCount 29 .
 
 phd:tour_86 a ph:Tour ;
@@ -2142,9 +1676,7 @@ phd:tour_86 a ph:Tour ;
     ph:countNewcomer 3 ;
     ph:inSeriesEdition phd:assoc_PH_78 ;
     ph:linkInstagram "https://www.instagram.com/p/DUoNFoEgdlN/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/54150035> ] ;
+    ph:linkRoute phd:tour_86_route ;
     ph:mediaCount 81 .
 
 phd:tour_87 a ph:Tour ;
@@ -2153,16 +1685,11 @@ phd:tour_87 a ph:Tour ;
     prov:wasAttributedTo phd:pessoaAnaju,
         phd:pessoaTomb ;
     ph:countAttendee 10 ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 204.0 ;
-            ph:intensityClassification "Ok" ] ;
+    ph:energyEstimate phd:tour_87_energy ;
     ph:inSeriesEdition phd:assoc_BP_4,
         phd:assoc_PH_79 ;
     ph:linkInstagram "https://www.instagram.com/p/DUogixyDldM/?img_index=1"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/53954783> ] ;
+    ph:linkRoute phd:tour_87_route ;
     ph:mediaCount 55 .
 
 phd:tour_88 a ph:Tour ;
@@ -2191,18 +1718,11 @@ Mudamos o curso a fim de acessar o Rio Perus enquanto este está acima do planal
     ph:countAttendee 18 ;
     ph:countNewcomer 2 ;
     ph:departedAt "2026-02-24T20:35:00-03:00"^^xsd:dateTime ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 280.0 ;
-            ph:intensityClassification "Ok" ] ;
+    ph:energyEstimate phd:tour_89_energy ;
     ph:inSeriesEdition phd:assoc_PH_81 ;
     ph:linkInstagram "https://www.instagram.com/p/DVIEJtmjmCK/?img_index=1"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/53947457> ] ;
-    ph:measuredEnergy [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 328.0 ] ;
+    ph:linkRoute phd:tour_89_route ;
+    ph:measuredEnergy phd:tour_89_measured ;
     ph:mediaCount 104 ;
     ph:movingDuration "PT1H29M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/89/announcement.jpg> .
@@ -2218,15 +1738,10 @@ Todos os córregos por aqui são verdes no nome! Felizmente, o córrego irmão d
     prov:wasAttributedTo phd:pessoaThiagoneves ;
     ph:countAttendee 8 ;
     ph:countNewcomer 2 ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 290.0 ;
-            ph:intensityClassification "Ok" ] ;
+    ph:energyEstimate phd:tour_9_energy ;
     ph:inSeriesEdition phd:assoc_PH_9 ;
     ph:linkInstagram "https://www.instagram.com/p/DBrLDD9u7ZE/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/49195401> ] ;
+    ph:linkRoute phd:tour_9_route ;
     ph:mediaCount 94 ;
     ph:movingDuration "PT1H20M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/9/announcement.jpg> .
@@ -2239,9 +1754,7 @@ phd:tour_90 a ph:Tour ;
     ph:countNewcomer 1 ;
     ph:inSeriesEdition phd:assoc_PH_82 ;
     ph:linkInstagram "https://www.instagram.com/p/DVbP7QsDiYA/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/53755124> ] ;
+    ph:linkRoute phd:tour_90_route ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/90/announcement.jpg> .
 
 phd:tour_91 a ph:Tour ;
@@ -2252,9 +1765,7 @@ phd:tour_91 a ph:Tour ;
     ph:countNewcomer 5 ;
     ph:inSeriesEdition phd:assoc_PH_83 ;
     ph:linkInstagram "https://www.instagram.com/p/DWB1tpeDqJO/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/54024668> ] .
+    ph:linkRoute phd:tour_91_route .
 
 phd:tour_92 a ph:Tour ;
     dcterms:date "2026-03-22T00:00:00-03:00"^^xsd:dateTime ;
@@ -2264,9 +1775,7 @@ phd:tour_92 a ph:Tour ;
     ph:countNewcomer 0 ;
     ph:inSeriesEdition phd:assoc_PH_84 ;
     ph:linkInstagram "https://www.instagram.com/p/DWIIvKyDq1i/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/54320499> ] .
+    ph:linkRoute phd:tour_92_route .
 
 phd:tour_93 a ph:Tour ;
     dcterms:date "2026-03-25T20:00:00-03:00"^^xsd:dateTime ;
@@ -2281,15 +1790,10 @@ A bifurcação se apresenta: deveríamos seguir ao alto pelo esporão que se bif
     ph:arrivedAt "2025-03-26T00:00:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 1 ;
     ph:countNewcomer 0 ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 372.0 ;
-            ph:intensityClassification "Endorfinado" ] ;
+    ph:energyEstimate phd:tour_93_energy ;
     ph:inSeriesEdition phd:assoc_PH_85 ;
     ph:linkInstagram "https://www.instagram.com/p/DWSt3WbDg-X/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/54356024> ] .
+    ph:linkRoute phd:tour_93_route .
 
 phd:tour_94 a ph:Tour ;
     dcterms:date "2026-03-31T20:00:00-03:00"^^xsd:dateTime ;
@@ -2298,15 +1802,10 @@ phd:tour_94 a ph:Tour ;
         phd:pessoaGmard ;
     ph:countAttendee 9 ;
     ph:countNewcomer 1 ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 371.0 ;
-            ph:intensityClassification "Endorfinado" ] ;
+    ph:energyEstimate phd:tour_94_energy ;
     ph:inSeriesEdition phd:assoc_PH_86 ;
     ph:linkInstagram "https://www.instagram.com/p/DWj9C_-Dxdq/?img_index=1"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/54435190> ] .
+    ph:linkRoute phd:tour_94_route .
 
 phd:tour_95 a ph:Tour ;
     dcterms:date "2026-04-11T00:00:00-03:00"^^xsd:dateTime ;
@@ -2314,15 +1813,10 @@ phd:tour_95 a ph:Tour ;
     prov:wasAttributedTo phd:pessoaAnaju ;
     ph:countAttendee 0 ;
     ph:countNewcomer 0 ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 104.0 ;
-            ph:intensityClassification "De boa" ] ;
+    ph:energyEstimate phd:tour_95_energy ;
     ph:inSeriesEdition phd:assoc_BP_4 ;
     ph:linkInstagram "https://www.instagram.com/p/DW9UkzAEQs85hloy_Q4a05uhVxS8efAVUUOr4c0/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/54435190> ] .
+    ph:linkRoute phd:tour_95_route .
 
 phd:tour_96 a ph:Tour ;
     dcterms:date "2026-04-14T20:00:00-03:00"^^xsd:dateTime ;
@@ -2337,15 +1831,10 @@ As curvas do Tietê nos levam para as origens operárias da expansão da cidade,
     prov:wasAttributedTo phd:pessoaAlef ;
     ph:countAttendee 23 ;
     ph:countNewcomer 9 ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 336.0 ;
-            ph:intensityClassification "Endorfinado" ] ;
+    ph:energyEstimate phd:tour_96_energy ;
     ph:inSeriesEdition phd:assoc_PH_87 ;
     ph:linkInstagram "https://www.instagram.com/p/DXDkpWnDmEO/?img_index=1"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/54581247> ] .
+    ph:linkRoute phd:tour_96_route .
 
 phd:tour_97 a ph:Tour ;
     dcterms:date "2026-04-21T00:00:00-03:00"^^xsd:dateTime ;
@@ -2355,15 +1844,10 @@ phd:tour_97 a ph:Tour ;
         phd:pessoaGa ;
     ph:countAttendee 4 ;
     ph:countNewcomer 0 ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 385.0 ;
-            ph:intensityClassification "Endorfinado" ] ;
+    ph:energyEstimate phd:tour_97_energy ;
     ph:inSeriesEdition phd:assoc_PH_88 ;
     ph:linkInstagram "https://www.instagram.com/p/DXYDQDKjjhH/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/54745946> ] .
+    ph:linkRoute phd:tour_97_route .
 
 phd:tour_98 a ph:Tour ;
     dcterms:date "2026-04-28T20:00:00-03:00"^^xsd:dateTime ;
@@ -2371,15 +1855,10 @@ phd:tour_98 a ph:Tour ;
     prov:wasAttributedTo phd:pessoaGabrieltunes ;
     ph:countAttendee 6 ;
     ph:countNewcomer 2 ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 356.0 ;
-            ph:intensityClassification "Endorfinado" ] ;
+    ph:energyEstimate phd:tour_98_energy ;
     ph:inSeriesEdition phd:assoc_PH_89 ;
     ph:linkInstagram "https://www.instagram.com/p/DXrwudMjrZL/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/54852830> ] .
+    ph:linkRoute phd:tour_98_route .
 
 phd:tour_99 a ph:Tour ;
     dcterms:date "2026-05-06T20:00:00-03:00"^^xsd:dateTime ;
@@ -2390,15 +1869,10 @@ phd:tour_99 a ph:Tour ;
         phd:pessoaGabrieltunes ;
     ph:countAttendee 6 ;
     ph:countNewcomer 1 ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 388.0 ;
-            ph:intensityClassification "Endorfinado" ] ;
+    ph:energyEstimate phd:tour_99_energy ;
     ph:inSeriesEdition phd:assoc_PH_90 ;
     ph:linkInstagram "https://www.instagram.com/p/DX-3psUjtYV/"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/54984116> ] ;
+    ph:linkRoute phd:tour_99_route ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/99/announcement.jpg> .
 
 phd:tour_Ph94 a ph:Tour ;
@@ -2422,43 +1896,28 @@ Por fim, margeando o córrego Boa Vista, sufocado pela Av. 23 de maio, cruzando 
     prov:wasAttributedTo phd:pessoaEstevam ;
     ph:countAttendee 22 ;
     ph:countNewcomer 6 ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 343.0 ;
-            ph:intensityClassification "Endorfinado" ] ;
+    ph:energyEstimate phd:tour_Ph94_energy ;
     ph:inSeriesEdition phd:assoc_PH_94 ;
     ph:linkInstagram "https://www.instagram.com/p/DY7f96pDuCJ/?igsh=ZXlwYnVtczR6cWwy"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/55298600> ] ;
+    ph:linkRoute phd:tour_Ph94_route ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/Ph94/announcement.jpg> .
 
 phd:tour_bp5 a ph:Tour ;
     dcterms:date "2026-05-01T08:00:00-03:00"^^xsd:dateTime ;
     dcterms:description "Pirajussara encontra Pinheiros - e ali nos encontramos também, na altura da Ponte da Cidade Universitária (Coffee Run Bike). Seguimos no contrafluxo do grande rio até chegar em seu passado-presente-permanente: os afluentes que lhe dão matéria - Rio Guarapiranga e Rio Jurubatuba. Damos tchau a este último para percorrer o Parque Barragem da Guarapiranga e passar por uma série de pontos excelentes para observação de aves aquáticas. Ao longo do percurso observaremos mais de 30 espécies. Paramos na frutaria para um coco melancia e seguimos para a Praia do Sol, onde esticaremos cangamapas-agora-no-modo-canga para desenhar aves e partilhar comidinhas."@pt ;
     dcterms:title "Guarapiranga desenhar pássaros" ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 270.0 ;
-            ph:intensityClassification "Ok" ] ;
+    ph:energyEstimate phd:tour_bp5_energy ;
     ph:inSeriesEdition phd:assoc_BP_5 ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/54884080> ] ;
+    ph:linkRoute phd:tour_bp5_route ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/bp5/announcement.jpg> .
 
 phd:tour_bp6 a ph:Tour ;
     dcterms:date "2026-06-04T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:description "Começamos contemplando os passarinhos que amam os brejinhos do Jurubatubaçu. Dali, seguimos asfalto, fazendo um apêndice em estradinha de terra para escutar o canto de paz da Mata Atlântica. Voltamos pro liso até chegar ao mirante da Serra do Mar. Passamos na igrejinha pra Oli e Theo darem um beijinho com vista para a Vila Histórica de Paranapiacaba. Tomamos sorvete de cambuci e almoçamos à vontade no Cantinho do Beija-flor. Dali, procuramos chocolate quente e voltamos pra estação. Levar: bike revisada, câmara extra, casaco, luvinha e binóculo. Este não é um pedal pra correr e nem ir com caixa de som: vamo ouvir o que o mato tem a dizer 🙏🍃🍄"@pt ;
     dcterms:title "Paranapiacaba: brejinhos e beijinhos" ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 504.0 ;
-            ph:intensityClassification "Frito" ] ;
+    ph:energyEstimate phd:tour_bp6_energy ;
     ph:inSeriesEdition phd:assoc_BP_6 ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/55460240> ] ;
+    ph:linkRoute phd:tour_bp6_route ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/bp6/announcement.jpg> .
 
 phd:tour_ph95 a ph:Tour ;
@@ -2469,16 +1928,11 @@ phd:tour_ph95 a ph:Tour ;
     prov:wasAttributedTo phd:pessoaAnaju ;
     ph:countAttendee 15 ;
     ph:countNewcomer 1 ;
-    ph:energyEstimate [ a qudt:QuantityValue ;
-            qudt:hasUnit unit:KiloJ ;
-            qudt:numericValue 346.0 ;
-            ph:intensityClassification "Endorfinado" ] ;
+    ph:energyEstimate phd:tour_ph95_energy ;
     ph:hadIncident "Anajú trouxe vinho quente"@pt ;
     ph:inSeriesEdition phd:assoc_PH_95 ;
     ph:linkInstagram "https://www.instagram.com/p/DZWWbtIDr0i"^^xsd:anyURI ;
-    ph:linkRoute [ a ph:RouteReference ;
-            schema:provider ph:rwgps ;
-            schema:url <https://ridewithgps.com/routes/55563620> ] ;
+    ph:linkRoute phd:tour_ph95_route ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/ph95/announcement.jpg> .
 
 phd:SESC a schema:EventSeries ;
@@ -2965,6 +2419,1000 @@ phd:pessoaTrilheiro a schema:Person ;
 
 phd:pessoaYas a schema:Person ;
     schema:alternateName "yas" .
+
+phd:tour_100_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 293.0 ;
+    ph:intensityClassification "Ok" .
+
+phd:tour_100_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/55017982> .
+
+phd:tour_101_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 313.0 ;
+    ph:intensityClassification "Endorfinado" .
+
+phd:tour_101_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/55083392> .
+
+phd:tour_102_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 396.0 ;
+    ph:intensityClassification "Endorfinado" .
+
+phd:tour_102_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/55184087> .
+
+phd:tour_10_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 850.0 ;
+    ph:intensityClassification "Frito" .
+
+phd:tour_10_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/49195458> .
+
+phd:tour_11_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 370.0 ;
+    ph:intensityClassification "Endorfinado" .
+
+phd:tour_11_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/48970565> .
+
+phd:tour_12_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 1700.0 ;
+    ph:intensityClassification "Insano" .
+
+phd:tour_12_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/49005652> .
+
+phd:tour_13_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 260.0 ;
+    ph:intensityClassification "Ok" .
+
+phd:tour_13_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/49029471> .
+
+phd:tour_14_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 523.0 ;
+    ph:intensityClassification "Frito" .
+
+phd:tour_14_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/49272870> .
+
+phd:tour_15_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 520.0 ;
+    ph:intensityClassification "Frito" .
+
+phd:tour_16_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 750.0 ;
+    ph:intensityClassification "Frito" .
+
+phd:tour_16_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/49272881> .
+
+phd:tour_17_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 789.0 ;
+    ph:intensityClassification "Frito" .
+
+phd:tour_17_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/49106874> .
+
+phd:tour_18_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 260.0 ;
+    ph:intensityClassification "Ok" .
+
+phd:tour_18_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/51086192> .
+
+phd:tour_19_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 850.0 ;
+    ph:intensityClassification "Frito" .
+
+phd:tour_19_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/49272926> .
+
+phd:tour_1_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 142.0 ;
+    ph:intensityClassification "De boa" .
+
+phd:tour_1_measured a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 140.0 .
+
+phd:tour_1_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/49272936> .
+
+phd:tour_20_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 400.0 ;
+    ph:intensityClassification "Endorfinado" .
+
+phd:tour_20_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/49182910> .
+
+phd:tour_21_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 614.0 ;
+    ph:intensityClassification "Frito" .
+
+phd:tour_21_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/49272994> .
+
+phd:tour_22_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 330.0 ;
+    ph:intensityClassification "Endorfinado" .
+
+phd:tour_22_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/49225969> .
+
+phd:tour_23_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 650.0 ;
+    ph:intensityClassification "Frito" .
+
+phd:tour_23_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/49195254> .
+
+phd:tour_24_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 436.0 ;
+    ph:intensityClassification "Endorfinado" .
+
+phd:tour_24_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/49267352> .
+
+phd:tour_25_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 271.0 ;
+    ph:intensityClassification "Ok" .
+
+phd:tour_25_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/49195396> .
+
+phd:tour_26_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 370.0 ;
+    ph:intensityClassification "Endorfinado" .
+
+phd:tour_26_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/48970565> .
+
+phd:tour_27_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 600.0 ;
+    ph:intensityClassification "Frito" .
+
+phd:tour_27_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/48691963> .
+
+phd:tour_28_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 441.0 ;
+    ph:intensityClassification "Endorfinado" .
+
+phd:tour_28_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/49510455> .
+
+phd:tour_29_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 340.0 ;
+    ph:intensityClassification "Endorfinado" .
+
+phd:tour_29_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/49567136> .
+
+phd:tour_2_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 184.0 ;
+    ph:intensityClassification "Ok" .
+
+phd:tour_2_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/49272970> .
+
+phd:tour_30_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 292.0 ;
+    ph:intensityClassification "Ok" .
+
+phd:tour_30_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/49567174> .
+
+phd:tour_31_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 291.0 ;
+    ph:intensityClassification "Ok" .
+
+phd:tour_31_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/49671673> .
+
+phd:tour_32_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 307.0 ;
+    ph:intensityClassification "Endorfinado" .
+
+phd:tour_32_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/49741245> .
+
+phd:tour_33_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 206.0 ;
+    ph:intensityClassification "Ok" .
+
+phd:tour_33_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/49924264> .
+
+phd:tour_34_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 363.0 ;
+    ph:intensityClassification "Endorfinado" .
+
+phd:tour_34_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/49999355> .
+
+phd:tour_35_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 323.0 ;
+    ph:intensityClassification "Endorfinado" .
+
+phd:tour_35_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/50150417> .
+
+phd:tour_36_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 294.0 ;
+    ph:intensityClassification "Ok" .
+
+phd:tour_36_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/50149484> .
+
+phd:tour_37_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 750.0 ;
+    ph:intensityClassification "Frito" .
+
+phd:tour_37_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/49100612> .
+
+phd:tour_38_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 314.0 ;
+    ph:intensityClassification "Endorfinado" .
+
+phd:tour_38_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/50331319> .
+
+phd:tour_39_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 351.0 ;
+    ph:intensityClassification "Endorfinado" .
+
+phd:tour_39_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/50411729> .
+
+phd:tour_3_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 179.0 ;
+    ph:intensityClassification "Ok" .
+
+phd:tour_3_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/49272915> .
+
+phd:tour_40_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 316.0 ;
+    ph:intensityClassification "Endorfinado" .
+
+phd:tour_40_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/50480798> .
+
+phd:tour_41_route a ph:RouteReference ;
+    schema:provider ph:strava ;
+    schema:url <https://www.strava.com/routes/3350848210103869176> .
+
+phd:tour_42_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 424.0 ;
+    ph:intensityClassification "Endorfinado" .
+
+phd:tour_42_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/50844953> .
+
+phd:tour_43_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 317.0 ;
+    ph:intensityClassification "Endorfinado" .
+
+phd:tour_43_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/50957749> .
+
+phd:tour_44_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 650.0 ;
+    ph:intensityClassification "Frito" .
+
+phd:tour_45_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 280.0 ;
+    ph:intensityClassification "Ok" .
+
+phd:tour_45_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/50943723> .
+
+phd:tour_46_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 399.0 ;
+    ph:intensityClassification "Endorfinado" .
+
+phd:tour_46_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/51051113> .
+
+phd:tour_47_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 340.0 ;
+    ph:intensityClassification "Endorfinado" .
+
+phd:tour_47_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/51282559> .
+
+phd:tour_48_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 349.0 ;
+    ph:intensityClassification "Endorfinado" .
+
+phd:tour_48_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/51391185> .
+
+phd:tour_49_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 385.0 ;
+    ph:intensityClassification "Endorfinado" .
+
+phd:tour_49_measured a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 421.0 .
+
+phd:tour_49_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/51486572> .
+
+phd:tour_4_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 417.0 ;
+    ph:intensityClassification "Endorfinado" .
+
+phd:tour_4_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/49195385> .
+
+phd:tour_50_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 393.0 ;
+    ph:intensityClassification "Endorfinado" .
+
+phd:tour_50_measured a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 482.0 .
+
+phd:tour_50_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/51588263> .
+
+phd:tour_51_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 380.0 ;
+    ph:intensityClassification "Endorfinado" .
+
+phd:tour_51_measured a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 415.0 .
+
+phd:tour_51_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/51701965> .
+
+phd:tour_52_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 280.0 ;
+    ph:intensityClassification "Ok" .
+
+phd:tour_52_measured a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 220.0 .
+
+phd:tour_52_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/51812173> .
+
+phd:tour_53_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 337.0 ;
+    ph:intensityClassification "Endorfinado" .
+
+phd:tour_53_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/51937044> .
+
+phd:tour_54_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 392.0 ;
+    ph:intensityClassification "Endorfinado" .
+
+phd:tour_54_measured a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 462.0 .
+
+phd:tour_54_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/50737426> .
+
+phd:tour_55_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 381.0 ;
+    ph:intensityClassification "Endorfinado" .
+
+phd:tour_55_measured a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 420.0 .
+
+phd:tour_55_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/52046213> .
+
+phd:tour_56_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 360.0 ;
+    ph:intensityClassification "Endorfinado" .
+
+phd:tour_56_measured a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 410.0 .
+
+phd:tour_56_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/52162083> .
+
+phd:tour_57_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 373.0 ;
+    ph:intensityClassification "Endorfinado" .
+
+phd:tour_57_measured a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 460.0 .
+
+phd:tour_57_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/52269074> .
+
+phd:tour_58_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 358.0 ;
+    ph:intensityClassification "Endorfinado" .
+
+phd:tour_58_measured a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 430.0 .
+
+phd:tour_58_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/52165449> .
+
+phd:tour_59_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 1200.0 ;
+    ph:intensityClassification "Insano" .
+
+phd:tour_59_measured a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 1500.0 .
+
+phd:tour_5_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 245.0 ;
+    ph:intensityClassification "Ok" .
+
+phd:tour_5_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/49195389> .
+
+phd:tour_60_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 276.0 ;
+    ph:intensityClassification "Ok" .
+
+phd:tour_60_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/52165232> .
+
+phd:tour_61_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 183.0 ;
+    ph:intensityClassification "Ok" .
+
+phd:tour_61_measured a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 187.0 .
+
+phd:tour_61_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/49272936> .
+
+phd:tour_62_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 400.0 ;
+    ph:intensityClassification "Endorfinado" .
+
+phd:tour_62_measured a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 430.0 .
+
+phd:tour_62_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/52653389> .
+
+phd:tour_63_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 801.0 ;
+    ph:intensityClassification "Frito" .
+
+phd:tour_63_measured a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 840.0 .
+
+phd:tour_63_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/52515917> .
+
+phd:tour_64_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 343.0 ;
+    ph:intensityClassification "Endorfinado" .
+
+phd:tour_64_measured a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 406.0 .
+
+phd:tour_64_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/52776083> .
+
+phd:tour_65_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 358.0 ;
+    ph:intensityClassification "Endorfinado" .
+
+phd:tour_65_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/52165449> .
+
+phd:tour_66_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 387.0 ;
+    ph:intensityClassification "Endorfinado" .
+
+phd:tour_66_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/52939892> .
+
+phd:tour_67_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 416.0 ;
+    ph:intensityClassification "Endorfinado" .
+
+phd:tour_67_measured a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 707.0 .
+
+phd:tour_67_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/52981759> .
+
+phd:tour_68_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 340.0 ;
+    ph:intensityClassification "Endorfinado" .
+
+phd:tour_68_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/51282559> .
+
+phd:tour_69_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 694.0 ;
+    ph:intensityClassification "Frito" .
+
+phd:tour_69_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/53123125> .
+
+phd:tour_6_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 150.0 ;
+    ph:intensityClassification "Ok" .
+
+phd:tour_70_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 392.0 ;
+    ph:intensityClassification "Endorfinado" .
+
+phd:tour_70_measured a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 428.0 .
+
+phd:tour_70_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/53113256> .
+
+phd:tour_71_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 390.0 ;
+    ph:intensityClassification "Endorfinado" .
+
+phd:tour_71_measured a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 586.0 .
+
+phd:tour_71_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/53205838> .
+
+phd:tour_72_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 306.0 ;
+    ph:intensityClassification "Endorfinado" .
+
+phd:tour_72_measured a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 324.0 .
+
+phd:tour_72_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/50150417> .
+
+phd:tour_73_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 267.0 ;
+    ph:intensityClassification "Ok" .
+
+phd:tour_73_measured a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 215.0 .
+
+phd:tour_73_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/53386705> .
+
+phd:tour_74_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 918.0 ;
+    ph:intensityClassification "Frito" .
+
+phd:tour_74_measured a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 856.0 .
+
+phd:tour_74_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/53380438> .
+
+phd:tour_75_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 297.0 ;
+    ph:intensityClassification "Ok" .
+
+phd:tour_75_measured a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 263.0 .
+
+phd:tour_75_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/53428447> .
+
+phd:tour_76_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 287.0 ;
+    ph:intensityClassification "Ok" .
+
+phd:tour_76_measured a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 215.0 .
+
+phd:tour_76_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/54149967> .
+
+phd:tour_77_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 275.0 ;
+    ph:intensityClassification "Ok" .
+
+phd:tour_77_measured a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 303.0 .
+
+phd:tour_77_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/53524909> .
+
+phd:tour_78_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 378.0 ;
+    ph:intensityClassification "Endorfinado" .
+
+phd:tour_78_measured a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 309.0 .
+
+phd:tour_78_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/53564416> .
+
+phd:tour_79_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 301.0 ;
+    ph:intensityClassification "Endorfinado" .
+
+phd:tour_79_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/53660982> .
+
+phd:tour_7_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 271.0 ;
+    ph:intensityClassification "Ok" .
+
+phd:tour_7_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/49195396> .
+
+phd:tour_80_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 359.0 ;
+    ph:intensityClassification "Endorfinado" .
+
+phd:tour_80_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/53715166> .
+
+phd:tour_81_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/54149999> .
+
+phd:tour_82_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 330.0 ;
+    ph:intensityClassification "Endorfinado" .
+
+phd:tour_82_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/53832056> .
+
+phd:tour_83_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 149.0 ;
+    ph:intensityClassification "De boa" .
+
+phd:tour_83_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/53853791> .
+
+phd:tour_84_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 298.0 ;
+    ph:intensityClassification "Ok" .
+
+phd:tour_85_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/53879757> .
+
+phd:tour_86_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/54150035> .
+
+phd:tour_87_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 204.0 ;
+    ph:intensityClassification "Ok" .
+
+phd:tour_87_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/53954783> .
+
+phd:tour_89_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 280.0 ;
+    ph:intensityClassification "Ok" .
+
+phd:tour_89_measured a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 328.0 .
+
+phd:tour_89_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/53947457> .
+
+phd:tour_8_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 300.0 ;
+    ph:intensityClassification "Endorfinado" .
+
+phd:tour_8_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/49195439> .
+
+phd:tour_90_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/53755124> .
+
+phd:tour_91_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/54024668> .
+
+phd:tour_92_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/54320499> .
+
+phd:tour_93_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 372.0 ;
+    ph:intensityClassification "Endorfinado" .
+
+phd:tour_93_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/54356024> .
+
+phd:tour_94_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 371.0 ;
+    ph:intensityClassification "Endorfinado" .
+
+phd:tour_94_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/54435190> .
+
+phd:tour_95_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 104.0 ;
+    ph:intensityClassification "De boa" .
+
+phd:tour_95_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/54435190> .
+
+phd:tour_96_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 336.0 ;
+    ph:intensityClassification "Endorfinado" .
+
+phd:tour_96_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/54581247> .
+
+phd:tour_97_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 385.0 ;
+    ph:intensityClassification "Endorfinado" .
+
+phd:tour_97_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/54745946> .
+
+phd:tour_98_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 356.0 ;
+    ph:intensityClassification "Endorfinado" .
+
+phd:tour_98_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/54852830> .
+
+phd:tour_99_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 388.0 ;
+    ph:intensityClassification "Endorfinado" .
+
+phd:tour_99_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/54984116> .
+
+phd:tour_9_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 290.0 ;
+    ph:intensityClassification "Ok" .
+
+phd:tour_9_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/49195401> .
+
+phd:tour_Ph94_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 343.0 ;
+    ph:intensityClassification "Endorfinado" .
+
+phd:tour_Ph94_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/55298600> .
+
+phd:tour_bp5_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 270.0 ;
+    ph:intensityClassification "Ok" .
+
+phd:tour_bp5_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/54884080> .
+
+phd:tour_bp6_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 504.0 ;
+    ph:intensityClassification "Frito" .
+
+phd:tour_bp6_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/55460240> .
+
+phd:tour_ph95_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 346.0 ;
+    ph:intensityClassification "Endorfinado" .
+
+phd:tour_ph95_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/55563620> .
 
 phd:assoc_BP_4 a ph:Association ;
     ph:inEventSeries phd:BP ;

@@ -33,6 +33,9 @@ Rotas:
   POST /delete-image/<phash>      remove arquivos + triples
   POST /delete-video/<vhash>      remove clipes + triples
   POST /delete-tour/<tour_id>     remove triples do tour + assets
+  POST /live-location             upsert da posição ao vivo (efêmera, em memória)
+  GET  /live-locations            posições ao vivo não-expiradas
+  POST /live-location/stop        remove a própria posição na hora
   POST /reload                    invalida caches in-memory
 
 Sem auth — quem alcança o servidor é de confiança. Todas as mutações são
@@ -50,8 +53,11 @@ Variáveis de ambiente:
 """
 import functools
 import json
+import math
 import os
 import threading
+import time
+import uuid
 from pathlib import Path
 
 from datetime import datetime, timezone
@@ -96,6 +102,12 @@ KEY_TOURS    = "data/tours.ttl"
 # container/repo como seed/fallback. Em modo local o root do STORE é `web/`,
 # então isto grava o MESMO `web/routes.json` que o script — sem divergência.
 KEY_ROUTES   = "routes.json"
+# saved_routes.json — biblioteca de rotas que o usuário salva pelo editor
+# (waypoints + geometria roteada + parâmetros + modo, no MESMO formato dos
+# links de compartilhamento `#st=`). Estado mutável, servido bucket-first,
+# sem auth (mesma premissa de acesso confiável do resto do backend).
+# Envelope: { "routes": { "<id>": {name, state, points, created, updated} } }.
+KEY_SAVED_ROUTES = "saved_routes.json"
 
 # Credenciais do RideWithGPS pra buscar a geometria das rotas (privadas/
 # unlisted exigem auth; públicas funcionam sem). Lidas de `os.environ` por
@@ -172,6 +184,155 @@ def serialized(fn):
         with _state_lock:
             return fn(*args, **kwargs)
     return wrapper
+
+
+# ── Posições ao vivo (efêmeras, em memória) ──────────────────────────────
+# Compartilhamento de localização ao vivo: cada participante faz POST da sua
+# posição a cada poucos segundos; todos leem via GET. NADA disto é persistido
+# (não toca TTL/disco/bucket) — é um dict em memória no único worker gunicorn,
+# com TTL curto. Opt-in, pseudônimo, expira sozinho. Como o estado é
+# per-process, depende de --workers 1 / 1 instância (mesma premissa do
+# _state_lock); em multi-instância as posições se fragmentariam. Tem lock
+# próprio (leve) em vez do _state_lock pra não competir com os uploads.
+_live_positions = {}            # token -> {name, lat, lng, ts, accuracy?, heading?, trail}
+_live_positions_lock = threading.Lock()
+LIVE_TRAIL_S = 3 * 3600         # janela de visibilidade/rastro: 3h
+LIVE_TRAIL_MIN_GAP_S = 8        # thinning: tempo mínimo entre pontos guardados (s)
+LIVE_TRAIL_MIN_MOVE_M = 12      # thinning: distância mínima entre pontos guardados (m)
+LIVE_TRAIL_MAX_POINTS = 500     # teto de pontos de rastro por pessoa (memória)
+LIVE_MAX_PEERS = 500            # teto defensivo de participantes
+
+# CORS restrito aos endpoints /live-* — o app rodando dentro do shell nativo
+# (Capacitor: capacitor://localhost / https://localhost) bate aqui cross-origin
+# se empacotar os assets. NÃO abre CORS nos uploads/CRUD: esses seguem
+# same-origin/confiança local. No browser (same-origin) é inócuo.
+_LIVE_CORS_ORIGINS = {"capacitor://localhost", "https://localhost",
+                      "ionic://localhost", "http://localhost"}
+
+
+def _prune_live(now):
+    """Remove tokens cujo último ponto saiu da janela de 3h e poda os pontos
+    de rastro expirados dos que sobram. Chamar já sob _live_positions_lock."""
+    cutoff = now - LIVE_TRAIL_S
+    dead = [t for t, p in _live_positions.items() if p["ts"] <= cutoff]
+    for t in dead:
+        del _live_positions[t]
+    for p in _live_positions.values():
+        tr = p.get("trail")
+        if tr and tr[0][2] <= cutoff:
+            p["trail"] = [pt for pt in tr if pt[2] > cutoff]
+
+
+def _valid_live_token(t):
+    """Token pseudônimo do cliente (crypto.randomUUID() ou hex). Aceita
+    hex + hífens, 1–64 chars — não confia em nada do corpo além disto."""
+    return isinstance(t, str) and 1 <= len(t) <= 64 and all(
+        c in "0123456789abcdefABCDEF-" for c in t)
+
+
+@app.after_request
+def _live_cors(resp):
+    if request.path.startswith("/live-location"):  # cobre singular, /stop e plural
+        origin = request.headers.get("Origin")
+        if origin in _LIVE_CORS_ORIGINS:
+            resp.headers["Access-Control-Allow-Origin"] = origin
+            resp.headers["Vary"] = "Origin"
+            resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+            resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    return resp
+
+
+@app.route("/live-location", methods=["POST", "OPTIONS"])
+def post_live_location():
+    """Atualiza a posição ao vivo de um participante e acumula o rastro (3h).
+    Efêmero, sem o lock de estado pesado. Body JSON:
+    {id, name?, lat, lng, accuracy?, heading?}."""
+    if request.method == "OPTIONS":
+        return ("", 204)
+    data = request.get_json(silent=True) or {}
+    token = str(data.get("id") or "").strip()
+    if not _valid_live_token(token):
+        return jsonify(error="id inválido"), 400
+    try:
+        lat = float(data.get("lat"))
+        lng = float(data.get("lng"))
+    except (TypeError, ValueError):
+        return jsonify(error="lat/lng inválidos"), 400
+    if not (math.isfinite(lat) and math.isfinite(lng)) or \
+            not (-90 <= lat <= 90 and -180 <= lng <= 180):
+        return jsonify(error="lat/lng fora de faixa"), 400
+    now = time.time()
+    head = {"name": str(data.get("name") or "").strip()[:40],
+            "lat": lat, "lng": lng, "ts": now}
+    for k in ("accuracy", "heading"):
+        try:
+            v = data.get(k)
+            if v is not None and math.isfinite(float(v)):
+                head[k] = float(v)
+        except (TypeError, ValueError):
+            pass
+    from rwgps import haversine_meters   # cacheado em sys.modules; boot barato
+    with _live_positions_lock:
+        _prune_live(now)
+        prev = _live_positions.get(token)
+        if prev is None and len(_live_positions) >= LIVE_MAX_PEERS:
+            return jsonify(error="muitos participantes ao vivo"), 503
+        trail = prev["trail"] if prev else []
+        # Thinning: só guarda um ponto novo se passou tempo OU distância
+        # suficiente desde o último — limita memória e suaviza a linha. O
+        # `head` sempre reflete o último fix (marcador preciso entre pontos).
+        if not trail:
+            keep = True
+        else:
+            llat, llng, lts = trail[-1][0], trail[-1][1], trail[-1][2]
+            keep = (now - lts >= LIVE_TRAIL_MIN_GAP_S
+                    or haversine_meters(llat, llng, lat, lng) >= LIVE_TRAIL_MIN_MOVE_M)
+        if keep:
+            # Ponto = [lat, lng, ts, accuracy?]. A precisão por ponto alimenta
+            # a faixa de incerteza desenhada ao longo do rastro no cliente.
+            trail.append([lat, lng, now, head.get("accuracy")])
+            if len(trail) > LIVE_TRAIL_MAX_POINTS:
+                del trail[:len(trail) - LIVE_TRAIL_MAX_POINTS]
+        head["trail"] = trail
+        _live_positions[token] = head
+    return jsonify(ok=True)
+
+
+@app.get("/live-locations")
+def get_live_locations():
+    """Posições ao vivo (janela de 3h) + rastro de cada pessoa. Muda toda hora,
+    então SEM ETag/_conditional e com Cache-Control: no-store."""
+    now = time.time()
+    out = []
+    with _live_positions_lock:
+        _prune_live(now)
+        for t, p in _live_positions.items():
+            item = {"id": t, "name": p["name"], "lat": p["lat"], "lng": p["lng"],
+                    "ts": p["ts"], "age": round(now - p["ts"], 1),
+                    "trail": [[round(pt[0], 5), round(pt[1], 5),
+                               (round(pt[3], 1) if len(pt) > 3 and pt[3] is not None else None),
+                               round(now - pt[2])]   # idade (s) do ponto, p/ tooltip
+                              for pt in p["trail"]]}
+            if "accuracy" in p:
+                item["accuracy"] = p["accuracy"]
+            if "heading" in p:
+                item["heading"] = p["heading"]
+            out.append(item)
+    return Response(json.dumps({"positions": out}, ensure_ascii=False),
+                    mimetype="application/json",
+                    headers={"Cache-Control": "no-store"})
+
+
+@app.route("/live-location/stop", methods=["POST", "OPTIONS"])
+def post_live_location_stop():
+    """Apaga token + rastro na hora. Não é mais chamado automaticamente (o
+    rastro fica até expirar da janela de 3h) — fica disponível pra uma ação
+    explícita futura de "apagar meu rastro agora"."""
+    if request.method == "OPTIONS":
+        return ("", 204)
+    data = request.get_json(silent=True) or {}
+    _live_positions.pop(str(data.get("id") or "").strip(), None)
+    return jsonify(ok=True)
 
 
 # ── Validador SHACL (lazy) ───────────────────────────────────────────────
@@ -1028,6 +1189,111 @@ def get_routes_json():
         text = '{"routes": []}'
     return _conditional(Response(text, mimetype="application/json",
                                  headers={"Cache-Control": "no-cache"}))
+
+
+# ── Rotas salvas (biblioteca de rotas do editor) ─────────────────────────
+def _read_saved_routes():
+    """Catálogo de rotas salvas — bucket-first, {"routes": {}} se ausente
+    ou corrompido (degrada pra vazio em vez de derrubar o endpoint)."""
+    text = STORE.read_text(KEY_SAVED_ROUTES)
+    if not text:
+        return {"routes": {}}
+    try:
+        obj = json.loads(text)
+    except (ValueError, TypeError):
+        return {"routes": {}}
+    if not isinstance(obj, dict) or not isinstance(obj.get("routes"), dict):
+        return {"routes": {}}
+    return obj
+
+
+def _write_saved_routes(catalog):
+    STORE.write_text(KEY_SAVED_ROUTES, json.dumps(catalog, ensure_ascii=False),
+                     content_type="application/json")
+
+
+@app.get("/saved-routes")
+def list_saved_routes():
+    """Lista resumida das rotas salvas (sem geometria) — mais novas primeiro."""
+    cat = _read_saved_routes()
+    items = []
+    for rid, r in cat.get("routes", {}).items():
+        if not isinstance(r, dict):
+            continue
+        items.append({
+            "id": rid,
+            "name": r.get("name") or "",
+            "created": r.get("created"),
+            "points": r.get("points"),
+        })
+    items.sort(key=lambda x: x.get("created") or "", reverse=True)
+    text = json.dumps({"routes": items}, ensure_ascii=False)
+    return _conditional(Response(text, mimetype="application/json",
+                                 headers={"Cache-Control": "no-cache"}))
+
+
+@app.get("/saved-route/<rid>")
+def get_saved_route(rid):
+    """Estado completo (formato de compartilhamento) de uma rota salva."""
+    rid = (rid or "").strip()
+    r = _read_saved_routes().get("routes", {}).get(rid)
+    if not isinstance(r, dict) or not isinstance(r.get("state"), dict):
+        abort(404)
+    text = json.dumps(r["state"], ensure_ascii=False)
+    return _conditional(Response(text, mimetype="application/json",
+                                 headers={"Cache-Control": "no-cache"}))
+
+
+@app.post("/save-route")
+@serialized
+def save_route():
+    """Upsert de uma rota salva. Body JSON: {name, state, id?}. Devolve {id}.
+    `state` é o objeto de snapshotForShare() do editor (wp + sg + rm + n).
+    Passar `id` (de uma rota existente) sobrescreve in-place; sem id, gera um."""
+    data = request.get_json(silent=True) or {}
+    state = data.get("state")
+    if (not isinstance(state, dict) or not isinstance(state.get("wp"), list)
+            or not state["wp"]):
+        return jsonify(error="state inválido (sem waypoints)"), 400
+    name = str(data.get("name") or state.get("n") or "").strip()
+    rid = str(data.get("id") or "").strip() or uuid.uuid4().hex[:12]
+    if not (1 <= len(rid) <= 32) or not all(c in "0123456789abcdef" for c in rid):
+        return jsonify(error="id inválido (esperado hex)"), 400
+    cat = _read_saved_routes()
+    routes = cat.setdefault("routes", {})
+    existing = routes.get(rid)
+    now = datetime.now(timezone.utc).isoformat()
+    routes[rid] = {
+        "name": name,
+        "state": state,
+        "points": len(state["wp"]),
+        "created": (existing or {}).get("created") if isinstance(existing, dict) else None,
+        "updated": now,
+    }
+    if not routes[rid]["created"]:
+        routes[rid]["created"] = now
+    try:
+        _write_saved_routes(cat)
+    except Exception as e:  # noqa: BLE001
+        return jsonify(error=f"persistência: {e}"), 500
+    print(f"[save-route] id={rid} pts={routes[rid]['points']} name={name!r}")
+    return jsonify(id=rid)
+
+
+@app.post("/delete-route/<rid>")
+@serialized
+def delete_route(rid):
+    rid = (rid or "").strip()
+    cat = _read_saved_routes()
+    if rid not in cat.get("routes", {}):
+        return jsonify(error="rota não encontrada", id=rid), 404
+    del cat["routes"][rid]
+    try:
+        _write_saved_routes(cat)
+    except Exception as e:  # noqa: BLE001
+        return jsonify(error=f"persistência: {e}"), 500
+    print(f"[delete-route] id={rid}")
+    return jsonify(id=rid, deleted=True)
 
 
 # URL pública canônica — usada no feed RSS (links absolutos). Override por

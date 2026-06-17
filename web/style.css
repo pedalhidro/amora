@@ -777,7 +777,7 @@ body.header-hidden .leaflet-top {
     display: block !important;
     transform: translateY(100%);
   }
-  .layer-row { grid-template-columns: minmax(110px, max-content) 1fr 32px; }
+  .layer-row { grid-template-columns: auto minmax(100px, max-content) 1fr 30px; }
 
   /* Modais (Enviar, Ajustes, Ajuda, photo-fallback) viram bottom-sheet —
      slidam de baixo, sem escurecer o que fica atrás. O overlay segue
@@ -1121,6 +1121,41 @@ body.layers-hidden .layer-panel { display: none; }
 }
 .save-actions button:not(.primary-btn):hover { color: var(--text); }
 
+/* Modal "Carregar rota": botão de arquivo local + lista do servidor. */
+#saved-routes-local { width: 100%; justify-content: center; }
+.saved-routes-server-head { margin-top: 12px !important; font-weight: 600; }
+
+/* Lista de rotas salvas no servidor. */
+.saved-routes-list { list-style: none; margin: 0; padding: 0; max-height: 50vh; overflow-y: auto; }
+.saved-route-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border);
+}
+.saved-route-item:last-child { border-bottom: none; }
+.saved-route-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+.saved-route-item button {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 5px 10px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.saved-route-item button:hover { color: var(--text); }
+.saved-route-item button.danger { color: #d65a3a; border-color: #d65a3a; }
+
 /* Crosshair cursor on the map while drawing. */
 body.drawing .leaflet-grab,
 body.drawing .leaflet-container {
@@ -1344,12 +1379,27 @@ body.trace-preview .tp-label { display: none !important; }
 .layer-section-title:first-child { margin-top: 0; }
 .layer-row {
   display: grid;
-  grid-template-columns: minmax(120px, max-content) 1fr 30px;
+  /* [setas ↑↓] [rótulo] [slider de opacidade] [valor%] — as duas últimas
+     colunas ficam vazias nas camadas noOpacity (ex.: Pessoas ao vivo). */
+  grid-template-columns: auto minmax(110px, max-content) 1fr 28px;
   align-items: center;
   gap: 4px;
   margin: 2px 0;
   font-size: 10px;
 }
+/* Setas de empilhamento inline (substituem o antigo modal de ordem). */
+.layer-move { display: inline-flex; gap: 2px; }
+.layer-move button {
+  width: 17px; height: 17px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: transparent; color: var(--text);
+  border: 1px solid var(--border); border-radius: 3px;
+  font-size: 8px; line-height: 1; cursor: pointer;
+}
+.layer-move button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.layer-move button:disabled { opacity: 0.3; cursor: default; }
+/* Camadas de conteúdo (sem setas) mantêm o alinhamento da coluna de setas. */
+.layer-move-spacer { display: inline-block; }
 .layer-row label {
   display: flex;
   align-items: baseline;
@@ -1390,58 +1440,20 @@ body.trace-preview .tp-label { display: none !important; }
   color: var(--accent);
   opacity: 1;
 }
-/* "Ordem de empilhamento…" button at the bottom of the layer panel. */
-.layer-order-open {
+/* Botão "↺ Ordem padrão" no rodapé do painel de camadas (reseta o
+   empilhamento; substitui o antigo modal de ordem). */
+.layer-order-reset-inline {
   width: 100%;
   margin-top: 6px;
   padding: 4px 6px;
   background: transparent;
-  color: var(--text);
+  color: var(--muted);
   border: 1px solid var(--border);
   border-radius: 4px;
   font-size: 10px;
   cursor: pointer;
 }
-.layer-order-open:hover { border-color: var(--accent); color: var(--accent); }
-
-/* Layer stacking-order modal. */
-.layer-order-modal-content { width: min(360px, 92vw); }
-.layer-order-body { padding: 12px 16px 16px; }
-.layer-order-hint { margin: 0 0 10px; font-size: 12px; color: var(--muted); }
-.layer-order-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 8px;
-  margin-top: 4px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-}
-.layer-order-name { flex: 1; font-size: 13px; }
-.layer-order-move {
-  width: 30px;
-  padding: 2px 0;
-  background: transparent;
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 13px;
-  line-height: 1.2;
-}
-.layer-order-move:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
-.layer-order-move:disabled { opacity: 0.35; cursor: default; }
-.layer-order-reset {
-  margin-top: 10px;
-  padding: 5px 10px;
-  background: transparent;
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 12px;
-}
-.layer-order-reset:hover { border-color: var(--accent); color: var(--accent); }
+.layer-order-reset-inline:hover { border-color: var(--accent); color: var(--accent); }
 
 /* Instructions modal */
 .help-modal-content { width: min(640px, 94vw); }
@@ -2346,3 +2358,97 @@ body.trace-preview .tp-label { display: none !important; }
   fill-opacity: var(--photo-cone-opacity, 0.45);
   stroke: none;
 }
+
+/* ── Localização ao vivo: marcador de pessoa ─────────────────────────────
+   Anel colorido pulsando (--live-color por pessoa), inicial no centro,
+   apelido abaixo e seta de rumo opcional. Deliberadamente distinto do
+   .photo-dot pra leitura imediata de "isto é alguém ao vivo, agora". */
+.live-person-wrap { background: transparent; border: none; }
+.live-person {
+  position: absolute;
+  left: 50%; top: 50%;
+  transform: translate(-50%, -50%);
+  width: 34px; height: 34px;
+}
+.live-person-dot {
+  position: absolute;
+  left: 50%; top: 50%;
+  transform: translate(-50%, -50%);
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  background: var(--live-color, #1e88e5);
+  border: 2px solid #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font: 700 13px/26px system-ui, sans-serif;
+  text-align: center;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+/* Pulso "ao vivo" — anel que expande e some, na cor da pessoa. */
+.live-person-dot::after {
+  content: "";
+  position: absolute;
+  left: 50%; top: 50%;
+  width: 100%; height: 100%;
+  border-radius: 50%;
+  border: 2px solid var(--live-color, #1e88e5);
+  transform: translate(-50%, -50%);
+  animation: live-pulse 2s ease-out infinite;
+}
+.live-person.is-me .live-person-dot { box-shadow: 0 0 0 2px #fff, 0 1px 6px rgba(0,0,0,0.6); }
+/* Sem fix recente: tira o pulso "ao vivo" e abranda a borda — o marcador
+   vira "última posição conhecida" em vez de "aqui agora". */
+.live-person.is-stale .live-person-dot::after { animation: none; opacity: 0; }
+.live-person.is-stale .live-person-dot { border-color: rgba(255, 255, 255, 0.6); }
+@keyframes live-pulse {
+  0%   { opacity: 0.6; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0;   transform: translate(-50%, -50%) scale(2.4); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .live-person-dot::after { animation: none; opacity: 0; }
+}
+.live-person-label {
+  position: absolute;
+  top: 30px; left: 50%;
+  transform: translateX(-50%);
+  max-width: 96px;
+  padding: 1px 5px;
+  border-radius: 6px;
+  background: rgba(15, 23, 33, 0.82);
+  color: #fff;
+  font: 600 10px/1.3 system-ui, sans-serif;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+/* Seta de rumo: triângulo apontando pra fora do anel. Posicionado no centro
+   do dot; o transform inline gira pro rumo e empurra pra fora
+   (translate(-50%,-50%) rotate(Hdeg) translateY(-20px)) — 0° = norte/topo. */
+.live-person-arrow {
+  position: absolute;
+  left: 50%; top: 50%;
+  width: 0; height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-bottom: 8px solid var(--live-color, #1e88e5);
+}
+
+/* Popup de ajustes por pessoa (clique no dot ao vivo) — tema escuro do app. */
+.live-ctrl-popup .leaflet-popup-content-wrapper { background: #0f1721; color: #fff; }
+.live-ctrl-popup .leaflet-popup-tip { background: #0f1721; }
+.live-ctrl-popup .leaflet-popup-content { margin: 10px 12px; }
+.live-ctrl { display: flex; flex-direction: column; gap: 7px; min-width: 156px; font-size: 12px; }
+.live-ctrl-name { font-weight: 700; }
+.live-ctrl label { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.live-ctrl input[type="color"] {
+  width: 36px; height: 22px; padding: 0; border: 1px solid var(--border); border-radius: 3px;
+  background: none; cursor: pointer;
+}
+.live-ctrl input[type="range"] { flex: 1; accent-color: var(--accent); }
+.live-ctrl .lc-hist-row { justify-content: flex-start; gap: 6px; cursor: pointer; }
+.live-ctrl .lc-reset {
+  align-self: flex-end; font-size: 11px; padding: 2px 8px; background: transparent;
+  border: 1px solid var(--border); border-radius: 4px; color: var(--muted); cursor: pointer;
+}
+.live-ctrl .lc-reset:hover { border-color: var(--accent); color: var(--accent); }

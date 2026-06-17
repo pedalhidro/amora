@@ -9,7 +9,7 @@
 //                    their second visit.
 //   RUNTIME_CACHE — map tiles, OSRM, elevation, etc. Same strategy.
 
-const VERSION = 'phidro-v245';
+const VERSION = 'phidro-v257';
 const STATIC_CACHE = `${VERSION}-static`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 
@@ -90,6 +90,10 @@ self.addEventListener('fetch', (event) => {
   if (req.method !== 'GET') return;
 
   const url = new URL(req.url);
+
+  // Localização ao vivo: NUNCA cachear. As posições mudam a cada segundo e
+  // o GET sai com Cache-Control: no-store — deixa passar direto pra rede.
+  if (url.pathname.includes('/live-location')) return;  // cobre /live-locations tb
 
   // Same-origin: estado mutável usa network-first — qualquer upload/sync
   // novo aparece no próximo refresh sem o dance de dois-refreshes do

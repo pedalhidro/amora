@@ -123,7 +123,7 @@
       <input type="file" id="photos-import-input" accept=".ttl,.zip,text/turtle,application/zip" hidden />
       <button id="upload-btn" type="button" class="secondary-btn" title="Enviar imagens ao acervo" aria-label="Enviar imagens">⬆🖼︎ Enviar</button>
       <input type="file" id="edit-gpx-input" accept=".gpx,application/gpx+xml" hidden />
-      <button id="edit-gpx-btn" type="button" class="secondary-btn" title="Editar GPX — carregar um arquivo .gpx" aria-label="Editar GPX">✎🗺︎ Editar</button>
+      <button id="edit-gpx-btn" type="button" class="secondary-btn" title="Editar rota — do servidor ou de um arquivo .gpx" aria-label="Editar rota">✎🗺︎ Editar</button>
       <button id="trace-btn" type="button" class="secondary-btn" title="Traçar GPX" aria-label="Traçar GPX">＋🗺︎ Traçar</button>
       <span class="topbar-break" aria-hidden="true"></span>
       <button id="help-btn" type="button" class="secondary-btn" title="Como usar" aria-label="Instruções">? Ajuda</button>
@@ -186,6 +186,52 @@
           <details class="help-changelog">
             <summary>Novidades (changelog)</summary>
             <dl>
+              <dt>17/06/2026 · v257</dt>
+              <dd>
+                <ul>
+                  <li>A trajetória ao vivo ficou mais <strong>suave</strong> (tira o serrilhado do GPS), e <strong>clicar numa pessoa</strong> abre um popup pra ajustar a <strong>cor</strong>, a <strong>opacidade</strong> e <strong>esconder o histórico</strong> dela.</li>
+                </ul>
+              </dd>
+              <dt>17/06/2026 · v254</dt>
+              <dd>
+                <ul>
+                  <li>A incerteza da localização ao vivo virou um <strong>corredor de largura variável</strong> ao longo do rastro (a largura interpola entre a precisão de cada ponto), em vez de um círculo só. O slider da camada <strong>Pessoas ao vivo</strong> controla a opacidade.</li>
+                  <li>Passe o mouse (ou toque) num ponto do rastro pra ver <strong>há quanto tempo</strong> a pessoa esteve ali.</li>
+                </ul>
+              </dd>
+              <dt>17/06/2026 · v251</dt>
+              <dd>
+                <ul>
+                  <li>O controle <strong>Pessoas ao vivo</strong> virou uma camada no <strong>painel de camadas</strong> (não fica mais só nas Configurações) — dá pra ligar/desligar a exibição ali junto das outras camadas.</li>
+                  <li>As setas de <strong>ordem de empilhamento</strong> agora ficam em cada linha do painel de camadas (↑/↓ à esquerda) — o modal separado foi removido.</li>
+                  <li>Correção: a camada <strong>Rotas cadastradas</strong> agora respeita o estado desligado ao reabrir a página.</li>
+                </ul>
+              </dd>
+              <dt>17/06/2026 · v249</dt>
+              <dd>
+                <ul>
+                  <li><strong>Localização ao vivo</strong> agora mostra a <strong>trajetória das últimas 3 h</strong> de cada pessoa (não só o ponto atual), e você <strong>vê as pessoas sem precisar transmitir</strong> — o "Mostrar pessoas ao vivo" já vem ligado. Quem para de transmitir continua no mapa, esmaecendo, até o rastro expirar. 🧭</li>
+                  <li>O painel de <strong>camadas</strong> agora <strong>lembra o que você deixou ligado/desligado</strong> (e a opacidade) entre sessões.</li>
+                </ul>
+              </dd>
+              <dt>17/06/2026 · v248</dt>
+              <dd>
+                <ul>
+                  <li>Nova <strong>Localização ao vivo</strong> (em Configurações): compartilhe sua posição em tempo real com todo mundo no mapa — opt-in, pseudônimo (só um apelido) e efêmero (nada é salvo). Funciona no navegador com a tela ligada e o app aberto. 📍</li>
+                </ul>
+              </dd>
+              <dt>15/06/2026 · v247</dt>
+              <dd>
+                <ul>
+                  <li>Novo controle nos <strong>Parâmetros</strong>: escolher a fonte do <strong>Menor energia pelo viário</strong> — o GeoPackage vetorial de SP (traçado suave, padrão) ou o Overpass (OSM ao vivo). O gpkg continua caindo pro Overpass sozinho se estiver indisponível.</li>
+                </ul>
+              </dd>
+              <dt>15/06/2026 · v246</dt>
+              <dd>
+                <ul>
+                  <li>Ao salvar um GPX, a <strong>geometria exata da rota</strong> agora é preservada: reabrir o arquivo no editor restaura o traçado roteado de cada trecho na hora, sem re-rotear nem virar linha reta. Também é possível <strong>salvar a rota no servidor</strong> e recarregá-la depois pela lista de Rotas salvas.</li>
+                </ul>
+              </dd>
               <dt>15/06/2026 · v245</dt>
               <dd>
                 <ul>
@@ -338,8 +384,25 @@
             <button type="button" id="save-cancel">Cancelar</button>
             <button type="button" id="save-copy-link">Copiar link</button>
             <button type="button" id="save-qr">QR</button>
+            <button type="button" id="save-server" title="Salvar a rota no servidor" aria-label="Salvar no servidor" hidden>☁ Servidor</button>
             <button type="button" id="save-confirm" class="primary-btn" title="Salvar GPX" aria-label="Salvar GPX">⤓🗺︎ Salvar</button>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Carregar rota: do computador (GPX) ou do servidor -->
+    <div id="saved-routes-modal" class="modal" hidden>
+      <div class="modal-content save-modal-content">
+        <header>
+          <h2>Carregar rota</h2>
+          <button class="close" id="saved-routes-close" type="button" aria-label="Close">&times;</button>
+        </header>
+        <div class="save-body">
+          <button type="button" id="saved-routes-local" class="secondary-btn" title="Carregar um arquivo .gpx do computador">📂🗺︎ Carregar GPX do computador…</button>
+          <p class="muted saved-routes-server-head">Rotas salvas no servidor</p>
+          <p class="muted" id="saved-routes-empty" hidden>Nenhuma rota salva no servidor ainda.</p>
+          <ul id="saved-routes-list" class="saved-routes-list"></ul>
         </div>
       </div>
     </div>
@@ -419,6 +482,10 @@
             <span class="param-label">Margem da busca</span>
             <span class="param-input"><input type="number" id="param-energy-margin" step="5" min="0" max="200"> %</span>
           </label>
+          <label class="param-row" title="Ligado: usa o GeoPackage vetorial do viário de SP (traçado suave no grafo). Desligado: usa o Overpass (OSM ao vivo, grid raster). O gpkg cai pro Overpass sozinho se indisponível.">
+            <span class="param-label">Viário pelo gpkg de SP (senão Overpass)</span>
+            <span class="param-input"><input type="checkbox" id="param-use-viario-gpkg"></span>
+          </label>
 
           <div class="params-actions">
             <input type="file" id="params-import" accept="application/ld+json,application/json,.json,.jsonld" hidden />
@@ -474,21 +541,6 @@
           <div class="route-modal-meta" id="route-modal-meta"></div>
           <div class="route-modal-photos" id="route-modal-photos"></div>
           <div class="route-modal-ig" id="route-modal-ig"></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Layer stacking-order modal (aberto pelo botão dentro do painel de camadas) -->
-    <div id="layer-order-modal" class="modal" hidden>
-      <div class="modal-content layer-order-modal-content">
-        <header>
-          <h2>Ordem de empilhamento</h2>
-          <button class="close" id="layer-order-close" type="button" aria-label="Fechar">&times;</button>
-        </header>
-        <div class="layer-order-body">
-          <p class="muted layer-order-hint">O topo da lista é desenhado por cima. Marcadores (fotos, números) e tooltips ficam sempre acima. Aplicado na hora; lembrado neste dispositivo.</p>
-          <div id="layer-order-list"></div>
-          <button type="button" id="layer-order-reset" class="layer-order-reset">↺ Restaurar padrão</button>
         </div>
       </div>
     </div>
@@ -622,6 +674,34 @@
             <label class="settings-row">
               <span>Listar participantes / iniciantes</span>
               <input type="checkbox" data-setting="attendees.list">
+            </label>
+          </section>
+
+          <!-- Localização ao vivo — compartilha a própria posição com todos, efêmera -->
+          <section class="settings-section" data-section="liveLocation">
+            <h3>Localização ao vivo</h3>
+            <p class="muted">Veja onde estão (e por onde passaram nas últimas 3 h) as pessoas que estão compartilhando — e, se quiser, compartilhe a sua. Opt-in e pseudônimo. Nada fica salvo: as posições só vivem na memória do servidor e o rastro de cada pessoa some sozinho ~3 h depois do último ponto. No navegador a transmissão funciona com a tela ligada e o app aberto; com a tela apagada ela pausa (limite da plataforma — o app nativo cobre esse caso). Para só ver (sem transmitir), use a camada <strong>“Pessoas ao vivo”</strong> no painel de camadas 🗺️.</p>
+            <label class="settings-row">
+              <span>Transmitir minha localização</span>
+              <input type="checkbox" data-setting="liveLocation.enabled">
+            </label>
+            <label class="settings-row">
+              <span>Apelido (aparece no marcador)</span>
+              <input type="text" data-setting="liveLocation.displayName" maxlength="40" placeholder="ex.: Dandan">
+            </label>
+            <label class="settings-row">
+              <span>Mostrar faixa de incerteza</span>
+              <input type="checkbox" data-setting="liveLocation.showAccuracy">
+            </label>
+            <label class="settings-row">
+              <span>Intervalo de envio (ms)</span>
+              <input type="range" data-setting="liveLocation.shareMs" min="2000" max="30000" step="1000">
+              <output></output>
+            </label>
+            <label class="settings-row">
+              <span>Intervalo de atualização (ms)</span>
+              <input type="range" data-setting="liveLocation.pollMs" min="2000" max="20000" step="1000">
+              <output></output>
             </label>
           </section>
 

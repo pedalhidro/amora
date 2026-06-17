@@ -1,0 +1,12 @@
+{
+  "appId": "co.pedalhidrografi.amora",
+  "appName": "Amora",
+  "webDir": "www",
+  "server": {
+    "url": "https://amora.pedalhidrografi.co",
+    "cleartext": false
+  },
+  "plugins": {
+    "BackgroundGeolocation": {}
+  }
+}
