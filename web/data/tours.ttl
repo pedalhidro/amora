@@ -1935,6 +1935,25 @@ phd:tour_ph95 a ph:Tour ;
     ph:linkRoute phd:tour_ph95_route ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/ph95/announcement.jpg> .
 
+phd:tour_ph96 a ph:Tour ;
+    dcterms:date "2026-06-16T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description "Ao invés de dar a volta ao mundo em 80 dias dentro de um balão a la Júlio Verne, daremos a volta ao balão de Edu Chaves, pedalando nossas magrelas em mais uma noite hidrográfica pela Zona Norte da cidade. Nossas fluvio-vias da vez serão o Anhangabaú, o Tamanduateí, cruzando Tietê e córrego da Biquinha pra cair no riacho Novo Mundo, passando por um rio sem nome (ao que tudo indica, enterrado sem sequer ter sido batizado). Dali pegamos o córrego do Violão e o rio Cabuçu de Cima, assim chegando ao topo do nosso balão. Fechamos o pedal com águas de Maria Paula e Paciência na estação de Metrô Tucuruvi, em horário nobre para ciclistas poderem mandar suas bicis pra dentro do vagão e voltar em paz cada um pra sua foz. Vamos descobrir se esse balão é mágico? Chama as amis!"@pt ;
+    dcterms:title "Super fantástico! Vamos de bike até o balão mágico" ;
+    ns1:providedBy phd:pessoaDandan ;
+    prov:wasAttributedTo phd:pessoaAnaju,
+        phd:pessoaDandan ;
+    ph:arrivedAt "2026-06-17T23:21:00-03:00"^^xsd:dateTime ;
+    ph:countAttendee 31 ;
+    ph:countNewcomer 9 ;
+    ph:departedAt "2026-06-17T20:45:00-03:00"^^xsd:dateTime ;
+    ph:energyEstimate phd:tour_ph96_energy ;
+    ph:inSeriesEdition phd:assoc_PH_96 ;
+    ph:linkInstagram "https://www.instagram.com/p/DZnXZA8DkM9"^^xsd:anyURI ;
+    ph:linkRoute phd:tour_ph96_route ;
+    ph:measuredEnergy phd:tour_ph96_measured ;
+    ph:movingDuration "PT1H51M"^^xsd:duration ;
+    schema:image <http://localhost:8080/tour_assets/ph96/announcement.jpg> .
+
 phd:SESC a schema:EventSeries ;
     dcterms:title "SESC" .
 
@@ -2349,6 +2368,10 @@ phd:assoc_PH_94 a ph:Association ;
 phd:assoc_PH_95 a ph:Association ;
     ph:inEventSeries phd:PH ;
     ph:sequenceInSeries 95 .
+
+phd:assoc_PH_96 a ph:Association ;
+    ph:inEventSeries phd:PH ;
+    ph:sequenceInSeries 96 .
 
 phd:assoc_SESC_1 a ph:Association ;
     ph:inEventSeries phd:SESC ;
@@ -3413,6 +3436,19 @@ phd:tour_ph95_energy a qudt:QuantityValue ;
 phd:tour_ph95_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/55563620> .
+
+phd:tour_ph96_energy a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 295.0 ;
+    ph:intensityClassification "Ok" .
+
+phd:tour_ph96_measured a qudt:QuantityValue ;
+    qudt:hasUnit unit:KiloJ ;
+    qudt:numericValue 265.0 .
+
+phd:tour_ph96_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/55659189> .
 
 phd:assoc_BP_4 a ph:Association ;
     ph:inEventSeries phd:BP ;

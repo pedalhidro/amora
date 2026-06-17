@@ -170,6 +170,33 @@ $DRY gcloud storage buckets update "gs://$BUCKET" \
   --project="$PROJECT"
 rm -f "$CORS_FILE"
 
+# Object Versioning: aplicado em TODO deploy (idempotente), igual ao CORS.
+# Mantém as gerações antigas dos arquivos de estado mutável (uploads.ttl,
+# tours.ttl, routes.json) a cada sobrescrita server-side — rede de segurança
+# contra clobber/lost-update e purga ruim. Recuperável via
+# scripts/state-history.sh (gcloud storage ls -a + cp da generation). Buckets
+# criados antes desta config não tinham versioning — por isso roda sempre.
+echo "→ Habilitando Object Versioning no bucket (idempotente)…"
+$DRY gcloud storage buckets update "gs://$BUCKET" \
+  --versioning \
+  --project="$PROJECT"
+
+# Lifecycle: limita o custo das gerações antigas. daysSinceNoncurrentTime SÓ
+# afeta versões NÃO-correntes (nunca o objeto vivo — `age` afetaria, então NÃO
+# usar): 90 dias após virar não-corrente, apaga. Os TTLs são minúsculos
+# (~430 KB) e photos/clips são content-addressed (quase nunca sobrescritos),
+# então o volume de versões é baixo. `buckets update --lifecycle-file`
+# SUBSTITUI toda a config de lifecycle — esta é a única regra.
+echo "→ Configurando lifecycle (expira versões não-correntes em 90d)…"
+LIFECYCLE_FILE="$(mktemp)"
+cat > "$LIFECYCLE_FILE" <<EOF
+{"rule":[{"action":{"type":"Delete"},"condition":{"daysSinceNoncurrentTime":90}}]}
+EOF
+$DRY gcloud storage buckets update "gs://$BUCKET" \
+  --lifecycle-file="$LIFECYCLE_FILE" \
+  --project="$PROJECT"
+rm -f "$LIFECYCLE_FILE"
+
 # ── 2b. Sync TTLs estáticos pro bucket ──────────────────────────────────
 # shapes.ttl, ontology.ttl, tours.ttl ficam tanto baked-in no container
 # (seed/fallback) quanto no bucket (fonte vigente — bucket-first read).

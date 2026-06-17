@@ -1,26 +1,22 @@
 {
-	"name": "cpa",
-	"version": "sync",
-	"bin": {
-		"cbm": "index.js"
-	},
-	"dependencies": {
-		"colors": "^1.1.2"
-	},
-	"main": "index.js",
-	"devDependencies": {},
-	"scripts": {
-		"test": "echo \"Error: no test specified\" && exit 1"
-	},
-	"repository": {
-		"type": "git",
-		"url": "git+https://github.com/Jiang-Xuan/cbm.git"
-	},
-	"author": "",
-	"license": "ISC",
-	"bugs": {
-		"url": "https://github.com/Jiang-Xuan/cbm/issues"
-	},
-	"homepage": "https://github.com/Jiang-Xuan/cbm#readme",
-	"description": ""
+  "name": "amora-native",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Capacitor native shell para o Pedal Hidrográfico (Amora). Carrega o app remoto (server.url) e adiciona o plugin de background-geolocation pra que a Localização ao vivo continue transmitindo com a tela apagada — único cenário que o PWA puro não cobre.",
+  "scripts": {
+    "sync": "cap sync",
+    "ios": "cap open ios",
+    "android": "cap open android",
+    "icons": "capacitor-assets generate"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.2.1",
+    "@capacitor/core": "^6.2.1",
+    "@capacitor/ios": "^6.2.1",
+    "@capacitor-community/background-geolocation": "^1.2.26"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.0",
+    "@capacitor/cli": "^6.2.1"
+  }
 }

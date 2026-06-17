@@ -102,6 +102,15 @@ mais nada de estado. (`web/routes.json` é regenerado por
 `scripts/build-routes.py`; clipes transcodados podem ser re-gerados de
 `web/clips/raw/` com `scripts/build-clips.py`.)
 
+No Cloud Run o bucket tem **Object Versioning** ligado (pelo
+`deploy-cloudrun.sh`, idempotente), então cada sobrescrita de um arquivo de
+estado guarda a geração anterior — rede de segurança contra clobber/purga
+ruim. Listar/diff/restaurar gerações: `scripts/state-history.sh
+list|diff|restore <arquivo>`. `restore` é não-destrutivo (cria nova geração
+corrente); rode `POST /reload` depois pro backend reler o catálogo. Uma
+regra de lifecycle expira versões não-correntes em 90 dias. Em modo local
+não há versioning — o backup ali é cópia de diretório / git.
+
 ## 1. Repositório e ambiente
 
 ```sh

@@ -178,17 +178,10 @@ body.header-hidden .leaflet-top {
    onde os 8 botões não cabem inline, força a quebra exatamente aqui pra
    garantir 4+4 ao invés de uma divisão desigual. Acima do threshold, o
    elemento some via `display: none` e a barra vira linha única. */
+/* Espaçador entre Traçar e Ajuda — sempre oculto agora. Restam poucos botões
+   (Traçar · Ajuda · Ajustes · Camadas), que cabem numa única linha mesmo no
+   iPhone em retrato; forçar a quebra aqui só dividia em duas linhas à toa. */
 .topbar-break { display: none; }
-@media (max-width: 560px) {
-  .topbar-break {
-    display: block;
-    flex-basis: 100%;
-    width: 100%;
-    height: 0;
-    margin: 0;
-    padding: 0;
-  }
-}
 
 /* Esconde o rodapé de atribuição do Leaflet em qualquer viewport. Os créditos
    do OSM ficam no modal de Instruções e nas tiles de cada provedor, o que
@@ -1379,27 +1372,48 @@ body.trace-preview .tp-label { display: none !important; }
 .layer-section-title:first-child { margin-top: 0; }
 .layer-row {
   display: grid;
-  /* [setas ↑↓] [rótulo] [slider de opacidade] [valor%] — as duas últimas
-     colunas ficam vazias nas camadas noOpacity (ex.: Pessoas ao vivo). */
+  /* [botões] [rótulo] [slider] [valor%]. A coluna de botões é o mini-grid
+     .layer-btns (largura FIXA de 3 colunas) — assim todo checkbox cai no mesmo
+     x, mesmo quando a linha tem mais/menos botões. As duas últimas colunas
+     ficam vazias nas camadas noOpacity. */
   grid-template-columns: auto minmax(110px, max-content) 1fr 28px;
   align-items: center;
   gap: 4px;
   margin: 2px 0;
   font-size: 10px;
 }
-/* Setas de empilhamento inline (substituem o antigo modal de ordem). */
-.layer-move { display: inline-flex; gap: 2px; }
-.layer-move button {
-  width: 17px; height: 17px; padding: 0;
+/* Mini-grid de botões da linha: 3 colunas fixas × 2 linhas.
+     col1=▲ (btn-up)   col2=▼ (btn-down)   col3=ação (btn-action)
+                       col2=⬆ (btn-upload, abaixo da seta-baixo)
+   Sempre 3 colunas reservadas (mesmo vazias) → checkboxes alinhados; a ação
+   sempre na col 3 → ✨ alinhado entre as linhas. */
+.layer-btns {
+  display: grid;
+  grid-template-columns: 18px 18px 18px;
+  grid-auto-rows: 18px;
+  gap: 1px 2px;
+  align-items: center;
+  justify-items: center;
+}
+.layer-btns .btn-up     { grid-column: 1; grid-row: 1; }
+.layer-btns .btn-down   { grid-column: 2; grid-row: 1; }
+.layer-btns .btn-action { grid-column: 3; grid-row: 1; }
+/* ⬆ Enviar fica na col 2 / linha 1 — em linha com a ✨ (col 3). "Imagens
+   contribuídas" não tem setas, então a col 2 está livre. */
+.layer-btns .btn-upload { grid-column: 2; grid-row: 1; }
+.layer-btns button {
+  width: 18px; height: 18px; padding: 0;
   display: flex; align-items: center; justify-content: center;
   background: transparent; color: var(--text);
   border: 1px solid var(--border); border-radius: 3px;
-  font-size: 8px; line-height: 1; cursor: pointer;
+  font-size: 11px; line-height: 1; cursor: pointer;
 }
-.layer-move button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
-.layer-move button:disabled { opacity: 0.3; cursor: default; }
-/* Camadas de conteúdo (sem setas) mantêm o alinhamento da coluna de setas. */
-.layer-move-spacer { display: inline-block; }
+.layer-btns .btn-up, .layer-btns .btn-down { font-size: 8px; }   /* ▲▼ menores */
+.layer-btns button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.layer-btns button:disabled { opacity: 0.3; cursor: default; }
+.layer-btns button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+/* Linha "Rota destacada" só aparece quando há um destaque ativo. */
+.layer-row-hidden { display: none !important; }
 .layer-row label {
   display: flex;
   align-items: baseline;
@@ -2452,3 +2466,24 @@ body.trace-preview .tp-label { display: none !important; }
   border: 1px solid var(--border); border-radius: 4px; color: var(--muted); cursor: pointer;
 }
 .live-ctrl .lc-reset:hover { border-color: var(--accent); color: var(--accent); }
+
+/* Modal "Compartilhar localização" (apelido + tempo de retenção). */
+.share-name-content { width: min(380px, 92vw); }
+.share-name-body { padding: 12px 16px 16px; display: flex; flex-direction: column; gap: 10px; }
+.share-name-body .muted { margin: 0; }
+.share-name-body input[type="text"],
+.share-name-body input[type="number"] {
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--border); border-radius: 4px;
+  padding: 5px 8px; font-size: 13px; justify-self: end;
+}
+.share-name-body #share-name-input { width: 160px; }
+.share-name-body .ttl-fields { display: inline-flex; align-items: center; gap: 4px; justify-self: end; }
+.share-name-body .ttl-fields input[type="number"] { width: 48px; text-align: right; }
+.share-name-body .ttl-sep { color: var(--muted); font-size: 12px; }
+.share-name-body .settings-actions { display: flex; justify-content: flex-end; margin-top: 2px; }
+.share-name-body #share-name-confirm {
+  background: var(--accent); color: #04121f; border: none;
+  border-radius: 6px; padding: 7px 14px; font-weight: 600; cursor: pointer;
+}
+.share-name-body #share-name-confirm:hover { filter: brightness(1.08); }

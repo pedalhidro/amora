@@ -17,6 +17,15 @@ Requisitos: ffmpeg + exiftool no PATH.
 
 Roda:
     python scripts/build-clips.py
+
+Ferramenta de LOTE local: escreve `uploads.ttl` direto no disco (o único
+writer local de catálogo que sobrou — uploads/CRUD interativos passam pelo
+servidor). Em operação normal o servidor é o dono do uploads.ttl, então
+depois de rodar isto empurre o resultado com
+`scripts/deploy-cloudrun.sh --state-only` (sync-guarded — não clobbera o que
+o servidor escreveu nesse meio-tempo). Object Versioning no bucket recupera
+um eventual clobber. (Não passa por POST /upload-video porque o endpoint é
+webm; aqui geramos mp4/m4a — reconciliar não compensa.)
 """
 from __future__ import annotations
 import hashlib
@@ -27,7 +36,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from rdflib import BNode, Graph, Literal, Namespace, URIRef
+from rdflib import Graph, Literal, Namespace, URIRef
 from rdflib.namespace import RDF, XSD
 
 
@@ -302,17 +311,16 @@ def closest_tour(tours: list[tuple[str, float]], clip_iso: str | None) -> str | 
 def upsert_clip(g: Graph, vhash: str, meta: dict, share_name: str,
                 hd_name: str | None, audio_name: str | None,
                 thumb_name: str | None, tour_iri: str | None = None) -> None:
-    """Idempotente: limpa triples antigos do mesmo IRI (e dos seus bnodes
-    alcançáveis) e regrava. Igual ao /upload-video do backend."""
+    """Idempotente: limpa triples antigos do mesmo IRI (e dos seus nós
+    derivados `<vid_iri>_*`) e regrava. Igual ao /upload-video do backend."""
     vid_iri = URIRef(PHD + f"video_{vhash}")
-    to_remove = {vid_iri}
-    queue = [vid_iri]
-    while queue:
-        cur = queue.pop()
-        for _s, _p, o in list(g.triples((cur, None, None))):
-            if isinstance(o, BNode) and o not in to_remove:
-                to_remove.add(o)
-                queue.append(o)
+    # Apaga o vídeo + nós derivados (<vid_iri>_geo). Antes percorria bnodes
+    # alcançáveis; hoje os nós aninhados são IRIs derivadas (casadas por
+    # prefixo `<vid_iri>_`).
+    prefix = str(vid_iri) + "_"
+    to_remove = {vid_iri} | {
+        s for s in set(g.subjects())
+        if isinstance(s, URIRef) and str(s).startswith(prefix)}
     for subj in to_remove:
         for triple in list(g.triples((subj, None, None))):
             g.remove(triple)
@@ -320,7 +328,7 @@ def upsert_clip(g: Graph, vhash: str, meta: dict, share_name: str,
     g.add((vid_iri, RDF.type, PH.Video))
     if meta["date_xsd"]:
         g.add((vid_iri, DCT.date, Literal(meta["date_xsd"], datatype=XSD.dateTime)))
-    geo = BNode()
+    geo = URIRef(f"{vid_iri}_geo")
     g.add((geo, RDF.type, SCHEMA.GeoCoordinates))
     g.add((geo, SCHEMA.latitude,  Literal(f"{meta['lat']}", datatype=XSD.decimal)))
     g.add((geo, SCHEMA.longitude, Literal(f"{meta['lng']}", datatype=XSD.decimal)))

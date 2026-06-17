@@ -2,7 +2,11 @@
 <html lang="pt-br">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <!-- maximum-scale=1 + user-scalable=no: o iOS NÃO dá zoom automático ao
+         focar um input (font < 16px), o que antes "sumia" com a interface (a
+         tela zumia e não voltava). O zoom do MAPA é do Leaflet (JS), então
+         segue funcionando — isto desliga só o zoom do navegador na interface. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
     <meta name="theme-color" content="#0f1721" />
     <!--
       Content-Security-Policy. Inline scripts are blocked outright (no
@@ -116,20 +120,16 @@
   <body class="rotas-page">
     <header class="topbar">
       <div class="title">
-        <h1>ajudante bicigeoenergético sampa</h1>
+        <h1>amora: ajudante bicigeoenergético</h1>
       </div>
       <nav class="topbar-actions">
-      <button id="photo-anim-btn" type="button" class="secondary-btn" title="Ligar/desligar animação dos marcadores de foto" aria-label="Animação dos marcadores" aria-pressed="false">✨ Animação</button>
       <input type="file" id="photos-import-input" accept=".ttl,.zip,text/turtle,application/zip" hidden />
-      <button id="upload-btn" type="button" class="secondary-btn" title="Enviar imagens ao acervo" aria-label="Enviar imagens">⬆🖼︎ Enviar</button>
       <input type="file" id="edit-gpx-input" accept=".gpx,application/gpx+xml" hidden />
-      <button id="edit-gpx-btn" type="button" class="secondary-btn" title="Editar rota — do servidor ou de um arquivo .gpx" aria-label="Editar rota">✎🗺︎ Editar</button>
       <button id="trace-btn" type="button" class="secondary-btn" title="Traçar GPX" aria-label="Traçar GPX">＋🗺︎ Traçar</button>
       <span class="topbar-break" aria-hidden="true"></span>
       <button id="help-btn" type="button" class="secondary-btn" title="Como usar" aria-label="Instruções">? Ajuda</button>
       <button id="settings-btn" type="button" class="secondary-btn" title="Configurações" aria-label="Configurações">⚙ Ajustes</button>
       <button id="layers-btn" type="button" class="secondary-btn" title="Mostrar/ocultar camadas" aria-label="Mostrar/ocultar camadas" aria-pressed="true">⧉ Camadas</button>
-      <button id="menu-btn" type="button" class="menu-btn secondary-btn" title="Mostrar rotas" aria-label="Mostrar rotas">☰ Rotas</button>
       </nav>
     </header>
 
@@ -148,6 +148,7 @@
           </select>
         </label>
         <button type="button" id="params-btn" class="params-btn" title="Parâmetros da simulação" aria-label="Parâmetros">⚙</button>
+        <button type="button" id="trace-load" class="trace-load" title="Carregar rota — do servidor ou de um arquivo .gpx" aria-label="Carregar rota">📂 Carregar</button>
         <button type="button" id="trace-save" class="trace-save" title="Salvar GPX" aria-label="Salvar GPX">⤓🗺︎ Salvar</button>
         <button type="button" id="trace-view" class="trace-view" title="Ver — oculta os pontos e suaviza o traçado" aria-label="Ver">👁 Ver</button>
         <span class="trace-break" aria-hidden="true"></span>
@@ -186,6 +187,34 @@
           <details class="help-changelog">
             <summary>Novidades (changelog)</summary>
             <dl>
+              <dt>17/06/2026 · v262</dt>
+              <dd>
+                <ul>
+                  <li>Correção (iOS): focar um campo (apelido ao compartilhar, nome ao salvar GPX…) não dá mais <strong>zoom automático na interface</strong> que “sumia” com os botões e não voltava. O zoom do mapa segue normal.</li>
+                </ul>
+              </dd>
+              <dt>17/06/2026 · v261</dt>
+              <dd>
+                <ul>
+                  <li>Novo botão <strong>Destacar rota</strong> no modal de uma rota — desenha uma cópia mais grossa dela e adiciona a camada <strong>Rota destacada</strong> (com 🗑 pra tirar).</li>
+                  <li>A trajetória ao vivo agora é uma <strong>linha + pontos cujo tamanho reflete a incerteza</strong> (a faixa foi removida); os pontos não têm mais borda (opacidade 0 some de vez).</li>
+                  <li>Ajustes na barra de cima: cabe em <strong>uma linha no iPhone em retrato</strong>, e o título virou “amora: ajudante bicigeoenergético”. O ⬆ Enviar ficou em linha com a ✨ Animação.</li>
+                </ul>
+              </dd>
+              <dt>17/06/2026 · v260</dt>
+              <dd>
+                <ul>
+                  <li>Ícones do painel de camadas reorganizados em 3 colunas alinhadas (a animação ✨ fica no mesmo lugar em “Imagens contribuídas” e “Vídeo fantasma”; o ⬆ Enviar fica abaixo da seta), e os checkboxes de visibilidade ficam todos alinhados.</li>
+                  <li>Correção: traçar uma rota nova logo após salvar outra no servidor não <strong>sobrescreve</strong> mais a anterior.</li>
+                </ul>
+              </dd>
+              <dt>17/06/2026 · v259</dt>
+              <dd>
+                <ul>
+                  <li>Barra de ferramentas enxugada — vários botões viraram ícones nas próprias camadas (painel de camadas): <strong>☰ Rotas</strong> e <strong>✎/⚙</strong> de config nas camadas correspondentes, <strong>✨ Animação</strong> e <strong>⬆ Enviar</strong> em “Imagens contribuídas” (✨ também no “Vídeo fantasma”), e <strong>📍 Compartilhar localização</strong> em “Pessoas ao vivo”. O <strong>Editar</strong> virou <strong>📂 Carregar</strong> dentro da barra de edição de traçado.</li>
+                  <li>Ao compartilhar localização, um diálogo pergunta o <strong>apelido</strong> e por <strong>quanto tempo</strong> guardar o rastro (padrão 3 h).</li>
+                </ul>
+              </dd>
               <dt>17/06/2026 · v257</dt>
               <dd>
                 <ul>
@@ -403,6 +432,29 @@
           <p class="muted saved-routes-server-head">Rotas salvas no servidor</p>
           <p class="muted" id="saved-routes-empty" hidden>Nenhuma rota salva no servidor ainda.</p>
           <ul id="saved-routes-list" class="saved-routes-list"></ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- Compartilhar localização: apelido + tempo de retenção do rastro -->
+    <div id="share-name-modal" class="modal" hidden>
+      <div class="modal-content share-name-content">
+        <header>
+          <h2>📍 Compartilhar localização</h2>
+          <button class="close" id="share-name-close" type="button" aria-label="Fechar">&times;</button>
+        </header>
+        <div class="share-name-body">
+          <p class="muted">Sua posição e a trajetória ficam visíveis para quem estiver no mapa — opt-in, pseudônimo e efêmero. Nada fica salvo permanentemente.</p>
+          <label class="settings-row"><span>Apelido (aparece no marcador)</span>
+            <input type="text" id="share-name-input" maxlength="40" placeholder="ex.: Dandan"></label>
+          <label class="settings-row"><span>Guardar o rastro por</span>
+            <span class="ttl-fields">
+              <input type="number" id="share-name-ttl-h" min="0" max="24" step="1" value="3" aria-label="horas"><span class="ttl-sep">h</span>
+              <input type="number" id="share-name-ttl-m" min="0" max="59" step="1" value="0" aria-label="minutos"><span class="ttl-sep">min</span>
+            </span></label>
+          <div class="settings-actions">
+            <button type="button" id="share-name-confirm">📍 Compartilhar</button>
+          </div>
         </div>
       </div>
     </div>

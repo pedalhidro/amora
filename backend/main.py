@@ -94,7 +94,6 @@ STORE = make_store_from_env(WEB)
 
 # Keys de estado mutável (usados como `STORE.read_text(...)` etc.)
 KEY_UPLOADS  = "data/uploads.ttl"
-KEY_MANIFEST = "data/data_graphs.ttl"
 KEY_TOURS    = "data/tours.ttl"
 # routes.json é pré-bakado por scripts/build-routes.py mas também é atualizado
 # incrementalmente aqui (upsert/remove de 1 rota por upload/delete de tour).
@@ -118,8 +117,6 @@ try:  # python-dotenv é dep do build-routes; pode faltar no container slim.
     _load_dotenv(WEB.parent / ".env")
 except Exception:  # noqa: BLE001
     pass
-
-VOID_NS = "http://rdfs.org/ns/void#"
 
 PH_NS  = "https://pedalhidrografi.co/terms#"
 PHD_NS = "https://pedalhidrografi.co/data/"
@@ -211,16 +208,21 @@ _LIVE_CORS_ORIGINS = {"capacitor://localhost", "https://localhost",
 
 
 def _prune_live(now):
-    """Remove tokens cujo último ponto saiu da janela de 3h e poda os pontos
-    de rastro expirados dos que sobram. Chamar já sob _live_positions_lock."""
-    cutoff = now - LIVE_TRAIL_S
-    dead = [t for t, p in _live_positions.items() if p["ts"] <= cutoff]
-    for t in dead:
-        del _live_positions[t]
-    for p in _live_positions.values():
+    """Remove tokens cujo último ponto saiu da janela de retenção e poda os
+    pontos de rastro expirados dos que sobram. A janela é por token (`ttl`, em
+    segundos, escolhido por quem compartilha; default LIVE_TRAIL_S). Chamar já
+    sob _live_positions_lock."""
+    dead = []
+    for t, p in _live_positions.items():
+        cutoff = now - (p.get("ttl") or LIVE_TRAIL_S)
+        if p["ts"] <= cutoff:
+            dead.append(t)
+            continue
         tr = p.get("trail")
         if tr and tr[0][2] <= cutoff:
             p["trail"] = [pt for pt in tr if pt[2] > cutoff]
+    for t in dead:
+        del _live_positions[t]
 
 
 def _valid_live_token(t):
@@ -271,6 +273,16 @@ def post_live_location():
                 head[k] = float(v)
         except (TypeError, ValueError):
             pass
+    # Retenção escolhida por quem compartilha (segundos): por quanto tempo o
+    # servidor guarda o rastro deste token. Default 3h, teto defensivo de 24h.
+    ttl = LIVE_TRAIL_S
+    try:
+        v = data.get("ttl")
+        if v is not None and math.isfinite(float(v)):
+            ttl = int(max(60, min(24 * 3600, float(v))))
+    except (TypeError, ValueError):
+        pass
+    head["ttl"] = ttl
     from rwgps import haversine_meters   # cacheado em sys.modules; boot barato
     with _live_positions_lock:
         _prune_live(now)
@@ -398,26 +410,22 @@ def _load_dump_text(fname):
     return None
 
 
+# Dumps que compõem o universo de validação. Era descoberto seguindo os
+# void:dataDump do manifesto (data_graphs.ttl); hoje a lista é fixa —
+# tours.ttl traz tours/pessoas/séries (referenciados por sh:class) e
+# uploads.ttl traz imagens + vídeos. shapes/ontology entram à parte no
+# validador. O manifesto vira só um shim estático servido pro frontend.
+CATALOG_DUMPS = ("tours.ttl", "uploads.ttl")
+
+
 def _load_catalog():
     global _catalog_cache
     if _catalog_cache is not None:
         return _catalog_cache
     v = _load_validator()
-    Graph = v["Graph"]
-    catalog = Graph()
-    manifest_text = STORE.read_text(KEY_MANIFEST)
-    if manifest_text is None:
-        _catalog_cache = catalog
-        return catalog
-    manifest = Graph().parse(
-        data=manifest_text, format="turtle", publicID=MANIFEST_BASE)
-    from rdflib import URIRef
-    pred = URIRef(VOID_NS + "dataDump")
+    catalog = v["Graph"]()
     loaded = 0
-    for _s, _p, o in manifest.triples((None, pred, None)):
-        url = str(o)
-        fname = url[len(MANIFEST_BASE):] if url.startswith(MANIFEST_BASE) \
-                else url.rsplit("/", 1)[-1]
+    for fname in CATALOG_DUMPS:
         text = _load_dump_text(fname)
         if not text:
             continue
@@ -462,19 +470,10 @@ def validate_image_ttl(ttl_text):
     # subject é a imagem em curso (ou bnodes alcançáveis a partir dela). Sem
     # isso, re-upload da mesma foto sobrepõe os triples antigos aos novos, e
     # SHACL flagra cardinalidade > 1 em `dcterms:date` etc.
-    from rdflib import BNode
     img_uri = URIRef(image_iri)
     catalog = _load_catalog()
-    # Coleta bnodes alcançáveis a partir da imagem (hash, locationCreated, …).
-    img_bnodes = set()
-    queue = [img_uri]
-    while queue:
-        cur = queue.pop()
-        for _s, _p, o in catalog.triples((cur, None, None)):
-            if isinstance(o, BNode) and o not in img_bnodes:
-                img_bnodes.add(o)
-                queue.append(o)
-    exclude = img_bnodes | {img_uri}
+    # Exclui o próprio sujeito + seus nós derivados (hash, locationCreated).
+    exclude = {img_uri} | _derived_subjects(catalog, img_uri)
     merged = data + v["ont"]
     for s, p, o in catalog:
         if s not in exclude:
@@ -527,98 +526,40 @@ def _build_audit_ttl(upload_local, phash):
     )
 
 
-# Base estável e hierárquica para o manifesto. rdflib usa isto como o
-# resolvido para `<>` e para `<tours.ttl>` etc., e na hora de serializar com
-# `base=` essas URIs voltam a ser relativas — mantendo o arquivo limpo no
-# disco. Precisa ser hierárquica (URN não serve por causa do RFC 3986).
-MANIFEST_BASE = "https://pedalhidrografi.co/.manifest/"
-MANIFEST_SEED = """\
+# Manifesto VoID servido em /data/data_graphs.ttl. O frontend (e os agentes
+# via llms.txt) seguem os void:dataDump pra achar os dumps. Antes era um Graph
+# mutado a cada upload (registrava uploads.ttl on-the-fly); hoje a lista é fixa
+# (= CATALOG_DUMPS) e isto é só um shim estático de compatibilidade pros
+# clientes/SWs em cache que ainda buscam o manifesto.
+DATA_GRAPHS_SHIM = """\
 @prefix dcterms: <http://purl.org/dc/terms/> .
 @prefix void:    <http://rdfs.org/ns/void#> .
 
 <> a void:Dataset ;
     dcterms:title "Pedal Hidrográfico — grafos de dados"@pt ;
-    void:dataDump <tours.ttl> .
+    void:dataDump <tours.ttl>, <uploads.ttl> .
 """
 
 
-def _load_manifest():
-    """Devolve o Graph do manifesto; cria o esqueleto se faltando."""
-    v = _load_validator()
-    Graph = v["Graph"]
-    g = Graph()
-    text = STORE.read_text(KEY_MANIFEST)
-    if text is not None:
-        g.parse(data=text, format="turtle", publicID=MANIFEST_BASE)
-    else:
-        g.parse(data=MANIFEST_SEED, format="turtle", publicID=MANIFEST_BASE)
-    return g
-
-
-def _save_manifest(g):
-    import re
-    out = g.serialize(format="turtle", base=MANIFEST_BASE)
-    out = re.sub(r'^@base\s+<[^>]*>\s*\.\s*\n', '', out, count=1, flags=re.MULTILINE)
-    STORE.write_text(KEY_MANIFEST, out)
-
-
-def _manifest_root():
-    """O sujeito `<>` resolvido contra a base opaca."""
+def _derived_subjects(graph, root):
+    """Sujeitos `<root>_*` — os nós que antes eram bnodes aninhados (geo, hash,
+    energy, measured, route) e hoje são IRIs derivadas com o IRI do pai como
+    prefixo. O `_` final evita casar IRIs irmãs (phd:tour_1 não pega
+    phd:tour_10). Substitui o antigo walk de bnodes alcançáveis."""
     from rdflib import URIRef
-    return URIRef(MANIFEST_BASE)
-
-
-def _manifest_uri(filename):
-    from rdflib import URIRef
-    return URIRef(MANIFEST_BASE + filename)
-
-
-def register_upload_in_manifest(filename):
-    """Adiciona `<> void:dataDump <filename>` ao manifesto (idempotente)."""
-    from rdflib import URIRef
-    g = _load_manifest()
-    triple = (_manifest_root(), URIRef(VOID_NS + "dataDump"), _manifest_uri(filename))
-    if triple not in g:
-        g.add(triple)
-        _save_manifest(g)
-        _invalidate_catalog()
-
-
-def unregister_upload_in_manifest(filename):
-    """Remove a linha `void:dataDump <filename>` do manifesto."""
-    if not STORE.exists(KEY_MANIFEST):
-        return False
-    from rdflib import URIRef
-    g = _load_manifest()
-    triple = (None, URIRef(VOID_NS + "dataDump"), _manifest_uri(filename))
-    n = 0
-    for s, p, o in list(g.triples(triple)):
-        g.remove((s, p, o))
-        n += 1
-    if n:
-        _save_manifest(g)
-        _invalidate_catalog()
-    return n > 0
+    prefix = str(root) + "_"
+    return {s for s in set(graph.subjects())
+            if isinstance(s, URIRef) and str(s).startswith(prefix)}
 
 
 def _purge_subject(graph, root):
-    """Apaga triples cujo subject é `root` e bnodes alcançáveis a partir dele."""
-    from rdflib import BNode
-    seen, queue = set(), [root]
-    while queue:
-        cur = queue.pop()
-        for _s, _p, o in graph.triples((cur, None, None)):
-            if isinstance(o, BNode) and o not in seen:
-                seen.add(o)
-                queue.append(o)
+    """Apaga as triples de `root` e dos seus nós derivados `<root>_*`.
+    Retorna nº de triples removidas."""
     removed = 0
-    for bn in seen:
-        for s, p, o in list(graph.triples((bn, None, None))):
+    for subj in {root} | _derived_subjects(graph, root):
+        for s, p, o in list(graph.triples((subj, None, None))):
             graph.remove((s, p, o))
             removed += 1
-    for s, p, o in list(graph.triples((root, None, None))):
-        graph.remove((s, p, o))
-        removed += 1
     return removed
 
 
@@ -707,26 +648,18 @@ def validate_tour_ttl(ttl_text):
     Retorna (ok, tour_id, errors). `tour_id` é o sufixo após `phd:tour_`.
     """
     v = _load_validator()
-    from rdflib import URIRef, Namespace, BNode
+    from rdflib import URIRef, Namespace
     data = v["Graph"]().parse(data=ttl_text, format="turtle")
 
     tour_id, id_errors = _single_tour_id(data)
     if tour_id is None:
         return False, None, id_errors
 
-    # Mescla com ontology + catálogo (excluindo o próprio tour pra evitar
-    # cardinalidade falsa por sobreposição de re-upload).
+    # Mescla com ontology + catálogo (excluindo o próprio tour + seus nós
+    # derivados pra evitar cardinalidade falsa por sobreposição de re-upload).
     tour_uri = URIRef(PHD_NS + "tour_" + tour_id)
     catalog = _load_catalog()
-    tour_bnodes = set()
-    queue = [tour_uri]
-    while queue:
-        cur = queue.pop()
-        for _s, _p, o in catalog.triples((cur, None, None)):
-            if isinstance(o, BNode) and o not in tour_bnodes:
-                tour_bnodes.add(o)
-                queue.append(o)
-    exclude = tour_bnodes | {tour_uri}
+    exclude = {tour_uri} | _derived_subjects(catalog, tour_uri)
     merged = data + v["ont"]
     for s, p, o in catalog:
         if s not in exclude:
@@ -828,7 +761,7 @@ def synthesize_tour_patch(patch_ttl, remove_preds, replace_image=False):
     """
     v = _load_validator()
     Graph = v["Graph"]
-    from rdflib import URIRef, BNode
+    from rdflib import URIRef
 
     patch = Graph().parse(data=patch_ttl, format="turtle")
     tour_id, errors = _single_tour_id(patch)
@@ -841,26 +774,22 @@ def synthesize_tour_patch(patch_ttl, remove_preds, replace_image=False):
         preds_to_replace.add(URIRef("https://schema.org/image"))
         preds_to_replace.add(URIRef("http://schema.org/image"))
 
-    # Closure atual do tour (subject + bnodes alcançáveis) em tours.ttl.
+    # Estado atual do tour (subject + nós derivados energy/measured/route) em
+    # tours.ttl, copiado verbatim pro documento sintetizado.
     result = Graph()
     existing = _load_dump_text("tours.ttl")
     if existing:
         catalog = Graph().parse(data=existing, format="turtle")
-        seen, queue = set(), [tour_uri]
-        while queue:
-            cur = queue.pop()
-            for s, p, o in catalog.triples((cur, None, None)):
+        for subj in {tour_uri} | _derived_subjects(catalog, tour_uri):
+            for s, p, o in catalog.triples((subj, None, None)):
                 result.add((s, p, o))
-                if isinstance(o, BNode) and o not in seen:
-                    seen.add(o)
-                    queue.append(o)
 
-    # Substituição por predicado: tira (tour, p, *) + closure dos bnodes
-    # descartados, depois soma o patch inteiro.
+    # Substituição por predicado: tira (tour, p, *) + as triples do nó
+    # derivado que esse predicado apontava, depois soma o patch inteiro.
     for p in preds_to_replace:
         for o in list(result.objects(tour_uri, p)):
             result.remove((tour_uri, p, o))
-            if isinstance(o, BNode):
+            if isinstance(o, URIRef) and str(o).startswith(str(tour_uri) + "_"):
                 _purge_subject(result, o)
     for triple in patch:
         result.add(triple)
@@ -1114,7 +1043,7 @@ def get_data_ttl(filename):
         if filename == "uploads.ttl":
             text = ""             # catálogo vazio — válido
         elif filename == "data_graphs.ttl":
-            text = MANIFEST_SEED  # manifesto mínimo
+            text = DATA_GRAPHS_SHIM  # manifesto estático (tours + uploads)
         else:
             abort(404)
     return _conditional(Response(text, mimetype="text/turtle",
@@ -1835,7 +1764,7 @@ def upload_image():
         upload_local = _upload_filename()[:-len(".ttl")]   # phd:upload_TIMESTAMP
         audit_block  = _build_audit_ttl(upload_local, phash)
         upsert_image_in_uploads(ttl_text, phash, audit_block)
-        register_upload_in_manifest("uploads.ttl")          # idempotente
+        _invalidate_catalog()
     except Exception as e:  # noqa: BLE001
         # Blobs já gravados sem triples = órfãos invisíveis. Limpa
         # best-effort (re-upload regrava as mesmas keys de qualquer jeito).
@@ -1857,7 +1786,7 @@ def validate_video_ttl(ttl_text):
     em curso, pra que re-uploads não disparem violações de cardinalidade).
     Retorna (ok, vhash, errors)."""
     v = _load_validator()
-    from rdflib import URIRef, Namespace, BNode
+    from rdflib import URIRef, Namespace
     data = v["Graph"]().parse(data=ttl_text, format="turtle")
 
     RDFT = URIRef("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
@@ -1877,15 +1806,8 @@ def validate_video_ttl(ttl_text):
 
     vid_uri = URIRef(video_iri)
     catalog = _load_catalog()
-    vid_bnodes = set()
-    queue = [vid_uri]
-    while queue:
-        cur = queue.pop()
-        for _s, _p, o in catalog.triples((cur, None, None)):
-            if isinstance(o, BNode) and o not in vid_bnodes:
-                vid_bnodes.add(o)
-                queue.append(o)
-    exclude = vid_bnodes | {vid_uri}
+    # Exclui o próprio sujeito + seus nós derivados (locationCreated).
+    exclude = {vid_uri} | _derived_subjects(catalog, vid_uri)
     merged = data + v["ont"]
     for s, p, o in catalog:
         if s not in exclude:
@@ -1973,26 +1895,16 @@ def upload_video():
     # Persiste TTL em uploads.ttl — mesma file dos uploads de imagem. Dedup
     # por IRI (re-upload sobrescreve triples antigos do mesmo vhash).
     try:
-        from rdflib import URIRef, BNode, Graph as RdfGraph
+        from rdflib import URIRef, Graph as RdfGraph
         vid_iri = URIRef(PHD_NS + f"video_{vid_id}")
         existing_text = STORE.read_text(KEY_UPLOADS) or ""
         catalog = RdfGraph()
         if existing_text:
             catalog.parse(data=existing_text, format="turtle")
-        to_remove_subjects = {vid_iri}
-        queue = [vid_iri]
-        while queue:
-            cur = queue.pop()
-            for _s, _p, o in list(catalog.triples((cur, None, None))):
-                if isinstance(o, BNode) and o not in to_remove_subjects:
-                    to_remove_subjects.add(o)
-                    queue.append(o)
-        for subj in to_remove_subjects:
-            for triple in list(catalog.triples((subj, None, None))):
-                catalog.remove(triple)
+        _purge_subject(catalog, vid_iri)   # vídeo + nós derivados (geo)
         catalog.parse(data=ttl_text, format="turtle")
         STORE.write_text(KEY_UPLOADS, catalog.serialize(format="turtle"))
-        register_upload_in_manifest("uploads.ttl")  # idempotente
+        _invalidate_catalog()
     except Exception as e:  # noqa: BLE001
         # Limpa os blobs recém-gravados (órfãos sem triples) — best-effort.
         for key in written:

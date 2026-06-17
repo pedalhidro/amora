@@ -25,8 +25,12 @@ local-first.
 - `backend/` — the self-hosted backend. One Flask service (`main.py`)
   that serves `web/` as static files **and** validates+stores incoming
   photos. No SQLite; state lives in `web/data/uploads.ttl` (per-image
-  triples), `web/data/data_graphs.ttl` (manifest pointing at every dump),
-  and `web/photos/<phash>/{original,large,thumb}.*` (image variants).
+  triples), `web/data/tours.ttl` (tour catalog), and
+  `web/photos/<phash>/{original,large,thumb}.*` (image variants).
+  `web/data/data_graphs.ttl` is a VoID manifest the frontend still follows,
+  but the backend no longer mutates it — the dump list is fixed
+  (`CATALOG_DUMPS = tours.ttl + uploads.ttl`) and `/data/data_graphs.ttl`
+  is served from a static shim (`DATA_GRAPHS_SHIM`).
   `phidro.plist` (launchd), `requirements.txt`, `README.md`. Runs locally
   (macOS/Linux) or on Cloud Run. (Was `backend/pi/` — the Raspberry Pi
   deploy was retired; the systemd unit + `pi-deploy.sh` were removed.)
@@ -43,22 +47,31 @@ local-first.
   in `web/data/`; the backend reads them from there at startup. The
   former top-level `ontology/` dir (v1.1 `pedalhidrografico.ttl` +
   JSON-LD context) was removed — git history is the only reference.
-- `scripts/` — `build-routes.py` (bakes `routes.json` from
-  `web/data/tours.ttl` + RideWithGPS), `build-clips.py` (re-encodes raw
-  videos in `web/clips/raw/` to 360p/720p mp4 + `.m4a` audio + thumbnail
-  and writes the triples directly into `web/data/uploads.ttl` as
-  `ph:Video`), `deploy.sh` (legacy GCS static mirror),
-  `deploy-cloudrun.sh` (Cloud Run deploy + `--state` flag to sync mutable
-  state), `pull-cloudrun.sh` (pull mutable state from the GCS bucket
-  back to local), `sync-guard.sh` (anti-clobber guard sourced by the two
-  previous scripts — see Conventions), `dev-cloudrun.sh` (run the Cloud
+- `scripts/` — `build-routes.py` (**full rebuild** of `routes.json` from
+  `web/data/tours.ttl` + RideWithGPS — NOT the normal path: the backend keeps
+  `routes.json` incrementally on every Tour CRUD; this is for bake/recovery
+  only, then push via `deploy-cloudrun.sh --state`), `build-clips.py`
+  (re-encodes raw videos in `web/clips/raw/` to 360p/720p mp4 + `.m4a` audio +
+  thumbnail and writes the triples directly into `web/data/uploads.ttl` as
+  `ph:Video` — local **batch** tool; the one remaining local catalog-writer,
+  push via `deploy-cloudrun.sh --state-only`), `deploy.sh` (legacy GCS static
+  mirror), `deploy-cloudrun.sh` (Cloud Run deploy + `--state` flag to sync
+  mutable state; also enables bucket Object Versioning + a lifecycle rule
+  idempotently — see Conventions), `pull-cloudrun.sh` (pull mutable state from
+  the GCS bucket back to local), `state-history.sh` (list/diff/restore prior
+  GCS object generations of a state file — the recovery UX on top of Object
+  Versioning), `sync-guard.sh` (anti-clobber guard sourced by
+  deploy/pull-cloudrun — see Conventions), `dev-cloudrun.sh` (run the Cloud
   Run image locally — the `deploy-amora.sh` / `pull-amora.sh` /
   `push-clips.sh` / `gcloud-ssh-rsync.sh` / `pi-deploy.sh` family for the
   old GCE VM and Raspberry Pi deploys was removed; amora is Cloud Run now),
   `remux-clips-audio.py` (one-shot migration: muxes audio back into
   pre-v225 silent `web/clips/*.webm` that were transcoded before audio
   was embedded — see the upload-flow note below; removable once all
-  clips are re-encoded), `gen-synthetic-rdf.py`, `exiftool_ph.config`.
+  clips are re-encoded), `migrate-bnodes-to-iris.py` (one-shot migration:
+  converted the historical blank nodes in `tours.ttl`/`uploads.ttl` into the
+  derived-IRI convention — idempotent, removable once it's clearly not needed
+  again), `gen-synthetic-rdf.py`, `exiftool_ph.config`.
   `build-photos.py` and
   `build-routes.mjs` are legacy artefacts pending removal — see "Open
   loose ends".
@@ -89,6 +102,21 @@ host (CDN) the form is offline-friendly but uploads have nowhere to go.
   `ph:availableResolution` (`sh:in` of `audio/360p/480p/720p/1080p`),
   `ph:audio`, optional `ph:video360p` / `ph:video720p`, and
   `schema:thumbnail`.
+
+**Nested nodes are minted IRIs, not blank nodes.** The `schema:GeoCoordinates`
+(`schema:locationCreated`), `nfo:FileHash` (`nfo:hasHash`), `qudt:QuantityValue`
+(`ph:energyEstimate` / `ph:measuredEnergy`), and `ph:RouteReference`
+(`ph:linkRoute`) sub-objects use deterministic IRIs derived from the parent —
+`<parent>_geo`, `_hash`, `_energy`, `_measured`, `_route` (e.g.
+`phd:tour_1_energy`, `phd:image_<phash>_geo`). The trailing `_` keeps siblings
+distinct (`phd:tour_1` never prefix-matches `phd:tour_10`). This is what makes
+deletion/merge trivial: purging a subject = removing `(subject, *, *)` plus the
+`<subject>_*` derived IRIs (`_derived_subjects` / `_purge_subject` in
+`backend/main.py`), with no blank-node-reachability walk. Both the TTL emitters
+(`upload_images.html`, `upload_tour.html`, `backfill_tours.html`,
+`scripts/build-clips.py`) and the validator's re-upload `exclude` set rely on
+this prefix convention. (`scripts/migrate-bnodes-to-iris.py` converted the
+historical bnode data — git history holds the pre-IRI form.)
 
 Key flows:
 
@@ -144,8 +172,8 @@ Key flows:
   plays the same clips' audio-only tracks with a longer crossfade for
   ambient use. Both have controls in Ajustes and the layer panel.
 - **Deletion.** `POST /delete-image/<phash>` and
-  `POST /delete-video/<vhash>` purge the IRI's triples (plus reachable
-  bnodes) from `uploads.ttl` AND delete the underlying blobs from the
+  `POST /delete-video/<vhash>` purge the IRI's triples (plus its `<iri>_*`
+  derived IRIs) from `uploads.ttl` AND delete the underlying blobs from the
   store. The frontend popups have a red-orange Excluir button gated by a
   `confirm()` dialog.
 - **Tour CRUD & Censo.** `POST /upload-tour` accepts a TTL fragment
@@ -166,8 +194,8 @@ Key flows:
   `tour_assets/<tour_id>/announcement.<ext>` and wired in as
   `schema:image <URL>` before the triples are persisted (under `patch`,
   a new file also replaces the current `schema:image`).
-  `POST /delete-tour/<tour_id>` removes the tour's triples + reachable
-  bnodes and purges `tour_assets/<tour_id>/`; it deliberately does NOT
+  `POST /delete-tour/<tour_id>` removes the tour's triples + its `<iri>_*`
+  derived IRIs and purges `tour_assets/<tour_id>/`; it deliberately does NOT
   delete referenced `phd:pessoa*` or series — git history preserves
   those and they may be referenced by other tours.
   On every `/upload-tour` and `/delete-tour`, the backend also **syncs
@@ -303,6 +331,25 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
   `--force` overrides (and establishes the baseline on first use on a new
   machine). Don't bypass the guard with raw `gcloud storage cp`; photos/
   and clips/ are content-addressed and additive, so they stay unguarded.
+- **The server is the sole writer of the catalogs in normal ops.** Photo/
+  video uploads, Tour CRUD, and deletes all go through the backend
+  (`upload_*.html` forms → POST); `routes.json` is server-owned (incremental
+  sync on Tour CRUD). The only local catalog-writers left are the **batch/
+  recovery** scripts: `build-clips.py` (writes `uploads.ttl`) and
+  `build-routes.py` (full `routes.json` rebuild). Treat them as round-trip:
+  `pull-cloudrun.sh` → run → `deploy-cloudrun.sh --state[-only]` (sync-guarded).
+  Don't hand-edit `tours.ttl`/`uploads.ttl` — edit tours via
+  `upload_tour.html?id=` (`mode=patch`) or `backfill_tours.html`; if you must
+  hand-edit, pull first and push immediately through the guarded scripts.
+- **The bucket has Object Versioning + a lifecycle rule** (enabled idempotently
+  on every `deploy-cloudrun.sh`, mirroring the CORS block). Every server write
+  to a state file keeps the prior generation; noncurrent versions expire after
+  90 days (`daysSinceNoncurrentTime` — never `age`, which would delete live
+  objects). This is the recovery net for a clobber / bad purge / lost update.
+  Browse + recover with `scripts/state-history.sh list|diff|restore <file>`;
+  `restore` is non-destructive (writes a new current generation) — follow it
+  with `POST /reload` so the backend re-reads. Local (`STORAGE_BACKEND=local`)
+  has no equivalent; history there is just git for the tracked TTLs.
 - **GCS read gotcha (Cloud Run).** Always use `bucket.get_blob(key)`
   rather than `bucket.blob(key) + download_as_text()` — the bare-blob form
   produced silently-stale content in Cloud Run despite the bucket having
@@ -327,10 +374,12 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
 
 ## Build & deploy
 
-- `python scripts/build-routes.py` — regenerate `web/routes.json` by
+- `python scripts/build-routes.py` — **full rebuild** of `web/routes.json` by
   reading `web/data/tours.ttl` (the Tour catalog) and fetching each
   referenced GPX from RideWithGPS. Requires `python-dotenv` plus
-  `RWGPS_API_KEY` / `RWGPS_AUTH_TOKEN` in `.env`.
+  `RWGPS_API_KEY` / `RWGPS_AUTH_TOKEN` in `.env`. **Not the normal path** —
+  the backend keeps `routes.json` incrementally on every Tour CRUD; use this
+  only for bake/recovery, then push via `deploy-cloudrun.sh --state`.
 - `python scripts/build-clips.py` — re-encode anything in `web/clips/raw/`
   to 360p/720p mp4 + `.m4a` audio + thumbnail, and upsert each as a
   `ph:Video` in `web/data/uploads.ttl` (associates with nearest tour

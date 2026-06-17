@@ -92,11 +92,28 @@ de localização em background** + revisão.
 
 ## Rodar em device
 
+Pela GUI:
+
 ```sh
 npx cap sync          # após qualquer mudança de config/plugins
 npx cap open ios      # abre o Xcode → Run num iPhone físico
 npx cap open android  # abre o Android Studio → Run num device
 ```
+
+Sem abrir a GUI (sync + build + install + launch num device conectado):
+
+```sh
+./run-ios.sh --list           # lista devices e UDIDs
+./run-ios.sh <UDID>           # ou IOS_UDID=<UDID> ./run-ios.sh
+./run-android.sh <serial>     # ou ANDROID_SERIAL=<serial> ./run-android.sh
+```
+
+`run-ios.sh` ainda exige o Xcode instalado e a **assinatura configurada uma
+vez** (time de desenvolvimento — ver acima; conta Apple grátis serve, mas o app
+expira em 7 dias). `npx cap run` passa pelo xcodebuild e instala no device
+(devicectl no iOS 17+/Xcode 15+; ios-deploy no iOS ≤16). Como o app carrega o
+site remoto (`server.url`), edições só de `web/` dispensam rebuild nativo — basta
+publicar o `web/` e dar pull-to-refresh no celular.
 
 ## Teste de aceitação (o que importa: tela apagada)
 

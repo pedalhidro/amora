@@ -198,6 +198,9 @@ function buildTourPatch(id, tour, cur) {
   const f = tour.fields;
   const newProps = ['a ph:Tour'];
   const remove = [];
+  // Nós aninhados (energia) como IRIs derivadas `phd:tour_<id>_*` em vez de
+  // bnodes — o backend substitui/apaga por prefixo de IRI.
+  const derived = [];
 
   function handle(key, emit) {
     const v = (cur[key] ?? '').trim();
@@ -219,26 +222,26 @@ function buildTourPatch(id, tour, cur) {
   handle('estimate', v => {
     const kj = parseFloat(v);
     if (!Number.isFinite(kj) || kj < 0) throw new Error(`energia estimada inválida: "${v}"`);
-    newProps.push(
-      'ph:energyEstimate [\n' +
-      '        a qudt:QuantityValue ;\n' +
-      `        qudt:numericValue "${kj}"^^xsd:decimal ;\n` +
-      '        qudt:hasUnit unit:KiloJ ;\n' +
-      `        ph:intensityClassification "${turtleEscape(intensityFor(kj))}"\n` +
-      '    ]');
+    newProps.push(`ph:energyEstimate phd:tour_${id}_energy`);
+    derived.push(
+      `phd:tour_${id}_energy a qudt:QuantityValue ;\n` +
+      `    qudt:numericValue "${kj}"^^xsd:decimal ;\n` +
+      `    qudt:hasUnit unit:KiloJ ;\n` +
+      `    ph:intensityClassification "${turtleEscape(intensityFor(kj))}" .`);
   });
   handle('measured', v => {
     const kj = parseFloat(v);
     if (!Number.isFinite(kj) || kj < 0) throw new Error(`energia medida inválida: "${v}"`);
-    newProps.push(
-      'ph:measuredEnergy [\n' +
-      '        a qudt:QuantityValue ;\n' +
-      `        qudt:numericValue "${kj}"^^xsd:decimal ;\n` +
-      '        qudt:hasUnit unit:KiloJ\n' +
-      '    ]');
+    newProps.push(`ph:measuredEnergy phd:tour_${id}_measured`);
+    derived.push(
+      `phd:tour_${id}_measured a qudt:QuantityValue ;\n` +
+      `    qudt:numericValue "${kj}"^^xsd:decimal ;\n` +
+      `    qudt:hasUnit unit:KiloJ .`);
   });
+  const derivedBlock = derived.length ? `\n${derived.join('\n')}\n` : '';
   const ttl = PREFIXES +
-    `\n# Patch do backfill — só os campos alterados\nphd:tour_${id}\n    ${newProps.join(' ;\n    ')} .\n`;
+    `\n# Patch do backfill — só os campos alterados\nphd:tour_${id}\n    ${newProps.join(' ;\n    ')} .\n` +
+    derivedBlock;
   return { ttl, remove };
 }
 // ═══════════════════════ [/pure] ══════════════════════════════════════════

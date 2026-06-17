@@ -1669,12 +1669,15 @@ function buildImageBlock(card) {
   const providers = card.providerTs.getValue();
 
   const id    = `phd:image_${card.phash}`;
+  // Nós aninhados como IRIs derivadas (`<id>_hash`, `<id>_geo`) em vez de
+  // bnodes: assim o backend apaga/substitui por prefixo de IRI, sem precisar
+  // percorrer bnodes alcançáveis.
   const props = [
     `a ph:Image`,
-    `nfo:hasHash [\n        a nfo:FileHash ;\n        nfo:hashAlgorithm "pHash" ;\n        nfo:hashValue "${card.phash}"\n    ]`,
+    `nfo:hasHash ${id}_hash`,
     `dcterms:date "${dateXsd}"^^xsd:dateTime`,
     `dcterms:license <${license}>`,
-    `schema:locationCreated [\n        a schema:GeoCoordinates ;\n        schema:latitude "${lat}"^^xsd:decimal ;\n        schema:longitude "${lon}"^^xsd:decimal\n    ]`,
+    `schema:locationCreated ${id}_geo`,
   ];
   if (bearing !== '') props.push(`exif:gpsImgDirection "${bearing}"^^xsd:decimal`);
   if (focal   !== '') props.push(`exif:focalLengthIn35mmFilm "${focal}"^^xsd:decimal`);
@@ -1684,7 +1687,14 @@ function buildImageBlock(card) {
   if (anon) props.push(`ph:anonymized true`);
   if (comp) props.push(`ph:compressed true`);
   const body = props.map(p => `    ${p}`).join(' ;\n');
-  return { id, ttl: `${id}\n${body} .` };
+  const derived =
+    `${id}_hash a nfo:FileHash ;\n` +
+    `    nfo:hashAlgorithm "pHash" ;\n` +
+    `    nfo:hashValue "${card.phash}" .\n\n` +
+    `${id}_geo a schema:GeoCoordinates ;\n` +
+    `    schema:latitude "${lat}"^^xsd:decimal ;\n` +
+    `    schema:longitude "${lon}"^^xsd:decimal .`;
+  return { id, ttl: `${id}\n${body} .\n\n${derived}` };
 }
 
 // ===================== Empacotamento single-image TTL ==================
@@ -1733,13 +1743,16 @@ function buildClipBlock(card) {
   const isoDur = `PT${Math.round(durSec * 100) / 100}S`;
 
   const id = card.clipId;
+  const iri = `phd:video_${id}`;
   const audioFile = `${id}.audio.webm`;
   const thumbFile = `${id}.thumb.jpg`;
+  // GeoCoordinates como IRI derivada (`<iri>_geo`) em vez de bnode — ver
+  // buildImageBlock.
   const props = [
     `a ph:Video`,
     `dcterms:date "${dateXsd}"^^xsd:dateTime`,
     `dcterms:license <${license}>`,
-    `schema:locationCreated [\n        a schema:GeoCoordinates ;\n        schema:latitude "${lat}"^^xsd:decimal ;\n        schema:longitude "${lon}"^^xsd:decimal\n    ]`,
+    `schema:locationCreated ${iri}_geo`,
     `schema:duration "${isoDur}"^^xsd:duration`,
     `ph:audio "${audioFile}"`,
     `schema:thumbnail "${thumbFile}"`,
@@ -1754,9 +1767,12 @@ function buildClipBlock(card) {
   if (tour)         props.push(`ph:capturedDuring ${tour}`);
   for (const a of authors)   props.push(`prov:wasAttributedTo ${a}`);
   for (const p of providers) props.push(`pav:providedBy ${p}`);
-  const iri  = `phd:video_${id}`;
   const body = props.map(p => `    ${p}`).join(' ;\n');
-  return { iri, ttl: `${iri}\n${body} .` };
+  const derived =
+    `${iri}_geo a schema:GeoCoordinates ;\n` +
+    `    schema:latitude "${lat}"^^xsd:decimal ;\n` +
+    `    schema:longitude "${lon}"^^xsd:decimal .`;
+  return { iri, ttl: `${iri}\n${body} .\n\n${derived}` };
 }
 
 // TTL auto-suficiente para 1 clipe: prefixos + pessoas novas + bloco.

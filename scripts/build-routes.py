@@ -1,16 +1,24 @@
 #!/usr/bin/env python
 """
-build-routes.py — pré-baka todas as rotas a partir de `web/data/tours.ttl`
-em `web/routes.json`, para que a página possa ser servida como app estático.
-Rode novamente quando tours.ttl ganhar novos passeios com `ph:linkRoute`.
+build-routes.py — REBUILD COMPLETO de `web/routes.json` a partir de
+`web/data/tours.ttl`, buscando cada GPX no RideWithGPS.
 
-Fonte de verdade: o catálogo RDF (`research/photos-rdf/data/tours.ttl`, que
-`web/data/tours.ttl` aponta via symlink). Cada `ph:Tour` com `ph:linkRoute`
-apontando pra uma URL do RideWithGPS vira uma entrada em routes.json.
-Passeios sem `linkRoute` (ex.: registros antigos sem GPX) ficam fora — o
-sidebar do app pode listá-los à parte, lendo o mesmo TTL.
+NÃO faz parte do fluxo normal: o backend já mantém routes.json
+INCREMENTALMENTE — faz upsert/remove da rota de 1 passeio a cada
+/upload-tour e /delete-tour, via `backend/rwgps.py` (mesma lógica de
+fetch/parse). Rode este script só pra:
+  - bake inicial (primeira geração do routes.json), ou
+  - recuperação / re-fetch em massa (geometria mudou no RWGPS, JSON corrompeu).
+Pra obter a versão vigente do servidor use `scripts/pull-cloudrun.sh`; depois
+de um rebuild empurre com `scripts/deploy-cloudrun.sh --state` (sync-guarded —
+não clobbera o que o servidor escreveu nesse meio-tempo).
 
-Uso:  python scripts/build-routes.py
+Fonte de verdade: o catálogo RDF `web/data/tours.ttl`. Cada `ph:Tour` com
+`ph:linkRoute` apontando pra uma URL do RideWithGPS vira uma entrada em
+routes.json. Passeios sem `linkRoute` (ex.: registros antigos sem GPX) ficam
+fora — o sidebar do app pode listá-los à parte, lendo o mesmo TTL.
+
+Uso:  python scripts/build-routes.py   (rebuild completo — ver acima)
 
 Lê do .env (carregado via python-dotenv):
   RWGPS_API_KEY
@@ -77,6 +85,10 @@ def parse_tours(ttl_path: Path) -> list[dict]:
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
 def main() -> int:
+    print("[build-routes] NOTA: rebuild COMPLETO do routes.json. Em operação "
+          "normal o backend o mantém incrementalmente (a cada upload/delete de "
+          "tour). Use só pra bake inicial/recuperação e empurre com "
+          "deploy-cloudrun.sh --state (sync-guarded).", file=sys.stderr)
     if not has_credentials():
         print("Warning: RWGPS_API_KEY/RWGPS_AUTH_TOKEN are not set. "
               "Public routes may still work; private/unlisted ones will return 401.",

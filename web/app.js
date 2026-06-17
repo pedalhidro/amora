@@ -8,7 +8,7 @@
 
 // Marcador de build — confira no console (`window.__PHIDRO_BUILD`) pra saber
 // se o browser está rodando o app.js mais novo (deve casar com o sw VERSION).
-window.__PHIDRO_BUILD = 257;
+window.__PHIDRO_BUILD = 262;
 
 const ROUTES_JSON_URL = 'routes.json';
 const SP = [-23.5505, -46.6333];
@@ -115,6 +115,7 @@ const SETTINGS_DEFAULTS = {
     enabled: false,
     view: true,                          // ver pessoas ao vivo no mapa (independe de transmitir)
     displayName: '',
+    ttlSec: 10800,                       // por quanto tempo o servidor guarda meu rastro (s) — 03:00
     shareMs: 5000,                       // intervalo mínimo entre POSTs da minha posição
     pollMs: 4000,                        // intervalo de leitura das posições alheias
     showAccuracy: true,                  // desenha o círculo de precisão de cada pessoa
@@ -184,6 +185,7 @@ const DEFAULT_LAYER_ORDER = [
   'osm-cicloinfra',
   'osm-overpass',
   'routes',                    // linhas das rotas, no topo das camadas de mapa
+  'route-highlight',           // rota destacada (1,5×), acima das rotas normais
 ];
 const LAYER_ORDER_KEY = 'phidro:layerOrder';
 let layerOrder = DEFAULT_LAYER_ORDER.slice();
@@ -396,7 +398,21 @@ const BASE_LAYERS = [
   { id: 'osm',       label: 'OpenStreetMap', layer: osm,       defaultVisible: baseDefault === 'osm',       defaultPct: 100 },
   { id: 'satellite', label: 'Satélite',      layer: satellite, defaultVisible: baseDefault === 'satellite', defaultPct: 100 },
 ];
+// FeatureGroup das rotas destacadas (botão "Destacar rota" no modal de rota).
+// Guarda cópias 1,5× mais grossas das rotas escolhidas; a linha "Rota destacada"
+// no painel de camadas (só aparece quando há destaque) tem 🗑 pra limpar.
+const routeHighlightGroup = L.featureGroup();
 const OVERLAY_LAYERS = [
+  {
+    id: 'route-highlight',
+    label: 'Rota destacada',
+    defaultVisible: false,
+    defaultPct: 100,
+    noOpacity: true,
+    layer: routeHighlightGroup,
+    trash: true,
+    trashAction: () => clearRouteHighlight(),
+  },
   { id: 'rmsampa',  label: 'Topografia colorida', layer: rmsampa,  defaultVisible: true,  defaultPct: 85 },
   // Câmera Topográfica: relevo do FABDEM renderizado no cliente (cmocean.phase
   // × declividade), re-renderizado a cada pan/zoom. Botão de engrenagem abre o
@@ -486,7 +502,7 @@ const OVERLAY_LAYERS = [
     id: 'live-people',
     label: 'Pessoas ao vivo',
     defaultVisible: settings.liveLocation?.view !== false,
-    defaultPct: 20,                       // opacidade inicial da faixa de incerteza (%)
+    defaultPct: 70,                       // opacidade inicial dos pontos do rastro (%)
     show: () => setLiveViewEnabled(true),
     hide: () => setLiveViewEnabled(false),
     setOpacity: (frac) => setLiveBandOpacity(frac),
@@ -1123,25 +1139,23 @@ function applyPhotoAnim() {
     for (const m of photoMarkers) m._spotIntensity = 0;
     relaxPhotoMarkers();
   }
-  // Mantém o botão visual sincronizado.
-  const btn = document.getElementById('photo-anim-btn');
-  if (btn) btn.setAttribute('aria-pressed', String(settings.spotlight.enabled));
+  // Mantém os ícones ✨ (linhas "Imagens contribuídas" / "Vídeo fantasma" do
+  // painel de camadas) em sincronia.
+  for (const b of document.querySelectorAll('.layer-anim-toggle')) {
+    b.setAttribute('aria-pressed', String(settings.spotlight.enabled));
+  }
 }
 
-const photoAnimBtn = document.getElementById('photo-anim-btn');
-if (photoAnimBtn) {
-  // Animação liga/desliga TUDO: o spotlight (animação dos marcadores) e o
-  // ghost video (clipes em loop como pano de fundo translúcido sobre o mapa).
-  photoAnimBtn.setAttribute('aria-pressed', String(settings.spotlight.enabled));
-  photoAnimBtn.addEventListener('click', async () => {
-    const enabling = !settings.spotlight.enabled;
-    settings.spotlight.enabled = enabling;
-    saveSettings();
-    applyPhotoAnim();
-    photoAnimBtn.setAttribute('aria-pressed', String(enabling));
-    if (enabling) await startClipsGhost();
-    else stopClipsGhost();
-  });
+// Animação liga/desliga TUDO: o spotlight (animação dos marcadores) e o ghost
+// video (clipes em loop como pano de fundo translúcido sobre o mapa). Acionada
+// pelos ícones ✨ no painel de camadas (ver makeRow).
+async function toggleAnimation() {
+  const enabling = !settings.spotlight.enabled;
+  settings.spotlight.enabled = enabling;
+  saveSettings();
+  applyPhotoAnim();
+  if (enabling) await startClipsGhost();
+  else stopClipsGhost();
 }
 applyPhotoAnim();
 
@@ -3805,7 +3819,7 @@ let _liveLastSentMs = 0;       // throttle do envio (settings.liveLocation.share
 // estado aplicado pra evitar start/stop repetido.
 let _liveViewing = false;      // poll + render ligado
 let _liveSharing = false;      // transmissão da minha posição ligada
-let _liveBandOpacity = 0.2;    // opacidade da faixa de incerteza (slider em Pessoas ao vivo)
+let _liveBandOpacity = 0.7;    // opacidade dos pontos do rastro (slider em Pessoas ao vivo)
 const _personMarkers = new Map();   // token -> { marker, band, trail, ticks, last }
 // Ajustes por pessoa (clique no dot abre um popup): { token: {color?, opacity?, hideHistory?} }.
 // Persistido localmente, aplicado em upsertPersonMarker.
@@ -3830,14 +3844,6 @@ function liveTrailsPane() {
   }
   return 'liveTrails';
 }
-function liveBandsPane() {
-  if (!map.getPane('liveBands')) {
-    const pane = map.createPane('liveBands');
-    pane.style.zIndex = '654';   // faixa de incerteza, abaixo da linha (655)
-  }
-  return 'liveBands';
-}
-
 // divIcon de uma pessoa ao vivo — anel colorido + inicial + (opcional) seta
 // de rumo. Classe própria (.live-person), distinta do .photo-dot. `stale`
 // (sem fix recente) tira o pulso "ao vivo" via .is-stale.
@@ -3876,66 +3882,6 @@ function formatLiveAgo(sec) {
   return `há ${(sec / 3600).toFixed(1).replace('.', ',')} h`;
 }
 
-// Suaviza o caminho com média móvel (lat/lng E precisão) numa janela `win`,
-// pra tirar o serrilhado do jitter de GPS antes de construir a faixa — é o que
-// dá as bordas ásperas nas mudanças de direção. Devolve [[lat,lng,acc],...]
-// com a precisão já preenchida (último valor conhecido) pra alimentar a faixa.
-function smoothLivePath(pts, win) {
-  const P = Array.isArray(pts)
-    ? pts.filter((q) => Number.isFinite(q[0]) && Number.isFinite(q[1])) : [];
-  let lastAcc = 0;
-  const accs = P.map((q) => {
-    if (Number.isFinite(q[2]) && q[2] > 0) lastAcc = q[2];
-    return lastAcc;
-  });
-  if (P.length < 3) return P.map((q, i) => [q[0], q[1], accs[i]]);
-  const half = Math.max(1, Math.floor(win / 2));
-  const out = [];
-  for (let i = 0; i < P.length; i++) {
-    let sl = 0, sg = 0, sa = 0, n = 0;
-    for (let j = Math.max(0, i - half); j <= Math.min(P.length - 1, i + half); j++) {
-      sl += P[j][0]; sg += P[j][1]; sa += accs[j]; n++;
-    }
-    out.push([sl / n, sg / n, sa / n]);
-  }
-  return out;
-}
-
-// Corredor de incerteza: polígono de largura variável seguindo o rastro, com
-// meia-largura em cada ponto = a precisão dali. As arestas retas do polígono
-// entre vértices fazem a largura interpolar linearmente de um ponto ao próximo.
-// pts = [[lat,lng,acc],...]; preenche acc faltante com o último conhecido.
-// Devolve o anel do polígono, ou null se não dá (< 2 pontos / nenhuma precisão).
-function uncertaintyRibbon(pts) {
-  const P = Array.isArray(pts)
-    ? pts.filter((q) => Number.isFinite(q[0]) && Number.isFinite(q[1])) : [];
-  if (P.length < 2) return null;
-  let lastAcc = 0;
-  const accs = P.map((q) => {
-    if (Number.isFinite(q[2]) && q[2] > 0) lastAcc = q[2];
-    return lastAcc;
-  });
-  if (!accs.some((a) => a > 0)) return null;
-  const toRad = Math.PI / 180;
-  const left = [], right = [];
-  for (let i = 0; i < P.length; i++) {
-    const lat = P[i][0], lng = P[i][1];
-    const prev = P[i - 1] || P[i];
-    const next = P[i + 1] || P[i];
-    const mLat = 111320;                                  // m por grau de lat
-    const mLng = 111320 * Math.cos(lat * toRad) || 1;     // m por grau de lng
-    let tx = (next[1] - prev[1]) * mLng;                  // tangente leste (m)
-    let ty = (next[0] - prev[0]) * mLat;                  // tangente norte (m)
-    const len = Math.hypot(tx, ty) || 1;
-    tx /= len; ty /= len;
-    const nx = -ty, ny = tx;                              // normal unitária
-    const r = accs[i];
-    left.push([lat + (ny * r) / mLat, lng + (nx * r) / mLng]);
-    right.push([lat - (ny * r) / mLat, lng - (nx * r) / mLng]);
-  }
-  return left.concat(right.reverse());
-}
-
 function upsertPersonMarker(p, mine) {
   const ll = [p.lat, p.lng];
   const stale = Number.isFinite(p.age) && p.age > LIVE_STALE_AGE_S;
@@ -3950,7 +3896,7 @@ function upsertPersonMarker(p, mine) {
     const marker = L.marker(ll, { icon, pane: livePeoplePane(), zIndexOffset: 1000 });
     marker.addTo(map);
     marker.on('click', () => openLivePersonControls(p.id));
-    e = { marker, band: null, trail: null, ticks: null, last: null };
+    e = { marker, trail: null, ticks: null, last: null };
     _personMarkers.set(p.id, e);
   } else {
     e.marker.setLatLng(ll);
@@ -3959,37 +3905,26 @@ function upsertPersonMarker(p, mine) {
   e.last = p;   // guardado p/ reaplicar na hora quando o popup muda um ajuste
   e.marker.setOpacity(liveOpacityForAge(p.age) * opMul);
 
-  // Rastro + faixa de incerteza, na cor da pessoa, suavizados (média móvel em
-  // lat/lng+precisão p/ tirar o serrilhado do GPS; mesma base p/ linha e faixa).
-  // `showHistory` (toggle no popup) esconde tudo isso, deixando só o dot atual.
-  // Passar só [lat,lng] também evita o bug do L.toLatLng() com arrays de 4
-  // elementos (devolve null → _projectLatlngs estoura no zoom).
+  // Trajetória = uma LINHA conectando os fixes + um PONTO em cada fix cujo raio
+  // reflete a incerteza (precisão) daquele ponto. (Substitui a antiga faixa de
+  // incerteza, que era um polígono problemático.) `showHistory` (toggle no
+  // popup) esconde tudo, deixando só o dot atual. `p.trail` vem como
+  // [lat,lng,acc,age]; passamos só [lat,lng] pra linha — L.toLatLng() devolve
+  // null pra arrays de 4 elementos e estoura o _projectLatlngs no zoom.
   const pts = showHistory && Array.isArray(p.trail) ? p.trail : [];
-  const smooth = smoothLivePath(pts, 5);
-  const line = smooth.map((q) => [q[0], q[1]]);
+  const line = pts.map((q) => [q[0], q[1]]);
   if (line.length >= 2) {
     if (!e.trail) {
       e.trail = L.polyline(line, { pane: liveTrailsPane(), color,
-        weight: 3, opacity: 0.6 * opMul, interactive: false }).addTo(map);
+        weight: 2, opacity: 0.7 * opMul, interactive: false }).addTo(map);
     } else {
       e.trail.setLatLngs(line);
-      e.trail.setStyle({ color, opacity: 0.6 * opMul });
+      e.trail.setStyle({ color, opacity: 0.7 * opMul });
     }
   } else if (e.trail) {
     map.removeLayer(e.trail); e.trail = null;
   }
-  if (e.band) { map.removeLayer(e.band); e.band = null; }
-  if (settings.liveLocation?.showAccuracy !== false && showHistory) {
-    const ring = uncertaintyRibbon(smooth);
-    if (ring) {
-      e.band = L.polygon(ring, { pane: liveBandsPane(), stroke: false,
-        fillColor: color, fillOpacity: _liveBandOpacity * opMul, interactive: false }).addTo(map);
-    } else if (Number.isFinite(p.accuracy) && p.accuracy > 0) {
-      e.band = L.circle(ll, { radius: p.accuracy, pane: liveBandsPane(), stroke: false,
-        fillColor: color, fillOpacity: _liveBandOpacity * opMul, interactive: false }).addTo(map);
-    }
-  }
-  // Pontos de tempo: dots interativos nos fixes CRUS — hover/toque mostra "há
+  // Pontos do rastro: raio cresce com a incerteza (px); hover/toque mostra "há
   // quanto tempo" (q[3] = idade em s). Downsample p/ ~40 por pessoa.
   if (!e.ticks) { e.ticks = L.layerGroup().addTo(map); }
   e.ticks.clearLayers();
@@ -3998,8 +3933,12 @@ function upsertPersonMarker(p, mine) {
     for (let k = 0; k < pts.length; k += tstep) {
       const q = pts[k];
       if (!Number.isFinite(q[0]) || !Number.isFinite(q[1])) continue;
-      const dot = L.circleMarker([q[0], q[1]], { pane: liveTrailsPane(), radius: 3,
-        color, weight: 1, fillColor: color, fillOpacity: 0.9 * opMul });
+      const acc = Number.isFinite(q[2]) && q[2] > 0 ? q[2] : 0;
+      const radius = Math.max(2.5, Math.min(14, 2 + acc / 5));   // px ~ incerteza
+      // Sem borda (stroke:false) — assim opacidade 0 some de vez (a borda não
+      // ficava visível antes).
+      const dot = L.circleMarker([q[0], q[1]], { pane: liveTrailsPane(), radius,
+        stroke: false, fillColor: color, fillOpacity: _liveBandOpacity * opMul });
       dot.bindTooltip(formatLiveAgo(q[3]), { direction: 'top', sticky: true });
       dot.on('click', () => dot.openTooltip());   // suporte a toque
       dot.addTo(e.ticks);
@@ -4049,7 +3988,6 @@ function removePersonMarker(token) {
   const e = _personMarkers.get(token);
   if (!e) return;
   if (e.marker) map.removeLayer(e.marker);
-  if (e.band) map.removeLayer(e.band);
   if (e.trail) map.removeLayer(e.trail);
   if (e.ticks) map.removeLayer(e.ticks);
   _personMarkers.delete(token);
@@ -4067,7 +4005,7 @@ function sendLivePosition(lat, lng, accuracy, heading) {
   if (now - _liveLastSentMs < minGap) return;
   _liveLastSentMs = now;
   const body = { id: liveId(), name: (settings.liveLocation?.displayName || '').trim().slice(0, 40),
-    lat, lng };
+    lat, lng, ttl: settings.liveLocation?.ttlSec ?? 10800 };
   if (Number.isFinite(accuracy)) body.accuracy = accuracy;
   if (Number.isFinite(heading)) body.heading = heading;
   fetch(liveApiUrl('/live-location'), {
@@ -4172,12 +4110,12 @@ function stopLiveShare() {
   // de 3h (decisão de produto). Parar só interrompe novos envios.
 }
 
-// Opacidade da faixa de incerteza (slider da camada Pessoas ao vivo). Atualiza
-// os círculos existentes na hora; os recriados a cada poll já leem a var.
+// Opacidade dos pontos do rastro (slider da camada Pessoas ao vivo). Atualiza
+// os dots existentes na hora; os recriados a cada poll já leem a var.
 function setLiveBandOpacity(frac) {
   _liveBandOpacity = Math.max(0, Math.min(1, frac));
   for (const e of _personMarkers.values()) {
-    if (e.band && e.band.setStyle) e.band.setStyle({ fillOpacity: _liveBandOpacity });
+    if (e.ticks) e.ticks.eachLayer((c) => c.setStyle && c.setStyle({ fillOpacity: _liveBandOpacity }));
   }
 }
 
@@ -4221,7 +4159,76 @@ function applyLiveLocation() {
     if (wantShare) startLiveShare();
     else stopLiveShare();
   }
+  updateShareLocBtn();   // mantém o botão do topbar em sincronia com `enabled`
 }
+
+// Ícone 📍 (linha "Pessoas ao vivo") — liga/desliga a transmissão da própria
+// posição (settings.liveLocation.enabled). O estado fica espelhado no
+// aria-pressed e no checkbox de Ajustes. getElementById (sem TDZ) pra poder
+// ser chamado de dentro do applyLiveLocation do boot.
+function updateShareLocBtn() {
+  const btn = document.getElementById('share-loc-btn');
+  if (btn) btn.setAttribute('aria-pressed', String(!!settings.liveLocation?.enabled));
+}
+function _syncShareCheckbox() {
+  const cb = document.querySelector('[data-setting="liveLocation.enabled"]');
+  if (cb) cb.checked = !!settings.liveLocation?.enabled;
+}
+// Clique no 📍 (wired em makeRow): se já transmite, para; senão abre o modal
+// pra escolher apelido + por quanto tempo guardar o rastro.
+function onShareLocClick() {
+  if (!settings.liveLocation) settings.liveLocation = {};
+  if (settings.liveLocation.enabled) {
+    settings.liveLocation.enabled = false;
+    saveSettings(); applyLiveLocation(); _syncShareCheckbox();
+  } else {
+    openShareNameModal();
+  }
+}
+
+// Retenção como horas+minutos (campos separados — duração, não horário, então
+// nada de AM/PM). Lê/escreve em segundos.
+function openShareNameModal() {
+  const modal = document.getElementById('share-name-modal');
+  if (!modal) return;
+  const nameEl = document.getElementById('share-name-input');
+  const sec = Math.max(60, Math.min(24 * 3600, settings.liveLocation?.ttlSec ?? 10800));
+  const hEl = document.getElementById('share-name-ttl-h');
+  const mEl = document.getElementById('share-name-ttl-m');
+  if (nameEl) nameEl.value = settings.liveLocation?.displayName || '';
+  if (hEl) hEl.value = String(Math.floor(sec / 3600));
+  if (mEl) mEl.value = String(Math.floor((sec % 3600) / 60));
+  if (typeof closeOtherMobileDialogs === 'function') closeOtherMobileDialogs('share');
+  modal.hidden = false;
+  setTimeout(() => nameEl?.focus(), 0);
+}
+function closeShareNameModal() {
+  const modal = document.getElementById('share-name-modal');
+  if (modal) modal.hidden = true;
+}
+function confirmShareName() {
+  if (!settings.liveLocation) settings.liveLocation = {};
+  const nameEl = document.getElementById('share-name-input');
+  const h = Math.max(0, Math.min(24, Math.floor(Number(document.getElementById('share-name-ttl-h')?.value) || 0)));
+  const m = Math.max(0, Math.min(59, Math.floor(Number(document.getElementById('share-name-ttl-m')?.value) || 0)));
+  settings.liveLocation.displayName = (nameEl?.value || '').trim().slice(0, 40);
+  settings.liveLocation.ttlSec = Math.max(60, Math.min(24 * 3600, h * 3600 + m * 60));
+  settings.liveLocation.enabled = true;
+  saveSettings();
+  applyLiveLocation();
+  _syncShareCheckbox();
+  const dn = document.querySelector('[data-setting="liveLocation.displayName"]');
+  if (dn) dn.value = settings.liveLocation.displayName;
+  closeShareNameModal();
+}
+document.getElementById('share-name-close')?.addEventListener('click', closeShareNameModal);
+document.getElementById('share-name-confirm')?.addEventListener('click', confirmShareName);
+document.getElementById('share-name-modal')?.addEventListener('click', (e) => {
+  if (e.target.id === 'share-name-modal') closeShareNameModal();
+});
+document.getElementById('share-name-input')?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); confirmShareName(); }
+});
 
 // Pausa/retoma o poll quando a aba some/volta (só afeta o ver).
 document.addEventListener('visibilitychange', applyLiveLocation);
@@ -4241,7 +4248,7 @@ const LAYER_STATE_KEY = 'phidro:layerState';   // { [id]: { on, pct } }
 // Estas NUNCA auto-restauram visibilidade no boot: custom-* exigem URL;
 // audio-loop tocaria sozinho (autoplay bloqueado/indesejado). Seguem
 // controláveis manualmente na sessão.
-const LAYER_PERSIST_SKIP = new Set(['custom-xyz', 'custom-wms', 'audio-loop']);
+const LAYER_PERSIST_SKIP = new Set(['custom-xyz', 'custom-wms', 'audio-loop', 'route-highlight']);
 let _restoringLayers = false;
 function readLayerState() {
   try { return JSON.parse(localStorage.getItem(LAYER_STATE_KEY)) || {}; }
@@ -4328,19 +4335,38 @@ layerPanel.onAdd = function () {
     const row = document.createElement('div');
     row.className = 'layer-row';
     row.dataset.id = l.id;
-    const editLink = l.editable
-      ? ` <a href="#" class="layer-edit-link" data-id="${l.id}" title="Editar URL">✎</a>`
-      : (l.gear ? ` <a href="#" class="layer-edit-link" data-id="${l.id}" title="Configurar">⚙</a>` : '');
-    const arrows = reorderable
-      ? `<span class="layer-move"><button type="button" class="layer-move-up" title="Empilhar acima">▲</button>`
-        + `<button type="button" class="layer-move-down" title="Empilhar abaixo">▼</button></span>`
-      : `<span class="layer-move layer-move-spacer" aria-hidden="true"></span>`;
+    // "Rota destacada" só aparece quando há destaque (setRouteHighlightRow).
+    if (l.id === 'route-highlight') row.classList.add('layer-row-hidden');
+    // Botões da linha num mini-grid fixo 3 colunas (sempre 3 col → checkboxes
+    // alinhados; a ação fica sempre na col 3 → ✨ de "Imagens contribuídas" e
+    // "Vídeo fantasma" no mesmo x):
+    //   col1=▲   col2=▼ (ou ⬆ enviar, quando não há setas)   col3=ação (☰/📍/✨/✎/⚙/🗑)
+    const btns = [];
+    if (reorderable) {
+      btns.push('<button type="button" class="layer-move-up btn-up" title="Empilhar acima" aria-label="Empilhar acima">▲</button>');
+      btns.push('<button type="button" class="layer-move-down btn-down" title="Empilhar abaixo" aria-label="Empilhar abaixo">▼</button>');
+    }
+    if (l.id === 'routes')
+      btns.push('<button type="button" id="routes-panel-toggle" class="layer-action btn-action" title="Mostrar rotas" aria-label="Mostrar rotas" aria-pressed="false">☰</button>');
+    else if (l.id === 'live-people')
+      btns.push('<button type="button" id="share-loc-btn" class="layer-action btn-action" title="Compartilhar minha localização ao vivo" aria-label="Compartilhar localização" aria-pressed="false">📍</button>');
+    else if (l.id === 'photos' || l.id === 'clips-ghost')
+      btns.push('<button type="button" class="layer-action layer-anim-toggle btn-action" title="Ligar/desligar animação dos marcadores + vídeo fantasma" aria-label="Animação" aria-pressed="false">✨</button>');
+    else if (l.editable)
+      btns.push('<button type="button" class="layer-action layer-action-edit btn-action" title="Editar URL" aria-label="Editar URL">✎</button>');
+    else if (l.gear)
+      btns.push('<button type="button" class="layer-action layer-action-edit btn-action" title="Configurar" aria-label="Configurar">⚙</button>');
+    else if (l.trash)
+      btns.push('<button type="button" class="layer-action layer-action-trash btn-action" title="Remover destaque" aria-label="Remover destaque">🗑</button>');
+    if (l.id === 'photos')
+      btns.push('<button type="button" class="layer-action layer-upload-act btn-upload" title="Enviar imagens ao acervo" aria-label="Enviar imagens">⬆</button>');
+    const buttons = `<span class="layer-btns">${btns.join('')}</span>`;
     const opacity = l.noOpacity ? ''
       : `<input type="range" class="opacity-slider" data-id="${l.id}" min="0" max="100" value="${l.defaultPct}" />`
         + `<span class="opacity-value" data-id="${l.id}">${l.defaultPct}%</span>`;
-    row.innerHTML = arrows
+    row.innerHTML = buttons
       + `<label><input type="checkbox" data-id="${l.id}" ${l.defaultVisible ? 'checked' : ''} />`
-      + `<span>${l.label}${editLink}</span></label>`
+      + `<span>${l.label}</span></label>`
       + opacity;
 
     row.querySelector('input[type="checkbox"]').addEventListener('change', (e) => {
@@ -4361,11 +4387,17 @@ layerPanel.onAdd = function () {
       row.querySelector('.opacity-value').textContent = `${pct}%`;
       persistLayerState();
     });
-    row.querySelector('.layer-edit-link')?.addEventListener('click', (e) => {
-      e.preventDefault(); e.stopPropagation();
-      const o = OVERLAY_LAYERS.find((x) => x.id === l.id);
-      if (o && o.edit) o.edit();
+    // Cada ícone de ação (a linha tem os que se aplicam; querySelector devolve
+    // null pros ausentes). stopPropagation evita o fecha-sidebar no clique-fora.
+    const onAct = (sel, fn) => row.querySelector(sel)?.addEventListener('click', (e) => {
+      e.preventDefault(); e.stopPropagation(); fn();
     });
+    onAct('#routes-panel-toggle', toggleRoutesSidebar);
+    onAct('#share-loc-btn', onShareLocClick);
+    onAct('.layer-anim-toggle', toggleAnimation);
+    onAct('.layer-upload-act', openUploadModal);
+    onAct('.layer-action-edit', () => { if (l.edit) l.edit(); });
+    onAct('.layer-action-trash', () => { if (l.trashAction) l.trashAction(); });
     if (reorderable) {
       row.querySelector('.layer-move-up').addEventListener('click', () => moveLayer(l.id, +1));
       row.querySelector('.layer-move-down').addEventListener('click', () => moveLayer(l.id, -1));
@@ -4481,7 +4513,6 @@ headerToggle?.addEventListener('click', () => {
 // Two distinct states so behavior matches each viewport:
 //   .sidebar-open   — explicit "show now" on mobile (drawer slide-in).
 //   .sidebar-hidden — explicit "hide" on desktop (map gets full width).
-const menuBtn = document.getElementById('menu-btn');
 const SIDEBAR_HIDDEN_KEY = 'phidro:sidebarHidden';
 const isMobileViewport = () => window.matchMedia('(max-width: 760px)').matches;
 
@@ -4548,8 +4579,10 @@ if (!isMobileViewport()) {
 }
 updateMenuBtnPressed();
 
-menuBtn?.addEventListener('click', (e) => {
-  e.stopPropagation();
+// O toggle das rotas agora mora no ícone ☰ da linha "Rotas cadastradas" no
+// painel de camadas (ver makeRow). A lógica fica aqui pra reaproveitar o
+// estado + a persistência da sidebar.
+function toggleRoutesSidebar() {
   if (isMobileViewport()) {
     const willOpen = !document.body.classList.contains('sidebar-open');
     if (willOpen) closeOtherMobileDialogs('sidebar');
@@ -4562,13 +4595,13 @@ menuBtn?.addEventListener('click', (e) => {
     setTimeout(() => map.invalidateSize(), 220);
   }
   updateMenuBtnPressed();
-});
+}
 
 // Tap outside the drawer closes it (mobile only).
 document.addEventListener('click', (e) => {
   if (!isMobileViewport()) return;
   if (!document.body.classList.contains('sidebar-open')) return;
-  if (e.target.closest('#sidebar') || e.target.closest('#menu-btn')) return;
+  if (e.target.closest('#sidebar') || e.target.closest('#routes-panel-toggle')) return;
   document.body.classList.remove('sidebar-open');
   updateMenuBtnPressed();
 });
@@ -4589,11 +4622,12 @@ window.addEventListener('resize', () => {
 });
 
 function updateMenuBtnPressed() {
-  if (!menuBtn) return;
+  const btn = document.getElementById('routes-panel-toggle');
+  if (!btn) return;
   const visible = isMobileViewport()
     ? document.body.classList.contains('sidebar-open')
     : !document.body.classList.contains('sidebar-hidden');
-  menuBtn.setAttribute('aria-pressed', String(visible));
+  btn.setAttribute('aria-pressed', String(visible));
 }
 
 // ─── PWA: register service worker ────────────────────────────────────────────
@@ -5101,6 +5135,39 @@ function applyRoutesOpacity(pct) {
   }
 }
 
+// ─── Rota destacada (botão "Destacar rota" no modal de rota) ─────────────────
+// Desenha uma cópia 1,5× mais grossa da rota (mesmo estilo: casing escuro +
+// traço branco) num featureGroup próprio, acima das rotas normais. A linha
+// "Rota destacada" no painel de camadas (escondida até existir destaque) tem 🗑.
+function addRouteHighlight(key) {
+  const r = routes.get(key);
+  if (!r || !Array.isArray(r.entry?.latlngs) || r.entry.latlngs.length < 2) return;
+  const dup = routeHighlightGroup.getLayers().some((l) => l._phKey === key);
+  if (!dup) {
+    const pane = LAYER_PANE('route-highlight');
+    const base = { lineCap: 'round', lineJoin: 'round', pane, interactive: false };
+    const casing = L.polyline(r.entry.latlngs, { ...base, color: '#1a1a1a', weight: 5.25, opacity: 0.55 });
+    const line   = L.polyline(r.entry.latlngs, { ...base, color: '#ffffff', weight: 2.6,  opacity: 1 });
+    casing._phKey = key; line._phKey = key;
+    routeHighlightGroup.addLayer(casing);
+    routeHighlightGroup.addLayer(line);
+  }
+  if (!map.hasLayer(routeHighlightGroup)) routeHighlightGroup.addTo(map);
+  setRouteHighlightRow(true);
+}
+function clearRouteHighlight() {
+  routeHighlightGroup.clearLayers();
+  if (map.hasLayer(routeHighlightGroup)) map.removeLayer(routeHighlightGroup);
+  setRouteHighlightRow(false);
+}
+// Mostra/esconde a linha "Rota destacada" no painel e sincroniza o checkbox.
+function setRouteHighlightRow(show) {
+  const row = document.querySelector('.layer-row[data-id="route-highlight"]');
+  if (row) row.classList.toggle('layer-row-hidden', !show);
+  const cb = row?.querySelector('input[type="checkbox"]');
+  if (cb) cb.checked = show;
+}
+
 function formatDay(ms) {
   const d = new Date(ms);
   // ISO yyyy-mm-dd, but localized — use toLocaleDateString for friendliness.
@@ -5387,6 +5454,9 @@ function openRouteModal(id) {
     metaParts.push(
       `<button type="button" class="linkbtn edit-route-btn">Editar este traçado ✎</button>`,
     );
+    metaParts.push(
+      `<button type="button" class="linkbtn highlight-route-btn">Destacar rota ★</button>`,
+    );
   }
   if (tourId) {
     metaParts.push(
@@ -5397,6 +5467,10 @@ function openRouteModal(id) {
   routeModalMeta.querySelector('.edit-route-btn')?.addEventListener('click', () => {
     closeRouteModal();
     editEntryInDrawingTool(entry);
+  });
+  routeModalMeta.querySelector('.highlight-route-btn')?.addEventListener('click', () => {
+    addRouteHighlight(id);
+    closeRouteModal();
   });
   routeModalMeta.querySelector('.edit-tour-btn')?.addEventListener('click', () => {
     openTourModal(tourId);
@@ -5594,6 +5668,11 @@ document.addEventListener('keydown', (e) => {
 function enterDrawingMode() {
   drawingMode = true;
   document.body.classList.add('drawing');
+  // Toda sessão de desenho começa DESVINCULADA de qualquer rota do servidor.
+  // Quem carrega uma rota (loadSavedRoute / loadGpxIntoEditor) re-seta o id
+  // depois. Sem isto, traçar uma rota NOVA logo após salvar outra reusaria o
+  // `currentSavedRouteId` e sobrescreveria a rota anterior no servidor.
+  currentSavedRouteId = null;
 
   for (const r of routes.values()) {
     if (r.casing) r.casing.setStyle({ opacity: 0.15 });
@@ -8805,13 +8884,13 @@ helpModal?.addEventListener('click', (e) => {
 });
 
 // ─── Edit GPX (load a .gpx into the drawing tool) ────────────────────────────
-const editGpxBtn = document.getElementById('edit-gpx-btn');
 const editGpxInput = document.getElementById('edit-gpx-input');
 
-// "Editar" abre o modal de carregar rota (do servidor ou do computador) — o
-// picker de arquivo .gpx fica dentro do modal (botão "Carregar GPX do
-// computador").
-editGpxBtn.addEventListener('click', () => openSavedRoutesModal());
+// "Carregar" (na barra de edição #trace-controls) abre o modal de carregar
+// rota (do servidor ou do computador) — o picker de .gpx fica dentro do modal
+// ("Carregar GPX do computador"). Carregar com a edição já aberta só troca o
+// traçado (os caminhos de load fazem `if (!drawingMode) enterDrawingMode()`).
+document.getElementById('trace-load')?.addEventListener('click', () => openSavedRoutesModal());
 editGpxInput.addEventListener('change', () => {
   const file = editGpxInput.files?.[0];
   editGpxInput.value = '';
