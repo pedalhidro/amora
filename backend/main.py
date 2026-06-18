@@ -235,10 +235,15 @@ def _valid_live_token(t):
 @app.after_request
 def _live_cors(resp):
     if request.path.startswith("/live-location"):  # cobre singular, /stop e plural
+        # A resposta varia por origem (ACAO só p/ origens da allowlist), então
+        # Origin SEMPRE entra no Vary — inclusive p/ origens fora da lista, senão
+        # um cache compartilhado poderia servir a resposta de uma origem a outra.
+        # vary.add NÃO sobrescreve um Vary já presente (ex.: Accept-Encoding do
+        # flask-compress), ao contrário de `headers["Vary"] = ...`.
+        resp.vary.add("Origin")
         origin = request.headers.get("Origin")
         if origin in _LIVE_CORS_ORIGINS:
             resp.headers["Access-Control-Allow-Origin"] = origin
-            resp.headers["Vary"] = "Origin"
             resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
             resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
     return resp
@@ -343,7 +348,8 @@ def post_live_location_stop():
     if request.method == "OPTIONS":
         return ("", 204)
     data = request.get_json(silent=True) or {}
-    _live_positions.pop(str(data.get("id") or "").strip(), None)
+    with _live_positions_lock:   # mesma disciplina dos outros acessos ao dict
+        _live_positions.pop(str(data.get("id") or "").strip(), None)
     return jsonify(ok=True)
 
 

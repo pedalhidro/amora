@@ -5,7 +5,7 @@ every passeio of the collective drawn on top of it, filterable by date, with
 the linked Instagram post embedded on click. Includes an in-browser GPX
 drawing tool and a photo overlay sourced from RDF/Turtle. Architecture and
 conventions in [CLAUDE.md](CLAUDE.md); ontology notes in
-[research/photos-rdf/DESIGN.md](research/photos-rdf/DESIGN.md); self-hosted
+[docs/DESIGN.md](docs/DESIGN.md); self-hosted
 backend in [backend/README.md](backend/README.md).
 
 ## What it does
@@ -38,6 +38,14 @@ backend in [backend/README.md](backend/README.md).
   video.
 - **Loop de áudio** — same clip catalog, ambient audio-only mode with
   longer crossfades. Independent of Animação.
+- **Localização ao vivo** — opt-in, pseudonymous, ephemeral live-location
+  sharing (the 📍 icon on the "Pessoas ao vivo" layer row): broadcast your
+  moving position under a nickname for a chosen retention window, and others
+  see each rider as a live marker + trail that expires on a server TTL.
+  Backed by the backend's `/live-location` + `/live-locations` endpoints
+  (in-memory, never persisted). A Capacitor native shell (`capacitor/`)
+  wraps this same web app so the broadcast keeps running with the screen
+  off — see [capacitor/README.md](capacitor/README.md).
 - Mobile-first UI: bottom-sheet dialogs (Camadas, Rotas, Enviar,
   Ajustes, Ajuda), dual-thumb date slider with native date pickers on
   the labels, dark theme with orange accent. PWA installable as "Amora".

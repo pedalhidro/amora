@@ -187,6 +187,20 @@
           <details class="help-changelog">
             <summary>Novidades (changelog)</summary>
             <dl>
+              <dt>17/06/2026 · v269</dt>
+              <dd>
+                <ul>
+                  <li>Ao compartilhar a localização, se o GPS não conseguir um sinal (sem ser falta de permissão), agora aparece um aviso — antes ficava parecendo que estava transmitindo sem enviar nada. Desempenho do rastro ao vivo também melhorado.</li>
+                </ul>
+              </dd>
+              <dt>17/06/2026 · v268</dt>
+              <dd>
+                <ul>
+                  <li><strong>Localização ao vivo:</strong> ao voltar pro app depois de bloquear a tela ou trocar de aplicativo, a transmissão volta a funcionar sozinha — antes ela parava calada, mas o botão continuava marcado como “ligado”.</li>
+                  <li><strong>“Mostrar minha localização”</strong> não fica mais dando zoom a cada atualização: centraliza só no primeiro acerto e depois deixa o mapa quieto.</li>
+                  <li>Correção (iOS): focar os campos de <em>Compartilhar localização</em> não dá mais <strong>zoom na interface</strong> — a correção da v262 não estava pegando nesses campos.</li>
+                </ul>
+              </dd>
               <dt>17/06/2026 · v262</dt>
               <dd>
                 <ul>
@@ -449,7 +463,7 @@
             <input type="text" id="share-name-input" maxlength="40" placeholder="ex.: pedalante"></label>
           <label class="settings-row"><span>Guardar o rastro por</span>
             <span class="ttl-fields">
-              <input type="number" id="share-name-ttl-h" min="0" max="24" step="1" value="3" aria-label="horas"><span class="ttl-sep">h</span>
+              <input type="number" id="share-name-ttl-h" min="0" max="23" step="1" value="3" aria-label="horas"><span class="ttl-sep">h</span>
               <input type="number" id="share-name-ttl-m" min="0" max="59" step="1" value="0" aria-label="minutos"><span class="ttl-sep">min</span>
             </span></label>
           <div class="settings-actions">

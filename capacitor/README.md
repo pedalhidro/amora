@@ -29,8 +29,10 @@ bloqueio; no Android a página é congelada).
 ## Pré-requisitos
 
 - Node ≥ 18 (`@capacitor/cli`).
-- **iOS:** macOS + Xcode + uma conta Apple Developer (US$ 99/ano) para
-  distribuir. Simulador não dá GPS de verdade — teste em device físico.
+- **iOS:** macOS + Xcode + CocoaPods (`sudo gem install cocoapods` — o
+  `npx cap sync ios` roda `pod install`) + uma conta Apple Developer
+  (US$ 99/ano) para distribuir. Simulador não dá GPS de verdade — teste em
+  device físico.
 - **Android:** Android Studio + SDK; conta Google Play Developer (US$ 25, único)
   para publicar.
 
@@ -51,6 +53,24 @@ npx cap sync
 > de incompatibilidade, alinhe tudo na mesma major: `npm install @capacitor/core@latest
 > @capacitor/cli@latest @capacitor/ios@latest @capacitor/android@latest
 > @capacitor-community/background-geolocation@latest` e rode `npx cap sync`.
+
+### Ícones e splash
+
+As artes-fonte ficam versionadas em `assets/`: `icon.png` (1024×1024) e
+`splash.png` (2732×2732, ícone centralizado no fundo escuro `#0f1721`). O app é
+dark-only, então **um único `splash.png` serve aos modos claro e escuro** — não
+mantenha um `splash-dark.png` separado idêntico ao claro (só implica suporte a
+dark que visualmente não existe). Se um dia quiser um splash claro de verdade,
+aí sim adicione um `splash-dark.png` genuinamente distinto. Gere os ícones e
+telas nativos com:
+
+```sh
+npm run icons   # capacitor-assets generate
+```
+
+Rode depois do `npx cap add` (e sempre que trocar as artes), seguido de
+`npx cap sync`. Trocar o ícone/splash exige rebuild nativo — não basta
+republicar o `web/`.
 
 ## Config nativa obrigatória
 
@@ -123,8 +143,10 @@ publicar o `web/` e dar pull-to-refresh no celular.
 3. **Bloqueie o telefone e ponha no bolso.** De outro aparelho (ou navegador),
    confirme que o marcador continua se movendo.
 4. Confirme a notificação persistente (Android).
-5. Desligue o toggle → as atualizações param e o marcador some em ~2 min (TTL do
-   servidor) ou na hora (o `/live-location/stop` é disparado no desligar).
+5. Desligue o toggle → as atualizações param na hora. O marcador e o rastro
+   **permanecem visíveis até expirar a retenção** escolhida no modal (default
+   3 h) — desligar só interrompe novos envios. O `/live-location/stop` (apagar
+   o rastro na hora) existe mas **não** é disparado automaticamente.
 
 ## Publicação (resumo)
 

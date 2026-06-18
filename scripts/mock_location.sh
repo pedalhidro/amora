@@ -28,14 +28,26 @@ ID="${1:-abcdef01}"          # precisa ser hex (+hífens); o backend rejeita o r
 NAME="${2:-fulanapedalante}"
 TTL="${TTL:-10800}"          # retenção do rastro em s (3h)
 
+command -v python >/dev/null || { echo 'python não encontrado no PATH' >&2; exit 1; }
+
 lat=-23.55; lng=-46.63
 echo "POST $BASE/live-location  ·  id=$ID  name=$NAME  ·  40 pontos (~2 min)"
 for i in $(seq 1 40); do
-  read lat lng acc <<<"$(python -c "import random; print($lat+random.uniform(-3e-4,3e-4), $lng+random.uniform(-3e-4,3e-4), round(random.uniform(8,40),1))")"
-  code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/live-location" \
+  # Guarda a substituição: `read x <<<"$(cmd que falha)"` NÃO dispara o set -e,
+  # então sem isto um python quebrado seguiria postando JSON malformado 40x calado.
+  pt=$(python -c "import random; print($lat+random.uniform(-3e-4,3e-4), $lng+random.uniform(-3e-4,3e-4), round(random.uniform(8,40),1))") \
+    || { echo 'python falhou ao gerar o ponto' >&2; exit 1; }
+  read lat lng acc <<<"$pt"
+  resp=$(curl -s -w '\n%{http_code}' -X POST "$BASE/live-location" \
     -H 'Content-Type: application/json' \
-    -d "{\"id\":\"$ID\",\"name\":\"$NAME\",\"lat\":$lat,\"lng\":$lng,\"accuracy\":$acc,\"ttl\":$TTL}")
-  printf '%2d/40  HTTP %s  (%.5f, %.5f)  acc=%s\n' "$i" "$code" "$lat" "$lng" "$acc"
+    -d "{\"id\":\"$ID\",\"name\":\"$NAME\",\"lat\":$lat,\"lng\":$lng,\"accuracy\":$acc,\"ttl\":$TTL}") || true
+  code=${resp##*$'\n'}; body=${resp%$'\n'*}
+  printf '%2d/40  HTTP %s  (%.5f, %.5f)  acc=%s\n' "$i" "${code:-000}" "$lat" "$lng" "$acc"
+  case "$code" in
+    2*) ;;                                          # ok
+    *) [ -n "$body" ] && printf '   ↳ %s\n' "$body" >&2   # erro do backend (id inválido, muitos peers…)
+       case "${code:-000}" in 4*|000) echo 'abortando: provável id/porta inválidos' >&2; exit 1;; esac ;;
+  esac
   sleep 3
 done
 echo "done. GET $BASE/live-locations to inspect."

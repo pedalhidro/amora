@@ -8,7 +8,7 @@
 
 // Marcador de build — confira no console (`window.__PHIDRO_BUILD`) pra saber
 // se o browser está rodando o app.js mais novo (deve casar com o sw VERSION).
-window.__PHIDRO_BUILD = 267;
+window.__PHIDRO_BUILD = 269;
 
 const ROUTES_JSON_URL = 'routes.json';
 const SP = [-23.5505, -46.6333];
@@ -191,12 +191,18 @@ const LAYER_ORDER_KEY = 'phidro:layerOrder';
 let layerOrder = DEFAULT_LAYER_ORDER.slice();
 try {
   const saved = JSON.parse(localStorage.getItem(LAYER_ORDER_KEY) || 'null');
-  // Só aceita se cobrir exatamente o mesmo conjunto — senão uma camada nova
-  // (ou removida) deixaria a ordem inconsistente; cai no padrão.
-  if (Array.isArray(saved) &&
-      saved.length === DEFAULT_LAYER_ORDER.length &&
-      DEFAULT_LAYER_ORDER.every((k) => saved.includes(k))) {
-    layerOrder = saved;
+  // Reconcilia em vez de descartar: preserva a ordem salva do usuário e só
+  // encaixa as camadas novas (ausentes no salvo) na posição padrão delas,
+  // descartando ids que não existem mais. Assim adicionar uma camada (ex.:
+  // 'route-highlight') NÃO zera o empilhamento personalizado de quem já tinha.
+  if (Array.isArray(saved) && saved.length) {
+    // filtra ids inválidos E dedupa (indexOf === i) — localStorage corrompido
+    // à mão não pode duplicar um pane e atribuir z-index duas vezes.
+    const merged = saved.filter((k, i) => DEFAULT_LAYER_ORDER.includes(k) && saved.indexOf(k) === i);
+    DEFAULT_LAYER_ORDER.forEach((k, defIdx) => {
+      if (!merged.includes(k)) merged.splice(Math.min(defIdx, merged.length), 0, k);
+    });
+    layerOrder = merged;
   }
 } catch { /* ignora JSON inválido */ }
 // Cria os panes ANTES de qualquer camada que os referencie. Tiles e vetores
@@ -3816,14 +3822,16 @@ function liveColorForId(id) {
 
 let _liveWatchId = null;       // id do navigator.geolocation.watchPosition
 let _livePollTimer = null;     // setInterval da leitura
+let _livePollMs = null;        // intervalo (ms) atualmente aplicado — só recria o timer se mudar
 let _liveLastSentMs = 0;       // throttle do envio (settings.liveLocation.shareMs)
+let _liveGeoErrShown = false;  // já avisei de falha de GPS (code 2/3) nesta sessão de envio?
 // Ver e transmitir são independentes: dá pra ver as pessoas no mapa sem
 // transmitir a própria posição (e vice-versa). Cada um tem seu flag de
 // estado aplicado pra evitar start/stop repetido.
 let _liveViewing = false;      // poll + render ligado
 let _liveSharing = false;      // transmissão da minha posição ligada
 let _liveBandOpacity = 0.7;    // opacidade dos pontos do rastro (slider em Pessoas ao vivo)
-const _personMarkers = new Map();   // token -> { marker, band, trail, ticks, last }
+const _personMarkers = new Map();   // token -> { marker, trail, ticks, tickDots, last }
 // Ajustes por pessoa (clique no dot abre um popup): { token: {color?, opacity?, hideHistory?} }.
 // Persistido localmente, aplicado em upsertPersonMarker.
 const LIVE_OVERRIDES_KEY = 'phidro:livePersonOverrides';
@@ -3832,6 +3840,22 @@ try { _personOverrides = JSON.parse(localStorage.getItem(LIVE_OVERRIDES_KEY)) ||
 function saveLiveOverrides() {
   try { localStorage.setItem(LIVE_OVERRIDES_KEY, JSON.stringify(_personOverrides)); } catch {}
 }
+// Os ajustes-por-pessoa usam tokens efêmeros como chave; sem poda o mapa cresce
+// pra sempre no localStorage. `ts` é gravado quando o usuário mexe nos ajustes
+// de alguém (reapply abaixo). Entradas sem ts (legado) ganham carimbo agora; as
+// não-tocadas há mais de 30 dias são descartadas.
+const LIVE_OVERRIDE_TTL_MS = 30 * 24 * 3600 * 1000;
+function pruneLiveOverrides() {
+  const now = Date.now();
+  let changed = false;
+  for (const [token, ov] of Object.entries(_personOverrides)) {
+    if (!ov || typeof ov !== 'object') { delete _personOverrides[token]; changed = true; continue; }
+    if (!Number.isFinite(ov.ts)) { ov.ts = now; changed = true; }
+    else if (now - ov.ts > LIVE_OVERRIDE_TTL_MS) { delete _personOverrides[token]; changed = true; }
+  }
+  if (changed) saveLiveOverrides();
+}
+pruneLiveOverrides();
 
 function livePeoplePane() {
   if (!map.getPane('livePeople')) {
@@ -3899,7 +3923,7 @@ function upsertPersonMarker(p, mine) {
     const marker = L.marker(ll, { icon, pane: livePeoplePane(), zIndexOffset: 1000 });
     marker.addTo(map);
     marker.on('click', () => openLivePersonControls(p.id));
-    e = { marker, trail: null, ticks: null, last: null };
+    e = { marker, trail: null, ticks: null, tickDots: [], last: null };
     _personMarkers.set(p.id, e);
   } else {
     e.marker.setLatLng(ll);
@@ -3928,25 +3952,44 @@ function upsertPersonMarker(p, mine) {
     map.removeLayer(e.trail); e.trail = null;
   }
   // Pontos do rastro: raio cresce com a incerteza (px); hover/toque mostra "há
-  // quanto tempo" (q[3] = idade em s). Downsample p/ ~40 por pessoa.
-  if (!e.ticks) { e.ticks = L.layerGroup().addTo(map); }
-  e.ticks.clearLayers();
+  // quanto tempo" (q[3] = idade em s). Downsample p/ ~40 por pessoa. Reusa os
+  // circleMarkers entre polls (setLatLng/setStyle), em vez de destruir+recriar
+  // ~40 layers a cada poll — mesmo padrão do marcador-cabeça e da linha.
+  if (!e.ticks) { e.ticks = L.layerGroup().addTo(map); e.tickDots = []; }
+  const sampled = [];
   if (showHistory && pts.length) {
     const tstep = Math.max(1, Math.ceil(pts.length / 40));
     for (let k = 0; k < pts.length; k += tstep) {
       const q = pts[k];
-      if (!Number.isFinite(q[0]) || !Number.isFinite(q[1])) continue;
-      const acc = Number.isFinite(q[2]) && q[2] > 0 ? q[2] : 0;
-      const radius = Math.max(2.5, Math.min(14, 2 + acc / 5));   // px ~ incerteza
-      // Sem borda (stroke:false) — assim opacidade 0 some de vez (a borda não
-      // ficava visível antes).
-      const dot = L.circleMarker([q[0], q[1]], { pane: liveTrailsPane(), radius,
-        stroke: false, fillColor: color, fillOpacity: _liveBandOpacity * opMul });
-      dot.bindTooltip(formatLiveAgo(q[3]), { direction: 'top', sticky: true });
-      dot.on('click', () => dot.openTooltip());   // suporte a toque
-      dot.addTo(e.ticks);
+      if (Number.isFinite(q[0]) && Number.isFinite(q[1])) sampled.push(q);
     }
   }
+  for (let k = 0; k < sampled.length; k++) {
+    const q = sampled[k];
+    const acc = Number.isFinite(q[2]) && q[2] > 0 ? q[2] : 0;
+    const radius = Math.max(2.5, Math.min(14, 2 + acc / 5));   // px ~ incerteza
+    const ago = formatLiveAgo(q[3]);
+    let dot = e.tickDots[k];
+    if (!dot) {
+      // Sem borda (stroke:false) — assim opacidade 0 some de vez.
+      dot = L.circleMarker([q[0], q[1]], { pane: liveTrailsPane(), radius,
+        stroke: false, fillColor: color, fillOpacity: _liveBandOpacity * opMul });
+      dot.on('click', () => dot.openTooltip());   // suporte a toque
+      dot.bindTooltip(ago, { direction: 'top', sticky: true });
+      dot.addTo(e.ticks);
+      e.tickDots[k] = dot;
+    } else {
+      dot.setLatLng([q[0], q[1]]);
+      dot.setRadius(radius);
+      dot.setStyle({ fillColor: color, fillOpacity: _liveBandOpacity * opMul });
+      dot.setTooltipContent(ago);
+    }
+  }
+  // Remove o excedente (rastro encolheu ou histórico foi escondido).
+  for (let k = sampled.length; k < e.tickDots.length; k++) {
+    if (e.tickDots[k]) e.ticks.removeLayer(e.tickDots[k]);
+  }
+  e.tickDots.length = sampled.length;
   // Tempo da posição atual no próprio dot (hover/toque).
   const ago = formatLiveAgo(p.age);
   if (e.marker.getTooltip()) e.marker.setTooltipContent(ago);
@@ -3976,7 +4019,7 @@ function openLivePersonControls(token) {
     .setLatLng(e.marker.getLatLng()).setContent(html).openOn(map);
   const root = popup.getElement();
   if (!root) return;
-  const reapply = () => { saveLiveOverrides(); if (e.last) upsertPersonMarker(e.last, mine); };
+  const reapply = () => { ov.ts = Date.now(); saveLiveOverrides(); if (e.last) upsertPersonMarker(e.last, mine); };
   root.querySelector('.lc-color').addEventListener('input', (ev) => { ov.color = ev.target.value; reapply(); });
   root.querySelector('.lc-op').addEventListener('input', (ev) => { ov.opacity = Number(ev.target.value) / 100; reapply(); });
   root.querySelector('.lc-hist').addEventListener('change', (ev) => { ov.hideHistory = !ev.target.checked; reapply(); });
@@ -4082,10 +4125,16 @@ async function stopNativeBackgroundWatch() {
 }
 
 function startLiveShare() {
-  if (liveIsNative()) { startNativeBackgroundWatch(); return; }
+  // No shell nativo devolve a Promise<boolean> do watcher pra applyLiveLocation
+  // poder desfazer o estado se o background-geolocation não subir (permissão
+  // negada / erro do plugin). No browser retorna undefined (erros são tratados
+  // no callback de watchPosition).
+  if (liveIsNative()) return startNativeBackgroundWatch();
   if (_liveWatchId != null || !navigator.geolocation) return;
+  _liveGeoErrShown = false;
   _liveWatchId = navigator.geolocation.watchPosition(
     (pos) => {
+      _liveGeoErrShown = false;   // recuperou o sinal — pode avisar de novo se cair
       const c = pos.coords;
       sendLivePosition(c.latitude, c.longitude, c.accuracy,
         Number.isFinite(c.heading) ? c.heading : NaN);
@@ -4097,6 +4146,12 @@ function startLiveShare() {
         applyLiveLocation();
         const cb = document.querySelector('[data-setting="liveLocation.enabled"]');
         if (cb) cb.checked = false;
+      } else if (err && (err.code === 2 || err.code === 3) && !_liveGeoErrShown) {
+        // POSITION_UNAVAILABLE / TIMEOUT: o watch segue tentando (perder o GPS
+        // por um tempo é comum pedalando), mas avisa UMA vez pra não mentir
+        // "transmitindo" enquanto nenhuma posição é enviada.
+        _liveGeoErrShown = true;
+        showToast('Não foi possível obter sua localização — tentando de novo.');
       }
     },
     { enableHighAccuracy: true, maximumAge: 3000, timeout: 20000 },
@@ -4117,8 +4172,14 @@ function stopLiveShare() {
 // os dots existentes na hora; os recriados a cada poll já leem a var.
 function setLiveBandOpacity(frac) {
   _liveBandOpacity = Math.max(0, Math.min(1, frac));
-  for (const e of _personMarkers.values()) {
-    if (e.ticks) e.ticks.eachLayer((c) => c.setStyle && c.setStyle({ fillOpacity: _liveBandOpacity }));
+  // Reaplica respeitando o multiplicador de opacidade por pessoa (opMul), do
+  // mesmo jeito que upsertPersonMarker — senão o slider sobrescreveria o ajuste
+  // individual de quem parou de reportar (não volta sozinho no próximo poll).
+  for (const [token, e] of _personMarkers.entries()) {
+    if (!e.ticks) continue;
+    const ov = _personOverrides[token] || {};
+    const opMul = Number.isFinite(ov.opacity) ? Math.max(0, Math.min(1, ov.opacity)) : 1;
+    e.ticks.eachLayer((c) => c.setStyle && c.setStyle({ fillOpacity: _liveBandOpacity * opMul }));
   }
 }
 
@@ -4142,25 +4203,46 @@ function applyLiveLocation() {
     _liveViewing = wantView;
     if (wantView) {
       pollLivePositions();
-      _livePollTimer = setInterval(pollLivePositions,
-        Math.max(1500, settings.liveLocation?.pollMs || 4000));
+      _livePollMs = Math.max(1500, settings.liveLocation?.pollMs || 4000);
+      _livePollTimer = setInterval(pollLivePositions, _livePollMs);
     } else {
       if (_livePollTimer != null) { clearInterval(_livePollTimer); _livePollTimer = null; }
+      _livePollMs = null;
       clearPersonMarkers();
     }
   } else if (wantView && _livePollTimer != null) {
-    // Sem transição: re-aplica o intervalo de poll caso pollMs tenha mudado.
-    clearInterval(_livePollTimer);
-    _livePollTimer = setInterval(pollLivePositions,
-      Math.max(1500, settings.liveLocation?.pollMs || 4000));
+    // Sem transição: só recria o timer se pollMs mudou de verdade. Antes,
+    // qualquer mudança de Ajustes/visibilidade reiniciava a cadência (o próximo
+    // fetch escorregava até um intervalo inteiro pra frente).
+    const ms = Math.max(1500, settings.liveLocation?.pollMs || 4000);
+    if (ms !== _livePollMs) {
+      clearInterval(_livePollTimer);
+      _livePollMs = ms;
+      _livePollTimer = setInterval(pollLivePositions, ms);
+    }
   }
 
   // ── Transmitir (independente do ver): ligado se `enabled`.
   const wantShare = !!settings.liveLocation?.enabled;
   if (wantShare !== _liveSharing) {
     _liveSharing = wantShare;
-    if (wantShare) startLiveShare();
-    else stopLiveShare();
+    if (wantShare) {
+      // startLiveShare pode ser assíncrono (shell nativo). Se o watcher de
+      // background não subir (resolve false — permissão negada / erro do
+      // plugin), desfaz o estado pra não mentir "transmitindo" e permitir nova
+      // tentativa, espelhando o tratamento de PERMISSION_DENIED do browser. No
+      // browser startLiveShare devolve undefined (≠ false), então sem rollback.
+      Promise.resolve(startLiveShare()).then((ok) => {
+        if (ok === false) {
+          _liveSharing = false;
+          settings.liveLocation.enabled = false;
+          saveSettings();
+          _syncShareCheckbox();
+          updateShareLocBtn();
+          showToast('Não foi possível iniciar o compartilhamento ao vivo.');
+        }
+      });
+    } else stopLiveShare();
   }
   updateShareLocBtn();   // mantém o botão do topbar em sincronia com `enabled`
 }
@@ -4236,8 +4318,14 @@ document.getElementById('share-name-input')?.addEventListener('keydown', (e) => 
 // Pausa/retoma o poll quando a aba some/volta (só afeta o ver).
 document.addEventListener('visibilitychange', applyLiveLocation);
 // Ao fechar/ocultar a aba, só encerra o watch local — o rastro permanece no
-// servidor até expirar (3h).
-window.addEventListener('pagehide', () => { if (_liveSharing) stopLiveShare(); });
+// servidor até expirar (3h). Zera _liveSharing pra que o próximo reconcile
+// (visibilitychange/pageshow) veja a transição e religue: pagehide também
+// dispara ao entrar no bfcache (trocar de app / bloquear a tela), onde a página
+// segue viva — sem isso o watch morria mas o estado dizia "ainda transmitindo".
+window.addEventListener('pagehide', () => { if (_liveSharing) { stopLiveShare(); _liveSharing = false; } });
+// Volta do bfcache (pageshow persisted): a página continua com enabled=true mas
+// o watch foi encerrado no pagehide — reconcilia pra religar a transmissão.
+window.addEventListener('pageshow', (e) => { if (e.persisted) applyLiveLocation(); });
 // Boot: liga o "ver pessoas ao vivo" já no load (default on), sem depender de
 // abrir Ajustes — mesmo padrão dos outros apply*() chamados na inicialização.
 applyLiveLocation();
@@ -4551,6 +4639,10 @@ function closeOtherMobileDialogs(except) {
   }
   if (except !== 'censo' && censoModal && !censoModal.hidden) {
     censoModal.hidden = true;
+  }
+  if (except !== 'share') {
+    const shareModal = document.getElementById('share-name-modal');
+    if (shareModal && !shareModal.hidden) shareModal.hidden = true;
   }
 }
 

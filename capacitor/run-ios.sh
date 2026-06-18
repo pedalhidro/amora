@@ -21,6 +21,14 @@ if [[ "${1:-}" == "--list" ]]; then
   exit 0
 fi
 
+# Rejeita flags desconhecidas no 1º arg — senão `./run-ios.sh --target X` viraria
+# TARGET=--target e passaria `--target --target` pro cap, calado.
+if [[ "${1:-}" == --* ]]; then
+  echo "Opção desconhecida: $1" >&2
+  echo "Uso: ./run-ios.sh [<UDID>|--list]" >&2
+  exit 1
+fi
+
 if [[ ! -d ios ]]; then
   echo "Projeto ios/ ausente. Faça o setup uma vez:" >&2
   echo "  npm install && npx cap add ios && npx cap sync ios" >&2

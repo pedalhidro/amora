@@ -18,6 +18,14 @@ if [[ "${1:-}" == "--list" ]]; then
   exit 0
 fi
 
+# Rejeita flags desconhecidas no 1º arg — senão `./run-android.sh --target X`
+# viraria TARGET=--target e passaria `--target --target` pro cap, calado.
+if [[ "${1:-}" == --* ]]; then
+  echo "Opção desconhecida: $1" >&2
+  echo "Uso: ./run-android.sh [<serial>|--list]" >&2
+  exit 1
+fi
+
 if [[ ! -d android ]]; then
   echo "Projeto android/ ausente. Faça o setup uma vez:" >&2
   echo "  npm install && npx cap add android && npx cap sync android" >&2

@@ -71,13 +71,29 @@ local-first.
   clips are re-encoded), `migrate-bnodes-to-iris.py` (one-shot migration:
   converted the historical blank nodes in `tours.ttl`/`uploads.ttl` into the
   derived-IRI convention — idempotent, removable once it's clearly not needed
-  again), `gen-synthetic-rdf.py`, `exiftool_ph.config`.
+  again), `gen-synthetic-rdf.py`, `mock_location.sh` (empurra posições de
+  teste da localização ao vivo pro backend — random walk, 1 ponto/3 s; bate no
+  remoto amora por padrão, `--local` p/ 127.0.0.1:8080; curl não precisa de
+  CORS), `exiftool_ph.config`.
   `build-photos.py` and
   `build-routes.mjs` are legacy artefacts pending removal — see "Open
   loose ends".
 - `docs/` — design-reference notes not loaded at runtime. `DESIGN.md`
   (RDF substrate / ontology design rationale) and `ICON_DESIGN.md` (PWA
   icon decisions). Excluded from the Cloud Run container.
+- `capacitor/` — native iOS/Android shell (Capacitor) that wraps the SAME
+  web app. `capacitor.config.json` points `server.url` at
+  `https://amora.pedalhidrografi.co` (loads the published site —
+  `location.origin` stays amora, so no CORS), with the
+  `@capacitor-community/background-geolocation` plugin. The one thing it buys
+  over the PWA: **Localização ao vivo keeps transmitting with the screen off /
+  app backgrounded** (the background bridge lives in `web/app.js` —
+  `window.phidroLivePush`). `run-ios.sh` / `run-android.sh` build+deploy to a
+  physical device via `npx cap run` without opening Xcode/Android Studio;
+  `npm run icons` regenerates app icon + splash from `assets/` via
+  `@capacitor/assets`. `README.md`, plus gitignored `android/`, `ios/`,
+  `www/`, `node_modules/`. Edits to `web/` alone need NO native rebuild — the
+  app loads the remote site (so iterate by deploying `web/`, not rebuilding).
 
 ## Architecture
 
@@ -127,7 +143,16 @@ Key flows:
   AND `ph:Video` (videos use the same `photoDivIcon` markup as photos with
   a red-orange border modifier `.photo-dot-video`; both participate in the
   same density-based clustering via `relaxPhotoMarkers`). GPS from
-  `schema:locationCreated`, popup from triples. The **Configurações** modal
+  `schema:locationCreated`, popup from triples. The **layer panel** gained
+  per-row action icons (fixed column: ▲/▼ to stack inline — the old ordering
+  modal was removed — plus an action icon: ☰ Rotas / 📍 Compartilhar / ✨
+  Animação / ⬆ Enviar / ✎ or ⚙ config / 🗑) and persists per-layer
+  visibility + opacity across sessions. The **Destacar rota ★** button in a
+  route's modal draws a ~1.5×-thicker copy and materializes the **Rota
+  destacada** layer (hidden until a highlight exists; its 🗑 clears it —
+  `addRouteHighlight` / `clearRouteHighlight` / `setRouteHighlightRow`). In the
+  trace-edit toolbar the old **Editar** is now **📂 Carregar** (`#trace-load`,
+  opens the load-route modal). The **Configurações** modal
   (gear icon in the topbar) lets the user switch between Servidor
   (same-origin; persisted source value `'server'`, legacy `'pi'` is migrated
   on load), CDN, or Local (kit ZIP file picker — stored in memory, image
@@ -176,6 +201,22 @@ Key flows:
   derived IRIs) from `uploads.ttl` AND delete the underlying blobs from the
   store. The frontend popups have a red-orange Excluir button gated by a
   `confirm()` dialog.
+- **Localização ao vivo.** A camada "Pessoas ao vivo" (painel de camadas;
+  ligada por default só p/ VER — nunca arranca transmitindo, por privacidade)
+  faz polling de `GET /live-locations` e desenha cada pessoa: marcador
+  `divIcon` com anel colorido + inicial + (opcional) seta de rumo, esmaecendo
+  via `.is-stale` quando o fix envelhece. O rastro é uma linha ligando os
+  fixes + pontos cujo tamanho reflete a `accuracy` de cada um (o slider da
+  camada controla a opacidade dos pontos, `_liveBandOpacity`). Clicar numa
+  pessoa abre um popup p/ ajustar cor/opacidade/esconder o histórico dela
+  (persistido em `phidro:livePersonOverrides`). O ícone 📍 da linha abre um
+  modal (apelido + retenção hh/mm do rastro, default 3 h) e liga/desliga a
+  transmissão da própria posição (token = `crypto.randomUUID()` por
+  dispositivo, POST `/live-location`; no browser via `watchPosition`, no shell
+  nativo via background-geolocation com a tela apagada). Ver e transmitir são
+  flags independentes (`_liveViewing` / `_liveSharing`), reconciliados por
+  `applyLiveLocation` a cada mudança de Ajustes / `visibilitychange` /
+  `pageshow`.
 - **Tour CRUD & Censo.** `POST /upload-tour` accepts a TTL fragment
   describing exactly one `phd:tour_<id> a ph:Tour` (plus any new
   `phd:pessoa*` / `phd:assoc_*` declarations it references) and upserts
@@ -246,7 +287,21 @@ Key flows:
   Mutations: `POST /upload-image`, `POST /upload-video`,
   `POST /upload-tour` (`mode=replace|patch` + `remove` — see Tour CRUD),
   `POST /delete-image/<phash>`, `POST /delete-video/<vhash>`,
-  `POST /delete-tour/<tour_id>`.
+  `POST /delete-tour/<tour_id>`. Localização ao vivo (efêmera, EM MEMÓRIA —
+  NÃO toca os catálogos): `POST /live-location` (upsert da posição + rastro de
+  um token pseudônimo; body JSON `{id, name?, lat, lng, accuracy?, heading?,
+  ttl?}`; rastro thinned por tempo/distância, teto 500 pts/pessoa e 500
+  pessoas), `GET /live-locations` (posições não-expiradas + rastro de cada
+  uma; `Cache-Control: no-store`, sem ETag), `POST /live-location/stop` (apaga
+  o próprio token na hora — NÃO chamado automaticamente; fica p/ um "apagar
+  meu rastro" explícito). Estado em `_live_positions` (dict por token sob
+  `_live_positions_lock`), retenção por token (`ttl` em s, default 3 h, teto
+  24 h, podada em `_prune_live`). CORS é aberto SÓ nestes endpoints
+  (`_LIVE_CORS_ORIGINS` = `capacitor://` / `ionic://` / `http(s)://localhost`,
+  via `@app.after_request _live_cors`) pro shell nativo Capacitor — uploads/
+  CRUD seguem same-origin. Estado por-processo: no Cloud Run **exige a
+  instância fixa em 1** (min=max=1), senão POST e GET caem em processos
+  diferentes e o app não vê (mesma razão do `--workers 1`).
 
 ## Clips workflow
 
