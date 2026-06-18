@@ -8,7 +8,7 @@
 
 // Marcador de build — confira no console (`window.__PHIDRO_BUILD`) pra saber
 // se o browser está rodando o app.js mais novo (deve casar com o sw VERSION).
-window.__PHIDRO_BUILD = 262;
+window.__PHIDRO_BUILD = 267;
 
 const ROUTES_JSON_URL = 'routes.json';
 const SP = [-23.5505, -46.6333];
@@ -3753,7 +3753,10 @@ let locateControl = null;
 if (L.control.locate) {
   locateControl = L.control.locate({
     position: 'topleft',
-    setView: 'untilPan',
+    // 'once': centraliza/zooma só no PRIMEIRO fix; depois disso o mapa não se
+    // mexe mais (cada update do watchPosition reposicionava + re-zoomava pra
+    // caber o círculo de precisão, que vai encolhendo → ficava dando zoom).
+    setView: 'once',
     flyTo: true,
     cacheLocation: true,
     drawCircle: true,
@@ -5436,6 +5439,9 @@ async function _renderTourSummary(tourId) {
 function openRouteModal(id) {
   const r = routes.get(id);
   if (!r) return;
+  // No mobile a sidebar (z 5500) fica ACIMA do modal de rota (z 5000); sem
+  // fechá-la, tocar numa rota "abria" o modal atrás dela (parecia não abrir).
+  if (typeof closeOtherMobileDialogs === 'function') closeOtherMobileDialogs('route');
   focusRoute(id);
 
   const entry = r.entry;

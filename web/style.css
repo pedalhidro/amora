@@ -173,6 +173,15 @@ body.header-hidden .leaflet-top {
     padding: 4px 6px;
     font-size: 11px;
   }
+  /* iOS dá zoom automático ao focar um input com font-size < 16px (some com a
+     barra de cima e não volta). Forçar ≥16px nos campos de texto/número impede
+     esse zoom. (O viewport user-scalable=no já cobre isso na WebView nativa;
+     isto é cinto + suspensório, e também ajuda no Safari, que ignora o meta.) */
+  input[type="text"], input[type="number"], input[type="search"],
+  input[type="email"], input[type="url"], input[type="tel"],
+  input[type="password"], textarea, select {
+    font-size: 16px;
+  }
 }
 /* Espaçador zero-altura entre `Traçar` e `Ajuda` — em viewports estreitos
    onde os 8 botões não cabem inline, força a quebra exatamente aqui pra
@@ -1217,6 +1226,29 @@ body.drawing .draft-line:active { cursor: grabbing; }
 .trace-controls .trace-view:hover {
   background: rgba(45, 169, 255, 0.18);
   border-color: var(--accent);
+}
+/* ── Barra de edição (#trace-controls): ajustes por modo de dispositivo ──── */
+/* Celular RETRATO: só ícones (sem rótulos Carregar/Salvar/Ver) + botões
+   centralizados. As métricas já caem na 2ª linha pelo .trace-break do bloco
+   mobile (max-width:760). */
+@media (orientation: portrait) and (max-width: 600px) {
+  .trace-controls .tb-label { display: none; }
+  body .trace-controls { justify-content: center; }
+}
+/* Celular PAISAGEM (altura baixa): só ícones + TUDO numa linha só (botões +
+   métricas juntos) — sem a quebra que joga as métricas pra baixo. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .trace-controls .tb-label { display: none; }
+  body .trace-controls { flex-wrap: nowrap; justify-content: center; }
+  body .trace-controls .trace-break { display: none; }
+}
+/* iPad RETRATO: mantém os rótulos, mas joga as MÉTRICAS pra 2ª linha (na 1ª
+   linha elas estouravam a barra). */
+@media (orientation: portrait) and (min-width: 601px) and (max-width: 1024px) {
+  .trace-controls { flex-wrap: wrap; max-width: calc(100vw - 160px); }
+  .trace-controls .trace-break {
+    display: block; flex-basis: 100%; width: 100%; height: 0; margin: 0; padding: 0;
+  }
 }
 /* Modo visualização ("Ver"): some com os pontos e rótulos do traçado. */
 body.trace-preview .trackpoint-marker,

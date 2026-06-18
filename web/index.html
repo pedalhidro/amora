@@ -148,9 +148,9 @@
           </select>
         </label>
         <button type="button" id="params-btn" class="params-btn" title="Parâmetros da simulação" aria-label="Parâmetros">⚙</button>
-        <button type="button" id="trace-load" class="trace-load" title="Carregar rota — do servidor ou de um arquivo .gpx" aria-label="Carregar rota">📂 Carregar</button>
-        <button type="button" id="trace-save" class="trace-save" title="Salvar GPX" aria-label="Salvar GPX">⤓🗺︎ Salvar</button>
-        <button type="button" id="trace-view" class="trace-view" title="Ver — oculta os pontos e suaviza o traçado" aria-label="Ver">👁 Ver</button>
+        <button type="button" id="trace-load" class="trace-load" title="Carregar rota — do servidor ou de um arquivo .gpx" aria-label="Carregar rota">📂 <span class="tb-label">Carregar</span></button>
+        <button type="button" id="trace-save" class="trace-save" title="Salvar GPX" aria-label="Salvar GPX">⤓🗺︎ <span class="tb-label">Salvar</span></button>
+        <button type="button" id="trace-view" class="trace-view" title="Ver — oculta os pontos e suaviza o traçado" aria-label="Ver">👁 <span class="tb-label">Ver</span></button>
         <span class="trace-break" aria-hidden="true"></span>
         <span class="trace-metrics" id="trace-metrics">0,00 km · 0,0 kJ</span>
       </div>
@@ -446,7 +446,7 @@
         <div class="share-name-body">
           <p class="muted">Sua posição e a trajetória ficam visíveis para quem estiver no mapa — opt-in, pseudônimo e efêmero. Nada fica salvo permanentemente.</p>
           <label class="settings-row"><span>Apelido (aparece no marcador)</span>
-            <input type="text" id="share-name-input" maxlength="40" placeholder="ex.: Dandan"></label>
+            <input type="text" id="share-name-input" maxlength="40" placeholder="ex.: pedalante"></label>
           <label class="settings-row"><span>Guardar o rastro por</span>
             <span class="ttl-fields">
               <input type="number" id="share-name-ttl-h" min="0" max="24" step="1" value="3" aria-label="horas"><span class="ttl-sep">h</span>
@@ -739,7 +739,7 @@
             </label>
             <label class="settings-row">
               <span>Apelido (aparece no marcador)</span>
-              <input type="text" data-setting="liveLocation.displayName" maxlength="40" placeholder="ex.: Dandan">
+              <input type="text" data-setting="liveLocation.displayName" maxlength="40" placeholder="ex.: pedalante">
             </label>
             <label class="settings-row">
               <span>Mostrar faixa de incerteza</span>
