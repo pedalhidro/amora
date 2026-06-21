@@ -109,6 +109,11 @@ function dijkstra(opts) {
     // these to keep the overall compute monotonic 0→1 across N refs.
     progressBase = 0,
     progressScale = 1,
+    // Bridge/tunnel portals: Map cell → [{to, fwd, bwd}] (directed deck
+    // shortcuts at flat-deck cost). Relaxed alongside the 8 grid neighbours so
+    // a route can cross water/valleys over a bridge. The cells UNDER the deck
+    // are untouched. null = no portals.
+    portalAdj = null,
   } = opts;
 
   const N = H * W;
@@ -204,6 +209,27 @@ function dijkstra(opts) {
         E[nIdx] = tentative;
         if (parents) parents[nIdx] = idx;
         heapPush(heap, tentative, nIdx);
+      }
+    }
+
+    // Bridge/tunnel portals incident to this cell: relax the directed deck
+    // shortcut(s) at the precomputed flat-deck cost (reverse picks the opposite
+    // direction's cost, mirroring the grid dh sign-flip). Same staleness +
+    // budget guards as the grid edges.
+    if (portalAdj) {
+      const ps = portalAdj.get(idx);
+      if (ps) for (let pk = 0; pk < ps.length; pk++) {
+        const p = ps[pk];
+        const nIdx = p.to;
+        if (!mask[nIdx] || settled[nIdx]) continue;
+        const edge = reverse ? p.bwd : p.fwd;
+        const tentative = g + edge;
+        if (eMax > 0 && tentative > eMax) continue;
+        if (tentative < E[nIdx]) {
+          E[nIdx] = tentative;
+          if (parents) parents[nIdx] = idx;
+          heapPush(heap, tentative, nIdx);
+        }
       }
     }
   }
@@ -720,6 +746,28 @@ function maxCostPathOfLength(opts) {
   };
 }
 
+// Build a per-cell portal adjacency from {u, v, lenM}: a directed deck shortcut
+// between each bridge/tunnel's two abutment cells at the flat-deck cost
+// (asymmetric model on the endpoint heights + deck length). Skips a portal whose
+// abutment is off the (effective) mask. null if none.
+function buildPortalAdj(portals, height, mask, alpha, beta, eta) {
+  if (!portals || !portals.n) return null;
+  const { u, v, lenM, n } = portals;
+  const cost = (L, dh) => { if (dh >= 0) return alpha * L + beta * dh; const e = alpha * L - eta * beta * (-dh); return e < 0 ? 0 : e; };
+  const adj = new Map();
+  const add = (a, b, fwd, bwd) => { let arr = adj.get(a); if (!arr) { arr = []; adj.set(a, arr); } arr.push({ to: b, fwd, bwd }); };
+  for (let i = 0; i < n; i++) {
+    const a = u[i], b = v[i], L = lenM[i];
+    if (a < 0 || b < 0 || a === b) continue;
+    if (!mask[a] || !mask[b]) continue;
+    const ha = height[a], hb = height[b];
+    const cAB = cost(L, hb - ha), cBA = cost(L, ha - hb);
+    add(a, b, cAB, cBA);
+    add(b, a, cBA, cAB);
+  }
+  return adj.size ? adj : null;
+}
+
 // ------- Worker message handler -------
 self.onmessage = (ev) => {
   const msg = ev.data;
@@ -748,6 +796,7 @@ self.onmessage = (ev) => {
     interpSmoothing = 0,                                  // number of 3×3 smoothing passes
     maximize = false,                                     // reverse the optimisation: prefer expensive edges
     maximizeLength = 0,                                   // >0 → layered-DP max-cost path of exactly L edges
+    portals = null,                                       // bridge/tunnel deck shortcuts {u,v,lenM,n}
   } = msg;
 
   const wantPath = goalR >= 0 && goalC >= 0;
@@ -787,6 +836,12 @@ self.onmessage = (ev) => {
     effMask = new Uint8Array(N);
     for (let i = 0; i < N; i++) effMask[i] = (mask[i] && networkMask[i]) ? 1 : 0;
   }
+
+  // Bridge/tunnel portals (raster mask+portal): abutment cells must be on the
+  // effective mask. Excluded under maximize (the inverted cost would turn a long
+  // deck into a free shortcut), matching sampasimu.
+  const portalAdj = (portals && !maximize)
+    ? buildPortalAdj(portals, height, effMask, alpha, beta, eta) : null;
 
   let energy;
   let passes = null;
@@ -905,7 +960,7 @@ self.onmessage = (ev) => {
         alpha, beta, eta, dx, dy,
         reverse: false, trackParents: wantPath,
         wantPasses, eMax,
-        maximize, maxEdgeCost,
+        maximize, maxEdgeCost, portalAdj,
       });
       energy = r.E;
       passes = r.passes;
@@ -920,7 +975,7 @@ self.onmessage = (ev) => {
         alpha, beta, eta, dx, dy,
         reverse: true, trackParents: wantPath,
         wantPasses, eMax,
-        maximize, maxEdgeCost,
+        maximize, maxEdgeCost, portalAdj,
       });
       energy = r.E;
       passes = r.passes;
@@ -936,7 +991,7 @@ self.onmessage = (ev) => {
         alpha, beta, eta, dx, dy,
         reverse: false, trackParents: wantPath,
         wantPasses, eMax,
-        maximize, maxEdgeCost,
+        maximize, maxEdgeCost, portalAdj,
       });
       const b = dijkstra({
         height, mask: effMask, H, W,
@@ -944,7 +999,7 @@ self.onmessage = (ev) => {
         alpha, beta, eta, dx, dy,
         reverse: true, trackParents: false,
         wantPasses, eMax,
-        maximize, maxEdgeCost,
+        maximize, maxEdgeCost, portalAdj,
       });
       energy = new Float32Array(N);
       for (let i = 0; i < N; i++) {

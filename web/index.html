@@ -187,6 +187,21 @@
           <details class="help-changelog">
             <summary>Novidades (changelog)</summary>
             <dl>
+              <dt>21/06/2026 · v271</dt>
+              <dd>
+                <ul>
+                  <li>O <strong>Menor energia pelo viário</strong> agora trata <strong>pontes, viadutos e túneis</strong> como tabuleiros planos: a elevação do trecho é achatada numa reta entre os dois apoios no solo, em vez de seguir o vale/sela que o DEM de terreno nu mostra por baixo (antes uma rota por cima de um viaduto mergulhava no relevo de baixo e inflava a energia). O GeoPackage do viário agora carrega as tags <code>bridge</code>/<code>tunnel</code>/<code>layer</code> (extraídas do OSM no build), então a identificação é offline; um gpkg antigo (só geometria) ainda cai pro Overpass por trecho.</li>
+                  <li><strong>Roteamento por viário bem mais rápido:</strong> o grafo agora é montado só com as vias dentro da extensão do trecho (antes, sem o índice R-tree no gpkg, ele varria SP inteira e montava um grafo de ~3 milhões de nós por segmento).</li>
+                  <li>As <strong>métricas</strong> do trecho (↑/↓ e kJ) também passam a refletir o tabuleiro plano sobre pontes/viadutos — antes a energia mostrada inflava porque o perfil mergulhava no vale sob o viaduto.</li>
+                  <li>O <strong>Menor energia pelo terreno</strong> agora respeita a <strong>água</strong>: lagos, represas e rios (camada <code>water</code> do GeoPackage) viram barreira intransponível, e a rota cruza por cima de <strong>pontes/túneis</strong> via "portais" no tabuleiro plano (igual ao sampasimu) — então a rota não corta lagos/rios, só os atravessa onde há ponte.</li>
+                </ul>
+              </dd>
+              <dt>17/06/2026 · v270</dt>
+              <dd>
+                <ul>
+                  <li>O <strong>DEM de São Paulo</strong> (~5 m, bem mais preciso que o FABDEM dentro da região metropolitana) agora vem <strong>ligado por padrão</strong> como fonte de elevação.</li>
+                </ul>
+              </dd>
               <dt>17/06/2026 · v269</dt>
               <dd>
                 <ul>

@@ -8,7 +8,7 @@
 
 // Marcador de build — confira no console (`window.__PHIDRO_BUILD`) pra saber
 // se o browser está rodando o app.js mais novo (deve casar com o sw VERSION).
-window.__PHIDRO_BUILD = 269;
+window.__PHIDRO_BUILD = 270;
 
 const ROUTES_JSON_URL = 'routes.json';
 const SP = [-23.5505, -46.6333];
@@ -5674,8 +5674,8 @@ const DEFAULT_PARAMS = {
   useFabdem: true,
   // DEM local de alta resolução de São Paulo (sampa_geral, ~5 m, COG único).
   // Quando ligado, tem prioridade sobre o FABDEM dentro da extensão da RMSP;
-  // fora dela (ou nodata) cai pro FABDEM/Open-Meteo. Desligado por padrão.
-  useSampaDem: false,
+  // fora dela (ou nodata) cai pro FABDEM/Open-Meteo. Ligado por padrão.
+  useSampaDem: true,
   // Roteamento "menor energia" (FABDEM + Dijkstra assimétrico):
   energyAlpha: 0.008,       // peso da distância no custo
   energyBeta: 1,            // peso do desnível positivo
@@ -6678,11 +6678,16 @@ async function ensureViarioDb() {
       clearTimeout(timer);
     }
     const db = new SQL.Database(new Uint8Array(buf));
-    const cont = db.exec('SELECT table_name, column_name, srs_id FROM gpkg_geometry_columns LIMIT 1');
-    if (!cont.length) throw new Error('gpkg sem gpkg_geometry_columns');
-    const tableName = cont[0].values[0][0];
-    const geomCol   = cont[0].values[0][1] || 'geom';
-    const srsId     = cont[0].values[0][2];
+    const gc = db.exec('SELECT table_name, column_name, srs_id FROM gpkg_geometry_columns');
+    if (!gc.length || !gc[0].values.length) throw new Error('gpkg sem gpkg_geometry_columns');
+    // O gpkg pode ter 2 camadas: `viario` (linhas) e `water` (polígonos+rios).
+    let vRow = null, wRow = null;
+    for (const r of gc[0].values) { if (r[0] === 'water') wRow = r; else if (!vRow) vRow = r; }
+    if (!vRow) vRow = gc[0].values[0];
+    const tableName = vRow[0];
+    const geomCol   = vRow[1] || 'geom';
+    const srsId     = vRow[2];
+    const hasWater = !!wRow, waterTable = wRow ? wRow[0] : null, waterGeom = wRow ? (wRow[1] || 'geom') : null;
     const isSrcWgs = srsId === 4326 || srsId === 0 || srsId === -1;
     let toWgs = (xy) => xy;     // fonte → [lng,lat]   (vértices)
     let fromWgs = (xy) => xy;   // [lng,lat] → fonte   (cantos da bbox)
@@ -6695,7 +6700,17 @@ async function ensureViarioDb() {
       toWgs = (xy) => tr.inverse(xy);
       fromWgs = (xy) => tr.forward(xy);
     }
-    return { db, tableName, geomCol, isSrcWgs, toWgs, fromWgs };
+    // Tags de ponte/túnel/nível pro achatamento do tabuleiro no roteamento.
+    // Esquemas variam: colunas dedicadas (bridge/tunnel/layer) OU um hstore
+    // `other_tags` (export do osmium/QGIS). Lemos as que existirem; se nenhuma,
+    // o grafo roteia sem achatamento (e o Overpass vira a fonte das tags).
+    let tagCols = [];
+    try {
+      const ti = db.exec(`PRAGMA table_info("${tableName}")`);
+      const allCols = ti.length ? ti[0].values.map((r) => r[1]) : [];
+      tagCols = ['bridge', 'tunnel', 'layer', 'name', 'other_tags'].filter((c) => allCols.includes(c));
+    } catch { /* sem tags = sem achatamento */ }
+    return { db, tableName, geomCol, isSrcWgs, toWgs, fromWgs, tagCols, hasWater, waterTable, waterGeom };
   })();
   _viarioDbPromise.catch(() => { _viarioDbPromise = null; });
   return _viarioDbPromise;
@@ -6706,8 +6721,25 @@ async function ensureViarioDb() {
 // vetorial — a rota segue a geometria real das vias, sem o serrilhado do
 // grid raster.
 async function queryViarioLines(bb) {
-  const { db, tableName, geomCol, isSrcWgs, toWgs, fromWgs } = await ensureViarioDb();
+  const { db, tableName, geomCol, isSrcWgs, toWgs, fromWgs, tagCols } = await ensureViarioDb();
   const t0 = performance.now();
+  // Geometria é a coluna 0; as tags (se houver) vêm depois, nesta ordem.
+  const tagIdx = {}; (tagCols || []).forEach((c, i) => { tagIdx[c] = i + 1; });
+  const tagSel = (tagCols || []).map((c) => `, t."${c}"`).join('');
+  // Lê bridge/tunnel/layer da linha — coluna dedicada OU hstore other_tags.
+  // Túnel ou bridge!=no → "deck" (tabuleiro plano); senão via comum.
+  const deckMeta = (row) => {
+    if (!tagCols || !tagCols.length) return { deck: false };
+    const get = (c) => (tagIdx[c] != null ? row[tagIdx[c]] : null);
+    const ot = get('other_tags');
+    const otv = (k) => { if (!ot) return null; const m = ot.match(new RegExp('"' + k + '"=>"([^"]*)"')); return m ? m[1] : null; };
+    const bridge = get('bridge') || otv('bridge');
+    const tunnel = get('tunnel') || otv('tunnel');
+    const deck = (bridge && bridge !== 'no') || tunnel === 'yes';
+    if (!deck) return { deck: false };
+    const layerRaw = get('layer') || otv('layer');
+    return { deck: true, tunnel: tunnel === 'yes', layer: parseInt(layerRaw, 10) || (tunnel === 'yes' ? -1 : 1) };
+  };
 
   // bbox em CRS de origem pro filtro R-tree (evita varrer o estado inteiro).
   let xmin, xmax, ymin, ymax;
@@ -6728,7 +6760,7 @@ async function queryViarioLines(bb) {
   let stmt, usedRtree = true;
   try {
     stmt = db.prepare(`
-      SELECT t."${geomCol}" FROM "${tableName}" t
+      SELECT t."${geomCol}"${tagSel} FROM "${tableName}" t
       WHERE t.fid IN (
         SELECT id FROM "${rtree}"
         WHERE minx <= ? AND maxx >= ? AND miny <= ? AND maxy >= ?
@@ -6738,28 +6770,205 @@ async function queryViarioLines(bb) {
     // Sem R-tree = scan da tabela INTEIRA por segmento — o caso lento. Avisa.
     console.warn('[viario] SEM R-tree — scan completo (lento!):', e.message);
     usedRtree = false;
-    stmt = db.prepare(`SELECT "${geomCol}" FROM "${tableName}"`);
+    stmt = db.prepare(`SELECT t."${geomCol}"${tagSel} FROM "${tableName}" t`); // alias t: tagSel usa t."col"
   }
 
   const lines = [];
-  let scanned = 0;
+  const meta = []; // paralelo a `lines`: { deck, tunnel?, layer? } por linha
+  let scanned = 0, kept = 0, decks = 0;
   while (stmt.step()) {
     scanned++;
-    const geom = parseGpkgGeom(stmt.get()[0]);
+    const row = stmt.get();
+    const geom = parseGpkgGeom(row[0]);
     if (!geom) continue;
+    const m = deckMeta(row);
     for (const coords of geom) {
+      // Filtro bbox em JS (coords da fonte): ESSENCIAL quando o módulo R-tree
+      // não está no sql.js (a query cai pro scan da tabela inteira) — mantém só
+      // as linhas que tocam a bbox do segmento; sem isso, o grafo abrangeria
+      // SP inteira (~3 M nós/segmento). Com R-tree, é um no-op barato.
+      let loX = Infinity, hiX = -Infinity, loY = Infinity, hiY = -Infinity;
+      for (let i = 0; i < coords.length; i++) {
+        const x = coords[i][0], y = coords[i][1];
+        if (x < loX) loX = x; if (x > hiX) hiX = x;
+        if (y < loY) loY = y; if (y > hiY) hiY = y;
+      }
+      if (hiX < xmin || loX > xmax || hiY < ymin || loY > ymax) continue;
       const out = new Array(coords.length);
       for (let i = 0; i < coords.length; i++) {
         out[i] = isSrcWgs ? coords[i] : toWgs(coords[i]);   // [lng, lat]
       }
       lines.push(out);
+      meta.push(m); // MultiLineString: cada filho herda as tags da feição
+      kept++;
+      if (m.deck) decks++;
     }
   }
   stmt.free();
   console.info(`[viario] consulta ${(performance.now() - t0).toFixed(0)} ms · ` +
-    `${scanned} feições · ${lines.length} linhas · rtree=${usedRtree} · ` +
-    `crs=${isSrcWgs ? 'wgs84' : 'reprojetado'}`);
-  return lines;
+    `${scanned} varridas → ${lines.length} na bbox (${decks} tabuleiros) · rtree=${usedRtree} · ` +
+    `crs=${isSrcWgs ? 'wgs84' : 'reprojetado'} · tags=${(tagCols || []).join('|') || 'nenhuma'}`);
+  // hasTags: o gpkg já traz ponte/túnel (não precisa do Overpass por trecho).
+  const hasTags = (tagCols || []).some((c) => c === 'bridge' || c === 'tunnel' || c === 'other_tags');
+  return { lines, meta, hasTags };
+}
+
+// Overpass: pontes/viadutos (bridge!=no) e túneis (tunnel=yes) de highway na
+// bbox, COM geometria. O gpkg do viário de SP é só geometria (sem tags), então
+// é o OSM que diz quais linhas são tabuleiros pra achatar. Pull pequeno (poucas
+// estruturas por segmento). Best-effort: falha → sem achatamento.
+async function fetchOsmDecksForBbox(bb) {
+  const bbox = `${bb.south},${bb.west},${bb.north},${bb.east}`;
+  const q = `[out:json][timeout:25];(` +
+    `way["bridge"]["bridge"!="no"]["highway"](${bbox});` +
+    `way["tunnel"="yes"]["highway"](${bbox});` +
+    `);out geom;`;
+  const res = await fetch(OVERPASS_URL, {
+    method: 'POST', body: 'data=' + encodeURIComponent(q),
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+  });
+  if (!res.ok) throw new Error(`Overpass ${res.status}`);
+  const data = await res.json();
+  const decks = [];
+  for (const el of data.elements || []) {
+    if (el.type === 'way' && Array.isArray(el.geometry) && el.geometry.length >= 2) {
+      const tg = el.tags || {};
+      decks.push({
+        pts: el.geometry.map((g) => [g.lon, g.lat]), // [lng,lat]
+        tunnel: tg.tunnel === 'yes',
+        layer: parseInt(tg.layer, 10) || (tg.tunnel === 'yes' ? -1 : 1),
+      });
+    }
+  }
+  return decks;
+}
+
+// Marca quais linhas do gpkg são tabuleiros casando-as por PROXIMIDADE com as
+// pontes/túneis do OSM (o gpkg não tem tags). Como ambas seguem a mesma
+// estrutura física, ficam a poucos metros uma da outra. Uma linha vira deck se
+// a maioria (≥60%) dos seus vértices amostrados está a ≤ TOL de algum segmento
+// de ponte do OSM — conservador, pra NÃO achatar uma via de superfície que só
+// CRUZA o viaduto (toca em ~1 ponto) nem uma paralela distante. Anota
+// tunnel/layer da estrutura casada. Devolve quantas linhas marcou.
+function markDecksByProximity(lines, meta, decks, bb) {
+  if (!decks || !decks.length) return 0;
+  const TOL = 14, TOL2 = TOL * TOL;            // m — gpkg vs OSM ~uma faixa
+  const midLat = (bb.south + bb.north) / 2;
+  const mPerLat = 111320, mPerLng = 111320 * Math.cos(midLat * Math.PI / 180);
+  const segs = [];                              // [x0,y0,x1,y1,deck] em metros
+  for (const d of decks) {
+    for (let i = 0; i + 1 < d.pts.length; i++) {
+      segs.push([d.pts[i][0] * mPerLng, d.pts[i][1] * mPerLat,
+                 d.pts[i + 1][0] * mPerLng, d.pts[i + 1][1] * mPerLat, d]);
+    }
+  }
+  if (!segs.length) return 0;
+  const ptSeg2 = (px, py, x0, y0, x1, y1) => {
+    const dx = x1 - x0, dy = y1 - y0, L2 = dx * dx + dy * dy;
+    let tt = L2 ? ((px - x0) * dx + (py - y0) * dy) / L2 : 0;
+    tt = tt < 0 ? 0 : tt > 1 ? 1 : tt;
+    const ex = x0 + tt * dx - px, ey = y0 + tt * dy - py;
+    return ex * ex + ey * ey;
+  };
+  let marked = 0;
+  for (let li = 0; li < lines.length; li++) {
+    if (meta[li] && meta[li].deck) continue;   // já marcado por tag do gpkg
+    const line = lines[li];
+    const step = Math.max(1, (line.length / 6) | 0); // amostra ≤ ~6 vértices
+    let near = 0, tot = 0, matched = null;
+    for (let i = 0; i < line.length; i += step) {
+      tot++;
+      const px = line[i][0] * mPerLng, py = line[i][1] * mPerLat;
+      let best = Infinity, bestD = null;
+      for (const s of segs) { const d2 = ptSeg2(px, py, s[0], s[1], s[2], s[3]); if (d2 < best) { best = d2; bestD = s[4]; } }
+      if (best <= TOL2) { near++; matched = bestD; }
+    }
+    if (tot && near / tot >= 0.6 && matched) {
+      meta[li] = { deck: true, tunnel: matched.tunnel, layer: matched.layer };
+      marked++;
+    }
+  }
+  return marked;
+}
+
+// ── Água (camada `water` do gpkg) → máscara de barreira no "Menor energia pelo
+//    terreno" ──────────────────────────────────────────────────────────────
+// parseWKB (do viário) só lê linhas; a água tem polígonos (lagos/represas) +
+// linhas (rios). SP é interior (sem litoral) → basta preencher os polígonos
+// (even-odd, buracos = ilhas) e barrar os rios (supercover). Coords [lng,lat].
+function _readRing(view, off, le, stride) {
+  const n = view.getUint32(off, le); off += 4;
+  const ring = new Array(n);
+  for (let i = 0; i < n; i++) { ring[i] = [view.getFloat64(off, le), view.getFloat64(off + 8, le)]; off += stride; }
+  return [ring, off];
+}
+function parseGpkgWater(blob) {
+  if (!(blob instanceof Uint8Array) || blob.length < 8) return null;
+  if (blob[0] !== 0x47 || blob[1] !== 0x50) return null; // "GP"
+  const envBytes = [0, 32, 48, 48, 64, 0, 0, 0][(blob[3] >> 1) & 0x07] || 0;
+  let off = 8 + envBytes;
+  if (blob.length < off + 9) return null;
+  const view = new DataView(blob.buffer, blob.byteOffset, blob.byteLength);
+  const polys = [], lines = [];
+  try {
+    const le = view.getUint8(off) === 1; off += 1;
+    const t = view.getUint32(off, le); off += 4;
+    const { base, stride } = wkbTypeInfo(t);
+    if (base === 2) { lines.push(_readRing(view, off, le, stride)[0]); }
+    else if (base === 3) { const k = view.getUint32(off, le); off += 4; const rings = []; for (let j = 0; j < k; j++) { const [r, no] = _readRing(view, off, le, stride); rings.push(r); off = no; } polys.push(rings); }
+    else if (base === 5) { const k = view.getUint32(off, le); off += 4; for (let j = 0; j < k; j++) { const sl = view.getUint8(off) === 1; off += 1; const ss = wkbTypeInfo(view.getUint32(off, sl)).stride; off += 4; const [r, no] = _readRing(view, off, sl, ss); lines.push(r); off = no; } }
+    else if (base === 6) { const k = view.getUint32(off, le); off += 4; for (let j = 0; j < k; j++) { const sl = view.getUint8(off) === 1; off += 1; const ss = wkbTypeInfo(view.getUint32(off, sl)).stride; off += 4; const nr = view.getUint32(off, sl); off += 4; const rings = []; for (let m = 0; m < nr; m++) { const [r, no] = _readRing(view, off, sl, ss); rings.push(r); off = no; } polys.push(rings); } }
+  } catch { return null; }
+  return { polys, lines };
+}
+// Even-odd scanline fill (rings em coords de GRADE) → marca `out` (1 = barrado).
+function fillRingsEvenOdd(rings, out, W, H) {
+  let yMin = Infinity, yMax = -Infinity;
+  for (const r of rings) for (const p of r) { if (p[1] < yMin) yMin = p[1]; if (p[1] > yMax) yMax = p[1]; }
+  if (!Number.isFinite(yMin)) return;
+  const r0 = Math.max(0, Math.floor(yMin)), r1 = Math.min(H - 1, Math.floor(yMax));
+  const xs = [];
+  for (let ry = r0; ry <= r1; ry++) {
+    const yc = ry + 0.5; xs.length = 0;
+    for (const ring of rings) { const n = ring.length; if (n < 3) continue; for (let i = 0, j = n - 1; i < n; j = i++) { const yi = ring[i][1], yj = ring[j][1]; if ((yi > yc) !== (yj > yc)) xs.push(ring[i][0] + (yc - yi) / (yj - yi) * (ring[j][0] - ring[i][0])); } }
+    if (xs.length < 2) continue; xs.sort((a, b) => a - b); const base = ry * W;
+    for (let k = 0; k + 1 < xs.length; k += 2) { const cA = Math.max(0, Math.ceil(xs[k] - 0.5)), cB = Math.min(W - 1, Math.floor(xs[k + 1] - 0.5)); for (let c = cA; c <= cB; c++) out[base + c] = 1; }
+  }
+}
+// Supercover (4-conn) de polilinha (coords de GRADE) → marca `out`.
+function rasterSupercover(pts, out, W, H) {
+  const mark = (cx, cy) => { if (cx >= 0 && cx < W && cy >= 0 && cy < H) out[cy * W + cx] = 1; };
+  for (let s = 0; s + 1 < pts.length; s++) {
+    const x0 = pts[s][0], y0 = pts[s][1], x1 = pts[s + 1][0], y1 = pts[s + 1][1];
+    const dX = x1 - x0, dY = y1 - y0;
+    let ix = Math.floor(x0), iy = Math.floor(y0); const ixe = Math.floor(x1), iye = Math.floor(y1);
+    const sx = dX > 0 ? 1 : dX < 0 ? -1 : 0, sy = dY > 0 ? 1 : dY < 0 ? -1 : 0;
+    const tdx = dX !== 0 ? Math.abs(1 / dX) : Infinity, tdy = dY !== 0 ? Math.abs(1 / dY) : Infinity;
+    let tmx = dX !== 0 ? ((sx > 0 ? ix + 1 : ix) - x0) / dX : Infinity, tmy = dY !== 0 ? ((sy > 0 ? iy + 1 : iy) - y0) / dY : Infinity;
+    mark(ix, iy); let g = Math.abs(ixe - ix) + Math.abs(iye - iy) + 4;
+    while ((ix !== ixe || iy !== iye) && g-- > 0) { if (tmx < tmy) { tmx += tdx; ix += sx; } else { tmy += tdy; iy += sy; } mark(ix, iy); }
+  }
+}
+// Lê a camada `water` do gpkg que cai na bbox → { polys, lines } em [lng,lat]
+// (a camada é 4326). Filtra por sobreposição de bbox (vital sem R-tree).
+async function queryWater(bb) {
+  const h = await ensureViarioDb();
+  if (!h.hasWater) return null;
+  const { db, waterTable, waterGeom } = h;
+  let stmt;
+  try {
+    stmt = db.prepare(`SELECT t."${waterGeom}" FROM "${waterTable}" t WHERE t.fid IN (SELECT id FROM "rtree_${waterTable}_${waterGeom}" WHERE minx<=? AND maxx>=? AND miny<=? AND maxy>=?)`);
+    stmt.bind([bb.east, bb.west, bb.north, bb.south]);
+  } catch { stmt = db.prepare(`SELECT t."${waterGeom}" FROM "${waterTable}" t`); }
+  const polys = [], lines = [];
+  const inBB = (geom) => { let loX = Infinity, hiX = -Infinity, loY = Infinity, hiY = -Infinity; for (const ring of geom) for (const p of ring) { if (p[0] < loX) loX = p[0]; if (p[0] > hiX) hiX = p[0]; if (p[1] < loY) loY = p[1]; if (p[1] > hiY) hiY = p[1]; } return !(hiX < bb.west || loX > bb.east || hiY < bb.south || loY > bb.north); };
+  while (stmt.step()) {
+    const g = parseGpkgWater(stmt.get()[0]); if (!g) continue;
+    for (const rings of g.polys) if (inBB(rings)) polys.push(rings);
+    for (const ln of g.lines) if (inBB([ln])) lines.push(ln);
+  }
+  stmt.free();
+  return { polys, lines };
 }
 
 // Min-heap binário (prioridade f64 + id int) com deleção preguiçosa — o
@@ -6808,7 +7017,7 @@ class MinHeap {
 // amostrando a elevação do DEM por nó. Devolve a polilinha lat/lng da via, ou
 // null se não há caminho (cai pro fallback). `from`/`to` reais são costurados
 // nas pontas pra conectar com os marcadores.
-function viarioGraphRoute(lines, fromLatLng, toLatLng, dem, bb, A) {
+function viarioGraphRoute(lines, meta, fromLatLng, toLatLng, dem, bb, A) {
   const t0 = performance.now();
   const W = dem.W, H = dem.H, height = dem.height, mask = dem.mask;
   const nodeKey = new Map();          // "latq,lngq" → id
@@ -6842,20 +7051,50 @@ function viarioGraphRoute(lines, fromLatLng, toLatLng, dem, bb, A) {
     dh >= 0 ? alpha * dist + beta * dh
             : Math.max(0, alpha * dist - eta * beta * (-dh));
 
-  for (const line of lines) {
-    let pu = -1;
-    for (const [lng, lat] of line) {
+  // Pontos do caminho que caem em tabuleiro (p/ achatar também o perfil do
+  // display, depois — usando a elevação que o PRÓPRIO display amostrou nos
+  // apoios, não o DEM grosseiro do roteamento).
+  const deckNodes = new Set();
+  for (let li = 0; li < lines.length; li++) {
+    const line = lines[li];
+    if (line.length < 2) continue;
+    // Tabuleiro (ponte/túnel): a elevação NÃO segue o DEM de terreno nu por
+    // baixo (vale/sela). Achata pra uma reta entre os dois apoios no solo
+    // (interpolada por comprimento de arco) — igual ao modo grafo do sampasimu.
+    // Os apoios ficam no solo (compartilham nó com a via de acesso); só o vão
+    // intermediário é achatado.
+    const isDeck = !!(meta && meta[li] && meta[li].deck);
+    let flat = null;
+    if (isDeck) {
+      const h0 = sampleElev(line[0][1], line[0][0]);
+      const h1 = sampleElev(line[line.length - 1][1], line[line.length - 1][0]);
+      const arc = new Array(line.length); arc[0] = 0;
+      for (let i = 1; i < line.length; i++) {
+        const dLat = (line[i][1] - line[i - 1][1]) * M_DEG;
+        const dLng = (line[i][0] - line[i - 1][0]) * M_DEG *
+          Math.cos((line[i][1] + line[i - 1][1]) / 2 * Math.PI / 180);
+        arc[i] = arc[i - 1] + Math.hypot(dLat, dLng);
+      }
+      const total = arc[line.length - 1];
+      flat = arc.map((a) => (total > 0 ? h0 + (h1 - h0) * (a / total) : h0));
+    }
+    let pu = -1, pi = -1;
+    for (let i = 0; i < line.length; i++) {
+      const lng = line[i][0], lat = line[i][1];
       const u = getNode(lng, lat);
+      // Marca só o VÃO (interior) do tabuleiro; os apoios (i=0 e i=último) ficam
+      // no solo e servem de âncora pro achatamento do perfil no display.
+      if (isDeck && i > 0 && i < line.length - 1) deckNodes.add(u);
       if (pu !== -1 && pu !== u) {
         const dLat = (nodeLat[u] - nodeLat[pu]) * M_DEG;
         const dLng = (nodeLng[u] - nodeLng[pu]) * M_DEG *
           Math.cos((nodeLat[u] + nodeLat[pu]) / 2 * Math.PI / 180);
         const dist = Math.hypot(dLat, dLng);
-        const dh = nodeElev[u] - nodeElev[pu];
+        const dh = flat ? (flat[i] - flat[pi]) : (nodeElev[u] - nodeElev[pu]);
         (adj[pu] || (adj[pu] = [])).push(u, edgeCost(dist,  dh));
         (adj[u]  || (adj[u]  = [])).push(pu, edgeCost(dist, -dh));
       }
-      pu = u;
+      pu = u; pi = i;
     }
   }
 
@@ -6903,10 +7142,18 @@ function viarioGraphRoute(lines, fromLatLng, toLatLng, dem, bb, A) {
   }
 
   const path = [];
-  for (let v = t; v !== -1; v = prev[v]) path.push([nodeLat[v], nodeLng[v]]);
-  path.reverse();
-  path.unshift([fromLatLng.lat, fromLatLng.lng]);
-  path.push([toLatLng.lat, toLatLng.lng]);
+  const deckFlag = [];
+  for (let v = t; v !== -1; v = prev[v]) {
+    path.push([nodeLat[v], nodeLng[v]]);
+    deckFlag.push(deckNodes.has(v));
+  }
+  path.reverse(); deckFlag.reverse();
+  path.unshift([fromLatLng.lat, fromLatLng.lng]); deckFlag.unshift(false);
+  path.push([toLatLng.lat, toLatLng.lng]); deckFlag.push(false);
+  // Anexa as flags de tabuleiro ao próprio array do caminho (viaja junto até o
+  // trackpoint). flattenDeckProfile() depois achata o perfil do display nesses
+  // pontos usando a elevação amostrada nos apoios.
+  path.deckFlag = deckFlag;
   console.info(`[viario] grafo ${N} nós · rota ${path.length} pts em ` +
     `${(performance.now() - t0).toFixed(0)} ms`);
   return path;
@@ -6960,8 +7207,20 @@ async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
   // consulta falhar / não achar caminho.
   if (mode === 'road' && params.useViarioGpkg !== false) {
     try {
-      const lines = await queryViarioLines(bb);
-      const path = viarioGraphRoute(lines, fromLatLng, toLatLng, dem, bb, A);
+      const { lines, meta, hasTags } = await queryViarioLines(bb);
+      // Quando o gpkg já traz bridge/tunnel (build-viario.py atual), as flags de
+      // tabuleiro vêm dele — nada de Overpass por trecho. Só num gpkg antigo (só
+      // geometria) caímos pro OSM: puxa pontes/túneis e casa por proximidade.
+      if (!hasTags) {
+        try {
+          const decks = await fetchOsmDecksForBbox(bb);
+          const marked = markDecksByProximity(lines, meta, decks, bb);
+          if (decks.length) console.info(`[energy_road] gpkg sem tags → OSM: ${decks.length} estruturas · ${marked} linha(s) achatada(s)`);
+        } catch (e3) {
+          console.warn('[energy_road] pontes do OSM indisponíveis:', e3.message);
+        }
+      }
+      const path = viarioGraphRoute(lines, meta, fromLatLng, toLatLng, dem, bb, A);
       if (path && path.length) return path;
     } catch (e) {
       console.warn('[energy_road] grafo gpkg falhou:', e.message);
@@ -7007,11 +7266,52 @@ async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
     }
   }
 
+  // Máscara de barreira de ÁGUA (modos raster: terreno livre + fallback raster
+  // do viário): preenche lagos/represas e barra rios da camada `water` do gpkg,
+  // pra rota não atravessar água. Pontes/túneis viram PORTAIS (abaixo), pra
+  // cruzar a água barrada no tabuleiro. Origem/destino nunca são barrados.
+  let portals = null;
+  try {
+    const water = await queryWater(bb);
+    if (water && (water.polys.length || water.lines.length)) {
+      const block = new Uint8Array(dem.W * dem.H);
+      const toG = (lng, lat) => [(lng - bb.west) / A, (bb.north - lat) / A];
+      for (const rings of water.polys) fillRingsEvenOdd(rings.map((r) => r.map((p) => toG(p[0], p[1]))), block, dem.W, dem.H);
+      for (const ln of water.lines) rasterSupercover(ln.map((p) => toG(p[0], p[1])), block, dem.W, dem.H);
+      let blocked = 0;
+      for (let i = 0; i < block.length; i++) if (block[i] && dem.mask[i]) { dem.mask[i] = 0; blocked++; }
+      dem.mask[seedR * dem.W + seedC] = 1; dem.mask[goalR * dem.W + goalC] = 1;
+      console.info(`[energy] máscara de água: ${blocked} células barradas (${water.polys.length} áreas, ${water.lines.length} rios)`);
+    }
+  } catch (e) { console.warn('[energy] máscara de água falhou:', e.message); }
+
+  // Portais de ponte/túnel (raster): atalho dirigido entre as duas células de
+  // apoio no custo do tabuleiro plano — deixa a rota cruzar a água barrada por
+  // cima da ponte. Decks = linhas do viário com bridge/tunnel (gpkg já em cache
+  // pela água); o worker calcula o custo a partir das alturas das pontas.
+  try {
+    const { lines, meta } = await queryViarioLines(bb);
+    const u = [], v = [], lenM = [], M = 111320;
+    const cellOf = (lng, lat) => { const r = Math.round((bb.north - lat) / A), c = Math.round((lng - bb.west) / A); return (r < 0 || r >= dem.H || c < 0 || c >= dem.W) ? -1 : r * dem.W + c; };
+    for (let li = 0; li < lines.length; li++) {
+      if (!(meta[li] && meta[li].deck)) continue;
+      const ln = lines[li];
+      if (ln.length < 2) continue;
+      const a = cellOf(ln[0][0], ln[0][1]), b = cellOf(ln[ln.length - 1][0], ln[ln.length - 1][1]);
+      if (a < 0 || b < 0 || a === b) continue;
+      let len = 0;
+      for (let i = 1; i < ln.length; i++) { const dLat = (ln[i][1] - ln[i - 1][1]) * M, dLng = (ln[i][0] - ln[i - 1][0]) * M * Math.cos((ln[i][1] + ln[i - 1][1]) / 2 * Math.PI / 180); len += Math.hypot(dLat, dLng); }
+      u.push(a); v.push(b); lenM.push(len);
+    }
+    if (u.length) portals = { u: Int32Array.from(u), v: Int32Array.from(v), lenM: Float64Array.from(lenM), n: u.length };
+    if (portals) console.info(`[energy] ${portals.n} portais de ponte/túnel`);
+  } catch (e) { console.warn('[energy] portais falharam:', e.message); }
+
   try {
     const tWork = performance.now();
     const res = await runEnergyWorker({
       height: dem.height, mask: dem.mask,
-      networkMask,
+      networkMask, portals,
       H: dem.H, W: dem.W, dx, dy,
       seedR, seedC, goalR, goalC,
       mode: 'from',
@@ -7735,6 +8035,43 @@ function pathLatLngArray() {
   return assembleLatLngs().map((ll) => [ll.lat, ll.lng]);
 }
 
+// Achata o perfil de elevação do DISPLAY nos vãos de tabuleiro. viarioGraphRoute
+// marca os pontos interiores de ponte/túnel (path.deckFlag). Para cada trecho
+// contíguo marcado, interpola a elevação dos interiores entre os dois apoios
+// (pontos não-marcados vizinhos), usando a elevação que o PRÓPRIO display
+// amostrou nos apoios — então ↑/↓/kJ refletem o tabuleiro plano sem o
+// descasamento de fonte que haveria ao reusar o DEM grosseiro do roteamento.
+// Roda depois do fetch de elevação e antes de updateMetrics.
+function flattenDeckProfile() {
+  const distM = (a, b) => {
+    const M = 111320, dLat = (b[0] - a[0]) * M,
+      dLng = (b[1] - a[1]) * M * Math.cos((a[0] + b[0]) / 2 * Math.PI / 180);
+    return Math.hypot(dLat, dLng);
+  };
+  for (const tp of trackpoints) {
+    const pts = tp && tp.pathFromPrev;
+    const flags = pts && pts.deckFlag;
+    if (!pts || !flags || flags.length !== pts.length) continue;
+    let i = 0;
+    while (i < flags.length) {
+      if (!flags[i]) { i++; continue; }
+      let a = i; while (i + 1 < flags.length && flags[i + 1]) i++;
+      const b = i; i++;
+      const lo = a - 1, hi = b + 1;        // âncoras = apoios (não-marcados)
+      if (lo < 0 || hi >= pts.length) continue;
+      const eLo = elevationCache.get(elevKey(pts[lo][0], pts[lo][1]));
+      const eHi = elevationCache.get(elevKey(pts[hi][0], pts[hi][1]));
+      if (!Number.isFinite(eLo) || !Number.isFinite(eHi)) continue;
+      const arc = []; let total = 0;
+      for (let k = lo; k <= hi; k++) { if (k > lo) total += distM(pts[k - 1], pts[k]); arc.push(total); }
+      for (let k = a; k <= b; k++) {
+        const f = total > 0 ? arc[k - lo] / total : 0;
+        elevationCache.set(elevKey(pts[k][0], pts[k][1]), eLo + (eHi - eLo) * f);
+      }
+    }
+  }
+}
+
 function scheduleElevationFetch() {
   clearTimeout(elevationDebounceTimer);
   elevationDebounceTimer = setTimeout(async () => {
@@ -7742,7 +8079,7 @@ function scheduleElevationFetch() {
     if (path.length === 0) return;
     const seq = ++elevationFetchSeq;
     await fetchMissingElevations(path, seq);
-    if (seq === elevationFetchSeq) updateMetrics();
+    if (seq === elevationFetchSeq) { flattenDeckProfile(); updateMetrics(); }
   }, 400);
 }
 
