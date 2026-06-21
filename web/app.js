@@ -5686,6 +5686,10 @@ const DEFAULT_PARAMS = {
   // (grid raster, depende do servidor do OSM). O gpkg cai pro Overpass
   // sozinho se indisponível, independentemente deste toggle.
   useViarioGpkg: true,
+  // "Menor energia pelo terreno": atravessar lagos/rios barrados por cima de
+  // pontes/túneis via portais (atalho no tabuleiro). Desligado = água é barreira
+  // total (sem travessia). Não afeta o "pelo viário" (já roteia nas vias).
+  usePortals: true,
 };
 
 function powerFor(gradient, p) {
@@ -7289,7 +7293,8 @@ async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
   // apoio no custo do tabuleiro plano — deixa a rota cruzar a água barrada por
   // cima da ponte. Decks = linhas do viário com bridge/tunnel (gpkg já em cache
   // pela água); o worker calcula o custo a partir das alturas das pontas.
-  try {
+  // Toggle nos Parâmetros (usePortals): desligado → água vira barreira total.
+  if (params.usePortals !== false) try {
     const { lines, meta } = await queryViarioLines(bb);
     const u = [], v = [], lenM = [], M = 111320;
     const cellOf = (lng, lat) => { const r = Math.round((bb.north - lat) / A), c = Math.round((lng - bb.west) / A); return (r < 0 || r >= dem.H || c < 0 || c >= dem.W) ? -1 : r * dem.W + c; };
@@ -8385,6 +8390,7 @@ const PARAM_CHECKBOXES = {
   useFabdem: document.getElementById('param-use-fabdem'),
   useSampaDem: document.getElementById('param-use-sampa-dem'),
   useViarioGpkg: document.getElementById('param-use-viario-gpkg'),
+  usePortals: document.getElementById('param-use-portals'),
 };
 
 paramsBtn.addEventListener('click', () => {
@@ -8436,6 +8442,7 @@ function fillParamInputs() {
   PARAM_CHECKBOXES.useFabdem.checked       = params.useFabdem !== false;
   PARAM_CHECKBOXES.useSampaDem.checked     = !!params.useSampaDem;
   PARAM_CHECKBOXES.useViarioGpkg.checked   = params.useViarioGpkg !== false;
+  PARAM_CHECKBOXES.usePortals.checked      = params.usePortals !== false;
 }
 
 // ─── Modal da Câmera Topográfica (engrenagem na camada) ──────────────────────
