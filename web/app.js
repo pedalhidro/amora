@@ -7051,6 +7051,7 @@ function viarioGraphRoute(lines, meta, fromLatLng, toLatLng, dem, bb, A) {
   const adj = [];                     // adj[u] = [v0, cost0, v1, cost1, …]
   const alpha = params.energyAlpha, beta = params.energyBeta, eta = params.energyEta;
   const M_DEG = 111320;
+  const cellM = A * M_DEG;            // ~tamanho da célula do DEM em metros
   const edgeCost = (dist, dh) =>
     dh >= 0 ? alpha * dist + beta * dh
             : Math.max(0, alpha * dist - eta * beta * (-dh));
@@ -7094,9 +7095,31 @@ function viarioGraphRoute(lines, meta, fromLatLng, toLatLng, dem, bb, A) {
         const dLng = (nodeLng[u] - nodeLng[pu]) * M_DEG *
           Math.cos((nodeLat[u] + nodeLat[pu]) / 2 * Math.PI / 180);
         const dist = Math.hypot(dLat, dLng);
-        const dh = flat ? (flat[i] - flat[pi]) : (nodeElev[u] - nodeElev[pu]);
-        (adj[pu] || (adj[pu] = [])).push(u, edgeCost(dist,  dh));
-        (adj[u]  || (adj[u]  = [])).push(pu, edgeCost(dist, -dh));
+        let fwd, bwd;
+        if (flat) {
+          // Tabuleiro: rampa uniforme entre os apoios (não amostra o DEM).
+          const dh = flat[i] - flat[pi];
+          fwd = edgeCost(dist, dh); bwd = edgeCost(dist, -dh);
+        } else {
+          // Amostra o PERFIL de elevação ao longo do segmento (~1 célula do DEM
+          // por passo) e soma o custo assimétrico passo a passo — igual ao
+          // profileCost do grafo do sampasimu. Vértices esparsos numa via reta
+          // sobre um morro deixavam o custo só pelo desnível das pontas (≈0),
+          // barateando a subida-e-descida; o perfil captura o morro.
+          const nsub = Math.max(1, Math.ceil(dist / cellM));
+          const subD = dist / nsub;
+          const phs = [nodeElev[pu]];
+          for (let sct = 1; sct <= nsub; sct++) {
+            const tt = sct / nsub;
+            phs.push(sct === nsub ? nodeElev[u] : sampleElev(
+              nodeLat[pu] + (nodeLat[u] - nodeLat[pu]) * tt,
+              nodeLng[pu] + (nodeLng[u] - nodeLng[pu]) * tt));
+          }
+          fwd = 0; for (let sct = 0; sct < nsub; sct++) fwd += edgeCost(subD, phs[sct + 1] - phs[sct]);
+          bwd = 0; for (let sct = nsub; sct > 0; sct--) bwd += edgeCost(subD, phs[sct - 1] - phs[sct]);
+        }
+        (adj[pu] || (adj[pu] = [])).push(u, fwd);
+        (adj[u]  || (adj[u]  = [])).push(pu, bwd);
       }
       pu = u; pi = i;
     }
