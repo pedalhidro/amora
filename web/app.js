@@ -7302,6 +7302,15 @@ async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
   // pra rota não atravessar água. Pontes/túneis viram PORTAIS (abaixo), pra
   // cruzar a água barrada no tabuleiro. Origem/destino nunca são barrados.
   let portals = null;
+  const waterBlocked = [];   // células barradas pela água (p/ refazer sem elas)
+  // Viário (linhas do gpkg): usado pra (a) abrir CORREDORES passáveis na máscara
+  // de água — estradas/pontes atravessam a água, como no sampasimu — e (b) os
+  // portais de ponte/túnel. Buscado UMA vez e reusado pelos dois blocos abaixo.
+  let viaLines = null, viaMeta = null;
+  if (params.useWaterMask !== false || params.usePortals !== false) {
+    try { const q = await queryViarioLines(bb); viaLines = q.lines; viaMeta = q.meta; }
+    catch (e) { console.warn('[energy] viário (corredores/portais) falhou:', e.message); }
+  }
   // Toggle nos Parâmetros (useWaterMask): desligado → água ignorada (e o gpkg
   // nem é baixado se os portais também estiverem off → zero tráfego no terreno).
   if (params.useWaterMask !== false) try {
@@ -7311,10 +7320,20 @@ async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
       const toG = (lng, lat) => [(lng - bb.west) / A, (bb.north - lat) / A];
       for (const rings of water.polys) fillRingsEvenOdd(rings.map((r) => r.map((p) => toG(p[0], p[1]))), block, dem.W, dem.H);
       for (const ln of water.lines) rasterSupercover(ln.map((p) => toG(p[0], p[1])), block, dem.W, dem.H);
-      let blocked = 0;
-      for (let i = 0; i < block.length; i++) if (block[i] && dem.mask[i]) { dem.mask[i] = 0; blocked++; }
+      // CORREDORES: as vias (incl. pontes/túneis) abrem caminho passável sobre a
+      // água — uma estrada que cruza um rio/represa não é barreira. Rasteriza o
+      // viário e poupa essas células do bloqueio (o "network carves corridors"
+      // do sampasimu). Sem isto, um destino sobre/à beira d'água fica ilhado.
+      let road = null;
+      if (viaLines) { road = new Uint8Array(dem.W * dem.H); for (const ln of viaLines) rasterSupercover(ln.map((p) => toG(p[0], p[1])), road, dem.W, dem.H); }
+      let blocked = 0, corr = 0;
+      for (let i = 0; i < block.length; i++) {
+        if (!block[i] || !dem.mask[i]) continue;
+        if (road && road[i]) { corr++; continue; }   // via passa por cima da água
+        dem.mask[i] = 0; waterBlocked.push(i); blocked++;
+      }
       dem.mask[seedR * dem.W + seedC] = 1; dem.mask[goalR * dem.W + goalC] = 1;
-      console.info(`[energy] máscara de água: ${blocked} células barradas (${water.polys.length} áreas, ${water.lines.length} rios)`);
+      console.info(`[energy] máscara de água: ${blocked} células barradas (${water.polys.length} áreas, ${water.lines.length} rios)${corr ? `, ${corr} de corredor viário liberadas` : ''}`);
     }
   } catch (e) { console.warn('[energy] máscara de água falhou:', e.message); }
 
@@ -7323,8 +7342,8 @@ async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
   // cima da ponte. Decks = linhas do viário com bridge/tunnel (gpkg já em cache
   // pela água); o worker calcula o custo a partir das alturas das pontas.
   // Toggle nos Parâmetros (usePortals): desligado → água vira barreira total.
-  if (params.usePortals !== false) try {
-    const { lines, meta } = await queryViarioLines(bb);
+  if (params.usePortals !== false && viaLines) try {
+    const lines = viaLines, meta = viaMeta;
     const u = [], v = [], lenM = [], M = 111320;
     const cellOf = (lng, lat) => { const r = Math.round((bb.north - lat) / A), c = Math.round((lng - bb.west) / A); return (r < 0 || r >= dem.H || c < 0 || c >= dem.W) ? -1 : r * dem.W + c; };
     for (let li = 0; li < lines.length; li++) {
@@ -7343,8 +7362,8 @@ async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
 
   try {
     const tWork = performance.now();
-    const res = await runEnergyWorker({
-      height: dem.height, mask: dem.mask,
+    const baseOpts = {
+      height: dem.height,
       networkMask, portals,
       H: dem.H, W: dem.W, dx, dy,
       seedR, seedC, goalR, goalC,
@@ -7352,7 +7371,17 @@ async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
       alpha: params.energyAlpha,
       beta:  params.energyBeta,
       eta:   params.energyEta,
-    });
+    };
+    let res = await runEnergyWorker({ ...baseOpts, mask: dem.mask });
+    // Rede de segurança: se mesmo com os corredores viários a água ainda selou
+    // o caminho (ex.: destino em água aberta, sem via por perto), refaz UMA vez
+    // sem a barreira. Uma rota real que raspa a água é melhor que cair na reta.
+    // (mask é CLONADA no postMessage, não transferida → dá pra reusar dem.mask.)
+    if ((!res.path || !res.path.length) && waterBlocked.length) {
+      for (const idx of waterBlocked) dem.mask[idx] = 1;
+      console.warn(`[energy] água ainda selou o caminho — refazendo sem a barreira (${waterBlocked.length} células)`);
+      res = await runEnergyWorker({ ...baseOpts, mask: dem.mask });
+    }
     console.info(`[energy] worker em ${(performance.now() - tWork).toFixed(0)} ms`);
     if (!res.path || !res.path.length) {
       console.warn('[energy] sem caminho — fallback pra reta');
