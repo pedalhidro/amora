@@ -54,8 +54,8 @@ local-first.
   (re-encodes raw videos in `web/clips/raw/` to 360p/720p mp4 + `.m4a` audio +
   thumbnail and writes the triples directly into `web/data/uploads.ttl` as
   `ph:Video` — local **batch** tool; the one remaining local catalog-writer,
-  push via `deploy-cloudrun.sh --state-only`), `deploy.sh` (legacy GCS static
-  mirror), `deploy-cloudrun.sh` (Cloud Run deploy + `--state` flag to sync
+  push via `deploy-cloudrun.sh --state-only`), `deploy-cloudrun.sh` (Cloud Run
+  deploy + `--state` flag to sync
   mutable state; also enables bucket Object Versioning + a lifecycle rule
   idempotently — see Conventions), `pull-cloudrun.sh` (pull mutable state from
   the GCS bucket back to local), `state-history.sh` (list/diff/restore prior
@@ -366,9 +366,8 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
   the same backend (`backend/main.py`) also runs locally for dev or
   self-hosting — `storage.py` abstracts state via `STORAGE_BACKEND=local`
   (filesystem) vs `gcs` (bucket). The old Raspberry Pi deploy was retired.
-  `scripts/deploy.sh` (the old read-only static mirror at
-  `tiles.pedalhidrografi.co/rotas_app`) is still around but largely
-  superseded.
+  The old read-only static mirror at `tiles.pedalhidrografi.co/rotas_app`
+  (deployed by the now-removed `scripts/deploy.sh`) is retired.
 - **gunicorn runs with `--workers 1` everywhere** (Dockerfile, .plist).
   The mutation lock (`_state_lock`) is per-process; with 2+
   workers, concurrent uploads land in different processes and the second
@@ -452,8 +451,6 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
     that no longer exist locally; pairs with `--state`/`--state-only`)
   - `--force` override the anti-clobber guard (see Conventions)
   - `--dry-run` preview without executing
-- `bash scripts/deploy.sh` (or `bash scripts/deploy.sh --dry-run`) — sync
-  `web/` to the legacy GCS static mirror (read-only; needs `gcloud` auth).
 - Local backend: `pip install -r backend/requirements.txt && python backend/main.py`
   (defaults to port 8000; override with `PORT=…`). See `backend/README.md`.
 
