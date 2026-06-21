@@ -33,7 +33,7 @@ import {
 // em localStorage e exportável/importável como JSON-LD.
 const SETTINGS_KEY = 'phidro:settings';
 const SETTINGS_DEFAULTS = {
-  photoSource: 'server',                // 'server' | 'cdn' | 'auto' | 'local'
+  photoSource: 'server',                // 'server' | 'local'
   spotlight: {
     enabled: false,
     boost: 10.0,
@@ -157,6 +157,9 @@ const settings = loadSettings();
   // 'pi' era o nome antigo da fonte same-origin (backend rodava num
   // Raspberry Pi). Renomeada pra 'server'; mapeia valores persistidos.
   if (settings.photoSource === 'pi') settings.photoSource = 'server';
+  // 'cdn' (espelho estático legado) e 'auto' (servidor→cdn) foram removidos —
+  // o backend serve as fotos na mesma origem. Mapeia persistidos pra 'server'.
+  if (settings.photoSource === 'cdn' || settings.photoSource === 'auto') settings.photoSource = 'server';
 }
 // Animação NÃO persiste entre sessões — sempre arranca desligada. Se o
 // usuário ligar no Ajustes/botão, vale só pra sessão atual.
@@ -742,15 +745,13 @@ function setOverpassOpacity(frac) {
 // `data/shapes.ttl` (ph:ImageShape). O app lê `data/data_graphs.ttl` (um
 // void:Dataset) pra descobrir quais dumps carregar — atualmente
 // `uploads.ttl` (imagens) e `tours.ttl` (passeios). N3.js parseia tudo
-// no browser; a fonte pode ser o servidor, a CDN, ou um kit local (.zip).
+// no browser; a fonte pode ser o servidor (mesma origem) ou um kit local (.zip).
 const PHOTOS_DIR_REL    = 'photos/';                       // <phash>/{original,large,thumb}.jpg
-const PHOTOS_CDN_BASE   = 'https://tiles.pedalhidrografi.co/rotas_app/';
 const TOURS_TTL_REL     = 'data/tours.ttl';                // catálogo de passeios (opcional)
 
-// Origem persistida em localStorage: 'auto' | 'server' | 'cdn' | 'local'.
-// Default 'server' (mesma origem). 'auto' tentaria CDN também — útil em prod,
-// mas pra dev local gera DNS errors barulhentos quando o CDN não existe.
-// O usuário pode trocar via 🗂 Fonte….
+// Origem persistida em localStorage: 'server' | 'local'.
+// Default 'server' (mesma origem — o backend serve/redireciona as fotos).
+// 'local' usa um kit .zip/.ttl importado. O usuário troca via 🗂 Fonte….
 let photoSource = settings.photoSource;
 // Quando local: kit ZIP descompactado em memória, com blob URLs por arquivo.
 let localKit = null;   // { ttlText, files: Map<path,blob URL> }
@@ -1905,8 +1906,7 @@ function resolvePhotoUrl(phash, variant /* 'large' | 'thumb' | 'original' */) {
     }
     return '';
   }
-  const base = (photoSource === 'cdn') ? PHOTOS_CDN_BASE : './';
-  return `${base}${PHOTOS_DIR_REL}${phash}/${variant}.jpg`;
+  return `./${PHOTOS_DIR_REL}${phash}/${variant}.jpg`;
 }
 
 // Parse de um texto TTL em quads (lista de triples N3.js).
@@ -2112,10 +2112,8 @@ async function loadAllGraphs() {
       sources: ['(kit local)'],
     };
   }
-  // Servidor e CDN: tenta cada base na ordem; o primeiro manifesto que responder vence.
-  const bases = [];
-  if (photoSource === 'server' || photoSource === 'auto') bases.push({ base: './',            label: 'server' });
-  if (photoSource === 'cdn' || photoSource === 'auto') bases.push({ base: PHOTOS_CDN_BASE,   label: 'cdn' });
+  // Servidor (mesma origem): o backend serve/redireciona o manifesto + as fotos.
+  const bases = [{ base: './', label: 'server' }];
   let lastErr = '';
   for (const b of bases) {
     let m;
@@ -2250,8 +2248,8 @@ function buildPhotoMarkers(photos) {
       ? `<a class="photo-dl" href="${escapeHtml(ph.full)}" download="${escapeHtml(dlName)}" target="_blank" rel="noopener">Baixar original ↓</a>`
       : '';
     // Botão de excluir: bate em POST /delete-image/<phash> (backend).
-    // Requer phash e fonte same-origin; em CDN/local só mostra "Baixar".
-    const delBtn = (ph.phash && (photoSource === 'server' || photoSource === 'auto'))
+    // Requer phash e fonte same-origin; em modo local só mostra "Baixar".
+    const delBtn = (ph.phash && photoSource === 'server')
       ? `<button type="button" class="photo-del" data-phash="${escapeHtml(ph.phash)}">Excluir ✕</button>`
       : '';
     const actions = [dlBtn, delBtn].filter(Boolean).join('');
@@ -2275,9 +2273,9 @@ async function reloadPhotos() {
   applyPhotoVisibility();
 }
 
-// ─── Fonte (Servidor / CDN / Local) ───────────────────────────────────────
+// ─── Fonte (Servidor / Local) ─────────────────────────────────────────────
 function setPhotoSource(src) {
-  if (!['auto', 'server', 'cdn', 'local'].includes(src)) return;
+  if (!['server', 'local'].includes(src)) return;
   // Saindo do modo `local`: revoga as blob URLs do kit pra não vazar memória
   // (só eram revogadas ao importar um novo kit).
   if (src !== 'local' && localKit) {

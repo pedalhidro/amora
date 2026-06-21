@@ -187,6 +187,12 @@
           <details class="help-changelog">
             <summary>Novidades (changelog)</summary>
             <dl>
+              <dt>21/06/2026 · v276</dt>
+              <dd>
+                <ul>
+                  <li>Acervo de imagens: removidas as opções <em>CDN</em> e <em>Auto</em> (espelho estático legado). As fotos vêm sempre do servidor (mesma origem) ou de um kit local importado.</li>
+                </ul>
+              </dd>
               <dt>21/06/2026 · v275</dt>
               <dd>
                 <ul>
@@ -671,9 +677,7 @@
             <h3>Acervo de imagens</h3>
             <p class="muted">De onde o app puxa o arquivo TTL.</p>
             <div class="photos-source-options">
-              <label><input type="radio" name="photos-source" value="auto"> Auto (tenta servidor → CDN)</label>
               <label><input type="radio" name="photos-source" value="server"> Servidor (mesma origem)</label>
-              <label><input type="radio" name="photos-source" value="cdn"> CDN</label>
               <label><input type="radio" name="photos-source" value="local"> Local (importar kit .zip ou .ttl)</label>
             </div>
             <p class="muted" id="photos-source-status">—</p>
