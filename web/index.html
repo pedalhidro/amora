@@ -187,6 +187,12 @@
           <details class="help-changelog">
             <summary>Novidades (changelog)</summary>
             <dl>
+              <dt>21/06/2026 · v274</dt>
+              <dd>
+                <ul>
+                  <li>Novo controle nos <strong>Parâmetros</strong>: <em>Barreira de água (terreno)</em>. Desligado, o <strong>Menor energia pelo terreno</strong> ignora lagos/rios — e, junto com <em>Atravessar pontes/túneis</em> desligado, nem baixa o gpkg de SP (zero tráfego no modo terreno).</li>
+                </ul>
+              </dd>
               <dt>21/06/2026 · v273</dt>
               <dd>
                 <ul>
@@ -578,6 +584,10 @@
           <label class="param-row" title="Ligado: usa o GeoPackage vetorial do viário de SP (traçado suave no grafo). Desligado: usa o Overpass (OSM ao vivo, grid raster). O gpkg cai pro Overpass sozinho se indisponível.">
             <span class="param-label">Viário pelo gpkg de SP (senão Overpass)</span>
             <span class="param-input"><input type="checkbox" id="param-use-viario-gpkg"></span>
+          </label>
+          <label class="param-row" title="Ligado: no Menor energia pelo terreno, lagos/represas e rios da camada de água do gpkg viram barreira intransponível (a rota não cruza água). Desligado: a água é ignorada — e o gpkg nem é baixado se Atravessar pontes/túneis também estiver desligado. Não afeta o Menor energia pelo viário.">
+            <span class="param-label">Barreira de água (terreno)</span>
+            <span class="param-input"><input type="checkbox" id="param-use-water-mask"></span>
           </label>
           <label class="param-row" title="Ligado: no Menor energia pelo terreno, a rota atravessa lagos/rios barrados por cima de pontes e túneis (portais no tabuleiro plano). Desligado: a água vira barreira total (sem travessia). Não afeta o Menor energia pelo viário.">
             <span class="param-label">Atravessar pontes/túneis (terreno)</span>

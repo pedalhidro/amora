@@ -5686,6 +5686,10 @@ const DEFAULT_PARAMS = {
   // (grid raster, depende do servidor do OSM). O gpkg cai pro Overpass
   // sozinho se indisponível, independentemente deste toggle.
   useViarioGpkg: true,
+  // "Menor energia pelo terreno": tratar lagos/represas e rios da camada de água
+  // do gpkg como barreira intransponível (a rota não cruza água). Desligado =
+  // água ignorada (e o gpkg nem é baixado se os portais também estiverem off).
+  useWaterMask: true,
   // "Menor energia pelo terreno": atravessar lagos/rios barrados por cima de
   // pontes/túneis via portais (atalho no tabuleiro). Desligado = água é barreira
   // total (sem travessia). Não afeta o "pelo viário" (já roteia nas vias).
@@ -7298,7 +7302,9 @@ async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
   // pra rota não atravessar água. Pontes/túneis viram PORTAIS (abaixo), pra
   // cruzar a água barrada no tabuleiro. Origem/destino nunca são barrados.
   let portals = null;
-  try {
+  // Toggle nos Parâmetros (useWaterMask): desligado → água ignorada (e o gpkg
+  // nem é baixado se os portais também estiverem off → zero tráfego no terreno).
+  if (params.useWaterMask !== false) try {
     const water = await queryWater(bb);
     if (water && (water.polys.length || water.lines.length)) {
       const block = new Uint8Array(dem.W * dem.H);
@@ -8413,6 +8419,7 @@ const PARAM_CHECKBOXES = {
   useFabdem: document.getElementById('param-use-fabdem'),
   useSampaDem: document.getElementById('param-use-sampa-dem'),
   useViarioGpkg: document.getElementById('param-use-viario-gpkg'),
+  useWaterMask: document.getElementById('param-use-water-mask'),
   usePortals: document.getElementById('param-use-portals'),
 };
 
@@ -8465,6 +8472,7 @@ function fillParamInputs() {
   PARAM_CHECKBOXES.useFabdem.checked       = params.useFabdem !== false;
   PARAM_CHECKBOXES.useSampaDem.checked     = !!params.useSampaDem;
   PARAM_CHECKBOXES.useViarioGpkg.checked   = params.useViarioGpkg !== false;
+  PARAM_CHECKBOXES.useWaterMask.checked    = params.useWaterMask !== false;
   PARAM_CHECKBOXES.usePortals.checked      = params.usePortals !== false;
 }
 
