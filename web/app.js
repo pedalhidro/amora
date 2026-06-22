@@ -6508,7 +6508,8 @@ async function loadDemMosaic(bb) {
 }
 
 // Overpass: ways com highway=* na bbox. Devolve { nodes: Map<id, [lat,lng]>,
-// ways: [{ nodes: [id1, id2, …] }] }.
+// ways: [{ nodes: [id1, id2, …], tags: {…} }] }. As tags (`out body`) trazem
+// bridge/tunnel → vão pro grafo vetorial como tabuleiro (achatamento do perfil).
 async function fetchOsmRoadsForBbox(bb) {
   const q = `[out:json][timeout:30];
 way["highway"](${bb.south},${bb.west},${bb.north},${bb.east});
@@ -6526,9 +6527,33 @@ out skel qt;`;
   const ways  = [];
   for (const el of data.elements || []) {
     if (el.type === 'node') nodes.set(el.id, [el.lat, el.lon]);
-    else if (el.type === 'way' && Array.isArray(el.nodes)) ways.push({ nodes: el.nodes });
+    else if (el.type === 'way' && Array.isArray(el.nodes)) ways.push({ nodes: el.nodes, tags: el.tags || {} });
   }
   return { nodes, ways };
+}
+
+// Converte a resposta do Overpass ({nodes, ways}) no formato que
+// viarioGraphRoute consome — lines = polilinhas [[lng,lat],…]; meta[i].deck =
+// ponte/túnel (das tags do OSM). Assim o "Menor energia pelo viário" via
+// Overpass roteia no MESMO grafo vetorial do gpkg: o traçado segue a geometria
+// real das vias, em vez do serrilhado de ~30 m do grid raster.
+function osmLinesForGraph(osm) {
+  const lines = [], meta = [];
+  for (const w of osm.ways) {
+    const line = [];
+    for (const id of w.nodes) {
+      const ll = osm.nodes.get(id);          // [lat, lon]
+      if (ll) line.push([ll[1], ll[0]]);     // → [lng, lat]
+    }
+    if (line.length < 2) continue;
+    const t = w.tags || {};
+    // No OSM a parte em ponte/túnel já vem como way própria, então a way inteira
+    // é tabuleiro — casa com o achatamento por-way do viarioGraphRoute.
+    const deck = (t.bridge && t.bridge !== 'no') || (t.tunnel && t.tunnel !== 'no');
+    lines.push(line);
+    meta.push({ deck: !!deck });
+  }
+  return { lines, meta };
 }
 
 // Bresenham: pinta (r0,c0)→(r1,c1) na máscara.
@@ -7229,8 +7254,9 @@ async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
 
   // ROAD primário: roteia SOBRE o grafo vetorial do gpkg — a rota segue a
   // geometria real das vias (linhas suaves, sem serrilhado do grid). Sucesso
-  // = retorno imediato. Falha (gpkg indisponível / sem caminho) cai pro grid
-  // raster via Overpass logo abaixo.
+  // = retorno imediato. Falha (gpkg indisponível / sem caminho) cai pro
+  // Overpass logo abaixo (que também roteia num grafo vetorial → traçado
+  // igualmente alinhado às vias; o grid raster é só o último fallback).
   // Toggle (Parâmetros): com o gpkg ligado, é a fonte primária; desligado,
   // pula direto pro Overpass. O gpkg ainda cai pro Overpass sozinho se a
   // consulta falhar / não achar caminho.
@@ -7256,21 +7282,41 @@ async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
     }
   }
 
-  // Rede viária no grid raster (Overpass) — fonte primária com o gpkg
-  // desligado, ou fallback quando o gpkg falha. Último caso: energia livre
-  // (networkMask = null).
-  let networkMask = null;
+  // Overpass como rede viária — PRIMÁRIO com o gpkg desligado, FALLBACK quando o
+  // gpkg falha. Buscado UMA vez; duas tentativas do melhor pro pior:
+  //   1) grafo VETORIAL (mesma engine do gpkg) → traçado alinhado às vias reais
+  //   2) grid RASTER (máscara + Dijkstra no DEM) → serrilhado de ~30 m, porém
+  //      resiliente; só roda se o grafo não achar caminho.
+  let osmRoads = null;
   if (mode === 'road') {
     try {
-      const osm = await fetchOsmRoadsForBbox(bb);
-      if (!osm.ways.length) {
-        showToast('Sem viário no bbox — caindo para menor energia livre.');
-      } else {
-        networkMask = rasterizeRoads(osm, bb, dem.H, dem.W, A);
-      }
+      osmRoads = await fetchOsmRoadsForBbox(bb);
     } catch (e2) {
       console.warn('[energy_road] Overpass falhou:', e2.message);
       showToast(`Viário indisponível (${e2.message}) — caindo para menor energia livre.`);
+    }
+    // 1) Grafo vetorial do Overpass: roteia na geometria real das vias (idêntico
+    // ao gpkg, só muda a fonte). Pontes/túneis vêm das tags do OSM.
+    if (osmRoads && osmRoads.ways.length) {
+      try {
+        const { lines, meta } = osmLinesForGraph(osmRoads);
+        const path = viarioGraphRoute(lines, meta, fromLatLng, toLatLng, dem, bb, A);
+        if (path && path.length) return path;
+        console.info('[energy_road] grafo Overpass sem caminho — tentando grid raster');
+      } catch (e) {
+        console.warn('[energy_road] grafo Overpass falhou:', e.message);
+      }
+    }
+  }
+
+  // 2) Rede viária no grid raster (Overpass) — fallback do grafo vetorial.
+  // Último caso: energia livre (networkMask = null).
+  let networkMask = null;
+  if (mode === 'road' && osmRoads) {
+    if (!osmRoads.ways.length) {
+      showToast('Sem viário no bbox — caindo para menor energia livre.');
+    } else {
+      networkMask = rasterizeRoads(osmRoads, bb, dem.H, dem.W, A);
     }
   }
 
@@ -7319,15 +7365,23 @@ async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
       for (const rings of water.polys) fillRingsEvenOdd(rings.map((r) => r.map((p) => toG(p[0], p[1]))), block, dem.W, dem.H);
       for (const ln of water.lines) rasterSupercover(ln.map((p) => toG(p[0], p[1])), block, dem.W, dem.H);
       // CORREDORES: as vias (incl. pontes/túneis) abrem caminho passável sobre a
-      // água — uma estrada que cruza um rio/represa não é barreira. Rasteriza o
-      // viário e poupa essas células do bloqueio (o "network carves corridors"
-      // do sampasimu). Sem isto, um destino sobre/à beira d'água fica ilhado.
+      // água — uma estrada que cruza um rio/represa não é barreira. Poupa essas
+      // células do bloqueio (o "network carves corridors" do sampasimu). Sem
+      // isto, um destino sobre/à beira d'água fica ilhado.
+      //
+      // Duas fontes de corredor: (a) `networkMask` — a rede RASTER em uso no
+      // "pelo viário" via Overpass (gpkg desligado/indisponível); é ELA que o
+      // worker roteia, então é ELA que precisa atravessar a água, senão a ponte
+      // do OSM fica barrada e a rota cai na reta. (b) `road` — as linhas
+      // VETORIAIS do gpkg (corredores do modo terreno; só existem com o gpkg
+      // carregado). Sem (a), o Overpass perdia todas as travessias d'água.
       let road = null;
       if (viaLines) { road = new Uint8Array(dem.W * dem.H); for (const ln of viaLines) rasterSupercover(ln.map((p) => toG(p[0], p[1])), road, dem.W, dem.H); }
       let blocked = 0, corr = 0;
       for (let i = 0; i < block.length; i++) {
         if (!block[i] || !dem.mask[i]) continue;
-        if (road && road[i]) { corr++; continue; }   // via passa por cima da água
+        if (networkMask && networkMask[i]) { corr++; continue; }   // via raster (Overpass) cruza a água
+        if (road && road[i]) { corr++; continue; }                 // via vetorial (gpkg) cruza a água
         dem.mask[i] = 0; waterBlocked.push(i); blocked++;
       }
       dem.mask[seedR * dem.W + seedC] = 1; dem.mask[goalR * dem.W + goalC] = 1;
