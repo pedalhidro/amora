@@ -32,9 +32,10 @@ Project-minted `ph:` classes & properties:
   (`⊑ prov:Entity, schema:ImageObject`), `ph:Association` (reification of
   Tour↔EventSeries membership), `ph:RouteReference` (URL + provider).
 - **Object properties:** `ph:capturedDuring` (Image → Tour, `⊑ prov:wasGeneratedBy`),
-  `ph:linkRoute`, `ph:inSeriesEdition`, `ph:inEventSeries`, `ph:energyEstimate`.
-- **Datatype properties:** `ph:linkInstagram`, `ph:countAttendee`,
-  `ph:countNewcomer`, `ph:sequenceInSeries`, `ph:intensityClassification`,
+  `ph:linkRoute`, `ph:inSeriesEdition`, `ph:inEventSeries`.
+- **Datatype properties:** `ph:energyEstimate` / `ph:measuredEnergy` (plain
+  `xsd:decimal` kJ literals on the tour), `ph:linkInstagram`, `ph:countAttendee`,
+  `ph:countNewcomer`, `ph:sequenceInSeries`,
   `ph:mediaCount`, `ph:anonymized`, `ph:compressed`.
 - **Reusable instances:** `ph:rwgps`, `ph:strava` declared as
   `schema:Organization` so route references can use `schema:provider`.
@@ -47,7 +48,7 @@ Old data keeps validating; new data should use the successors.
 
 - Classes: `PascalCase`.
 - Properties: `lowerCamelCase`.
-- Avoid baking units into property names (`ph:estimate_quilojoules` → `ph:energyEstimate`; unit lives in `qudt:hasUnit`).
+- Avoid baking units into property names (`ph:estimate_quilojoules` → `ph:energyEstimate`; the unit — kJ — is implicit in the property, documented in its `rdfs:comment`).
 - Avoid snake_case (legacy artefact — being phased out).
 
 ## 2. Shapes & validation
@@ -58,8 +59,12 @@ Shapes are organized as one `sh:NodeShape` per concept, with `sh:property` block
 - `sh:Violation` — must hold (date format, GPS presence, valid IRIs, route reference).
 - `sh:Warning` — encouraged but not required (attribution, license, camera metadata, optional flags).
 
-**Cross-property constraint (SPARQL).** `ph:EnergyEstimateShape` validates that
-`ph:intensityClassification` matches the bucket implied by `qudt:numericValue` (kJ):
+**Energy & derived intensity.** `ph:energyEstimate` and `ph:measuredEnergy` are
+plain `xsd:decimal` kJ literals on the tour (`sh:datatype xsd:decimal`,
+`sh:minInclusive 0`, `sh:maxCount 1`, `sh:Warning` in `TourShape`). The
+qualitative **intensity** label is *not stored* — it's derived from the kJ
+estimate by fixed bands, computed in the readers (`censo.html`, `app.js`,
+`backend/main.py` `_intensity_for`):
 
 | Range (kJ)  | Label         |
 | ----------- | ------------- |
@@ -68,10 +73,13 @@ Shapes are organized as one `sh:NodeShape` per concept, with `sh:property` block
 | 300 ≤ x < 500 | Endorfinado |
 | 500 ≤ x < 1000 | Frito      |
 | x ≥ 1000    | Insano        |
-| x < 0       | invalid (rejected via separate `sh:minInclusive 0`) |
 
-Scoped to the energy-estimate context via `sh:targetObjectsOf ph:energyEstimate`,
-not on every `qudt:QuantityValue` (so other quantities aren't subject to the rule).
+(Previously each energy pointed at a `qudt:QuantityValue` node carrying
+`qudt:numericValue` + `qudt:hasUnit unit:KiloJ` + a stored
+`ph:intensityClassification`, and `ph:EnergyEstimateShape` SPARQL-validated the
+label against the band. The nested nodes, that shape, `ph:QuantityValueShape`,
+and `ph:intensityClassification` were all removed when the energies were
+flattened to literals.)
 
 **License is an IRI**, not a string (`sh:nodeKind sh:IRI`). Use the canonical
 Creative Commons URL.
@@ -105,7 +113,7 @@ script should always pass the merged graph.**
 - Images: `phd:image_<phash16>` — uses the full 16-hex perceptual hash as the
   IRI suffix. **Near-duplicate uploads share an IRI**, which is the clustering
   behavior described in `CLAUDE.md`.
-- Series: `phd:PH`, `phd:BP`, `phd:S` (Suados), `phd:BT` (Trips/Bondes).
+- Series: `phd:PH`, `phd:BP`, `phd:S` (Suados), `phd:BT` (Bicicletografia).
 - Associations: `phd:assoc_<series>_<n>` (one per (series, sequence) pair).
 - Providers: `ph:rwgps`, `ph:strava` (vocabulary-level instances).
 
@@ -160,7 +168,7 @@ bucket table the SHACL rule enforces.
 declared with `schema:alternateName` carrying the raw nickname.
 
 **Series titles**: hardcoded guesses (`Pedais Hidrográficos Regulares`,
-`Bicipassarinhadas`, `Pedais Hidrográficos Suados`, `Bondes / Trips`) — update
+`Bicipassarinhadas`, `Pedais Hidrográficos Suados`, `Bicicletografia`) — update
 in the script if better titles emerge.
 
 ## 5. Upload form (upload-form.html — legacy / kit-export)

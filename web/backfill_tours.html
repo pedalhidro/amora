@@ -96,7 +96,6 @@ const PHD_NS = 'https://pedalhidrografi.co/data/';
 const SCHEMA = 'https://schema.org/';
 const DCT    = 'http://purl.org/dc/terms/';
 const RDF_TYPE = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
-const QUDT_NUM = 'http://qudt.org/schema/qudt/numericValue';
 
 const FIELD_PREDS = {
   desc:     [DCT + 'description'],
@@ -137,14 +136,6 @@ function fmtDateTime(value) {
   }
   return v.length === 16 ? `${v}:00-03:00` : `${v}-03:00`;
 }
-function intensityFor(kj) {
-  if (kj == null) return null;
-  if (kj < 150)  return 'De boa';
-  if (kj < 300)  return 'Ok';
-  if (kj < 500)  return 'Endorfinado';
-  if (kj < 1000) return 'Frito';
-  return 'Insano';
-}
 function parseDuration(value) {
   if (!value) return null;
   const parts = value.split(':').map(p => parseInt(p, 10));
@@ -175,11 +166,8 @@ function extractTour(own, subjBy) {
     else if (key === 'departed' || key === 'arrived')
       fields[key].orig = q.object.value.slice(0, 16).replace('T', ' ');
     else if (key === 'moving') fields[key].orig = durToDisplay(q.object.value);
-    else if (q.object.termType === 'BlankNode') {
-      const num = (subjBy.get(q.object.value) || [])
-        .find(x => x.predicate.value === QUDT_NUM);
-      if (num) fields[key].orig = num.object.value;
-    } else fields[key].orig = q.object.value;
+    // energyEstimate / measuredEnergy agora são literais xsd:decimal diretos.
+    else fields[key].orig = q.object.value;
   }
   return { fields, title, date };
 }
@@ -222,21 +210,12 @@ function buildTourPatch(id, tour, cur) {
   handle('estimate', v => {
     const kj = parseFloat(v);
     if (!Number.isFinite(kj) || kj < 0) throw new Error(`energia estimada inválida: "${v}"`);
-    newProps.push(`ph:energyEstimate phd:tour_${id}_energy`);
-    derived.push(
-      `phd:tour_${id}_energy a qudt:QuantityValue ;\n` +
-      `    qudt:numericValue "${kj}"^^xsd:decimal ;\n` +
-      `    qudt:hasUnit unit:KiloJ ;\n` +
-      `    ph:intensityClassification "${turtleEscape(intensityFor(kj))}" .`);
+    newProps.push(`ph:energyEstimate "${kj}"^^xsd:decimal`);
   });
   handle('measured', v => {
     const kj = parseFloat(v);
     if (!Number.isFinite(kj) || kj < 0) throw new Error(`energia medida inválida: "${v}"`);
-    newProps.push(`ph:measuredEnergy phd:tour_${id}_measured`);
-    derived.push(
-      `phd:tour_${id}_measured a qudt:QuantityValue ;\n` +
-      `    qudt:numericValue "${kj}"^^xsd:decimal ;\n` +
-      `    qudt:hasUnit unit:KiloJ .`);
+    newProps.push(`ph:measuredEnergy "${kj}"^^xsd:decimal`);
   });
   const derivedBlock = derived.length ? `\n${derived.join('\n')}\n` : '';
   const ttl = PREFIXES +

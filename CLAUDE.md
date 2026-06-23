@@ -120,11 +120,15 @@ host (CDN) the form is offline-friendly but uploads have nowhere to go.
   `schema:thumbnail`.
 
 **Nested nodes are minted IRIs, not blank nodes.** The `schema:GeoCoordinates`
-(`schema:locationCreated`), `nfo:FileHash` (`nfo:hasHash`), `qudt:QuantityValue`
-(`ph:energyEstimate` / `ph:measuredEnergy`), and `ph:RouteReference`
-(`ph:linkRoute`) sub-objects use deterministic IRIs derived from the parent —
-`<parent>_geo`, `_hash`, `_energy`, `_measured`, `_route` (e.g.
-`phd:tour_1_energy`, `phd:image_<phash>_geo`). The trailing `_` keeps siblings
+(`schema:locationCreated`), `nfo:FileHash` (`nfo:hasHash`), and
+`ph:RouteReference` (`ph:linkRoute`) sub-objects use deterministic IRIs derived
+from the parent — `<parent>_geo`, `_hash`, `_route` (e.g.
+`phd:image_<phash>_geo`, `phd:tour_1_route`). (`ph:energyEstimate` /
+`ph:measuredEnergy` used to mint `_energy` / `_measured` `qudt:QuantityValue`
+nodes too, but were **flattened to plain `xsd:decimal` kJ literals on the tour**
+— the unit is implicit (kJ) and `ph:intensityClassification` was dropped, since
+intensity is derivable from the kJ value by fixed bands and is computed in
+readers.) The trailing `_` keeps siblings
 distinct (`phd:tour_1` never prefix-matches `phd:tour_10`). This is what makes
 deletion/merge trivial: purging a subject = removing `(subject, *, *)` plus the
 `<subject>_*` derived IRIs (`_derived_subjects` / `_purge_subject` in

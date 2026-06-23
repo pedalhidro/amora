@@ -5,12 +5,11 @@
 @prefix dcterms: <http://purl.org/dc/terms/> .
 @prefix schema:  <https://schema.org/> .
 @prefix prov:    <http://www.w3.org/ns/prov#> .
-@prefix qudt:    <http://qudt.org/schema/qudt/> .
 
 <https://pedalhidrografi.co/terms> a owl:Ontology ;
     dcterms:title "Pedal Hidrográfico — vocabulário"@pt ;
     dcterms:description
-        "Vocabulário específico do coletivo Pedal Hidrográfico. Reutiliza PROV-O, schema.org, Dublin Core, QUDT, NFO, EXIF, GeoSPARQL; mint termos ph: apenas para conceitos próprios."@pt ;
+        "Vocabulário específico do coletivo Pedal Hidrográfico. Reutiliza PROV-O, schema.org, Dublin Core, NFO, EXIF, GeoSPARQL; mint termos ph: apenas para conceitos próprios."@pt ;
     owl:versionInfo "0.1-draft" .
 
 # =====================================================================
@@ -136,28 +135,32 @@ ph:hasNewcomer a owl:ObjectProperty ;
     rdfs:range schema:Person ;
     rdfs:subPropertyOf schema:attendee .
 
-ph:energyEstimate a owl:ObjectProperty ;
+ph:energyEstimate a owl:DatatypeProperty ;
     rdfs:label "estimativa de energia"@pt ;
     rdfs:comment
-        "Energia estimada gasta no passeio. Unidade fica em qudt:hasUnit dentro do qudt:QuantityValue."@pt ;
+        "Energia estimada gasta no passeio, em quilojoules (kJ). Valor numérico literal direto no passeio."@pt ;
     rdfs:domain ph:Tour ;
-    rdfs:range qudt:QuantityValue .
+    rdfs:range xsd:decimal .
 
-ph:estimate_quilojoules a owl:ObjectProperty ;
+ph:measuredEnergy a owl:DatatypeProperty ;
+    rdfs:label "energia medida"@pt ;
+    rdfs:comment
+        "Energia efetivamente medida no passeio (ex.: trabalho mecânico de uma atividade GPS), em quilojoules (kJ). Valor numérico literal direto no passeio."@pt ;
+    rdfs:domain ph:Tour ;
+    rdfs:range xsd:decimal .
+
+ph:estimate_quilojoules a owl:DatatypeProperty ;
     rdfs:label "estimativa em quilojoules (legado)"@pt ;
     rdfs:comment
-        "Nome legado em snake_case. Preferir ph:energyEstimate; a unidade não precisa estar no nome (vive em qudt:hasUnit)."@pt ;
+        "Nome legado em snake_case. Preferir ph:energyEstimate (em kJ)."@pt ;
     rdfs:domain ph:Tour ;
-    rdfs:range qudt:QuantityValue ;
+    rdfs:range xsd:decimal ;
     owl:equivalentProperty ph:energyEstimate ;
     owl:deprecated true .
 
-ph:intensityClassification a owl:DatatypeProperty ;
-    rdfs:label "classificação de intensidade"@pt ;
-    rdfs:comment
-        "Rótulo qualitativo da intensidade (ex.: 'Endorfinado'). Anexado a um qudt:QuantityValue."@pt ;
-    rdfs:domain qudt:QuantityValue ;
-    rdfs:range xsd:string .
+# ph:intensityClassification foi removida: a intensidade ('De boa', 'Ok',
+# 'Endorfinado', 'Frito', 'Insano') é derivada do valor em kJ por faixas fixas,
+# computada nos leitores (censo.html / app.js) — não é mais armazenada.
 
 # =====================================================================
 # Propriedades — Foto (ph:Image)

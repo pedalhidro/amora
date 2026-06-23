@@ -5413,17 +5413,24 @@ async function _renderTourSummary(tourId) {
     };
   }
 
-  // Energia estimada via blank node ph:energyEstimate (qudt:QuantityValue).
-  function readQuantity(pred) {
-    const bn = first(pred, 'bn');
-    if (!bn) return null;
-    const m = bnodeProps(bn);
-    const num = m.get(QUDT + 'numericValue');
-    const cls = m.get(PH + 'intensityClassification');
-    return num ? { value: num, class: cls } : null;
+  // ph:energyEstimate / ph:measuredEnergy são literais xsd:decimal (kJ) direto
+  // no tour. A classificação de intensidade é derivada do valor por faixas
+  // fixas (não é mais armazenada no TTL).
+  function intensityFor(kj) {
+    if (!Number.isFinite(kj)) return null;
+    if (kj < 150)  return 'De boa';
+    if (kj < 300)  return 'Ok';
+    if (kj < 500)  return 'Endorfinado';
+    if (kj < 1000) return 'Frito';
+    return 'Insano';
   }
-  const energyEst  = readQuantity(PH + 'energyEstimate');
-  const energyMeas = readQuantity(PH + 'measuredEnergy');
+  function readEnergy(pred, withClass) {
+    const v = first(pred);
+    if (v == null) return null;
+    return { value: v, class: withClass ? intensityFor(parseFloat(v)) : null };
+  }
+  const energyEst  = readEnergy(PH + 'energyEstimate', true);
+  const energyMeas = readEnergy(PH + 'measuredEnergy', false);
 
   // Pessoas (autoras + provedores + participantes + iniciantes).
   // Os dois últimos são listados nominalmente APENAS quando o toggle de

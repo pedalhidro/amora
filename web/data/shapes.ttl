@@ -8,7 +8,6 @@
 @prefix sf: <http://www.opengis.net/ont/sf#> .
 @prefix pav: <http://purl.org/pav/> .
 @prefix exif: <http://www.w3.org/2003/12/exif/ns#> .
-@prefix qudt: <http://qudt.org/schema/qudt/> .
 @prefix nfo: <http://www.semanticdesktop.org/ontologies/2007/03/22/nfo#> .
 
 ph:ImageShape a sh:NodeShape ;
@@ -271,8 +270,17 @@ ph:TourShape a sh:NodeShape ;
         sh:path ph:energyEstimate ;
         sh:severity sh:Warning ;
         sh:maxCount 1 ;
-        sh:class qudt:QuantityValue ;
-        sh:message "Ideal: estimativa de energia (qudt:QuantityValue)."@pt ;
+        sh:datatype xsd:decimal ;
+        sh:minInclusive 0 ;
+        sh:message "Ideal: estimativa de energia em kJ (número)."@pt ;
+    ] ;
+    sh:property [
+        sh:path ph:measuredEnergy ;
+        sh:severity sh:Warning ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:decimal ;
+        sh:minInclusive 0 ;
+        sh:message "Ideal: energia medida em kJ (número)."@pt ;
     ] ;
     # Listas nominais de participantes / iniciantes (opcionais — só
     # aparecem quando a feature de "listar attendees" está ligada nas
@@ -372,56 +380,8 @@ ph:FileHashShape a sh:NodeShape ;
         sh:message "Hash precisa de valor (nfo:hashValue)."@pt ;
     ] .
 
-ph:QuantityValueShape a sh:NodeShape ;
-    sh:targetClass qudt:QuantityValue ;
-    sh:property [
-        sh:path qudt:numericValue ;
-        sh:severity sh:Violation ;
-        sh:minCount 1 ;
-        sh:maxCount 1 ;
-        sh:datatype xsd:decimal ;
-        sh:message "Quantidade precisa de valor numérico."@pt ;
-    ] ;
-    sh:property [
-        sh:path qudt:hasUnit ;
-        sh:severity sh:Violation ;
-        sh:minCount 1 ;
-        sh:maxCount 1 ;
-        sh:nodeKind sh:IRI ;
-        sh:message "Quantidade precisa de unidade (qudt:hasUnit)."@pt ;
-    ] ;
-    sh:property [
-        sh:path ph:intensityClassification ;
-        sh:severity sh:Warning ;
-        sh:maxCount 1 ;
-        sh:datatype xsd:string ;
-        sh:message "Ideal: classificação de intensidade."@pt ;
-    ] .
-
-ph:EnergyEstimateShape a sh:NodeShape ;
-    sh:targetObjectsOf ph:energyEstimate ;
-    sh:property [
-        sh:path qudt:numericValue ;
-        sh:severity sh:Violation ;
-        sh:minInclusive 0 ;
-        sh:message "Energia estimada não pode ser negativa."@pt ;
-    ] ;
-    sh:sparql [
-        sh:severity sh:Violation ;
-        sh:message "Classificação de intensidade não bate com a faixa: 0–150 → 'De boa', 150–300 → 'Ok', 300–500 → 'Endorfinado', 500–1000 → 'Frito', ≥1000 → 'Insano'."@pt ;
-        sh:select """
-            PREFIX qudt: <http://qudt.org/schema/qudt/>
-            PREFIX ph:   <https://pedalhidrografi.co/terms#>
-            SELECT $this ?value WHERE {
-                $this qudt:numericValue ?value ;
-                      ph:intensityClassification ?actual .
-                BIND(
-                    IF(?value < 150,  "De boa",
-                    IF(?value < 300,  "Ok",
-                    IF(?value < 500,  "Endorfinado",
-                    IF(?value < 1000, "Frito",
-                    "Insano")))) AS ?expected)
-                FILTER (?expected != ?actual)
-            }
-        """ ;
-    ] .
+# ph:QuantityValueShape e ph:EnergyEstimateShape foram removidas: a energia
+# agora é um literal xsd:decimal (kJ) direto no passeio, validado pelas
+# propriedades ph:energyEstimate / ph:measuredEnergy na ph:TourShape acima.
+# A intensidade ('De boa'…'Insano') é derivada do valor por faixas fixas e
+# computada nos leitores (censo.html / app.js) — não é mais armazenada.

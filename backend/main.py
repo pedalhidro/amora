@@ -121,6 +121,23 @@ except Exception:  # noqa: BLE001
 PH_NS  = "https://pedalhidrografi.co/terms#"
 PHD_NS = "https://pedalhidrografi.co/data/"
 
+
+def _intensity_for(kj):
+    """Classificação de intensidade derivada do valor em kJ por faixas fixas.
+    Antes vivia em ph:intensityClassification num nó qudt:QuantityValue; agora
+    a energia é um literal e a intensidade é derivada na leitura."""
+    if kj is None:
+        return None
+    if kj < 150:
+        return "De boa"
+    if kj < 300:
+        return "Ok"
+    if kj < 500:
+        return "Endorfinado"
+    if kj < 1000:
+        return "Frito"
+    return "Insano"
+
 # Limite por requisição. Um upload de vídeo manda 360p + 720p (webm) +
 # áudio + thumb num único multipart, então o teto precisa acomodar a soma.
 # Override via env pra hosts com clipes mais longos.
@@ -1300,7 +1317,6 @@ def _build_feed_xml(tours_text):
     SCHEMA = Namespace("https://schema.org/")
     DCT = Namespace("http://purl.org/dc/terms/")
     PROV = Namespace("http://www.w3.org/ns/prov#")
-    QUDT = Namespace("http://qudt.org/schema/qudt/")
 
     g = Graph().parse(data=tours_text, format="turtle")
 
@@ -1325,13 +1341,11 @@ def _build_feed_xml(tours_text):
         metrics = []
 
         energy_line = None
-        energy = g.value(t, PH.energyEstimate)
-        if energy is not None:
-            kj = g.value(energy, QUDT.numericValue)
-            intensity = g.value(energy, PH.intensityClassification)
-            if kj is not None:
-                energy_line = (f"{float(kj):.0f} quilojaules"
-                               + (f" ({intensity})" if intensity else ""))
+        kj = g.value(t, PH.energyEstimate)
+        if kj is not None:
+            intensity = _intensity_for(float(kj))
+            energy_line = (f"{float(kj):.0f} quilojaules"
+                           + (f" ({intensity})" if intensity else ""))
 
         # <description>: resumo plano — fallback pra leitores que ignoram
         # content:encoded.
@@ -1570,7 +1584,6 @@ def _render_tour_index(tour_id):
     SCHEMA = Namespace("https://schema.org/")
     DCT = Namespace("http://purl.org/dc/terms/")
     PROV = Namespace("http://www.w3.org/ns/prov#")
-    QUDT = Namespace("http://qudt.org/schema/qudt/")
 
     g = _tours_graph()
     t = URIRef(PHD_NS + "tour_" + tour_id)
@@ -1592,13 +1605,11 @@ def _render_tour_index(tour_id):
     img_url = str(img) if img else None
 
     energy_line = None
-    energy = g.value(t, PH.energyEstimate)
-    if energy is not None:
-        kj = g.value(energy, QUDT.numericValue)
-        intensity = g.value(energy, PH.intensityClassification)
-        if kj is not None:
-            energy_line = (f"{float(kj):.0f} quilojaules"
-                           + (f" ({intensity})" if intensity else ""))
+    kj = g.value(t, PH.energyEstimate)
+    if kj is not None:
+        intensity = _intensity_for(float(kj))
+        energy_line = (f"{float(kj):.0f} quilojaules"
+                       + (f" ({intensity})" if intensity else ""))
     route_ref = g.value(t, PH.linkRoute)
     route_url = g.value(route_ref, SCHEMA.url) if route_ref else None
     ig_url = g.value(t, PH.linkInstagram)

@@ -300,14 +300,6 @@ function fmtDateTime(value) {
   }
   return v.length === 16 ? `${v}:00-03:00` : `${v}-03:00`;
 }
-function intensityFor(kj) {
-  if (kj == null) return null;
-  if (kj < 150)  return 'De boa';
-  if (kj < 300)  return 'Ok';
-  if (kj < 500)  return 'Endorfinado';
-  if (kj < 1000) return 'Frito';
-  return 'Insano';
-}
 function parseDuration(value) {
   if (!value) return null;
   const parts = value.split(':').map(p => parseInt(p, 10));
@@ -667,30 +659,16 @@ function buildTtl() {
     props.push(`ph:countNewcomer ${newcomerN}`);
   if (energyKj !== '') {
     const kj = parseFloat(energyKj);
-    if (Number.isFinite(kj) && kj >= 0) {
-      const cls = intensityFor(kj);
-      props.push(`ph:energyEstimate ${tourIri}_energy`);
-      derived.push(
-        `${tourIri}_energy a qudt:QuantityValue ;\n` +
-        `    qudt:numericValue "${kj}"^^xsd:decimal ;\n` +
-        `    qudt:hasUnit unit:KiloJ ;\n` +
-        `    ph:intensityClassification "${turtleEscape(cls)}" .`
-      );
-    }
+    if (Number.isFinite(kj) && kj >= 0)
+      props.push(`ph:energyEstimate "${kj}"^^xsd:decimal`);
   }
   if (departed)  props.push(`ph:departedAt "${departed}"^^xsd:dateTime`);
   if (arrived)   props.push(`ph:arrivedAt "${arrived}"^^xsd:dateTime`);
   if (movingDur) props.push(`ph:movingDuration "${movingDur}"^^xsd:duration`);
   if (measured !== '') {
     const kj = parseFloat(measured);
-    if (Number.isFinite(kj) && kj >= 0) {
-      props.push(`ph:measuredEnergy ${tourIri}_measured`);
-      derived.push(
-        `${tourIri}_measured a qudt:QuantityValue ;\n` +
-        `    qudt:numericValue "${kj}"^^xsd:decimal ;\n` +
-        `    qudt:hasUnit unit:KiloJ .`
-      );
-    }
+    if (Number.isFinite(kj) && kj >= 0)
+      props.push(`ph:measuredEnergy "${kj}"^^xsd:decimal`);
   }
   if (hadBonde) props.push('ph:hadBonde true');
   if (hadRain)  props.push('ph:hadRain true');
@@ -965,20 +943,8 @@ async function prefillFromId(tourId) {
       if (url)  routeUrl  = url.object.value;
       if (prov) routeProv = shortIRI(prov.object.value);
     }
-    else if (p === PH_NS + 'energyEstimate') {
-      const bn = objBnode(q);
-      if (!bn) continue;
-      const num = subjBy.get(bn)?.find(x =>
-        x.predicate.value === 'http://qudt.org/schema/qudt/numericValue');
-      if (num) energyKj = num.object.value;
-    }
-    else if (p === PH_NS + 'measuredEnergy') {
-      const bn = objBnode(q);
-      if (!bn) continue;
-      const num = subjBy.get(bn)?.find(x =>
-        x.predicate.value === 'http://qudt.org/schema/qudt/numericValue');
-      if (num) measured = num.object.value;
-    }
+    else if (p === PH_NS + 'energyEstimate') energyKj = objLit(q);
+    else if (p === PH_NS + 'measuredEnergy') measured = objLit(q);
     else if (p === PH_NS + 'movingDuration') {
       // "PT2H35M0S" → "2:35:00" pra exibir; aceita H, M, S.
       const lit = objLit(q);

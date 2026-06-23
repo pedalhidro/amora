@@ -202,7 +202,9 @@
         <th data-key="title"   data-num="false">Título</th>
         <th data-key="attendees" data-num="true">Participantes</th>
         <th data-key="newcomers" data-num="true">Iniciantes</th>
+        <th data-key="media"   data-num="true">Mídias</th>
         <th data-key="energy"  data-num="true">kJ&nbsp;est.</th>
+        <th data-key="measured" data-num="true">kJ&nbsp;med.</th>
         <th data-key="totalKj" data-num="true">kJ&nbsp;coletivo</th>
         <th data-key="collectiveH"       data-num="true">Tempo&nbsp;coletivo</th>
         <th data-key="collectiveMovingH" data-num="true">Tempo&nbsp;movimento&nbsp;coletivo</th>
@@ -217,8 +219,10 @@
 </div>
 
 <footer>
-  Calculado a partir de <code>web/data/tours.ttl</code>; intensidade segue a
-  faixa declarada na ontologia (kJ por participante, não pelo coletivo).
+  Calculado a partir de <code>web/data/tours.ttl</code> (mídias de
+  <code>web/data/uploads.ttl</code> via <code>ph:capturedDuring</code>);
+  intensidade segue a faixa declarada na ontologia (kJ por participante, não
+  pelo coletivo).
   <span id="meta-ts"></span>
 </footer>
 
@@ -241,7 +245,6 @@ const PH     = 'https://pedalhidrografi.co/terms#';
 const PHD    = 'https://pedalhidrografi.co/data/';
 const SCHEMA = 'https://schema.org/';
 const DCT    = 'http://purl.org/dc/terms/';
-const QUDT   = 'http://qudt.org/schema/qudt/';
 const RDFT   = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
 
 // Lê o toggle de privacidade do localStorage (compartilhado com o app).
@@ -252,6 +255,17 @@ function attendeeListEnabled() {
     if (!raw) return false;
     return JSON.parse(raw)?.attendees?.list === true;
   } catch (_) { return false; }
+}
+
+// Intensidade é derivada do valor em kJ (estimativa) por faixas fixas —
+// não é mais armazenada no TTL (era ph:intensityClassification num nó).
+function intensityFor(kj) {
+  if (!Number.isFinite(kj)) return null;
+  if (kj < 150)  return 'De boa';
+  if (kj < 300)  return 'Ok';
+  if (kj < 500)  return 'Endorfinado';
+  if (kj < 1000) return 'Frito';
+  return 'Insano';
 }
 
 const SERIES_LABEL_OVERRIDE = { S: 'PH-S' };
@@ -269,8 +283,7 @@ async function loadTours() {
   return new Promise((resolve, reject) => {
     // Acumula por subject, depois cruza com bnodes (energyEstimate, assoc).
     const types   = new Map();
-    const props   = new Map();   // subj → { title, date, attendee, newcomer, energyBn, assocs:Set, attendees:Set, newcomers:Set }
-    const energy  = new Map();   // bn   → { kj, intensity }
+    const props   = new Map();   // subj → { title, date, attendee, newcomer, energy, measured, assocs:Set, attendees:Set, newcomers:Set }
     const assocs  = new Map();   // bn   → { series, seq }
     const labels  = new Map();   // person/series IRI → schema:alternateName / schema:name / dcterms:title
     function s(subj) {
@@ -288,14 +301,13 @@ async function loadTours() {
         const tours = [];
         for (const [iri, p] of props) {
           if (types.get(iri) !== PH + 'Tour') continue;
-          const e = p.energyBn ? energy.get(p.energyBn) : null;
           const code = [...p.assocs].map((a) => {
             const x = assocs.get(a);
             return x && Number.isInteger(x.seq) ? `${seriesLabel(x.series)} ${x.seq}` : null;
           }).filter(Boolean).sort().join(' & ');
           const attendees = Number.isFinite(p.attendee) ? p.attendee : null;
           const newcomers = Number.isFinite(p.newcomer) ? p.newcomer : null;
-          const kj = e?.kj ?? null;
+          const kj = Number.isFinite(p.energy) ? p.energy : null;
           const totalKj = (attendees != null && kj != null) ? attendees * kj : null;
           // Duração total do passeio: arrivedAt − departedAt. Em horas.
           let elapsedH = null;
@@ -327,7 +339,8 @@ async function loadTours() {
             code:      code || '',
             attendees, newcomers,
             energy:    kj,
-            intensity: e?.intensity || '',
+            measured:  Number.isFinite(p.measured) ? p.measured : null,
+            intensity: intensityFor(kj) || '',
             totalKj,
             elapsedH,
             movingH,
@@ -350,13 +363,9 @@ async function loadTours() {
       else if (pred === DCT + 'date')   s(sub).date  = obj;
       else if (pred === PH  + 'countAttendee') s(sub).attendee = parseInt(obj, 10);
       else if (pred === PH  + 'countNewcomer') s(sub).newcomer = parseInt(obj, 10);
-      else if (pred === PH  + 'energyEstimate') s(sub).energyBn = obj;
-      else if (pred === QUDT + 'numericValue') {
-        const e = energy.get(sub) || {}; e.kj = parseFloat(obj); energy.set(sub, e);
-      }
-      else if (pred === PH + 'intensityClassification') {
-        const e = energy.get(sub) || {}; e.intensity = obj; energy.set(sub, e);
-      }
+      // energyEstimate / measuredEnergy são literais xsd:decimal (kJ) direto no tour.
+      else if (pred === PH  + 'energyEstimate') s(sub).energy   = parseFloat(obj);
+      else if (pred === PH  + 'measuredEnergy') s(sub).measured = parseFloat(obj);
       else if (pred === PH + 'inSeriesEdition') s(sub).assocs.add(obj);
       else if (pred === PH + 'inEventSeries') {
         const a = assocs.get(sub) || {}; a.series = obj; assocs.set(sub, a);
@@ -374,6 +383,44 @@ async function loadTours() {
         if (!labels.has(sub)) labels.set(sub, obj);
       }
       else if (pred === DCT + 'title' && !labels.has(sub)) labels.set(sub, obj);
+    });
+  });
+}
+
+// Conta as mídias (ph:Image + ph:Video) de uploads.ttl por passeio, via
+// ph:capturedDuring. Retorna Map<tourIri, {photos, videos}>. Best-effort:
+// num host estático sem uploads.ttl, devolve mapa vazio (coluna fica "—").
+async function loadMediaCounts() {
+  let text;
+  try {
+    const res = await fetch('./data/uploads.ttl', { cache: 'no-cache' });
+    if (!res.ok) throw new Error(`uploads.ttl HTTP ${res.status}`);
+    text = await res.text();
+  } catch (_) {
+    return new Map();
+  }
+  const N3 = await loadN3();
+  const parser = new N3.Parser({ format: 'text/turtle' });
+  return new Promise((resolve, reject) => {
+    const types  = new Map();   // subj → rdf:type
+    const tourOf = new Map();   // subj → tour IRI (ph:capturedDuring)
+    parser.parse(text, (err, quad, done) => {
+      if (err) { reject(err); return; }
+      if (done) {
+        const counts = new Map();   // tourIri → { photos, videos }
+        for (const [subj, tour] of tourOf) {
+          const t = types.get(subj);
+          if (t !== PH + 'Image' && t !== PH + 'Video') continue;
+          const c = counts.get(tour) || { photos: 0, videos: 0 };
+          if (t === PH + 'Video') c.videos++; else c.photos++;
+          counts.set(tour, c);
+        }
+        resolve(counts);
+        return;
+      }
+      const pred = quad.predicate.value;
+      if (pred === RDFT) types.set(quad.subject.value, quad.object.value);
+      else if (pred === PH + 'capturedDuring') tourOf.set(quad.subject.value, quad.object.value);
     });
   });
 }
@@ -420,6 +467,7 @@ function renderMetrics(tours) {
   let toursWithEnergy = 0, toursWithAttendees = 0, toursWithTotalKj = 0;
   let collectiveH = 0, collectiveMovingH = 0;
   let toursWithCollective = 0, toursWithMoving = 0;
+  let totalPhotos = 0, totalVideos = 0, toursWithMedia = 0;
   let firstDate = null, lastDate = null;
   // Zero é tratado como missing (isMissing()) — não soma. Tours com 0
   // declarado em tours.ttl são quase sempre "não medido", não "nenhum
@@ -443,6 +491,9 @@ function renderMetrics(tours) {
       collectiveMovingH += t.collectiveMovingH;
       toursWithMoving++;
     }
+    totalPhotos += t.mediaPhotos || 0;
+    totalVideos += t.mediaVideos || 0;
+    if (!isMissing(t.media)) toursWithMedia++;
     if (t.date) {
       if (!firstDate || t.date < firstDate) firstDate = t.date;
       if (!lastDate  || t.date > lastDate)  lastDate  = t.date;
@@ -466,6 +517,8 @@ function renderMetrics(tours) {
                                                 l: 'Média kJ/passeio',     h: `coletivo ÷ ${toursWithTotalKj} passeios c/ dados` },
     { v: fmtInt(toursWithAttendees ? Math.round(totalAttendees / toursWithAttendees) : null),
                                                 l: 'Média participantes',  h: 'por passeio' },
+    { v: fmtInt(totalPhotos + totalVideos),     l: 'Mídias enviadas',
+                                                h: `${totalPhotos} fotos · ${totalVideos} vídeos · em ${toursWithMedia} passeios` },
     { v: fmtH(toursWithCollective ? collectiveH : null),
                                                 l: 'Tempo coletivo',
                                                 h: `Σ duração × participantes (${toursWithCollective} c/ datas)` },
@@ -510,6 +563,12 @@ function renderTable(tours) {
     const slug = t.iri.startsWith(PHD) ? t.iri.slice(PHD.length) : t.iri;
     const tourId = slug.startsWith('tour_') ? slug.slice('tour_'.length) : slug;
     const editHref = `./upload_tour.html?id=${encodeURIComponent(tourId)}`;
+    // Mídias: total com breakdown foto/vídeo no title (hover).
+    const mediaTitle = isMissing(t.media)
+      ? '' : `${t.mediaPhotos} foto(s), ${t.mediaVideos} vídeo(s)`;
+    const mediaCell = isMissing(t.media)
+      ? `<td class="num missing">—</td>`
+      : `<td class="num" title="${escapeHtml(mediaTitle)}">${fmtInt(t.media)}</td>`;
     return (
       `<tr>` +
         `<td class="muted">${escapeHtml(fmtDate(t.date))}</td>` +
@@ -517,7 +576,9 @@ function renderTable(tours) {
         `<td class="wrap">${escapeHtml(t.title)}</td>` +
         numCell(t.attendees,         fmtInt) +
         numCell(t.newcomers,         fmtInt) +
+        mediaCell +
         numCell(t.energy,            fmtKJ) +
+        numCell(t.measured,          fmtKJ) +
         numCell(t.totalKj,           fmtKJ) +
         numCell(t.collectiveH,       fmtH) +
         numCell(t.collectiveMovingH, fmtH) +
@@ -570,10 +631,20 @@ function attachSort(tours) {
 
 (async () => {
   try {
-    const tours = await loadTours();
+    const [tours, mediaCounts] = await Promise.all([loadTours(), loadMediaCounts()]);
     if (!tours.length) {
       $('#status').innerHTML = '<span class="err">Nenhum passeio encontrado.</span>';
       return;
+    }
+    // Cruza a contagem de mídias (uploads.ttl) com cada passeio.
+    // `media` fica null (não 0) quando não há mídia, pra ordenar junto
+    // com os demais ausentes (sempre no fim) e renderizar "—".
+    for (const t of tours) {
+      const c = mediaCounts.get(t.iri);
+      t.mediaPhotos = c ? c.photos : 0;
+      t.mediaVideos = c ? c.videos : 0;
+      const total = t.mediaPhotos + t.mediaVideos;
+      t.media = total > 0 ? total : null;
     }
     $('#status').remove();
     renderMetrics(tours);

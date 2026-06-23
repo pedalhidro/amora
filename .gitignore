@@ -16,3 +16,8 @@ web/clips/
 # máquina, não versionado.
 .sync-state/
 web/tour_assets/
+sampasimu/
+ignore/
+
+# Keystore de assinatura Android (Capacitor) — segredo, nunca versionar.
+amora-upload.keystore
