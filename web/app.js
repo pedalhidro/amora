@@ -6483,9 +6483,10 @@ async function loadFabdemMosaic(bb) {
 // idênticos, independente da fonte. Lê uma janela única do COG cobrindo a bbox
 // e amostra o vizinho mais próximo. Retorna null se a bbox não couber inteira
 // na extensão do DEM (aí o chamador cai pro FABDEM, evitando buracos).
-async function loadSampaDemMosaic(bb) {
-  const t = await openSampaDem();
+async function loadDemHandleMosaic(t, bb) {
   if (!t) return null;
+  // Só usa este DEM se a bbox do segmento cabe INTEIRA na extensão dele —
+  // senão devolve null e o caller cai pra próxima fonte (sem costurar bordas).
   if (!(withinSampaDem(t.bounds, bb.north, bb.west) &&
         withinSampaDem(t.bounds, bb.south, bb.east))) return null;
   const A = FABDEM_ARCSEC;
@@ -6507,7 +6508,7 @@ async function loadSampaDemMosaic(bb) {
       interleave: true,
     });
   } catch (e) {
-    console.warn(`[sampa-dem] mosaico falhou: ${e.message}`);
+    console.warn(`[dem] mosaico falhou: ${e.message}`);
     return null;
   }
   const wndW = scMax - scMin + 1;
@@ -6533,10 +6534,16 @@ async function loadSampaDemMosaic(bb) {
   }
   return { height, mask, H, W };
 }
+async function loadSampaDemMosaic(bb) { return loadDemHandleMosaic(await openSampaDem(), bb); }
+async function loadCustomDemMosaic(bb) { return loadDemHandleMosaic(_customDem, bb); }
 
-// Escolhe a fonte do mosaico: DEM de SP quando ligado e a bbox cabe na sua
-// extensão; senão FABDEM.
+// Escolhe a fonte do mosaico: DEM custom (se carregado e a bbox cabe nele) →
+// DEM de SP (se ligado) → FABDEM. Cada fonte só vale onde cobre a bbox inteira.
 async function loadDemMosaic(bb) {
+  if (_customDem) {
+    const custom = await loadCustomDemMosaic(bb);
+    if (custom) return custom;
+  }
   if (params.useSampaDem) {
     const sampa = await loadSampaDemMosaic(bb);
     if (sampa) return sampa;
@@ -6729,6 +6736,54 @@ function parseWKB(view, off) {
 // por string a cada vértice, que era o gargalo). Em falha, limpa o cache
 // pra permitir nova tentativa. Timeout aborta downloads travados → fallback.
 const VIARIO_FETCH_TIMEOUT_MS = 60000;
+
+// Abre um GeoPackage (bytes já em memória) num handle de viário reusável pelas
+// consultas — descobre a camada de linhas (e a de `water`, se houver), resolve
+// o CRS (reprojeção proj4 quando não é WGS84) e quais tags de tabuleiro existem.
+// Compartilhado entre o gpkg de SP (baixado) e um gpkg custom (carregado de
+// arquivo). O parser de geometria é o `parseGpkgGeom` acima.
+async function buildViarioSrc(SQL, bytes) {
+  const db = new SQL.Database(bytes);
+  try {
+  const gc = db.exec('SELECT table_name, column_name, srs_id FROM gpkg_geometry_columns');
+  if (!gc.length || !gc[0].values.length) throw new Error('gpkg sem gpkg_geometry_columns');
+  // O gpkg pode ter 2 camadas: `viario` (linhas) e `water` (polígonos+rios).
+  let vRow = null, wRow = null;
+  for (const r of gc[0].values) { if (r[0] === 'water') wRow = r; else if (!vRow) vRow = r; }
+  if (!vRow) vRow = gc[0].values[0];
+  const tableName = vRow[0];
+  const geomCol   = vRow[1] || 'geom';
+  const srsId     = vRow[2];
+  const hasWater = !!wRow, waterTable = wRow ? wRow[0] : null, waterGeom = wRow ? (wRow[1] || 'geom') : null;
+  const isSrcWgs = srsId === 4326 || srsId === 0 || srsId === -1;
+  let toWgs = (xy) => xy;     // fonte → [lng,lat]   (vértices)
+  let fromWgs = (xy) => xy;   // [lng,lat] → fonte   (cantos da bbox)
+  if (!isSrcWgs) {
+    const proj4 = await ensureProj4();
+    const srsRes = db.exec(`SELECT definition FROM gpkg_spatial_ref_sys WHERE srs_id = ${srsId}`);
+    if (!srsRes.length || !srsRes[0].values[0][0]) throw new Error(`SRS ${srsId} sem definição`);
+    proj4.defs(`EPSG:${srsId}`, srsRes[0].values[0][0]);
+    const tr = proj4('EPSG:4326', `EPSG:${srsId}`);  // transformador reusável
+    toWgs = (xy) => tr.inverse(xy);
+    fromWgs = (xy) => tr.forward(xy);
+  }
+  // Tags de ponte/túnel/nível pro achatamento do tabuleiro no roteamento.
+  // Esquemas variam: colunas dedicadas (bridge/tunnel/layer) OU um hstore
+  // `other_tags` (export do osmium/QGIS). Lemos as que existirem; se nenhuma,
+  // o grafo roteia sem achatamento (e o Overpass vira a fonte das tags).
+  let tagCols = [];
+  try {
+    const ti = db.exec(`PRAGMA table_info("${tableName}")`);
+    const allCols = ti.length ? ti[0].values.map((r) => r[1]) : [];
+    tagCols = ['bridge', 'tunnel', 'layer', 'name', 'other_tags'].filter((c) => allCols.includes(c));
+  } catch { /* sem tags = sem achatamento */ }
+  return { db, tableName, geomCol, isSrcWgs, toWgs, fromWgs, tagCols, hasWater, waterTable, waterGeom };
+  } catch (e) {
+    try { db.close(); } catch { /* já fechado */ }   // não vaza o handle WASM na falha
+    throw e;
+  }
+}
+
 let _viarioDbPromise = null;
 async function ensureViarioDb() {
   if (_viarioDbPromise) return _viarioDbPromise;
@@ -6745,51 +6800,91 @@ async function ensureViarioDb() {
     } finally {
       clearTimeout(timer);
     }
-    const db = new SQL.Database(new Uint8Array(buf));
-    const gc = db.exec('SELECT table_name, column_name, srs_id FROM gpkg_geometry_columns');
-    if (!gc.length || !gc[0].values.length) throw new Error('gpkg sem gpkg_geometry_columns');
-    // O gpkg pode ter 2 camadas: `viario` (linhas) e `water` (polígonos+rios).
-    let vRow = null, wRow = null;
-    for (const r of gc[0].values) { if (r[0] === 'water') wRow = r; else if (!vRow) vRow = r; }
-    if (!vRow) vRow = gc[0].values[0];
-    const tableName = vRow[0];
-    const geomCol   = vRow[1] || 'geom';
-    const srsId     = vRow[2];
-    const hasWater = !!wRow, waterTable = wRow ? wRow[0] : null, waterGeom = wRow ? (wRow[1] || 'geom') : null;
-    const isSrcWgs = srsId === 4326 || srsId === 0 || srsId === -1;
-    let toWgs = (xy) => xy;     // fonte → [lng,lat]   (vértices)
-    let fromWgs = (xy) => xy;   // [lng,lat] → fonte   (cantos da bbox)
-    if (!isSrcWgs) {
-      const proj4 = await ensureProj4();
-      const srsRes = db.exec(`SELECT definition FROM gpkg_spatial_ref_sys WHERE srs_id = ${srsId}`);
-      if (!srsRes.length || !srsRes[0].values[0][0]) throw new Error(`SRS ${srsId} sem definição`);
-      proj4.defs(`EPSG:${srsId}`, srsRes[0].values[0][0]);
-      const tr = proj4('EPSG:4326', `EPSG:${srsId}`);  // transformador reusável
-      toWgs = (xy) => tr.inverse(xy);
-      fromWgs = (xy) => tr.forward(xy);
-    }
-    // Tags de ponte/túnel/nível pro achatamento do tabuleiro no roteamento.
-    // Esquemas variam: colunas dedicadas (bridge/tunnel/layer) OU um hstore
-    // `other_tags` (export do osmium/QGIS). Lemos as que existirem; se nenhuma,
-    // o grafo roteia sem achatamento (e o Overpass vira a fonte das tags).
-    let tagCols = [];
-    try {
-      const ti = db.exec(`PRAGMA table_info("${tableName}")`);
-      const allCols = ti.length ? ti[0].values.map((r) => r[1]) : [];
-      tagCols = ['bridge', 'tunnel', 'layer', 'name', 'other_tags'].filter((c) => allCols.includes(c));
-    } catch { /* sem tags = sem achatamento */ }
-    return { db, tableName, geomCol, isSrcWgs, toWgs, fromWgs, tagCols, hasWater, waterTable, waterGeom };
+    return buildViarioSrc(SQL, new Uint8Array(buf));
   })();
   _viarioDbPromise.catch(() => { _viarioDbPromise = null; });
   return _viarioDbPromise;
+}
+
+// ─── Rede viária custom (gpkg ou GeoJSON carregado de arquivo) ───────────────
+// Carregada em memória pelo modal "Fontes de dados"; tem PRIORIDADE sobre o gpkg
+// de SP e o Overpass no "Menor energia pelo viário". gpkg passa pelo MESMO
+// pipeline do viário de SP (buildViarioSrc + queryViarioLines); GeoJSON (sempre
+// WGS84, RFC 7946) é varrido direto pra [lng,lat]. Efêmera: some ao recarregar.
+let _customNetwork = null;   // { kind:'gpkg', src, name } | { kind:'geojson', fc, name }
+async function setCustomNetwork(file) {
+  const name = file.name || 'rede';
+  const lower = name.toLowerCase();
+  // Carrega o novo PRIMEIRO; só depois fecha o anterior — assim uma falha de
+  // leitura preserva a rede atual em vez de deixar o usuário sem nenhuma.
+  let next;
+  if (lower.endsWith('.geojson') || lower.endsWith('.json')) {
+    const fc = JSON.parse(await file.text());
+    const feats = fc && (fc.type === 'FeatureCollection' ? fc.features
+      : fc.type === 'Feature' ? [fc] : (Array.isArray(fc) ? fc : null));
+    if (!Array.isArray(feats)) throw new Error('GeoJSON sem FeatureCollection/Feature');
+    next = { kind: 'geojson', fc: { features: feats }, name };
+  } else {
+    const SQL = await ensureSqlJs();
+    const src = await buildViarioSrc(SQL, new Uint8Array(await file.arrayBuffer()));
+    next = { kind: 'gpkg', src, name };
+  }
+  clearCustomNetwork();   // fecha o db do gpkg anterior (se houver) sem vazar
+  _customNetwork = next;
+  return _customNetwork;
+}
+function clearCustomNetwork() {
+  if (_customNetwork && _customNetwork.kind === 'gpkg') {
+    try { _customNetwork.src.db.close(); } catch { /* já fechado */ }
+  }
+  _customNetwork = null;
+}
+
+// Linhas de uma rede GeoJSON que tocam a bbox → mesmo formato de queryViarioLines
+// ({ lines:[[lng,lat],…], meta:[{deck,…}], hasTags }). GeoJSON é sempre WGS84.
+function queryGeojsonLines(bb, fc) {
+  const lines = [], meta = [];
+  let hasTags = false;
+  for (const f of (fc.features || [])) {
+    const g = f && f.geometry; if (!g) continue;
+    const props = f.properties || {};
+    if (props.bridge != null || props.tunnel != null) hasTags = true;
+    const bridge = props.bridge, tunnel = props.tunnel;
+    const deck = (bridge && bridge !== 'no') || tunnel === 'yes';
+    const m = deck
+      ? { deck: true, tunnel: tunnel === 'yes', layer: parseInt(props.layer, 10) || (tunnel === 'yes' ? -1 : 1) }
+      : { deck: false };
+    const polys = g.type === 'LineString' ? [g.coordinates]
+      : g.type === 'MultiLineString' ? g.coordinates : [];
+    for (const coords of polys) {
+      if (!Array.isArray(coords) || coords.length < 2) continue;
+      let loX = Infinity, hiX = -Infinity, loY = Infinity, hiY = -Infinity;
+      for (const c of coords) {
+        const x = c[0], y = c[1];
+        if (x < loX) loX = x; if (x > hiX) hiX = x;
+        if (y < loY) loY = y; if (y > hiY) hiY = y;
+      }
+      if (hiX < bb.west || loX > bb.east || hiY < bb.south || loY > bb.north) continue;
+      lines.push(coords.map((c) => [c[0], c[1]]));   // [lng,lat]
+      meta.push(m);
+    }
+  }
+  return { lines, meta, hasTags };
+}
+
+// Despacha a consulta da rede custom (gpkg → pipeline do viário; geojson → varre).
+async function queryCustomNetworkLines(bb) {
+  if (!_customNetwork) return { lines: [], meta: [], hasTags: false };
+  if (_customNetwork.kind === 'geojson') return queryGeojsonLines(bb, _customNetwork.fc);
+  return queryViarioLines(bb, _customNetwork.src);
 }
 
 // Consulta o viário do gpkg que cai na bbox e devolve as linhas em WGS84
 // (array de polilinhas [[lng,lat], …]). É a matéria-prima do roteamento
 // vetorial — a rota segue a geometria real das vias, sem o serrilhado do
 // grid raster.
-async function queryViarioLines(bb) {
-  const { db, tableName, geomCol, isSrcWgs, toWgs, fromWgs, tagCols } = await ensureViarioDb();
+async function queryViarioLines(bb, src) {
+  const { db, tableName, geomCol, isSrcWgs, toWgs, fromWgs, tagCols } = src || await ensureViarioDb();
   const t0 = performance.now();
   // Geometria é a coluna 0; as tags (se houver) vêm depois, nesta ordem.
   const tagIdx = {}; (tagCols || []).forEach((c, i) => { tagIdx[c] = i + 1; });
@@ -7287,6 +7382,31 @@ async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
   if (!dem.W || !dem.H) {
     console.warn('[energy] DEM vazio — fallback pra reta');
     return straightPath(fromLatLng, toLatLng);
+  }
+
+  // ROAD com rede custom: se o usuário carregou um gpkg/GeoJSON de viário no
+  // modal "Fontes de dados", ele tem PRIORIDADE — mesma engine de grafo do
+  // gpkg de SP. Sucesso = retorno imediato; falha/sem caminho cai pro gpkg de
+  // SP / Overpass abaixo (a rede custom pode cobrir só parte do trecho).
+  if (mode === 'road' && _customNetwork) {
+    try {
+      const { lines, meta, hasTags } = await queryCustomNetworkLines(bb);
+      if (lines.length) {
+        if (!hasTags) {
+          try {
+            const decks = await fetchOsmDecksForBbox(bb);
+            markDecksByProximity(lines, meta, decks, bb);
+          } catch (e3) {
+            console.warn('[energy_road] pontes do OSM (rede custom) indisponíveis:', e3.message);
+          }
+        }
+        const path = viarioGraphRoute(lines, meta, fromLatLng, toLatLng, dem, bb, A);
+        if (path && path.length) return path;
+        console.info('[energy_road] rede custom sem caminho — caindo pro gpkg/Overpass');
+      }
+    } catch (e) {
+      console.warn('[energy_road] grafo da rede custom falhou:', e.message);
+    }
   }
 
   // ROAD primário: roteia SOBRE o grafo vetorial do gpkg — a rota segue a
@@ -7884,6 +8004,29 @@ async function sampleFabdemBatch(points /* [[lat, lng], …] */) {
 // (ambos EPSG:4326), só que UMA imagem em vez de tiles 1°×1°. Aberto sob
 // demanda e cacheado; ativo apenas quando params.useSampaDem está ligado.
 const SAMPA_DEM_URL = 'https://telhas.pedalhidrografi.co/dem/sampa_geral.tif';
+
+// Constrói o "handle" de DEM (origin/resolution/bounds/nodata) a partir de uma
+// imagem geotiff.js já aberta. Compartilhado entre o DEM de SP (Range fetch de
+// URL) e o DEM custom (GeoTIFF carregado de arquivo em memória). A matemática
+// de pixel assume EPSG:4326 (graus) — igual ao FABDEM.
+function demHandleFromImage(image) {
+  const origin = image.getOrigin();         // [oX(west lon), oY(north lat)]
+  const resolution = image.getResolution(); // [rX>0, rY<0]
+  const W = image.getWidth();
+  const H = image.getHeight();
+  const nodataRaw = image.fileDirectory.getValue
+    ? image.fileDirectory.getValue('GDAL_NODATA')
+    : image.fileDirectory.GDAL_NODATA;
+  const nodata = nodataRaw != null ? parseFloat(nodataRaw) : null;
+  const bounds = {
+    west:  origin[0],
+    north: origin[1],
+    east:  origin[0] + W * resolution[0],
+    south: origin[1] + H * resolution[1],
+  };
+  return { image, origin, resolution, W, H, nodata, bounds };
+}
+
 let _sampaDemPromise = null;
 async function openSampaDem() {
   if (_sampaDemPromise) return _sampaDemPromise;
@@ -7891,22 +8034,7 @@ async function openSampaDem() {
     try {
       const GeoTIFF = await ensureGeoTIFF();
       const tiff  = await GeoTIFF.fromUrl(SAMPA_DEM_URL);
-      const image = await tiff.getImage();
-      const origin = image.getOrigin();         // [oX(west lon), oY(north lat)]
-      const resolution = image.getResolution(); // [rX>0, rY<0]
-      const W = image.getWidth();
-      const H = image.getHeight();
-      const nodataRaw = image.fileDirectory.getValue
-        ? image.fileDirectory.getValue('GDAL_NODATA')
-        : image.fileDirectory.GDAL_NODATA;
-      const nodata = nodataRaw != null ? parseFloat(nodataRaw) : null;
-      const bounds = {
-        west:  origin[0],
-        north: origin[1],
-        east:  origin[0] + W * resolution[0],
-        south: origin[1] + H * resolution[1],
-      };
-      return { image, origin, resolution, W, H, nodata, bounds };
+      return demHandleFromImage(await tiff.getImage());
     } catch (e) {
       console.info(`[sampa-dem] indisponível: ${e.message}`);
       return null;   // negative cache: don't keep retrying
@@ -7915,6 +8043,34 @@ async function openSampaDem() {
   return _sampaDemPromise;
 }
 
+// ─── DEM custom (GeoTIFF carregado de arquivo, EPSG:4326) ────────────────────
+// Carregado em memória pelo modal "Fontes de dados"; tem PRIORIDADE sobre o DEM
+// de SP e o FABDEM onde cobrir (na amostragem e no mosaico do roteamento). Mesmo
+// handle/matemática do DEM de SP — só que a imagem vem de um ArrayBuffer
+// (fromArrayBuffer) em vez de Range fetch. Efêmero: some ao recarregar a página.
+let _customDem = null;   // { image, …, bounds, projected, name } | null
+async function setCustomDem(file) {
+  const GeoTIFF = await ensureGeoTIFF();
+  const buf = await file.arrayBuffer();
+  const tiff = await GeoTIFF.fromArrayBuffer(buf);
+  const h = demHandleFromImage(await tiff.getImage());
+  // Aviso de CRS: a matemática de pixel é em graus (EPSG:4326). Um DEM projetado
+  // (UTM/Web Mercator…) amostraria errado. Detecta por DUAS vias: a geokey
+  // ProjectedCSTypeGeoKey (presente ⇒ projetado, mesmo que a base seja 4326) E
+  // a heurística da resolução — um DEM em metros tem |res| » 0.5° (um grau ≈
+  // 111 km; FABDEM/DEM-SP têm res ~1e-4..1e-3°), pegando até GeoTIFF sem geokeys.
+  // Não bloqueia (alguns COG 4326 não setam geokeys), só alerta.
+  h.projected = Math.abs(h.resolution[0]) > 0.5;
+  try {
+    const keys = h.image.getGeoKeys ? h.image.getGeoKeys() : {};
+    if (keys.ProjectedCSTypeGeoKey) h.projected = true;
+  } catch { /* sem geokeys: vale a heurística de resolução acima */ }
+  h.name = file.name;
+  _customDem = h;
+  return h;
+}
+function clearCustomDem() { _customDem = null; }
+
 function withinSampaDem(b, lat, lng) {
   return lat >= b.south && lat <= b.north && lng >= b.west && lng <= b.east;
 }
@@ -7922,11 +8078,9 @@ function withinSampaDem(b, lat, lng) {
 // Sample many points from the single COG: one bounding-window read covering
 // every in-bounds point. Out-of-bounds (or nodata) entries stay null so the
 // caller can fall back to FABDEM/Open-Meteo.
-async function sampleSampaDemBatch(points /* [[lat,lng], …] */) {
+async function sampleDemHandle(t, points /* [[lat,lng], …] */) {
   const out = new Array(points.length).fill(null);
-  if (!points.length) return out;
-  const t = await openSampaDem();
-  if (!t) return out;
+  if (!t || !points.length) return out;
   const [oX, oY] = t.origin;
   const [rX, rY] = t.resolution;
   let cMin = Infinity, cMax = -Infinity, rMin = Infinity, rMax = -Infinity;
@@ -7952,10 +8106,12 @@ async function sampleSampaDemBatch(points /* [[lat,lng], …] */) {
       if (Number.isFinite(v) && (t.nodata == null || v !== t.nodata)) out[i] = v;
     }
   } catch (e) {
-    console.warn(`[sampa-dem] read window falhou: ${e.message}`);
+    console.warn(`[dem] read window falhou: ${e.message}`);
   }
   return out;
 }
+async function sampleSampaDemBatch(points) { return sampleDemHandle(await openSampaDem(), points); }
+async function sampleCustomDemBatch(points) { return sampleDemHandle(_customDem, points); }
 
 // ─── Câmera Topográfica: relevo do FABDEM renderizado no cliente ─────────────
 // Igual ao sampasimu: elevação na paleta cmocean.phase (cíclica, perceptual)
@@ -8266,6 +8422,10 @@ async function fetchMissingElevations(path, seq) {
     }
     return false;
   };
+  if (_customDem) {
+    if (await drainSource('custom-dem', sampleCustomDemBatch)) return;
+    if (stillMissing.length === 0) return;
+  }
   if (params.useSampaDem) {
     if (await drainSource('sampa-dem', sampleSampaDemBatch)) return;
     if (stillMissing.length === 0) return;
@@ -8592,6 +8752,99 @@ function fillParamInputs() {
   PARAM_CHECKBOXES.useViarioGpkg.checked   = params.useViarioGpkg !== false;
   PARAM_CHECKBOXES.useWaterMask.checked    = params.useWaterMask !== false;
   PARAM_CHECKBOXES.usePortals.checked      = params.usePortals !== false;
+}
+
+// ─── Modal "Fontes de dados" (DEM + rede viária) ─────────────────────────────
+// Aberto pelo botão na seção de elevação dos Parâmetros. Hospeda os 3 toggles de
+// fonte (FABDEM / DEM de SP / gpkg de SP — mesmos IDs, já ligados via
+// PARAM_CHECKBOXES) + carregar/limpar DEM custom e rede viária custom. Os
+// arquivos custom ficam só em memória (efêmeros) e têm prioridade sobre os
+// built-ins na amostragem de elevação e no roteamento por energia.
+const dsModal        = document.getElementById('datasources-modal');
+const dsOpenBtn      = document.getElementById('open-datasources');
+const dsCloseBtn     = document.getElementById('datasources-close');
+const customDemFile  = document.getElementById('custom-dem-file');
+const customDemLoad  = document.getElementById('custom-dem-load');
+const customDemClear = document.getElementById('custom-dem-clear');
+const customDemStatus= document.getElementById('custom-dem-status');
+const customNetFile  = document.getElementById('custom-net-file');
+const customNetLoad  = document.getElementById('custom-net-load');
+const customNetClear = document.getElementById('custom-net-clear');
+const customNetStatus= document.getElementById('custom-net-status');
+
+function setDsStatus(el, clearBtn, name, emptyLabel) {
+  if (!el) return;
+  el.textContent = name || emptyLabel;
+  el.title = name || '';
+  el.classList.toggle('is-set', !!name);
+  if (clearBtn) clearBtn.hidden = !name;
+}
+function refreshDataSourceStatus() {
+  setDsStatus(customDemStatus, customDemClear, _customDem ? _customDem.name : '', 'nenhum');
+  setDsStatus(customNetStatus, customNetClear, _customNetwork ? _customNetwork.name : '', 'nenhuma');
+}
+function fillDataSourceInputs() {
+  PARAM_CHECKBOXES.useFabdem.checked     = params.useFabdem !== false;
+  PARAM_CHECKBOXES.useSampaDem.checked   = !!params.useSampaDem;
+  PARAM_CHECKBOXES.useViarioGpkg.checked = params.useViarioGpkg !== false;
+  refreshDataSourceStatus();
+}
+// Trocar a fonte de elevação exige limpar o cache (senão valores já amostrados
+// de outra fonte permaneceriam) e reagendar o fetch — que recalcula o perfil e
+// as métricas. (A rede viária não mexe no cache; vale nos próximos trechos.)
+function recomputeAfterDemChange() {
+  elevationCache.clear();
+  scheduleElevationFetch();
+}
+if (dsModal && dsOpenBtn) {
+  dsOpenBtn.addEventListener('click', () => { fillDataSourceInputs(); dsModal.hidden = false; });
+  dsCloseBtn?.addEventListener('click', () => { dsModal.hidden = true; });
+  dsModal.addEventListener('click', (e) => { if (e.target === dsModal) dsModal.hidden = true; });
+
+  customDemLoad?.addEventListener('click', () => customDemFile?.click());
+  customDemFile?.addEventListener('change', async () => {
+    const file = customDemFile.files && customDemFile.files[0];
+    customDemFile.value = '';
+    if (!file) return;
+    try {
+      showToast(`Carregando DEM ${file.name}…`);
+      const h = await setCustomDem(file);
+      refreshDataSourceStatus();
+      if (h.projected) showToast('Atenção: o DEM parece projetado (não-4326) — a elevação pode sair errada.', 4500);
+      else showToast(`DEM custom ativo: ${file.name}`);
+      recomputeAfterDemChange();
+    } catch (err) {
+      console.warn('[custom-dem] falhou:', err);
+      showToast(`Falha ao ler o DEM: ${err.message}`);
+    }
+  });
+  customDemClear?.addEventListener('click', () => {
+    clearCustomDem();
+    refreshDataSourceStatus();
+    showToast('DEM custom removido.');
+    recomputeAfterDemChange();
+  });
+
+  customNetLoad?.addEventListener('click', () => customNetFile?.click());
+  customNetFile?.addEventListener('change', async () => {
+    const file = customNetFile.files && customNetFile.files[0];
+    customNetFile.value = '';
+    if (!file) return;
+    try {
+      showToast(`Carregando rede ${file.name}…`);
+      await setCustomNetwork(file);
+      refreshDataSourceStatus();
+      showToast(`Rede viária custom ativa: ${file.name}. Vale nos próximos trechos roteados.`, 4500);
+    } catch (err) {
+      console.warn('[custom-net] falhou:', err);
+      showToast(`Falha ao ler a rede: ${err.message}`);
+    }
+  });
+  customNetClear?.addEventListener('click', () => {
+    clearCustomNetwork();
+    refreshDataSourceStatus();
+    showToast('Rede viária custom removida.');
+  });
 }
 
 // ─── Modal da Câmera Topográfica (engrenagem na camada) ──────────────────────

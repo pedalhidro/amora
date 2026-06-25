@@ -187,6 +187,13 @@
           <details class="help-changelog">
             <summary>Novidades (changelog)</summary>
             <dl>
+              <dt>25/06/2026 · v288</dt>
+              <dd>
+                <ul>
+                  <li>Nos <strong>Parâmetros</strong>, a seção de elevação ganhou o botão <strong>Fontes de dados: DEM e rede viária</strong>, que abre um modal com os controles de fonte (FABDEM, DEM de SP, viário pelo gpkg de SP) reunidos.</li>
+                  <li>Dá pra <strong>carregar um DEM custom</strong> (GeoTIFF em WGS84) e uma <strong>rede viária custom</strong> (GeoPackage ou GeoJSON de linhas) — eles têm <strong>prioridade</strong> sobre o FABDEM/DEM de SP e o gpkg de SP no perfil de elevação e no roteamento por energia (onde cobrirem). Ficam só em memória (somem ao recarregar).</li>
+                </ul>
+              </dd>
               <dt>25/06/2026 · v286</dt>
               <dd>
                 <ul>
@@ -613,14 +620,7 @@
           </label>
 
           <h3 style="margin: 1.2rem 0 .35rem; font-size: .95rem; border-top: 1px dashed #ccc; padding-top: .75rem">Elevação &amp; roteamento por energia</h3>
-          <label class="param-row">
-            <span class="param-label">Usar FABDEM para elevação</span>
-            <span class="param-input"><input type="checkbox" id="param-use-fabdem"></span>
-          </label>
-          <label class="param-row" title="DEM local de São Paulo (~5 m, COG). Tem prioridade sobre o FABDEM dentro da RMSP; fora dela cai pro FABDEM/Open-Meteo.">
-            <span class="param-label">Usar DEM de SP (sampa_geral, ~5 m)</span>
-            <span class="param-input"><input type="checkbox" id="param-use-sampa-dem"></span>
-          </label>
+          <button type="button" id="open-datasources" class="ds-open-btn" title="Escolher as fontes de elevação (FABDEM / DEM de SP / DEM custom) e de viário (gpkg de SP / rede custom)">Fontes de dados: DEM e rede viária…</button>
           <label class="param-row" title="Peso da distância no custo de cada aresta">
             <span class="param-label">α (peso da distância)</span>
             <span class="param-input"><input type="number" id="param-energy-alpha" step="0.5" min="0" max="100"></span>
@@ -637,10 +637,6 @@
             <span class="param-label">Margem da busca</span>
             <span class="param-input"><input type="number" id="param-energy-margin" step="5" min="0" max="200"> %</span>
           </label>
-          <label class="param-row" title="Ligado: usa o GeoPackage vetorial do viário de SP (traçado suave no grafo). Desligado: usa o Overpass (OSM ao vivo, grid raster). O gpkg cai pro Overpass sozinho se indisponível.">
-            <span class="param-label">Viário pelo gpkg de SP (senão Overpass)</span>
-            <span class="param-input"><input type="checkbox" id="param-use-viario-gpkg"></span>
-          </label>
           <label class="param-row" title="Ligado: no Menor energia pelo terreno, lagos/represas e rios da camada de água do gpkg viram barreira intransponível (a rota não cruza água). Desligado: a água é ignorada — e o gpkg nem é baixado se Atravessar pontes/túneis também estiver desligado. Não afeta o Menor energia pelo viário.">
             <span class="param-label">Barreira de água (terreno)</span>
             <span class="param-input"><input type="checkbox" id="param-use-water-mask"></span>
@@ -655,6 +651,60 @@
             <button type="button" id="params-load">Carregar de arquivo…</button>
             <button type="button" id="params-export">Salvar em arquivo</button>
             <button type="button" id="params-reset" class="linkbtn">Restaurar padrões</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Fontes de dados: DEM (elevação) + rede viária (roteamento). Aberto pelo
+         botão na seção "Elevação & roteamento por energia" dos Parâmetros. -->
+    <div id="datasources-modal" class="modal" hidden>
+      <div class="modal-content params-modal-content">
+        <header>
+          <h2>Fontes de dados: DEM e rede viária</h2>
+          <button class="close" id="datasources-close" type="button" aria-label="Fechar">&times;</button>
+        </header>
+        <div class="params-body">
+          <p class="muted">Fontes de elevação e de viário pro perfil e pro roteamento por energia. Um <strong>DEM custom</strong> ou uma <strong>rede viária custom</strong> carregados abaixo têm <strong>prioridade</strong> sobre o FABDEM/DEM de SP e o gpkg de SP onde cobrirem.</p>
+
+          <h3 class="ds-h3">Elevação (DEM)</h3>
+          <label class="param-row" title="DEM global FABDEM (Range fetch de tiles 1°×1°). Fallback quando o DEM de SP/custom não cobre.">
+            <span class="param-label">Usar FABDEM para elevação</span>
+            <span class="param-input"><input type="checkbox" id="param-use-fabdem"></span>
+          </label>
+          <label class="param-row" title="DEM local de São Paulo (~5 m, COG). Tem prioridade sobre o FABDEM dentro da RMSP; fora dela cai pro FABDEM/Open-Meteo.">
+            <span class="param-label">Usar DEM de SP (sampa_geral, ~5 m)</span>
+            <span class="param-input"><input type="checkbox" id="param-use-sampa-dem"></span>
+          </label>
+          <div class="ds-custom">
+            <div class="ds-custom-head">
+              <span class="param-label">DEM custom</span>
+              <span id="custom-dem-status" class="ds-status muted">nenhum</span>
+            </div>
+            <div class="ds-custom-actions">
+              <input type="file" id="custom-dem-file" accept=".tif,.tiff,image/tiff" hidden />
+              <button type="button" id="custom-dem-load">Carregar DEM…</button>
+              <button type="button" id="custom-dem-clear" class="linkbtn" hidden>Limpar</button>
+            </div>
+            <p class="muted ds-hint">GeoTIFF em EPSG:4326 (graus). Tem prioridade sobre o DEM de SP e o FABDEM onde cobrir; fora da extensão cai pras fontes acima. Fica só em memória (some ao recarregar).</p>
+          </div>
+
+          <h3 class="ds-h3">Rede viária (Menor energia pelo viário)</h3>
+          <label class="param-row" title="Ligado: usa o GeoPackage vetorial do viário de SP (traçado suave no grafo). Desligado: usa o Overpass (OSM ao vivo, grid raster). O gpkg cai pro Overpass sozinho se indisponível.">
+            <span class="param-label">Viário pelo gpkg de SP (senão Overpass)</span>
+            <span class="param-input"><input type="checkbox" id="param-use-viario-gpkg"></span>
+          </label>
+          <div class="ds-custom">
+            <div class="ds-custom-head">
+              <span class="param-label">Rede viária custom</span>
+              <span id="custom-net-status" class="ds-status muted">nenhuma</span>
+            </div>
+            <div class="ds-custom-actions">
+              <input type="file" id="custom-net-file" accept=".gpkg,.geojson,.json,application/geo+json" hidden />
+              <button type="button" id="custom-net-load">Carregar rede…</button>
+              <button type="button" id="custom-net-clear" class="linkbtn" hidden>Limpar</button>
+            </div>
+            <p class="muted ds-hint">GeoPackage (camada LINESTRING) ou GeoJSON de linhas, em WGS84. Tem prioridade sobre o gpkg de SP e o Overpass. Tags <code>bridge</code>/<code>tunnel</code>/<code>layer</code> (se houver) achatam o tabuleiro. Fica só em memória (some ao recarregar).</p>
           </div>
         </div>
       </div>

@@ -1406,6 +1406,78 @@ body.trace-preview .tp-label { display: none !important; }
   order: -1;
 }
 
+/* Fontes de dados (DEM / rede viária): botão de abertura + modal. */
+.ds-open-btn {
+  justify-self: stretch;
+  width: 100%;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 7px 12px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  margin: 2px 0 4px;
+}
+.ds-open-btn:hover {
+  background: rgba(45, 169, 255, 0.18);
+  border-color: var(--accent);
+}
+.ds-h3 {
+  margin: 12px 0 2px;
+  font-size: .9rem;
+  border-top: 1px dashed var(--border);
+  padding-top: 10px;
+}
+.ds-custom {
+  display: grid;
+  gap: 6px;
+  padding: 6px 0 2px;
+}
+.ds-custom-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+.ds-status {
+  font-size: 12px;
+  max-width: 60%;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ds-status.is-set { color: var(--accent); }
+.ds-custom-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ds-custom-actions button:not(.linkbtn) {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 6px 12px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.ds-custom-actions button:not(.linkbtn):hover {
+  background: rgba(45, 169, 255, 0.18);
+  border-color: var(--accent);
+}
+.ds-hint { margin: 0 !important; }
+.ds-hint code {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0 3px;
+  font-size: 11px;
+}
+
 /* Combined layer panel: visibility toggles + per-layer opacity sliders. */
 .layer-panel {
   background: var(--panel);
