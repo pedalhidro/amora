@@ -152,7 +152,7 @@
         <button type="button" id="trace-save" class="trace-save" title="Salvar GPX" aria-label="Salvar GPX">⤓🗺︎ <span class="tb-label">Salvar</span></button>
         <button type="button" id="trace-view" class="trace-view" title="Ver — oculta os pontos e suaviza o traçado" aria-label="Ver">👁 <span class="tb-label">Ver</span></button>
         <span class="trace-break" aria-hidden="true"></span>
-        <span class="trace-metrics" id="trace-metrics">0,00 km · 0,0 kJ</span>
+        <span class="trace-metrics" id="trace-metrics" role="status" aria-live="polite">0,00 km · 0,0 kJ</span>
       </div>
     </main>
 
@@ -161,7 +161,7 @@
         <h2>Rotas</h2>
         <a class="sidebar-link" href="./censo.html" id="censo-link" title="Métricas e tabela do censo hidrográfico">Censo →</a>
       </div>
-      <div id="routes-status" class="status">Carregando…</div>
+      <div id="routes-status" class="status" role="status" aria-live="polite">Carregando…</div>
 
       <section class="date-filter" id="date-filter" hidden>
         <span class="range-value" id="range-from-value"></span>
@@ -181,12 +181,32 @@
       <div class="modal-content help-modal-content">
         <header>
           <h2>Instruções</h2>
-          <button class="close" id="help-close" type="button" aria-label="Close">&times;</button>
+          <button class="close" id="help-close" type="button" aria-label="Fechar">&times;</button>
         </header>
         <div class="help-body">
           <details class="help-changelog">
             <summary>Novidades (changelog)</summary>
             <dl>
+              <dt>25/06/2026 · v286</dt>
+              <dd>
+                <ul>
+                  <li>A <strong>Topografia colorida</strong> agora sai nítida em telas retina/alta densidade (antes só ficava nítida com o zoom do navegador em 50%).</li>
+                </ul>
+              </dd>
+              <dt>23/06/2026 · v284</dt>
+              <dd>
+                <ul>
+                  <li>No <strong>Censo</strong> aberto dentro do app, o <strong>← Mapa</strong> agora fecha o painel e volta pro mapa (em vez de abrir um segundo mapa dentro da janela), e o título deixa de aparecer duplicado.</li>
+                </ul>
+              </dd>
+              <dt>23/06/2026 · v282</dt>
+              <dd>
+                <ul>
+                  <li><strong>Acessibilidade e ajustes de interface:</strong> os modais agora se comportam como diálogos — o foco fica preso dentro deles, volta pro botão que os abriu ao fechar, e <strong>Esc</strong> fecha qualquer um. Navegação por teclado ganhou anel de foco visível, e leitores de tela passam a anunciar avisos/status (carregamento, envios, métricas).</li>
+                  <li>Botões primários com mais contraste; <strong>“reduzir movimento”</strong> do sistema agora desliga também as animações de painéis e modais.</li>
+                  <li>As páginas de <strong>Enviar</strong> e <strong>Cadastrar passeio</strong> agora se ajustam à tela do celular. Novo aviso de <em>“nenhuma rota neste período”</em> quando o filtro de data esconde tudo.</li>
+                </ul>
+              </dd>
               <dt>23/06/2026 · v280</dt>
               <dd>
                 <ul>
@@ -411,13 +431,13 @@
             </dl>
           </details>
           <h3>Mapa</h3>
-          <p>Arraste para mover, scroll/pinça para zoom. O painel de camadas (canto sup. direito) controla visibilidade e opacidade de cada camada — base (OSM ou satélite), sobreposições (Topografia colorida, SARA Brasil 1930, rotas da planilha) e duas camadas customizáveis (XYZ e WMS — clique no ✎ para colar uma URL).</p>
+          <p>Arraste para mover, scroll/pinça para zoom. O painel de camadas (canto sup. direito) controla visibilidade e opacidade de cada camada — base (OSM ou satélite), sobreposições (Topografia colorida, SARA Brasil 1930, rotas cadastradas) e duas camadas customizáveis (XYZ e WMS — clique no ✎ para colar uma URL).</p>
 
-          <h3>Rotas da planilha</h3>
+          <h3>Rotas cadastradas</h3>
           <p>A barra lateral lista as rotas em ordem decrescente de data. Use o filtro de data para mostrar só as rotas dentro de uma janela. Clique numa rota para abrir o post do Instagram + atalho para abrir no RideWithGPS, ou para entrar no editor (<em>Editar este traçado</em>) com aquela rota carregada.</p>
 
           <h3>Editar um GPX existente</h3>
-          <p><strong>Editar GPX…</strong> abre um <code>.gpx</code> local no editor. Se for um arquivo gerado por este app, parâmetros de simulação e waypoints originais voltam exatamente como estavam.</p>
+          <p><strong>📂 Carregar</strong> abre uma rota cadastrada no servidor ou um <code>.gpx</code> local no editor. Se for um arquivo gerado por este app, parâmetros de simulação e waypoints originais voltam exatamente como estavam.</p>
 
           <h3>Traçar um GPX novo</h3>
           <ul>
@@ -461,7 +481,7 @@
       <div class="modal-content qr-modal-content">
         <header>
           <h2>QR code do link</h2>
-          <button class="close" id="qr-close" type="button" aria-label="Close">&times;</button>
+          <button class="close" id="qr-close" type="button" aria-label="Fechar">&times;</button>
         </header>
         <div class="qr-body">
           <div class="qr-image" id="qr-image"></div>
@@ -484,7 +504,7 @@
       <div class="modal-content save-modal-content">
         <header>
           <h2>Salvar GPX</h2>
-          <button class="close" id="save-close" type="button" aria-label="Close">&times;</button>
+          <button class="close" id="save-close" type="button" aria-label="Fechar">&times;</button>
         </header>
         <div class="save-body">
           <label class="save-row">
@@ -508,7 +528,7 @@
       <div class="modal-content save-modal-content">
         <header>
           <h2>Carregar rota</h2>
-          <button class="close" id="saved-routes-close" type="button" aria-label="Close">&times;</button>
+          <button class="close" id="saved-routes-close" type="button" aria-label="Fechar">&times;</button>
         </header>
         <div class="save-body">
           <button type="button" id="saved-routes-local" class="secondary-btn" title="Carregar um arquivo .gpx do computador">📂🗺︎ Carregar GPX do computador…</button>
@@ -547,7 +567,7 @@
       <div class="modal-content params-modal-content">
         <header>
           <h2>Parâmetros da simulação</h2>
-          <button class="close" id="params-close" type="button" aria-label="Close">&times;</button>
+          <button class="close" id="params-close" type="button" aria-label="Fechar">&times;</button>
         </header>
         <div class="params-body">
           <p class="muted">A velocidade é simulada por segmento a partir destes valores. A potência do ciclista varia por terreno (subida / plano / descida — o limiar é configurável abaixo). Em descidas o ciclista recupera apenas <em>ε</em>% da energia gravitacional como velocidade. O tempo total é o tempo de movimento dividido pela <em>eficiência de movimento</em> (paradas, semáforos, imagens).</p>
@@ -678,7 +698,7 @@
       <div class="modal-content route-modal-content">
         <header>
           <h2 id="route-modal-title">Route</h2>
-          <button class="close" id="route-modal-close" type="button" aria-label="Close">&times;</button>
+          <button class="close" id="route-modal-close" type="button" aria-label="Fechar">&times;</button>
         </header>
         <div class="route-modal-body">
           <div class="route-modal-meta" id="route-modal-meta"></div>
@@ -829,10 +849,6 @@
             <label class="settings-row">
               <span>Apelido (aparece no marcador)</span>
               <input type="text" data-setting="liveLocation.displayName" maxlength="40" placeholder="ex.: pedalante">
-            </label>
-            <label class="settings-row">
-              <span>Mostrar faixa de incerteza</span>
-              <input type="checkbox" data-setting="liveLocation.showAccuracy">
             </label>
             <label class="settings-row">
               <span>Intervalo de envio (ms)</span>
@@ -994,7 +1010,7 @@
       </div>
     </div>
 
-    <div id="toast" class="toast" hidden></div>
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
     <!-- Floating tooltip shown when hovering a route in the sidebar -->
     <div id="route-tooltip" class="route-tooltip" hidden></div>

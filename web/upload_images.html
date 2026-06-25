@@ -2,6 +2,7 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>Upload de imagens e vídeos — Pedal Hidrográfico</title>
 <style>
@@ -156,7 +157,7 @@
         <input type="file" id="files" accept="image/*,video/*" multiple>
         <small id="filesStatus">Imagens: pHash e EXIF, dedup por pHash ≤ 5. Vídeos: transcodados em 360p+720p webm, trim por card (máx 30 s).</small>
         <small id="catalogStatus">Carregando catálogo…</small>
-        <div id="notices" style="margin: .5rem 0;"></div>
+        <div id="notices" role="status" aria-live="polite" style="margin: .5rem 0;"></div>
         <div style="margin-top: .5rem">
           <button type="button" id="clearAll" disabled>Limpar todos os cards</button>
         </div>

@@ -14,6 +14,16 @@
 
 * { box-sizing: border-box; }
 
+/* Foco de teclado visível em todo o app. Antes não havia regra de :focus, então
+   a navegação por Tab ficava invisível sobre o tema escuro. :focus-visible só
+   pinta o anel quando o foco veio do teclado (não do clique/toque). */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+:focus:not(:focus-visible) { outline: none; }
+
 html, body {
   margin: 0;
   height: 100%;
@@ -219,7 +229,7 @@ body.header-hidden .leaflet-top {
 
 #publish-btn {
   background: var(--accent);
-  color: #fff;
+  color: #04121f;
   border: none;
   padding: 8px 14px;
   border-radius: 6px;
@@ -356,6 +366,10 @@ body.header-hidden .leaflet-top {
   z-index: 5000;
 }
 .modal[hidden] { display: none; }
+/* Trava o scroll de fundo enquanto há um modal aberto (a classe é posta/tirada
+   pelo controlador de acessibilidade dos modais em app.js). Junto com o
+   scrollWheelZoom.disable() do Leaflet, impede o scroll "vazar" pro mapa. */
+body.modal-open { overflow: hidden; }
 
 .modal-content {
   background: var(--panel);
@@ -435,7 +449,7 @@ body.header-hidden .leaflet-top {
 
 #publish-submit {
   background: var(--accent);
-  color: #fff;
+  color: #04121f;
   border: none;
   padding: 9px 18px;
   border-radius: 6px;
@@ -801,10 +815,15 @@ body.header-hidden .leaflet-top {
     border-bottom: none;
     box-shadow: 0 -2px 18px rgba(0, 0, 0, 0.5);
   }
-  /* Ajuda, Ajustes e Enviar têm conteúdo mais longo — permitem cobrir até
-     70vh pra dar espaço de leitura/uso sem virar tela cheia. */
+  /* Modais com conteúdo mais longo (leitura, foto+resumo do passeio,
+     parâmetros, topo da câmera, rotas salvas) — permitem cobrir até 70vh pra
+     dar espaço de leitura/uso sem virar tela cheia. */
   #help-modal .modal-content,
-  #settings-modal .modal-content {
+  #settings-modal .modal-content,
+  #route-modal .modal-content,
+  #params-modal .modal-content,
+  #camera-topo-modal .modal-content,
+  #saved-routes-modal .modal-content {
     max-height: 70vh;
   }
   /* Upload é o único com altura própria. */
@@ -989,7 +1008,7 @@ body.header-hidden .leaflet-top {
 /* ─── GPX drawing tool ───────────────────────────────────────────────────── */
 .primary-btn {
   background: var(--accent);
-  color: #fff;
+  color: #04121f;
   border: none;
   padding: 8px 14px;
   border-radius: 6px;
@@ -2441,6 +2460,16 @@ body.trace-preview .tp-label { display: none !important; }
 }
 @media (prefers-reduced-motion: reduce) {
   .live-person-dot::after { animation: none; opacity: 0; }
+  /* Respeita o "reduzir movimento" do sistema: zera animações e transições
+     (slides de sidebar/painel/modais, pulsos de marcador, etc.). transitionend/
+     animationend ainda disparam (~1ms), então a lógica que depende deles segue
+     funcionando. Os loops de pulso movidos por rAF (clips) são gated no JS. */
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 .live-person-label {
   position: absolute;

@@ -61,9 +61,13 @@ let toastTimer = null;
 export function showToast(msg, ms = 3500) {
   if (!toastEl) toastEl = document.getElementById('toast');
   if (!toastEl) return;
-  toastEl.textContent = msg;
+  // Tornar visível ANTES de escrever o texto: o #toast é um live region
+  // (role=status / aria-live=polite); enquanto [hidden] ele fica fora da
+  // árvore de acessibilidade, então mudar o texto com ele oculto não é
+  // anunciado. Desocultar primeiro garante que a mudança vire um update.
   toastEl.hidden = false;
   toastEl.classList.remove('fade');
+  toastEl.textContent = msg;
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => {
     toastEl.classList.add('fade');

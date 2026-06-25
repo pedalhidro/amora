@@ -184,7 +184,7 @@
   <a href="./index.html">← Mapa</a>
 </header>
 
-<div id="status">Carregando catálogo de passeios…</div>
+<div id="status" role="status" aria-live="polite">Carregando catálogo de passeios…</div>
 
 <div id="metrics" class="metrics" hidden></div>
 
@@ -228,6 +228,24 @@
 
 <script type="module">
 const $ = (q) => document.querySelector(q);
+
+// "← Mapa": no modo embutido (iframe do modal Censo dentro do app), o link
+// NÃO pode navegar o iframe pra index.html — isso carregaria um segundo mapa
+// inteiro dentro do modal ("dois mapas"). Em vez disso, avisa o app pra fechar
+// o modal, revelando o mapa que já está embaixo. Standalone (aberto direto),
+// o link navega pro mapa normalmente.
+if (window.self !== window.top) {
+  // A barra do modal Censo já mostra o título — esconde o <h1>/subtítulo
+  // internos pra não duplicar. O "← Mapa" fecha o modal (em vez de navegar o
+  // iframe pra index.html, o que abriria um segundo mapa dentro da janela).
+  $('header h1')?.style.setProperty('display', 'none');
+  $('header .sub')?.style.setProperty('display', 'none');
+  const back = $('header a[href="./index.html"]');
+  if (back) back.addEventListener('click', (e) => {
+    e.preventDefault();
+    try { window.parent.postMessage({ type: 'phidro-censo-back' }, window.location.origin); } catch (_) {}
+  });
+}
 
 // ── N3.js ────────────────────────────────────────────────────────────────
 // Vendored UMD em ./lib/n3.min.js — popula window.N3 quando carrega.

@@ -118,7 +118,6 @@ const SETTINGS_DEFAULTS = {
     ttlSec: 10800,                       // por quanto tempo o servidor guarda meu rastro (s) — 03:00
     shareMs: 5000,                       // intervalo mínimo entre POSTs da minha posição
     pollMs: 4000,                        // intervalo de leitura das posições alheias
-    showAccuracy: true,                  // desenha o círculo de precisão de cada pessoa
   },
 };
 function _deepMerge(base, over) {
@@ -368,11 +367,23 @@ const satellite = L.tileLayer(
 // Camada base inicial vem do settings.mapDefaults.baseLayer.
 (settings.mapDefaults.baseLayer === 'satellite' ? satellite : osm).addTo(map);
 
+// Em telas retina (devicePixelRatio ≥ 2) os tiles de 256px eram ampliados 2×
+// pra preencher a caixa de 256px de CSS = 512px físicos → borrados. Só ficavam
+// nítidos com o zoom do navegador em 50% (o que derruba o dpr pra 1). A correção
+// é o padrão "retina tiles" do Leaflet: pedir o tile do zoom SEGUINTE e desenhá-lo
+// em meia caixa (tileSize 128 + zoomOffset 1), pra 256px de imagem caírem em 256px
+// físicos = nítido. (É o que detectRetina faz por dentro — mas ele também derruba
+// maxZoom 19→18, sumindo a camada nos zooms mais fechados, e deixa maxNativeZoom em
+// 16, fazendo o caminho retina pedir z17 inexistente e 404ar; por isso é manual.)
+const rmsampaRetina = L.Browser.retina;
 const rmsampa = L.tileLayer('https://telhas.pedalhidrografi.co/rmsampa-v2/{z}/{x}/{y}.png', {
   maxZoom: 19,
   // O servidor só tem tiles até z=16; acima disso o Leaflet escala o tile do
-  // z=16 (interpolado) em vez de pedir z≥17 e levar 404.
-  maxNativeZoom: 16,
+  // z=16 (interpolado) em vez de pedir z≥17 e levar 404. No caminho retina o
+  // zoom pedido é nativo+1, então limitamos a 15 pra nunca passar de 16.
+  maxNativeZoom: rmsampaRetina ? 15 : 16,
+  tileSize: rmsampaRetina ? 128 : 256,
+  zoomOffset: rmsampaRetina ? 1 : 0,
   opacity: 0.85,
   pane: LAYER_PANE('rmsampa'),
   attribution: 'Topografia: Pedal Hidrográfico',
@@ -2976,6 +2987,12 @@ censoModal?.addEventListener('click', (e) => {
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && censoModal && !censoModal.hidden) closeCensoModal();
 });
+// O "← Mapa" dentro do iframe do Censo pede pro app fechar o modal (em vez de
+// navegar o iframe pro index e abrir um segundo mapa). Só mesma origem.
+window.addEventListener('message', (e) => {
+  if (e.origin !== window.location.origin) return;
+  if (e.data && e.data.type === 'phidro-censo-back') closeCensoModal();
+});
 
 // ─── Modal de Configurações ───────────────────────────────────────────────
 const settingsBtn        = document.getElementById('settings-btn');
@@ -4451,7 +4468,7 @@ layerPanel.onAdd = function () {
       btns.push('<button type="button" class="layer-action layer-upload-act btn-upload" title="Enviar imagens ao acervo" aria-label="Enviar imagens">⬆</button>');
     const buttons = `<span class="layer-btns">${btns.join('')}</span>`;
     const opacity = l.noOpacity ? ''
-      : `<input type="range" class="opacity-slider" data-id="${l.id}" min="0" max="100" value="${l.defaultPct}" />`
+      : `<input type="range" class="opacity-slider" data-id="${l.id}" min="0" max="100" value="${l.defaultPct}" aria-label="Opacidade — ${l.label}" />`
         + `<span class="opacity-value" data-id="${l.id}">${l.defaultPct}%</span>`;
     row.innerHTML = buttons
       + `<label><input type="checkbox" data-id="${l.id}" ${l.defaultVisible ? 'checked' : ''} />`
@@ -4839,7 +4856,7 @@ async function boot() {
     const li = addRouteToSidebar(entry);
     if (!entry.latlngs || entry.latlngs.length === 0) {
       li.classList.add('failed');
-      li.title = entry.error || 'No track data';
+      li.title = entry.error || 'Sem traçado disponível';
       routes.set(key, { entry, listEl: li, dateMs: entry.dateMs ?? null, visible: false });
       continue;
     }
@@ -4870,8 +4887,8 @@ async function boot() {
     const popupHtml =
       `<strong>${escapeHtml(buildLabel(entry))}</strong><br>` +
       (nums.length ? `${formatNumbersHtml(entry)}<br>` : '') +
-      `Route ${entry.id}` +
-      (entry.igPost ? `<br><a href="#" class="popup-open-modal" data-route-id="${escapeHtml(key)}">Open IG post</a>` : '');
+      `Rota ${entry.id}` +
+      (entry.igPost ? `<br><a href="#" class="popup-open-modal" data-route-id="${escapeHtml(key)}">Abrir passeio</a>` : '');
     layer.bindPopup(popupHtml);
     layer.on('click', () => openRouteModal(key));
     layer.on('popupopen', () => wireUpPopupLinks());
@@ -5167,6 +5184,19 @@ function applyDateWindow(from, to) {
       r.dateMs == null ? true : r.dateMs >= from && r.dateMs <= to + DAY_MS - 1;
     setRouteVisible(r, inRange);
     if (inRange) visible++;
+  }
+
+  // Estado vazio: se o filtro de data escondeu TODAS as rotas, avisa no lugar
+  // da lista silenciosamente vazia (o "Carregando…" já some quando o catálogo
+  // termina). Só age com o catálogo carregado e fora do estado de erro.
+  if (routes.size > 0 && !routesStatus.classList.contains('error')) {
+    if (visible === 0) {
+      routesStatus.textContent = 'Nenhuma rota neste período — toque ↺ pra limpar o filtro.';
+      routesStatus.hidden = false;
+    } else {
+      routesStatus.textContent = '';
+      routesStatus.hidden = true;
+    }
   }
 
   // Propaga a mesma janela pras fotos. `to + DAY_MS - 1` inclui o dia
@@ -5551,7 +5581,7 @@ function openRouteModal(id) {
   if (numberLabel) metaParts.push(`<strong>${escapeHtml(numberLabel)}</strong>`);
   if (entry.date) metaParts.push(escapeHtml(entry.date));
   metaParts.push(
-    `<a href="https://ridewithgps.com/routes/${entry.id}" target="_blank" rel="noopener">Open on RideWithGPS ↗</a>`,
+    `<a href="https://ridewithgps.com/routes/${entry.id}" target="_blank" rel="noopener">Abrir no RideWithGPS ↗</a>`,
   );
   if (Array.isArray(entry.latlngs) && entry.latlngs.length >= 2) {
     metaParts.push(
@@ -5893,9 +5923,9 @@ function exitDrawingMode() {
       const popupHtml =
         `<strong>${escapeHtml(buildLabel(entry))}</strong><br>` +
         (numsHtml ? `${numsHtml}<br>` : '') +
-        `Route ${entry.id}` +
+        `Rota ${entry.id}` +
         (entry.igPost
-          ? `<br><a href="#" class="popup-open-modal" data-route-id="${escapeHtml(key)}">Open IG post</a>`
+          ? `<br><a href="#" class="popup-open-modal" data-route-id="${escapeHtml(key)}">Abrir passeio</a>`
           : '');
       r.layer.bindPopup(popupHtml);
       r.layer.on('click', () => openRouteModal(key));
@@ -9847,3 +9877,144 @@ async function loadGpxIntoEditor(gpxText) {
   if (savedUserWaypoints) bits.push('waypoints originais restaurados');
   showToast(`GPX carregado · ${bits.join(' · ')}`);
 }
+
+// ─── Acessibilidade centralizada dos modais ─────────────────────────────────
+// Todos os modais são `<div class="modal" hidden>`. Em vez de reescrever as ~12
+// funções open/close, um MutationObserver no atributo `hidden` de cada modal
+// aplica a semântica de diálogo + gestão de foco quando ele abre/fecha:
+//   • role="dialog" / aria-modal / aria-labelledby (do <h2>/<h3> do cabeçalho);
+//   • guarda e devolve o foco (volta pro elemento que abriu o modal);
+//   • foca o 1º controle ao abrir e prende o Tab dentro do modal (focus trap);
+//   • inerta o fundo (topbar/mapa/sidebar) enquanto há modal aberto;
+//   • trava o scroll do body e desliga o zoom-por-scroll do Leaflet.
+// ESC fecha o modal do topo clicando no seu `.close` (reaproveita a limpeza das
+// funções close* existentes; idempotente com os listeners já presentes). Modais
+// com <iframe> (Enviar/Cadastrar/Censo) não recebem focus trap — o foco entra no
+// documento filho e não dá pra gerenciar daqui.
+(function setupModalA11y() {
+  const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), ' +
+    'select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+  const openStack = [];        // modais abertos, na ordem de abertura
+  let returnFocusEl = null;    // pra onde devolver o foco quando tudo fechar
+  let inerted = [];            // elementos de fundo inertados
+
+  const focusablesIn = (root) => Array.from(root.querySelectorAll(FOCUSABLE))
+    .filter((el) => el.offsetParent !== null || el === document.activeElement);
+
+  const bgEls = () => Array.from(document.body.children).filter((el) =>
+    !el.classList.contains('modal') &&
+    el.id !== 'toast' && el.id !== 'route-tooltip' &&
+    el.tagName !== 'SCRIPT' && el.tagName !== 'TEMPLATE');
+
+  // Foca já e de novo num macrotask — não via rAF: requestAnimationFrame não
+  // dispara de forma confiável em aba sem pintura (headless/segundo plano), e o
+  // foco não pode depender de um frame de pintura.
+  const focusSoon = (el) => {
+    if (!el || typeof el.focus !== 'function') return;
+    const go = () => { try { el.focus({ preventScroll: true }); } catch (_) {} };
+    go(); setTimeout(go, 0);
+  };
+
+  // Ao abrir, foca o CABEÇALHO do diálogo (ou o autofocus/conteúdo), não o 1º
+  // controle interativo — é o padrão WAI-ARIA (o leitor de tela anuncia o título
+  // do diálogo) e evita o caso em que o 1º focável é um <a>: no macOS, com
+  // "navegação por teclado" desligada (padrão), o Chrome NÃO foca <a> via
+  // .focus() — só controles de formulário. Damos tabindex=-1 ao alvo (fica fora
+  // da ordem de Tab, mas focável por código). Recalcula a cada tentativa porque
+  // o layout do bottom-sheet pode não estar pronto no microtask do observer.
+  const focusModalSoon = (modal) => {
+    const pick = () => {
+      const t = modal.querySelector('[autofocus]') ||
+        modal.querySelector('.modal-content header h2, .modal-content h2, .modal-content h3, h2, h3') ||
+        modal.querySelector('.modal-content') || modal;
+      if (t !== modal && t.tabIndex < 0 && !t.hasAttribute('tabindex')) t.setAttribute('tabindex', '-1');
+      try { t.focus({ preventScroll: true }); } catch (_) {}
+    };
+    pick(); setTimeout(pick, 0); setTimeout(pick, 80);
+  };
+
+  function onShown(modal) {
+    if (openStack.includes(modal)) return;
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    const heading = modal.querySelector('.modal-content header h2, .modal-content h2, .modal-content h3, h2, h3');
+    if (heading) {
+      if (!heading.id) heading.id = (modal.id || 'modal') + '-title';
+      modal.setAttribute('aria-labelledby', heading.id);
+    }
+    if (openStack.length === 0) {
+      returnFocusEl = document.activeElement;
+      document.body.classList.add('modal-open');
+      try { map.scrollWheelZoom.disable(); } catch (_) {}
+      inerted = bgEls();
+      inerted.forEach((el) => { el.inert = true; });
+    }
+    openStack.push(modal);
+    focusModalSoon(modal);
+  }
+
+  function onHidden(modal) {
+    const i = openStack.indexOf(modal);
+    if (i === -1) return;
+    openStack.splice(i, 1);
+    if (openStack.length === 0) {
+      document.body.classList.remove('modal-open');
+      try { map.scrollWheelZoom.enable(); } catch (_) {}
+      inerted.forEach((el) => { el.inert = false; });
+      inerted = [];
+      const el = returnFocusEl;
+      returnFocusEl = null;
+      if (el && document.contains(el)) focusSoon(el);
+    } else {
+      // Modal aninhado fechou (ex.: QR sobre Salvar): devolve o foco pro modal
+      // que ficou por baixo em vez de largar no <body>.
+      const top = openStack[openStack.length - 1];
+      const f = focusablesIn(top);
+      focusSoon(f.find((el) => !el.classList.contains('close')) || f[0]);
+    }
+  }
+
+  function watch(modal) {
+    new MutationObserver(() => {
+      if (!modal.hidden) onShown(modal); else onHidden(modal);
+    }).observe(modal, { attributes: true, attributeFilter: ['hidden'] });
+    if (!modal.hidden) onShown(modal);   // raro: modal já aberto no boot
+  }
+
+  document.querySelectorAll('.modal').forEach(watch);
+  // Modais criados em runtime (ex.: photo-fallback) também entram no esquema.
+  new MutationObserver((muts) => {
+    for (const m of muts) for (const n of m.addedNodes) {
+      if (n.nodeType === 1 && n.classList && n.classList.contains('modal')) watch(n);
+    }
+  }).observe(document.body, { childList: true });
+
+  // Focus trap: prende o Tab no modal do topo (exceto modais com <iframe>, onde
+  // o foco vai pro documento filho). Capture pra rodar antes de outros handlers.
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Tab' || openStack.length === 0) return;
+    const modal = openStack[openStack.length - 1];
+    if (modal.querySelector('iframe')) return;
+    const f = focusablesIn(modal);
+    if (!f.length) return;
+    const first = f[0], last = f[f.length - 1];
+    const active = document.activeElement;
+    if (!modal.contains(active)) { e.preventDefault(); first.focus(); }
+    else if (e.shiftKey && active === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && active === last) { e.preventDefault(); first.focus(); }
+  }, true);
+
+  // ESC fecha o modal do topo via seu `.close`. Cobre os modais que não tinham
+  // ESC próprio (Ajuda, Ajustes, rotas salvas, compartilhar). Os listeners já
+  // existentes fecham o seu antes deste rodar, então aqui ele já sai da lista
+  // (sem duplo-fechamento). O guard do modo de edição (ver onMapClickInDrawing)
+  // já ignora ESC quando há `.modal:not([hidden])`.
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    const open = document.querySelectorAll('.modal:not([hidden])');
+    if (!open.length) return;
+    const modal = open[open.length - 1];
+    const btn = modal.querySelector('.close');
+    if (btn) { e.preventDefault(); btn.click(); } else { modal.hidden = true; }
+  });
+})();
