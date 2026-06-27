@@ -5780,7 +5780,12 @@ traceView.addEventListener('click', () => enterPreviewMode());
 traceUndo.addEventListener('click', undo);
 traceRedo.addEventListener('click', redo);
 traceRoutingMode.addEventListener('change', () => {
+  const prev = routingMode;
   routingMode = traceRoutingMode.value || 'straight';
+  // Trocar o modo re-roteia o rascunho atual com o modo/fontes vigentes (antes
+  // só valia pros próximos waypoints). Reverte o seletor se o usuário recusar
+  // um re-roteamento grande.
+  rerouteCurrentDraft(prev);
 });
 
 document.addEventListener('keydown', (e) => {
@@ -7921,8 +7926,37 @@ async function openFabdemTile(latLo, lonLo) {
   }
 }
 
-// Sample elevation (meters) at lat/lng. Returns null when the tile is
-// missing or the cell is nodata. Batched callers should prefer
+// Interpolação BILINEAR num buffer de janela (interleave) lido via readRasters.
+// (u, v) são coords de pixel CENTRADAS — já descontado o 0.5 da borda, então o
+// valor da célula k mora em k e os vizinhos são floor(u)/floor(u)+1. cMin/rMin
+// são o canto da janela lida; winW/winH suas dimensões. Cantos nodata / NaN /
+// fora-da-janela são descartados e os pesos renormalizados (degrada com graça
+// nas bordas de cobertura); null se nenhum dos 4 cantos vale. A amostragem
+// bilinear suaviza o serrilhado do nearest-neighbor — perfil de elevação mais
+// fiel à rampa real da célula, sem saltos de ±meia-célula entre pontos.
+function bilinearFromWindow(ras, winW, winH, cMin, rMin, u, v, nodata) {
+  const c0 = Math.floor(u), r0 = Math.floor(v);
+  const fu = u - c0, fv = v - r0;
+  const corners = [
+    [r0,     c0,     (1 - fu) * (1 - fv)],
+    [r0,     c0 + 1, fu * (1 - fv)],
+    [r0 + 1, c0,     (1 - fu) * fv],
+    [r0 + 1, c0 + 1, fu * fv],
+  ];
+  let acc = 0, wsum = 0;
+  for (const [r, c, w] of corners) {
+    if (w <= 0) continue;
+    const lc = c - cMin, lr = r - rMin;
+    if (lc < 0 || lr < 0 || lc >= winW || lr >= winH) continue;
+    const val = ras[lr * winW + lc];
+    if (!Number.isFinite(val) || (nodata != null && val === nodata)) continue;
+    acc += val * w; wsum += w;
+  }
+  return wsum > 0 ? acc / wsum : null;
+}
+
+// Sample elevation (meters) at lat/lng, BILINEAR. Returns null when the tile is
+// missing or every covering cell is nodata. Batched callers should prefer
 // `sampleFabdemBatch` to reuse a single window per tile.
 async function sampleFabdemAt(lat, lng) {
   const latLo = Math.floor(lat);
@@ -7931,17 +7965,19 @@ async function sampleFabdemAt(lat, lng) {
   if (!t) return null;
   const [oX, oY] = t.origin;
   const [rX, rY] = t.resolution;   // rX > 0, rY < 0
-  const col = Math.round((lng - oX) / rX);
-  const row = Math.round((lat - oY) / rY);
+  const W = t.image.getWidth(), H = t.image.getHeight();
+  const u = (lng - oX) / rX - 0.5;
+  const v = (lat - oY) / rY - 0.5;
+  const cMin = Math.max(0, Math.floor(u)), rMin = Math.max(0, Math.floor(v));
+  const cMax = Math.min(W - 1, Math.floor(u) + 1), rMax = Math.min(H - 1, Math.floor(v) + 1);
+  if (cMax < cMin || rMax < rMin) return null;
   try {
+    const winW = cMax - cMin + 1, winH = rMax - rMin + 1;
     const ras = await t.image.readRasters({
-      window: [col, row, col + 1, row + 1],
+      window: [cMin, rMin, cMax + 1, rMax + 1],
       interleave: true,
     });
-    const v = ras[0];
-    if (!Number.isFinite(v)) return null;
-    if (t.nodata != null && v === t.nodata) return null;
-    return v;
+    return bilinearFromWindow(ras, winW, winH, cMin, rMin, u, v, t.nodata);
   } catch (e) {
     console.warn(`[fabdem] sample ${lat},${lng} falhou: ${e.message}`);
     return null;
@@ -7968,28 +8004,30 @@ async function sampleFabdemBatch(points /* [[lat, lng], …] */) {
     if (!t) continue;
     const [oX, oY] = t.origin;
     const [rX, rY] = t.resolution;
-    // Bounding pixel window for this group.
+    const W = t.image.getWidth(), H = t.image.getHeight();
+    // Janela cobrindo os 4 vizinhos bilineares (floor..floor+1) de cada ponto.
     let cMin = Infinity, cMax = -Infinity, rMin = Infinity, rMax = -Infinity;
-    const cells = idxs.map(i => {
+    const samp = idxs.map(i => {
       const [lat, lng] = points[i];
-      const c = Math.round((lng - oX) / rX);
-      const r = Math.round((lat - oY) / rY);
-      if (c < cMin) cMin = c; if (c > cMax) cMax = c;
-      if (r < rMin) rMin = r; if (r > rMax) rMax = r;
-      return [i, r, c];
+      const u = (lng - oX) / rX - 0.5;
+      const v = (lat - oY) / rY - 0.5;
+      const c0 = Math.floor(u), r0 = Math.floor(v);
+      if (c0     < cMin) cMin = c0;     if (c0 + 1 > cMax) cMax = c0 + 1;
+      if (r0     < rMin) rMin = r0;     if (r0 + 1 > rMax) rMax = r0 + 1;
+      return [i, u, v];
     });
+    cMin = Math.max(0, cMin); rMin = Math.max(0, rMin);
+    cMax = Math.min(W - 1, cMax); rMax = Math.min(H - 1, rMax);
+    if (cMax < cMin || rMax < rMin) continue;
     try {
-      const wndW = cMax - cMin + 1;
-      const wndH = rMax - rMin + 1;
+      const winW = cMax - cMin + 1, winH = rMax - rMin + 1;
       const ras = await t.image.readRasters({
         window: [cMin, rMin, cMax + 1, rMax + 1],
         interleave: true,
       });
-      for (const [i, r, c] of cells) {
-        const v = ras[(r - rMin) * wndW + (c - cMin)];
-        if (Number.isFinite(v) && (t.nodata == null || v !== t.nodata)) {
-          out[i] = v;
-        }
+      for (const [i, u, v] of samp) {
+        const z = bilinearFromWindow(ras, winW, winH, cMin, rMin, u, v, t.nodata);
+        if (z != null) out[i] = z;
       }
     } catch (e) {
       console.warn(`[fabdem] read window (${latLo},${lonLo}) falhou: ${e.message}`);
@@ -8083,27 +8121,32 @@ async function sampleDemHandle(t, points /* [[lat,lng], …] */) {
   if (!t || !points.length) return out;
   const [oX, oY] = t.origin;
   const [rX, rY] = t.resolution;
+  // Janela cobrindo os 4 vizinhos bilineares (floor..floor+1) de cada ponto.
   let cMin = Infinity, cMax = -Infinity, rMin = Infinity, rMax = -Infinity;
-  const cells = [];
+  const samp = [];
   points.forEach(([lat, lng], i) => {
     if (!withinSampaDem(t.bounds, lat, lng)) return;
-    const c = Math.round((lng - oX) / rX);
-    const r = Math.round((lat - oY) / rY);
-    if (c < 0 || c >= t.W || r < 0 || r >= t.H) return;
-    if (c < cMin) cMin = c; if (c > cMax) cMax = c;
-    if (r < rMin) rMin = r; if (r > rMax) rMax = r;
-    cells.push([i, r, c]);
+    const u = (lng - oX) / rX - 0.5;
+    const v = (lat - oY) / rY - 0.5;
+    const c0 = Math.floor(u), r0 = Math.floor(v);
+    if (c0 + 1 < 0 || c0 > t.W - 1 || r0 + 1 < 0 || r0 > t.H - 1) return;
+    if (c0     < cMin) cMin = c0;     if (c0 + 1 > cMax) cMax = c0 + 1;
+    if (r0     < rMin) rMin = r0;     if (r0 + 1 > rMax) rMax = r0 + 1;
+    samp.push([i, u, v]);
   });
-  if (!cells.length) return out;
+  if (!samp.length) return out;
+  cMin = Math.max(0, cMin); rMin = Math.max(0, rMin);
+  cMax = Math.min(t.W - 1, cMax); rMax = Math.min(t.H - 1, rMax);
+  if (cMax < cMin || rMax < rMin) return out;
   try {
-    const wndW = cMax - cMin + 1;
+    const winW = cMax - cMin + 1, winH = rMax - rMin + 1;
     const ras = await t.image.readRasters({
       window: [cMin, rMin, cMax + 1, rMax + 1],
       interleave: true,
     });
-    for (const [i, r, c] of cells) {
-      const v = ras[(r - rMin) * wndW + (c - cMin)];
-      if (Number.isFinite(v) && (t.nodata == null || v !== t.nodata)) out[i] = v;
+    for (const [i, u, v] of samp) {
+      const z = bilinearFromWindow(ras, winW, winH, cMin, rMin, u, v, t.nodata);
+      if (z != null) out[i] = z;
     }
   } catch (e) {
     console.warn(`[dem] read window falhou: ${e.message}`);
@@ -8728,7 +8771,15 @@ for (const [key, input] of Object.entries(PARAM_CHECKBOXES)) {
   input.addEventListener('change', () => {
     params[key] = !!input.checked;
     saveParams();
-    updateMetrics();
+    if (key === 'useFabdem' || key === 'useSampaDem') {
+      // Fonte de elevação: limpa o cache (senão os valores antigos persistiam e
+      // o toggle não tinha efeito), reamostra e — no modo energia — re-roteia.
+      recomputeAfterDemChange();
+    } else {
+      // Viário / máscara d'água / portais: afetam só a geometria roteada.
+      updateMetrics();
+      rerouteCurrentDraft();
+    }
   });
 }
 
@@ -8789,12 +8840,41 @@ function fillDataSourceInputs() {
   PARAM_CHECKBOXES.useViarioGpkg.checked = params.useViarioGpkg !== false;
   refreshDataSourceStatus();
 }
+// Re-roteia TODOS os segmentos do rascunho atual com o modo/fontes vigentes.
+// Chamado quando algo que afeta a GEOMETRIA roteada muda: o seletor de modo, a
+// rede viária custom, ou os toggles de viário/DEM (no modo energia) — antes
+// essas mudanças só valiam pros próximos waypoints, então uma rota já carregada
+// ignorava as fontes. Sem efeito fora do desenho ou em 'straight' (reta não
+// roteia). Acima do limiar pede confirmação (re-rotear centenas de trechos por
+// energia é pesado); se recusar e `revertModeTo` veio (troca de seletor), volta
+// o modo anterior.
+const REROUTE_CONFIRM_THRESHOLD = 150;
+async function rerouteCurrentDraft(revertModeTo) {
+  if (!drawingMode || routingMode === 'straight' || trackpoints.length < 2) return;
+  const indices = [];
+  for (let i = 1; i < trackpoints.length; i++) indices.push(i);
+  if (indices.length > REROUTE_CONFIRM_THRESHOLD &&
+      !confirm(`Isto vai rotear ${indices.length} trechos pelo modo selecionado e pode demorar bastante. Continuar?`)) {
+    if (revertModeTo !== undefined) {
+      routingMode = revertModeTo;
+      traceRoutingMode.value = revertModeTo;
+    }
+    return;
+  }
+  const routeSeq = ++pendingRouteSeq;
+  showToast(`Re-roteando ${indices.length} trecho(s)…`, 2500);
+  await mapConcurrent(indices, 4, (idx) => refetchPath(idx, routeSeq));
+  redrawAndMetrics();
+}
+
 // Trocar a fonte de elevação exige limpar o cache (senão valores já amostrados
 // de outra fonte permaneceriam) e reagendar o fetch — que recalcula o perfil e
-// as métricas. (A rede viária não mexe no cache; vale nos próximos trechos.)
+// as métricas. No modo energia o DEM também muda a geometria roteada, então
+// re-roteia o rascunho.
 function recomputeAfterDemChange() {
   elevationCache.clear();
   scheduleElevationFetch();
+  rerouteCurrentDraft();
 }
 if (dsModal && dsOpenBtn) {
   dsOpenBtn.addEventListener('click', () => { fillDataSourceInputs(); dsModal.hidden = false; });
@@ -8834,7 +8914,14 @@ if (dsModal && dsOpenBtn) {
       showToast(`Carregando rede ${file.name}…`);
       await setCustomNetwork(file);
       refreshDataSourceStatus();
-      showToast(`Rede viária custom ativa: ${file.name}. Vale nos próximos trechos roteados.`, 4500);
+      // A rede custom só é consultada no modo "Menor energia pelo viário". Se já
+      // estiver nesse modo com um rascunho, re-roteia na hora; senão orienta.
+      if (routingMode === 'energy_road' && drawingMode) {
+        showToast(`Rede viária custom ativa: ${file.name}.`, 3000);
+        rerouteCurrentDraft();
+      } else {
+        showToast(`Rede viária custom ativa: ${file.name}. Use o modo "Menor energia pelo viário" para roteá-la.`, 5000);
+      }
     } catch (err) {
       console.warn('[custom-net] falhou:', err);
       showToast(`Falha ao ler a rede: ${err.message}`);
@@ -8844,6 +8931,7 @@ if (dsModal && dsOpenBtn) {
     clearCustomNetwork();
     refreshDataSourceStatus();
     showToast('Rede viária custom removida.');
+    if (routingMode === 'energy_road') rerouteCurrentDraft();
   });
 }
 
@@ -9745,6 +9833,39 @@ editGpxInput.addEventListener('change', () => {
   reader.readAsText(file);
 });
 
+// ─── Modal: como conectar os pontos de um GPX de terceiros ───────────────────
+// Carregar um GPX de terceiros pergunta como ligar os pontos. Espelha as opções
+// da barra de edição (#trace-routing-mode) e usa os mesmos `params`. 'straight'
+// preserva TODOS os pontos (geometria exata do traço); os modos roteados
+// reamostram p/ ~100 e recalculam o caminho (rotear centenas de pontos densos
+// seria inviável). Promessa: resolve com o modo escolhido ou null se cancelar.
+const gpxConnectModal = document.getElementById('gpx-connect-modal');
+const gpxConnectClose = document.getElementById('gpx-connect-close');
+const gpxConnectMode = document.getElementById('gpx-connect-mode');
+const gpxConnectConfirm = document.getElementById('gpx-connect-confirm');
+const gpxConnectCount = document.getElementById('gpx-connect-count');
+const GPX_CONNECT_MODES = ['straight', 'cycling', 'foot', 'energy', 'energy_road'];
+let _gpxConnectResolve = null;
+
+function askGpxConnectMode(pointCount) {
+  return new Promise((resolve) => {
+    _gpxConnectResolve = resolve;
+    if (gpxConnectCount) gpxConnectCount.textContent = String(pointCount);
+    const cur = traceRoutingMode.value || routingMode || 'straight';
+    gpxConnectMode.value = GPX_CONNECT_MODES.includes(cur) ? cur : 'straight';
+    gpxConnectModal.hidden = false;
+  });
+}
+function settleGpxConnect(mode) {
+  if (!gpxConnectModal.hidden) gpxConnectModal.hidden = true;
+  const r = _gpxConnectResolve;
+  _gpxConnectResolve = null;
+  if (r) r(mode);
+}
+gpxConnectConfirm?.addEventListener('click', () => settleGpxConnect(gpxConnectMode.value || 'straight'));
+gpxConnectClose?.addEventListener('click', () => settleGpxConnect(null));
+gpxConnectModal?.addEventListener('click', (e) => { if (e.target === gpxConnectModal) settleGpxConnect(null); });
+
 // ─── Rotas salvas no servidor ────────────────────────────────────────────────
 // Persistem o MESMO estado dos links de compartilhamento (snapshotForShare:
 // waypoints + geometria roteada por segmento + modo + parâmetros) no backend.
@@ -9996,6 +10117,7 @@ async function loadGpxIntoEditor(gpxText) {
   const metaEls = doc.getElementsByTagNameNS(PHIDRO_NS, 'meta');
   let savedUserWaypoints = null;
   let savedRoutingMode = null;
+  let chosenConnectMode = null;   // modo escolhido no modal p/ GPX de terceiros
   let appliedParams = false;
   if (metaEls.length > 0) {
     const meta = metaEls[0];
@@ -10035,9 +10157,21 @@ async function loadGpxIntoEditor(gpxText) {
       }
       if (coords.length > 0) break;
     }
+    if (coords.length === 0) {
+      alert('Não encontrei pontos no arquivo GPX.');
+      return;
+    }
+
+    // GPX de terceiros: pergunta como conectar os pontos. Cancelar aborta.
+    chosenConnectMode = await askGpxConnectMode(coords.length);
+    if (chosenConnectMode === null) return;
+
+    // 'straight' preserva TODOS os pontos (geometria exata). Os modos roteados
+    // reamostram p/ ~100 antes de recalcular o caminho — rotear centenas de
+    // pontos densos seria inviável (centenas de chamadas a DEM/Overpass).
     const MAX = 100;
     let sampled = coords;
-    if (coords.length > MAX) {
+    if (chosenConnectMode !== 'straight' && coords.length > MAX) {
       sampled = [];
       const stride = (coords.length - 1) / (MAX - 1);
       for (let i = 0; i < MAX; i++) sampled.push(coords[Math.round(i * stride)]);
@@ -10084,6 +10218,9 @@ async function loadGpxIntoEditor(gpxText) {
   if (savedRoutingMode && ['straight', 'cycling', 'foot', 'energy', 'energy_road'].includes(savedRoutingMode)) {
     routingMode = savedRoutingMode;
     traceRoutingMode.value = savedRoutingMode;
+  } else if (chosenConnectMode) {
+    routingMode = chosenConnectMode;
+    traceRoutingMode.value = chosenConnectMode;
   }
 
   for (let i = 0; i < waypointsToCreate.length; i++) {

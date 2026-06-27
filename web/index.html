@@ -187,6 +187,19 @@
           <details class="help-changelog">
             <summary>Novidades (changelog)</summary>
             <dl>
+              <dt>27/06/2026 · v290</dt>
+              <dd>
+                <ul>
+                  <li>A amostragem de elevação dos DEMs (FABDEM, DEM de SP e DEM custom) passou a ser <strong>bilinear</strong> em vez de vizinho-mais-próximo — perfil de elevação mais suave, sem saltos de meia-célula entre pontos.</li>
+                  <li>Trocar o <strong>modo de roteamento</strong>, mexer nos toggles de <strong>Fontes de dados</strong> (FABDEM / DEM de SP / viário) ou carregar uma <strong>rede viária custom</strong> agora <strong>re-roteia a rota já carregada</strong> na hora (antes só valia para os próximos pontos). A rede viária custom só é usada no modo <em>Menor energia pelo viário</em>.</li>
+                </ul>
+              </dd>
+              <dt>27/06/2026 · v289</dt>
+              <dd>
+                <ul>
+                  <li>Ao <strong>carregar um GPX</strong> de outro app (ex.: Wikiloc, RideWithGPS), um modal pergunta <strong>como conectar os pontos</strong>: em <strong>Reta</strong>, <strong>todos os pontos do traço são preservados</strong> (geometria exata — a distância bate com a do app de origem); nos modos roteados (OSM / menor energia pelo terreno ou viário) os pontos são reamostrados e o caminho recalculado. Antes o traço era sempre reduzido a 100 pontos e ligado em reta, encurtando rotas longas.</li>
+                </ul>
+              </dd>
               <dt>25/06/2026 · v288</dt>
               <dd>
                 <ul>
@@ -542,6 +555,32 @@
           <p class="muted saved-routes-server-head">Rotas salvas no servidor</p>
           <p class="muted" id="saved-routes-empty" hidden>Nenhuma rota salva no servidor ainda.</p>
           <ul id="saved-routes-list" class="saved-routes-list"></ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- GPX de terceiros: como conectar os pontos ao carregar -->
+    <div id="gpx-connect-modal" class="modal" hidden>
+      <div class="modal-content save-modal-content">
+        <header>
+          <h2>Como conectar os pontos?</h2>
+          <button class="close" id="gpx-connect-close" type="button" aria-label="Fechar">&times;</button>
+        </header>
+        <div class="save-body">
+          <p class="muted">Este GPX tem <strong><span id="gpx-connect-count">0</span> pontos</strong>.</p>
+          <label class="settings-row"><span>Conectar com</span>
+            <select id="gpx-connect-mode" aria-label="Modo de conexão">
+              <option value="straight">Reta (menor distância) — mantém todos os pontos</option>
+              <option value="cycling">OSM ciclismo</option>
+              <option value="foot">OSM a pé</option>
+              <option value="energy">Menor energia pelo terreno</option>
+              <option value="energy_road">Menor energia pelo viário</option>
+            </select>
+          </label>
+          <p class="muted">Em <strong>Reta</strong>, todos os pontos do traço são preservados (geometria exata). Os modos roteados reamostram para ~100 pontos e recalculam o caminho entre eles, usando os mesmos parâmetros da barra de edição (⚙).</p>
+          <div class="settings-actions">
+            <button type="button" id="gpx-connect-confirm">Carregar</button>
+          </div>
         </div>
       </div>
     </div>
