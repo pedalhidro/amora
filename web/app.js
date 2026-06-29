@@ -183,6 +183,7 @@ const DEFAULT_LAYER_ORDER = [
   'camera-topo',               // relevo FABDEM (abaixo da topografia colorida)
   'rmsampa',                   // topografia colorida
   'sara1930',                  // SARA 1930 (histórico)
+  'mapa1850',                  // Mapa de 1850 (histórico)
   'mtpi-pindorama', 'mtpi-parana', // MTPI (índice de posição topográfica multiescala)
   'custom-wms', 'custom-xyz',  // camadas custom do usuário
   'osm-cicloinfra',
@@ -425,6 +426,16 @@ const mtpiParana = L.tileLayer('https://telhas.pedalhidrografi.co/mtpi_bacia_par
   attribution: 'MTPI Bacia do Paraná 30 m · Pedal Hidrográfico',
 });
 
+// Mapa histórico georreferenciado de São Paulo (1850), tiles XYZ em
+// telhas.pedalhidrografi.co. Tiles nativos até z18; maxNativeZoom escala acima.
+const mapa1850 = L.tileLayer('https://telhas.pedalhidrografi.co/1850/{z}/{x}/{y}.png', {
+  maxZoom: 19,
+  maxNativeZoom: 18,
+  opacity: 0.85,
+  pane: LAYER_PANE('mapa1850'),
+  attribution: 'Mapa de 1850 · Pedal Hidrográfico',
+});
+
 // ─── Combined layer panel ────────────────────────────────────────────────────
 // A single flat list of layers — each an independent visibility checkbox plus
 // an opacity slider. There is deliberately NO "base vs overlay" distinction:
@@ -467,6 +478,7 @@ const OVERLAY_LAYERS = [
     edit: () => openCameraTopoModal(),
   },
   { id: 'sara1930', label: 'SARA 1930',           layer: sara1930, defaultVisible: false, defaultPct: 85 },
+  { id: 'mapa1850', label: 'Mapa 1850',           layer: mapa1850, defaultVisible: false, defaultPct: 85 },
   { id: 'mtpi-pindorama', label: 'MTPI Pindorama 90m',       layer: mtpiPindorama, defaultVisible: false, defaultPct: 100 },
   { id: 'mtpi-parana',    label: 'MTPI Bacia do Paraná 30m', layer: mtpiParana,    defaultVisible: false, defaultPct: 100 },
   // Pseudo-layer for the loaded sidebar routes. Custom show/hide/setOpacity
