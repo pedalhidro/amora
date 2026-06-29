@@ -187,6 +187,12 @@
           <details class="help-changelog">
             <summary>Novidades (changelog)</summary>
             <dl>
+              <dt>29/06/2026 · v293</dt>
+              <dd>
+                <ul>
+                  <li>Ajustes do modelo v2: densidade do ar padrão <strong>ρ = 1,1 kg/m³</strong> (~750 m de altitude, São Paulo), <strong>limiar de plano/subida padrão 2%</strong> e <strong>ε de descida padrão 17%</strong>. O modal de Ajustes agora mostra os coeficientes derivados <strong>α</strong> (custo horizontal) e <strong>β</strong> (custo de subida) em <strong>kJ/m</strong> — é o que o roteamento por energia usa por aresta.</li>
+                </ul>
+              </dd>
               <dt>29/06/2026 · v292</dt>
               <dd>
                 <ul>
@@ -677,6 +683,18 @@
             <span class="param-label">Deadband de elevação</span>
             <span class="param-input"><input type="number" id="param-deadband" step="0.5" min="0" max="20"> m</span>
           </label>
+          <div class="param-row" title="Rolamento: m·g·Crr / k_ef — custo por metro horizontal, independente da velocidade. Cobrado em toda a distância.">
+            <span class="param-label">α_r (rolamento)</span>
+            <span class="param-input"><span id="param-alphar-readout" class="param-readout">—</span> kJ/m</span>
+          </div>
+          <div class="param-row" title="Arrasto no plano: ½·ρ·CdA·v_f² / k_ef — custo por metro horizontal à velocidade de plano v_f. Cobrado só fora das subidas.">
+            <span class="param-label">α_a (arrasto, plano)</span>
+            <span class="param-input"><span id="param-alphaa-readout" class="param-readout">—</span> kJ/m</span>
+          </div>
+          <div class="param-row" title="Subida: m·g / k_ef — custo por metro de desnível positivo.">
+            <span class="param-label">β (subida)</span>
+            <span class="param-input"><span id="param-beta-readout" class="param-readout">—</span> kJ/m</span>
+          </div>
 
           <h3 style="margin: 1.2rem 0 .35rem; font-size: .95rem; border-top: 1px dashed #ccc; padding-top: .75rem">Elevação &amp; roteamento por energia</h3>
           <button type="button" id="open-datasources" class="ds-open-btn" title="Escolher as fontes de elevação (FABDEM / DEM de SP / DEM custom) e de viário (gpkg de SP / rede custom)">Fontes de dados: DEM e rede viária…</button>

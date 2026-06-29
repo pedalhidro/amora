@@ -5696,14 +5696,14 @@ const DEFAULT_PARAMS = {
   mass: 75,                 // kg (rider + bike)
   crr: 0.008,
   cda: 0.5,                 // m² — typical upright tourist
-  rho: 1.225,               // kg/m³
+  rho: 1.1,                 // kg/m³ — ~750 m asl (São Paulo)
   // Three-tier power profile, chosen by gradient (see slopeFlatThreshold).
   powerAscent: 100,         // W when slope > +threshold
   powerFlat: 50,            // W when |slope| ≤ threshold
   powerDescent: 10,         // W when slope < −threshold
-  epsilon: 0.10,            // 0..1 — fraction of descent gravity converted to speed
+  epsilon: 0.17,            // 0..1 — fração da gravidade de descida virada velocidade (só tempo)
   efficiency: 0.90,         // 0..1 — moving time / total time
-  slopeFlatThreshold: 0.01, // 0..1 — ±1% boundary for flat vs. ascent/descent
+  slopeFlatThreshold: 0.02, // 0..1 — ±2% boundary; também o limiar de subida v2 (arrasto cai acima)
   // Modelo de energia v2 (bicycling-energy-model): eficiência da transmissão e
   // deadband de elevação. v_f (velocidade no plano p/ o arrasto) é derivada do
   // equilíbrio na potência de plano. ε (recuperação na descida) é estimada do
@@ -8831,6 +8831,21 @@ const PARAM_CHECKBOXES = {
   useWaterMask: document.getElementById('param-use-water-mask'),
   usePortals: document.getElementById('param-use-portals'),
 };
+// Leitura (read-only) dos coeficientes de custo v2 derivados (kJ/m): α_r = custo
+// horizontal de rolamento (m·g·Crr/k_ef); α_a = custo horizontal de arrasto no
+// plano (½ρCdA·v_f²/k_ef, só fora das subidas); β = custo de subida (m·g/k_ef).
+// É o que o roteamento por energia usa por aresta. Atualiza ao abrir o modal e a
+// cada mudança de parâmetro.
+const alpharReadout = document.getElementById('param-alphar-readout');
+const alphaaReadout = document.getElementById('param-alphaa-readout');
+const betaReadout   = document.getElementById('param-beta-readout');
+function updateCostReadout() {
+  const c = readCost(params);
+  const fmt4 = (n) => n.toFixed(4).replace('.', ',');
+  if (alpharReadout) alpharReadout.textContent = fmt4(c.aRoll / 1000);
+  if (alphaaReadout) alphaaReadout.textContent = fmt4(c.aAero / 1000);
+  if (betaReadout)   betaReadout.textContent   = fmt4(c.beta / 1000);
+}
 
 paramsBtn.addEventListener('click', () => {
   fillParamInputs();
@@ -8853,6 +8868,7 @@ for (const [key, input] of Object.entries(PARAM_INPUTS)) {
     params[key] = PCT_PARAMS.has(key) ? Math.max(0, Math.min(1, v / 100)) : v;
     saveParams();
     updateMetrics();
+    updateCostReadout();
   });
 }
 for (const [key, input] of Object.entries(PARAM_CHECKBOXES)) {
@@ -8890,6 +8906,7 @@ function fillParamInputs() {
   PARAM_CHECKBOXES.useViarioGpkg.checked   = params.useViarioGpkg !== false;
   PARAM_CHECKBOXES.useWaterMask.checked    = params.useWaterMask !== false;
   PARAM_CHECKBOXES.usePortals.checked      = params.usePortals !== false;
+  updateCostReadout();
 }
 
 // ─── Modal "Fontes de dados" (DEM + rede viária) ─────────────────────────────
