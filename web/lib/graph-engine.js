@@ -1,4 +1,4 @@
-// VENDORED from sampasimu @ 656af12 (verbatim, no amora patch). Imported by the
+// VENDORED from sampasimu @ 396d122 (verbatim, no amora patch). Imported by the
 // vendored energy-worker.js for its graphBuild/graphRun handlers; amora doesn't
 // call graph mode yet (its vector routing is the inline viarioGraphRoute), so
 // this is carried only to keep the worker a faithful upstream copy. Re-sync with

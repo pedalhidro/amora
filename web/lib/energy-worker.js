@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// VENDORED from sampasimu (github.com/pedalhidro/sampasimu) @ 656af12 — the
+// VENDORED from sampasimu (github.com/pedalhidro/sampasimu) @ 396d122 — the
 // canonical v2 energy engine. Treat as an upstream artifact: re-sync by copying
 // sampasimu/energy-worker.js + graph-engine.js, then re-apply the AMORA PATCH.
 // AMORA PATCH: this copy echoes `reqId` on the run-path done/error so amora's
