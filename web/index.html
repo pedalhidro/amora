@@ -187,6 +187,12 @@
           <details class="help-changelog">
             <summary>Novidades (changelog)</summary>
             <dl>
+              <dt>29/06/2026 · v291</dt>
+              <dd>
+                <ul>
+                  <li>A <strong>energia (kJ)</strong> da rota desenhada passou a usar o <strong>modelo v2</strong> (do <em>bicycling-energy-model</em>): o arrasto é cobrado <strong>só fora das subidas</strong> (à velocidade de plano <em>v_f</em>), a <strong>recuperação na descida ε é estimada do próprio perfil</strong> (não é mais fixa), e o cálculo usa um <strong>deadband de elevação de 2 m</strong> para descartar o ruído do DEM. Novos parâmetros: <em>eficiência da transmissão</em> e <em>deadband</em>. O tempo continua simulado por segmento como antes.</li>
+                </ul>
+              </dd>
               <dt>27/06/2026 · v290</dt>
               <dd>
                 <ul>
@@ -616,7 +622,7 @@
           <button class="close" id="params-close" type="button" aria-label="Fechar">&times;</button>
         </header>
         <div class="params-body">
-          <p class="muted">A velocidade é simulada por segmento a partir destes valores. A potência do ciclista varia por terreno (subida / plano / descida — o limiar é configurável abaixo). Em descidas o ciclista recupera apenas <em>ε</em>% da energia gravitacional como velocidade. O tempo total é o tempo de movimento dividido pela <em>eficiência de movimento</em> (paradas, semáforos, imagens).</p>
+          <p class="muted">A velocidade é simulada por segmento a partir destes valores. A potência do ciclista varia por terreno (subida / plano / descida — o limiar é configurável abaixo). Em descidas o ciclista recupera apenas <em>ε</em>% da energia gravitacional como velocidade. O tempo total é o tempo de movimento dividido pela <em>eficiência de movimento</em> (paradas, semáforos, imagens). A <strong>energia (kJ)</strong> usa o modelo <strong>v2</strong> (<em>bicycling-energy-model</em>): arrasto cobrado só fora das subidas (à velocidade de plano <em>v_f</em>, derivada da potência de plano), recuperação na descida estimada do próprio perfil e um <em>deadband</em> de elevação — o <em>ε</em> acima afeta só a velocidade/tempo, não a energia.</p>
           <label class="param-row">
             <span class="param-label">Massa total (rider + bike)</span>
             <span class="param-input"><input type="number" id="param-mass" step="0.5" min="20" max="200"> kg</span>
@@ -656,6 +662,14 @@
           <label class="param-row">
             <span class="param-label">Limiar de plano (±)</span>
             <span class="param-input"><input type="number" id="param-slope-threshold" step="0.1" min="0" max="20"> %</span>
+          </label>
+          <label class="param-row" title="Eficiência da transmissão (corrente). A energia nas pernas é o trabalho na roda dividido por isto.">
+            <span class="param-label">Eficiência da transmissão (k_ef)</span>
+            <span class="param-input"><input type="number" id="param-keff" step="1" min="10" max="100"> %</span>
+          </label>
+          <label class="param-row" title="Deadband (banda morta) aplicado ao perfil de elevação antes de somar a energia v2 — descarta ondulações menores que isto (ruído do DEM), preservando subidas reais.">
+            <span class="param-label">Deadband de elevação</span>
+            <span class="param-input"><input type="number" id="param-deadband" step="0.5" min="0" max="20"> m</span>
           </label>
 
           <h3 style="margin: 1.2rem 0 .35rem; font-size: .95rem; border-top: 1px dashed #ccc; padding-top: .75rem">Elevação &amp; roteamento por energia</h3>

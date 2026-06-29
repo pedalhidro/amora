@@ -5691,7 +5691,7 @@ const traceMetrics = document.getElementById('trace-metrics');
 // extra speed beyond the flat-equivalent: v = v_flat + ε·(v_coast − v_flat).
 const G = 9.81;
 // Stored as fractions in the params object; surfaced as % in the UI.
-const PCT_PARAMS = new Set(['epsilon', 'efficiency', 'slopeFlatThreshold']);
+const PCT_PARAMS = new Set(['epsilon', 'efficiency', 'slopeFlatThreshold', 'kEff']);
 const DEFAULT_PARAMS = {
   mass: 75,                 // kg (rider + bike)
   crr: 0.008,
@@ -5704,6 +5704,12 @@ const DEFAULT_PARAMS = {
   epsilon: 0.10,            // 0..1 — fraction of descent gravity converted to speed
   efficiency: 0.90,         // 0..1 — moving time / total time
   slopeFlatThreshold: 0.01, // 0..1 — ±1% boundary for flat vs. ascent/descent
+  // Modelo de energia v2 (bicycling-energy-model): eficiência da transmissão e
+  // deadband de elevação. v_f (velocidade no plano p/ o arrasto) é derivada do
+  // equilíbrio na potência de plano. ε (recuperação na descida) é estimada do
+  // perfil — o param `epsilon` acima só afeta a velocidade simulada (tempo).
+  kEff: 0.97,               // 0..1 — eficiência da transmissão
+  deadbandM: 2,             // m — deadband de elevação p/ h± na energia v2
   // Fonte de elevação: FABDEM (Range fetch de tiles 1°×1°) por padrão; cai
   // pra Open-Meteo se desligado ou se a célula vier nodata/404.
   useFabdem: true,
@@ -8562,75 +8568,122 @@ function segmentSpeed(gradient, p) {
   return vFlat + p.epsilon * (vCoast - vFlat);
 }
 
-// Walk the assembled path one Δh at a time, summing distance, time, and
-// per-segment work. Returns null if there's no path yet.
+// Deadband (backlash) filter on an elevation profile: ignores moves smaller than
+// `tau` and tracks larger ones (lagging by tau), rejecting sub-tau DEM jitter from
+// h±/h₋ while preserving real climbs. NaN points (missing elevation) pass through
+// and don't update the running reference. The v2 model's "right" smoothing for
+// full-profile data (see bicycling-energy-model/notas.md). Mirrors sampasimu's
+// deadband() / refEnergyKJ.
+function deadbandElev(h, tau) {
+  const out = new Array(h.length);
+  let y = NaN;
+  for (let i = 0; i < h.length; i++) {
+    const hi = h[i];
+    if (!Number.isFinite(hi)) { out[i] = NaN; continue; }
+    if (!Number.isFinite(y)) { y = hi; out[i] = y; continue; }
+    if (hi > y + tau) y = hi - tau;
+    else if (hi < y - tau) y = hi + tau;
+    out[i] = y;
+  }
+  return out;
+}
+
+// Walk the assembled path summing distance, time, and the v2 leg energy.
+// TIME stays the per-segment equilibrium-speed simulation (on raw Δh); ENERGY is
+// the v2 closed form (bicycling-energy-model notas.md): rolling over all distance,
+// aero charged only OFF the climbs at the flat speed v_f, gravity m·g·Δh with a
+// per-grade descent recovery ε, all ÷ k_eff, on a 2 m-deadbanded profile.
+// Returns null if there's no path yet.
 function simulateRide(p) {
   const latlngs = assembleLatLngs();
   if (latlngs.length < 2) return null;
 
-  let totalDist = 0;
-  let totalTime = 0;
-  let workRoll = 0;
-  let workAero = 0;
-  let workGravUp = 0;     // strictly positive climbing
-  let workGravDown = 0;   // strictly negative (energy returned by gravity, scaled by ε)
-  let workRider = 0;      // energy actually expended by the rider
-  let elevMissing = 0;
-  let totalAscentM = 0;
-  let totalDescentM = 0;
-  // Time-in-zone breakdown for the tooltip.
+  // Elevation profile aligned to latlngs (NaN where unknown), deadbanded for v2.
+  const elev = latlngs.map((q) => {
+    const e = elevationCache.get(elevKey(q.lat, q.lng));
+    return Number.isFinite(e) ? e : NaN;
+  });
+  const elevS = deadbandElev(elev, p.deadbandM ?? 2);
+
+  // v2 cost coefficients (Joules; ÷1000 for kJ at display). v_f from the flat-power
+  // equilibrium so it tracks the current power tuning. climb threshold reused from
+  // slopeFlatThreshold; aero is dropped on segments steeper than it.
+  const vf = solveSpeedAtGradient(p.powerFlat, 0, p);
+  const kEff = Math.min(1, Math.max(0.1, p.kEff ?? 0.97));
+  const aRoll = (p.crr * p.mass * G) / kEff;            // J per ground metre (always)
+  const aAero = (0.5 * p.rho * p.cda * vf * vf) / kEff; // J per ground metre (off climbs)
+  const beta = (p.mass * G) / kEff;                     // J per metre climbed
+  const abRatio = p.crr + (0.5 * p.rho * p.cda * vf * vf) / (p.mass * G); // = α/β, flat-resistance grade
+  const climbThr = p.slopeFlatThreshold;
+
+  let totalDist = 0, totalTime = 0, elevMissing = 0;
   let tAscent = 0, tFlat = 0, tDescent = 0;
+  // v2 accumulators (on the smoothed profile).
+  let xTot = 0, xNonClimb = 0, hPlus = 0, hMinus = 0;
+  let epsNum = 0, epsDen = 0;          // drop-weighted εcoast
+  let wRollJ = 0, wAeroJ = 0, wClimbJ = 0;
 
   for (let i = 1; i < latlngs.length; i++) {
-    const a = latlngs[i - 1];
-    const b = latlngs[i];
-    const seg = a.distanceTo(b);
+    const seg = latlngs[i - 1].distanceTo(latlngs[i]);
     if (seg < 0.5) continue;
 
-    const eA = elevationCache.get(elevKey(a.lat, a.lng));
-    const eB = elevationCache.get(elevKey(b.lat, b.lng));
+    // Raw Δh → the (unchanged) speed/time simulation.
+    const eA = elev[i - 1], eB = elev[i];
     let dh = 0;
     if (Number.isFinite(eA) && Number.isFinite(eB)) dh = eB - eA;
     else elevMissing++;
     const gradient = dh / seg;
-
     const v = segmentSpeed(gradient, p);
     const t = seg / v;
-    const power = powerFor(gradient, p);
 
     totalDist += seg;
     totalTime += t;
-    workRoll += p.crr * p.mass * G * seg;
-    workAero += 0.5 * p.rho * p.cda * v * v * seg;
-    workRider += power * t;
-
-    if (dh > 0) {
-      workGravUp += p.mass * G * dh;
-      totalAscentM += dh;
-    } else if (dh < 0) {
-      workGravDown += p.epsilon * p.mass * G * dh;
-      totalDescentM += -dh;
-    }
-
     if (gradient > p.slopeFlatThreshold) tAscent += t;
     else if (gradient < -p.slopeFlatThreshold) tDescent += t;
     else tFlat += t;
+
+    // Smoothed Δh → the v2 leg-energy accounting.
+    const eAs = elevS[i - 1], eBs = elevS[i];
+    const dhS = (Number.isFinite(eAs) && Number.isFinite(eBs)) ? eBs - eAs : 0;
+    const gradS = dhS / seg;
+    xTot += seg;
+    wRollJ += aRoll * seg;
+    if (dhS >= 0) {
+      hPlus += dhS;
+      wClimbJ += beta * dhS;
+      if (gradS < climbThr) { xNonClimb += seg; wAeroJ += aAero * seg; } // aero off climbs
+    } else {
+      hMinus += -dhS;
+      xNonClimb += seg; wAeroJ += aAero * seg;        // descents: full flat aero
+      const s = -gradS;                                // descent grade > 0
+      const epsCoast = Math.min(1, abRatio / s);
+      epsNum += epsCoast * (-dhS);
+      epsDen += (-dhS);
+    }
   }
+
+  // Drop-weighted ε with the empirical −0.13 offset, clamped to [0,1].
+  let eps = epsDen > 0 ? epsNum / epsDen - 0.13 : 0;
+  if (eps < 0) eps = 0; else if (eps > 1) eps = 1;
+  const wDescentJ = -eps * beta * hMinus;             // ≤ 0 (energy gravity returns)
+  const eLegJ = wRollJ + wAeroJ + wClimbJ + wDescentJ;
+  const fPlus = xTot > 0 ? (xTot - xNonClimb) / xTot : 0;
 
   return {
     distMeters: totalDist,
     timeSec: totalTime,
     avgSpeedMps: totalDist / Math.max(1, totalTime),
-    workRollJ: workRoll,
-    workAeroJ: workAero,
-    workGravUpJ: workGravUp,
-    workGravDownJ: workGravDown,
-    workRiderJ: workRider,
+    eLegJ,
+    workRollJ: wRollJ,
+    workAeroJ: wAeroJ,
+    workGravUpJ: wClimbJ,
+    workGravDownJ: wDescentJ,
+    fPlus, epsUsed: eps, vf, kEff,
     timeAscentSec: tAscent,
     timeFlatSec: tFlat,
     timeDescentSec: tDescent,
-    ascentM: totalAscentM,
-    descentM: totalDescentM,
+    ascentM: hPlus,        // smoothed (matches the energy terms)
+    descentM: hMinus,
     elevMissing,
   };
 }
@@ -8667,11 +8720,15 @@ function updateMetrics() {
 
   const km = sim.distMeters / 1000;
   const avgKmh = (sim.avgSpeedMps * 3600) / 1000;
-  const totalKJ = sim.workRiderJ / 1000;
+  const totalKJ = sim.eLegJ / 1000;
   const wRollKJ = sim.workRollJ / 1000;
   const wAeroKJ = sim.workAeroJ / 1000;
   const wGravUpKJ = sim.workGravUpJ / 1000;
-  const wGravDownKJ = sim.workGravDownJ / 1000; // negative
+  const wGravDownKJ = sim.workGravDownJ / 1000; // ≤ 0 (gravity returned on descent)
+  const vfKmh = (sim.vf * 3600) / 1000;
+  const fPlusPct = (sim.fPlus * 100).toFixed(0);
+  const epsPct = (sim.epsUsed * 100).toFixed(0);
+  const kEffPct = (sim.kEff * 100).toFixed(0);
   const movingTimeSec = sim.timeSec;
   const totalTimeSec = movingTimeSec / Math.max(0.01, params.efficiency);
   const haveAllElev = sim.elevMissing === 0;
@@ -8700,15 +8757,15 @@ function updateMetrics() {
     `  Plano  (${params.powerFlat} W):    ${formatHMS(sim.timeFlatSec)}\n` +
     `  Descida (${params.powerDescent} W): ${formatHMS(sim.timeDescentSec)}\n` +
     `\n` +
-    `Trabalho mecânico (kJ):\n` +
-    `  Rolamento (Crr=${params.crr}, m=${params.mass} kg):       ${fmt(wRollKJ)}\n` +
-    `  Aero      (CdA=${params.cda} m², ρ=${params.rho}):       ${fmt(wAeroKJ)}\n` +
-    `  Subida    (m·g·Δh+):                                       ${fmt(wGravUpKJ)}\n` +
-    `  Descida   (ε=${(params.epsilon * 100).toFixed(0)}% × m·g·Δh−):                       ${fmt(wGravDownKJ)}\n` +
+    `Energia (modelo v2, pernas, kJ — perfil com deadband 2 m):\n` +
+    `  Rolamento (Crr=${params.crr}, m=${params.mass} kg, k_ef=${kEffPct}%):  ${fmt(wRollKJ)}\n` +
+    `  Aero (CdA=${params.cda} m², ρ=${params.rho}, v_f=${fmt(vfKmh)} km/h, só fora das subidas): ${fmt(wAeroKJ)}\n` +
+    `  Subida (m·g·Δh+ / k_ef, f+=${fPlusPct}%):                   ${fmt(wGravUpKJ)}\n` +
+    `  Descida (−ε·m·g·Δh− / k_ef, ε=${epsPct}% estimado do perfil): ${fmt(wGravDownKJ)}\n` +
     `  ────────────────────────────────────\n` +
-    `  Energia gasta pelo ciclista:                              ${fmt(totalKJ)} kJ\n` +
+    `  Energia nas pernas:                                       ${fmt(totalKJ)} kJ\n` +
     `\n` +
-    `Mecânica bruta na roda. Energia metabólica ≈ 4× isto (eficiência humana ~25%).` +
+    `Modelo v2 (bicycling-energy-model). Energia metabólica ≈ 4× isto (eficiência humana ~25%).` +
     (sim.elevMissing > 0 ? `\n\n${sim.elevMissing} ponto(s) ainda sem elevação.` : '');
 }
 
@@ -8730,6 +8787,8 @@ const PARAM_INPUTS = {
   epsilon:            document.getElementById('param-epsilon'),
   efficiency:         document.getElementById('param-efficiency'),
   slopeFlatThreshold: document.getElementById('param-slope-threshold'),
+  kEff:               document.getElementById('param-keff'),
+  deadbandM:          document.getElementById('param-deadband'),
   // FABDEM + energy-routing
   energyAlpha:        document.getElementById('param-energy-alpha'),
   energyBeta:         document.getElementById('param-energy-beta'),
@@ -8794,6 +8853,8 @@ function fillParamInputs() {
   PARAM_INPUTS.epsilon.value = (params.epsilon * 100).toFixed(0);
   PARAM_INPUTS.efficiency.value = (params.efficiency * 100).toFixed(0);
   PARAM_INPUTS.slopeFlatThreshold.value = (params.slopeFlatThreshold * 100).toFixed(1);
+  PARAM_INPUTS.kEff.value = (params.kEff * 100).toFixed(0);
+  PARAM_INPUTS.deadbandM.value = params.deadbandM;
   PARAM_INPUTS.energyAlpha.value           = params.energyAlpha;
   PARAM_INPUTS.energyBeta.value            = params.energyBeta;
   PARAM_INPUTS.energyEta.value             = params.energyEta;
