@@ -1,19 +1,35 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// VENDORED from sampasimu (github.com/pedalhidro/sampasimu) @ 656af12 — the
+// canonical v2 energy engine. Treat as an upstream artifact: re-sync by copying
+// sampasimu/energy-worker.js + graph-engine.js, then re-apply the AMORA PATCH.
+// AMORA PATCH: this copy echoes `reqId` on the run-path done/error so amora's
+// CONCURRENT energy requests (mapConcurrent on share-link / GPX restore)
+// correlate correctly. sampasimu never runs concurrent `run` jobs, so its copy
+// omits reqId — search "AMORA PATCH" below for the added lines.
+// ─────────────────────────────────────────────────────────────────────────────
 // energy-worker.js — runs Dijkstra in a Web Worker so the UI stays responsive.
 //
-// Cost model per directed edge u -> v, dh = h_v - h_u:
-//   if dh >= 0: cost = alpha * dist + beta * dh
-//   else:       cost = max(0, alpha * dist - eta * beta * |dh|)
+// Cost model per directed edge u -> v, dh = h_v - h_u (the v2 leg-energy model
+// from bicycling-energy-model/notas.md, per-edge realisation — see v2Edge()).
+// The engine is parameterised by a `cost` bundle (physics folded once in app.js
+// and shipped identically to this worker AND the Rust backend, so they stay
+// bit-parity):
+//   cost = { aRoll, aAero, beta, climbThr, abRatio, epsOffset }
+//     aRoll  = m·g·Crr / k_eff           (J per ground metre, always)
+//     aAero  = ½·ρ·CdA·v_f² / k_eff       (J per ground metre, only OFF climbs)
+//     beta   = m·g / k_eff               (J per metre of climb)
+//     climbThr = climb-grade threshold   (grade ≥ this ⇒ drop aero, e.g. 0.02)
+//     abRatio  = Crr + ½ρCdA·v_f²/(m·g)  (flat-resistance grade, = α/β)
+//     epsOffset = 0.13                   (empirical descent-recovery offset)
+// Per directed edge (dist = ground length, dh = signed rise):
+//   dh ≥ 0: aRoll·dist + (grade<climbThr ? aAero·dist : 0) + beta·dh
+//   dh < 0: max(0, aRoll·dist + aAero·dist − ε·beta·|dh|),
+//           ε = clamp₀₁(min(1, abRatio·dist/|dh|) − epsOffset)
 //
 // Modes: "from" | "to" | "round"
 // Always returns a Float32Array of energies (Infinity for unreachable).
 // If a destination cell is given, also returns the reconstructed path
 // (array of [r, c] pairs) and its energy/length.
-
-// Request id echoed back on every outgoing message so the main thread can
-// match responses to requests on the shared (singleton) worker. Set once at
-// the top of onmessage; safe as module state because the worker processes
-// one "run" synchronously at a time.
-let currentReqId;
 
 // ------- Binary heap on a flat typed array (priority, payload) -------
 // We pack each entry as two Float64 + Int32 in parallel arrays.
@@ -36,44 +52,62 @@ function heapGrow(h) {
   h.payloads = nl;
   h.capacity = newCap;
 }
+// Both sift loops move a "hole" instead of swapping pairs — one write per
+// level instead of four — and the pop path allocates nothing: callers read
+// the top via h.priorities[0] / h.payloads[0], then call heapRemoveTop(h).
+// (The old heapPop returned a fresh {priority, payload} object per call,
+// which is millions of short-lived allocations over one Dijkstra run.)
 function heapPush(h, priority, payload) {
   if (h.size >= h.capacity) heapGrow(h);
+  const pr = h.priorities, pl = h.payloads;
   let i = h.size++;
-  h.priorities[i] = priority;
-  h.payloads[i] = payload;
-  // Sift up
   while (i > 0) {
     const parent = (i - 1) >> 1;
-    if (h.priorities[parent] <= h.priorities[i]) break;
-    [h.priorities[parent], h.priorities[i]] = [h.priorities[i], h.priorities[parent]];
-    [h.payloads[parent], h.payloads[i]] = [h.payloads[i], h.payloads[parent]];
+    if (pr[parent] <= priority) break;
+    pr[i] = pr[parent];
+    pl[i] = pl[parent];
     i = parent;
   }
+  pr[i] = priority;
+  pl[i] = payload;
 }
-function heapPop(h) {
-  if (h.size === 0) return null;
-  const topPriority = h.priorities[0];
-  const topPayload = h.payloads[0];
-  h.size--;
-  if (h.size > 0) {
-    h.priorities[0] = h.priorities[h.size];
-    h.payloads[0] = h.payloads[h.size];
-    // Sift down
-    let i = 0;
-    const n = h.size;
-    while (true) {
-      const l = 2 * i + 1;
-      const r = 2 * i + 2;
-      let smallest = i;
-      if (l < n && h.priorities[l] < h.priorities[smallest]) smallest = l;
-      if (r < n && h.priorities[r] < h.priorities[smallest]) smallest = r;
-      if (smallest === i) break;
-      [h.priorities[smallest], h.priorities[i]] = [h.priorities[i], h.priorities[smallest]];
-      [h.payloads[smallest], h.payloads[i]] = [h.payloads[i], h.payloads[smallest]];
-      i = smallest;
-    }
+function heapRemoveTop(h) {
+  const n = --h.size;
+  if (n <= 0) return;
+  const pr = h.priorities, pl = h.payloads;
+  const movedP = pr[n];
+  const movedV = pl[n];
+  let i = 0;
+  while (true) {
+    let child = 2 * i + 1;
+    if (child >= n) break;
+    if (child + 1 < n && pr[child + 1] < pr[child]) child++;
+    if (pr[child] >= movedP) break;
+    pr[i] = pr[child];
+    pl[i] = pl[child];
+    i = child;
   }
-  return { priority: topPriority, payload: topPayload };
+  pr[i] = movedP;
+  pl[i] = movedV;
+}
+
+// ------- v2 per-edge leg-energy cost -------
+// THE single cost function — every engine (dijkstra, densityField, astar, the
+// layered-DP, portals) routes through it, and backend/src/main.rs::v2_edge is a
+// byte-identical port (same operation order so test-backend.mjs stays parity).
+// `dist` = ground length (m), `dh` = signed rise (m). c = the cost bundle.
+function v2Edge(dist, dh, c) {
+  if (dh >= 0) {
+    const aero = (dh < c.climbThr * dist) ? c.aAero * dist : 0;
+    return c.aRoll * dist + aero + c.beta * dh;
+  }
+  const ndh = -dh;
+  let eps = c.abRatio * dist / ndh;
+  if (eps > 1) eps = 1;
+  eps -= c.epsOffset;
+  if (eps < 0) eps = 0;
+  const e = c.aRoll * dist + c.aAero * dist - eps * c.beta * ndh;
+  return e < 0 ? 0 : e;
 }
 
 // ------- Dijkstra -------
@@ -87,15 +121,62 @@ function heapPop(h) {
 //               energy-and-passes plugin. Forces parent + settle-order
 //               tracking and runs a reverse-walk subtree accumulation at
 //               the end. Returns a Float64Array (counts can exceed 2^24).
-// Returns { E, parents, passes }. Any of parents/passes may be null.
+// wantTree:     keep parents + settle order, skip the passes accumulation —
+//               the caller runs subtreePasses() itself, optionally with an
+//               include mask (round mode filters endpoints by combined-leg
+//               feasibility, which a single run can't know).
+// Returns { E, parents, passes, order, orderLen }; parents/passes/order may
+// be null depending on the flags.
+// Build the bridge-portal adjacency (hybrid raster + sparse graph overlay).
+// Each bridge is a deck shortcut between its two ground abutment cells (u, v),
+// traversed at the flat-deck cost — the same asymmetric model as a grid edge,
+// with the deck length in metres and dh = h(v) − h(u). The cells UNDER the deck
+// keep their ground elevation, so the over-bridge route (this portal) and the
+// under-bridge ground route coexist on the 2.5-D grid. Returns a Map
+// cell → [{ to, fwd, bwd }] (fwd = real cost in this direction, bwd = the
+// reverse, so a `reverse` search uses bwd — mirroring the grid dh sign flip),
+// or null when there are no portals. `mask` is the EFFECTIVE mask (DEM ∧
+// network): a portal whose endpoint is masked out is dropped.
+// portalHU/portalHV: per-portal deck-END elevations (from OSM `ele`). NaN means
+// "no mapped ele" → fall back to the DEM height at the abutment cell, so a pull
+// without ele is byte-identical to before. Both engines (this + Rust build_portals)
+// must apply the SAME fallback for parity.
+function buildPortalAdj(portalU, portalV, portalLenM, portalHU, portalHV, height, mask, costc) {
+  if (!portalU || !portalU.length) return null;
+  const cost = (lenM, dh) => v2Edge(lenM, dh, costc);
+  const adj = new Map();
+  const add = (a, b, fwd, bwd) => {
+    let arr = adj.get(a);
+    if (!arr) { arr = []; adj.set(a, arr); }
+    arr.push({ to: b, fwd, bwd });
+  };
+  for (let i = 0; i < portalU.length; i++) {
+    const u = portalU[i], v = portalV[i], L = portalLenM[i];
+    if (u < 0 || v < 0 || u === v) continue;
+    if (!mask[u] || !mask[v]) continue; // endpoint not traversable (e.g. network-constrained off the bridge)
+    const hu = (portalHU && !Number.isNaN(portalHU[i])) ? portalHU[i] : height[u];
+    const hv = (portalHV && !Number.isNaN(portalHV[i])) ? portalHV[i] : height[v];
+    const costUV = cost(L, hv - hu), costVU = cost(L, hu - hv);
+    add(u, v, costUV, costVU);
+    add(v, u, costVU, costUV);
+  }
+  return adj.size ? adj : null;
+}
+
 function dijkstra(opts) {
   const {
     height, mask, H, W,
     seedR, seedC,
-    alpha, beta, eta,
+    cost,
     dx, dy,
     reverse, trackParents,
     wantPasses,
+    // wantTree: keep parents + settle order and return them WITHOUT the
+    // passes accumulation. Round mode uses this so the caller can compute
+    // FILTERED passes after combining both legs' energies (the filter —
+    // "is this cell's round trip within budget?" — isn't knowable inside
+    // a single leg's run).
+    wantTree = false,
     eMax = 0,                  // 0 = no budget; >0 = stop expanding past this
     // Reverse-optimisation: when true, every edge cost is replaced with
     // (maxEdgeCost − cost) before relaxation. Dijkstra then finds the
@@ -103,34 +184,36 @@ function dijkstra(opts) {
     // cost" path among same-length paths.
     maximize = false,
     maxEdgeCost = 0,
+    // Bridge portal edges: Map cell → [{ to, fwd, bwd }] deck shortcuts.
+    portalAdj = null,
     // Per-cell progress messages get scaled into the range
     // [progressBase, progressBase + progressScale]. Default = full range,
     // i.e. one Dijkstra spans the whole bar. The density loop overrides
     // these to keep the overall compute monotonic 0→1 across N refs.
     progressBase = 0,
     progressScale = 1,
-    // Bridge/tunnel portals: Map cell → [{to, fwd, bwd}] (directed deck
-    // shortcuts at flat-deck cost). Relaxed alongside the 8 grid neighbours so
-    // a route can cross water/valleys over a bridge. The cells UNDER the deck
-    // are untouched. null = no portals.
-    portalAdj = null,
   } = opts;
 
   const N = H * W;
   const diag = Math.hypot(dx, dy);
 
-  // 8-neighbor offsets and their ground distances
-  const drs = [-1, -1, -1, 0, 0, 1, 1, 1];
-  const dcs = [-1, 0, 1, -1, 1, -1, 0, 1];
-  const dists = [diag, dy, diag, dx, dx, diag, dy, diag];
+  // 8-neighbor offsets and their ground distances. Typed arrays (not JS
+  // arrays) so the relax loop reads unboxed values, plus precomputed
+  // flat-index deltas: interior cells (~99% of the grid) skip the per-
+  // neighbor row/col bounds arithmetic entirely.
+  const drs = new Int32Array([-1, -1, -1, 0, 0, 1, 1, 1]);
+  const dcs = new Int32Array([-1, 0, 1, -1, 1, -1, 0, 1]);
+  const dists = new Float64Array([diag, dy, diag, dx, dx, diag, dy, diag]);
+  const dIdx = new Int32Array(8);
+  for (let k = 0; k < 8; k++) dIdx[k] = drs[k] * W + dcs[k];
 
   const E = new Float32Array(N);
   E.fill(Infinity);
   const seedIdx = seedR * W + seedC;
   E[seedIdx] = 0;
 
-  // wantPasses needs parent links for the subtree walk.
-  const keepParents = trackParents || wantPasses;
+  // wantPasses/wantTree need parent links for the subtree walk.
+  const keepParents = trackParents || wantPasses || wantTree;
   const parents = keepParents ? new Int32Array(N).fill(-1) : null;
   // `settled` filters stale heap entries. Using a boolean per-cell flag
   // instead of `g > E[idx]` because E is f32 and heap priorities are f64
@@ -139,7 +222,7 @@ function dijkstra(opts) {
   // reachable field at ~200 m before the heap drained.
   const settled = new Uint8Array(N);
   // Sequence of cells in pop order; required for the passes accumulation.
-  const order = wantPasses ? new Int32Array(N) : null;
+  const order = (wantPasses || wantTree) ? new Int32Array(N) : null;
   let orderLen = 0;
 
   const heap = createHeap(Math.min(N, 1 << 16));
@@ -149,9 +232,9 @@ function dijkstra(opts) {
   const reportEvery = Math.max(1000, Math.floor(N / 50));
 
   while (heap.size > 0) {
-    const top = heapPop(heap);
-    const g = top.priority;
-    const idx = top.payload;
+    const g = heap.priorities[0];
+    const idx = heap.payloads[0];
+    heapRemoveTop(heap);
     if (settled[idx]) continue;
     settled[idx] = 1;
     if (order) order[orderLen++] = idx;
@@ -161,18 +244,24 @@ function dijkstra(opts) {
       // Coarse progress: fraction of mask cells settled (approximation),
       // scaled into the caller's slice of the overall progress bar.
       const local = progressed / N;
-      postMessage({ kind: "progress", reqId: currentReqId, progress: progressBase + local * progressScale });
+      postMessage({ kind: "progress", progress: progressBase + local * progressScale });
     }
 
     const r = (idx / W) | 0;
     const c = idx - r * W;
     const hHere = height[idx];
+    const inner = r > 0 && r < H - 1 && c > 0 && c < W - 1;
 
     for (let k = 0; k < 8; k++) {
-      const nr = r + drs[k];
-      const nc = c + dcs[k];
-      if (nr < 0 || nr >= H || nc < 0 || nc >= W) continue;
-      const nIdx = nr * W + nc;
+      let nIdx;
+      if (inner) {
+        nIdx = idx + dIdx[k];
+      } else {
+        const nr = r + drs[k];
+        const nc = c + dcs[k];
+        if (nr < 0 || nr >= H || nc < 0 || nc >= W) continue;
+        nIdx = nr * W + nc;
+      }
       if (!mask[nIdx]) continue;
       // Symmetric guard to the settled-flag staleness check: don't even
       // attempt to relax an already-settled neighbour. f32 storage of E
@@ -186,13 +275,7 @@ function dijkstra(opts) {
       const dh = reverse ? hHere - hNbr : hNbr - hHere;
       const dist = dists[k];
 
-      let edge;
-      if (dh >= 0) {
-        edge = alpha * dist + beta * dh;
-      } else {
-        edge = alpha * dist - eta * beta * (-dh);
-        if (edge < 0) edge = 0;
-      }
+      let edge = v2Edge(dist, dh, cost);
 
       // Reverse the optimisation by inverting against the global cap.
       if (maximize) {
@@ -212,60 +295,287 @@ function dijkstra(opts) {
       }
     }
 
-    // Bridge/tunnel portals incident to this cell: relax the directed deck
-    // shortcut(s) at the precomputed flat-deck cost (reverse picks the opposite
-    // direction's cost, mirroring the grid dh sign-flip). Same staleness +
-    // budget guards as the grid edges.
+    // Bridge portal edges (deck shortcuts) — relaxed exactly like grid edges:
+    // settled guard, maximize inversion, eMax budget, parent/heap update. The
+    // cells under the deck are never touched, so under-bridge routes are intact.
     if (portalAdj) {
-      const ps = portalAdj.get(idx);
-      if (ps) for (let pk = 0; pk < ps.length; pk++) {
-        const p = ps[pk];
-        const nIdx = p.to;
-        if (!mask[nIdx] || settled[nIdx]) continue;
-        const edge = reverse ? p.bwd : p.fwd;
-        const tentative = g + edge;
-        if (eMax > 0 && tentative > eMax) continue;
-        if (tentative < E[nIdx]) {
-          E[nIdx] = tentative;
-          if (parents) parents[nIdx] = idx;
-          heapPush(heap, tentative, nIdx);
+      const padj = portalAdj.get(idx);
+      if (padj) {
+        for (let pi = 0; pi < padj.length; pi++) {
+          const p = padj[pi];
+          const nIdx = p.to;
+          if (settled[nIdx]) continue;
+          let edge = reverse ? p.bwd : p.fwd;
+          if (maximize) { edge = maxEdgeCost - edge; if (edge < 0) edge = 0; }
+          const tentative = g + edge;
+          if (eMax > 0 && tentative > eMax) continue;
+          if (tentative < E[nIdx]) {
+            E[nIdx] = tentative;
+            if (parents) parents[nIdx] = idx;
+            heapPush(heap, tentative, nIdx);
+          }
         }
       }
     }
   }
 
-  // Subtree accumulation for passes count: walk the settle order in reverse,
-  // adding each cell's count to its parent. Result: passes[c] = number of
-  // settled cells whose shortest path to the seed traverses c.
-  let passes = null;
-  if (wantPasses && order) {
-    passes = new Float64Array(N);
-    for (let j = 0; j < orderLen; j++) passes[order[j]] = 1;
-    for (let j = orderLen - 1; j >= 0; j--) {
-      const idx = order[j];
-      const p = parents[idx];
-      if (p >= 0) passes[p] += passes[idx];
+  const passes = (wantPasses && order)
+    ? subtreePasses(parents, order, orderLen, N, null)
+    : null;
+
+  return {
+    E,
+    parents: (trackParents || wantTree) ? parents : null,
+    passes,
+    order: wantTree ? order : null,
+    orderLen,
+  };
+}
+
+// Subtree accumulation for the passes count: walk the settle order in
+// reverse, adding each cell's count to its parent. Result: passes[c] =
+// number of counted cells whose shortest path to the seed traverses c.
+// `include` (optional Uint8Array of 0/1) selects which cells count as
+// trajectory ENDPOINTS — round mode passes the "round trip is within
+// budget / both legs reachable" mask, so only displayed destinations
+// contribute. Intermediate cells need no filtering: a corridor cell over
+// the budget still carries optimal legs serving within-budget cells.
+function subtreePasses(parents, order, orderLen, N, include) {
+  const passes = new Float64Array(N);
+  for (let j = 0; j < orderLen; j++) {
+    const idx = order[j];
+    passes[idx] = include ? include[idx] : 1;
+  }
+  for (let j = orderLen - 1; j >= 0; j--) {
+    const idx = order[j];
+    const p = parents[idx];
+    if (p >= 0) passes[p] += passes[idx];
+  }
+  return passes;
+}
+
+// ------- Multi-reference density (optimised, scratch-reused) -------
+// Equivalent to looping dijkstra() per ref + subtree walk + accumulate, but:
+//   - ONE scratch set (E/settled/parents/order/passes), allocated once and
+//     TARGETED-RESET between refs — only the explored cells (tracked in
+//     `order`) are touched, not all H·W. With an energy budget the explored
+//     region is a small fraction of the grid, so this turns per-ref O(N)
+//     overhead into O(explored), the dominant win on large DEMs.
+//   - accumulation also iterates `order`, not the whole grid.
+// Cost model is identical to dijkstra(); from/to are bit-exact vs the old
+// per-ref path, round differs only by f64 summation regrouping (~1e-17,
+// below export/display precision). Returns raw partials (density carries
+// the first /N, like densityPartial); caller does the second /N + avgE.
+function densityField(opts) {
+  const {
+    height, mask, H, W, refPoints, dmode,
+    cost, dx, dy,
+    eMax = 0, maximize = false, maxEdgeCost = 0, eMaxTotalCap = 0,
+    portalAdj = null, // bridge portal edges: Map cell → [{ to, fwd, bwd }]
+    onProgress = null,
+    // Optional: invoked once per reference with (settleCount, budgetReached)
+    // — the explored-cell count and the energy of the last-settled cell.
+    // Used by the calibration probe to learn this DEM's reach-vs-budget and
+    // rate laws. No effect when omitted.
+    onExplored = null,
+    // Probe-only: stop each search after settling this many cells (0 = no
+    // cap). Bounds the calibration probe's wall time regardless of DEM size
+    // so it returns an estimate in under a few seconds. Zero-cost (one
+    // short-circuited compare per pop) when 0 — the normal compute path.
+    maxSettled = 0,
+  } = opts;
+  const N = H * W;
+  const diag = Math.hypot(dx, dy);
+  const drs = new Int32Array([-1, -1, -1, 0, 0, 1, 1, 1]);
+  const dcs = new Int32Array([-1, 0, 1, -1, 1, -1, 0, 1]);
+  const dists = new Float64Array([diag, dy, diag, dx, dx, diag, dy, diag]);
+  const dIdx = new Int32Array(8);
+  for (let k = 0; k < 8; k++) dIdx[k] = drs[k] * W + dcs[k];
+
+  // `density` and the `passes` scratch are Float32 (not Float64): subtree
+  // counts are exact integers up to 2^24, and density values are exact
+  // dyadic rationals (count/N) in f32 on small grids, so pooled-vs-single
+  // stays bit-identical (test-worker-pool's maxD===0); on large budgets f32
+  // loses ~1e-7, invisible under the p10/p90-clipped, gamma density render.
+  // `energySum` stays Float64 — it accumulates large energy VALUES (not small
+  // counts), where f32 grouping diverges ~1e-3 between pooled and single and
+  // the mean would lose precision. Net per-worker saving ≈ 8 B/cell
+  // (non-round) / 12 (round). `density` carries the first /N.
+  const density = new Float32Array(N);
+  const energySum = new Float64Array(N);
+  const energyCount = new Int32Array(N);
+
+  const E = new Float32Array(N).fill(Infinity);
+  const settled = new Uint8Array(N);
+  const parents = new Int32Array(N).fill(-1);
+  const order = new Int32Array(N);
+  const passes = new Float32Array(N);
+  // Round mode keeps a second search resident so both legs combine per ref.
+  const round = dmode === "round";
+  const E2 = round ? new Float32Array(N).fill(Infinity) : null;
+  const settled2 = round ? new Uint8Array(N) : null;
+  const parents2 = round ? new Int32Array(N).fill(-1) : null;
+  const order2 = round ? new Int32Array(N) : null;
+  const passes2 = round ? new Float32Array(N) : null;
+
+  // Exact monotone radix heap on the f64 keys, reused across all searches.
+  // Same structure as the Rust backend's: 65 buckets indexed by the highest
+  // bit where the key differs from the last-popped minimum; pop drains
+  // bucket 0, refilling it by redistributing the lowest non-empty bucket
+  // around the new minimum. O(1) amortised push, O(64) amortised pop — far
+  // less per-op work than a binary heap's O(log n) sift on the multi-million
+  // entry frontiers a budgeted density search produces. It pops the EXACT
+  // minimum, so the settle order matches a binary heap except on genuine
+  // f64 cost ties (where either equal-cost parent is a valid optimum — the
+  // same tie behaviour the native backend already has). Bit extraction uses
+  // a typed-array union view (JIT-fast; DataView method calls are not).
+  const _ub = new ArrayBuffer(8), _uf = new Float64Array(_ub), _u32 = new Uint32Array(_ub);
+  const NB = 65;
+  const bPri = [], bVal = [], bLen = new Int32Array(NB);
+  for (let i = 0; i < NB; i++) { bPri.push(new Float64Array(16)); bVal.push(new Int32Array(16)); }
+  let lastHi = 0, lastLo = 0, rlen = 0;
+  const bucketOf = (p) => {
+    _uf[0] = p; const hi = _u32[1], lo = _u32[0];
+    const xh = hi ^ lastHi; if (xh !== 0) return 33 + (31 - Math.clz32(xh));
+    const xl = lo ^ lastLo; if (xl === 0) return 0; return 1 + (31 - Math.clz32(xl));
+  };
+  const rClear = () => { for (let i = 0; i < NB; i++) bLen[i] = 0; lastHi = 0; lastLo = 0; rlen = 0; };
+  const rPush = (p, v) => {
+    const b = bucketOf(p); let L = bLen[b];
+    if (L >= bPri[b].length) { const a = new Float64Array(L * 2); a.set(bPri[b]); bPri[b] = a; const c = new Int32Array(L * 2); c.set(bVal[b]); bVal[b] = c; }
+    bPri[b][L] = p; bVal[b][L] = v; bLen[b] = L + 1; rlen++;
+  };
+  const rTop = [0, 0];
+  const rPop = () => {
+    if (rlen === 0) return false;
+    if (bLen[0] === 0) {
+      let i = 1; while (bLen[i] === 0) i++;
+      const pr = bPri[i], va = bVal[i], L = bLen[i];
+      let mn = pr[0]; for (let j = 1; j < L; j++) if (pr[j] < mn) mn = pr[j];
+      _uf[0] = mn; lastHi = _u32[1]; lastLo = _u32[0];
+      for (let j = 0; j < L; j++) {
+        const p = pr[j], v = va[j]; const b = bucketOf(p); let M = bLen[b];
+        if (M >= bPri[b].length) { const a = new Float64Array(M * 2); a.set(bPri[b]); bPri[b] = a; const c = new Int32Array(M * 2); c.set(bVal[b]); bVal[b] = c; }
+        bPri[b][M] = p; bVal[b][M] = v; bLen[b] = M + 1;
+      }
+      bLen[i] = 0;
     }
+    const L = bLen[0] - 1; rTop[0] = bPri[0][L]; rTop[1] = bVal[0][L]; bLen[0] = L; rlen--; return true;
+  };
+
+  // Budget reached by the last cell the most recent search settled (its
+  // energy). Only meaningful under maxSettled (the probe); the calibration
+  // reads it to learn what budget a given explored-cell count corresponds to.
+  let lastStopG = 0;
+  // One budget-limited Dijkstra into the given scratch arrays; returns the
+  // settle count (order length). reverse flips dh (energy TO the seed).
+  function search(seedR, seedC, reverse, Ea, settledA, parentsA, orderA) {
+    let orderLen = 0; rClear();
+    // Reset per search and record every settle: on a maxSettled break this is
+    // the cap cell's energy, on clean exhaustion the frontier (last settled)
+    // energy. Previously only the break assigned it, so a search that
+    // exhausted before the cap reported a STALE budget (0 for the first ref,
+    // or the prior ref's), which floored the probe's bStar to 1 and blew up
+    // the budget→explored extrapolation.
+    lastStopG = 0;
+    const seed = seedR * W + seedC;
+    Ea[seed] = 0; rPush(0, seed);
+    while (rPop()) {
+      const g = rTop[0], idx = rTop[1] | 0;
+      if (settledA[idx]) continue;
+      settledA[idx] = 1; orderA[orderLen++] = idx;
+      lastStopG = g; // energy of the most-recently-settled cell (non-decreasing)
+      if (maxSettled !== 0 && orderLen >= maxSettled) break;
+      const r = (idx / W) | 0, c = idx - r * W, hHere = height[idx];
+      const inner = r > 0 && r < H - 1 && c > 0 && c < W - 1;
+      for (let k = 0; k < 8; k++) {
+        let nIdx;
+        if (inner) nIdx = idx + dIdx[k];
+        else { const nr = r + drs[k], nc = c + dcs[k]; if (nr < 0 || nr >= H || nc < 0 || nc >= W) continue; nIdx = nr * W + nc; }
+        if (!mask[nIdx] || settledA[nIdx]) continue;
+        const dh = reverse ? hHere - height[nIdx] : height[nIdx] - hHere;
+        let edge = v2Edge(dists[k], dh, cost);
+        if (maximize) { edge = maxEdgeCost - edge; if (edge < 0) edge = 0; }
+        const t = g + edge;
+        if (eMax > 0 && t > eMax) continue;
+        if (t < Ea[nIdx]) { Ea[nIdx] = t; parentsA[nIdx] = idx; rPush(t, nIdx); }
+      }
+      // Bridge portal edges (deck shortcuts). Portal-reached cells are settled
+      // and added to `order`, so the targeted reset + subtree-passes walk below
+      // already cover them.
+      if (portalAdj) {
+        const padj = portalAdj.get(idx);
+        if (padj) for (let pi = 0; pi < padj.length; pi++) {
+          const p = padj[pi]; const nIdx = p.to;
+          if (settledA[nIdx]) continue;
+          let edge = reverse ? p.bwd : p.fwd;
+          if (maximize) { edge = maxEdgeCost - edge; if (edge < 0) edge = 0; }
+          const t = g + edge;
+          if (eMax > 0 && t > eMax) continue;
+          if (t < Ea[nIdx]) { Ea[nIdx] = t; parentsA[nIdx] = idx; rPush(t, nIdx); }
+        }
+      }
+    }
+    return orderLen;
   }
 
-  return { E, parents: trackParents ? parents : null, passes };
+  const K = refPoints.length;
+  for (let k = 0; k < K; k++) {
+    const [refR, refC] = refPoints[k];
+    if (refR < 0 || refR >= H || refC < 0 || refC >= W) continue;
+    if (!mask[refR * W + refC]) continue;
+
+    if (!round) {
+      const len = search(refR, refC, dmode === "to", E, settled, parents, order);
+      if (onExplored) onExplored(len, lastStopG);
+      for (let j = 0; j < len; j++) passes[order[j]] = 1;
+      for (let j = len - 1; j >= 0; j--) { const idx = order[j]; const p = parents[idx]; if (p >= 0) passes[p] += passes[idx]; }
+      for (let j = 0; j < len; j++) {
+        const idx = order[j];
+        density[idx] += passes[idx] / N;
+        energySum[idx] += E[idx]; energyCount[idx] += 1;
+        E[idx] = Infinity; settled[idx] = 0; parents[idx] = -1; passes[idx] = 0;
+      }
+    } else {
+      const lf = search(refR, refC, false, E, settled, parents, order);
+      const lb = search(refR, refC, true, E2, settled2, parents2, order2);
+      if (onExplored) onExplored(lf + lb);
+      // Filtered subtree passes: a destination counts only if BOTH legs
+      // reach it (and the round trip is within the total cap, if set).
+      for (let j = 0; j < lf; j++) { const idx = order[j]; const fi = E[idx], bi = E2[idx]; passes[idx] = (bi < Infinity && !(eMaxTotalCap > 0 && fi + bi > eMaxTotalCap)) ? 1 : 0; }
+      for (let j = lf - 1; j >= 0; j--) { const idx = order[j]; const p = parents[idx]; if (p >= 0) passes[p] += passes[idx]; }
+      for (let j = 0; j < lb; j++) { const idx = order2[j]; const fi = E[idx], bi = E2[idx]; passes2[idx] = (fi < Infinity && !(eMaxTotalCap > 0 && fi + bi > eMaxTotalCap)) ? 1 : 0; }
+      for (let j = lb - 1; j >= 0; j--) { const idx = order2[j]; const p = parents2[idx]; if (p >= 0) passes2[p] += passes2[idx]; }
+      for (let j = 0; j < lf; j++) {
+        const idx = order[j];
+        density[idx] += passes[idx] / N;
+        const fi = E[idx], bi = E2[idx];
+        if (bi < Infinity && !(eMaxTotalCap > 0 && fi + bi > eMaxTotalCap)) { energySum[idx] += Math.fround(fi + bi); energyCount[idx] += 1; }
+      }
+      for (let j = 0; j < lb; j++) density[order2[j]] += passes2[order2[j]] / N;
+      for (let j = 0; j < lf; j++) { const idx = order[j]; E[idx] = Infinity; settled[idx] = 0; parents[idx] = -1; passes[idx] = 0; }
+      for (let j = 0; j < lb; j++) { const idx = order2[j]; E2[idx] = Infinity; settled2[idx] = 0; parents2[idx] = -1; passes2[idx] = 0; }
+    }
+    if (onProgress) onProgress((k + 1) / K);
+  }
+  return { density, energySum, energyCount };
 }
 
 // ------- A* with iterative-penalization for top-N routes -------
-// Single shortest path from `start` to `goal` under the asymmetric cost
-// model, with a per-cell penalty multiplier on the alpha*dist component:
+// Single shortest path from `start` to `goal` under the v2 cost model (v2Edge),
+// with a per-cell penalty multiplier on the distance-cost component:
 //   mult = penalty ^ usedCount[v];
-//   edge += (mult - 1) * alpha * dist
+//   edge += (mult - 1) * (aRoll + aAero) * dist
 // Penalty applies to the destination cell of each edge. The gravitational
 // (beta * dh) term is NOT penalized — climb is unavoidable.
 //
-// Heuristic: alpha * straight-line + beta * max(0, h_goal - h_here).
+// Heuristic: aRoll * straight-line + beta * max(0, h_goal - h_here).
 // Admissible because both bounds are required by any feasible path.
 function astar(opts) {
   const {
     height, mask, H, W,
     startR, startC, goalR, goalC,
-    alpha, beta, eta,
+    cost,
     dx, dy,
     penalty, usedCount,
     repulsionMode = "per-cell",   // "per-cell" | "linear" | "square"
@@ -276,9 +586,11 @@ function astar(opts) {
   } = opts;
   const N = H * W;
   const diag = Math.hypot(dx, dy);
-  const drs = [-1, -1, -1, 0, 0, 1, 1, 1];
-  const dcs = [-1, 0, 1, -1, 1, -1, 0, 1];
-  const dists = [diag, dy, diag, dx, dx, diag, dy, diag];
+  const drs = new Int32Array([-1, -1, -1, 0, 0, 1, 1, 1]);
+  const dcs = new Int32Array([-1, 0, 1, -1, 1, -1, 0, 1]);
+  const dists = new Float64Array([diag, dy, diag, dx, dx, diag, dy, diag]);
+  const dIdx = new Int32Array(8);
+  for (let k = 0; k < 8; k++) dIdx[k] = drs[k] * W + dcs[k];
 
   const startIdx = startR * W + startC;
   const goalIdx = goalR * W + goalC;
@@ -301,6 +613,8 @@ function astar(opts) {
   // inverted cost (it would be an upper bound on the remaining path,
   // which depends on path length). Falling back to h=0 makes A* behave
   // as Dijkstra — slower, but correctness is preserved.
+  // Rolling-only distance term (aRoll, the minimum per-distance edge cost — climbing
+  // edges carry no aero) keeps the heuristic a lower bound, as the v1 `alpha` did.
   const heuristic = maximize ? (() => 0) : (idx) => {
     const r = (idx / W) | 0;
     const c = idx - r * W;
@@ -308,7 +622,7 @@ function astar(opts) {
     const dc = (c - goalC) * dx;
     const straight = Math.hypot(dr, dc);
     const climb = Math.max(0, hGoal - height[idx]);
-    return alpha * straight + beta * climb;
+    return cost.aRoll * straight + cost.beta * climb;
   };
 
   E[startIdx] = 0;
@@ -320,34 +634,40 @@ function astar(opts) {
   heapPush(heap, heuristic(startIdx), startIdx);
 
   while (heap.size > 0) {
-    const top = heapPop(heap);
-    const idx = top.payload;
+    const idx = heap.payloads[0];
+    const fTop = heap.priorities[0]; // f = g + h (f64) — read BEFORE removeTop
+    heapRemoveTop(heap);
     if (settled[idx]) continue;
     settled[idx] = 1;
     if (idx === goalIdx) break;
 
-    const g = E[idx];
+    // Recover g from the f64 heap priority (g = f − h) rather than the f32
+    // E[idx]: keeps the accumulated path cost f64-exact along the route, like
+    // dijkstra()'s `g = heap.priorities[0]`. h is deterministic (0 in maximize
+    // mode), so f − h reproduces the f64 tentative that was pushed.
+    const g = fTop - heuristic(idx);
     const r = (idx / W) | 0;
     const c = idx - r * W;
     const hHere = height[idx];
+    const inner = r > 0 && r < H - 1 && c > 0 && c < W - 1;
 
     for (let k = 0; k < 8; k++) {
-      const nr = r + drs[k];
-      const nc = c + dcs[k];
-      if (nr < 0 || nr >= H || nc < 0 || nc >= W) continue;
-      const nIdx = nr * W + nc;
+      let nIdx;
+      if (inner) {
+        nIdx = idx + dIdx[k];
+      } else {
+        const nr = r + drs[k];
+        const nc = c + dcs[k];
+        if (nr < 0 || nr >= H || nc < 0 || nc >= W) continue;
+        nIdx = nr * W + nc;
+      }
       if (!mask[nIdx] || settled[nIdx]) continue;
 
       const hNbr = height[nIdx];
       const dh = hNbr - hHere;
       const dist = dists[k];
 
-      let edge;
-      if (dh >= 0) edge = alpha * dist + beta * dh;
-      else {
-        edge = alpha * dist - eta * beta * (-dh);
-        if (edge < 0) edge = 0;
-      }
+      let edge = v2Edge(dist, dh, cost);
 
       // Reverse-optimisation: invert the base cost before the repulsion
       // penalty is layered on. The penalty itself still ADDS to the
@@ -358,28 +678,31 @@ function astar(opts) {
         if (edge < 0) edge = 0;
       }
 
-      // Apply the repulsion penalty. Three modes:
-      //   per-cell:  multiplier = penalty^used_count[v], applied to alpha*dist.
+      // Apply the repulsion penalty. It scales the distance-cost component
+      // `distCost` (= (aRoll+aAero)·dist, the v2 flat-resistance distance term,
+      // the analog of v1's `alpha·dist`). Three modes:
+      //   per-cell:  multiplier = penalty^used_count[v], applied to distCost.
       //              Sharp edges; only cells you've already traversed are
       //              expensive. Same as the QGIS plugin.
-      //   linear:    extra cost = (penalty / (d + 1)) * alpha * dist, where d
+      //   linear:    extra cost = (penalty / (d + 1)) * distCost, where d
       //              is the cell's Euclidean distance (in cells) to the
       //              nearest previously-used cell. Soft 1/r decay; pushes
       //              the route away from prior corridors even where they
       //              don't directly overlap.
-      //   square:    extra cost = (penalty / (d² + 1)) * alpha * dist —
+      //   square:    extra cost = (penalty / (d² + 1)) * distCost —
       //              same idea but with 1/r² (point-charge-like) falloff.
+      const distCost = (cost.aRoll + cost.aAero) * dist;
       if (repulsionMode === "per-cell") {
         const used = usedCount[nIdx] | 0;
         if (used > 0) {
           const mult = Math.pow(penalty, used);
-          edge += (mult - 1) * alpha * dist;
+          edge += (mult - 1) * distCost;
         }
       } else if (distUsed) {
         const d = distUsed[nIdx];
         if (Number.isFinite(d)) {
           const denom = repulsionMode === "square" ? d * d + 1 : d + 1;
-          edge += (penalty / denom) * alpha * dist;
+          edge += (penalty / denom) * distCost;
         }
       }
 
@@ -460,6 +783,51 @@ function chamferDistanceTransform(seedMask, H, W) {
   return dist;
 }
 
+// Specialised 3-4 chamfer for the idwFill prefilter: Int32 distances in raw
+// chamfer units (no /3 normalisation pass), clamped at `limit + 4` so the
+// propagation never grows numbers past what the cutoff comparison needs.
+// ~2-3× cheaper than the general Float32 transform above.
+function chamferFar3(seedMask, H, W, limit) {
+  const N = H * W;
+  const D = 3, DD = 4;
+  const cap = limit + DD;
+  const dist = new Int32Array(N);
+  for (let i = 0; i < N; i++) dist[i] = seedMask[i] ? 0 : cap;
+  // Forward pass: top→bottom, left→right
+  for (let r = 0; r < H; r++) {
+    const rowOff = r * W;
+    for (let c = 0; c < W; c++) {
+      const idx = rowOff + c;
+      let v = dist[idx];
+      if (v === 0) continue;
+      if (r > 0) {
+        if (c > 0)        { const t = dist[idx - W - 1] + DD; if (t < v) v = t; }
+                          { const t = dist[idx - W] + D;      if (t < v) v = t; }
+        if (c < W - 1)    { const t = dist[idx - W + 1] + DD; if (t < v) v = t; }
+      }
+      if (c > 0)          { const t = dist[idx - 1] + D;      if (t < v) v = t; }
+      dist[idx] = v < cap ? v : cap;
+    }
+  }
+  // Backward pass: bottom→top, right→left
+  for (let r = H - 1; r >= 0; r--) {
+    const rowOff = r * W;
+    for (let c = W - 1; c >= 0; c--) {
+      const idx = rowOff + c;
+      let v = dist[idx];
+      if (v === 0) continue;
+      if (c < W - 1)      { const t = dist[idx + 1] + D;      if (t < v) v = t; }
+      if (r < H - 1) {
+        if (c > 0)        { const t = dist[idx + W - 1] + DD; if (t < v) v = t; }
+                          { const t = dist[idx + W] + D;      if (t < v) v = t; }
+        if (c < W - 1)    { const t = dist[idx + W + 1] + DD; if (t < v) v = t; }
+      }
+      dist[idx] = v < cap ? v : cap;
+    }
+  }
+  return dist;
+}
+
 // GDAL-style fillnodata: for each non-network cell within demMask, walk
 // outward in 8 directions until a network cell with a finite energy is
 // found (up to maxDistance cells per direction). The cell's filled value
@@ -474,8 +842,8 @@ function chamferDistanceTransform(seedMask, H, W) {
 //   demMask:     1 on every cell that should be filled.
 //   maxDistance: ray search cap, in cells.
 //   smoothing:   number of 3×3 box-smooth passes over the fill (0 = none).
-function fillAcrossNetwork(E, networkMask, demMask, H, W, dx, dy, maxDistance, smoothing) {
-  const out = idwFill(E, networkMask, demMask, H, W, dx, dy, maxDistance);
+function fillAcrossNetwork(E, networkMask, demMask, H, W, dx, dy, maxDistance, smoothing, onProgress) {
+  const out = idwFill(E, networkMask, demMask, H, W, dx, dy, maxDistance, onProgress);
   let buf = out;
   for (let s = 0; s < smoothing; s++) {
     buf = boxSmoothPreserveNetwork(buf, networkMask, demMask, H, W);
@@ -483,34 +851,61 @@ function fillAcrossNetwork(E, networkMask, demMask, H, W, dx, dy, maxDistance, s
   return buf;
 }
 
-function idwFill(E, networkMask, demMask, H, W, dx, dy, maxDistance) {
+// rowStart/rowEnd (optional) restrict the FILLED rows to a band — the app's
+// interp worker pool partitions the grid by rows; inputs are always the full
+// grid since rays read up to maxDistance beyond the band edges. Output cells
+// outside the band keep their input values.
+function idwFill(E, networkMask, demMask, H, W, dx, dy, maxDistance, onProgress, rowStart = 0, rowEnd = H) {
   const N = H * W;
   const out = new Float32Array(E);
   const dDiag = Math.hypot(dx, dy);
-  // Eight rays: dr, dc, per-step Euclidean cost.
-  const dirs = [
-    [-1,  0, dy],
-    [-1,  1, dDiag],
-    [ 0,  1, dx],
-    [ 1,  1, dDiag],
-    [ 1,  0, dy],
-    [ 1, -1, dDiag],
-    [ 0, -1, dx],
-    [-1, -1, dDiag],
-  ];
+  // Eight rays: dr, dc, per-step Euclidean cost. Typed columns — same
+  // order as the original triplet array, so hit-sum order (and therefore
+  // float rounding) is unchanged.
+  const drs = new Int32Array([-1, -1, 0, 1, 1, 1, 0, -1]);
+  const dcs = new Int32Array([0, 1, 1, 1, 0, -1, -1, -1]);
+  const steps = new Float64Array([dy, dDiag, dx, dDiag, dy, dDiag, dx, dDiag]);
   const max = Math.max(1, maxDistance | 0);
+  const bandRows = Math.max(1, rowEnd - rowStart);
+  const reportEvery = Math.max(1, Math.floor(bandRows / 25));
 
-  for (let r = 0; r < H; r++) {
+  // Distance-transform prefilter: a ray can reach at most maxDistance·√2
+  // cells (Euclidean), so cells whose nearest seed is provably farther get
+  // Infinity without walking 8 rays — that's the bulk of the work on
+  // sparse networks (misses cost the full 8·maxDistance steps; hits are
+  // cheap). The chamfer transform is ±~6% approximate, so the cutoff
+  // carries a 10% safety margin: cells inside the margin still walk (and
+  // miss) their rays, keeping the output bit-identical.
+  const seedMask = new Uint8Array(N);
+  let anySeed = false;
+  for (let i = 0; i < N; i++) {
+    if (networkMask[i] && E[i] < Infinity) { seedMask[i] = 1; anySeed = true; }
+  }
+  // Integer chamfer in raw 3-4 units, clamped just above the cutoff — two
+  // cheap passes regardless of network shape (global density heuristics
+  // fail on clustered networks, where the prefilter matters most).
+  // cutoffC3 is the cutoff in chamfer units with a 10% margin for the
+  // transform's ±~6% error; marginal cells still walk (and miss) their
+  // rays, so the output is bit-identical to the unfiltered version.
+  const cutoffC3 = Math.ceil(1.1 * Math.SQRT2 * max * 3);
+  const distNet = anySeed ? chamferFar3(seedMask, H, W, cutoffC3) : null;
+
+  for (let r = rowStart; r < rowEnd; r++) {
+    if (onProgress && (r - rowStart) % reportEvery === 0) onProgress((r - rowStart) / bandRows);
+    const rowOff = r * W;
     for (let c = 0; c < W; c++) {
-      const idx = r * W + c;
+      const idx = rowOff + c;
       if (!demMask[idx]) continue;
       // Network cells with finite E are the seeds — leave them alone.
-      if (networkMask[idx] && Number.isFinite(E[idx])) continue;
+      if (networkMask[idx] && E[idx] < Infinity) continue;
+      // No seeds at all → nothing can fill; beyond the (chamfer-unit)
+      // cutoff → no ray can possibly hit, skip the walk.
+      if (!anySeed || distNet[idx] > cutoffC3) { out[idx] = Infinity; continue; }
 
       let weighted = 0;
       let weightSum = 0;
       for (let k = 0; k < 8; k++) {
-        const dr = dirs[k][0], dc = dirs[k][1], step = dirs[k][2];
+        const dr = drs[k], dc = dcs[k], step = steps[k];
         let nr = r, nc = c, dist = 0;
         for (let s = 0; s < max; s++) {
           nr += dr; nc += dc; dist += step;
@@ -519,7 +914,7 @@ function idwFill(E, networkMask, demMask, H, W, dx, dy, maxDistance) {
           // Walk over any cells (network or not) but only contribute when we
           // hit a network cell with a finite seed value. The loop terminates
           // at the first such hit per direction.
-          if (networkMask[ni] && Number.isFinite(E[ni])) {
+          if (networkMask[ni] && E[ni] < Infinity) {
             const w = 1 / (dist * dist);
             weighted += E[ni] * w;
             weightSum += w;
@@ -596,7 +991,7 @@ function maxCostPathOfLength(opts) {
   const {
     height, mask, H, W,
     startR, startC, goalR, goalC,
-    alpha, beta, eta, dx, dy,
+    cost, dx, dy,
     L,
     progressBase = 0,
     progressScale = 1,
@@ -659,15 +1054,10 @@ function maxCostPathOfLength(opts) {
           const pVal = prev[n];
           if (!Number.isFinite(pVal)) continue;
 
-          // Same cost model as Dijkstra/A*: asymmetric uphill/downhill.
+          // Same cost model as Dijkstra/A*: the v2 per-edge leg energy.
           const dh = hv - height[n];
           const dist = dists[k];
-          let edge;
-          if (dh >= 0) edge = alpha * dist + beta * dh;
-          else {
-            edge = alpha * dist - eta * beta * (-dh);
-            if (edge < 0) edge = 0;
-          }
+          const edge = v2Edge(dist, dh, cost);
           const cand = pVal + edge;
           if (cand > bestVal) {
             bestVal = cand;
@@ -686,7 +1076,7 @@ function maxCostPathOfLength(opts) {
 
     // Coarse progress per layer.
     if (t === L || t % Math.max(1, Math.floor(L / 25)) === 0) {
-      postMessage({ kind: "progress", reqId: currentReqId, progress: progressBase + progressScale * (t / L) });
+      postMessage({ kind: "progress", progress: progressBase + progressScale * (t / L) });
     }
   }
 
@@ -746,33 +1136,156 @@ function maxCostPathOfLength(opts) {
   };
 }
 
-// Build a per-cell portal adjacency from {u, v, lenM}: a directed deck shortcut
-// between each bridge/tunnel's two abutment cells at the flat-deck cost
-// (asymmetric model on the endpoint heights + deck length). Skips a portal whose
-// abutment is off the (effective) mask. null if none.
-function buildPortalAdj(portals, height, mask, alpha, beta, eta) {
-  if (!portals || !portals.n) return null;
-  const { u, v, lenM, n } = portals;
-  const cost = (L, dh) => { if (dh >= 0) return alpha * L + beta * dh; const e = alpha * L - eta * beta * (-dh); return e < 0 ? 0 : e; };
-  const adj = new Map();
-  const add = (a, b, fwd, bwd) => { let arr = adj.get(a); if (!arr) { arr = []; adj.set(a, arr); } arr.push({ to: b, fwd, bwd }); };
-  for (let i = 0; i < n; i++) {
-    const a = u[i], b = v[i], L = lenM[i];
-    if (a < 0 || b < 0 || a === b) continue;
-    if (!mask[a] || !mask[b]) continue;
-    const ha = height[a], hb = height[b];
-    const cAB = cost(L, hb - ha), cBA = cost(L, ha - hb);
-    add(a, b, cAB, cBA);
-    add(b, a, cBA, cAB);
-  }
-  return adj.size ? adj : null;
+// ------- Worker message handler -------
+// Vector-network graph routing lives in a sibling module (shared with the node
+// test). importScripts only exists in a real Worker; in the node test harness
+// (new Function sandbox) it's absent and the graph kinds are never exercised,
+// so the guard keeps test-worker-pool.mjs working while the browser gets the
+// engine. graph-engine.js assigns self.GraphEngine.
+if (typeof importScripts === "function") {
+  try { importScripts("graph-engine.js"); } catch (e) { /* graph mode unavailable; grid paths unaffected */ }
 }
 
-// ------- Worker message handler -------
 self.onmessage = (ev) => {
   const msg = ev.data;
+
+  // Standalone IDW-fill job. Used by the density worker pool: the pool
+  // merges per-worker partial fields on the main thread, so the optional
+  // network interpolation (which lives here, next to its helpers) runs as
+  // a follow-up task on the merged energy field.
+  if (msg.kind === "interp") {
+    try {
+      const rowStart = msg.rowStart ?? 0;
+      const rowEnd = msg.rowEnd ?? msg.H;
+      const onProgress = (frac) => postMessage({ kind: "progress", progress: frac });
+      if (rowStart > 0 || rowEnd < msg.H) {
+        // Pool band: fill only [rowStart, rowEnd) and return that slice.
+        // Smoothing is NOT applied per band (it would seam at the edges) —
+        // the app runs a separate "smooth" pass over the merged grid.
+        const out = idwFill(
+          msg.energy, msg.networkMask, msg.mask, msg.H, msg.W, msg.dx, msg.dy,
+          msg.interpMaxDistance, onProgress, rowStart, rowEnd,
+        );
+        const band = out.slice(rowStart * msg.W, rowEnd * msg.W);
+        postMessage({ kind: "interp-done", energy: band, rowStart, rowEnd }, [band.buffer]);
+      } else {
+        const filled = fillAcrossNetwork(
+          msg.energy, msg.networkMask, msg.mask, msg.H, msg.W, msg.dx, msg.dy,
+          msg.interpMaxDistance, msg.interpSmoothing, onProgress,
+        );
+        postMessage({ kind: "interp-done", energy: filled }, [filled.buffer]);
+      }
+    } catch (err) {
+      postMessage({ kind: "error", message: err.message });
+    }
+    return;
+  }
+
+  // Post-merge smoothing for the banded interp path: N box-smooth passes
+  // over the full merged grid (cheap relative to the fill itself).
+  if (msg.kind === "smooth") {
+    try {
+      let buf = msg.energy;
+      for (let s = 0; s < (msg.iters | 0); s++) {
+        buf = boxSmoothPreserveNetwork(buf, msg.networkMask, msg.mask, msg.H, msg.W);
+      }
+      postMessage({ kind: "smooth-done", energy: buf }, [buf.buffer]);
+    } catch (err) {
+      postMessage({ kind: "error", message: err.message });
+    }
+    return;
+  }
+
+  // Calibration probe: learn this DEM's real allocation cost and per-ref
+  // search throughput so the main thread's pre-flight estimate can scale
+  // with the energy budget instead of assuming a fixed full-grid rate.
+  // Two phases: (a) time a fresh full-N scratch allocation (dominated by
+  // first-touch on huge DEMs); (b) run densityField with a couple of refs
+  // at a fixed calibration budget, capturing total time + explored cells.
+  // perRef = (totalMs − allocMs) / nRefs isolates the per-ref work from the
+  // one-time allocation (see app.js startCalibrationProbe).
+  if (msg.kind === "probe") {
+    try {
+      const { height, mask, H, W, dx, dy, cost, refPoints, maxSettled } = msg;
+      const N = H * W;
+      const tA = performance.now();
+      // Mirror densityField's non-round scratch set so the measured alloc
+      // matches what a real run pays. Touch each so the JIT can't elide.
+      const _e = new Float32Array(N).fill(Infinity);
+      const _s = new Uint8Array(N);
+      const _p = new Int32Array(N).fill(-1);
+      const _o = new Int32Array(N);
+      const _pa = new Float32Array(N);
+      _e[0] = 0; _s[0] = 1; _p[0] = 0; _o[0] = 0; _pa[0] = 0;
+      const allocMs = performance.now() - tA;
+
+      // ONE unbudgeted search per ref, stopped after maxSettled cells. This
+      // bounds the probe's wall time regardless of DEM size (the 3 s ceiling)
+      // while anchoring the estimate at an UNSATURATED point: we learn this
+      // terrain's (budgetReached → explored) and (explored → perRef) at the
+      // cell count, then the estimate scales from there. budgetReached
+      // (energy of the last settled cell) varies per ref with local relief;
+      // we average it. perRef = (totalMs − allocMs)/nRefs isolates search+walk.
+      let exploredTotal = 0, budgetReachedSum = 0;
+      const t0 = performance.now();
+      densityField({
+        height, mask, H, W, refPoints, dmode: "from",
+        cost, dx, dy, eMax: 0, maxSettled,
+        maximize: false, maxEdgeCost: 0, eMaxTotalCap: 0,
+        onExplored: (len, budgetReached) => { exploredTotal += len; budgetReachedSum += budgetReached; },
+      });
+      const totalMs = performance.now() - t0;
+      postMessage({
+        kind: "probe-done", allocMs, totalMs, exploredTotal,
+        budgetReached: budgetReachedSum / refPoints.length,
+        nRefs: refPoints.length, N,
+      });
+    } catch (err) {
+      postMessage({ kind: "error", message: err.message });
+    }
+    return;
+  }
+
+  // Build the routable graph from network polylines + DEM (once per network
+  // load). Returns transferable typed arrays the app caches as state.networkGraph
+  // and ships back with every graphRun. See graph-engine.js for the data shape.
+  if (msg.kind === "graphBuild") {
+    try {
+      const g = GraphEngine.buildGraph(msg.lines, msg.dem, msg.opts);
+      const transfer = [
+        g.nodeR.buffer, g.nodeC.buffer, g.nodeH.buffer, g.nodeValid.buffer, g.edgeA.buffer, g.edgeB.buffer,
+        g.edgeLenM.buffer, g.edgeStepM.buffer, g.profOff.buffer, g.profH.buffer,
+        g.csrHead.buffer, g.csrSource.buffer, g.csrTarget.buffer, g.csrEdge.buffer, g.csrAtoB.buffer,
+      ];
+      postMessage({ kind: "graph-built", graph: g, gen: msg.gen }, transfer);
+    } catch (err) {
+      postMessage({ kind: "error", message: err.message });
+    }
+    return;
+  }
+
+  // Run one compute (any mode) on the cached graph. The big per-edge / per-node
+  // arrays transfer back; path/routes are small plain objects.
+  if (msg.kind === "graphRun") {
+    try {
+      const g = msg.graph, p = msg.params;
+      // Snap src/dst/ref pixel coords to graph nodes here — the main thread has
+      // no engine; the graph (and nearestNode) live in the worker.
+      if (p.srcRC) p.srcNode = GraphEngine.nearestNode(g, p.srcRC[0], p.srcRC[1]);
+      if (p.dstRC) p.dstNode = GraphEngine.nearestNode(g, p.dstRC[0], p.dstRC[1]);
+      if (p.refRCs) p.refNodes = p.refRCs.map((rc) => GraphEngine.nearestNode(g, rc[0], rc[1]));
+      const res = GraphEngine.computeGraph(g, p);
+      const transfer = [res.edgePasses.buffer];
+      if (res.edgeEnergy) transfer.push(res.edgeEnergy.buffer);
+      if (res.nodeEnergy) transfer.push(res.nodeEnergy.buffer);
+      postMessage({ kind: "graph-result", result: res, gen: msg.gen }, transfer);
+    } catch (err) {
+      postMessage({ kind: "error", message: err.message });
+    }
+    return;
+  }
+
   if (msg.kind !== "run") return;
-  currentReqId = msg.reqId;
 
   const t0 = performance.now();
   const {
@@ -780,26 +1293,38 @@ self.onmessage = (ev) => {
     seedR, seedC,
     goalR, goalC,                                        // optional, may be -1 / -1
     mode,                                                 // "from" | "to" | "round"
-    alpha, beta, eta,
+    cost,                                                 // v2 cost bundle (see v2Edge)
     wantPasses = false,                                  // route-density toggle
     wantTopN = false,                                    // top-N routes toggle
     nRoutes = 1,                                         // number of top-N iterations
     penalty = 2.0,                                       // strength of repulsion
     repulsionMode = "per-cell",                          // "per-cell" | "linear" | "square"
     eMax = 0,                                            // energy budget (0 = none)
+    eMaxMode = "leg",                                    // round mode only: "leg" caps each
+                                                         // direction at eMax (totals reach
+                                                         // 2·eMax); "total" caps the sum —
+                                                         // legs still search up to eMax each
+                                                         // (a leg can never exceed the total),
+                                                         // then over-budget sums are masked
+                                                         // to Infinity. Ignored outside round
+                                                         // (one leg IS the total there).
     wantDensity = false,                                  // multi-ref passes density
     refPoints = null,                                     // [[r0,c0],[r1,c1], …]
     densityMode = "from",                                 // mode for each ref's Dijkstra
+    densityPartial = false,                               // return un-normalised partial sums (worker pool)
     networkMask = null,                                   // optional binary mask over the DEM grid
     wantNetworkInterp = false,                            // fill non-network cells via IDW from network seeds
     interpMaxDistance = 50,                               // ray search cap, in cells
     interpSmoothing = 0,                                  // number of 3×3 smoothing passes
     maximize = false,                                     // reverse the optimisation: prefer expensive edges
     maximizeLength = 0,                                   // >0 → layered-DP max-cost path of exactly L edges
-    portals = null,                                       // bridge/tunnel deck shortcuts {u,v,lenM,n}
   } = msg;
 
   const wantPath = goalR >= 0 && goalC >= 0;
+  // Round-trip total budget (see eMaxMode above). The per-leg Dijkstras
+  // still run with eMax — a leg can never exceed the total — and the
+  // combine loops below mask sums beyond this cap to Infinity.
+  const eMaxTotalCap = (eMaxMode === "total" && eMax > 0) ? eMax : 0;
   const goalIdx = wantPath ? goalR * W + goalC : -1;
   const N = H * W;
 
@@ -824,8 +1349,9 @@ self.onmessage = (ev) => {
     const diag = Math.hypot(dx, dy);
     // 1.001 buffer so even the absolute worst-case original edge cost
     // can't push the inverted value to zero (which would make the cell
-    // free and degenerate the search).
-    maxEdgeCost = (alpha * diag + beta * Math.max(dh, 1e-6)) * 1.001;
+    // free and degenerate the search). Worst per-edge cost = rolling + flat
+    // aero over the diagonal + the full climb term.
+    maxEdgeCost = ((cost.aRoll + cost.aAero) * diag + cost.beta * Math.max(dh, 1e-6)) * 1.001;
   }
 
   // When a network mask is supplied, Dijkstra runs on the AND of the DEM
@@ -837,11 +1363,15 @@ self.onmessage = (ev) => {
     for (let i = 0; i < N; i++) effMask[i] = (mask[i] && networkMask[i]) ? 1 : 0;
   }
 
-  // Bridge/tunnel portals (raster mask+portal): abutment cells must be on the
-  // effective mask. Excluded under maximize (the inverted cost would turn a long
-  // deck into a free shortcut), matching sampasimu.
-  const portalAdj = (portals && !maximize)
-    ? buildPortalAdj(portals, height, effMask, alpha, beta, eta) : null;
+  // Bridge portal edges (hybrid raster + sparse graph overlay). Cost uses the
+  // same asymmetric model + the effective mask, so it composes with the network
+  // constraint. Shared across all refs/legs. Top-N (A*) and the max-cost DP
+  // path don't use portals yet (A*'s admissible heuristic would break).
+  // Portals are EXCLUDED from maximize mode: maxEdgeCost bounds only a single
+  // grid edge, so a long deck cost would invert to a clamped-0 "free" max-cost
+  // shortcut (degenerate). Mirror the backend (handle_density) and the A*/DP
+  // exclusion. Bridges + "maximize energy" isn't a meaningful combination anyway.
+  const portalAdj = maximize ? null : buildPortalAdj(msg.portalU, msg.portalV, msg.portalLenM, msg.portalHU, msg.portalHV, height, effMask, cost);
 
   let energy;
   let passes = null;
@@ -873,75 +1403,38 @@ self.onmessage = (ev) => {
       // layer is the per-cell mean of all refs' energy fields (counting
       // only refs from which the cell is reachable). Cells unreachable
       // from every ref stay Infinity (rendered transparent).
-      const density = new Float64Array(N);
-      const energySum = new Float64Array(N);
-      const energyCount = new Int32Array(N);
       const dmode = densityMode || "from";
-      const K = refPoints.length;
-      const slice = 1 / K;
-      for (let k = 0; k < K; k++) {
-        const [refR, refC] = refPoints[k];
-        if (refR < 0 || refR >= H || refC < 0 || refC >= W) continue;
-        if (!mask[refR * W + refC]) continue;
+      // Optimised engine: one reused scratch set, targeted reset/accumulate
+      // over explored cells only (see densityField). The `density` it
+      // returns already carries the first /N (matching the old per-ref
+      // path); the second /N + avgE happen below.
+      const { density, energySum, energyCount } = densityField({
+        height, mask: effMask, H, W,
+        refPoints, dmode,
+        cost, dx, dy,
+        eMax, maximize, maxEdgeCost, eMaxTotalCap,
+        portalAdj,
+        onProgress: (frac) => postMessage({ kind: "progress", progress: frac }),
+      });
 
-        const base = k / K;
-
-        let perRefPasses, perRefEnergy;
-        if (dmode === "round") {
-          // Forward + reverse share this ref's slice equally.
-          const f = dijkstra({
-            height, mask: effMask, H, W,
-            seedR: refR, seedC: refC,
-            alpha, beta, eta, dx, dy,
-            reverse: false, trackParents: false,
-            wantPasses: true, eMax,
-            maximize, maxEdgeCost,
-            progressBase: base, progressScale: slice * 0.5,
-          });
-          const b = dijkstra({
-            height, mask: effMask, H, W,
-            seedR: refR, seedC: refC,
-            alpha, beta, eta, dx, dy,
-            reverse: true, trackParents: false,
-            wantPasses: true, eMax,
-            maximize, maxEdgeCost,
-            progressBase: base + slice * 0.5, progressScale: slice * 0.5,
-          });
-          perRefPasses = new Float64Array(N);
-          perRefEnergy = new Float32Array(N);
-          for (let i = 0; i < N; i++) {
-            perRefPasses[i] = f.passes[i] + b.passes[i];
-            const fi = f.E[i], bi = b.E[i];
-            perRefEnergy[i] = Number.isFinite(fi) && Number.isFinite(bi) ? fi + bi : Infinity;
-          }
-        } else {
-          const r = dijkstra({
-            height, mask: effMask, H, W,
-            seedR: refR, seedC: refC,
-            alpha, beta, eta, dx, dy,
-            reverse: dmode === "to", trackParents: false,
-            wantPasses: true, eMax,
-            maximize, maxEdgeCost,
-            progressBase: base, progressScale: slice,
-          });
-          perRefPasses = r.passes;
-          perRefEnergy = r.E;
-        }
-        // First normalisation: each reference's count becomes a density
-        // (passes per cell over the grid).
-        for (let i = 0; i < N; i++) {
-          density[i] += perRefPasses[i] / N;
-          if (Number.isFinite(perRefEnergy[i])) {
-            energySum[i] += perRefEnergy[i];
-            energyCount[i] += 1;
-          }
-        }
-        // Snap progress to the slice boundary at end of each ref so the
-        // bar lines up with the "ref X/K" status text the main thread
-        // shows. The per-cell ticks above already cover the slice
-        // monotonically; this is just a clean checkpoint.
-        postMessage({ kind: "progress", reqId: currentReqId, progress: (k + 1) / K });
+      // Worker-pool mode: hand back the raw accumulators (density before
+      // the second /N, energy as sum + reach-count) so the main thread can
+      // merge several workers' slices before normalising. Buffers are
+      // transferred — this worker is done with them.
+      if (densityPartial) {
+        const t1 = performance.now();
+        postMessage(
+          {
+            kind: "done",
+            partial: true,
+            density, energySum, energyCount,
+            elapsedMs: t1 - t0,
+          },
+          [density.buffer, energySum.buffer, energyCount.buffer],
+        );
+        return;
       }
+
       // Second density normalisation.
       for (let i = 0; i < N; i++) density[i] /= N;
 
@@ -957,7 +1450,7 @@ self.onmessage = (ev) => {
       const r = dijkstra({
         height, mask: effMask, H, W,
         seedR, seedC,
-        alpha, beta, eta, dx, dy,
+        cost, dx, dy,
         reverse: false, trackParents: wantPath,
         wantPasses, eMax,
         maximize, maxEdgeCost, portalAdj,
@@ -972,7 +1465,7 @@ self.onmessage = (ev) => {
       const r = dijkstra({
         height, mask: effMask, H, W,
         seedR, seedC,
-        alpha, beta, eta, dx, dy,
+        cost, dx, dy,
         reverse: true, trackParents: wantPath,
         wantPasses, eMax,
         maximize, maxEdgeCost, portalAdj,
@@ -984,32 +1477,41 @@ self.onmessage = (ev) => {
         pathEnergy = energy[goalIdx];
       }
     } else {
-      // round trip: forward + reverse, sum
+      // round trip: forward + reverse, sum. Passes are computed AFTER the
+      // combine (wantTree defers the subtree walk) so that only displayed
+      // destinations — both legs reachable AND within the budget semantics
+      // — count as trajectory endpoints.
       const f = dijkstra({
         height, mask: effMask, H, W,
         seedR, seedC,
-        alpha, beta, eta, dx, dy,
+        cost, dx, dy,
         reverse: false, trackParents: wantPath,
-        wantPasses, eMax,
+        wantTree: wantPasses, eMax,
         maximize, maxEdgeCost, portalAdj,
       });
       const b = dijkstra({
         height, mask: effMask, H, W,
         seedR, seedC,
-        alpha, beta, eta, dx, dy,
+        cost, dx, dy,
         reverse: true, trackParents: false,
-        wantPasses, eMax,
+        wantTree: wantPasses, eMax,
         maximize, maxEdgeCost, portalAdj,
       });
       energy = new Float32Array(N);
       for (let i = 0; i < N; i++) {
         const a = f.E[i];
         const c = b.E[i];
-        energy[i] = (a === Infinity || c === Infinity) ? Infinity : a + c;
+        const s = a + c;
+        // Total-budget mode masks over-budget round trips.
+        energy[i] = (a === Infinity || c === Infinity || (eMaxTotalCap > 0 && s > eMaxTotalCap))
+          ? Infinity : s;
       }
-      if (wantPasses && f.passes && b.passes) {
-        passes = new Float64Array(N);
-        for (let i = 0; i < N; i++) passes[i] = f.passes[i] + b.passes[i];
+      if (wantPasses) {
+        const include = new Uint8Array(N);
+        for (let i = 0; i < N; i++) include[i] = Number.isFinite(energy[i]) ? 1 : 0;
+        passes = subtreePasses(f.parents, f.order, f.orderLen, N, include);
+        const pb = subtreePasses(b.parents, b.order, b.orderLen, N, include);
+        for (let i = 0; i < N; i++) passes[i] += pb[i];
       }
       // For round trip, the "path" is ambiguous (outbound vs return differ).
       // Report the outbound path here for visualisation.
@@ -1045,7 +1547,7 @@ self.onmessage = (ev) => {
           height, mask: effMask, H, W,
           startR: seedR, startC: seedC,
           goalR, goalC,
-          alpha, beta, eta, dx, dy,
+          cost, dx, dy,
           penalty: pen, usedCount,
           repulsionMode, distUsed,
           eMax,
@@ -1067,7 +1569,7 @@ self.onmessage = (ev) => {
           if (usedMask) usedMask[res.path[j]] = 1;
         }
         // Coarse progress per iteration
-        postMessage({ kind: "progress", reqId: currentReqId, progress: (r + 1) / k });
+        postMessage({ kind: "progress", progress: (r + 1) / k });
       }
     }
 
@@ -1086,7 +1588,7 @@ self.onmessage = (ev) => {
         height, mask: effMask, H, W,
         startR: seedR, startC: seedC,
         goalR, goalC,
-        alpha, beta, eta, dx, dy,
+        cost, dx, dy,
         L: maximizeLength,
       });
       // Always log the DP outcome to the console so it's clear whether the
@@ -1103,7 +1605,6 @@ self.onmessage = (ev) => {
         // so the user still sees the field.
         postMessage({
           kind: "warning",
-          reqId: currentReqId,
           message: `Length-constrained DP did not run (${dp.error}). ` +
                    `Showing the inverted-Dijkstra path instead — try a larger L ` +
                    `(at minimum ~Chebyshev distance between src and dst).`,
@@ -1131,7 +1632,7 @@ self.onmessage = (ev) => {
     const t1 = performance.now();
     const out = {
       kind: "done",
-      reqId: currentReqId,
+      reqId: msg.reqId,      // AMORA PATCH: correlate concurrent run requests
       energy,
       passes,
       path,                  // null or array of flat indices
@@ -1144,6 +1645,7 @@ self.onmessage = (ev) => {
     if (passes) transfer.push(passes.buffer);
     postMessage(out, transfer);
   } catch (err) {
-    postMessage({ kind: "error", reqId: currentReqId, message: err.message });
+    // AMORA PATCH: echo reqId so the right run-request promise rejects.
+    postMessage({ kind: "error", reqId: msg.reqId, message: err.message });
   }
 };

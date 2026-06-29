@@ -9,7 +9,7 @@
 //                    their second visit.
 //   RUNTIME_CACHE — map tiles, OSRM, elevation, etc. Same strategy.
 
-const VERSION = 'phidro-v291';
+const VERSION = 'phidro-v292';
 const STATIC_CACHE = `${VERSION}-static`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 
@@ -30,6 +30,7 @@ const STATIC_ASSETS = [
   './lib/utils.js',
   './lib/n3.min.js',
   './lib/energy-worker.js',
+  './lib/graph-engine.js',   // importScripts()'d pelo energy-worker no boot
   './lib/tom-select.complete.min.js',
   './lib/tom-select.min.css',
   './lib/qrcode.js',

@@ -5717,10 +5717,9 @@ const DEFAULT_PARAMS = {
   // Quando ligado, tem prioridade sobre o FABDEM dentro da extensão da RMSP;
   // fora dela (ou nodata) cai pro FABDEM/Open-Meteo. Ligado por padrão.
   useSampaDem: true,
-  // Roteamento "menor energia" (FABDEM + Dijkstra assimétrico):
-  energyAlpha: 0.008,       // peso da distância no custo
-  energyBeta: 1,            // peso do desnível positivo
-  energyEta: 0.2,           // fração do ganho de descida recuperada (0..1)
+  // Roteamento "menor energia" (FABDEM + Dijkstra assimétrico): o custo por aresta
+  // é o modelo v2 derivado dos parâmetros físicos acima (mass/crr/cda/rho/kEff +
+  // v_f da potência de plano) via readCost() — não há mais α/β/η.
   energySearchMarginPct: 100, // % de margem em torno da bbox dos endpoints
   // Fonte do viário no "menor energia pelo viário": gpkg vetorial de SP
   // (roteia no grafo, traçado suave) por padrão; desligado usa o Overpass
@@ -7219,12 +7218,26 @@ function viarioGraphRoute(lines, meta, fromLatLng, toLatLng, dem, bb, A) {
   }
 
   const adj = [];                     // adj[u] = [v0, cost0, v1, cost1, …]
-  const alpha = params.energyAlpha, beta = params.energyBeta, eta = params.energyEta;
+  const cost = readCost(params);
   const M_DEG = 111320;
   const cellM = A * M_DEG;            // ~tamanho da célula do DEM em metros
-  const edgeCost = (dist, dh) =>
-    dh >= 0 ? alpha * dist + beta * dh
-            : Math.max(0, alpha * dist - eta * beta * (-dh));
+  // Custo v2 por aresta — IDÊNTICO ao v2Edge do worker (lib/energy-worker.js) e ao
+  // v2_edge do backend Rust do sampasimu; manter em sincronia. dist = metros de
+  // solo, dh = desnível com sinal. Rolamento sempre; arrasto só fora das subidas;
+  // recuperação na descida ε por grade.
+  const edgeCost = (dist, dh) => {
+    if (dh >= 0) {
+      const aero = (dh < cost.climbThr * dist) ? cost.aAero * dist : 0;
+      return cost.aRoll * dist + aero + cost.beta * dh;
+    }
+    const ndh = -dh;
+    let eps = cost.abRatio * dist / ndh;
+    if (eps > 1) eps = 1;
+    eps -= cost.epsOffset;
+    if (eps < 0) eps = 0;
+    const e = cost.aRoll * dist + cost.aAero * dist - eps * cost.beta * ndh;
+    return e < 0 ? 0 : e;
+  };
 
   // Pontos do caminho que caem em tabuleiro (p/ achatar também o perfil do
   // display, depois — usando a elevação que o PRÓPRIO display amostrou nos
@@ -7584,13 +7597,19 @@ async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
     const tWork = performance.now();
     const baseOpts = {
       height: dem.height,
-      networkMask, portals,
+      networkMask,
+      // O worker vendado lê os portais como 5 arrays soltos (portalU/V/LenM/HU/HV),
+      // não como objeto. amora não tem `ele` de tabuleiro → HU/HV = null (o worker
+      // cai pra altura do DEM nas pontas, igual ao comportamento anterior).
+      portalU:    portals ? portals.u    : null,
+      portalV:    portals ? portals.v    : null,
+      portalLenM: portals ? portals.lenM : null,
+      portalHU:   null,
+      portalHV:   null,
       H: dem.H, W: dem.W, dx, dy,
       seedR, seedC, goalR, goalC,
       mode: 'from',
-      alpha: params.energyAlpha,
-      beta:  params.energyBeta,
-      eta:   params.energyEta,
+      cost: readCost(params),
     };
     let res = await runEnergyWorker({ ...baseOpts, mask: dem.mask });
     // Rede de segurança: se mesmo com os corredores viários a água ainda selou
@@ -8588,6 +8607,26 @@ function deadbandElev(h, tau) {
   return out;
 }
 
+// v2 cost bundle from the physics params — the SINGLE source for the routing
+// engine (the vendored worker's v2Edge AND the inline vector router's edgeCost)
+// and the energy estimate. v_f is derived from the flat-power equilibrium. The
+// per-edge arithmetic must stay identical across all three (worker v2Edge, the
+// inline edgeCost, sampasimu's Rust v2_edge). Keep epsOffset = 0.13.
+function readCost(p) {
+  const vf = solveSpeedAtGradient(p.powerFlat, 0, p);
+  const kEff = Math.min(1, Math.max(0.1, p.kEff ?? 0.97));
+  const aero = 0.5 * p.rho * p.cda * vf * vf;            // ½ρCdA·v_f² (J per ground metre)
+  return {
+    aRoll: (p.crr * p.mass * G) / kEff,                  // J per ground metre (always)
+    aAero: aero / kEff,                                  // J per ground metre (off climbs)
+    beta: (p.mass * G) / kEff,                           // J per metre climbed
+    climbThr: p.slopeFlatThreshold,
+    abRatio: p.crr + aero / (p.mass * G),                // = α/β, flat-resistance grade
+    epsOffset: 0.13,
+    vf, kEff,                                            // convenience for the estimate/tooltip
+  };
+}
+
 // Walk the assembled path summing distance, time, and the v2 leg energy.
 // TIME stays the per-segment equilibrium-speed simulation (on raw Δh); ENERGY is
 // the v2 closed form (bicycling-energy-model notas.md): rolling over all distance,
@@ -8605,16 +8644,9 @@ function simulateRide(p) {
   });
   const elevS = deadbandElev(elev, p.deadbandM ?? 2);
 
-  // v2 cost coefficients (Joules; ÷1000 for kJ at display). v_f from the flat-power
-  // equilibrium so it tracks the current power tuning. climb threshold reused from
-  // slopeFlatThreshold; aero is dropped on segments steeper than it.
-  const vf = solveSpeedAtGradient(p.powerFlat, 0, p);
-  const kEff = Math.min(1, Math.max(0.1, p.kEff ?? 0.97));
-  const aRoll = (p.crr * p.mass * G) / kEff;            // J per ground metre (always)
-  const aAero = (0.5 * p.rho * p.cda * vf * vf) / kEff; // J per ground metre (off climbs)
-  const beta = (p.mass * G) / kEff;                     // J per metre climbed
-  const abRatio = p.crr + (0.5 * p.rho * p.cda * vf * vf) / (p.mass * G); // = α/β, flat-resistance grade
-  const climbThr = p.slopeFlatThreshold;
+  // v2 cost coefficients (Joules; ÷1000 for kJ at display) — shared with the
+  // routing engine via readCost(). aero is dropped on segments steeper than climbThr.
+  const { aRoll, aAero, beta, abRatio, climbThr, vf, kEff } = readCost(p);
 
   let totalDist = 0, totalTime = 0, elevMissing = 0;
   let tAscent = 0, tFlat = 0, tDescent = 0;
@@ -8790,9 +8822,6 @@ const PARAM_INPUTS = {
   kEff:               document.getElementById('param-keff'),
   deadbandM:          document.getElementById('param-deadband'),
   // FABDEM + energy-routing
-  energyAlpha:        document.getElementById('param-energy-alpha'),
-  energyBeta:         document.getElementById('param-energy-beta'),
-  energyEta:          document.getElementById('param-energy-eta'),
   energySearchMarginPct: document.getElementById('param-energy-margin'),
 };
 const PARAM_CHECKBOXES = {
@@ -8855,9 +8884,6 @@ function fillParamInputs() {
   PARAM_INPUTS.slopeFlatThreshold.value = (params.slopeFlatThreshold * 100).toFixed(1);
   PARAM_INPUTS.kEff.value = (params.kEff * 100).toFixed(0);
   PARAM_INPUTS.deadbandM.value = params.deadbandM;
-  PARAM_INPUTS.energyAlpha.value           = params.energyAlpha;
-  PARAM_INPUTS.energyBeta.value            = params.energyBeta;
-  PARAM_INPUTS.energyEta.value             = params.energyEta;
   PARAM_INPUTS.energySearchMarginPct.value = params.energySearchMarginPct;
   PARAM_CHECKBOXES.useFabdem.checked       = params.useFabdem !== false;
   PARAM_CHECKBOXES.useSampaDem.checked     = !!params.useSampaDem;

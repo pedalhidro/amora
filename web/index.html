@@ -187,6 +187,12 @@
           <details class="help-changelog">
             <summary>Novidades (changelog)</summary>
             <dl>
+              <dt>29/06/2026 · v292</dt>
+              <dd>
+                <ul>
+                  <li>O <strong>roteamento por energia</strong> (pelo terreno e pelo viário) passou a usar o mesmo <strong>modelo v2</strong> da estimativa: o motor de cálculo (Web Worker) agora é a versão canônica compartilhada com o <em>Simujaules</em>, e o custo por aresta vem dos parâmetros físicos (massa, Crr, CdA, ρ, eficiência da transmissão, velocidade de plano) — os antigos parâmetros <em>α / β / η</em> foram removidos dos Ajustes. As rotas podem mudar um pouco de traçado (o modelo pesa subidas e descidas de forma mais física).</li>
+                </ul>
+              </dd>
               <dt>29/06/2026 · v291</dt>
               <dd>
                 <ul>
@@ -674,18 +680,7 @@
 
           <h3 style="margin: 1.2rem 0 .35rem; font-size: .95rem; border-top: 1px dashed #ccc; padding-top: .75rem">Elevação &amp; roteamento por energia</h3>
           <button type="button" id="open-datasources" class="ds-open-btn" title="Escolher as fontes de elevação (FABDEM / DEM de SP / DEM custom) e de viário (gpkg de SP / rede custom)">Fontes de dados: DEM e rede viária…</button>
-          <label class="param-row" title="Peso da distância no custo de cada aresta">
-            <span class="param-label">α (peso da distância)</span>
-            <span class="param-input"><input type="number" id="param-energy-alpha" step="0.5" min="0" max="100"></span>
-          </label>
-          <label class="param-row" title="Peso do desnível positivo (m·g·Δh)">
-            <span class="param-label">β (peso do desnível +)</span>
-            <span class="param-input"><input type="number" id="param-energy-beta" step="0.5" min="0" max="100"></span>
-          </label>
-          <label class="param-row" title="Fração da energia gravitacional recuperada em descida">
-            <span class="param-label">η (recuperação em descida)</span>
-            <span class="param-input"><input type="number" id="param-energy-eta" step="0.05" min="0" max="1"></span>
-          </label>
+          <p class="muted" style="margin: .4rem 0 .2rem">O custo de roteamento usa o modelo de energia <strong>v2</strong> derivado dos parâmetros físicos acima (massa, Crr, CdA, ρ, eficiência da transmissão e a velocidade de plano vinda da potência) — os antigos α/β/η foram removidos.</p>
           <label class="param-row" title="Quanto expandir a bbox dos dois endpoints antes de pedir o DEM">
             <span class="param-label">Margem da busca</span>
             <span class="param-input"><input type="number" id="param-energy-margin" step="5" min="0" max="200"> %</span>
