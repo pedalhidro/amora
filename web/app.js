@@ -183,6 +183,7 @@ const DEFAULT_LAYER_ORDER = [
   'camera-topo',               // relevo FABDEM (abaixo da topografia colorida)
   'rmsampa',                   // topografia colorida
   'sara1930',                  // SARA 1930 (histórico)
+  'mtpi-pindorama', 'mtpi-parana', // MTPI (índice de posição topográfica multiescala)
   'custom-wms', 'custom-xyz',  // camadas custom do usuário
   'osm-cicloinfra',
   'osm-overpass',
@@ -407,6 +408,23 @@ const sara1930 = L.tileLayer.wms(
   },
 );
 
+// MTPI (índice de posição topográfica multiescala) servido em XYZ por
+// telhas.pedalhidrografi.co. Tiles nativos só até z10 (Pindorama/COP90 90 m,
+// América do Sul) e z12 (Bacia do Paraná 30 m); maxNativeZoom escala acima disso
+// em vez de levar 404.
+const mtpiPindorama = L.tileLayer('https://telhas.pedalhidrografi.co/mtpi_cop90_sa_full/{z}/{x}/{y}.png', {
+  maxZoom: 19,
+  maxNativeZoom: 10,
+  pane: LAYER_PANE('mtpi-pindorama'),
+  attribution: 'MTPI COP90 · Pedal Hidrográfico',
+});
+const mtpiParana = L.tileLayer('https://telhas.pedalhidrografi.co/mtpi_bacia_parana_30/{z}/{x}/{y}.png', {
+  maxZoom: 19,
+  maxNativeZoom: 12,
+  pane: LAYER_PANE('mtpi-parana'),
+  attribution: 'MTPI Bacia do Paraná 30 m · Pedal Hidrográfico',
+});
+
 // ─── Combined layer panel ────────────────────────────────────────────────────
 // A single flat list of layers — each an independent visibility checkbox plus
 // an opacity slider. There is deliberately NO "base vs overlay" distinction:
@@ -449,6 +467,8 @@ const OVERLAY_LAYERS = [
     edit: () => openCameraTopoModal(),
   },
   { id: 'sara1930', label: 'SARA 1930',           layer: sara1930, defaultVisible: false, defaultPct: 85 },
+  { id: 'mtpi-pindorama', label: 'MTPI Pindorama 90m',       layer: mtpiPindorama, defaultVisible: false, defaultPct: 100 },
+  { id: 'mtpi-parana',    label: 'MTPI Bacia do Paraná 30m', layer: mtpiParana,    defaultVisible: false, defaultPct: 100 },
   // Pseudo-layer for the loaded sidebar routes. Custom show/hide/setOpacity
   // because routes are a Map of polylines + markers, not a single tileLayer.
   {

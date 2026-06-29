@@ -9,7 +9,7 @@
 //                    their second visit.
 //   RUNTIME_CACHE — map tiles, OSRM, elevation, etc. Same strategy.
 
-const VERSION = 'phidro-v293';
+const VERSION = 'phidro-v294';
 const STATIC_CACHE = `${VERSION}-static`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 
