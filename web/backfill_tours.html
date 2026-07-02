@@ -208,12 +208,13 @@ function buildTourPatch(id, tour, cur) {
     newProps.push(`ph:movingDuration "${d}"^^xsd:duration`);
   });
   handle('estimate', v => {
-    const kj = parseFloat(v);
+    // Vírgula → ponto — ver upload_images.html num().
+    const kj = parseFloat(String(v).replace(/,/g, '.'));
     if (!Number.isFinite(kj) || kj < 0) throw new Error(`energia estimada inválida: "${v}"`);
     newProps.push(`ph:energyEstimate "${kj}"^^xsd:decimal`);
   });
   handle('measured', v => {
-    const kj = parseFloat(v);
+    const kj = parseFloat(String(v).replace(/,/g, '.'));
     if (!Number.isFinite(kj) || kj < 0) throw new Error(`energia medida inválida: "${v}"`);
     newProps.push(`ph:measuredEnergy "${kj}"^^xsd:decimal`);
   });

@@ -146,6 +146,15 @@ function loadSettings() {
 function saveSettings() {
   try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch {}
 }
+// 'pi' era o nome antigo da fonte same-origin (backend rodava num Raspberry
+// Pi), renomeada pra 'server'. 'cdn' (espelho estático legado) e 'auto'
+// (servidor→cdn) foram removidos — o backend serve as fotos na mesma
+// origem. Usado tanto no boot quanto na importação de settings (JSON-LD
+// exportado de uma sessão antiga pode carregar qualquer um destes).
+function _migratePhotoSourceValue(v) {
+  if (v === 'pi' || v === 'cdn' || v === 'auto') return 'server';
+  return v;
+}
 const settings = loadSettings();
 // Migração: fonte de imagens ficava em chave separada — preserva valor antigo.
 {
@@ -153,12 +162,7 @@ const settings = loadSettings();
   if (legacy && settings.photoSource === SETTINGS_DEFAULTS.photoSource) {
     settings.photoSource = legacy;
   }
-  // 'pi' era o nome antigo da fonte same-origin (backend rodava num
-  // Raspberry Pi). Renomeada pra 'server'; mapeia valores persistidos.
-  if (settings.photoSource === 'pi') settings.photoSource = 'server';
-  // 'cdn' (espelho estático legado) e 'auto' (servidor→cdn) foram removidos —
-  // o backend serve as fotos na mesma origem. Mapeia persistidos pra 'server'.
-  if (settings.photoSource === 'cdn' || settings.photoSource === 'auto') settings.photoSource = 'server';
+  settings.photoSource = _migratePhotoSourceValue(settings.photoSource);
 }
 // Animação NÃO persiste entre sessões — sempre arranca desligada. Se o
 // usuário ligar no Ajustes/botão, vale só pra sessão atual.
@@ -946,8 +950,11 @@ function photoDivIcon(thumbUrl, bearing, fov, extraClass, largeUrl) {
   // large (~2400px) em vez do thumb (~256px), eliminando o borrão de
   // upscaling durante a animação (peak ~150px CSS = 300 device-pixels em 2x).
   // Em telas 1x a banda fica preservada (só thumb baixa).
-  const url1x = thumbUrl;
-  const url2x = largeUrl || thumbUrl;
+  // escapeHtml: url1x/url2x acabam derivados de RDF (phash de subject IRI,
+  // ou schema:thumbnail em dados legado/editados à mão) — evita quebrar o
+  // atributo `style="…"` se algum caractere de aspas colar no valor.
+  const url1x = escapeHtml(thumbUrl);
+  const url2x = escapeHtml(largeUrl || thumbUrl);
   // Ordem: fallback primeiro, image-set depois — navegadores aceitam o
   // último declaração válida; quem não entende image-set fica com url() simples.
   const bg =
@@ -1584,8 +1591,10 @@ function makeClipMarkers(clips) {
     if (!Number.isFinite(c.lat) || !Number.isFinite(c.lng)) continue;
     // Marker: círculo estilo foto com o thumb do clipe + borda red-orange.
     // O `.clip-marker` overlay continua escondido até a animação ativar,
-    // quando ganha `.active` e pulsa em cima do dot.
-    const thumbUrl = c.thumb ? CLIPS_DIR + c.thumb : '';
+    // quando ganha `.active` e pulsa em cima do dot. `c.thumb` vem de
+    // schema:thumbnail (literal RDF livre) — encodeURIComponent por segmento
+    // como em renderClipPopupHtml, pra não quebrar o `style="…url('…')"`.
+    const thumbUrl = c.thumb ? CLIPS_DIR + c.thumb.split('/').map(encodeURIComponent).join('/') : '';
     const bg = thumbUrl
       ? `background-image: url('${thumbUrl}'); background-size: cover; background-position: center;`
       : 'background-color: rgba(255,87,34,0.35);';
@@ -2205,6 +2214,7 @@ async function loadPhotos() {
       console.warn('[photos] falha:', err);
       showToast(`Falha ao carregar imagens: ${err.message}`);
       updatePhotoSourceStatus(`Erro: ${err.message}`);
+      photosLoading = null;  // permite que a próxima chamada tente de novo
     }
   })();
   await photosLoading;
@@ -2298,7 +2308,7 @@ function buildPhotoMarkers(photos) {
     const actions = [dlBtn, delBtn].filter(Boolean).join('');
     m.bindPopup(
       `<div class="photo-popup">` +
-        `<img src="${ph.file}" loading="lazy" alt="${escapeHtml(ph.orig)}" />` +
+        `<img src="${escapeHtml(ph.file)}" loading="lazy" alt="${escapeHtml(ph.orig)}" />` +
         `<dl class="photo-details">${rows}</dl>` +
         (actions ? `<div class="photo-actions">${actions}</div>` : '') +
       `</div>`,
@@ -3478,6 +3488,9 @@ async function importSettingsJsonLd(file) {
           layers: layersState, customLayers, ...rest } = doc;
   const merged = _deepMerge(SETTINGS_DEFAULTS, _deepMerge(settings, rest));
   // Cuidado: a fonte de imagens muda via setPhotoSource pra disparar reload.
+  // Migra valores legados ('pi'/'cdn'/'auto') — um JSON-LD exportado de uma
+  // sessão antiga pode trazê-los, e setPhotoSource só aceita 'server'/'local'.
+  merged.photoSource = _migratePhotoSourceValue(merged.photoSource);
   const newPhotoSource = merged.photoSource;
   Object.assign(settings, merged);
   saveSettings();
@@ -5335,6 +5348,7 @@ const routeModalTitle = document.getElementById('route-modal-title');
 const routeModalMeta = document.getElementById('route-modal-meta');
 const routeModalSummary = document.getElementById('route-modal-ig');  // legacy id, repurposed
 const routeModalClose = document.getElementById('route-modal-close');
+let _routeModalReqId = 0;  // guarda contra summary de um modal antigo sobrescrever um novo
 
 routeModalClose.addEventListener('click', closeRouteModal);
 routeModal.addEventListener('click', (e) => {
@@ -5645,13 +5659,14 @@ function openRouteModal(id) {
   // mostra placeholder.
   if (tourId) {
     routeModalSummary.innerHTML = `<p class="muted">carregando…</p>`;
-    const reqId = tourId;
+    const reqId = ++_routeModalReqId;
     _renderTourSummary(tourId).then((html) => {
       // Evita corrida se o usuário trocou de modal antes da resposta.
-      if (_tourIdFromIri(routes.get(id)?.entry?.tourIri) !== reqId) return;
+      if (reqId !== _routeModalReqId) return;
       routeModalSummary.innerHTML = html;
     });
   } else {
+    _routeModalReqId++;  // invalida qualquer resposta pendente de um modal anterior
     routeModalSummary.innerHTML =
       `<p class="muted">Sem Tour vinculado a esta rota — provavelmente importação legada.</p>`;
   }
@@ -5664,6 +5679,7 @@ function closeRouteModal() {
   routeModal.hidden = true;
   routeModalSummary.innerHTML = '';
   document.getElementById('route-modal-photos').innerHTML = '';
+  _routeModalReqId++;  // invalida qualquer _renderTourSummary pendente
 }
 
 

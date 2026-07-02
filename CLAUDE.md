@@ -1,9 +1,11 @@
 # Pedal Hidrográfico
 
 Static-PWA web map for an urban cycling collective in São Paulo, plus a
-self-hosted backend, Python automation scripts, and an RDF ontology. No cloud
-dependency — the project deliberately walked away from GCP and is now
-local-first.
+self-hosted backend, Python automation scripts, and an RDF ontology.
+Local-first and self-hostable, deliberately built to avoid hard cloud
+lock-in — the same backend runs standalone on a laptop or self-hosted server
+via `STORAGE_BACKEND=local`, with Cloud Run/GCS (`STORAGE_BACKEND=gcs`) as
+one optional hosted deploy target, not a dependency.
 
 ## Repo layout
 
@@ -11,7 +13,14 @@ local-first.
   file, no build step), `style.css`, `sw.js` (service worker),
   `manifest.json`, icons, `robots.txt`, `sitemap.xml`, `llms.txt` (guia do
   site p/ agentes LLM — aponta pros dumps TTL), `lib/` (vendored deps: `utils.js`,
-  `n3.min.js`, `energy-worker.js`, `tom-select.complete.min.js`,
+  `n3.min.js`, `energy-worker.js` + `graph-engine.js` (both vendored verbatim
+  from the sibling `sampasimu` repo, the canonical v2 energy engine —
+  re-sync by copying both files and re-applying the `AMORA PATCH` reqId
+  echo, see the header comment in `energy-worker.js`; `graph-engine.js`
+  backs the worker's graph-mode routing, fed by `scripts/build-viario.py`'s
+  road-network GPKG, though amora's own "Menor energia pelo viário" mode
+  currently routes via the inline `viarioGraphRoute` in app.js instead),
+  `tom-select.complete.min.js`,
   `tom-select.min.css`, `qrcode.js`, `leaflet/` (js+css+images),
   `locatecontrol/` — Leaflet & friends were vendored off unpkg/jsdelivr;
   only app.js's lazy loads (exifr/heic2any/jszip/geotiff) still hit
@@ -44,8 +53,10 @@ local-first.
   `conversion-notes.md`, and the legacy `upload-form.html` (kit-download
   form — superseded in production by `web/upload_images.html`). The
   active SHACL `shapes.ttl` and `ontology.ttl` live alongside the data
-  in `web/data/`; the backend reads them from there at startup. The
-  former top-level `ontology/` dir (v1.1 `pedalhidrografico.ttl` +
+  in `web/data/`; the backend lazily loads them (bucket-first, container
+  copy as fallback) on first validation, not at startup — see
+  `_load_validator` in `backend/main.py`. The former top-level `ontology/`
+  dir (v1.1 `pedalhidrografico.ttl` +
   JSON-LD context) was removed — git history is the only reference.
 - `scripts/` — `build-routes.py` (**full rebuild** of `routes.json` from
   `web/data/tours.ttl` + RideWithGPS — NOT the normal path: the backend keeps
@@ -71,7 +82,13 @@ local-first.
   clips are re-encoded), `migrate-bnodes-to-iris.py` (one-shot migration:
   converted the historical blank nodes in `tours.ttl`/`uploads.ttl` into the
   derived-IRI convention — idempotent, removable once it's clearly not needed
-  again), `gen-synthetic-rdf.py`, `mock_location.sh` (empurra posições de
+  again), `build-viario.py` (data-prep, not runtime: slims a full SP road-
+  network GPKG down to a lightweight WGS84 GPKG via `ogr2ogr` — extracts
+  `bridge`/`tunnel`/`layer` from OSM's `other_tags` hstore, filters to
+  `highway IS NOT NULL`, optional `--water` layer via Geofabrik+osmium —
+  feeding the browser's "Menor energia pelo viário" road-graph routing;
+  producer for the consumer described under `lib/graph-engine.js` above),
+  `gen-synthetic-rdf.py`, `mock_location.sh` (empurra posições de
   teste da localização ao vivo pro backend — random walk, 1 ponto/3 s; bate no
   remoto amora por padrão, `--local` p/ 127.0.0.1:8080; curl não precisa de
   CORS), `exiftool_ph.config`.
@@ -291,7 +308,11 @@ Key flows:
   Mutations: `POST /upload-image`, `POST /upload-video`,
   `POST /upload-tour` (`mode=replace|patch` + `remove` — see Tour CRUD),
   `POST /delete-image/<phash>`, `POST /delete-video/<vhash>`,
-  `POST /delete-tour/<tour_id>`. Localização ao vivo (efêmera, EM MEMÓRIA —
+  `POST /delete-tour/<tour_id>`. Rotas salvas (biblioteca do editor de
+  traçado, `web/saved_routes.json`): `GET /saved-routes` (lista resumida,
+  mais novas primeiro), `GET /saved-route/<id>` (estado completo, formato de
+  compartilhamento), `POST /save-route` (upsert; body `{name, state, id?}`),
+  `POST /delete-route/<id>`. Localização ao vivo (efêmera, EM MEMÓRIA —
   NÃO toca os catálogos): `POST /live-location` (upsert da posição + rastro de
   um token pseudônimo; body JSON `{id, name?, lat, lng, accuracy?, heading?,
   ttl?}`; rastro thinned por tempo/distância, teto 500 pts/pessoa e 500
@@ -378,10 +399,16 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
   read-modify-write of the TTL catalogs silently discards the first (lost
   update). Concurrency comes from threads; Cloud Run scales by instances.
   Don't "tune" the worker count up.
-- **Local↔bucket sync is guarded against lost updates.** The four
-  dual-writer state files (`uploads.ttl`, `data_graphs.ttl`, `tours.ttl`,
-  `routes.json`) are mutated both locally (build scripts, edits) and
-  server-side (uploads, Tour CRUD via the bucket). `scripts/sync-guard.sh`
+- **Local↔bucket sync is guarded against lost updates.** The dual-writer
+  state files — `uploads.ttl`, `tours.ttl`, `routes.json` — are mutated both
+  locally (build scripts, edits) and server-side (uploads, Tour CRUD via the
+  bucket). `data_graphs.ttl` is pushed alongside them but is NOT itself
+  dual-writer: the backend never mutates it (it's a static VoID shim, see
+  Architecture above), so it only ever changes if you hand-edit it locally.
+  `web/saved_routes.json` (the route-editor's save library, `/save-route` /
+  `/delete-route`) is also server-mutated bucket-first state but currently
+  sits outside this guarded sync — there's no local↔bucket round-trip for it
+  yet. `scripts/sync-guard.sh`
   (sourced by `deploy-cloudrun.sh` and `pull-cloudrun.sh`) stashes the MD5
   of the last successful sync in `.sync-state/` (gitignored, per-machine)
   and refuses any copy whose destination changed since that baseline AND

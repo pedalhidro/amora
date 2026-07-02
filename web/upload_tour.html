@@ -659,7 +659,9 @@ function buildTtl() {
   if (newcomers !== '' && Number.isInteger(newcomerN) && newcomerN >= 0)
     props.push(`ph:countNewcomer ${newcomerN}`);
   if (energyKj !== '') {
-    const kj = parseFloat(energyKj);
+    // Vírgula → ponto: type="number" normalmente já barra a vírgula, mas
+    // alguns teclados numéricos móveis em locale pt-BR deixam passar.
+    const kj = parseFloat(String(energyKj).trim().replace(/,/g, '.'));
     if (Number.isFinite(kj) && kj >= 0)
       props.push(`ph:energyEstimate "${kj}"^^xsd:decimal`);
   }
@@ -667,7 +669,7 @@ function buildTtl() {
   if (arrived)   props.push(`ph:arrivedAt "${arrived}"^^xsd:dateTime`);
   if (movingDur) props.push(`ph:movingDuration "${movingDur}"^^xsd:duration`);
   if (measured !== '') {
-    const kj = parseFloat(measured);
+    const kj = parseFloat(String(measured).trim().replace(/,/g, '.'));
     if (Number.isFinite(kj) && kj >= 0)
       props.push(`ph:measuredEnergy "${kj}"^^xsd:decimal`);
   }
@@ -936,11 +938,12 @@ async function prefillFromId(tourId) {
       }
     }
     else if (p === PH_NS + 'linkRoute') {
-      // Blank node — resolve via subjBy.
-      const bn = objBnode(q);
-      if (!bn) continue;
-      const url  = subjBy.get(bn)?.find(x => x.predicate.value === SCHEMA + 'url');
-      const prov = subjBy.get(bn)?.find(x => x.predicate.value === SCHEMA + 'provider');
+      // Objeto é a IRI derivada `<tour>_route` (convenção atual); bnode só
+      // aparece em dados legados pré-migração — os dois resolvem via subjBy.
+      const target = objIri(q) || objBnode(q);
+      if (!target) continue;
+      const url  = subjBy.get(target)?.find(x => x.predicate.value === SCHEMA + 'url');
+      const prov = subjBy.get(target)?.find(x => x.predicate.value === SCHEMA + 'provider');
       if (url)  routeUrl  = url.object.value;
       if (prov) routeProv = shortIRI(prov.object.value);
     }

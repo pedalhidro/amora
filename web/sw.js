@@ -1,15 +1,19 @@
 // Pedal Hidrográfico — service worker
 //
-// Two cache buckets, both stale-while-revalidate:
-//   STATIC_CACHE  — app shell (HTML/CSS/JS/icons/routes.json/manifest).
-//                    Cached copy serves instantly; a network fetch runs in
-//                    the background and updates the cache for the *next*
-//                    page load. So redeploys propagate without users having
-//                    to hard-refresh — they just get the new version on
-//                    their second visit.
-//   RUNTIME_CACHE — map tiles, OSRM, elevation, etc. Same strategy.
+// Two cache buckets, both STATIC_CACHE by default:
+//   STATIC_CACHE  — app shell (HTML/CSS/JS/icons/manifest): stale-while-
+//                    revalidate. Cached copy serves instantly; a network
+//                    fetch runs in the background and updates the cache for
+//                    the *next* page load. So redeploys propagate without
+//                    users having to hard-refresh — they just get the new
+//                    version on their second visit. Same-origin mutable
+//                    state (tours.ttl, uploads.ttl, data_graphs.ttl,
+//                    routes.json) is the exception: network-first, since the
+//                    backend upserts them live and staleness there means
+//                    stale data, not just a stale app shell.
+//   RUNTIME_CACHE — map tiles, OSRM, elevation, etc. stale-while-revalidate.
 
-const VERSION = 'phidro-v295';
+const VERSION = 'phidro-v296';
 const STATIC_CACHE = `${VERSION}-static`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 

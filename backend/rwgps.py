@@ -339,12 +339,14 @@ def parse_gpx_pois(gpx_text: str) -> list[dict]:
 
 
 def decode_xml(s: str) -> str:
+    # &amp; deve ser decodificado por ÚLTIMO — senão um "&amp;lt;" (que
+    # representa o texto literal "&lt;") vira "<" por dupla-decodificação.
     return (str(s)
-            .replace("&amp;",  "&")
             .replace("&lt;",   "<")
             .replace("&gt;",   ">")
             .replace("&quot;", '"')
-            .replace("&apos;", "'"))
+            .replace("&apos;", "'")
+            .replace("&amp;",  "&"))
 
 
 # ─── Geometria / stats ────────────────────────────────────────────────────────

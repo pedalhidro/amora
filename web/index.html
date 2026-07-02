@@ -187,6 +187,16 @@
           <details class="help-changelog">
             <summary>Novidades (changelog)</summary>
             <dl>
+              <dt>02/07/2026 · v296</dt>
+              <dd>
+                <ul>
+                  <li>Corrigido: <strong>editar um passeio existente apagava a rota vinculada</strong> (o formulário não reconhecia mais o formato atual de <code>ph:linkRoute</code>, gravado desde a migração para IRIs derivadas). Editar um passeio agora preserva a rota normalmente.</li>
+                  <li>Corrigido: abrir o modal de uma rota logo depois de outra podia mostrar o resumo do passeio errado (condição de corrida no carregamento).</li>
+                  <li>Corrigido: se o carregamento de fotos falhasse uma vez (rede instável), o mapa parava de tentar carregar fotos pro resto da sessão.</li>
+                  <li>Corrigido: enviar uma foto/vídeo sem GPS ou data preenchidos agora mostra um aviso claro em vez de um erro de validação genérico do servidor.</li>
+                  <li>Motor de energia/roteamento (Web Worker, compartilhado com o <em>Simujaules</em>) atualizado: heurística do top-N de rotas corrigida (podia sugerir uma rota #1 mais cara que o ótimo do próprio campo), correção de registro de meia-célula no modo "seguir os vetores" e no modo "maximizar energia" com orçamento. Os valores de energia calculados podem mudar ligeiramente.</li>
+                </ul>
+              </dd>
               <dt>29/06/2026 · v295</dt>
               <dd>
                 <ul>

@@ -1652,7 +1652,7 @@ $('#clearAll').addEventListener('click', () => {
 // engolem como texto. Normaliza vírgula → ponto antes de emitir xsd:decimal
 // no Turtle (parser RDF rejeita "-23,55" e a serialização SHACL falha).
 function num(s) {
-  return String(s ?? '').trim().replace(',', '.');
+  return String(s ?? '').trim().replace(/,/g, '.');
 }
 
 function buildImageBlock(card) {
@@ -1662,6 +1662,12 @@ function buildImageBlock(card) {
   const lon     = num($('[data-field="lon"]',     elem).value);
   const bearing = num($('[data-field="bearing"]', elem).value);
   const focal   = num($('[data-field="focal"]',   elem).value);
+  // Defesa em profundidade: o form já marca data/lat/lon `required` (bloqueado
+  // por reportValidity() antes daqui), mas sem isso um valor vazio/inválido
+  // viraria um literal Turtle malformado ("null"^^xsd:dateTime, ""^^xsd:decimal)
+  // que só o SHACL do backend rejeitaria, com um erro genérico e confuso.
+  if (!dateXsd) throw new Error('data/hora inválida ou ausente');
+  if (lat === '' || lon === '') throw new Error('GPS (latitude/longitude) obrigatório');
   const tour    = $('[data-field="tour"]',    elem).value.trim();
   const license = $('[data-field="license"]', elem).value;
   const anon    = $('[data-field="anon"]',    elem).checked;
@@ -1732,6 +1738,9 @@ function buildClipBlock(card) {
   // Vírgula → ponto antes de emitir xsd:decimal — ver buildImageBlock.
   const lat   = num($('[data-field="lat"]', elem).value);
   const lon   = num($('[data-field="lon"]', elem).value);
+  // Defesa em profundidade — ver buildImageBlock.
+  if (!dateXsd) throw new Error('data/hora inválida ou ausente');
+  if (lat === '' || lon === '') throw new Error('GPS (latitude/longitude) obrigatório');
   const tour    = $('[data-field="tour"]',    elem).value.trim();
   const license = $('[data-field="license"]', elem).value;
   const audioOnly = $('[data-field="audio-only"]', elem).checked;

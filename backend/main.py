@@ -1144,17 +1144,25 @@ def get_routes_json():
 
 
 # ── Rotas salvas (biblioteca de rotas do editor) ─────────────────────────
-def _read_saved_routes():
-    """Catálogo de rotas salvas — bucket-first, {"routes": {}} se ausente
-    ou corrompido (degrada pra vazio em vez de derrubar o endpoint)."""
+def _read_saved_routes(strict=False):
+    """Catálogo de rotas salvas — bucket-first, {"routes": {}} se ausente.
+
+    Por padrão (strict=False, uso em GET) um arquivo corrompido também
+    degrada pra vazio, pra não derrubar o endpoint de leitura. Em strict=True
+    (uso nos mutadores save/delete-route) um arquivo PRESENTE mas corrompido
+    levanta em vez de degradar — coagir pra vazio ali faria o upsert/delete
+    seguinte PERSISTIR o catálogo zerado (mesmo raciocínio de
+    `_load_routes_payload` pro routes.json)."""
     text = STORE.read_text(KEY_SAVED_ROUTES)
     if not text:
         return {"routes": {}}
     try:
         obj = json.loads(text)
+        if not isinstance(obj, dict) or not isinstance(obj.get("routes"), dict):
+            raise ValueError("saved_routes.json com formato inesperado (sem dict 'routes')")
     except (ValueError, TypeError):
-        return {"routes": {}}
-    if not isinstance(obj, dict) or not isinstance(obj.get("routes"), dict):
+        if strict:
+            raise
         return {"routes": {}}
     return obj
 
@@ -1211,7 +1219,10 @@ def save_route():
     rid = str(data.get("id") or "").strip() or uuid.uuid4().hex[:12]
     if not (1 <= len(rid) <= 32) or not all(c in "0123456789abcdef" for c in rid):
         return jsonify(error="id inválido (esperado hex)"), 400
-    cat = _read_saved_routes()
+    try:
+        cat = _read_saved_routes(strict=True)
+    except (ValueError, TypeError) as e:
+        return jsonify(error=f"saved_routes.json corrompido, recusando salvar: {e}"), 500
     routes = cat.setdefault("routes", {})
     existing = routes.get(rid)
     now = datetime.now(timezone.utc).isoformat()
@@ -1236,7 +1247,10 @@ def save_route():
 @serialized
 def delete_route(rid):
     rid = (rid or "").strip()
-    cat = _read_saved_routes()
+    try:
+        cat = _read_saved_routes(strict=True)
+    except (ValueError, TypeError) as e:
+        return jsonify(error=f"saved_routes.json corrompido, recusando apagar: {e}"), 500
     if rid not in cat.get("routes", {}):
         return jsonify(error="rota não encontrada", id=rid), 404
     del cat["routes"][rid]
@@ -2137,6 +2151,13 @@ def upload_tour():
             upsert_tour_in_tours_ttl(ttl_text, tour_id)
             _invalidate_catalog()
         except Exception as e:  # noqa: BLE001
+            # Anúncio já gravado sem triples referenciando-o = órfão invisível.
+            # Limpa best-effort (mesmo padrão do upload-image/upload-video).
+            if f and f.filename:
+                try:
+                    STORE.delete(key)
+                except Exception as e2:  # noqa: BLE001
+                    print(f"[upload-tour] aviso limpando anúncio órfão de {tour_id}: {e2}")
             return jsonify(
                 error=f"persistência ttl: {e}", tour_id=tour_id,
             ), 500
