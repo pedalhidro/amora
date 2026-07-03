@@ -119,6 +119,15 @@ body.header-hidden .leaflet-top {
   line-height: 1.25;
   text-align: left;
 }
+/* Título embrulhou em 2+ linhas (celular estreito em retrato) — centraliza
+   em vez de deixar a 2ª linha "pendurada" à esquerda. Alternado via JS
+   (updateTitleAlignment em app.js), que mede o texto renderizado; a partir
+   de 900px o texto nunca embrulha (nowrap+ellipsis abaixo), então isto não
+   se aplica ali. */
+.topbar h1.title-wrapped {
+  justify-content: center;
+  text-align: center;
+}
 .title-icon {
   /* Preenche a altura da própria barra — acompanha os botões vizinhos
      (~32px de conteúdo em .secondary-btn) em vez do tamanho do texto. */

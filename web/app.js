@@ -4775,7 +4775,27 @@ window.addEventListener('resize', () => {
   }
   _wasMobileViewport = nowMobile;
   updateMenuBtnPressed();
+  updateTitleAlignment();
 });
+
+// Título "amora: ajudante bicigeoenergético": alinhado à esquerda por padrão,
+// mas centraliza quando o texto embrulha em mais de uma linha (celulares
+// estreitos em retrato) — senão a segunda linha fica "pendurada" à esquerda.
+// A partir de 900px o CSS já força nowrap+ellipsis (nunca embrulha), então a
+// checagem nem roda ali.
+function updateTitleAlignment() {
+  const titleText = document.querySelector('.title-text');
+  const titleH1 = document.querySelector('.topbar h1');
+  if (!titleText || !titleH1) return;
+  if (window.matchMedia('(min-width: 900px)').matches) {
+    titleH1.classList.remove('title-wrapped');
+    return;
+  }
+  const lineHeight = parseFloat(getComputedStyle(titleText).lineHeight) || 0;
+  const wrapped = lineHeight > 0 && titleText.getBoundingClientRect().height > lineHeight * 1.4;
+  titleH1.classList.toggle('title-wrapped', wrapped);
+}
+updateTitleAlignment();
 
 function updateMenuBtnPressed() {
   const btn = document.getElementById('routes-panel-toggle');
