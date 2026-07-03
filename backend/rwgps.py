@@ -29,7 +29,12 @@ import re
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+
+# Fuso horário de referência do coletivo (São Paulo, sem horário de verão
+# atualmente) — usado só p/ ancorar datas ISO SEM offset explícito, senão
+# `.timestamp()` usaria o fuso local do host (deploy-dependente).
+LOCAL_TZ = timezone(timedelta(hours=-3))
 
 # ─── Config ───────────────────────────────────────────────────────────────────
 MAX_POINTS_PER_ROUTE = 400   # downsample pra manter o JSON enxuto
@@ -126,6 +131,10 @@ def parse_iso_date_ms(s: str) -> int | None:
         return None
     try:
         dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            # Sem offset explícito → ancora no fuso de SP, não no fuso do
+            # host (senão `dateMs` mudaria conforme onde o processo roda).
+            dt = dt.replace(tzinfo=LOCAL_TZ)
         return int(dt.timestamp() * 1000)
     except ValueError:
         return None
@@ -257,8 +266,8 @@ def fetch_route_data(route_id: str) -> dict:
         if not (isinstance(lat, (int, float)) and isinstance(lng, (int, float))):
             continue
         pois.append({
-            "lat":  lat,
-            "lng":  lng,
+            "lat":  round(lat, COORD_PRECISION),
+            "lng":  round(lng, COORD_PRECISION),
             "name": p.get("n") or p.get("name") or "",
             "sym":  p.get("t") or p.get("poi_type") or "",
             "type": p.get("t") or p.get("poi_type") or "",

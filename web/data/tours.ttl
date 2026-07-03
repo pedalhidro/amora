@@ -1,6 +1,5 @@
 @prefix dcterms: <http://purl.org/dc/terms/> .
 @prefix ns1: <http://purl.org/pav/> .
-@prefix ns2: <http://qudt.org/schema/qudt/> .
 @prefix ph: <https://pedalhidrografi.co/terms#> .
 @prefix phd: <https://pedalhidrografi.co/data/> .
 @prefix prov: <http://www.w3.org/ns/prov#> .
@@ -2044,15 +2043,6 @@ phd:tour_ph97 a ph:Tour ;
     ph:linkRoute phd:tour_ph97_route ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/ph97/announcement.jpg> .
 
-phd:tour_um-pedal-de-30kj a ph:Tour ;
-    dcterms:date "2026-06-23T19:30:00-03:00"^^xsd:dateTime ;
-    dcterms:description "Já realizamos 96 passeios pedalando pelos rios e anti-rios de São Paulo, com uma distribuição bastante diversa de rotas para todas as direções da cidade. Apesar de já termos pedalado tudo-qué-canto, ainda há en-cantos topográficos na região central que não passamos. E é isso que faremos amanhã: conversar com a cachoeira do Córrego Augusta, logo antes destas águas darem corpo ao Rio Saracura. Encerraremos o passeio mais curto de todos os tempos no Robertinho, onde haverá uma assembleia geral regada à limonada para decidirmos duas coisas: 1) onde será o hidrokê na sequência e 2) ter ideias de próximas rotas."@pt ;
-    dcterms:title "Um pedal de 30kj"^^xsd:string ;
-    ph:energyEstimate phd:tour_um-pedal-de-30kj_energy ;
-    ph:inSeriesEdition phd:assoc_PH_97 ;
-    ph:linkRoute phd:tour_um-pedal-de-30kj_route ;
-    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/um-pedal-de-30kj/announcement.jpg> .
-
 phd:SESC a schema:EventSeries ;
     dcterms:title "SESC" .
 
@@ -2471,6 +2461,10 @@ phd:assoc_PH_95 a ph:Association ;
 phd:assoc_PH_96 a ph:Association ;
     ph:inEventSeries phd:PH ;
     ph:sequenceInSeries 96 .
+
+phd:assoc_PH_97 a ph:Association ;
+    ph:inEventSeries phd:PH ;
+    ph:sequenceInSeries 97 .
 
 phd:assoc_SESC_1 a ph:Association ;
     ph:inEventSeries phd:SESC ;
@@ -2950,22 +2944,9 @@ phd:tour_ph97_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/55785987> .
 
-phd:tour_um-pedal-de-30kj_energy a ns2:QuantityValue ;
-    ns2:hasUnit <http://qudt.org/vocab/unit/KiloJ> ;
-    ns2:numericValue 30.0 ;
-    ph:intensityClassification "De boa" .
-
-phd:tour_um-pedal-de-30kj_route a ph:RouteReference ;
-    schema:provider ph:rwgps ;
-    schema:url <https://ridewithgps.com/routes/55785987> .
-
 phd:assoc_BP_4 a ph:Association ;
     ph:inEventSeries phd:BP ;
     ph:sequenceInSeries 4 .
-
-phd:assoc_PH_97 a ph:Association ;
-    ph:inEventSeries phd:PH ;
-    ph:sequenceInSeries 97 .
 
 phd:pessoaLume a schema:Person ;
     schema:alternateName "lume" .

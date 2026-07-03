@@ -108,12 +108,26 @@ body.header-hidden .leaflet-top {
   line-height: 1.1;
 }
 .topbar h1 {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   font-size: 14px;
   margin: 0;
   letter-spacing: 0.2px;
   font-weight: 600;
   line-height: 1.25;
   text-align: center;
+}
+.title-icon {
+  /* Preenche a altura da própria barra — acompanha os botões vizinhos
+     (~32px de conteúdo em .secondary-btn) em vez do tamanho do texto. */
+  height: 32px;
+  width: 32px;
+  flex-shrink: 0;
+}
+.title-text {
+  min-width: 0;
 }
 .topbar .title {
   flex: 1 1 auto;
@@ -146,10 +160,11 @@ body.header-hidden .leaflet-top {
    com ellipsis se faltar espaço, e os botões nunca rolam pra uma 2ª linha. */
 @media (min-width: 900px) {
   .topbar { flex-wrap: nowrap; }
-  .topbar h1 {
+  .title-text {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    display: inline-block;
   }
 }
 /* Faixa intermediária (ex.: iPhone 13 em paisagem ≈ 844px): aperta gap e
@@ -711,6 +726,7 @@ body.modal-open { overflow: hidden; }
   }
   .topbar h1 { font-size: 12px; line-height: 1.2; }
   .topbar .title { padding: 4px 4px 4px 0; flex: 1 1 100%; }
+  .title-icon { width: 30px; height: 30px; }
 
   /* Mobile-friendly button heights — at least ~36 px tall for thumbs. */
   .topbar button { min-height: 34px; padding: 6px 10px; font-size: 12px; }

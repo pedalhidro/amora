@@ -140,12 +140,15 @@ def main() -> int:
     # reprojetado pra WGS84; R-tree reconstruído pelo driver de saída.
     # other_tags tem o formato `"chave"=>"valor",…` — extraímos os 3 campos com
     # instr/substr (sem precisar de extensão). `"layer"=>"` tem 10 caracteres.
+    # NULLIF(...,0) protege contra hstore malformado sem aspas de fechamento:
+    # sem o guard, instr()=0 vira length=-1 e o SQLite conta pra trás,
+    # produzindo um "layer" bogus em vez de degradar pra NULL.
     sql = f"""SELECT {GEOM},
       CASE WHEN instr(other_tags,'"bridge"=>')>0 AND instr(other_tags,'"bridge"=>"no"')=0 THEN 'yes' END AS bridge,
       CASE WHEN instr(other_tags,'"tunnel"=>"yes"')>0 THEN 'yes' END AS tunnel,
       CASE WHEN instr(other_tags,'"layer"=>"')>0 THEN CAST(substr(
         other_tags, instr(other_tags,'"layer"=>"')+10,
-        instr(substr(other_tags, instr(other_tags,'"layer"=>"')+10),'"')-1) AS INTEGER) END AS layer
+        NULLIF(instr(substr(other_tags, instr(other_tags,'"layer"=>"')+10),'"'), 0)-1) AS INTEGER) END AS layer
       FROM {TABLE} WHERE highway IS NOT NULL"""
     cmd = [
         "ogr2ogr", "-f", "GPKG", str(args.dst), str(args.src),

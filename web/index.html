@@ -120,7 +120,7 @@
   <body class="rotas-page">
     <header class="topbar">
       <div class="title">
-        <h1>amora: ajudante bicigeoenergético</h1>
+        <h1><img class="title-icon" src="img/amora-icon.png" alt="" width="96" height="96" /><span class="title-text">amora: ajudante bicigeoenergético</span><img class="title-icon" src="img/amora-icon.png" alt="" width="96" height="96" /></h1>
       </div>
       <nav class="topbar-actions">
       <input type="file" id="photos-import-input" accept=".ttl,.zip,text/turtle,application/zip" hidden />
@@ -187,6 +187,19 @@
           <details class="help-changelog">
             <summary>Novidades (changelog)</summary>
             <dl>
+              <dt>02/07/2026 · v298</dt>
+              <dd>
+                <ul>
+                  <li>Ícone novo: favicon, ícone do app (PWA) e o ícone que agora aparece dos dois lados do título na barra de cima — preenchendo a altura da barra — foram todos atualizados pro logo da amora (bicicleta + traçado sobre o terreno). O desenho anterior foi aposentado.</li>
+                  <li>Corrigido: editar um passeio antigo (de antes da energia virar um número simples) podia apagar a energia dele ao salvar qualquer outra coisa — nos formulários de cadastro e no backfill em massa. Passeios nesse formato agora preservam a energia existente até serem migrados.</li>
+                  <li>Corrigido: exportar/importar os parâmetros de energia (ou salvar/reabrir um GPX) resetava silenciosamente a eficiência da transmissão e o deadband de elevação pros valores padrão.</li>
+                  <li>Corrigido: uma instabilidade de rede no carregamento de fotos, do parser RDF, do banco do viário ou da leitura de DEM podia deixar essas funções permanentemente quebradas até recarregar a página — agora recuperam sozinhas.</li>
+                  <li>Corrigido: desfazer/refazer um traçado podia perder o "achatamento" de elevação em pontes/túneis, inflando a energia calculada ali.</li>
+                  <li>Corrigido: a pré-visualização de TTL no envio de fotos/vídeos quebrava inteira se um card estivesse sem GPS/data — agora só aquele card mostra o erro.</li>
+                  <li>Corrigido: um link de rota compartilhado corrompido descartava a própria URL antes de avisar que não deu pra carregar nada.</li>
+                  <li>Reforços de segurança no feed RSS e na página renderizada por link direto de passeio (escapes de HTML mais rigorosos).</li>
+                </ul>
+              </dd>
               <dt>02/07/2026 · v296</dt>
               <dd>
                 <ul>

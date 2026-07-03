@@ -38,11 +38,30 @@ sync_guard_local_md5() {
   fi
 }
 
-# md5_hash do objeto no bucket. Vazio se o objeto não existe.
+# md5_hash do objeto no bucket. Vazio se o objeto genuinamente não existe
+# (404/NOT_FOUND — ok pushar). "ERROR" se o describe falhou por outro motivo
+# (rede, ADC expirado, 5xx, projeto errado, …) — NÃO é o mesmo que "não
+# existe" e não pode virar verdict `ok`, senão uma falha transiente destrava
+# um clobber (ver T6 no REVIEW_HANDOFF).
 sync_guard_remote_md5() {
   local url="$1"
-  gcloud storage objects describe "$url" --project="$PROJECT" \
-    --format="value(md5_hash)" 2>/dev/null || echo ""
+  local out err status
+  err="$(mktemp)"
+  out="$(gcloud storage objects describe "$url" --project="$PROJECT" \
+    --format="value(md5_hash)" 2>"$err")"
+  status=$?
+  if [[ $status -eq 0 ]]; then
+    rm -f "$err"
+    echo "$out"
+    return
+  fi
+  if grep -qiE 'not found|404|does not have|no such object|matched no objects' "$err"; then
+    rm -f "$err"
+    echo ""
+    return
+  fi
+  rm -f "$err"
+  echo "ERROR"
 }
 
 sync_guard_stash_read() {
@@ -59,10 +78,13 @@ sync_guard_stash_write() {
 
 # Veredito pra uma cópia DESTINO ← ORIGEM (ver tabela no cabeçalho).
 # Args: <nome-do-stash> <md5-origem> <md5-destino>. Imprime insync|ok|conflict.
+# dst == "ERROR" (describe falhou por motivo != não-existe) SEMPRE vira
+# conflict — falha transiente nunca deve ser lida como "destino ausente".
 sync_guard_verdict() {
   local name="$1" src="$2" dst="$3"
   local base
   base="$(sync_guard_stash_read "$name")"
+  if [[ "$dst" == "ERROR" ]]; then echo conflict; return; fi
   if [[ -z "$dst" ]]; then echo ok; return; fi
   if [[ "$src" == "$dst" ]]; then echo insync; return; fi
   if [[ -n "$base" && "$dst" == "$base" ]]; then echo ok; return; fi

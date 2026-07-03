@@ -377,13 +377,15 @@ async function loadTours() {
       const pred = quad.predicate.value;
       const obj = quad.object.value;
       if (pred === RDFT) types.set(sub, obj);
-      else if (pred === DCT + 'title')  s(sub).title = obj;
+      else if (pred === DCT + 'title')  { s(sub).title = obj; if (!labels.has(sub)) labels.set(sub, obj); }
       else if (pred === DCT + 'date')   s(sub).date  = obj;
       else if (pred === PH  + 'countAttendee') s(sub).attendee = parseInt(obj, 10);
       else if (pred === PH  + 'countNewcomer') s(sub).newcomer = parseInt(obj, 10);
       // energyEstimate / measuredEnergy são literais xsd:decimal (kJ) direto no tour.
-      else if (pred === PH  + 'energyEstimate') s(sub).energy   = parseFloat(obj);
-      else if (pred === PH  + 'measuredEnergy') s(sub).measured = parseFloat(obj);
+      // Passeios no formato legado (IRI QuantityValue) são tratados como "sem valor"
+      // em vez de deixar cair num parseFloat(IRI) → NaN.
+      else if (pred === PH  + 'energyEstimate') s(sub).energy   = quad.object.termType === 'Literal' ? parseFloat(obj) : NaN;
+      else if (pred === PH  + 'measuredEnergy') s(sub).measured = quad.object.termType === 'Literal' ? parseFloat(obj) : NaN;
       else if (pred === PH + 'inSeriesEdition') s(sub).assocs.add(obj);
       else if (pred === PH + 'inEventSeries') {
         const a = assocs.get(sub) || {}; a.series = obj; assocs.set(sub, a);
@@ -400,7 +402,6 @@ async function loadTours() {
       else if (pred === SCHEMA + 'alternateName' || pred === SCHEMA + 'name') {
         if (!labels.has(sub)) labels.set(sub, obj);
       }
-      else if (pred === DCT + 'title' && !labels.has(sub)) labels.set(sub, obj);
     });
   });
 }

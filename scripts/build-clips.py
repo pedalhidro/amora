@@ -47,8 +47,11 @@ AUDIO_OUT_DIR = CLIPS_OUT_DIR / "audio"
 UPLOADS_TTL   = ROOT / "web" / "data" / "uploads.ttl"
 TOURS_TTL     = ROOT / "web" / "data" / "tours.ttl"
 
-# Janela pra associar clipe a passeio: ±12h em torno do passeio.
-TOUR_WINDOW_SEC = 12 * 3600
+# Janela pra associar clipe a passeio: mesma janela assimétrica do
+# upload_images.html (D3) — aceita de 2h ANTES até 12h DEPOIS do início do
+# passeio, não ±12h simétrico.
+TOUR_WINDOW_BEFORE_SEC = 2 * 3600
+TOUR_WINDOW_AFTER_SEC = 12 * 3600
 
 EXTS = {".mov", ".mp4", ".m4v"}
 SHARE_SUFFIX    = ".360p.mp4"
@@ -134,6 +137,21 @@ def parse_creation_date(s: str) -> str | None:
 
 def stem_to_vhash(stem: str) -> str:
     return hashlib.md5(stem.encode("utf-8")).hexdigest()[:16]
+
+
+def find_stem_collisions(raw_dir: Path) -> dict[str, list[Path]]:
+    """Agrupa os arquivos-fonte de `raw_dir` por stem (nome sem extensão).
+    O vhash e os nomes de saída (share/hd/audio/thumb) são derivados só do
+    stem — dois arquivos com o mesmo stem e extensões diferentes (ex.:
+    `foo.mov` + `foo.mp4`) colidiriam no mesmo IRI/arquivos, e o segundo
+    processado sobrescreveria o primeiro em silêncio. Devolve só os grupos
+    com mais de um arquivo (colisões)."""
+    by_stem: dict[str, list[Path]] = {}
+    for p in sorted(raw_dir.iterdir()):
+        if p.suffix.lower() not in EXTS:
+            continue
+        by_stem.setdefault(p.stem, []).append(p)
+    return {stem: paths for stem, paths in by_stem.items() if len(paths) > 1}
 
 
 def parse_exiftool(path: Path) -> dict | None:
@@ -268,7 +286,8 @@ def transcode(src: Path, dst: Path, target_short_side: int) -> bool:
 
 def load_tour_catalog() -> list[tuple[str, float]]:
     """Lê tours.ttl e devolve lista de (tour_iri, epoch_seconds) ordenada
-    por data. Usada pra associar clipes ao passeio mais próximo (±12h)."""
+    por data. Usada pra associar clipes ao passeio mais próximo (janela
+    −2h/+12h — ver TOUR_WINDOW_BEFORE_SEC/TOUR_WINDOW_AFTER_SEC)."""
     if not TOURS_TTL.exists():
         return []
     g = Graph()
@@ -290,8 +309,10 @@ def load_tour_catalog() -> list[tuple[str, float]]:
 
 def closest_tour(tours: list[tuple[str, float]], clip_iso: str | None) -> str | None:
     """Match do clipe (dcterms:date no formato xsd:dateTime) com o passeio
-    cuja data esteja a no máximo ±TOUR_WINDOW_SEC do clipe. Retorna o IRI
-    do tour ou None."""
+    mais próximo cujo início esteja dentro da janela assimétrica
+    [−TOUR_WINDOW_BEFORE_SEC, +TOUR_WINDOW_AFTER_SEC] em relação ao clipe —
+    mesma janela de upload_images.html (D3), não ±12h simétrico. Retorna o
+    IRI do tour ou None."""
     if not clip_iso or not tours:
         return None
     try:
@@ -299,12 +320,13 @@ def closest_tour(tours: list[tuple[str, float]], clip_iso: str | None) -> str | 
     except ValueError:
         return None
     best_iri = None
-    best_delta = TOUR_WINDOW_SEC + 1
+    best_abs_delta = None
     for iri, ts in tours:
-        delta = abs(ts - clip_ts)
-        if delta < best_delta and delta <= TOUR_WINDOW_SEC:
-            best_delta = delta
-            best_iri = iri
+        delta = clip_ts - ts  # >0: clipe depois do início do passeio
+        if -TOUR_WINDOW_BEFORE_SEC <= delta <= TOUR_WINDOW_AFTER_SEC:
+            if best_abs_delta is None or abs(delta) < best_abs_delta:
+                best_abs_delta = abs(delta)
+                best_iri = iri
     return best_iri
 
 
@@ -358,6 +380,17 @@ def main() -> int:
     if not CLIPS_RAW_DIR.is_dir():
         print(f"raw clips dir not found: {CLIPS_RAW_DIR}", file=sys.stderr)
         return 1
+
+    collisions = find_stem_collisions(CLIPS_RAW_DIR)
+    if collisions:
+        print("ERRO: arquivos-fonte com o mesmo nome (stem) colidiriam no "
+              "mesmo vhash/IRI e nos mesmos arquivos de saída — renomeie um "
+              "deles e rode de novo:", file=sys.stderr)
+        for stem, paths in sorted(collisions.items()):
+            names = ", ".join(p.name for p in paths)
+            print(f"  stem '{stem}': {names}", file=sys.stderr)
+        return 1
+
     CLIPS_OUT_DIR.mkdir(parents=True, exist_ok=True)
     AUDIO_OUT_DIR.mkdir(parents=True, exist_ok=True)
 

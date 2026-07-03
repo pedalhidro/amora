@@ -1931,6 +1931,7 @@ async function ensureN3() {
       if (!window.N3) await loadScript(N3_URL);
       return window.N3.Parser;
     })();
+    _n3Promise.catch(() => { _n3Promise = null; });
   }
   return _n3Promise;
 }
@@ -6461,9 +6462,12 @@ function runEnergyWorker(payload) {
       // pendurar a promise (compatível com chamadas isoladas).
       if (m.reqId !== undefined && m.reqId !== reqId) return;
       if (m.kind === 'progress') return;
+      // Só 'done'/'error' resolvem a promise — outros kinds (ex.: 'warning',
+      // sem reqId) não têm .path e deixariam o caller com um resultado vazio.
+      if (m.kind === 'error') { cleanup(); reject(new Error(m.message)); return; }
+      if (m.kind !== 'done') return;
       cleanup();
-      if (m.kind === 'error') reject(new Error(m.message));
-      else resolve(m);
+      resolve(m);
     };
     // Sem isto, uma exceção não-tratada no worker deixava a promise pendurada
     // pra sempre (o caller de estimateEnergy travava). O worker pode ter
@@ -6713,6 +6717,7 @@ async function ensureSqlJs() {
       if (typeof window.initSqlJs !== 'function') await loadScript(SQLJS_BASE + 'sql-wasm.js');
       return window.initSqlJs({ locateFile: (f) => SQLJS_BASE + f });
     })();
+    _sqlJsPromise.catch(() => { _sqlJsPromise = null; });
   }
   return _sqlJsPromise;
 }
@@ -6723,6 +6728,7 @@ async function ensureProj4() {
       if (!window.proj4) await loadScript(PROJ4_URL);
       return window.proj4;
     })();
+    _proj4Promise.catch(() => { _proj4Promise = null; });
   }
   return _proj4Promise;
 }
@@ -7958,6 +7964,7 @@ async function ensureGeoTIFF() {
       if (!window.GeoTIFF) await loadScript(GEOTIFF_URL);
       return window.GeoTIFF;
     })();
+    _geoTiffPromise.catch(() => { _geoTiffPromise = null; });
   }
   return _geoTiffPromise;
 }
@@ -9192,6 +9199,9 @@ const QUDT_PROFILE = {
   epsilon:            { iri: 'descentEnergyRecoveryFraction',  kind: 'kind:DimensionlessRatio',   unit: 'unit:UNITLESS' },
   efficiency:         { iri: 'movingEfficiency',               kind: 'kind:DimensionlessRatio',   unit: 'unit:UNITLESS' },
   slopeFlatThreshold: { iri: 'slopeFlatThreshold',             kind: 'kind:DimensionlessRatio',   unit: 'unit:UNITLESS' },
+  kEff:               { iri: 'transmissionEfficiency',         kind: 'kind:DimensionlessRatio',   unit: 'unit:UNITLESS' },
+  deadbandM:          { iri: 'elevationDeadband',               kind: 'kind:Length',                unit: 'unit:M' },
+  energySearchMarginPct: { iri: 'energySearchMargin',           kind: 'kind:DimensionlessRatio',   unit: 'unit:PERCENT' },
 };
 
 function paramsToJsonLd(p) {
@@ -9291,6 +9301,9 @@ function snapshot() {
     lng: t.marker.getLatLng().lng,
     // Clone the path so future mutations don't bleed into history.
     path: t.pathFromPrev ? t.pathFromPrev.map((p) => [p[0], p[1]]) : null,
+    // deckFlag marca trechos de ponte/túnel (viarioGraphRoute) p/ o flattening
+    // de elevação — precisa sobreviver ao undo/redo (não é reconstruído).
+    deckFlag: t.pathFromPrev?.deckFlag ? [...t.pathFromPrev.deckFlag] : null,
     name: t.name || '',
     isPoi: !!t.isPoi,
     sym: t.sym || 'Flag, Blue',
@@ -9327,6 +9340,7 @@ function restoreSnapshot(snap) {
       sym: s.sym || 'Flag, Blue',
     });
     tp.pathFromPrev = s.path ? s.path.map((p) => [p[0], p[1]]) : null;
+    if (s.deckFlag && tp.pathFromPrev) tp.pathFromPrev.deckFlag = s.deckFlag;
     trackpoints.push(tp);
   }
   redrawAndMetrics();
@@ -9642,6 +9656,9 @@ async function applyShareState(state) {
     await mapConcurrent(indices, 4, (idx) => refetchPath(idx, routeSeq));
     redrawAndMetrics();
   }
+  // Todos os waypoints podem ter sido pulados por coords inválidas (lat/lng
+  // não-numérico) — sem trackpoints não há o que desfazer/compartilhar.
+  if (!trackpoints.length) return false;
   pushHistory();
   return true;
 }
@@ -10000,6 +10017,10 @@ const GPX_CONNECT_MODES = ['straight', 'cycling', 'foot', 'energy', 'energy_road
 let _gpxConnectResolve = null;
 
 function askGpxConnectMode(pointCount) {
+  // Um segundo GPX carregado enquanto o modal ainda está aberto sobrescreveria
+  // o resolver pendente e travaria o primeiro loadGpxIntoEditor pra sempre —
+  // libera quem estava esperando (com null, como um cancelamento) antes.
+  if (_gpxConnectResolve) { const prev = _gpxConnectResolve; _gpxConnectResolve = null; prev(null); }
   return new Promise((resolve) => {
     _gpxConnectResolve = resolve;
     if (gpxConnectCount) gpxConnectCount.textContent = String(pointCount);

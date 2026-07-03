@@ -245,22 +245,49 @@ function escapeHtml(s) {
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
   }[c]));
 }
+// FNV-1a 32-bit — fallback determinístico quando slugifyPerson não sobra
+// nenhum caractere ASCII (nome 100% não-latino, ex: "田中太郎"). Sem isto,
+// mintPerson não conseguia mintar IRI nenhuma pra essas pessoas (D2).
+function hashPersonFallback(s) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(16).padStart(8, '0');
+}
 function slugifyPerson(s) {
-  return s.normalize('NFKD').replace(/\p{Diacritic}/gu, '')
+  const slug = s.normalize('NFKD').replace(/\p{Diacritic}/gu, '')
     .split(/\s+/).map(w => w.replace(/[^A-Za-z0-9]/g, '')).filter(Boolean)
     .map(w => w[0].toUpperCase() + w.slice(1).toLowerCase()).join('');
+  // Fallback (D2): mesmo nome bruto → mesmo hash → mesma IRI, então a
+  // colisão intencional entre variações latinas do mesmo nome continua
+  // igual; só o caso "slug ficou vazio" ganha uma saída em vez de falhar.
+  return slug || `Anon${hashPersonFallback(s)}`;
 }
 function pad(n) { return String(n).padStart(2, '0'); }
 function dateToLocalInput(d) {
   return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}` +
          `T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
-function localToXsdDateTime(s) {
+// offsetOverride (ex: "+02:00"/"-03:00", vindo do EXIF OffsetTimeOriginal)
+// prevalece sobre o fuso do navegador — o wall-clock em `s` normalmente veio
+// do EXIF, que não carrega fuso; só sabemos o fuso real de gravação quando a
+// câmera/telefone grava OffsetTimeOriginal (D4). Sem override, comportamento
+// antigo (fuso do navegador) é mantido — o caso comum (SP filmado/subido em
+// SP) não muda.
+function localToXsdDateTime(s, offsetOverride) {
   const d = new Date(s); if (isNaN(d)) return null;
-  const off = -d.getTimezoneOffset();
-  const sign = off >= 0 ? '+' : '-';
-  const oh = pad(Math.floor(Math.abs(off) / 60));
-  const om = pad(Math.abs(off) % 60);
+  const m = /^([+-])(\d{2}):?(\d{2})$/.exec(offsetOverride || '');
+  let sign, oh, om;
+  if (m) {
+    [, sign, oh, om] = m;
+  } else {
+    const off = -d.getTimezoneOffset();
+    sign = off >= 0 ? '+' : '-';
+    oh = pad(Math.floor(Math.abs(off) / 60));
+    om = pad(Math.abs(off) % 60);
+  }
   return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}` +
          `T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}` +
          `${sign}${oh}:${om}`;
@@ -947,9 +974,17 @@ function showTtlPreview() {
   if (!cards.length) { pre.textContent = '— sem cards —'; pre.hidden = false; return; }
   const blocks = cards.map((card, i) => {
     if (!card.phash) return `# ─── ${i + 1}: ${card.file.name} — pHash ainda não pronto ───`;
-    const head = `# ─── ${i + 1}/${cards.length}: ${card.file.name} (${card.phash}) ───`;
-    const body = card.kind === 'video' ? buildSingleClipTtl(card) : buildSingleImageTtl(card);
-    return `${head}\n${body}`;
+    // v296 acrescentou guardas de GPS/data ausentes em buildImageBlock/
+    // buildClipBlock (lançam Error); sem isolar por card, uma delas derrubava
+    // a preview inteira (T13) — o try/catch aqui devolve o erro só daquele
+    // card, os demais continuam previstos normalmente.
+    try {
+      const head = `# ─── ${i + 1}/${cards.length}: ${card.file.name} (${card.phash}) ───`;
+      const body = card.kind === 'video' ? buildSingleClipTtl(card) : buildSingleImageTtl(card);
+      return `${head}\n${body}`;
+    } catch (e) {
+      return `# ─── ${i + 1}: ${card.file.name} — ERRO: ${e.message} ───`;
+    }
   });
   pre.textContent = blocks.join('\n\n');
   pre.hidden = false;
@@ -1349,6 +1384,7 @@ async function createImageCard(file, defaults) {
     kind: 'image',
     index: cardCounter, file, phash, bitmap, elem,
     authorTs: null, providerTs: null, skipAutoDetect: false,
+    exifTzOffset: null,   // preenchido se o EXIF trouxer OffsetTimeOriginal (D4)
   };
   cards.push(card);
 
@@ -1408,6 +1444,9 @@ async function createImageCard(file, defaults) {
       if (data) {
         if (data.DateTimeOriginal) {
           dateInput.value = dateToLocalInput(new Date(data.DateTimeOriginal));
+          // OffsetTimeOriginal (ex: "+02:00"): fuso em que a câmera gravou —
+          // prevalece sobre o fuso do navegador em localToXsdDateTime (D4).
+          if (data.OffsetTimeOriginal) card.exifTzOffset = data.OffsetTimeOriginal;
           autoDetectTour(card);
         }
         if (data.latitude  != null) $('[data-field="lat"]', elem).value     = data.latitude.toFixed(6);
@@ -1657,7 +1696,7 @@ function num(s) {
 
 function buildImageBlock(card) {
   const elem    = card.elem;
-  const dateXsd = localToXsdDateTime($('[data-field="date"]',    elem).value);
+  const dateXsd = localToXsdDateTime($('[data-field="date"]',    elem).value, card.exifTzOffset);
   const lat     = num($('[data-field="lat"]',     elem).value);
   const lon     = num($('[data-field="lon"]',     elem).value);
   const bearing = num($('[data-field="bearing"]', elem).value);

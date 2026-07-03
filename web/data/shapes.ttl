@@ -9,6 +9,7 @@
 @prefix pav: <http://purl.org/pav/> .
 @prefix exif: <http://www.w3.org/2003/12/exif/ns#> .
 @prefix nfo: <http://www.semanticdesktop.org/ontologies/2007/03/22/nfo#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 
 ph:ImageShape a sh:NodeShape ;
     sh:targetClass ph:Image ;
@@ -268,19 +269,60 @@ ph:TourShape a sh:NodeShape ;
     ] ;
     sh:property [
         sh:path ph:energyEstimate ;
-        sh:severity sh:Warning ;
+        sh:severity sh:Violation ;
         sh:maxCount 1 ;
         sh:datatype xsd:decimal ;
         sh:minInclusive 0 ;
-        sh:message "Ideal: estimativa de energia em kJ (número)."@pt ;
+        sh:message "ph:energyEstimate deve ser um literal numérico (xsd:decimal) em kJ — não mais aceito como IRI/QuantityValue."@pt ;
     ] ;
     sh:property [
         sh:path ph:measuredEnergy ;
-        sh:severity sh:Warning ;
+        sh:severity sh:Violation ;
         sh:maxCount 1 ;
         sh:datatype xsd:decimal ;
         sh:minInclusive 0 ;
-        sh:message "Ideal: energia medida em kJ (número)."@pt ;
+        sh:message "ph:measuredEnergy deve ser um literal numérico (xsd:decimal) em kJ — não mais aceito como IRI/QuantityValue."@pt ;
+    ] ;
+    sh:property [
+        sh:path ph:departedAt ;
+        sh:severity sh:Warning ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:dateTime ;
+        sh:message "Ideal: horário de saída (ph:departedAt)."@pt ;
+    ] ;
+    sh:property [
+        sh:path ph:arrivedAt ;
+        sh:severity sh:Warning ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:dateTime ;
+        sh:message "Ideal: horário de chegada (ph:arrivedAt)."@pt ;
+    ] ;
+    sh:property [
+        sh:path ph:movingDuration ;
+        sh:severity sh:Warning ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:duration ;
+        sh:message "Ideal: tempo em movimento (ph:movingDuration)."@pt ;
+    ] ;
+    sh:property [
+        sh:path ph:hadIncident ;
+        sh:severity sh:Warning ;
+        sh:or ( [ sh:datatype xsd:string ] [ sh:datatype rdf:langString ] ) ;
+        sh:message "Se declarado, ph:hadIncident deve ser texto, com ou sem tag de idioma (repetível)."@pt ;
+    ] ;
+    sh:property [
+        sh:path ph:hadBonde ;
+        sh:severity sh:Warning ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:boolean ;
+        sh:message "Se declarado, ph:hadBonde deve ser booleano."@pt ;
+    ] ;
+    sh:property [
+        sh:path ph:hadRain ;
+        sh:severity sh:Warning ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:boolean ;
+        sh:message "Se declarado, ph:hadRain deve ser booleano."@pt ;
     ] ;
     # Listas nominais de participantes / iniciantes (opcionais — só
     # aparecem quando a feature de "listar attendees" está ligada nas

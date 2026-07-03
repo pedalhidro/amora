@@ -1321,11 +1321,29 @@ def _tour_display_title(g, t):
     return title
 
 
+def _tour_date_sort_key(dt):
+    """Chave de ordenação p/ (None | datetime naive | datetime aware) sem
+    TypeError: datetimes naive e aware não são comparáveis entre si, e um
+    único dcterms:date sem timezone junto de outros com timezone derrubava
+    /feed.xml e /sitemap.xml de vez (500 permanente até o dado ser corrigido).
+    Datas naive são tratadas como UTC — mesma convenção do resto do backend."""
+    if dt is None:
+        return (False, 0.0)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return (True, dt.timestamp())
+
+
 def _build_feed_xml(tours_text):
     import re
     from email.utils import format_datetime
     from xml.sax.saxutils import escape
     from rdflib import Graph, Namespace, RDF
+
+    def attr_escape(v):
+        # escape() só cobre &/</> — sem isso um valor com `"` fecha o
+        # atributo antes da hora (injeção de handler/atributo).
+        return escape(v, {'"': "&quot;", "'": "&#39;"})
 
     PH = Namespace(PH_NS)
     SCHEMA = Namespace("https://schema.org/")
@@ -1342,7 +1360,7 @@ def _build_feed_xml(tours_text):
         except ValueError:
             dt = None
         tours.append((dt, t))
-    tours.sort(key=lambda x: (x[0] is not None, x[0] or datetime.min), reverse=True)
+    tours.sort(key=lambda x: _tour_date_sort_key(x[0]), reverse=True)
 
     items = []
     for dt, t in tours[:50]:
@@ -1357,9 +1375,16 @@ def _build_feed_xml(tours_text):
         energy_line = None
         kj = g.value(t, PH.energyEstimate)
         if kj is not None:
-            intensity = _intensity_for(float(kj))
-            energy_line = (f"{float(kj):.0f} quilojaules"
-                           + (f" ({intensity})" if intensity else ""))
+            try:
+                kj_val = float(kj)
+            except (TypeError, ValueError):
+                # Forma legada (IRI de QuantityValue) ou lixo — não 500a o
+                # feed inteiro por causa de um tour com dado malformado.
+                kj_val = None
+            if kj_val is not None:
+                intensity = _intensity_for(kj_val)
+                energy_line = (f"{kj_val:.0f} quilojaules"
+                               + (f" ({intensity})" if intensity else ""))
 
         # <description>: resumo plano — fallback pra leitores que ignoram
         # content:encoded.
@@ -1371,8 +1396,8 @@ def _build_feed_xml(tours_text):
         html = []
         img = g.value(t, SCHEMA.image)
         if img:
-            html.append(f'<p><img src="{escape(str(img))}" '
-                        f'alt="{escape(title)}" style="max-width:100%"/></p>')
+            html.append(f'<p><img src="{attr_escape(str(img))}" '
+                        f'alt="{attr_escape(title)}" style="max-width:100%"/></p>')
         narrative = g.value(t, DCT.description)
         if narrative:
             for para in re.split(r"\r?\n+", str(narrative).strip()):
@@ -1383,7 +1408,7 @@ def _build_feed_xml(tours_text):
         route_block = []
         if route_url:
             u = escape(str(route_url))
-            route_block.append(f'Rota: <a href="{u}">{u}</a>')
+            route_block.append(f'Rota: <a href="{attr_escape(str(route_url))}">{u}</a>')
         if energy_line:
             route_block.append(escape(energy_line))
         if route_block:
@@ -1494,7 +1519,7 @@ def _build_sitemap_xml(tours_text):
             tour_id = str(t).rsplit("tour_", 1)[-1]
             title = str(g.value(t, DCT.title) or tour_id).strip()
             tours.append((dt, tour_id, title))
-    tours.sort(key=lambda x: (x[0] is not None, x[0] or datetime.min), reverse=True)
+    tours.sort(key=lambda x: _tour_date_sort_key(x[0]), reverse=True)
 
     now = datetime.now(timezone.utc)
     urls = [
@@ -1691,8 +1716,16 @@ def _render_tour_index(tour_id):
         jsonld["description"] = meta_desc
     if authors:
         jsonld["author"] = [{"@type": "Person", "name": n} for n in authors]
+    # Escapa &/</> pra um tour com "</script>" no título/narrativa não
+    # fechar a tag e injetar markup no <head> (crawlers/preview bots não
+    # têm o CSP da página pra segurar isso). & primeiro, senão o <
+    # e > que a gente escreve depois seriam re-escapados.
+    jsonld_body = (json.dumps(jsonld, ensure_ascii=False)
+                   .replace("&", "\\u0026")
+                   .replace("<", "\\u003c")
+                   .replace(">", "\\u003e"))
     jsonld_tag = ('<script type="application/ld+json">'
-                  + json.dumps(jsonld, ensure_ascii=False) + "</script>")
+                  + jsonld_body + "</script>")
 
     html_text = (WEB / "index.html").read_text(encoding="utf-8")
 
@@ -2189,18 +2222,23 @@ def delete_tour(tour_id):
         return jsonify(error="tour_id inválido"), 400
     asset_prefix = f"tour_assets/{tour_id}/"
     removed_assets = len(STORE.list_keys(asset_prefix)) if hasattr(STORE, "list_keys") else 0
-    try:
-        STORE.delete_prefix(asset_prefix)
-    except Exception as e:  # noqa: BLE001
-        print(f"[delete-tour] erro removendo {asset_prefix}: {e}")
+    # Triples primeiro, assets depois (mesma ordem do delete-image): se a
+    # purga do TTL falhar, os assets ainda existem e `schema:image` continua
+    # apontando pra algo válido — um retry conserta. Na ordem inversa, uma
+    # falha deixava o tour com `schema:image` quebrado (assets já apagados)
+    # até o próximo retry.
     try:
         removed_triples = remove_tour_from_tours_ttl(tour_id)
         _invalidate_catalog()
     except Exception as e:  # noqa: BLE001
         return jsonify(
             error=f"persistência ttl: {e}", tour_id=tour_id,
-            assets=removed_assets,
+            assets=0,
         ), 500
+    try:
+        STORE.delete_prefix(asset_prefix)
+    except Exception as e:  # noqa: BLE001
+        print(f"[delete-tour] erro removendo {asset_prefix}: {e}")
     # Remove a entrada do tour de routes.json (sem IO de rede — lock curto).
     try:
         removed_routes = _remove_tour_route(tour_id)

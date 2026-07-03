@@ -273,6 +273,31 @@ if [[ "$SYNC_STATE" == 1 ]]; then
   echo "→ Sincronizando estado mutável pra gs://$BUCKET"
   [[ -n "$MIRROR_FLAG" ]] && echo "  (modo --mirror: deleta no bucket o que não existe local)"
 
+  # --mirror nos rsync de photos/, clips/ e tour_assets/ abaixo apaga do
+  # bucket qualquer objeto ausente localmente. Ao contrário de uploads.ttl/
+  # routes.json (guardados por md5 acima), esses três NÃO passam pela guarda
+  # anti-clobber — são rsync direto — e tour_assets/ em particular é
+  # dual-writer (comentário mais abaixo) e não é content-addressed: um
+  # anúncio enviado server-side desde o último pull local seria deletado do
+  # bucket sem aviso. Object Versioning é a rede de segurança, mas exige
+  # confirmação explícita antes de prosseguir (mesmo racional do prompt em
+  # pull-cloudrun.sh); `--force` pula pra uso não-interativo (CI, etc).
+  if [[ -n "$MIRROR_FLAG" ]]; then
+    echo "  ⚠ --mirror vai DELETAR no bucket os objetos de photos/, clips/ e" >&2
+    echo "    tour_assets/ que não existam localmente. tour_assets/ é" >&2
+    echo "    dual-writer (anúncios enviados via upload_tour.html/Censo) e" >&2
+    echo "    NÃO é content-addressed — um anúncio recente pode ser perdido" >&2
+    echo "    se este repo local estiver desatualizado." >&2
+    if [[ -z "$DRY" ]]; then
+      if [[ "$FORCE" == 1 ]]; then
+        echo "  ⚠ --force: confirmação pulada — prosseguindo com --mirror." >&2
+      else
+        read -r -p "  Continuar com --mirror em photos/clips/tour_assets? [y/N] " _ans
+        [[ "$_ans" == "y" || "$_ans" == "Y" ]] || { echo "Abortado."; exit 1; }
+      fi
+    fi
+  fi
+
   for f in uploads.ttl data_graphs.ttl; do
     if [[ -f "$REPO_ROOT/web/data/$f" ]]; then
       guarded_push "$REPO_ROOT/web/data/$f" "gs://$BUCKET/data/$f"

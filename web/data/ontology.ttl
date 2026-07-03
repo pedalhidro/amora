@@ -162,6 +162,48 @@ ph:estimate_quilojoules a owl:DatatypeProperty ;
 # 'Endorfinado', 'Frito', 'Insano') é derivada do valor em kJ por faixas fixas,
 # computada nos leitores (censo.html / app.js) — não é mais armazenada.
 
+ph:departedAt a owl:DatatypeProperty ;
+    rdfs:label "saída"@pt ;
+    rdfs:comment
+        "Horário em que o grupo efetivamente partiu (pode diferir do horário marcado em dcterms:date)."@pt ;
+    rdfs:domain ph:Tour ;
+    rdfs:range xsd:dateTime .
+
+ph:arrivedAt a owl:DatatypeProperty ;
+    rdfs:label "chegada"@pt ;
+    rdfs:comment
+        "Horário em que o grupo chegou ao destino final do passeio."@pt ;
+    rdfs:domain ph:Tour ;
+    rdfs:range xsd:dateTime .
+
+ph:movingDuration a owl:DatatypeProperty ;
+    rdfs:label "tempo em movimento"@pt ;
+    rdfs:comment
+        "Duração efetivamente pedalando (exclui paradas), no formato ISO 8601 (ex.: 'PT1H22M')."@pt ;
+    rdfs:domain ph:Tour ;
+    rdfs:range xsd:duration .
+
+ph:hadIncident a owl:DatatypeProperty ;
+    rdfs:label "incidente"@pt ;
+    rdfs:comment
+        "Registro textual e livre de um incidente ou fato notável ocorrido durante o passeio. Repetível: cada ocorrência é uma triple própria."@pt ;
+    rdfs:domain ph:Tour ;
+    rdfs:range xsd:string .
+
+ph:hadBonde a owl:DatatypeProperty ;
+    rdfs:label "teve bonde"@pt ;
+    rdfs:comment
+        "true se o passeio teve 'bonde' (grupo grande pedalando juntos, além do usual). Ausência do predicado = não informado (não é o mesmo que false)."@pt ;
+    rdfs:domain ph:Tour ;
+    rdfs:range xsd:boolean .
+
+ph:hadRain a owl:DatatypeProperty ;
+    rdfs:label "teve chuva"@pt ;
+    rdfs:comment
+        "true se choveu durante o passeio. Ausência do predicado = não informado (não é o mesmo que false)."@pt ;
+    rdfs:domain ph:Tour ;
+    rdfs:range xsd:boolean .
+
 # =====================================================================
 # Propriedades — Foto (ph:Image)
 # =====================================================================

@@ -155,6 +155,11 @@ function durToDisplay(lit) {
 function extractTour(own, subjBy) {
   const fields = {};
   for (const k of Object.keys(FIELD_PREDS)) fields[k] = { orig: '' };
+  // Tours na forma legada (`ph:energyEstimate`/`measuredEnergy` apontando pra
+  // um nó qudt:QuantityValue via IRI, em vez do literal xsd:decimal atual) —
+  // não há valor editável aqui; marcado pra nunca entrar no `remove` do patch
+  // em buildTourPatch, mesmo com o campo aparentando "vazio" no form.
+  const legacyEnergyFields = new Set();
   let title = '', date = '';
   for (const q of own) {
     const p = q.predicate.value;
@@ -166,10 +171,15 @@ function extractTour(own, subjBy) {
     else if (key === 'departed' || key === 'arrived')
       fields[key].orig = q.object.value.slice(0, 16).replace('T', ' ');
     else if (key === 'moving') fields[key].orig = durToDisplay(q.object.value);
-    // energyEstimate / measuredEnergy agora são literais xsd:decimal diretos.
+    else if (key === 'estimate' || key === 'measured') {
+      // energyEstimate / measuredEnergy agora são literais xsd:decimal diretos
+      // — mas um tour antigo pode ainda apontar pro nó QuantityValue (IRI).
+      if (q.object.termType === 'Literal') fields[key].orig = q.object.value;
+      else legacyEnergyFields.add(key);
+    }
     else fields[key].orig = q.object.value;
   }
-  return { fields, title, date };
+  return { fields, title, date, legacyEnergyFields };
 }
 
 // CURIEs dos predicados editáveis (pro campo `remove` do patch).
@@ -184,6 +194,7 @@ const FIELD_CURIES = {
 // novo substitui o schema:image atual). Retorna { ttl, remove }.
 function buildTourPatch(id, tour, cur) {
   const f = tour.fields;
+  const legacy = tour.legacyEnergyFields || new Set();
   const newProps = ['a ph:Tour'];
   const remove = [];
   // Nós aninhados (energia) como IRIs derivadas `phd:tour_<id>_*` em vez de
@@ -193,7 +204,13 @@ function buildTourPatch(id, tour, cur) {
   function handle(key, emit) {
     const v = (cur[key] ?? '').trim();
     if (v === f[key].orig.trim()) return;        // intocado → fora do patch
-    if (v === '') { remove.push(FIELD_CURIES[key]); return; }
+    if (v === '') {
+      // Forma legada: o campo nunca teve um valor editável carregado aqui —
+      // nunca remover uma energia que o form não chegou a segurar de verdade.
+      if (legacy.has(key)) return;
+      remove.push(FIELD_CURIES[key]);
+      return;
+    }
     emit(v);
   }
   handle('desc', v =>

@@ -278,9 +278,25 @@ function escapeIri(u) {
   return (u || '').replace(/[\s<>"{}|^`\\]/g, c =>
     '%' + c.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0'));
 }
+function hashHex8(s) {
+  // Hash determinístico simples (djb2) — só usado como slug de última
+  // instância (ver slugify abaixo). Determinístico: o mesmo nome digitado
+  // de novo mais tarde produz o mesmo IRI (não colide por acidente com o
+  // fallback de outro nome, mas mantém a identidade estável pro mesmo nome).
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
+  return h.toString(16).padStart(8, '0').slice(0, 8);
+}
 function slugify(s, { upperFirst = false } = {}) {
   const parts = s.normalize('NFKD').replace(/\p{Diacritic}/gu, '')
     .split(/\s+/).map(w => w.replace(/[^A-Za-z0-9]/g, '')).filter(Boolean);
+  if (!parts.length) {
+    // Nome sem NENHUM caractere translit. p/ ASCII (ex.: só CJK, árabe, …) —
+    // sem isto o slug ficava vazio e mintPerson/mintOrg/mintProvider
+    // recusavam silenciosamente a entrada (D2). Hash do nome cru garante um
+    // IRI estável em vez de "não dá pra cadastrar essa pessoa".
+    return hashHex8(s);
+  }
   return parts.map(w =>
     upperFirst ? (w[0].toUpperCase() + w.slice(1).toLowerCase()) : w.toLowerCase()
   ).join('');
@@ -549,6 +565,14 @@ addSeriesRow();    // primeira linha sempre presente
 // continua no replace (default), que é o certo pra um tour novo.
 let editMode = false;
 
+// Setados pelo prefill quando o tour carregado tem ph:energyEstimate /
+// ph:measuredEnergy na forma legada (objeto IRI, não literal — ver T1/T2).
+// Nesse caso o campo fica vazio (o input type=number não aceita a IRI), mas
+// NÃO deve entrar na remove list — senão salvar qualquer edição apagaria a
+// energia legada do tour.
+let energyIsLegacy = false;
+let measuredIsLegacy = false;
+
 // Predicados que o form gerencia e que podem ficar vazios — quando vazios
 // em modo edição, entram na lista `remove` (sob patch, ausência = "mantém",
 // então apagar precisa ser explícito).
@@ -560,11 +584,11 @@ function buildRemoveList() {
   if (!$('#t-instagram').value.trim())   rm.push('ph:linkInstagram');
   if ($('#t-attendees').value === '')    rm.push('ph:countAttendee');
   if ($('#t-newcomers').value === '')    rm.push('ph:countNewcomer');
-  if ($('#t-energy-kj').value === '')    rm.push('ph:energyEstimate');
+  if ($('#t-energy-kj').value === '' && !energyIsLegacy)     rm.push('ph:energyEstimate');
   if (!$('#t-departed').value.trim())    rm.push('ph:departedAt');
   if (!$('#t-arrived').value.trim())     rm.push('ph:arrivedAt');
   if (!$('#t-moving-time').value.trim()) rm.push('ph:movingDuration');
-  if ($('#t-measured-kj').value === '')  rm.push('ph:measuredEnergy');
+  if ($('#t-measured-kj').value === '' && !measuredIsLegacy) rm.push('ph:measuredEnergy');
   if (!$('#t-had-bonde').checked)        rm.push('ph:hadBonde');
   if (!$('#t-had-rain').checked)         rm.push('ph:hadRain');
   if (!$('#t-incidents').value.trim())   rm.push('ph:hadIncident');
@@ -867,6 +891,8 @@ async function prefillFromId(tourId) {
   // Submit passa a usar mode=patch — o backend preserva os predicados que
   // o form não conhece (ph:mediaCount, schema:image, …) sem round-trip.
   editMode = true;
+  energyIsLegacy = false;
+  measuredIsLegacy = false;
 
   // Preenche o ID e trava o campo.
   $('#t-id').value = tourId;
@@ -947,8 +973,17 @@ async function prefillFromId(tourId) {
       if (url)  routeUrl  = url.object.value;
       if (prov) routeProv = shortIRI(prov.object.value);
     }
-    else if (p === PH_NS + 'energyEstimate') energyKj = objLit(q);
-    else if (p === PH_NS + 'measuredEnergy') measured = objLit(q);
+    else if (p === PH_NS + 'energyEstimate') {
+      // Forma legada: objeto é uma IRI (qudt:QuantityValue), não um literal —
+      // um input type=number não representa isso. Deixa o campo vazio e
+      // marca legado pra buildRemoveList NÃO apagar o triple existente.
+      if (q.object.termType === 'Literal') energyKj = objLit(q);
+      else energyIsLegacy = true;
+    }
+    else if (p === PH_NS + 'measuredEnergy') {
+      if (q.object.termType === 'Literal') measured = objLit(q);
+      else measuredIsLegacy = true;
+    }
     else if (p === PH_NS + 'movingDuration') {
       // "PT2H35M0S" → "2:35:00" pra exibir; aceita H, M, S.
       const lit = objLit(q);
