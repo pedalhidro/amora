@@ -8831,18 +8831,23 @@ function simulateRide(p) {
 //     subindo (a bike só carrega arrasto fora das subidas, porque desacelera
 //     o bastante pra zerar a contribuição aero; o SUV mantém velocidade de
 //     cruzeiro mesmo subindo, então o arrasto nunca some).
-// v_f (a velocidade usada no termo aero) é a MESMA da bike (sim.vf): isto é uma
-// comparação de modelo (mesma rota, mesma velocidade assumida), não uma
-// simulação realista da velocidade/potência de um carro.
-const CAR_PARAMS = { mass: 5000, crr: 0.013, cda: 1.1, kEff: 0.12, epsilon: 0 };
+// v_f (a velocidade usada no termo aero) é a velocidade de equilíbrio do
+// PRÓPRIO SUV — resolve a mesma cúbica da bike (solveSpeedAtGradient), só que
+// com a potência média de um motor de carro (25 000 W) e a massa/Crr/CdA do
+// SUV, em vez de reaproveitar o v_f da bike.
+const CAR_PARAMS = { mass: 5000, crr: 0.013, cda: 1.1, kEff: 0.12, epsilon: 0, powerFlat: 25000 };
 function carEnergyJ(sim, p) {
-  const aero = 0.5 * p.rho * CAR_PARAMS.cda * sim.vf * sim.vf; // J por metro no plano
+  const vf = solveSpeedAtGradient(CAR_PARAMS.powerFlat, 0, {
+    rho: p.rho, cda: CAR_PARAMS.cda, mass: CAR_PARAMS.mass, crr: CAR_PARAMS.crr,
+  });
+  const aero = 0.5 * p.rho * CAR_PARAMS.cda * vf * vf; // J por metro no plano
   const alphaR = (CAR_PARAMS.crr * CAR_PARAMS.mass * G) / CAR_PARAMS.kEff;
   const alphaA = aero / CAR_PARAMS.kEff;
   const beta = (CAR_PARAMS.mass * G) / CAR_PARAMS.kEff;
   // f=1 → termo aero de subida pleno; − ε·β·h− → crédito de descida (0 hoje).
-  return alphaR * sim.distMeters + alphaA * sim.distMeters + beta * sim.ascentM
+  const energyJ = alphaR * sim.distMeters + alphaA * sim.distMeters + beta * sim.ascentM
     - CAR_PARAMS.epsilon * beta * sim.descentM;
+  return { energyJ, vf };
 }
 
 // Duração compacta pra barra de edição: uma unidade só (dias é a exceção,
@@ -8886,7 +8891,9 @@ function updateMetrics() {
   const fPlusPct = (sim.fPlus * 100).toFixed(0);
   const epsPct = (sim.epsUsed * 100).toFixed(0);
   const kEffPct = (sim.kEff * 100).toFixed(0);
-  const carKJ = carEnergyJ(sim, params) / 1000;
+  const carSim = carEnergyJ(sim, params);
+  const carKJ = carSim.energyJ / 1000;
+  const carVfKmh = (carSim.vf * 3600) / 1000;
   const bikeVsCarRatio = totalKJ > 0.01 ? carKJ / totalKJ : 0;
   const carKEffPct = (CAR_PARAMS.kEff * 100).toFixed(0);
   const movingTimeSec = sim.timeSec;
@@ -8930,9 +8937,10 @@ function updateMetrics() {
     `\n` +
     `Modelo v2 (bicycling-energy-model). Energia metabólica ≈ 4× isto (eficiência humana ~25%).\n` +
     `\n` +
-    `Comparação com um SUV (mesma rota/velocidade, modelo v2 com m=${CAR_PARAMS.mass} kg, ` +
-    `Crr=${CAR_PARAMS.crr}, CdA=${CAR_PARAMS.cda} m², k_ef=${carKEffPct}%, sem recuperação na ` +
-    `descida (ε=0) e arrasto em 100% da distância mesmo subindo (f=1)):\n` +
+    `Comparação com um SUV (mesma rota, modelo v2 com m=${CAR_PARAMS.mass} kg, ` +
+    `Crr=${CAR_PARAMS.crr}, CdA=${CAR_PARAMS.cda} m², k_ef=${carKEffPct}%, v_f=${fmt(carVfKmh)} km/h ` +
+    `(equilíbrio a ${CAR_PARAMS.powerFlat} W), sem recuperação na descida (ε=0) e arrasto em 100% da ` +
+    `distância mesmo subindo (f=1)):\n` +
     `  Energia do SUV: ${fmt(carKJ)} kJ\n` +
     `  Bike ${fmt(bikeVsCarRatio)}× mais eficiente que o SUV` +
     (sim.elevMissing > 0 ? `\n\n${sim.elevMissing} ponto(s) ainda sem elevação.` : '');
