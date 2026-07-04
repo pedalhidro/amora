@@ -4523,7 +4523,7 @@ layerPanel.onAdd = function () {
     // Botões da linha num mini-grid fixo 3 colunas (sempre 3 col → checkboxes
     // alinhados; a ação fica sempre na col 3 → ✨ de "Imagens contribuídas" e
     // "Vídeo fantasma" no mesmo x):
-    //   col1=▲   col2=▼ (ou ⬆ enviar, quando não há setas)   col3=ação (☰/📍/✨/✎/⚙/🗑)
+    //   col1=▲   col2=▼ (vazia quando não há setas)   col3=ação (☰/📍/✨/✎/⚙/🗑)
     const btns = [];
     if (reorderable) {
       btns.push('<button type="button" class="layer-move-up btn-up" title="Empilhar acima" aria-label="Empilhar acima">▲</button>');
@@ -4541,8 +4541,6 @@ layerPanel.onAdd = function () {
       btns.push('<button type="button" class="layer-action layer-action-edit btn-action" title="Configurar" aria-label="Configurar">⚙</button>');
     else if (l.trash)
       btns.push('<button type="button" class="layer-action layer-action-trash btn-action" title="Remover destaque" aria-label="Remover destaque">🗑</button>');
-    if (l.id === 'photos')
-      btns.push('<button type="button" class="layer-action layer-upload-act btn-upload" title="Enviar imagens ao acervo" aria-label="Enviar imagens">⬆</button>');
     const buttons = `<span class="layer-btns">${btns.join('')}</span>`;
     const opacity = l.noOpacity ? ''
       : `<input type="range" class="opacity-slider" data-id="${l.id}" min="0" max="100" value="${l.defaultPct}" aria-label="Opacidade — ${l.label}" />`
@@ -4578,7 +4576,6 @@ layerPanel.onAdd = function () {
     onAct('#routes-panel-toggle', toggleRoutesSidebar);
     onAct('#share-loc-btn', onShareLocClick);
     onAct('.layer-anim-toggle', toggleAnimation);
-    onAct('.layer-upload-act', openUploadModal);
     onAct('.layer-action-edit', () => { if (l.edit) l.edit(); });
     onAct('.layer-action-trash', () => { if (l.trashAction) l.trashAction(); });
     if (reorderable) {

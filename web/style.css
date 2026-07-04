@@ -1536,7 +1536,6 @@ body.trace-preview .tp-label { display: none !important; }
 }
 /* Mini-grid de botões da linha: 3 colunas fixas × 2 linhas.
      col1=▲ (btn-up)   col2=▼ (btn-down)   col3=ação (btn-action)
-                       col2=⬆ (btn-upload, abaixo da seta-baixo)
    Sempre 3 colunas reservadas (mesmo vazias) → checkboxes alinhados; a ação
    sempre na col 3 → ✨ alinhado entre as linhas. */
 .layer-btns {
@@ -1550,9 +1549,6 @@ body.trace-preview .tp-label { display: none !important; }
 .layer-btns .btn-up     { grid-column: 1; grid-row: 1; }
 .layer-btns .btn-down   { grid-column: 2; grid-row: 1; }
 .layer-btns .btn-action { grid-column: 3; grid-row: 1; }
-/* ⬆ Enviar fica na col 2 / linha 1 — em linha com a ✨ (col 3). "Imagens
-   contribuídas" não tem setas, então a col 2 está livre. */
-.layer-btns .btn-upload { grid-column: 2; grid-row: 1; }
 .layer-btns button {
   width: 18px; height: 18px; padding: 0;
   display: flex; align-items: center; justify-content: center;
