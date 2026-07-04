@@ -2919,7 +2919,6 @@ function renderUploadChip() {
 // uploadModal limpo a cada abertura.
 const uploadBtn        = document.getElementById('upload-btn');
 const uploadModal      = document.getElementById('upload-modal');
-const uploadModalClose = document.getElementById('upload-modal-close');
 const uploadIframe     = document.getElementById('upload-iframe');
 function openUploadModal() {
   if (!uploadModal) return;
@@ -2940,7 +2939,6 @@ function closeUploadModal() {
   reloadPhotos();
 }
 uploadBtn?.addEventListener('click', openUploadModal);
-uploadModalClose?.addEventListener('click', closeUploadModal);
 // Clique no overlay (fora do conteúdo) fecha.
 uploadModal?.addEventListener('click', (e) => {
   if (e.target === uploadModal) closeUploadModal();
@@ -2953,16 +2951,11 @@ document.addEventListener('keydown', (e) => {
 // Cadastro/edição de passeio em iframe — o src é remontado a cada abertura
 // porque o ?id pode mudar entre invocações (novo vs editar X vs editar Y).
 const tourModal      = document.getElementById('tour-modal');
-const tourModalClose = document.getElementById('tour-modal-close');
-const tourModalTitle = document.getElementById('tour-modal-title');
 const tourIframe     = document.getElementById('tour-iframe');
 function openTourModal(tourId) {
   if (!tourModal) return;
   closeOtherMobileDialogs('tour');
   if (closeRouteModal && !routeModal?.hidden) closeRouteModal();
-  if (tourModalTitle) {
-    tourModalTitle.textContent = tourId ? 'Editar passeio' : 'Cadastrar passeio';
-  }
   const src = tourId
     ? `./upload_tour.html?id=${encodeURIComponent(tourId)}`
     : './upload_tour.html';
@@ -2979,7 +2972,6 @@ function closeTourModal() {
   // abertura, então mudanças aparecem sem refresh.
   reloadPhotos();
 }
-tourModalClose?.addEventListener('click', closeTourModal);
 tourModal?.addEventListener('click', (e) => {
   if (e.target === tourModal) closeTourModal();
 });
@@ -8826,6 +8818,33 @@ function simulateRide(p) {
   };
 }
 
+// ─── Comparação "quantas vezes mais eficiente é a bike" vs. um SUV ───────────
+// Mesma forma fechada do modelo v2 (bicycling-energy-model/notas.md):
+//   E = α_r·x + α_a·x·f + β·(h+ − ε·h−),  α_r=m·g·Crr/k_ef, α_a=½ρCdA·v_f²/k_ef, β=m·g/k_ef
+// só que com massa/Crr/CdA/eficiência de carro e duas diferenças físicas fixas:
+//   • ε = 0  → nenhuma recuperação de energia na descida (ao contrário da bike,
+//     cujo ε é estimado do perfil da rota — um motor a combustão não converte
+//     a descida de volta em propulsão). Escrito explicitamente abaixo (em vez
+//     de simplesmente omitir o termo) pra continuar correto se CAR_PARAMS.epsilon
+//     for mudado no futuro.
+//   • f = 1  → o arrasto aerodinâmico entra em 100% da distância, inclusive
+//     subindo (a bike só carrega arrasto fora das subidas, porque desacelera
+//     o bastante pra zerar a contribuição aero; o SUV mantém velocidade de
+//     cruzeiro mesmo subindo, então o arrasto nunca some).
+// v_f (a velocidade usada no termo aero) é a MESMA da bike (sim.vf): isto é uma
+// comparação de modelo (mesma rota, mesma velocidade assumida), não uma
+// simulação realista da velocidade/potência de um carro.
+const CAR_PARAMS = { mass: 5000, crr: 0.013, cda: 1.1, kEff: 0.12, epsilon: 0 };
+function carEnergyJ(sim, p) {
+  const aero = 0.5 * p.rho * CAR_PARAMS.cda * sim.vf * sim.vf; // J por metro no plano
+  const alphaR = (CAR_PARAMS.crr * CAR_PARAMS.mass * G) / CAR_PARAMS.kEff;
+  const alphaA = aero / CAR_PARAMS.kEff;
+  const beta = (CAR_PARAMS.mass * G) / CAR_PARAMS.kEff;
+  // f=1 → termo aero de subida pleno; − ε·β·h− → crédito de descida (0 hoje).
+  return alphaR * sim.distMeters + alphaA * sim.distMeters + beta * sim.ascentM
+    - CAR_PARAMS.epsilon * beta * sim.descentM;
+}
+
 // Duração compacta pra barra de edição: uma unidade só (dias é a exceção,
 // mostra d+h). 7d14h · 3h52 · 42m59 · 30s. Sem segundos a partir de 1 h.
 function fmtDurCompact(sec) {
@@ -8867,6 +8886,9 @@ function updateMetrics() {
   const fPlusPct = (sim.fPlus * 100).toFixed(0);
   const epsPct = (sim.epsUsed * 100).toFixed(0);
   const kEffPct = (sim.kEff * 100).toFixed(0);
+  const carKJ = carEnergyJ(sim, params) / 1000;
+  const bikeVsCarRatio = totalKJ > 0.01 ? carKJ / totalKJ : 0;
+  const carKEffPct = (CAR_PARAMS.kEff * 100).toFixed(0);
   const movingTimeSec = sim.timeSec;
   const totalTimeSec = movingTimeSec / Math.max(0.01, params.efficiency);
   const haveAllElev = sim.elevMissing === 0;
@@ -8876,9 +8898,12 @@ function updateMetrics() {
     : `↑${sim.ascentM.toFixed(0)}… ↓${sim.descentM.toFixed(0)}…`;
   const thrPct = (params.slopeFlatThreshold * 100).toFixed(1).replace('.', ',');
   const effPct = (params.efficiency * 100).toFixed(0);
+  const carCompact = totalKJ > 0.01
+    ? ` · 🚙 ${Math.round(carKJ)} kJ (🚲 ${fmt(bikeVsCarRatio)}× mais eficiente)`
+    : '';
 
   traceMetrics.textContent =
-    `${fmtDistCompact(sim.distMeters)} · ${ascDesc} · ${fmtDurCompact(movingTimeSec)} mov · ${fmtDurCompact(totalTimeSec)} tot · ${Math.round(totalKJ)} kJ${elevHint}`;
+    `${fmtDistCompact(sim.distMeters)} · ${ascDesc} · ${fmtDurCompact(movingTimeSec)} mov · ${fmtDurCompact(totalTimeSec)} tot · ${Math.round(totalKJ)} kJ${carCompact}${elevHint}`;
   traceMetrics.title =
     `Simulação por segmento.\n` +
     `  Distância:        ${fmt(km, 2)} km\n` +
@@ -8903,7 +8928,13 @@ function updateMetrics() {
     `  ────────────────────────────────────\n` +
     `  Energia nas pernas:                                       ${fmt(totalKJ)} kJ\n` +
     `\n` +
-    `Modelo v2 (bicycling-energy-model). Energia metabólica ≈ 4× isto (eficiência humana ~25%).` +
+    `Modelo v2 (bicycling-energy-model). Energia metabólica ≈ 4× isto (eficiência humana ~25%).\n` +
+    `\n` +
+    `Comparação com um SUV (mesma rota/velocidade, modelo v2 com m=${CAR_PARAMS.mass} kg, ` +
+    `Crr=${CAR_PARAMS.crr}, CdA=${CAR_PARAMS.cda} m², k_ef=${carKEffPct}%, sem recuperação na ` +
+    `descida (ε=0) e arrasto em 100% da distância mesmo subindo (f=1)):\n` +
+    `  Energia do SUV: ${fmt(carKJ)} kJ\n` +
+    `  Bike ${fmt(bikeVsCarRatio)}× mais eficiente que o SUV` +
     (sim.elevMissing > 0 ? `\n\n${sim.elevMissing} ponto(s) ainda sem elevação.` : '');
 }
 
