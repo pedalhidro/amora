@@ -116,6 +116,11 @@
 
 <form id="form">
 
+  <div class="actions">
+    <button type="button" id="uploadAllTop" class="upload-all-btn" disabled>📤 Enviar todas (pendentes)</button>
+    <small id="uploadAllStatusTop" class="upload-all-status" style="margin-left:.5rem"></small>
+  </div>
+
   <!-- Grade de cards (cresce de cima pra baixo; upload-zone fica abaixo) -->
   <div id="cards"></div>
 
@@ -166,11 +171,9 @@
   </fieldset>
 
   <div class="actions">
-    <button type="button" id="uploadAll" disabled>📤 Enviar todas (pendentes)</button>
-    <button type="button" id="previewTtl" disabled>👁 Pré-visualizar TTL</button>
-    <small id="uploadAllStatus" style="margin-left:.5rem"></small>
+    <button type="button" id="uploadAll" class="upload-all-btn" disabled>📤 Enviar todas (pendentes)</button>
+    <small id="uploadAllStatus" class="upload-all-status" style="margin-left:.5rem"></small>
   </div>
-  <pre id="ttl-preview" hidden></pre>
 
 </form>
 
@@ -201,6 +204,7 @@
 
 <script type="module">
 const $  = (sel, root = document) => root.querySelector(sel);
+const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
 // ===================== Dependências CDN ================================
 let exifr = null;
@@ -963,32 +967,8 @@ function removeCard(card) {
 
 function refreshGenerateButtons() {
   const has = cards.length > 0;
-  $('#uploadAll').disabled  = !has;
-  $('#previewTtl').disabled = !has;
-  $('#clearAll').disabled   = !has;
-}
-
-// Mostra inline a concatenação dos TTLs single-image que seriam enviados.
-function showTtlPreview() {
-  const pre = $('#ttl-preview');
-  if (!cards.length) { pre.textContent = '— sem cards —'; pre.hidden = false; return; }
-  const blocks = cards.map((card, i) => {
-    if (!card.phash) return `# ─── ${i + 1}: ${card.file.name} — pHash ainda não pronto ───`;
-    // v296 acrescentou guardas de GPS/data ausentes em buildImageBlock/
-    // buildClipBlock (lançam Error); sem isolar por card, uma delas derrubava
-    // a preview inteira (T13) — o try/catch aqui devolve o erro só daquele
-    // card, os demais continuam previstos normalmente.
-    try {
-      const head = `# ─── ${i + 1}/${cards.length}: ${card.file.name} (${card.phash}) ───`;
-      const body = card.kind === 'video' ? buildSingleClipTtl(card) : buildSingleImageTtl(card);
-      return `${head}\n${body}`;
-    } catch (e) {
-      return `# ─── ${i + 1}: ${card.file.name} — ERRO: ${e.message} ───`;
-    }
-  });
-  pre.textContent = blocks.join('\n\n');
-  pre.hidden = false;
-  pre.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  $$('.upload-all-btn').forEach((btn) => { btn.disabled = !has; });
+  $('#clearAll').disabled = !has;
 }
 
 function notify(html, kind = 'warn') {
@@ -1682,7 +1662,7 @@ $('#clearAll').addEventListener('click', () => {
   cardCounter = 0;
   clearNotices();
   $('#filesStatus').textContent = 'Nenhum arquivo.';
-  $('#uploadAllStatus').textContent = '';
+  setUploadAllStatus('');
 });
 
 // ===================== Geração do Turtle ===============================
@@ -2004,24 +1984,28 @@ async function uploadVideoCard(card) {
   }
 }
 
+function setUploadAllStatus(html) {
+  $$('.upload-all-status').forEach((el) => { el.innerHTML = html; });
+}
+
 async function uploadAll() {
   const pending = cards.filter(c => !c.uploaded);
-  if (!pending.length) { $('#uploadAllStatus').textContent = 'tudo enviado.'; return; }
-  $('#uploadAll').disabled = true;
+  if (!pending.length) { setUploadAllStatus('tudo enviado.'); return; }
+  $$('.upload-all-btn').forEach((btn) => { btn.disabled = true; });
   let ok = 0, fail = 0;
   for (let i = 0; i < pending.length; i++) {
-    $('#uploadAllStatus').textContent = `enviando ${i + 1}/${pending.length}…`;
+    setUploadAllStatus(`enviando ${i + 1}/${pending.length}…`);
     const success = await uploadCard(pending[i]);
     if (success) ok++; else fail++;
   }
-  $('#uploadAllStatus').innerHTML =
+  setUploadAllStatus(
     `<span class="ok">${ok} enviada(s)</span>` +
-    (fail ? ` · <span class="err">${fail} com erro</span>` : '');
-  $('#uploadAll').disabled = false;
+    (fail ? ` · <span class="err">${fail} com erro</span>` : ''),
+  );
+  $$('.upload-all-btn').forEach((btn) => { btn.disabled = false; });
 }
 
-$('#uploadAll').addEventListener('click', uploadAll);
-$('#previewTtl').addEventListener('click', showTtlPreview);
+$$('.upload-all-btn').forEach((btn) => btn.addEventListener('click', uploadAll));
 
 // ===================== Map picker (Leaflet/OSM, lazy) ==================
 const LEAFLET_CSS = './lib/leaflet/leaflet.css';

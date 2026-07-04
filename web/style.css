@@ -2614,6 +2614,17 @@ body.trace-preview .tp-label { display: none !important; }
 }
 .live-ctrl .lc-reset:hover { border-color: var(--accent); color: var(--accent); }
 
+/* Modal "Subir" — atalho pra enviar mídia ou cadastrar passeio. */
+.subir-modal-content { width: min(320px, 92vw); }
+.subir-modal-body { padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+.subir-modal-body .subir-action {
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 12px 14px; font-size: 14px; font-weight: 600;
+  cursor: pointer; text-align: left;
+}
+.subir-modal-body .subir-action:hover { border-color: var(--accent); background: rgba(45,169,255,0.12); }
+
 /* Modal "Compartilhar localização" (apelido + tempo de retenção). */
 .share-name-content { width: min(380px, 92vw); }
 .share-name-body { padding: 12px 16px 16px; display: flex; flex-direction: column; gap: 10px; }

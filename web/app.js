@@ -3037,6 +3037,37 @@ window.addEventListener('message', (e) => {
   if (e.data && e.data.type === 'phidro-censo-back') closeCensoModal();
 });
 
+// Menu "Subir" — atalho no topbar que abre um mini-modal com as duas ações
+// de contribuição (enviar mídia / cadastrar passeio), cada uma delegando pro
+// modal já existente.
+const subirBtn        = document.getElementById('subir-btn');
+const subirModal      = document.getElementById('subir-modal');
+const subirModalClose = document.getElementById('subir-modal-close');
+function openSubirModal() {
+  if (!subirModal) return;
+  closeOtherMobileDialogs('subir');
+  subirModal.hidden = false;
+}
+function closeSubirModal() {
+  if (subirModal) subirModal.hidden = true;
+}
+subirBtn?.addEventListener('click', openSubirModal);
+subirModalClose?.addEventListener('click', closeSubirModal);
+subirModal?.addEventListener('click', (e) => {
+  if (e.target === subirModal) closeSubirModal();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && subirModal && !subirModal.hidden) closeSubirModal();
+});
+document.getElementById('subir-upload-media')?.addEventListener('click', () => {
+  closeSubirModal();
+  openUploadModal();
+});
+document.getElementById('subir-new-tour')?.addEventListener('click', () => {
+  closeSubirModal();
+  openTourModal();
+});
+
 // ─── Modal de Configurações ───────────────────────────────────────────────
 const settingsBtn        = document.getElementById('settings-btn');
 const settingsModal      = document.getElementById('settings-modal');
@@ -4705,6 +4736,9 @@ function closeOtherMobileDialogs(except) {
     const shareModal = document.getElementById('share-name-modal');
     if (shareModal && !shareModal.hidden) shareModal.hidden = true;
   }
+  if (except !== 'subir' && subirModal && !subirModal.hidden) {
+    subirModal.hidden = true;
+  }
 }
 
 // Boot defaults para a sidebar no desktop:
@@ -6022,7 +6056,7 @@ function exitDrawingMode() {
     if (layersBtn) layersBtn.setAttribute('aria-pressed', 'true');
     layersWasVisible = false;
   }
-  traceBtn.textContent = '＋🗺︎ Traçar';
+  traceBtn.textContent = '🗺︎ Traçar';
   traceBtn.setAttribute('aria-label', 'Traçar GPX');
   traceBtn.setAttribute('title', 'Traçar GPX');
   traceBtn.removeAttribute('aria-pressed');
