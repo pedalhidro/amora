@@ -8836,6 +8836,12 @@ function simulateRide(p) {
 // com a potência média de um motor de carro (25 000 W) e a massa/Crr/CdA do
 // SUV, em vez de reaproveitar o v_f da bike.
 const CAR_PARAMS = { mass: 5000, crr: 0.013, cda: 1.1, kEff: 0.12, epsilon: 0, powerFlat: 25000 };
+// A energia "nas pernas" (eLegJ) é só a saída mecânica do ciclista — o corpo
+// humano só converte ~25% da comida que queima em propulsão, então a energia
+// METABÓLICA (o que realmente "custou" à pessoa) é ~4× isso. O SUV já é medido
+// em energia de combustível (mecânica ÷ CAR_PARAMS.kEff), então comparar maçã
+// com maçã exige escalar a bike pro mesmo referencial antes de tirar a razão.
+const BIKE_METABOLIC_FACTOR = 4;
 function carEnergyJ(sim, p) {
   const vf = solveSpeedAtGradient(CAR_PARAMS.powerFlat, 0, {
     rho: p.rho, cda: CAR_PARAMS.cda, mass: CAR_PARAMS.mass, crr: CAR_PARAMS.crr,
@@ -8894,7 +8900,8 @@ function updateMetrics() {
   const carSim = carEnergyJ(sim, params);
   const carKJ = carSim.energyJ / 1000;
   const carVfKmh = (carSim.vf * 3600) / 1000;
-  const bikeVsCarRatio = totalKJ > 0.01 ? carKJ / totalKJ : 0;
+  const bikeMetabolicKJ = totalKJ * BIKE_METABOLIC_FACTOR;
+  const bikeVsCarRatio = bikeMetabolicKJ > 0.01 ? carKJ / bikeMetabolicKJ : 0;
   const carKEffPct = (CAR_PARAMS.kEff * 100).toFixed(0);
   const movingTimeSec = sim.timeSec;
   const totalTimeSec = movingTimeSec / Math.max(0.01, params.efficiency);
@@ -8941,8 +8948,9 @@ function updateMetrics() {
     `Crr=${CAR_PARAMS.crr}, CdA=${CAR_PARAMS.cda} m², k_ef=${carKEffPct}%, v_f=${fmt(carVfKmh)} km/h ` +
     `(equilíbrio a ${CAR_PARAMS.powerFlat} W), sem recuperação na descida (ε=0) e arrasto em 100% da ` +
     `distância mesmo subindo (f=1)):\n` +
-    `  Energia do SUV: ${fmt(carKJ)} kJ\n` +
-    `  Bike ${fmt(bikeVsCarRatio)}× mais eficiente que o SUV` +
+    `  Energia do SUV (combustível):                             ${fmt(carKJ)} kJ\n` +
+    `  Bike (metabólica, ${BIKE_METABOLIC_FACTOR}× a mecânica, eficiência humana ~25%): ${fmt(bikeMetabolicKJ)} kJ\n` +
+    `  Bike ${fmt(bikeVsCarRatio)}× mais eficiente que o SUV (comparando energia metabólica vs. combustível)` +
     (sim.elevMissing > 0 ? `\n\n${sim.elevMissing} ponto(s) ainda sem elevação.` : '');
 }
 
