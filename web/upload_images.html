@@ -40,13 +40,30 @@
   .opts input[type="checkbox"] { width: auto; }
 
   /* Grid de cards (1 por foto) */
+  /* Galeria horizontal: os cards viram uma faixa que rola pra esquerda/direita
+     em vez de empilhar verticalmente. Mostra ~1 card no celular e vários no
+     desktop; o resto fica fora da tela, alcançável pelo scroll horizontal.
+     overflow-y: hidden (não visible) evita promover o eixo Y a scroll — os
+     dropdowns do Tom Select escapam do clipe via dropdownParent:'body'. */
   #cards {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+    display: flex;
+    align-items: flex-start;
     gap: 1rem;
     margin: 1rem 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: .6rem;
+    scroll-snap-type: x proximity;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
   }
+  #cards:empty { display: none; margin: 0; }   /* sem faixa vazia quando não há cards */
+  #cards::-webkit-scrollbar { height: 9px; }
+  #cards::-webkit-scrollbar-thumb { background: #bbb; border-radius: 5px; }
+  #cards::-webkit-scrollbar-thumb:hover { background: #999; }
   .card {
+    flex: 0 0 min(360px, 82vw);
+    scroll-snap-align: start;
     border: 1px solid #ccc;
     border-radius: 6px;
     padding: .75rem;
@@ -703,6 +720,9 @@ function initPersonSelect(selectEl) {
     searchField: ['text'],
     plugins: ['remove_button'],
     persist: false,
+    // Renderiza o dropdown no <body>, não dentro do card — a galeria de cards
+    // rola na horizontal com overflow-y: hidden, que senão cortaria o dropdown.
+    dropdownParent: 'body',
     create: (input) => mintPerson(input) || false,
     render: {
       option_create: (data, escape) =>
