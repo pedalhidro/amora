@@ -112,13 +112,24 @@
     background: var(--accent); color: #fff; border-radius: 4px;
   }
   .ts-wrapper.multi .ts-control .item .remove { border-left-color: rgba(255,255,255,.35); }
+  /* O tom-select.min.css é carregado DEPOIS deste <style> (link abaixo), então
+     nas empatadas de especificidade o CSS vendido (tema claro) vence — por isso
+     as opções do dropdown precisam de !important pra não ficarem texto escuro
+     sobre fundo escuro. Fundo igual ao da caixa SPARQL (var(--surface)). */
   .ts-dropdown {
-    background: var(--panel); color: var(--text); border: 1px solid var(--border);
-    box-shadow: 0 4px 14px rgba(0,0,0,.5);
+    background: var(--surface) !important; color: var(--text) !important;
+    border: 1px solid var(--border); box-shadow: 0 4px 14px rgba(0,0,0,.5);
   }
-  .ts-dropdown .option { color: var(--text); }
-  .ts-dropdown .active { background: var(--accent); color: #fff; }
-  .ts-dropdown .create { color: var(--muted); }
+  .ts-dropdown .option {
+    color: var(--text) !important; background: transparent !important;
+    font-size: 13px; padding: 7px 10px;
+  }
+  .ts-dropdown .option.active,
+  .ts-dropdown .active { background: var(--accent) !important; color: #fff !important; }
+  .ts-dropdown .create,
+  .ts-dropdown .no-results,
+  .ts-dropdown .optgroup-header { color: var(--muted) !important; }
+  .ts-dropdown .create:hover { color: #fff !important; }
 
   /* Avançado (SPARQL) */
   .adv { margin-top: 8px; }
