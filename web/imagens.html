@@ -510,8 +510,13 @@ function peopleOptions(iriSet) {
 function authorIriSet() { const s = new Set(); model.records.forEach((r) => r.authorIris.forEach((i) => s.add(i))); return s; }
 function uploaderIriSet() { const s = new Set(); model.records.forEach((r) => r.uploaderIris.forEach((i) => s.add(i))); return s; }
 function tourOptions() {
-  // Ordenadas por data do passeio, mais novas primeiro.
+  // Só passeios que TÊM mídia associada — o catálogo tem ~100 passeios mas a
+  // maioria ainda não tem foto/vídeo, então não faz sentido oferecê-los no
+  // filtro. Ordenadas por data do passeio, mais novas primeiro.
+  const withMedia = new Set();
+  model.records.forEach((r) => { if (r.tourIri) withMedia.add(r.tourIri); });
   return Object.keys(model.tours)
+    .filter((t) => withMedia.has(t))
     .map((t) => ({ value: t, text: model.tourLabel(t), _d: model.tours[t].date || '' }))
     .sort((a, b) => b._d.localeCompare(a._d))
     .map(({ value, text }) => ({ value, text }));
