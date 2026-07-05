@@ -90,7 +90,7 @@ ajustando **`carKEff` e `carPowerFlat`**.
 | `carKEff` | **0,28** | Eficiência tanque→roda em **cruzeiro estável**: fueleconomy.gov "energy to wheels" 22–30 % na estrada; BTE de motores SI modernos ~30–36 % × ~0,9 de transmissão. Faixa defensável 0,25–0,30; central 0,28. (Ciclo combinado ~0,21–0,25 = o "cerca de um quarto"; média de ciclo com cidade ~0,16–0,20.) |
 | `carPowerFlat` | **15 000 W** | Cruzeiro de equilíbrio ~65 km/h — arterial de fluxo livre em SP (entre os 50 km/h de arterial e os 80–90 km/h das Marginais). |
 | `carPowerAscent` | 45 000 W | Motorista **acelera na subida** — em SP não se "cruza" em morro (acelera e freia). ~69 / 50 / 35 km/h a +3 / +5 / +8 %; sobe grades leves acima da velocidade de plano. |
-| `carPowerDescent` | 0 W | Pé fora do acelerador (corte de combustível na desaceleração — DFCO). |
+| `carPowerDescent` | 5 000 W | Acelerador leve — o motorista ainda dá um gás na descida (não fica só no coasting/DFCO). Só ajusta a velocidade de descida (aero); a salvaguarda de coasting a mantém em ≥ ~65 km/h de plano. |
 | `carSlopeFlatThreshold` | 0,03 (±3 %) | Grade de equilíbrio do *coasting*: acima dela, na descida, o motor tira o pé e entra o DFCO. Literatura: ~1,5 % (cidade) a ~3 % (estrada) — usamos o extremo de estrada. |
 | `carEpsilon` | **0,20** | Ver §4. |
 

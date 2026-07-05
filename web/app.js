@@ -5873,7 +5873,7 @@ const DEFAULT_PARAMS = {
   carPowerAscent: 45000,   // W — potência em subida (> +limiar): motorista acelera na subida
                            //     (em SP não se "cruza" em morro) — ~69/50/35 km/h a +3/+5/+8%
   carPowerFlat: 15000,     // W — potência em plano (±limiar): cruzeiro ~65 km/h
-  carPowerDescent: 0,      // W — potência em descida (< −limiar): pé fora do acelerador (DFCO)
+  carPowerDescent: 5000,   // W — potência em descida (< −limiar): acelerador leve (motorista ainda dá um gás)
   carSlopeFlatThreshold: 0.03, // 0..1 — limiar de plano do SUV (±3%): grade de equilíbrio do coasting em estrada
   // Escala a energia mecânica da bike ("nas pernas") pra energia metabólica
   // (comida) — eficiência humana ~25% → ~4×. Usado só na comparação com o SUV.
