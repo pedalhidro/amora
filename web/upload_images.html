@@ -40,6 +40,45 @@
   .opts input[type="checkbox"] { width: auto; }
 
   /* Grid de cards (1 por foto) */
+  /* Grade de miniaturas (visão geral de tudo que foi adicionado). */
+  #thumb-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+    gap: .4rem;
+    margin: 1rem 0 .5rem;
+  }
+  #thumb-grid:empty { display: none; margin: 0; }
+  .thumb-grid-item {
+    position: relative; aspect-ratio: 1; cursor: pointer;
+    border: 1px solid #ccc; border-radius: 4px; overflow: hidden; background: #eee;
+    padding: 0;
+  }
+  .thumb-grid-item img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .thumb-grid-item .tg-idx {
+    position: absolute; top: 1px; left: 2px; font-size: .6rem; font-weight: 700;
+    color: #fff; text-shadow: 0 0 3px #000, 0 0 2px #000; pointer-events: none;
+  }
+  .thumb-grid-item.is-video::after {
+    content: "▶"; position: absolute; right: 2px; bottom: 0; font-size: .7rem;
+    color: #fff; text-shadow: 0 0 3px #000;
+  }
+  .thumb-grid-item:hover, .thumb-grid-item:focus-visible { border-color: #06c; outline: none; }
+
+  /* Faixa de cards + botões de navegação nos cantos. */
+  .cards-carousel { position: relative; }
+  .cards-nav {
+    position: absolute; top: 50%; transform: translateY(-50%); z-index: 5;
+    width: 34px; height: 46px; border: 1px solid #bbb; border-radius: 6px;
+    background: rgba(255,255,255,.92); color: #333; font-size: 1.4rem; line-height: 1;
+    cursor: pointer; box-shadow: 0 1px 4px rgba(0,0,0,.2); padding: 0;
+  }
+  .cards-nav:hover { background: #fff; border-color: #888; }
+  .cards-nav[disabled] { opacity: .3; cursor: default; }
+  .cards-nav-left  { left: -4px; }
+  .cards-nav-right { right: -4px; }
+  /* Realce breve quando o card é alcançado via clique numa miniatura. */
+  .card.card-flash { box-shadow: 0 0 0 3px #06c; transition: box-shadow .2s; }
+
   /* Galeria horizontal: os cards viram uma faixa que rola pra esquerda/direita
      em vez de empilhar verticalmente. Mostra ~1 card no celular e vários no
      desktop; o resto fica fora da tela, alcançável pelo scroll horizontal.
@@ -138,8 +177,17 @@
     <small id="uploadAllStatusTop" class="upload-all-status" style="margin-left:.5rem"></small>
   </div>
 
-  <!-- Grade de cards (cresce de cima pra baixo; upload-zone fica abaixo) -->
-  <div id="cards"></div>
+  <!-- Visão geral: grade de miniaturas de tudo que foi adicionado. Clicar
+       numa miniatura rola a faixa de cards até o card correspondente. -->
+  <div id="thumb-grid" aria-label="Miniaturas dos arquivos adicionados"></div>
+
+  <!-- Faixa horizontal de cards + botões ‹ › nos cantos pra rolar. Mostra
+       quantos couberem na largura da tela; o resto rola pra esquerda/direita. -->
+  <div class="cards-carousel">
+    <button type="button" class="cards-nav cards-nav-left" aria-label="Cards anteriores" hidden>‹</button>
+    <div id="cards"></div>
+    <button type="button" class="cards-nav cards-nav-right" aria-label="Próximos cards" hidden>›</button>
+  </div>
 
   <!-- Upload zone único (sempre após o grid; "desce" conforme cards são adicionados) -->
   <fieldset id="upload-zone">
@@ -1061,10 +1109,12 @@ function removeCard(card) {
   try { URL.revokeObjectURL($('.card-thumb', card.elem).src); } catch (_) {}
   const previewEl = $('.card-video-preview', card.elem);
   if (previewEl?.src) { try { URL.revokeObjectURL(previewEl.src); } catch (_) {} }
+  removeThumbFromGrid(card);
   card.elem.remove();
   const i = cards.indexOf(card);
   if (i >= 0) cards.splice(i, 1);
   refreshGenerateButtons();
+  updateCarouselNav();
 }
 
 function refreshGenerateButtons() {
@@ -1072,6 +1122,68 @@ function refreshGenerateButtons() {
   $$('.upload-all-btn').forEach((btn) => { btn.disabled = !has; });
   $('#clearAll').disabled = !has;
 }
+
+// ─── Grade de miniaturas (visão geral) + navegação da faixa de cards ─────────
+const thumbGridEl = $('#thumb-grid');
+const cardsStripEl = $('#cards');
+const navLeftBtn  = $('.cards-nav-left');
+const navRightBtn = $('.cards-nav-right');
+
+// Cria a miniatura de um card na grade de visão geral. Clicar nela foca o card
+// (rola a faixa até ele + realce). A imagem: cards de foto já têm o thumbBlob
+// (256px); cards de vídeo atualizam a src async quando o frame é extraído.
+function addThumbToGrid(card) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'thumb-grid-item' + (card.kind === 'video' ? ' is-video' : '');
+  btn.title = `${card.index}. ${card.file.name}`;
+  const img = document.createElement('img');
+  img.alt = card.file.name;
+  img.loading = 'lazy';
+  const idx = document.createElement('span');
+  idx.className = 'tg-idx';
+  idx.textContent = String(card.index);
+  btn.append(img, idx);
+  if (card.kind === 'image' && card.thumbBlob) {
+    card.gridThumbUrl = URL.createObjectURL(card.thumbBlob);   // próprio (revogado no remove)
+    img.src = card.gridThumbUrl;
+  }
+  btn.addEventListener('click', () => focusCard(card));
+  card.gridThumb = img;
+  card.gridThumbBtn = btn;
+  thumbGridEl.appendChild(btn);
+  updateCarouselNav();
+}
+// Atualiza a src da miniatura (usado quando o thumb do vídeo fica pronto).
+function setGridThumbSrc(card, url) { if (card.gridThumb) card.gridThumb.src = url; }
+function removeThumbFromGrid(card) {
+  if (card.gridThumbUrl) { try { URL.revokeObjectURL(card.gridThumbUrl); } catch (_) {} card.gridThumbUrl = null; }
+  card.gridThumbBtn?.remove();
+  card.gridThumb = null; card.gridThumbBtn = null;
+}
+// Foca um card: rola a faixa até ele e dá um realce breve.
+function focusCard(card) {
+  card.elem.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+  card.elem.classList.add('card-flash');
+  setTimeout(() => card.elem.classList.remove('card-flash'), 800);
+}
+
+// Botões ‹ › rolam a faixa ~uma "página" (largura visível). Ficam ocultos
+// quando tudo cabe, e desabilitados nas pontas.
+function scrollCardsStrip(dir) {
+  cardsStripEl.scrollBy({ left: dir * Math.max(240, cardsStripEl.clientWidth * 0.9), behavior: 'smooth' });
+}
+function updateCarouselNav() {
+  const scrollable = cardsStripEl.scrollWidth - cardsStripEl.clientWidth > 4;
+  navLeftBtn.hidden = navRightBtn.hidden = !scrollable;
+  if (!scrollable) return;
+  navLeftBtn.disabled  = cardsStripEl.scrollLeft <= 2;
+  navRightBtn.disabled = cardsStripEl.scrollLeft >= cardsStripEl.scrollWidth - cardsStripEl.clientWidth - 2;
+}
+navLeftBtn.addEventListener('click', () => scrollCardsStrip(-1));
+navRightBtn.addEventListener('click', () => scrollCardsStrip(1));
+cardsStripEl.addEventListener('scroll', updateCarouselNav, { passive: true });
+window.addEventListener('resize', updateCarouselNav);
 
 function notify(html, kind = 'warn') {
   const div = document.createElement('div');
@@ -1493,6 +1605,7 @@ async function createImageCard(file, defaults) {
     exifTzOffset: null,   // preenchido se o EXIF trouxer OffsetTimeOriginal (D4)
   };
   cards.push(card);
+  addThumbToGrid(card);
 
   // Tom Select (autoras/quem subiu) só é montado na ativação do card (A3) —
   // até lá os padrões do lote ficam guardados aqui e são aplicados via
@@ -1620,6 +1733,7 @@ async function createVideoCard(file, defaults) {
     uploaded: false,
   };
   cards.push(card);
+  addThumbToGrid(card);
   $('.hash', elem).textContent = `pHash: ${vhash}`;
 
   // Tom Select (autoras/quem subiu) e a prévia de vídeo só são montadas na
@@ -1710,9 +1824,10 @@ async function createVideoCard(file, defaults) {
     });
   }
 
-  // Thumb do card: 1º frame decodificado.
+  // Thumb do card: 1º frame decodificado. A mesma URL alimenta o card e a
+  // miniatura da grade (revogada no removeCard via a src do .card-thumb).
   videoFirstFrameBlob(file)
-    .then(blob => { if (blob) $('.card-thumb', elem).src = URL.createObjectURL(blob); })
+    .then(blob => { if (blob) { const u = URL.createObjectURL(blob); $('.card-thumb', elem).src = u; setGridThumbSrc(card, u); } })
     .catch(() => { /* sem thumb — placeholder cinza */ });
 
   // Extração best-effort de GPS + data/hora de gravação dos metadados do
@@ -1844,11 +1959,13 @@ $('#files').addEventListener('change', async (e) => {
 });
 
 function clearAllCards() {
-  for (const c of [...cards]) removeCard(c);
+  for (const c of [...cards]) removeCard(c);   // remove cada card + sua miniatura
+  thumbGridEl.replaceChildren();               // garante grade vazia
   cardCounter = 0;
   clearNotices();
   $('#filesStatus').textContent = 'Nenhum arquivo.';
   setUploadAllStatus('');
+  updateCarouselNav();
 }
 
 // Botão "Limpar todos os cards"
