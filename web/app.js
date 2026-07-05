@@ -305,6 +305,7 @@ function showPhotoFallbackModal(innerHtml) {
         pauseMediaIn(modal);
         modal.hidden = true;
         restoreMapViewAfterPhoto();
+        clearPhotoPreview();
       }
     });
     document.body.appendChild(modal);
@@ -318,8 +319,12 @@ function showPhotoFallbackModal(innerHtml) {
     pauseMediaIn(modal);
     modal.hidden = true;
     restoreMapViewAfterPhoto();
+    clearPhotoPreview();
   });
   modal.hidden = false;
+  // Navegação também no modal promovido: arrastar ↔ + manter as setas visíveis.
+  attachPhotoSwipe(modal.querySelector('.photo-fallback-content'));
+  updatePhotoNavArrows();
 }
 function popupFitsViewport(el) {
   const rect = el.getBoundingClientRect();
@@ -340,13 +345,18 @@ map.on('popupopen', (e) => {
   // Destaca o marcador de foto clicado (vídeos já se distinguem pela borda).
   const srcMarker = popup._source;
   if (srcMarker && srcMarker._photo) highlightPhotoMarker(srcMarker);
+  // Preview ativo → habilita a navegação por tempo (setas / ← → / arrastar).
+  photoPreviewMarker = srcMarker || null;
+  updatePhotoNavArrows();
+  attachPhotoSwipe(el);
   // Se já tem um modal aberto (de outro marker), fecha — evita dois previews
-  // visíveis e o snap-back de map view ficar incoerente.
+  // visíveis e o snap-back de map view ficar incoerente. Durante uma navegação
+  // NÃO restaura a view (senão voltaria pro ponto de origem a cada pulo).
   const existingModal = document.getElementById('photo-fallback-modal');
   if (existingModal && !existingModal.hidden) {
     pauseMediaIn(existingModal);
     existingModal.hidden = true;
-    restoreMapViewAfterPhoto();
+    if (!_photoNavigating) restoreMapViewAfterPhoto();
   }
   const promoteIfNeeded = () => {
     if (!el.isConnected || el.style.visibility === 'hidden') return;
@@ -370,6 +380,111 @@ map.on('popupopen', (e) => {
       media.addEventListener(evt, () => requestAnimationFrame(promoteIfNeeded), { once: true });
     }
   }
+});
+
+// ─── Navegação entre fotos no preview (ordenação por TEMPO) ───────────────────
+// Com um preview aberto: ← (ou seta ‹, ou arrastar →) vai pra foto ANTERIOR no
+// tempo; → (ou seta ›, ou arrastar ←) vai pra PRÓXIMA. Só entre as fotos
+// visíveis no momento (respeita o filtro de listas/SPARQL, a janela de data e o
+// filtro de pedal). Fotos sem data-hora ficam de fora.
+let photoPreviewMarker = null;
+let _photoNavigating = false;
+
+// Marcadores de foto visíveis com data válida, ordenados por tempo (asc).
+function visiblePhotoMarkersByTime() {
+  return photoMarkers
+    .filter((m) => map.hasLayer(m) && m._photo && Number.isFinite(Date.parse(m._photo.datetime)))
+    .map((m) => ({ m, t: Date.parse(m._photo.datetime) }))
+    .sort((a, b) => a.t - b.t
+      || String(a.m._photo.phash || '').localeCompare(String(b.m._photo.phash || '')))
+    .map((x) => x.m);
+}
+// forward=true → próxima no tempo; forward=false → anterior. Sem wrap.
+function findTimeNeighbor(fromMarker, forward) {
+  if (!fromMarker?._photo) return null;
+  const list = visiblePhotoMarkersByTime();
+  const idx = list.indexOf(fromMarker);
+  if (idx === -1) return null;
+  const j = forward ? idx + 1 : idx - 1;
+  return (j >= 0 && j < list.length) ? list[j] : null;
+}
+function navigatePhoto(forward) {
+  const from = photoPreviewMarker;
+  if (!from || !from._photo) return;
+  const target = findTimeNeighbor(from, forward);
+  if (!target) return;
+  if (!savedMapViewForPhoto) savedMapViewForPhoto = { center: map.getCenter(), zoom: map.getZoom() };
+  _photoNavigating = true;
+  map.setView(target.getLatLng(), map.getZoom(), { animate: false });
+  target.openPopup();          // dispara popupopen → seta photoPreviewMarker + promove se preciso
+  photoPreviewMarker = target;
+  _photoNavigating = false;
+}
+
+// Setas fixas nos cantos (‹ ›), visíveis com um preview aberto.
+const photoNavPrev = document.createElement('button');
+photoNavPrev.type = 'button';
+photoNavPrev.className = 'photo-nav-arrow photo-nav-prev';
+photoNavPrev.innerHTML = '‹';
+photoNavPrev.title = 'Foto anterior no tempo (←)';
+photoNavPrev.setAttribute('aria-label', photoNavPrev.title);
+photoNavPrev.hidden = true;
+const photoNavNext = document.createElement('button');
+photoNavNext.type = 'button';
+photoNavNext.className = 'photo-nav-arrow photo-nav-next';
+photoNavNext.innerHTML = '›';
+photoNavNext.title = 'Próxima foto no tempo (→)';
+photoNavNext.setAttribute('aria-label', photoNavNext.title);
+photoNavNext.hidden = true;
+photoNavPrev.addEventListener('click', (e) => { e.stopPropagation(); navigatePhoto(false); });
+photoNavNext.addEventListener('click', (e) => { e.stopPropagation(); navigatePhoto(true); });
+document.body.append(photoNavPrev, photoNavNext);
+
+function updatePhotoNavArrows() {
+  const on = !!photoPreviewMarker;
+  photoNavPrev.hidden = !(on && findTimeNeighbor(photoPreviewMarker, false));
+  photoNavNext.hidden = !(on && findTimeNeighbor(photoPreviewMarker, true));
+}
+function clearPhotoPreview() {
+  photoPreviewMarker = null;
+  updatePhotoNavArrows();
+}
+// Arrasta ↔ pra navegar (toque): arrastar pra ESQUERDA → próxima; pra DIREITA → anterior.
+function attachPhotoSwipe(el) {
+  if (!el || el._swipeBound) return;
+  el._swipeBound = true;
+  let x0 = null, y0 = null;
+  el.addEventListener('touchstart', (e) => {
+    const t = e.changedTouches[0]; x0 = t.clientX; y0 = t.clientY;
+  }, { passive: true });
+  el.addEventListener('touchend', (e) => {
+    if (x0 == null) return;
+    const t = e.changedTouches[0], dx = t.clientX - x0, dy = t.clientY - y0;
+    x0 = null;
+    if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.5) navigatePhoto(dx < 0);
+  }, { passive: true });
+}
+// ← / → navegam quando há preview (e o foco não está num campo de texto).
+document.addEventListener('keydown', (e) => {
+  if (!photoPreviewMarker) return;
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || '')) return;
+  if (e.key === 'ArrowRight') { e.preventDefault(); navigatePhoto(true); }
+  else if (e.key === 'ArrowLeft') { e.preventDefault(); navigatePhoto(false); }
+});
+// Fechamento REAL do popup (não promoção pro modal nem navegação) limpa o
+// preview e restaura a view salva.
+map.on('popupclose', (e) => {
+  const el = e.popup?.getElement?.();
+  if (!el || !el.classList.contains('photo-popup-wrap')) return;
+  if (_photoNavigating) return;
+  setTimeout(() => {
+    if (_photoNavigating) return;
+    const modal = document.getElementById('photo-fallback-modal');
+    if (modal && !modal.hidden) return;                              // promovido pro modal
+    if (document.querySelector('.leaflet-popup .photo-popup')) return; // outro popup abriu
+    clearPhotoPreview();
+    restoreMapViewAfterPhoto();
+  }, 0);
 });
 
 const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -11280,6 +11395,7 @@ async function loadGpxIntoEditor(gpxText) {
 
   const bgEls = () => Array.from(document.body.children).filter((el) =>
     !el.classList.contains('modal') &&
+    !el.classList.contains('photo-nav-arrow') &&   // setas de navegação de foto ficam ativas sobre o preview
     el.id !== 'toast' && el.id !== 'route-tooltip' &&
     el.tagName !== 'SCRIPT' && el.tagName !== 'TEMPLATE');
 
