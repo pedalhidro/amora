@@ -29,7 +29,18 @@
   }
   button.danger-action:hover { background: #ffd6d6; }
   button[disabled] { opacity: .5; cursor: not-allowed; }
+  /* Padrão geral p/ campos só-leitura: fundo cinza, texto esmaecido, cursor
+     bloqueado — deixa claro que o valor não é editável (ex.: o ID em modo edição). */
+  input[readonly], textarea[readonly] {
+    background: #ececec; color: #777; cursor: not-allowed; border-color: #ddd;
+  }
   .required::after { content: " *"; color: #c00; }
+  /* Miniatura da imagem do anúncio já cadastrada (modo edição). */
+  .announce-preview {
+    display: block; max-width: 220px; max-height: 160px; width: auto; height: auto;
+    margin-top: .4rem; border: 1px solid #ccc; border-radius: 4px; object-fit: contain;
+    background: #f4f4f4;
+  }
   .ok { color: #080; }
   .warn { color: #c80; }
   .err { color: #c00; }
@@ -1043,16 +1054,31 @@ async function prefillFromId(tourId) {
     }
   }
 
-  // Anúncio: mostra link pra imagem existente (não dá pra prefilar <input type=file>
-  // por segurança do browser).
+  // Anúncio: mostra a imagem existente (miniatura) + link (não dá pra prefilar
+  // <input type=file> por segurança do browser).
   if (announceUrl) {
+    const anchor = $('#t-announcement').nextSibling;
+    const parent = $('#t-announcement').parentElement;
+    // Miniatura só quando a URL é http(s) segura — evita <img src> com
+    // esquemas perigosos (javascript:, data:) refletidos do TTL.
+    if (saneUrl(announceUrl)) {
+      const img = document.createElement('img');
+      img.className = 'announce-preview';
+      img.src = announceUrl;
+      img.alt = 'Imagem do anúncio atual';
+      img.loading = 'lazy';
+      // Se a imagem não carregar (404/movida), some com a miniatura em vez de
+      // deixar o ícone quebrado.
+      img.addEventListener('error', () => img.remove(), { once: true });
+      parent.insertBefore(img, anchor);
+    }
     const small = document.createElement('small');
     const safeUrl = escapeHtml(announceUrl);
     small.innerHTML = (saneUrl(announceUrl)
                         ? `Anúncio atual: <a href="${safeUrl}" target="_blank">${safeUrl}</a>. `
                         : `Anúncio atual: <code>${safeUrl}</code>. `) +
                       `Selecione um arquivo novo aqui pra substituir.`;
-    $('#t-announcement').parentElement.insertBefore(small, $('#t-announcement').nextSibling);
+    parent.insertBefore(small, anchor);
   }
 
   // Reflete modo edição no título da página + botão.
