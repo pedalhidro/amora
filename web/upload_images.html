@@ -713,6 +713,9 @@ function initPersonSelect(selectEl) {
       this.dropdown_content.appendChild(create);
     }
   };
+  // Nesta config o texto digitado na busca não some sozinho ao selecionar um
+  // item (clique ou Enter) — sobra no campo pro próximo item. Limpa na mão.
+  ts.on('item_add', () => ts.setTextboxValue(''));
   personSelects.push(ts);
   return ts;
 }
