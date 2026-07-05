@@ -189,6 +189,12 @@
           <details class="help-changelog">
             <summary>Novidades (changelog)</summary>
             <dl>
+              <dt>05/07/2026 · v322</dt>
+              <dd>
+                <ul>
+                  <li>Modais em iframe (Censo e Galeria de imagens) perderam a barra de título — o conteúdo já mostra o próprio título; fecham por clique fora, Esc ou o "← Mapa" interno.</li>
+                </ul>
+              </dd>
               <dt>05/07/2026 · v321</dt>
               <dd>
                 <ul>
@@ -1362,24 +1368,20 @@
       </div>
     </div>
 
-    <!-- Censo hidrográfico — iframe para censo.html. -->
+    <!-- Censo hidrográfico — iframe para censo.html. Sem header: o conteúdo já
+         mostra o próprio título; fecha por clique fora, Esc, ou o "← Mapa"
+         interno (postMessage). -->
     <div id="censo-modal" class="modal" hidden>
       <div class="modal-content upload-modal-content">
-        <header>
-          <h2>Censo hidrográfico</h2>
-          <button class="close" id="censo-modal-close" type="button" aria-label="Fechar">&times;</button>
-        </header>
         <iframe id="censo-iframe" src="" title="Censo hidrográfico"></iframe>
       </div>
     </div>
 
-    <!-- Galeria de imagens/vídeos — iframe para imagens.html. -->
+    <!-- Galeria de imagens/vídeos — iframe para imagens.html. Sem header: o
+         conteúdo já mostra o próprio título; fecha por clique fora, Esc, ou o
+         "← Mapa" interno (postMessage). -->
     <div id="imagens-modal" class="modal" hidden>
       <div class="modal-content upload-modal-content">
-        <header>
-          <h2>Imagens & vídeos</h2>
-          <button class="close" id="imagens-modal-close" type="button" aria-label="Fechar">&times;</button>
-        </header>
         <iframe id="imagens-iframe" src="" title="Galeria de imagens"></iframe>
       </div>
     </div>

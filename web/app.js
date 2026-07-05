@@ -3382,7 +3382,6 @@ document.addEventListener('keydown', (e) => {
 // passeio", que vai pra upload_tour.html), reabrir o modal mostraria a
 // página interna em vez do censo. Re-set explícito é cheap e idempotente.
 const censoModal      = document.getElementById('censo-modal');
-const censoModalClose = document.getElementById('censo-modal-close');
 const censoIframe     = document.getElementById('censo-iframe');
 const censoLink       = document.getElementById('censo-link');
 const CENSO_URL = './censo.html';
@@ -3413,7 +3412,6 @@ censoLink?.addEventListener('click', (e) => {
   e.preventDefault();
   openCensoModal();
 });
-censoModalClose?.addEventListener('click', closeCensoModal);
 censoModal?.addEventListener('click', (e) => {
   if (e.target === censoModal) closeCensoModal();
 });
@@ -3440,7 +3438,6 @@ window.addEventListener('message', (e) => {
 // Galeria de imagens em iframe — mesma mecânica do Censo.
 const imagensBtn        = document.getElementById('imagens-btn');
 const imagensModal      = document.getElementById('imagens-modal');
-const imagensModalClose = document.getElementById('imagens-modal-close');
 const imagensIframe     = document.getElementById('imagens-iframe');
 const IMAGENS_URL = './imagens.html';
 function openImagensModal() {
@@ -3462,7 +3459,6 @@ function closeImagensModal() {
   imagensBtn?.setAttribute('aria-pressed', 'false');
 }
 imagensBtn?.addEventListener('click', openImagensModal);
-imagensModalClose?.addEventListener('click', closeImagensModal);
 imagensModal?.addEventListener('click', (e) => {
   if (e.target === imagensModal) closeImagensModal();
 });
