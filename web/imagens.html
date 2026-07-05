@@ -155,6 +155,12 @@
   }
   .tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
   .tile:hover { border-color: var(--accent); }
+  /* Modo colagem: linhas justificadas (estilo Google Fotos) — as imagens ficam
+     no aspect-ratio real e cada linha preenche a largura toda. layoutJustified()
+     define width/height inline de cada tile; a última linha fica na altura-alvo
+     (não estica) pra não distorcer poucos itens. */
+  .gallery.collage .tiles { display: flex; flex-wrap: wrap; gap: 6px; align-content: flex-start; }
+  .gallery.collage .tile { aspect-ratio: auto; width: auto; }
   .tile.no-img::after {
     content: '🖼'; position: absolute; inset: 0; display: flex; align-items: center;
     justify-content: center; color: var(--muted); font-size: 24px; background: var(--surface);
@@ -258,6 +264,11 @@
       <button type="button" data-group="day">Dia</button>
       <button type="button" data-group="month">Mês</button>
       <button type="button" data-group="year">Ano</button>
+    </div>
+    <span class="tb-label">Layout:</span>
+    <div id="tb-layout" class="segmented">
+      <button type="button" data-layout="grid" class="active">Quadrado</button>
+      <button type="button" data-layout="collage">Colagem</button>
     </div>
     <div class="tb-spacer"></div>
     <button id="btn-select" type="button" class="btn">Selecionar</button>
@@ -479,6 +490,7 @@ let store = null, model = null, recordByIri = new Map();
 let currentGroup = 'tour';
 let currentSparql = '';
 let isCustom = false;
+let galleryLayout = (localStorage.getItem('phidro:galleryLayout') === 'collage') ? 'collage' : 'grid';
 let runSeq = 0;
 let selectMode = false;
 const selected = new Set();          // IRIs de mídia selecionadas
@@ -688,7 +700,67 @@ function renderGroups(rows, facets) {
     );
   }).join('');
   gallery.innerHTML = html;
+  applyGalleryLayout();
   updateSelUI();
+}
+
+// ── Layout: grade quadrada vs colagem justificada ────────────────────────────
+// Aplica o modo atual na grade. No modo colagem, roda o layout justificado e
+// (re)anexa os relayouts em cada imagem que carrega (as miniaturas chegam lazy).
+function applyGalleryLayout() {
+  const gallery = $('#gallery');
+  const collage = galleryLayout === 'collage';
+  gallery.classList.toggle('collage', collage);
+  if (!collage) {
+    // Limpa os tamanhos inline deixados pela colagem.
+    gallery.querySelectorAll('.tile').forEach((t) => { t.style.width = ''; t.style.height = ''; });
+    return;
+  }
+  layoutAllJustified();
+  gallery.querySelectorAll('.tile img').forEach((img) => {
+    if (img.dataset.relayout) return;
+    img.dataset.relayout = '1';
+    img.addEventListener('load', scheduleRelayout);
+  });
+}
+const scheduleRelayout = debounce(() => { if (galleryLayout === 'collage') layoutAllJustified(); }, 80);
+function layoutAllJustified() {
+  $('#gallery').querySelectorAll('.group .tiles').forEach((c) => layoutJustified(c));
+}
+// Empacota os tiles em linhas de altura ~alvo, cada linha esticada pra largura
+// toda (larguras ∝ aspect-ratio). A última linha fica na altura-alvo se não
+// encher, pra não distorcer poucos itens.
+function layoutJustified(container) {
+  const tiles = [...container.children];
+  const cw = container.clientWidth;
+  if (!tiles.length || cw <= 0) return;
+  const gap = 6;
+  const targetH = cw < 500 ? 130 : 200;
+  const ar = (t) => {
+    const img = t.querySelector('img');
+    const w = img && img.naturalWidth, h = img && img.naturalHeight;
+    return (w && h) ? (w / h) : 1;   // 1 (quadrado) até a miniatura carregar
+  };
+  let i = 0;
+  while (i < tiles.length) {
+    let j = i, sum = 0;
+    while (j < tiles.length) {
+      sum += ar(tiles[j]);
+      j++;
+      if (sum * targetH + (j - i - 1) * gap >= cw) break;   // linha cheia
+    }
+    const rowTiles = tiles.slice(i, j);
+    const sumAr = rowTiles.reduce((a, t) => a + ar(t), 0);
+    const avail = cw - (rowTiles.length - 1) * gap;
+    const isLast = j >= tiles.length;
+    const naturalW = sumAr * targetH + (rowTiles.length - 1) * gap;
+    const h = (isLast && naturalW < cw) ? targetH : (avail / sumAr);
+    rowTiles.forEach((t) => {
+      t.style.height = h + 'px';
+      t.style.width = Math.max(1, ar(t) * h) + 'px';
+    });
+    i = j;
+  }
 }
 
 function tileHtml(rec) {
@@ -993,6 +1065,19 @@ function wireToolbar() {
     $$('#tb-group button').forEach((b) => b.classList.toggle('active', b === btn));
     rebuildAndRun();
   });
+  // Toggle de layout (quadrado ↔ colagem justificada), persistido.
+  $$('#tb-layout button').forEach((b) => b.classList.toggle('active', b.dataset.layout === galleryLayout));
+  $('#tb-layout').addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-layout]');
+    if (!btn) return;
+    galleryLayout = btn.dataset.layout;
+    try { localStorage.setItem('phidro:galleryLayout', galleryLayout); } catch (_) {}
+    $$('#tb-layout button').forEach((b) => b.classList.toggle('active', b === btn));
+    applyGalleryLayout();
+  });
+  window.addEventListener('resize', debounce(() => {
+    if (galleryLayout === 'collage') layoutAllJustified();
+  }, 120));
   $('#adv-apply').addEventListener('click', () => {
     const sparql = $('#adv-sparql').value;
     currentSparql = sparql;
