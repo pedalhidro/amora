@@ -27,7 +27,8 @@
     margin-bottom: 16px; }
   header h1 { margin: 0; font-size: 22px; }
   header .sub { color: var(--muted); font-size: 13px; }
-  header a { color: var(--accent); text-decoration: none; margin-left: auto; }
+  header nav { margin-left: auto; display: flex; gap: 16px; }
+  header a { color: var(--accent); text-decoration: none; }
   header a:hover { color: var(--accent-hover); }
 
   /* Métricas — cards inline */
@@ -181,7 +182,10 @@
 <header>
   <h1>Censo Hidrográfico</h1>
   <span class="sub">Pedal Hidrográfico — métricas agregadas dos passeios</span>
-  <a href="./index.html">← Mapa</a>
+  <nav>
+    <a href="./pessoas.html">Pessoas →</a>
+    <a href="./index.html">← Mapa</a>
+  </nav>
 </header>
 
 <div id="status" role="status" aria-live="polite">Carregando catálogo de passeios…</div>

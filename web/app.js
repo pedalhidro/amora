@@ -268,10 +268,23 @@ function pauseMediaIn(root) {
 }
 
 // Leaflet só fecha o popup detachando o DOM; em alguns browsers o <video>
+// Destaque do marcador de foto cujo popup está aberto (o clicado) — análogo ao
+// anel dos vídeos, pra ficar fácil achar qual marcador foi aberto num cluster.
+let _activePhotoDot = null;
+function clearPhotoMarkerHighlight() {
+  if (_activePhotoDot) { _activePhotoDot.classList.remove('photo-dot-active'); _activePhotoDot = null; }
+}
+function highlightPhotoMarker(marker) {
+  clearPhotoMarkerHighlight();
+  const dot = marker?.getElement?.()?.querySelector('.photo-dot');
+  if (dot) { dot.classList.add('photo-dot-active'); _activePhotoDot = dot; }
+}
+
 // continua tocando antes do GC. Pausa explícita no popupclose.
 map.on('popupclose', (e) => {
   const el = e.popup?.getElement?.();
   if (el) pauseMediaIn(el);
+  clearPhotoMarkerHighlight();
 });
 
 function restoreMapViewAfterPhoto() {
@@ -324,6 +337,9 @@ map.on('popupopen', (e) => {
   const popup = e.popup;
   const el = popup.getElement?.();
   if (!el || !el.classList.contains('photo-popup-wrap')) return;
+  // Destaca o marcador de foto clicado (vídeos já se distinguem pela borda).
+  const srcMarker = popup._source;
+  if (srcMarker && srcMarker._photo) highlightPhotoMarker(srcMarker);
   // Se já tem um modal aberto (de outro marker), fecha — evita dois previews
   // visíveis e o snap-back de map view ficar incoerente.
   const existingModal = document.getElementById('photo-fallback-modal');

@@ -2269,6 +2269,85 @@ def assign_media_lists():
     return jsonify(ok=True, touched=touched)
 
 
+@app.post("/update-person/<slug>")
+@serialized
+def update_person(slug):
+    """Renomeia (schema:alternateName) a pessoa phd:pessoa<slug> nos catálogos.
+
+    Pessoas são sujeitos minúsculos (`phd:pessoa<Slug> a schema:Person ;
+    schema:alternateName "<nome>"`), mintadas de rebote por upload de mídia
+    (uploads.ttl) ou cadastro de passeio (tours.ttl) — podem existir em UM ou
+    nos DOIS catálogos (ex.: pessoaDandan). Este endpoint troca o alternateName
+    em TODOS os arquivos que definem a pessoa; senão o app.js, que mescla os
+    dois grafos num Map last-write-wins, poderia exibir um valor obsoleto.
+
+    Body: form field `name` (o novo alternateName). Sem SHACL — não há shape de
+    `schema:Person`; o rótulo é livre, igual à criação. Não mexe em routes.json
+    (nomes não afetam geometria). Sem auth — mesma política do resto da API.
+    """
+    from rdflib import URIRef, Literal
+    slug = (slug or "").strip()
+    if not slug or not all(c.isalnum() or c in "_-" for c in slug):
+        return jsonify(error="slug inválido"), 400
+    name = (request.form.get("name") or "").strip()
+    if not name:
+        return jsonify(error="name ausente"), 400
+    if len(name) > 200:
+        return jsonify(error="name longo demais (máx. 200)"), 400
+
+    v = _load_validator()
+    Graph = v["Graph"]
+    person = URIRef(PHD_NS + "pessoa" + slug)
+    RDFT = URIRef("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
+    # schema.org aparece nas duas formas (https/http) no acervo — trata ambas.
+    PERSON_CLS = (URIRef(SCHEMA_NS + "Person"), URIRef("http://schema.org/Person"))
+    ALT_NAMES = (URIRef(SCHEMA_NS + "alternateName"),
+                 URIRef("http://schema.org/alternateName"))
+    ALT_CANON = URIRef(SCHEMA_NS + "alternateName")
+    PERSON_CANON = URIRef(SCHEMA_NS + "Person")
+
+    def _set_name(g):
+        for alt in ALT_NAMES:
+            for o in list(g.objects(person, alt)):
+                g.remove((person, alt, o))
+        g.add((person, ALT_CANON, Literal(name)))
+        if not any((person, RDFT, c) in g for c in PERSON_CLS):
+            g.add((person, RDFT, PERSON_CANON))
+
+    graphs = {}          # key → Graph
+    defined_keys = []    # arquivos que definem a pessoa (tipo ou alternateName)
+    referenced = False   # pessoa aparece como objeto em algum catálogo?
+    for key, fname in ((KEY_TOURS, "tours.ttl"), (KEY_UPLOADS, "uploads.ttl")):
+        text = _load_dump_text(fname)
+        g = Graph().parse(data=text, format="turtle") if text else Graph()
+        graphs[key] = g
+        has_type = any((person, RDFT, c) in g for c in PERSON_CLS)
+        has_alt = any((person, alt, None) in g for alt in ALT_NAMES)
+        if has_type or has_alt:
+            defined_keys.append(key)
+        if (None, None, person) in g:
+            referenced = True
+
+    changed = []
+    if defined_keys:
+        targets = defined_keys
+    elif referenced:
+        # Referenciada mas sem definição em lugar nenhum — cria em tours.ttl.
+        targets = [KEY_TOURS]
+    else:
+        return jsonify(error=f"pessoa desconhecida: {slug}"), 404
+
+    for key in targets:
+        g = graphs[key]
+        _set_name(g)
+        STORE.write_text(key, g.serialize(format="turtle"))
+        changed.append("tours.ttl" if key == KEY_TOURS else "uploads.ttl")
+
+    _invalidate_catalog()
+    print(f"[update-person] pessoa{slug} -> {name!r} files={changed}")
+    return jsonify(ok=True, slug=slug, name=name, files=changed)
+
+
 @app.post("/upload-tour")
 def upload_tour():
     """Cria/atualiza 1 ph:Tour em tours.ttl.
