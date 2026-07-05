@@ -442,8 +442,11 @@ body.modal-open { overflow: hidden; }
 /* Reserva de espaço pra bolinha (macOS-like): o conteúdo cai logo abaixo dela.
    Modais sem iframe têm estrutura [<header oculto>][corpo] → empurra o corpo;
    modais com iframe reservam a faixa no próprio contêiner flex (.upload-…). */
-.modal-content > header + * { padding-top: 26px; }
-.upload-modal-content { padding-top: 24px; }
+.modal-content > header + *:not(iframe) { padding-top: 26px; }
+/* Modais com iframe: a faixa (título + bolinha) vem do padding do contêiner
+   flex, empurrando o iframe pra baixo (padding no próprio iframe não é
+   confiável). O header fica absoluto por cima dessa faixa. */
+.upload-modal-content { padding-top: 26px; }
 
 /* Upload modal: muito mais largo (cards do form em grade); iframe preenche. */
 .upload-modal-content {
@@ -1587,6 +1590,24 @@ body.trace-preview .tp-label { display: none !important; }
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
   font-size: 11px;
   min-width: 240px;
+}
+/* Título "Camadas" na faixa reservada, ao lado da bolinha (igual ao header dos
+   modais). Absolute → não desloca as linhas. */
+.layer-panel-title {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  padding: 0 8px 0 30px;           /* 30px à esquerda livram a bolinha */
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
 }
 .layer-section-title {
   color: var(--muted);

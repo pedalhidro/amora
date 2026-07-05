@@ -185,6 +185,13 @@
           <details class="help-changelog">
             <summary>Novidades (changelog)</summary>
             <dl>
+              <dt>05/07/2026 · v327</dt>
+              <dd>
+                <ul>
+                  <li>Título também na faixa do header dos modais em iframe e do painel de Camadas: <strong>Galeria de imagens</strong>, <strong>Camadas</strong>, <strong>Subir/Editar imagens</strong> e <strong>Subir/Editar passeio</strong>.</li>
+                  <li>No Censo, o título saiu do formulário e passou pra faixa do header do modal (sem duplicar).</li>
+                </ul>
+              </dd>
               <dt>05/07/2026 · v326</dt>
               <dd>
                 <ul>
@@ -1378,37 +1385,41 @@
     </div>
 
     <!-- Upload de imagens — iframe para upload_images.html, isolando estado.
-         Sem header/barra de título: o iframe já mostra seu próprio <h1>;
-         fecha por clique fora ou Esc (ver openUploadModal/closeUploadModal). -->
+         O título vive na faixa do header (o <h1> interno some quando embutido);
+         fecha pela bolinha, clique fora ou Esc (ver openUploadModal). -->
     <div id="upload-modal" class="modal" hidden>
       <div class="modal-content upload-modal-content">
+        <header><h2>Subir imagens</h2></header>
         <iframe id="upload-iframe" src="" title="Upload de imagens"></iframe>
       </div>
     </div>
 
-    <!-- Cadastro / edição de passeio — iframe para upload_tour.html.
-         Sem header/barra de título: o iframe já mostra seu próprio título;
-         fecha por clique fora ou Esc (ver openTourModal/closeTourModal). -->
+    <!-- Cadastro / edição de passeio — iframe para upload_tour.html. Título na
+         faixa do header (Subir/Editar, setado em openTourModal; o <h1> interno
+         some quando embutido); fecha pela bolinha, clique fora ou Esc. -->
     <div id="tour-modal" class="modal" hidden>
       <div class="modal-content upload-modal-content">
+        <header><h2 id="tour-modal-title">Subir passeio</h2></header>
         <iframe id="tour-iframe" src="" title="Cadastro de passeio"></iframe>
       </div>
     </div>
 
-    <!-- Censo hidrográfico — iframe para censo.html. Sem header: o conteúdo já
-         mostra o próprio título; fecha por clique fora, Esc, ou o "← Mapa"
-         interno (postMessage). -->
+    <!-- Censo hidrográfico — iframe para censo.html. Título na faixa do header
+         (o header interno some quando embutido); fecha pela bolinha, clique
+         fora, Esc, ou o "← Mapa" interno (postMessage). -->
     <div id="censo-modal" class="modal" hidden>
       <div class="modal-content upload-modal-content">
+        <header><h2>Censo Hidrográfico</h2></header>
         <iframe id="censo-iframe" src="" title="Censo hidrográfico"></iframe>
       </div>
     </div>
 
-    <!-- Galeria de imagens/vídeos — iframe para imagens.html. Sem header: o
-         conteúdo já mostra o próprio título; fecha por clique fora, Esc, ou o
-         "← Mapa" interno (postMessage). -->
+    <!-- Galeria de imagens/vídeos — iframe para imagens.html. Título na faixa
+         do header (o header interno já some quando embutido); fecha pela
+         bolinha, clique fora, Esc, ou o "← Mapa" interno (postMessage). -->
     <div id="imagens-modal" class="modal" hidden>
       <div class="modal-content upload-modal-content">
+        <header><h2>Galeria de imagens</h2></header>
         <iframe id="imagens-iframe" src="" title="Galeria de imagens"></iframe>
       </div>
     </div>

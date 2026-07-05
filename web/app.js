@@ -3357,6 +3357,9 @@ function openTourModal(tourId) {
   const src = tourId
     ? `./upload_tour.html?id=${encodeURIComponent(tourId)}`
     : './upload_tour.html';
+  // Título da faixa reflete o modo (criar vs editar).
+  const tourTitle = document.getElementById('tour-modal-title');
+  if (tourTitle) tourTitle.textContent = tourId ? 'Editar passeio' : 'Subir passeio';
   // Forçar reload mesmo quando o ?id é o mesmo: substitui o src.
   tourIframe.src = src;
   tourModal.hidden = false;
@@ -5086,6 +5089,11 @@ layerPanel.onAdd = function () {
     applyLayerOrder();
     layoutRows();
   });
+
+  // Título "Camadas" na faixa reservada, ao lado da bolinha (absolute → não
+  // desloca as linhas).
+  const panelTitle = L.DomUtil.create('div', 'layer-panel-title', div);
+  panelTitle.textContent = 'Camadas';
 
   // Bolinha de fechar (macOS) no canto do painel — fecha as camadas (mesmo
   // caminho do botão ⧉ Camadas: esconde + persiste). Absolute → não desloca
