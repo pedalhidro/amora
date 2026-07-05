@@ -469,8 +469,9 @@ body.modal-open { overflow: hidden; }
   width: 100vw; height: 100vh; max-height: none;
   border-radius: 0; border: 0;
 }
-/* Na galeria o título precisa livrar as DUAS bolinhas (fechar + maximizar). */
-#imagens-modal .modal-content header { padding-left: 46px; }
+/* Galeria e censo: o título precisa livrar as DUAS bolinhas (fechar + maximizar). */
+#imagens-modal .modal-content header,
+#censo-modal .modal-content header { padding-left: 46px; }
 /* Reserva de espaço pra bolinha (macOS-like): o conteúdo cai logo abaixo dela.
    Modais sem iframe têm estrutura [<header oculto>][corpo] → empurra o corpo;
    modais com iframe reservam a faixa no próprio contêiner flex (.upload-…). */
