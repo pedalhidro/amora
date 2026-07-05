@@ -414,7 +414,8 @@ async function loadTours() {
       else if (pred === PH + 'arrivedAt')    s(sub).arrivedAt  = obj;
       else if (pred === PH + 'movingDuration') s(sub).movingDuration = obj;
       // Labels pra resolver IRIs de pessoas/séries quando renderizar.
-      else if (pred === SCHEMA + 'alternateName' || pred === SCHEMA + 'name') {
+      else if (pred === SCHEMA + 'name') labels.set(sub, obj);   // nome real vence
+      else if (pred === SCHEMA + 'alternateName') {
         if (!labels.has(sub)) labels.set(sub, obj);
       }
     });

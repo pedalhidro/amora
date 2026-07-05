@@ -2119,7 +2119,8 @@ function buildModelFromQuads(quads) {
     else if (p === DCT + 'date')            dates.set(s, ov);
     else if (p === DCT + 'license')         licenses.set(s, ov);
     else if (p === SCHEMA + 'encodingFormat') origFmts.set(s, ov);
-    else if (p === SCHEMA + 'alternateName' || p === SCHEMA + 'name') names.set(s, ov);
+    else if (p === SCHEMA + 'name') names.set(s, ov);   // nome real vence sobre apelido
+    else if (p === SCHEMA + 'alternateName') { if (!names.has(s)) names.set(s, ov); }
     else if (p === SCHEMA + 'latitude')     locLat.set(s, parseFloat(ov));
     else if (p === SCHEMA + 'longitude')    locLng.set(s, parseFloat(ov));
     else if (p === SCHEMA + 'elevation')    elev.set(s, parseFloat(ov));
@@ -5917,8 +5918,9 @@ async function _renderTourSummary(tourId) {
       if (p === RDFT) {
         if (!types.has(s)) types.set(s, new Set());
         types.get(s).add(o);
-      } else if (p === SCHEMA + 'alternateName' || p === SCHEMA + 'name'
-                 || p === DCT + 'title') {
+      } else if (p === SCHEMA + 'name') {
+        labels.set(s, o);   // nome real vence sobre apelido/título
+      } else if (p === SCHEMA + 'alternateName' || p === DCT + 'title') {
         if (!labels.has(s)) labels.set(s, o);
       }
     }

@@ -2326,23 +2326,37 @@ def assign_media_lists():
 @app.post("/update-person/<slug>")
 @serialized
 def update_person(slug):
-    """Renomeia (schema:alternateName) a pessoa phd:pessoa<slug> em identities.ttl.
+    """Edita os metadados de uma pessoa em identities.ttl (fonte única).
 
-    Pós-split, pessoas vivem SÓ em identities.ttl (fonte única — tours/images
-    apenas as referenciam). Se a pessoa ainda não tem definição lá mas é
-    referenciada por alguma mídia/passeio, a definição é criada. Body: form
-    field `name` (o novo alternateName). Sem SHACL (rótulo livre), sem
-    routes.json. Sem auth — mesma política do resto da API.
+    Pós-split, pessoas vivem SÓ em identities.ttl (tours/images apenas as
+    referenciam). Form fields:
+      - `alternateName` (obrigatório) — apelido/handle, o rótulo curto
+      - `name` (opcional) — nome real (schema:name)
+      - `url` (opcional) — página pessoal (schema:url)
+      - `seeAlso` (opcional, repetível) — perfis/links relacionados
+        (rdfs:seeAlso — Instagram, Mastodon, etc.; associa sem afirmar
+        identidade, ao contrário de schema:sameAs)
+    Reescreve só esses predicados; rdf:type e schema:mainEntityOfPage são
+    preservados. url/seeAlso precisam ser http(s). Se a pessoa não existe mas é
+    referenciada em algum catálogo, a definição é criada. O PersonShape é soft
+    (não bloqueia). Sem routes.json, sem auth.
     """
+    import re as _re
     from rdflib import URIRef, Literal
     slug = (slug or "").strip()
     if not slug or not all(c.isalnum() or c in "_-" for c in slug):
         return jsonify(error="slug inválido"), 400
-    name = (request.form.get("name") or "").strip()
-    if not name:
-        return jsonify(error="name ausente"), 400
-    if len(name) > 200:
-        return jsonify(error="name longo demais (máx. 200)"), 400
+    alt = (request.form.get("alternateName") or "").strip()
+    real_name = (request.form.get("name") or "").strip()
+    url = (request.form.get("url") or "").strip()
+    see_also = [u.strip() for u in request.form.getlist("seeAlso") if u.strip()]
+    if not alt:
+        return jsonify(error="alternateName ausente (apelido é obrigatório)"), 400
+    if len(alt) > 200 or len(real_name) > 200:
+        return jsonify(error="nome longo demais (máx. 200)"), 400
+    for u in ([url] if url else []) + see_also:
+        if not _re.match(r"^https?://", u):
+            return jsonify(error=f"URL inválida (precisa http/https): {u}"), 400
 
     v = _load_validator()
     Graph = v["Graph"]
@@ -2350,29 +2364,44 @@ def update_person(slug):
     RDFT = URIRef("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
     # schema.org aparece nas duas formas (https/http) no acervo — trata ambas.
     PERSON_CLS = (URIRef(SCHEMA_NS + "Person"), URIRef("http://schema.org/Person"))
-    ALT_NAMES = (URIRef(SCHEMA_NS + "alternateName"),
-                 URIRef("http://schema.org/alternateName"))
+    def _sc(local):
+        return (URIRef(SCHEMA_NS + local), URIRef("http://schema.org/" + local))
+    ALT_P, NAME_P, URL_P = _sc("alternateName"), _sc("name"), _sc("url")
+    SEEALSO = URIRef("http://www.w3.org/2000/01/rdf-schema#seeAlso")
 
     idg = Graph()
     text = _load_dump_text("identities.ttl")
     if text:
         idg.parse(data=text, format="turtle")
     defined = (any((person, RDFT, c) in idg for c in PERSON_CLS)
-               or any((person, alt, None) in idg for alt in ALT_NAMES))
+               or any((person, p, None) in idg for p in ALT_P))
     if not defined and (None, None, person) not in _load_catalog():
         # Nem definida em identities nem referenciada em lugar nenhum.
         return jsonify(error=f"pessoa desconhecida: {slug}"), 404
 
-    for alt in ALT_NAMES:
-        for o in list(idg.objects(person, alt)):
-            idg.remove((person, alt, o))
-    idg.add((person, URIRef(SCHEMA_NS + "alternateName"), Literal(name)))
+    def _clear(preds):
+        for p in preds:
+            for o in list(idg.objects(person, p)):
+                idg.remove((person, p, o))
+    _clear(ALT_P); idg.add((person, URIRef(SCHEMA_NS + "alternateName"), Literal(alt)))
+    _clear(NAME_P)
+    if real_name:
+        idg.add((person, URIRef(SCHEMA_NS + "name"), Literal(real_name)))
+    _clear(URL_P)
+    if url:
+        idg.add((person, URIRef(SCHEMA_NS + "url"), URIRef(url)))
+    for o in list(idg.objects(person, SEEALSO)):
+        idg.remove((person, SEEALSO, o))
+    for u in see_also:
+        idg.add((person, SEEALSO, URIRef(u)))
     if not any((person, RDFT, c) in idg for c in PERSON_CLS):
         idg.add((person, RDFT, URIRef(SCHEMA_NS + "Person")))
     STORE.write_text(KEY_IDENTITIES, idg.serialize(format="turtle"))
     _invalidate_catalog()
-    print(f"[update-person] pessoa{slug} -> {name!r}")
-    return jsonify(ok=True, slug=slug, name=name, files=["identities.ttl"])
+    print(f"[update-person] {slug} alt={alt!r} name={real_name!r} "
+          f"url={bool(url)} seeAlso={len(see_also)}")
+    return jsonify(ok=True, slug=slug, alternateName=alt, name=real_name,
+                   url=url, seeAlso=see_also, files=["identities.ttl"])
 
 
 @app.post("/upload-tour")

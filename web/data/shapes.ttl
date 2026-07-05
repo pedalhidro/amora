@@ -10,6 +10,7 @@
 @prefix exif: <http://www.w3.org/2003/12/exif/ns#> .
 @prefix nfo: <http://www.semanticdesktop.org/ontologies/2007/03/22/nfo#> .
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 
 # Mídia visual — base abstrata ph:Image. Restrições COMPARTILHADAS por foto e
 # vídeo. Sob inference=rdfs (que o backend usa ao validar), toda instância
@@ -402,3 +403,44 @@ ph:FileHashShape a sh:NodeShape ;
 # propriedades ph:energyEstimate / ph:measuredEnergy na ph:TourShape acima.
 # A intensidade ('De boa'…'Insano') é derivada do valor por faixas fixas e
 # computada nos leitores (censo.html / app.js) — não é mais armazenada.
+
+# Pessoa (schema:Person) — primeiro shape a mirar pessoas; antes eram
+# irrestritas. TUDO soft (Warning/Info), então nenhuma pessoa existente é
+# rejeitada e uploads de passeio/mídia não falham por causa dela.
+ph:PersonShape a sh:NodeShape ;
+    sh:targetClass schema:Person ;
+    sh:property [
+        sh:path schema:alternateName ;
+        sh:severity sh:Warning ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:string ;
+        sh:message "Pessoa precisa de um apelido/handle (schema:alternateName) — o rótulo curto."@pt ;
+    ] ;
+    sh:property [
+        sh:path schema:name ;
+        sh:severity sh:Info ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:string ;
+        sh:message "Ideal: nome real da pessoa (schema:name)."@pt ;
+    ] ;
+    sh:property [
+        sh:path schema:url ;
+        sh:severity sh:Info ;
+        sh:maxCount 1 ;
+        sh:nodeKind sh:IRI ;
+        sh:message "Se declarada, a página pessoal (schema:url) deve ser um IRI."@pt ;
+    ] ;
+    sh:property [
+        sh:path rdfs:seeAlso ;
+        sh:severity sh:Info ;
+        sh:nodeKind sh:IRI ;
+        sh:message "Perfis/links relacionados (rdfs:seeAlso — Instagram, Mastodon, etc.) devem ser IRIs."@pt ;
+    ] ;
+    sh:property [
+        sh:path schema:mainEntityOfPage ;
+        sh:severity sh:Info ;
+        sh:maxCount 1 ;
+        sh:nodeKind sh:IRI ;
+        sh:message "Página humana da pessoa (schema:mainEntityOfPage) deve ser um IRI."@pt ;
+    ] .

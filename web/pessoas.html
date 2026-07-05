@@ -93,6 +93,17 @@
   .btn-primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
   .btn-primary:disabled { opacity: 0.45; cursor: default; }
   .save-msg { font-size: 12px; align-self: center; }
+  .editor label.wide { flex: 1 1 100%; }
+  .editor textarea { padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--surface); color: var(--text); font: inherit; font-size: 13px; resize: vertical; }
+  .editor textarea:focus { outline: none; border-color: var(--accent); }
+  /* Apelido ao lado do nome real no resumo; chips de links/redes no corpo. */
+  .phandle { color: var(--muted); font-size: 13px; }
+  .social { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 14px; }
+  .social-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px;
+    border-radius: 12px; background: var(--surface); border: 1px solid var(--border);
+    color: var(--text); text-decoration: none; font-size: 12px; }
+  .social-chip:hover { border-color: var(--accent); color: var(--accent); }
 
   /* Seções de fatos */
   .facts h3 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em;
@@ -234,6 +245,8 @@ const VIDEO_TYPE = PH + 'MotionImage';
 const TOUR_TYPE  = PH + 'Tour';
 const ALT_PREDS   = new Set([SCHEMA + 'alternateName', 'http://schema.org/alternateName']);
 const NAME_PREDS  = new Set([SCHEMA + 'name', 'http://schema.org/name']);
+const URL_PREDS   = new Set([SCHEMA + 'url', 'http://schema.org/url']);
+const SEEALSO_PRED = 'http://www.w3.org/2000/01/rdf-schema#seeAlso';
 const THUMB_PREDS = new Set([SCHEMA + 'thumbnail', 'http://schema.org/thumbnail']);
 const IMAGE_PREDS = new Set([SCHEMA + 'image', 'http://schema.org/image']);
 const TITLE_PRED  = DCT + 'title';
@@ -335,7 +348,10 @@ const tourAssocs = new Map();   // passeio iri → [assoc iri]
 let people = [];   // [{iri, slug, label, defined, forward:[{p,o,literal}], groups:[{p, subjects:[iri]}], apCount}]
 
 function buildModel(quads) {
-  const labelOf = new Map();      // person iri → alternateName (ou name) — último vence
+  const altOf = new Map();        // iri → schema:alternateName (apelido/handle)
+  const nameOf = new Map();       // iri → schema:name (nome real)
+  const urlOf = new Map();        // iri → schema:url (página pessoal)
+  const seeAlsoOf = new Map();    // iri → [rdfs:seeAlso] (perfis/links)
   const altValuesOf = new Map();  // iri → Set de valores DISTINTOS de alternateName
   const typedPersons = new Set(); // pessoas com definição RDF (a schema:Person)
   const personSet = new Set();    // typed ∪ referenciadas
@@ -357,11 +373,16 @@ function buildModel(quads) {
     else if (p === SEQ_IN_SERIES)   { (assocOf.get(s) || assocOf.set(s, {}).get(s)).seq = parseInt(o.value, 10); }
 
     if (ALT_PREDS.has(p)) {
-      labelOf.set(s, o.value);
+      altOf.set(s, o.value);
       if (!altValuesOf.has(s)) altValuesOf.set(s, new Set());
       altValuesOf.get(s).add(o.value);
     }
-    else if (NAME_PREDS.has(p) && !labelOf.has(s)) labelOf.set(s, o.value);
+    else if (NAME_PREDS.has(p)) nameOf.set(s, o.value);
+    else if (URL_PREDS.has(p)) urlOf.set(s, o.value);
+    else if (p === SEEALSO_PRED) {
+      if (!seeAlsoOf.has(s)) seeAlsoOf.set(s, []);
+      seeAlsoOf.get(s).push(o.value);
+    }
 
     // Pessoa referenciada em posição de objeto (mesmo sem definição própria).
     if (o.termType === 'NamedNode' && o.value.startsWith(PERSON_PREFIX)) personSet.add(o.value);
@@ -397,10 +418,14 @@ function buildModel(quads) {
     // arquivos distintos (ex.: tours.ttl vs uploads.ttl). O rótulo exibido é
     // "último vence" (ordem do void:dataDump) — sinalizamos a divergência.
     const altVals = [...(altValuesOf.get(iri) || [])];
+    const alt = altOf.get(iri) || '';
+    const name = nameOf.get(iri) || '';
     return {
       iri, slug,
-      label: labelOf.get(iri) || slug,
-      alt: labelOf.get(iri) || '',
+      label: name || alt || slug,     // exibe o nome real; senão o apelido/slug
+      alt, name,
+      url: urlOf.get(iri) || '',
+      seeAlso: seeAlsoOf.get(iri) || [],
       defined: typedPersons.has(iri),
       altVals, divergent: altVals.length > 1,
       forward: fwd, groups, apCount,
@@ -543,30 +568,63 @@ function renderGroup(g, personIri) {
   `</details>`;
 }
 
+// Ícone de plataforma pelo host do link (best-effort; Mastodon é federado →
+// 🐘 quando o host/URL sugere fediverso, senão 🔗 genérico).
+function platformIcon(url) {
+  let h = '';
+  try { h = new URL(url).host.replace(/^www\./, ''); } catch (_) { return '🔗'; }
+  if (/(^|\.)instagram\.com$/.test(h)) return '📷';
+  if (/(^|\.)(x\.com|twitter\.com)$/.test(h)) return '𝕏';
+  if (/(^|\.)github\.com$/.test(h)) return '🐙';
+  if (/(^|\.)(youtube\.com|youtu\.be)$/.test(h)) return '▶';
+  if (/mastodon|fosstodon|mstdn|pixelfed|\.social$/.test(h) || url.includes('/@')) return '🐘';
+  return '🔗';
+}
+function socialChip(url, home) {
+  let host = url;
+  try { host = new URL(url).host.replace(/^www\./, ''); } catch (_) {}
+  return `<a class="social-chip" href="${escapeHtml(url)}" target="_blank" rel="noopener" ` +
+    `title="${escapeHtml(url)}">${home ? '🌐' : platformIcon(url)} ${escapeHtml(host)}</a>`;
+}
+function socialChipsHtml(p) {
+  const items = [];
+  if (p.url) items.push(socialChip(p.url, true));
+  for (const u of p.seeAlso) items.push(socialChip(u, false));
+  return items.length ? `<div class="social">${items.join('')}</div>` : '';
+}
+
 function renderPerson(p) {
   const counts = `${p.forward.length} fato(s) · ${p.apCount} aparição(ões)`;
   let badge = p.defined ? '' : ` <span class="badge-warn">sem definição RDF</span>`;
   if (p.divergent) {
     badge += ` <span class="badge-warn" title="${escapeHtml(p.altVals.join(' · '))}">⚠ nomes divergentes</span>`;
   }
+  // O apelido aparece à parte só quando o rótulo primário é o nome real.
+  const handle = (p.name && p.alt) ? ` <span class="phandle">@${escapeHtml(p.alt)}</span>` : '';
   const groupsHtml = p.groups.length
     ? p.groups.map((g) => renderGroup(g, p.iri)).join('')
     : '<p class="empty">Nenhuma aparição no acervo.</p>';
-  return `<details class="person" data-slug="${escapeHtml(p.slug)}" data-search="${escapeHtml((p.label + ' ' + p.slug).toLowerCase())}">` +
+  return `<details class="person" data-slug="${escapeHtml(p.slug)}" ` +
+      `data-search="${escapeHtml([p.name, p.alt, p.slug].join(' ').toLowerCase())}">` +
     `<summary>` +
-      `<span class="pname">${escapeHtml(p.label)}</span>` +
+      `<span class="pname">${escapeHtml(p.label)}</span>${handle}` +
       `<span class="pslug">pes:${escapeHtml(p.slug)}</span>` +
       `<span class="pcounts">${counts}</span>${badge}` +
     `</summary>` +
     `<div class="pbody">` +
       `<div class="editor">` +
-        `<label>Nome (schema:alternateName)` +
-          `<input class="alt-input" type="text" value="${escapeHtml(p.alt)}" ` +
-            `placeholder="${escapeHtml(p.slug)}" data-slug="${escapeHtml(p.slug)}" ` +
-            `data-orig="${escapeHtml(p.alt)}"></label>` +
+        `<label>Nome real (schema:name)` +
+          `<input class="pf-name" type="text" value="${escapeHtml(p.name)}"></label>` +
+        `<label>Apelido (schema:alternateName)` +
+          `<input class="pf-alt" type="text" value="${escapeHtml(p.alt)}" placeholder="${escapeHtml(p.slug)}"></label>` +
+        `<label>Página pessoal (schema:url)` +
+          `<input class="pf-url" type="url" value="${escapeHtml(p.url)}" placeholder="https://…"></label>` +
+        `<label class="wide">Links / redes (rdfs:seeAlso — um por linha)` +
+          `<textarea class="pf-links" rows="2" placeholder="https://instagram.com/…">${escapeHtml(p.seeAlso.join('\n'))}</textarea></label>` +
         `<button class="btn-primary save-btn" data-slug="${escapeHtml(p.slug)}" disabled>Salvar</button>` +
         `<span class="save-msg"></span>` +
       `</div>` +
+      socialChipsHtml(p) +
       `<div class="facts">` +
         `<h3>Fatos diretos</h3>${renderForward(p.forward)}` +
         `<h3>Aparições</h3>${groupsHtml}` +
@@ -585,10 +643,13 @@ function renderAll() {
   $('#searchbox').hidden = false;
 }
 
-// ── Edição do alternateName (POST ./update-person/<slug>) ────────────────────
-async function savePerson(slug, name) {
+// ── Edição de metadados (POST ./update-person/<slug>) ────────────────────────
+async function savePerson(slug, fields) {
   const fd = new FormData();
-  fd.append('name', name);
+  fd.append('alternateName', fields.alt);
+  fd.append('name', fields.name);
+  fd.append('url', fields.url);
+  for (const u of fields.seeAlso) fd.append('seeAlso', u);
   const res = await fetch('./update-person/' + encodeURIComponent(slug), { method: 'POST', body: fd });
   let j = {};
   try { j = await res.json(); } catch (_) {}
@@ -598,33 +659,45 @@ async function savePerson(slug, name) {
 
 function wireEvents() {
   const box = $('#people');
-  // Habilita "Salvar" só quando o texto muda.
+  // Habilita "Salvar" quando qualquer campo muda (e o apelido está preenchido).
   box.addEventListener('input', (e) => {
-    const inp = e.target.closest('.alt-input');
-    if (!inp) return;
-    const btn = inp.closest('.editor').querySelector('.save-btn');
-    btn.disabled = inp.value.trim() === (inp.dataset.orig || '') || !inp.value.trim();
+    const editor = e.target.closest('.editor');
+    if (!editor) return;
+    editor.querySelector('.save-btn').disabled = !editor.querySelector('.pf-alt').value.trim();
   });
   box.addEventListener('click', async (e) => {
     const btn = e.target.closest('.save-btn');
     if (!btn) return;
     const editor = btn.closest('.editor');
-    const inp = editor.querySelector('.alt-input');
     const msg = editor.querySelector('.save-msg');
     const slug = btn.dataset.slug;
-    const name = inp.value.trim();
-    if (!name) return;
+    const fields = {
+      alt: editor.querySelector('.pf-alt').value.trim(),
+      name: editor.querySelector('.pf-name').value.trim(),
+      url: editor.querySelector('.pf-url').value.trim(),
+      seeAlso: editor.querySelector('.pf-links').value.split('\n')
+        .map((s) => s.trim()).filter(Boolean),
+    };
+    if (!fields.alt) return;
     btn.disabled = true; msg.className = 'save-msg'; msg.textContent = 'Salvando…';
     try {
-      const j = await savePerson(slug, name);
-      // Atualiza modelo + UI in-place, sem recarregar tudo.
+      await savePerson(slug, fields);
+      // Atualiza o modelo e re-renderiza SÓ este cartão (refresca chips +
+      // resumo), preservando o estado aberto.
       const p = people.find((x) => x.slug === slug);
-      if (p) { p.label = name; p.alt = name; }
-      inp.dataset.orig = name;
-      const summary = editor.closest('details').querySelector('summary .pname');
-      if (summary) summary.textContent = name;
-      msg.className = 'save-msg ok';
-      msg.textContent = `salvo (${(j.files || []).join(', ') || 'ok'})`;
+      if (p) {
+        p.alt = fields.alt; p.name = fields.name; p.url = fields.url; p.seeAlso = fields.seeAlso;
+        p.label = fields.name || fields.alt || slug;
+        const details = editor.closest('details.person');
+        const open = details.open;
+        details.outerHTML = renderPerson(p);
+        const fresh = box.querySelector(`details.person[data-slug="${CSS.escape(slug)}"]`);
+        if (fresh) {
+          fresh.open = open;
+          const m = fresh.querySelector('.save-msg');
+          if (m) { m.className = 'save-msg ok'; m.textContent = 'salvo'; }
+        }
+      }
     } catch (err) {
       msg.className = 'save-msg err';
       msg.textContent = /Failed to fetch|NetworkError/i.test(err.message)

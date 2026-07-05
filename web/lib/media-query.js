@@ -166,7 +166,7 @@
     var people = {};
     store.getQuads(null, RDFT, nn(NS.schema + 'Person'), null).forEach(function (q) {
       var p = q.subject.value;
-      people[p] = obj1(p, NS.schema + 'alternateName') || obj1(p, NS.schema + 'name') || short(p);
+      people[p] = obj1(p, NS.schema + 'name') || obj1(p, NS.schema + 'alternateName') || short(p);
     });
     var lists = {};
     store.getQuads(null, RDFT, nn(NS.schema + 'Collection'), null).forEach(function (q) {
