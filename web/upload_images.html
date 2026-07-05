@@ -171,30 +171,12 @@
 
 <form id="form">
 
-  <div class="actions">
-    <button type="button" id="uploadAllTop" class="upload-all-btn" disabled>📤 Enviar todas (pendentes)</button>
-    <small id="uploadAllStatusTop" class="upload-all-status" style="margin-left:.5rem"></small>
-  </div>
-
-  <!-- Visão geral: grade de miniaturas de tudo que foi adicionado. Clicar
-       numa miniatura rola a faixa de cards até o card correspondente. -->
-  <div id="thumb-grid" aria-label="Miniaturas dos arquivos adicionados"></div>
-
-  <!-- Faixa horizontal de cards + botões ‹ › nos cantos pra rolar. Mostra
-       quantos couberem na largura da tela; o resto rola pra esquerda/direita. -->
-  <div class="cards-carousel">
-    <button type="button" class="cards-nav cards-nav-left" aria-label="Cards anteriores" hidden>‹</button>
-    <div id="cards"></div>
-    <button type="button" class="cards-nav cards-nav-right" aria-label="Próximos cards" hidden>›</button>
-  </div>
-
-  <!-- Upload zone único (sempre após o grid; "desce" conforme cards são adicionados) -->
+  <!-- Grupo "Adicionar imagens e vídeos" — no topo, acima do Enviar todas. -->
   <fieldset id="upload-zone">
     <legend>Adicionar imagens e vídeos</legend>
     <div class="upload-row">
       <div>
         <label style="font-weight:600;margin-top:0">Padrões da Atribuição</label>
-        <small>Aplicados a cada imagem adicionada daqui em diante (edite por card depois).</small>
 
         <label for="d-tour">Passeio <small style="display:inline;color:#888">(sobrescreve auto-detecção)</small></label>
         <select id="d-tour"><option value="">— deixar para auto-detecção —</option></select>
@@ -233,7 +215,7 @@
              soltar no desktop (contorna o seletor); no celular, escolher em lotes
              menores — os cards se acumulam (dedup evita repetição). -->
         <input type="file" id="files" accept="image/*,image/heic,image/heif,video/*" multiple>
-        <small id="filesStatus">Escolha os arquivos <strong>ou arraste-os aqui</strong>. No celular, pode enviar em vários lotes — eles se somam. Imagens: pHash e EXIF, dedup por pHash ≤ 5. Vídeos: 360p+720p webm, trim por card (máx 30 s).</small>
+        <small id="filesStatus">Escolha ou arraste imagens. Videos serão convertidos para 360p+720p webm e cortados em 10min.</small>
         <small id="catalogStatus">Carregando catálogo…</small>
         <div id="notices" role="status" aria-live="polite" style="margin: .5rem 0;"></div>
         <div style="margin-top: .5rem">
@@ -244,8 +226,20 @@
   </fieldset>
 
   <div class="actions">
-    <button type="button" id="uploadAll" class="upload-all-btn" disabled>📤 Enviar todas (pendentes)</button>
-    <small id="uploadAllStatus" class="upload-all-status" style="margin-left:.5rem"></small>
+    <button type="button" id="uploadAllTop" class="upload-all-btn" disabled>📤 Enviar todas as imagens</button>
+    <small id="uploadAllStatusTop" class="upload-all-status" style="margin-left:.5rem"></small>
+  </div>
+
+  <!-- Visão geral: grade de miniaturas de tudo que foi adicionado. Clicar
+       numa miniatura rola a faixa de cards até o card correspondente. -->
+  <div id="thumb-grid" aria-label="Miniaturas dos arquivos adicionados"></div>
+
+  <!-- Faixa horizontal de cards + botões ‹ › nos cantos pra rolar. Mostra
+       quantos couberem na largura da tela; o resto rola pra esquerda/direita. -->
+  <div class="cards-carousel">
+    <button type="button" class="cards-nav cards-nav-left" aria-label="Cards anteriores" hidden>‹</button>
+    <div id="cards"></div>
+    <button type="button" class="cards-nav cards-nav-right" aria-label="Próximos cards" hidden>›</button>
   </div>
 
 </form>
@@ -978,7 +972,7 @@ function buildCardElem(displayIdx, file, thumbBlob) {
     <div class="card-section">
       <h4>Envio</h4>
       <div style="display:flex;gap:.4rem;align-items:center;flex-wrap:wrap">
-        <button type="button" class="card-send" disabled>📤 Enviar</button>
+        <button type="button" class="card-send" disabled>📤 Enviar esta imagem</button>
         <small class="card-send-status">pendente</small>
       </div>
     </div>
@@ -1011,7 +1005,7 @@ function buildVideoCardElem(displayIdx, file) {
     </div>
 
     <div class="card-section">
-      <h4>Recorte (máx 30 s)</h4>
+      <h4>Recorte (máx 10 min)</h4>
       <video class="card-video-preview" muted controls playsinline preload="metadata"></video>
       <div class="trim-row">
         <span>Início</span>
@@ -1091,7 +1085,7 @@ function buildVideoCardElem(displayIdx, file) {
     <div class="card-section">
       <h4>Envio</h4>
       <div style="display:flex;gap:.4rem;align-items:center;flex-wrap:wrap">
-        <button type="button" class="card-send" disabled>📤 Processar &amp; enviar</button>
+        <button type="button" class="card-send" disabled>📤 Enviar esta imagem</button>
         <small class="card-send-status">pendente</small>
       </div>
     </div>
@@ -1796,14 +1790,14 @@ async function createVideoCard(file, defaults) {
     let s = Math.max(0, Math.min(parseFloat(tStart.value) || 0, card.duration));
     let e = Math.max(0, Math.min(parseFloat(tEnd.value)   || 0, card.duration));
     if (e < s) [s, e] = [e, s];
-    if (e - s > 30) e = s + 30;
+    if (e - s > 600) e = s + 600;
     tStart.value = String(s);
     tEnd.value   = String(e);
     outStart.textContent = fmtSec(s);
     outEnd.textContent   = fmtSec(e);
     const dur = e - s;
     outDur.textContent = fmtSec(dur);
-    outDur.parentElement.classList.toggle('warn', dur > 30 || dur < 0.1);
+    outDur.parentElement.classList.toggle('warn', dur > 600 || dur < 0.1);
     if (document.activeElement === tStart) preview.currentTime = s;
     else if (document.activeElement === tEnd) preview.currentTime = e;
   }
@@ -1811,7 +1805,7 @@ async function createVideoCard(file, defaults) {
     card.duration = preview.duration || 0;
     tStart.max = String(card.duration);
     tEnd.max   = String(card.duration);
-    tEnd.value = String(Math.min(30, card.duration));
+    tEnd.value = String(Math.min(600, card.duration));
     tStart.value = '0';
     updateTrimLabels();
     setCardSendEnabled(card, true);
@@ -2294,8 +2288,8 @@ async function uploadVideoCard(card) {
     setCardStatus(card, 'recorte muito curto', 'err');
     return false;
   }
-  if (tEnd - tStart > 30.5) {
-    setCardStatus(card, 'recorte > 30 s', 'err');
+  if (tEnd - tStart > 600.5) {
+    setCardStatus(card, 'recorte > 10 min', 'err');
     return false;
   }
 
@@ -2385,7 +2379,12 @@ async function uploadAll() {
   $$('.upload-all-btn').forEach((btn) => { btn.disabled = false; });
 }
 
-$$('.upload-all-btn').forEach((btn) => btn.addEventListener('click', uploadAll));
+$$('.upload-all-btn').forEach((btn) => btn.addEventListener('click', () => {
+  // Ao enviar, leva o botão pro topo da viewport — o grupo "Adicionar" some
+  // pra cima e a grade/faixa de cards (com o progresso) fica à vista.
+  btn.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  uploadAll();
+}));
 
 // ===================== Map picker (Leaflet/OSM, lazy) ==================
 const LEAFLET_CSS = './lib/leaflet/leaflet.css';
