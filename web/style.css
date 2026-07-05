@@ -2142,8 +2142,9 @@ body.trace-preview .tp-label { display: none !important; }
   font-size: 12px;
   box-shadow: 0 1px 6px rgba(0, 0, 0, 0.4);
 }
-#photo-filter-chip { bottom: 12px; }
-#upload-status-chip { bottom: 52px; }
+#media-filter-chip { bottom: 12px; }
+#photo-filter-chip { bottom: 52px; }
+#upload-status-chip { bottom: 92px; }
 .map-chip button {
   border: none;
   background: rgba(255, 255, 255, 0.15);
@@ -2161,6 +2162,88 @@ body.trace-preview .tp-label { display: none !important; }
   border-radius: 50%;
 }
 .map-chip button:hover { background: rgba(255, 255, 255, 0.3); }
+
+/* Chip do filtro de listas/SPARQL das mídias (é um <button>). */
+.media-filter-chip {
+  border: none;
+  cursor: pointer;
+  font: inherit;
+}
+.media-filter-chip b { font-weight: 600; }
+
+/* Popover do filtro de mídias, ancorado acima do chip. */
+.media-filter-pop {
+  position: absolute;
+  left: 12px;
+  bottom: 50px;
+  z-index: 1001;
+  width: min(320px, calc(100vw - 24px));
+  max-height: min(60vh, 460px);
+  overflow-y: auto;
+  background: var(--panel, #1c1c1c);
+  color: var(--text, #fff);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5);
+  padding: 8px 10px 10px;
+  font-size: 13px;
+}
+.media-filter-pop .mf-head {
+  display: flex; align-items: center; justify-content: space-between;
+  font-weight: 600; margin-bottom: 6px;
+}
+.media-filter-pop .mf-close {
+  border: none; background: transparent; color: inherit;
+  cursor: pointer; font-size: 15px; line-height: 1; padding: 2px 4px;
+}
+.media-filter-pop .mf-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 2px; cursor: pointer;
+}
+.media-filter-pop .mf-row input { flex: none; }
+.media-filter-pop .mf-todas { border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 6px; margin-bottom: 4px; }
+.media-filter-pop .mf-lists { display: flex; flex-direction: column; }
+.media-filter-pop .mf-empty { opacity: 0.7; padding: 6px 2px; font-size: 12px; }
+.media-filter-pop .mf-adv { margin-top: 6px; }
+.media-filter-pop .mf-adv summary { cursor: pointer; opacity: 0.85; }
+.media-filter-pop textarea {
+  width: 100%; box-sizing: border-box; margin-top: 6px;
+  background: rgba(0,0,0,0.35); color: inherit;
+  border: 1px solid rgba(255,255,255,0.18); border-radius: 6px;
+  font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11px;
+  padding: 6px; resize: vertical;
+}
+.media-filter-pop .mf-adv-actions { margin-top: 6px; }
+.media-filter-pop .mf-btn {
+  border: none; border-radius: 6px; cursor: pointer;
+  background: var(--accent, #2da9ff); color: #fff; padding: 5px 10px; font-size: 12px;
+}
+.media-filter-pop .mf-err { margin-top: 6px; font-size: 11px; opacity: 0.85; min-height: 14px; }
+
+/* Modal de edição de listas de UMA mídia (popup do mapa). */
+.media-lists-modal .media-lists-content {
+  width: min(380px, 94vw); max-height: 80vh; display: flex; flex-direction: column;
+}
+.media-lists-content .mle-lists {
+  overflow-y: auto; margin: 6px 0; display: flex; flex-direction: column; gap: 2px;
+}
+.media-lists-content .mle-row {
+  display: flex; align-items: center; gap: 8px; padding: 4px 2px; cursor: pointer;
+}
+.media-lists-content .mle-row em { opacity: 0.6; font-style: italic; }
+.media-lists-content .mle-empty { opacity: 0.7; padding: 6px 2px; }
+.media-lists-content .mle-new { display: flex; gap: 6px; margin: 6px 0; }
+.media-lists-content .mle-new input {
+  flex: 1; background: rgba(0,0,0,0.3); color: inherit;
+  border: 1px solid rgba(255,255,255,0.18); border-radius: 6px; padding: 6px 8px;
+}
+.media-lists-content .mle-btn, .media-lists-content .mle-save {
+  border: none; border-radius: 6px; cursor: pointer; padding: 6px 12px; font-size: 13px;
+  background: rgba(255,255,255,0.15); color: inherit;
+}
+.media-lists-content .mle-save { background: var(--accent, #2da9ff); color: #fff; }
+.media-lists-content .mle-actions { margin-top: 4px; }
+.media-lists-content .mle-err { margin-top: 6px; font-size: 12px; opacity: 0.85; min-height: 14px; }
 
 /* Foto enviada pelo usuário — anel destacado para diferenciar das do mapa. */
 .photo-dot-upload { border-color: #2da9ff; }

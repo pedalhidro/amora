@@ -1,0 +1,1027 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="robots" content="noindex">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Imagens — Pedal Hidrográfico</title>
+<style>
+  /* Tema herdado do censo.html (mesma paleta escura) para casar visualmente. */
+  :root {
+    --bg: #0f1721;
+    --panel: #15202b;
+    --surface: #0c1722;
+    --text: #e7eef5;
+    --muted: #97a3b1;
+    --accent: #ff8c2e;
+    --accent-hover: #e07320;
+    --border: #243240;
+    --danger: #b3431e;
+    --danger-hover: #922f0f;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+  body { padding: 12px; margin: 0; }
+  body.select-mode { padding-bottom: 76px; }  /* espaço p/ a barra de ação fixa */
+
+  header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+    margin-bottom: 10px; }
+  header h1 { margin: 0; font-size: 22px; }
+  header .sub { color: var(--muted); font-size: 13px; }
+  header a { color: var(--accent); text-decoration: none; margin-left: auto; }
+  header a:hover { color: var(--accent-hover); }
+
+  #status { color: var(--muted); padding: 10px 0; }
+  .err { color: #ff6b6b; }
+  .ok  { color: #5dd29c; }
+  .muted { color: var(--muted); }
+
+  /* ── Botões genéricos ─────────────────────────────────────────────────── */
+  .btn {
+    display: inline-block; padding: 6px 12px; border-radius: 6px;
+    background: var(--surface); color: var(--text); border: 1px solid var(--border);
+    font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .btn:disabled:hover { border-color: var(--border); color: var(--text); }
+  .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: #fff; }
+  .btn-danger { background: var(--danger); color: #fff; border-color: var(--danger); }
+  .btn-danger:hover { background: var(--danger-hover); border-color: var(--danger-hover); color: #fff; }
+  .btn-ghost { background: transparent; }
+  .btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+  /* ── Toolbar (sticky) ─────────────────────────────────────────────────── */
+  .toolbar {
+    position: sticky; top: 0; z-index: 20;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 12px; margin-bottom: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.35);
+  }
+  .tb-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .tb-row + .tb-row { margin-top: 8px; }
+  .tb-label { color: var(--muted); font-size: 12px; }
+  .tb-spacer { flex: 1 1 auto; }
+
+  .segmented { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .segmented button {
+    background: var(--surface); color: var(--text); border: none; padding: 6px 12px;
+    font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  .segmented button + button { border-left: 1px solid var(--border); }
+  .segmented button.active { background: var(--accent); color: #fff; }
+  .segmented button:hover:not(.active) { color: var(--accent); }
+
+  .sel-count { color: var(--muted); font-size: 12px; }
+
+  /* Facetas — controles compactos rotulados */
+  .tb-facets { align-items: flex-end; }
+  .facet { display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: var(--muted); }
+  .facet > span, .facet > legend { text-transform: uppercase; letter-spacing: .03em; font-size: 10px; }
+  .facet input[type="date"], .facet input[type="number"] {
+    background: var(--surface); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 5px 6px; font-size: 12px; min-height: 32px;
+  }
+  .facet-date input { width: 140px; }
+  .facet-kj input { width: 84px; }
+  .facet-wd {
+    border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px 6px; margin: 0;
+    display: flex; flex-direction: column; gap: 2px;
+  }
+  .facet-wd .wd-boxes { display: flex; gap: 6px; flex-wrap: wrap; }
+  .facet-wd label { display: inline-flex; align-items: center; gap: 3px; color: var(--text); font-size: 12px; text-transform: none; }
+  .facet-wd input { accent-color: var(--accent); }
+
+  /* Tom Select — tema escuro (o CSS vendido é claro por padrão). */
+  .facet .ts-wrapper { min-width: 150px; max-width: 230px; }
+  .ts-wrapper { color: var(--text); }
+  .ts-control {
+    background: var(--surface) !important; color: var(--text);
+    border: 1px solid var(--border) !important; border-radius: 6px !important;
+    box-shadow: none !important; min-height: 32px; font-size: 12px;
+  }
+  .ts-control input, .ts-control input::placeholder { color: var(--muted) !important; }
+  .ts-control > input { color: var(--text) !important; }
+  .ts-wrapper.multi .ts-control .item {
+    background: var(--accent); color: #fff; border-radius: 4px;
+  }
+  .ts-wrapper.multi .ts-control .item .remove { border-left-color: rgba(255,255,255,.35); }
+  .ts-dropdown {
+    background: var(--panel); color: var(--text); border: 1px solid var(--border);
+    box-shadow: 0 4px 14px rgba(0,0,0,.5);
+  }
+  .ts-dropdown .option { color: var(--text); }
+  .ts-dropdown .active { background: var(--accent); color: #fff; }
+  .ts-dropdown .create { color: var(--muted); }
+
+  /* Avançado (SPARQL) */
+  .adv { margin-top: 8px; }
+  .adv summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+  .adv summary:hover { color: var(--text); }
+  .adv .flag { color: var(--accent); font-weight: 600; margin-left: 6px; }
+  #adv-sparql {
+    width: 100%; min-height: 120px; margin-top: 8px; resize: vertical;
+    background: var(--surface); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 8px; font: 11px/1.5 ui-monospace, 'SF Mono', Menlo, monospace;
+  }
+  .adv-actions { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+  .query-status { color: var(--muted); font-size: 12px; }
+  #adv-error { margin-top: 8px; font-size: 12px; }
+
+  /* ── Grade estilo Apple Fotos ─────────────────────────────────────────── */
+  .gallery { display: block; }
+  .empty { color: var(--muted); padding: 40px 0; text-align: center; font-size: 15px; }
+  .group { margin-bottom: 20px; }
+  .group-header {
+    position: sticky; top: 0; z-index: 5;
+    background: var(--bg); padding: 8px 2px; margin-bottom: 6px;
+    display: flex; align-items: baseline; gap: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  .group-header .g-title { font-size: 15px; font-weight: 700; }
+  .group-header .g-count { color: var(--muted); font-size: 12px; }
+  .tiles {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 6px;
+  }
+  .tile {
+    position: relative; aspect-ratio: 1 / 1; border-radius: 6px; overflow: hidden;
+    background: var(--surface); cursor: pointer; border: 1px solid var(--border);
+  }
+  .tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .tile:hover { border-color: var(--accent); }
+  .tile.no-img::after {
+    content: '🖼'; position: absolute; inset: 0; display: flex; align-items: center;
+    justify-content: center; color: var(--muted); font-size: 24px; background: var(--surface);
+  }
+  .tile .badge {
+    position: absolute; left: 6px; bottom: 6px; background: rgba(0,0,0,.6); color: #fff;
+    border-radius: 4px; padding: 0 6px; font-size: 12px; line-height: 18px;
+  }
+  .tile .check {
+    position: absolute; top: 6px; right: 6px; width: 20px; height: 20px; border-radius: 50%;
+    border: 2px solid #fff; background: rgba(0,0,0,.4); display: none;
+  }
+  .gallery.select-mode .tile .check { display: block; }
+  .tile.selected { outline: 3px solid var(--accent); outline-offset: -3px; }
+  .tile.selected .check { background: var(--accent); border-color: #fff; }
+  .tile.selected .check::after {
+    content: '✓'; color: #fff; font-size: 13px; position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  /* ── Lightbox ─────────────────────────────────────────────────────────── */
+  .lightbox { position: fixed; inset: 0; z-index: 100; display: flex; }
+  .lb-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.86); }
+  .lb-close {
+    position: absolute; top: 12px; right: 14px; z-index: 3; background: transparent;
+    border: none; color: #fff; font-size: 34px; line-height: 1; cursor: pointer;
+  }
+  .lb-content {
+    position: relative; z-index: 2; margin: auto; display: flex; gap: 16px;
+    max-width: 96vw; max-height: 94vh; padding: 16px; flex-wrap: wrap;
+    align-items: center; justify-content: center;
+  }
+  .lb-media { flex: 1 1 420px; min-width: 0; display: flex; align-items: center; justify-content: center; }
+  .lb-media img, .lb-media video {
+    max-width: 100%; max-height: 84vh; border-radius: 8px; display: block; background: #000;
+  }
+  .lb-media audio { width: 100%; margin-top: 8px; }
+  .lb-panel {
+    flex: 0 1 320px; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; padding: 14px; max-height: 84vh; overflow: auto;
+  }
+  .lb-meta dl { margin: 0 0 12px; display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; }
+  .lb-meta dt { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .03em; }
+  .lb-meta dd { margin: 0; font-size: 13px; word-break: break-word; }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+  .chip {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 1px 8px; font-size: 11px; color: var(--muted);
+  }
+  .lb-lists { border-top: 1px solid var(--border); padding-top: 12px; margin-top: 4px; }
+  .lb-lists .facet { margin-bottom: 8px; }
+  .lb-panel .btn { width: 100%; margin-top: 8px; }
+  #lb-error { margin-top: 8px; font-size: 12px; }
+
+  /* ── Barra de ação da seleção (fixa embaixo) ──────────────────────────── */
+  .selbar {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 60;
+    background: var(--panel); border-top: 1px solid var(--border);
+    display: flex; align-items: center; gap: 12px; padding: 10px 14px;
+    box-shadow: 0 -2px 12px rgba(0,0,0,.4);
+  }
+  .selbar-count { color: var(--text); font-weight: 600; }
+  .selbar-actions { display: flex; gap: 8px; margin-left: auto; }
+
+  /* ── Modal genérico (adicionar a listas) ──────────────────────────────── */
+  .modal { position: fixed; inset: 0; z-index: 120; display: flex; }
+  .modal-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.7); }
+  .modal-box {
+    position: relative; z-index: 2; margin: auto; width: min(440px, 92vw);
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 18px;
+  }
+  .modal-box h2 { margin: 0 0 6px; font-size: 17px; }
+  .modal-box p { margin: 0 0 12px; }
+  .modal-box select { width: 100%; }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+  #assign-error { margin-top: 10px; font-size: 12px; }
+
+  footer { margin-top: 20px; color: var(--muted); font-size: 11px; }
+</style>
+<link href="./lib/tom-select.min.css" rel="stylesheet">
+<!-- media-query.js é um <script> CLÁSSICO (publica window.PhidroMediaQuery),
+     não um módulo: carregado no <head> antes do módulo abaixo. Requer window.N3
+     já presente na hora de CHAMAR makeStore/buildMediaRecords (garantido por loadN3()). -->
+<script src="./lib/media-query.js"></script>
+</head>
+<body>
+
+<header>
+  <h1>Imagens</h1>
+  <span class="sub">Pedal Hidrográfico — galeria de fotos e vídeos</span>
+  <a href="./index.html">← Mapa</a>
+</header>
+
+<div id="status" role="status" aria-live="polite">Carregando catálogo de mídias…</div>
+
+<div class="toolbar" hidden>
+  <div class="tb-row tb-groups">
+    <span class="tb-label">Agrupar:</span>
+    <div id="tb-group" class="segmented">
+      <button type="button" data-group="tour" class="active">Passeio</button>
+      <button type="button" data-group="day">Dia</button>
+      <button type="button" data-group="month">Mês</button>
+      <button type="button" data-group="year">Ano</button>
+    </div>
+    <div class="tb-spacer"></div>
+    <button id="btn-select" type="button" class="btn">Selecionar</button>
+    <button id="btn-select-all" type="button" class="btn" hidden>Selecionar tudo</button>
+    <span id="sel-count" class="sel-count" hidden>0 selecionadas</span>
+  </div>
+
+  <div class="tb-row tb-facets">
+    <label class="facet"><span>Listas</span><select id="f-lists" multiple placeholder="todas"></select></label>
+    <label class="facet"><span>Autoras</span><select id="f-authors" multiple placeholder="todas"></select></label>
+    <label class="facet"><span>Quem subiu</span><select id="f-uploaders" multiple placeholder="todos"></select></label>
+    <label class="facet"><span>Passeio</span><select id="f-tours" multiple placeholder="todos"></select></label>
+    <label class="facet facet-date"><span>De</span><input type="date" id="f-date-from"></label>
+    <label class="facet facet-date"><span>Até</span><input type="date" id="f-date-to"></label>
+    <label class="facet facet-kj"><span>kJ mín</span><input type="number" id="f-kj-min" min="0" step="10"></label>
+    <label class="facet facet-kj"><span>kJ máx</span><input type="number" id="f-kj-max" min="0" step="10"></label>
+    <fieldset class="facet facet-wd" id="f-weekdays">
+      <legend>Dia da semana</legend>
+      <div class="wd-boxes">
+        <label><input type="checkbox" value="0">dom</label>
+        <label><input type="checkbox" value="1">seg</label>
+        <label><input type="checkbox" value="2">ter</label>
+        <label><input type="checkbox" value="3">qua</label>
+        <label><input type="checkbox" value="4">qui</label>
+        <label><input type="checkbox" value="5">sex</label>
+        <label><input type="checkbox" value="6">sáb</label>
+      </div>
+    </fieldset>
+    <button id="btn-clear" type="button" class="btn btn-ghost">Limpar filtros</button>
+  </div>
+
+  <details id="adv" class="adv">
+    <summary>Avançado (SPARQL) <span id="adv-flag" class="flag" hidden>consulta personalizada</span></summary>
+    <textarea id="adv-sparql" spellcheck="false"></textarea>
+    <div class="adv-actions">
+      <button id="adv-apply" type="button" class="btn">Aplicar consulta</button>
+      <span id="query-status" class="query-status"></span>
+    </div>
+    <div id="adv-error" class="err" hidden></div>
+  </details>
+</div>
+
+<div id="gallery" class="gallery"></div>
+
+<!-- Lightbox -->
+<div id="lightbox" class="lightbox" hidden>
+  <div class="lb-backdrop" id="lb-backdrop"></div>
+  <button class="lb-close" id="lb-close" aria-label="Fechar">×</button>
+  <div class="lb-content">
+    <div class="lb-media" id="lb-media"></div>
+    <div class="lb-panel">
+      <div class="lb-meta" id="lb-meta"></div>
+      <div class="lb-lists">
+        <label class="facet"><span>Listas desta mídia</span><select id="lb-lists-select" multiple placeholder="nenhuma"></select></label>
+        <button id="lb-lists-save" type="button" class="btn">Salvar listas</button>
+        <div id="lb-error" class="err" hidden></div>
+      </div>
+      <button id="lb-map" type="button" class="btn btn-primary">📍 Ver no mapa</button>
+    </div>
+  </div>
+</div>
+
+<!-- Barra de ação da seleção -->
+<div id="selbar" class="selbar" hidden>
+  <span id="selbar-count" class="selbar-count">0 selecionadas</span>
+  <div class="selbar-actions">
+    <button id="sel-lists" type="button" class="btn">＋ Listas</button>
+    <button id="sel-download" type="button" class="btn">Baixar</button>
+    <button id="sel-delete" type="button" class="btn btn-danger">Excluir</button>
+  </div>
+</div>
+
+<!-- Modal: adicionar seleção a listas -->
+<div id="assign-modal" class="modal" hidden>
+  <div class="modal-backdrop" id="assign-backdrop"></div>
+  <div class="modal-box">
+    <h2>Adicionar às listas</h2>
+    <p class="muted">Escolha listas existentes ou digite um nome novo para criar.</p>
+    <select id="assign-select" multiple placeholder="listas…"></select>
+    <div class="modal-actions">
+      <button id="assign-close" type="button" class="btn btn-ghost">Cancelar</button>
+      <button id="assign-apply" type="button" class="btn btn-primary">Adicionar</button>
+    </div>
+    <div id="assign-error" class="err" hidden></div>
+  </div>
+</div>
+
+<script type="module">
+'use strict';
+const $  = (q) => document.querySelector(q);
+const $$ = (q) => Array.from(document.querySelectorAll(q));
+
+const MQ = window.PhidroMediaQuery;   // publicado por ./lib/media-query.js (clássico)
+if (!MQ) {
+  $('#status').innerHTML = '<span class="err">Falha: ./lib/media-query.js não carregou.</span>';
+  throw new Error('PhidroMediaQuery ausente');
+}
+const NS = MQ.NS;
+const PHD = NS.phd, PH = NS.ph, SCHEMA = NS.schema;
+const LIST_PREFIX = PHD + 'list_';
+const TOUR_PREFIX = PHD + 'tour_';
+
+// ── Helpers básicos ─────────────────────────────────────────────────────────
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, (c) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+// Escapa string para literal Turtle (usado ao emitir schema:name inline).
+function ttlEsc(s) {
+  return String(s ?? '').replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+    .replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t');
+}
+const short = (iri) => String(iri || '').split(/[/#]/).pop();
+function debounce(fn, ms) {
+  let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
+}
+// Slug minúsculo p/ IRI de lista nova — IDÊNTICO ao app.js e ao
+// upload_images.html (e à migração da Padrão), pra que a MESMA lista criada em
+// lugares diferentes case na mesma IRI phd:list_<slug>.
+function slugifyList(s) {
+  return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'lista';
+}
+function extDot(url) {
+  const m = /\.([a-z0-9]+)(?:\?|#|$)/i.exec(url || '');
+  return m ? ('.' + m[1].toLowerCase()) : '';
+}
+const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho',
+  'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+function fmtDateTimePt(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d)) return String(iso);
+  return d.toLocaleString('pt-BR');
+}
+
+// ── N3.js (UMD vendored em ./lib/n3.min.js → popula window.N3) ───────────────
+async function loadN3() {
+  if (window.N3) return window.N3;
+  await loadScript('./lib/n3.min.js');
+  return window.N3;
+}
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = src; s.onload = () => resolve(); s.onerror = () => reject(new Error(`falha ao carregar ${src}`));
+    document.head.appendChild(s);
+  });
+}
+// Tom Select — UMD vendored (sem CDN), igual upload_images.html.
+async function loadTomSelect() {
+  if (window.TomSelect) return window.TomSelect;
+  await loadScript('./lib/tom-select.complete.min.js');
+  return window.TomSelect;
+}
+// JSZip carregado sob demanda (só no download) — mesmo CDN dos outros deps pesados.
+async function ensureJSZip() {
+  if (window.JSZip) return window.JSZip;
+  await loadScript('https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js');
+  return window.JSZip;
+}
+
+// ── Modo embutido (iframe do modal do app) ──────────────────────────────────
+// Igual censo.html: esconde título interno e faz o "← Mapa" fechar o modal em
+// vez de navegar o iframe pra index.html (que abriria um segundo mapa).
+function embeddedSetup() {
+  if (window.self === window.top) return;
+  $('header h1')?.style.setProperty('display', 'none');
+  $('header .sub')?.style.setProperty('display', 'none');
+  const back = $('header a[href="./index.html"]');
+  if (back) back.addEventListener('click', (e) => {
+    e.preventDefault();
+    try { window.parent.postMessage({ type: 'phidro-gallery-back' }, '*'); } catch (_) {}
+  });
+}
+
+// ── Carregamento dos dados (manifesto void → tours.ttl + uploads.ttl) ────────
+async function loadData() {
+  const N3 = await loadN3();
+  const VOID = 'http://rdfs.org/ns/void#';
+  let urls = null;
+  // 1) tenta o manifesto e segue cada void:dataDump (URL relativa).
+  try {
+    const manifestUrl = new URL('./data/data_graphs.ttl', location.href).href;
+    const res = await fetch(manifestUrl, { cache: 'no-cache' });
+    if (!res.ok) throw new Error(`data_graphs.ttl HTTP ${res.status}`);
+    const manifestText = await res.text();
+    const mQuads = new N3.Parser().parse(manifestText);
+    urls = [];
+    for (const q of mQuads) {
+      if (q.predicate.value === VOID + 'dataDump') {
+        urls.push(new URL(q.object.value, manifestUrl).href);
+      }
+    }
+    if (!urls.length) throw new Error('manifesto sem void:dataDump');
+  } catch (e) {
+    // 2) fallback: baixa os dois dumps conhecidos diretamente.
+    console.warn('[imagens] manifesto indisponível, usando fallback:', e.message);
+    urls = [
+      new URL('./data/tours.ttl', location.href).href,
+      new URL('./data/uploads.ttl', location.href).href,
+    ];
+  }
+  // Baixa e concatena o texto de todos os grafos, depois parseia tudo junto.
+  const parts = [];
+  for (const u of urls) {
+    try {
+      const r = await fetch(u, { cache: 'no-cache' });
+      if (!r.ok) { console.warn(`[imagens] ${u}: HTTP ${r.status}`); continue; }
+      parts.push(await r.text());
+    } catch (err) { console.warn(`[imagens] ${u}: ${err.message}`); }
+  }
+  const text = parts.join('\n\n');
+  return new N3.Parser().parse(text);
+}
+
+// ── Estado do módulo ─────────────────────────────────────────────────────────
+let store = null, model = null, recordByIri = new Map();
+let currentGroup = 'tour';
+let currentSparql = '';
+let isCustom = false;
+let runSeq = 0;
+let selectMode = false;
+const selected = new Set();          // IRIs de mídia selecionadas
+const pendingNewLists = new Map();   // listIri → nome (listas criadas na sessão, ainda não persistidas)
+let ftLists, ftAuthors, ftUploaders, ftTours, assignTS, lbTS;
+let lbRecord = null;                 // record aberto no lightbox
+
+// Reconstrói store + model + índice a partir dos dados atuais.
+async function loadAndBuild() {
+  const quads = await loadData();
+  store = MQ.makeStore(quads);
+  model = MQ.buildMediaRecords(store);
+  recordByIri = new Map(model.records.map((r) => [r.iri, r]));
+}
+
+// ── Opções de faceta ─────────────────────────────────────────────────────────
+function listOptions() {
+  const opts = Object.entries(model.lists).map(([iri, name]) => ({ value: iri, text: name }));
+  // inclui listas novas ainda-não-persistidas (criadas nesta sessão)
+  for (const [iri, name] of pendingNewLists) if (!model.lists[iri]) opts.push({ value: iri, text: name });
+  opts.sort((a, b) => a.text.localeCompare(b.text));
+  return opts;
+}
+function peopleOptions(iriSet) {
+  const opts = [...iriSet].map((i) => ({ value: i, text: model.people[i] || short(i) }));
+  opts.sort((a, b) => a.text.localeCompare(b.text));
+  return opts;
+}
+function authorIriSet() { const s = new Set(); model.records.forEach((r) => r.authorIris.forEach((i) => s.add(i))); return s; }
+function uploaderIriSet() { const s = new Set(); model.records.forEach((r) => r.uploaderIris.forEach((i) => s.add(i))); return s; }
+function tourOptions() {
+  // Ordenadas por data do passeio, mais novas primeiro.
+  return Object.keys(model.tours)
+    .map((t) => ({ value: t, text: model.tourLabel(t), _d: model.tours[t].date || '' }))
+    .sort((a, b) => b._d.localeCompare(a._d))
+    .map(({ value, text }) => ({ value, text }));
+}
+
+// ── Inicialização dos controles de faceta ────────────────────────────────────
+function initSelect(sel, options, { placeholder, sortByOrder } = {}) {
+  const cfg = { plugins: ['remove_button'], persist: false, options, maxOptions: 2000, placeholder: placeholder || '' };
+  // sortByOrder preserva a ordem em que passamos as opções (usado nos passeios,
+  // que já vêm por data desc); senão o Tom Select ordena alfabético/relevância.
+  if (sortByOrder) cfg.sortField = [{ field: '$order', direction: 'asc' }];
+  return new window.TomSelect(sel, cfg);
+}
+// Select de listas COM criar-na-hora (usado no lightbox e no modal de seleção).
+function initListSelect(sel, options, initialValues) {
+  const ts = new window.TomSelect(sel, {
+    plugins: ['remove_button'], persist: false, createOnBlur: true, options,
+    maxOptions: 2000, placeholder: 'listas…',
+    create(input) {
+      const iri = LIST_PREFIX + slugifyList(input);
+      pendingNewLists.set(iri, input);
+      return { value: iri, text: input };
+    },
+  });
+  if (initialValues && initialValues.length) ts.setValue(initialValues, true);
+  return ts;
+}
+
+function buildFacetControls() {
+  ftLists     = initSelect('#f-lists', listOptions(), { placeholder: 'todas' });
+  ftAuthors   = initSelect('#f-authors', peopleOptions(authorIriSet()), { placeholder: 'todas' });
+  ftUploaders = initSelect('#f-uploaders', peopleOptions(uploaderIriSet()), { placeholder: 'todos' });
+  ftTours     = initSelect('#f-tours', tourOptions(), { placeholder: 'todos', sortByOrder: true });
+  [ftLists, ftAuthors, ftUploaders, ftTours].forEach((ts) => ts.on('change', debouncedRebuild));
+
+  ['#f-date-from', '#f-date-to', '#f-kj-min', '#f-kj-max'].forEach((s) =>
+    $(s).addEventListener('input', debouncedRebuild));
+  $$('#f-weekdays input').forEach((cb) => cb.addEventListener('change', debouncedRebuild));
+
+  // Selects de listas com criar-na-hora (lightbox + modal de seleção).
+  assignTS = initListSelect('#assign-select', listOptions(), []);
+  lbTS = initListSelect('#lb-lists-select', listOptions(), []);
+}
+
+// Re-sincroniza opções de listas após uma mutação (novas listas criadas).
+function syncListOptions() {
+  const opts = listOptions();
+  [ftLists, assignTS, lbTS].forEach((ts) => { if (ts) ts.addOptions(opts); });
+}
+
+// ── Leitura das facetas ──────────────────────────────────────────────────────
+function readFacets() {
+  const num = (sel) => { const v = $(sel).value; return v === '' ? null : Number(v); };
+  const weekdays = $$('#f-weekdays input:checked').map((cb) => Number(cb.value));
+  return {
+    group: currentGroup,
+    lists: ftLists ? ftLists.getValue() : [],
+    authors: ftAuthors ? ftAuthors.getValue() : [],
+    uploaders: ftUploaders ? ftUploaders.getValue() : [],
+    tours: ftTours ? ftTours.getValue() : [],
+    dateFrom: $('#f-date-from').value || null,
+    dateTo: $('#f-date-to').value || null,
+    kjMin: num('#f-kj-min'),
+    kjMax: num('#f-kj-max'),
+    weekdays,
+  };
+}
+
+// ── Pipeline de consulta ─────────────────────────────────────────────────────
+const debouncedRebuild = debounce(rebuildAndRun, 250);
+
+function rebuildAndRun() {
+  const facets = readFacets();
+  const sparql = MQ.buildQueryFromFacets(facets);
+  currentSparql = sparql;
+  isCustom = false;
+  $('#adv-sparql').value = sparql;
+  $('#adv-flag').hidden = true;
+  runAndRender(sparql, facets);
+}
+
+async function runAndRender(sparql, facets) {
+  const seq = ++runSeq;
+  setQueryStatus('carregando consulta…');   // Comunica é lazy (~1.6 MB) na 1ª vez
+  clearError();
+  let rows;
+  try {
+    rows = await MQ.runQuery(store, sparql);
+  } catch (e) {
+    if (seq !== runSeq) return;
+    setQueryStatus('');
+    showError('Erro na consulta: ' + e.message);
+    return;
+  }
+  if (seq !== runSeq) return;   // uma consulta mais nova já começou
+  setQueryStatus('');
+  renderGroups(rows, facets);
+}
+
+function setQueryStatus(msg) { $('#query-status').textContent = msg; }
+function showError(msg) { const el = $('#adv-error'); el.textContent = msg; el.hidden = false; if (!$('#adv').open) $('#adv').open = true; }
+function clearError() { const el = $('#adv-error'); el.textContent = ''; el.hidden = true; }
+
+// ── Agrupamento + render da grade ────────────────────────────────────────────
+function groupOrderStr(key) {
+  // String comparável para ordenar grupos (desc). Vazios vão pro fim.
+  if (key.startsWith(TOUR_PREFIX)) return (model.tours[key] && model.tours[key].date) || '';
+  if (key === 'sem-passeio' || key === '') return '';
+  return key;
+}
+function groupLabel(key) {
+  if (key.startsWith(TOUR_PREFIX)) return model.tourLabel(key);
+  if (key === 'sem-passeio') return 'Sem passeio';
+  if (key === '') return 'Todas';
+  if (/^\d{4}$/.test(key)) return key;
+  if (/^\d{4}-\d{2}$/.test(key)) { const [y, m] = key.split('-'); return `${MESES[+m - 1] || m} de ${y}`; }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(key)) {
+    const d = new Date(key + 'T00:00:00Z');
+    return isNaN(d) ? key : d.toLocaleDateString('pt-BR', { timeZone: 'UTC', day: '2-digit', month: 'long', year: 'numeric' });
+  }
+  return key;
+}
+
+function renderGroups(rows, facets) {
+  const wds = facets.weekdays || [];
+  // Dia-da-semana NÃO existe em SPARQL → filtrado no cliente, aqui.
+  const filterWd = wds.length > 0 && wds.length < 7;
+  const wdSet = new Set(wds);
+
+  const groups = new Map();       // key → { records:[], seen:Set }
+  for (const row of rows) {
+    const iri = row.m && row.m.value;
+    if (!iri) continue;
+    const rec = recordByIri.get(iri);
+    if (!rec) continue;
+    if (filterWd && (rec.weekday == null || !wdSet.has(rec.weekday))) continue;
+    const gk = (row.group && row.group.value) || '';
+    let g = groups.get(gk);
+    if (!g) { g = { records: [], seen: new Set() }; groups.set(gk, g); }
+    if (g.seen.has(iri)) continue;
+    g.seen.add(iri);
+    g.records.push(rec);
+  }
+
+  const keys = [...groups.keys()].sort((a, b) => {
+    const av = groupOrderStr(a), bv = groupOrderStr(b);
+    if (!av && !bv) return 0;
+    if (!av) return 1;
+    if (!bv) return -1;
+    return bv.localeCompare(av);   // desc
+  });
+
+  const gallery = $('#gallery');
+  const total = keys.reduce((n, k) => n + groups.get(k).records.length, 0);
+  if (!total) {
+    gallery.innerHTML = '<div class="empty">Nenhuma imagem encontrada.</div>';
+    updateSelUI();
+    return;
+  }
+  const html = keys.map((k) => {
+    const recs = groups.get(k).records;
+    const tiles = recs.map(tileHtml).join('');
+    return (
+      `<section class="group">` +
+        `<div class="group-header"><span class="g-title">${escapeHtml(groupLabel(k))}</span>` +
+        `<span class="g-count">${recs.length}</span></div>` +
+        `<div class="tiles">${tiles}</div>` +
+      `</section>`
+    );
+  }).join('');
+  gallery.innerHTML = html;
+  updateSelUI();
+}
+
+function tileHtml(rec) {
+  const sel = selected.has(rec.iri) ? ' selected' : '';
+  const noImg = rec.thumbUrl ? '' : ' no-img';
+  const img = rec.thumbUrl
+    ? `<img loading="lazy" src="${escapeHtml(rec.thumbUrl)}" alt="" ` +
+      `onerror="this.style.display='none';this.parentElement.classList.add('no-img')">`
+    : '';
+  const badge = rec.kind === 'video' ? `<span class="badge">▶</span>` : '';
+  const title = escapeHtml(rec.tourLabel || fmtDateTimePt(rec.datetime) || '');
+  return (
+    `<div class="tile${sel}${noImg}" data-iri="${escapeHtml(rec.iri)}" role="button" tabindex="0" title="${title}">` +
+      `${img}${badge}<span class="check"></span>` +
+    `</div>`
+  );
+}
+
+// ── Interação com a grade (delegação) ────────────────────────────────────────
+function wireGallery() {
+  const gallery = $('#gallery');
+  gallery.addEventListener('click', (e) => {
+    const tile = e.target.closest('.tile');
+    if (!tile) return;
+    onTileActivate(tile);
+  });
+  gallery.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const tile = e.target.closest('.tile');
+    if (!tile) return;
+    e.preventDefault();
+    onTileActivate(tile);
+  });
+}
+function onTileActivate(tile) {
+  const iri = tile.dataset.iri;
+  const rec = recordByIri.get(iri);
+  if (!rec) return;
+  if (selectMode) {
+    if (selected.has(iri)) { selected.delete(iri); tile.classList.remove('selected'); }
+    else { selected.add(iri); tile.classList.add('selected'); }
+    updateSelUI();
+  } else {
+    openLightbox(rec);
+  }
+}
+
+// ── Modo seleção ─────────────────────────────────────────────────────────────
+function wireSelect() {
+  $('#btn-select').addEventListener('click', () => {
+    selectMode = !selectMode;
+    $('#gallery').classList.toggle('select-mode', selectMode);
+    document.body.classList.toggle('select-mode', selectMode);
+    $('#btn-select').textContent = selectMode ? 'Concluir' : 'Selecionar';
+    $('#btn-select').classList.toggle('active', selectMode);
+    $('#btn-select-all').hidden = !selectMode;
+    $('#sel-count').hidden = !selectMode;
+    $('#selbar').hidden = !selectMode;
+    if (!selectMode) { selected.clear(); $$('#gallery .tile.selected').forEach((t) => t.classList.remove('selected')); }
+    updateSelUI();
+  });
+  $('#btn-select-all').addEventListener('click', () => {
+    // Seleciona todas as mídias atualmente renderizadas.
+    $$('#gallery .tile').forEach((t) => { selected.add(t.dataset.iri); t.classList.add('selected'); });
+    updateSelUI();
+  });
+}
+function updateSelUI() {
+  const n = selected.size;
+  const label = `${n} selecionada${n === 1 ? '' : 's'}`;
+  $('#sel-count').textContent = label;
+  $('#selbar-count').textContent = label;
+  const none = n === 0;
+  ['#sel-lists', '#sel-download', '#sel-delete'].forEach((s) => { $(s).disabled = none; });
+}
+
+// ── Lightbox ─────────────────────────────────────────────────────────────────
+function wireLightbox() {
+  $('#lb-close').addEventListener('click', closeLightbox);
+  $('#lb-backdrop').addEventListener('click', closeLightbox);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !$('#lightbox').hidden) closeLightbox();
+  });
+  $('#lb-map').addEventListener('click', () => {
+    if (!lbRecord) return;
+    try { window.parent.postMessage({ type: 'phidro-gallery-show', iri: lbRecord.iri }, '*'); } catch (_) {}
+    closeLightbox();
+  });
+  $('#lb-lists-save').addEventListener('click', saveLightboxLists);
+}
+function openLightbox(rec) {
+  lbRecord = rec;
+  $('#lb-error').hidden = true;
+  // Mídia
+  const media = $('#lb-media');
+  if (rec.kind === 'video' && rec.clipUrl) {
+    let html = `<video controls playsinline src="${escapeHtml(rec.clipUrl)}"${rec.thumbUrl ? ` poster="${escapeHtml(rec.thumbUrl)}"` : ''}></video>`;
+    media.innerHTML = html;
+  } else if (rec.largeUrl || rec.fullUrl || rec.thumbUrl) {
+    const src = rec.largeUrl || rec.fullUrl || rec.thumbUrl;
+    let html = `<img src="${escapeHtml(src)}" alt="">`;
+    if (rec.kind === 'video' && rec.audioUrl) html += `<audio controls src="${escapeHtml(rec.audioUrl)}"></audio>`;
+    media.innerHTML = html;
+  } else {
+    media.innerHTML = '<div class="muted">sem prévia</div>';
+  }
+  // Metadados
+  const rows = [];
+  rows.push(['Data', escapeHtml(fmtDateTimePt(rec.datetime))]);
+  if (rec.tourLabel) rows.push(['Passeio', escapeHtml(rec.tourLabel)]);
+  if (rec.authors && rec.authors.length) rows.push(['Autoras', escapeHtml(rec.authors.join(', '))]);
+  if (rec.uploaders && rec.uploaders.length) rows.push(['Quem subiu', escapeHtml(rec.uploaders.join(', '))]);
+  if (rec.energyKj != null) rows.push(['Energia', `${Math.round(rec.energyKj).toLocaleString('pt-BR')} kJ`]);
+  if (rec.duration != null) rows.push(['Duração', `${rec.duration.toFixed(1)} s`]);
+  const chips = (rec.lists || []).map((l) => `<span class="chip">${escapeHtml(model.lists[l] || short(l))}</span>`).join('');
+  let metaHtml = `<dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>`;
+  if (chips) metaHtml += `<div class="chips">${chips}</div>`;
+  $('#lb-meta').innerHTML = metaHtml;
+  // Editor de listas (single-item): reflete o pertencimento atual da mídia.
+  lbTS.addOptions(listOptions());
+  lbTS.setValue(rec.lists || [], true);
+  $('#lightbox').hidden = false;
+}
+function closeLightbox() {
+  $('#lightbox').hidden = true;
+  $('#lb-media').innerHTML = '';   // para o vídeo/áudio ao fechar
+  lbRecord = null;
+}
+// Salva o pertencimento COMPLETO da mídia (substitui isPartOf) via /update-*.
+async function saveLightboxLists() {
+  if (!lbRecord) return;
+  const rec = lbRecord;
+  const listIris = lbTS.getValue();
+  const ttl = membershipTtl(rec, listIris);
+  const fd = new FormData();
+  fd.append('ttl', ttl);
+  fd.append('remove', 'schema:isPartOf');   // troca o pertencimento inteiro
+  const url = rec.kind === 'image' ? `./update-image/${rec.phash}` : `./update-video/${rec.vhash}`;
+  const btn = $('#lb-lists-save');
+  btn.disabled = true; btn.textContent = 'Salvando…';
+  try {
+    const resp = await fetch(url, { method: 'POST', body: fd });
+    const j = await resp.json().catch(() => ({}));
+    if (!resp.ok || j.error) throw new Error(j.error || (j.details ? JSON.stringify(j.details) : 'HTTP ' + resp.status));
+  } catch (e) {
+    const el = $('#lb-error'); el.textContent = 'Falha: ' + e.message; el.hidden = false;
+    btn.disabled = false; btn.textContent = 'Salvar listas';
+    return;
+  }
+  btn.disabled = false; btn.textContent = 'Salvar listas';
+  closeLightbox();
+  await refresh();
+}
+// Fragmento Turtle: pertencimento da mídia + Collections novas inline.
+function membershipTtl(rec, listIris) {
+  const lines = [`@prefix schema: <${SCHEMA}> .`, ''];
+  if (listIris.length) {
+    lines.push(`<${rec.iri}> schema:isPartOf ${listIris.map((l) => `<${l}>`).join(', ')} .`);
+  } else {
+    lines.push('# sem listas (isPartOf removido via remove=schema:isPartOf)');
+  }
+  for (const li of listIris) {
+    if (!model.lists[li]) {
+      const nm = pendingNewLists.get(li) || short(li);
+      lines.push(`<${li}> a schema:Collection ; schema:name "${ttlEsc(nm)}" .`);
+    }
+  }
+  return lines.join('\n') + '\n';
+}
+
+// ── Barra de seleção: adicionar a listas / baixar / excluir ──────────────────
+function selectedRecords() {
+  return [...selected].map((iri) => recordByIri.get(iri)).filter(Boolean);
+}
+function wireSelbar() {
+  $('#sel-lists').addEventListener('click', openAssignModal);
+  $('#sel-download').addEventListener('click', downloadSelected);
+  $('#sel-delete').addEventListener('click', deleteSelected);
+}
+
+// Adicionar a listas (lote) → POST /assign-media-lists.
+function wireAssignModal() {
+  $('#assign-close').addEventListener('click', closeAssignModal);
+  $('#assign-backdrop').addEventListener('click', closeAssignModal);
+  $('#assign-apply').addEventListener('click', applyAssign);
+}
+function openAssignModal() {
+  if (!selected.size) return;
+  $('#assign-error').hidden = true;
+  assignTS.addOptions(listOptions());
+  assignTS.clear(true);
+  $('#assign-modal').hidden = false;
+}
+function closeAssignModal() { $('#assign-modal').hidden = true; }
+async function applyAssign() {
+  const listIris = assignTS.getValue();
+  if (!listIris.length) { closeAssignModal(); return; }
+  const recs = selectedRecords();
+  if (!recs.length) { closeAssignModal(); return; }
+  // Listas que ainda não existem no catálogo → declaradas em newLists.
+  const newLists = listIris.filter((li) => !model.lists[li])
+    .map((li) => ({ iri: li, name: pendingNewLists.get(li) || short(li) }));
+  const body = { iris: recs.map((r) => r.iri), add: listIris, remove: [], newLists };
+  const btn = $('#assign-apply');
+  btn.disabled = true; btn.textContent = 'Adicionando…';
+  try {
+    const resp = await fetch('./assign-media-lists', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    const j = await resp.json().catch(() => ({}));
+    if (!resp.ok || j.error) throw new Error(j.error || 'HTTP ' + resp.status);
+  } catch (e) {
+    const el = $('#assign-error'); el.textContent = 'Falha: ' + e.message; el.hidden = false;
+    btn.disabled = false; btn.textContent = 'Adicionar';
+    return;
+  }
+  btn.disabled = false; btn.textContent = 'Adicionar';
+  closeAssignModal();
+  await refresh();
+}
+
+// Baixar seleção como ZIP (JSZip lazy).
+async function downloadSelected() {
+  const recs = selectedRecords();
+  if (!recs.length) return;
+  const btn = $('#sel-download');
+  btn.disabled = true; btn.textContent = 'Preparando…';
+  let JSZip;
+  try { JSZip = await ensureJSZip(); }
+  catch (e) { btn.disabled = false; btn.textContent = 'Baixar'; showError('JSZip indisponível: ' + e.message); return; }
+  const zip = new JSZip();
+  let done = 0;
+  for (const r of recs) {
+    const files = [];   // [nomeNoZip, url]
+    if (r.kind === 'image') {
+      if (r.largeUrl) files.push([r.phash + (extDot(r.largeUrl) || '.jpg'), r.largeUrl]);
+      if (r.fullUrl)  files.push([r.phash + '_original' + (extDot(r.fullUrl) || '.jpg'), r.fullUrl]);
+    } else {
+      if (r.clipUrl)  files.push([r.vhash + (extDot(r.clipUrl) || '.webm'), r.clipUrl]);
+      if (r.audioUrl) files.push([r.vhash + '_audio' + (extDot(r.audioUrl) || '.webm'), r.audioUrl]);
+    }
+    for (const [name, url] of files) {
+      try {
+        const resp = await fetch(url);
+        if (!resp.ok) continue;
+        zip.file(name, await resp.blob());
+      } catch (_) { /* arquivo indisponível — pula */ }
+    }
+    done++;
+    btn.textContent = `Baixando ${done}/${recs.length}…`;
+  }
+  btn.textContent = 'Compactando…';
+  const blob = await zip.generateAsync({ type: 'blob' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `imagens_${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.zip`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  btn.disabled = false; btn.textContent = 'Baixar';
+}
+
+// Excluir seleção → POST /delete-image|/delete-video.
+async function deleteSelected() {
+  const recs = selectedRecords();
+  if (!recs.length) return;
+  if (!confirm(`Excluir ${recs.length} mídia(s)? Isso remove arquivos e triples e não pode ser desfeito.`)) return;
+  const btn = $('#sel-delete');
+  btn.disabled = true;
+  let done = 0, fail = 0;
+  for (const r of recs) {
+    const url = r.kind === 'image' ? `./delete-image/${r.phash}` : `./delete-video/${r.vhash}`;
+    try { const resp = await fetch(url, { method: 'POST' }); if (!resp.ok) fail++; }
+    catch (_) { fail++; }
+    done++;
+    btn.textContent = `Excluindo ${done}/${recs.length}…`;
+  }
+  btn.textContent = 'Excluir'; btn.disabled = false;
+  selected.clear();
+  await refresh();
+  if (fail) showError(`${fail} exclusão(ões) falharam.`);
+}
+
+// ── Refresh após mutação: recarrega dados, re-roda consulta, avisa o mapa ─────
+async function refresh() {
+  try {
+    await loadAndBuild();
+  } catch (e) {
+    showError('Falha ao recarregar dados: ' + e.message);
+    return;
+  }
+  syncListOptions();
+  try { window.parent.postMessage({ type: 'phidro-gallery-reload' }, '*'); } catch (_) {}
+  runAndRender(currentSparql, readFacets());
+}
+
+// ── Toolbar: grupo, avançado, limpar ─────────────────────────────────────────
+function wireToolbar() {
+  $('#tb-group').addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-group]');
+    if (!btn) return;
+    currentGroup = btn.dataset.group;
+    $$('#tb-group button').forEach((b) => b.classList.toggle('active', b === btn));
+    rebuildAndRun();
+  });
+  $('#adv-apply').addEventListener('click', () => {
+    const sparql = $('#adv-sparql').value;
+    currentSparql = sparql;
+    isCustom = true;
+    $('#adv-flag').hidden = false;
+    runAndRender(sparql, readFacets());   // dia-da-semana ainda é aplicado no cliente
+  });
+  $('#btn-clear').addEventListener('click', () => {
+    ftLists.clear(true); ftAuthors.clear(true); ftUploaders.clear(true); ftTours.clear(true);
+    $('#f-date-from').value = ''; $('#f-date-to').value = '';
+    $('#f-kj-min').value = ''; $('#f-kj-max').value = '';
+    $$('#f-weekdays input').forEach((cb) => { cb.checked = false; });
+    rebuildAndRun();
+  });
+}
+
+// ── Boot ─────────────────────────────────────────────────────────────────────
+(async () => {
+  try {
+    embeddedSetup();
+    await Promise.all([loadN3(), loadTomSelect()]);
+    await loadAndBuild();
+    buildFacetControls();
+    wireToolbar();
+    wireGallery();
+    wireSelect();
+    wireLightbox();
+    wireSelbar();
+    wireAssignModal();
+    $('#status').hidden = true;
+    $('.toolbar').hidden = false;
+    // Visão padrão: agrupado por passeio, sem filtros (mostra TODAS as mídias).
+    rebuildAndRun();
+  } catch (e) {
+    console.error(e);
+    $('#status').innerHTML = `<span class="err">Falha ao iniciar: ${escapeHtml(e.message)}</span>`;
+  }
+})();
+</script>
+</body>
+</html>

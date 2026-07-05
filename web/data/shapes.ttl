@@ -99,6 +99,13 @@ ph:ImageShape a sh:NodeShape ;
         sh:maxCount 1 ;
         sh:datatype xsd:boolean ;
         sh:message "Se declarado, ph:compressed deve ser booleano."@pt ;
+    ] ;
+    sh:property [
+        sh:path schema:isPartOf ;
+        sh:severity sh:Warning ;
+        sh:nodeKind sh:IRI ;
+        sh:class schema:Collection ;
+        sh:message "Se declarada, a lista (schema:isPartOf) deve ser schema:Collection."@pt ;
     ] .
 
 ph:VideoShape a sh:NodeShape ;
@@ -192,6 +199,13 @@ ph:VideoShape a sh:NodeShape ;
         sh:minCount 1 ;
         sh:class schema:Person ;
         sh:message "Vídeo precisa de proveniência (pav:providedBy)."@pt ;
+    ] ;
+    sh:property [
+        sh:path schema:isPartOf ;
+        sh:severity sh:Warning ;
+        sh:nodeKind sh:IRI ;
+        sh:class schema:Collection ;
+        sh:message "Se declarada, a lista (schema:isPartOf) deve ser schema:Collection."@pt ;
     ] .
 
 ph:TourShape a sh:NodeShape ;

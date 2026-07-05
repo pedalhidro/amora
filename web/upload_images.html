@@ -141,6 +141,9 @@
         <label for="d-provider">Quem subiu</label>
         <select multiple id="d-provider" placeholder="busca ou digita…"></select>
 
+        <label for="d-list">Listas (álbuns) <small style="display:inline;color:#888">(opcional; deixe vazio p/ nenhuma)</small></label>
+        <select multiple id="d-list" placeholder="busca ou cria uma lista…"></select>
+
         <label for="d-license">Licença</label>
         <select id="d-license">
           <option value="https://creativecommons.org/licenses/by-sa/4.0/" selected>CC BY-SA 4.0</option>
@@ -540,7 +543,7 @@ async function loadCatalog() {
   } catch (e) {
     throw new Error('N3.js indisponível.');
   }
-  const tours = new Map(), persons = new Map();
+  const tours = new Map(), persons = new Map(), lists = new Map();
   const types = new Map(), titles = new Map(), dts = new Map(), names = new Map();
   const inSE = new Map(), aSer = new Map(), aSeq = new Map();
   // pHashes já presentes no servidor — usados pra rejeitar re-uploads.
@@ -589,8 +592,9 @@ async function loadCatalog() {
       tours.set(s, { title: titles.get(s) || s, dateTime: dts.get(s) || '', assocs });
     }
     if (ts.has(SCHEMA + 'Person')) persons.set(s, { name: names.get(s) || s });
+    if (ts.has(SCHEMA + 'Collection')) lists.set(s, { name: names.get(s) || s.split(/[/#]/).pop() });
   }
-  return { tours, persons, existingPhashes, existingVhashes };
+  return { tours, persons, lists, existingPhashes, existingVhashes };
 }
 
 // ===================== Estado global ===================================
@@ -598,8 +602,13 @@ const tourItems     = [];
 const tourCatalog   = [];                  // { value, ms, label } para auto-detecção
 const personOptions = [];
 const newPersons    = new Map();           // iri → nome
-const cards         = [];                  // [{ index, file, phash, bitmap, elem, authorTs, providerTs, skipAutoDetect }]
+const cards         = [];                  // [{ index, file, phash, bitmap, elem, authorTs, providerTs, listTs, skipAutoDetect }]
 const personSelects = [];                  // todas as instâncias TomSelect ligadas a pessoas
+// Listas (álbuns) — mesmo trio que pessoas: opções, listas novas cunhadas, e
+// todas as instâncias TomSelect ligadas a listas (pra propagar opções novas).
+const listOptions   = [];                  // { value: 'phd:list_x', text: 'Nome' }
+const newLists      = new Map();           // iri → nome
+const listSelects   = [];
 // pHashes (16-hex) das imagens já no servidor — preenchido pelo bootstrap
 // do catálogo. Usado para rejeitar re-uploads antes de chamar o backend.
 const existingPhashes = [];
@@ -627,7 +636,7 @@ let pickerBusy  = false;   // guarda contra re-entrada do handler de #files
 
 // ===================== Bootstrap catálogo ==============================
 try {
-  const { tours, persons, existingPhashes: srvHashes, existingVhashes: srvVHashes } = await loadCatalog();
+  const { tours, persons, lists, existingPhashes: srvHashes, existingVhashes: srvVHashes } = await loadCatalog();
   for (const h of srvHashes) existingPhashes.push(h);
   for (const h of srvVHashes) existingVhashes.push(h);
   for (const [iri, m] of tours) {
@@ -646,6 +655,10 @@ try {
     personOptions.push({ value: shortIRI(iri), text: m.name });
   }
   personOptions.sort((a, b) => a.text.localeCompare(b.text, 'pt-BR'));
+  for (const [iri, m] of lists) {
+    listOptions.push({ value: shortIRI(iri), text: m.name });
+  }
+  listOptions.sort((a, b) => a.text.localeCompare(b.text, 'pt-BR'));
   if (tours.size || persons.size) {
     $('#catalogStatus').innerHTML =
       `<span class="ok">Catálogo: ${tours.size} passeios, ${persons.size} pessoas, ${existingPhashes.length} imagens, ${existingVhashes.length} vídeos.</span>`;
@@ -735,10 +748,264 @@ function destroyPersonSelect(ts) {
   try { ts.destroy(); } catch (_) {}
 }
 
+// ===================== Mint / picker de LISTAS (álbuns) ================
+// Slug minúsculo idêntico ao app.js e ao imagens.html (e à migração da
+// Padrão) — pra que a MESMA lista criada em lugares diferentes case na
+// mesma IRI phd:list_<slug>.
+function slugifyList(name) {
+  return (name || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'lista';
+}
+function mintList(input) {
+  const name = (input || '').trim();
+  if (!name) return null;
+  const iri = `phd:list_${slugifyList(name)}`;
+  if (!newLists.has(iri) && !listOptions.some(o => o.value === iri)) {
+    newLists.set(iri, name);
+    const opt = { value: iri, text: name };
+    listOptions.push(opt);
+    for (const ts of listSelects) ts.addOption(opt);
+  }
+  return { value: iri, text: name };
+}
+function initListSelect(selectEl) {
+  const ts = new TomSelect(selectEl, {
+    options: [...listOptions],
+    valueField: 'value',
+    labelField: 'text',
+    searchField: ['text'],
+    plugins: ['remove_button'],
+    persist: false,
+    create: (input) => mintList(input) || false,
+    render: {
+      option_create: (data, escape) =>
+        `<div class="create">+ criar lista <strong>${escape(data.input)}</strong></div>`,
+    },
+    sortField: { field: 'text', direction: 'asc' },
+    maxOptions: 500,
+  });
+  const origRefresh = ts.refreshOptions.bind(ts);
+  ts.refreshOptions = function (triggerDropdown) {
+    origRefresh(triggerDropdown);
+    const create = this.dropdown_content.querySelector('.create');
+    if (create && create !== this.dropdown_content.lastElementChild) {
+      this.dropdown_content.appendChild(create);
+    }
+  };
+  ts.on('item_add', () => ts.setTextboxValue(''));
+  listSelects.push(ts);
+  return ts;
+}
+function destroyListSelect(ts) {
+  if (!ts) return;
+  const i = listSelects.indexOf(ts);
+  if (i >= 0) listSelects.splice(i, 1);
+  try { ts.destroy(); } catch (_) {}
+}
+
 // Ativa TS no painel único de padrões
-const defaultsTs = { author: null, provider: null };
+const defaultsTs = { author: null, provider: null, list: null };
 defaultsTs.author   = initPersonSelect($('#d-author'));
 defaultsTs.provider = initPersonSelect($('#d-provider'));
+defaultsTs.list     = initListSelect($('#d-list'));
+
+// ===================== Modo edição (?edit=<iri>) =======================
+// Edita metadados de UMA mídia existente SEM reenviar blobs: prefill a partir
+// de uploads.ttl e POST predicate-patch em /update-image|/update-video.
+const EDIT_IRI = new URLSearchParams(location.search).get('edit');
+if (EDIT_IRI) {
+  startEditMode(EDIT_IRI).catch((e) => {
+    $('#cards').innerHTML = `<p style="color:#e66">Não consegui abrir a edição: ${escapeHtml(e.message)}</p>`;
+  });
+}
+
+function xsdOffset(xsd) {
+  const m = /([+-]\d{2}:\d{2}|Z)$/.exec(xsd || '');
+  return m ? (m[1] === 'Z' ? '+00:00' : m[1]) : null;
+}
+
+async function extractMediaFields(iri) {
+  const EXIF = 'http://www.w3.org/2003/12/exif/ns#';
+  const PROV = 'http://www.w3.org/ns/prov#';
+  const PAV  = 'http://purl.org/pav/';
+  const DCT_LIC = 'http://purl.org/dc/terms/license';
+  const kind = iri.includes('/video_') ? 'video' : 'image';
+  const hash = iri.split(/image_|video_/).pop();
+  let Parser; ({ Parser } = await import('https://esm.sh/n3@1.17.4?bundle'));
+  const res = await fetch('./data/uploads.ttl', { cache: 'no-cache' });
+  if (!res.ok) throw new Error('uploads.ttl indisponível (' + res.status + ')');
+  const text = await res.text();
+  const latOf = new Map(), lonOf = new Map();
+  const f = { kind, hash, iri, date: '', offset: null, lat: '', lon: '',
+    bearing: '', focal: '', tour: '', authors: [], providers: [], lists: [],
+    license: '', anon: false, comp: false, found: false };
+  let locTarget = null;
+  for (const q of new Parser().parse(text)) {
+    const s = q.subject.value, p = q.predicate.value, o = q.object.value;
+    if (p === SCHEMA + 'latitude')  latOf.set(s, o);
+    if (p === SCHEMA + 'longitude') lonOf.set(s, o);
+    if (s !== iri) continue;
+    f.found = true;
+    if (p === DCT_DATE) { f.offset = xsdOffset(o); f.date = o.slice(0, 16); }
+    else if (p === SCHEMA + 'locationCreated') locTarget = o;
+    else if (p === EXIF + 'gpsImgDirection') f.bearing = o;
+    else if (p === EXIF + 'focalLengthIn35mmFilm') f.focal = o;
+    else if (p === PH_NS + 'capturedDuring') f.tour = shortIRI(o);
+    else if (p === PROV + 'wasAttributedTo') f.authors.push(shortIRI(o));
+    else if (p === PAV + 'providedBy') f.providers.push(shortIRI(o));
+    else if (p === SCHEMA + 'isPartOf') f.lists.push(shortIRI(o));
+    else if (p === DCT_LIC) f.license = o;
+    else if (p === PH_NS + 'anonymized') f.anon = (o === 'true');
+    else if (p === PH_NS + 'compressed') f.comp = (o === 'true');
+  }
+  if (!f.found) throw new Error('mídia não encontrada no catálogo');
+  if (locTarget) { f.lat = latOf.get(locTarget) || ''; f.lon = lonOf.get(locTarget) || ''; }
+  return f;
+}
+
+async function startEditMode(iri) {
+  const uz = $('#upload-zone'); if (uz) uz.style.display = 'none';
+  document.querySelectorAll('.actions').forEach((a) => { a.style.display = 'none'; });
+  const h1 = document.querySelector('h1'); if (h1) h1.textContent = 'Editar mídia';
+  const lede = document.querySelector('.lede');
+  if (lede) lede.textContent = 'Ajuste os metadados e salve — os arquivos (foto/vídeo) não são reenviados.';
+
+  const f = await extractMediaFields(iri);
+  const isImg = f.kind === 'image';
+  const licOptions = [
+    ['https://creativecommons.org/licenses/by-sa/4.0/', 'CC BY-SA 4.0'],
+    ['https://creativecommons.org/licenses/by-nc-sa/4.0/', 'CC BY-NC-SA 4.0'],
+    ['https://creativecommons.org/licenses/by/4.0/', 'CC BY 4.0'],
+    ['https://creativecommons.org/licenses/by-nc/4.0/', 'CC BY-NC 4.0'],
+    ['https://creativecommons.org/publicdomain/zero/1.0/', 'CC0 1.0'],
+  ].map(([v, t]) => `<option value="${v}"${v === f.license ? ' selected' : ''}>${t}</option>`).join('');
+  const grid = 'style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem"';
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.innerHTML =
+    `<div class="card-section">` +
+      `<h4>Editar — <code>${escapeHtml(shortIRI(iri))}</code></h4>` +
+      `<label>Data/hora</label>` +
+      `<input type="datetime-local" data-e="date" value="${escapeHtml(f.date)}" step="1">` +
+      `<div ${grid}>` +
+        `<div><label>Latitude</label><input type="number" data-e="lat" step="any" value="${escapeHtml(f.lat)}"></div>` +
+        `<div><label>Longitude</label><input type="number" data-e="lon" step="any" value="${escapeHtml(f.lon)}"></div>` +
+      `</div>` +
+      (isImg
+        ? `<div ${grid}>` +
+            `<div><label>Direção (°)</label><input type="number" data-e="bearing" step="any" min="0" max="359.999" value="${escapeHtml(f.bearing)}"></div>` +
+            `<div><label>Focal eq. 35mm</label><input type="number" data-e="focal" step="any" min="0.001" value="${escapeHtml(f.focal)}"></div>` +
+          `</div>`
+        : '') +
+    `</div>` +
+    `<div class="card-section">` +
+      `<h4>Atribuição</h4>` +
+      `<label>Passeio</label><select data-e="tour"><option value="">— nenhum —</option></select>` +
+      `<label>Autoras</label><select multiple data-e="author"></select>` +
+      `<label>Quem subiu</label><select multiple data-e="provider"></select>` +
+      `<label>Listas (álbuns)</label><select multiple data-e="list"></select>` +
+      `<label>Licença</label><select data-e="license">${licOptions}</select>` +
+      (isImg
+        ? `<div class="opts">` +
+            `<label><input type="checkbox" data-e="anon"${f.anon ? ' checked' : ''}> Anonimizada</label>` +
+            `<label><input type="checkbox" data-e="comp"${f.comp ? ' checked' : ''}> Comprimida</label>` +
+          `</div>`
+        : '') +
+    `</div>` +
+    `<div class="card-section">` +
+      `<button type="button" id="edit-save" class="upload-all-btn">💾 Salvar alterações</button>` +
+      `<small id="edit-status" style="margin-left:.5rem"></small>` +
+    `</div>`;
+  $('#cards').appendChild(card);
+
+  populateTourSelect($('[data-e="tour"]', card));
+  $('[data-e="tour"]', card).value = f.tour || '';
+  const authorTs   = initPersonSelect($('[data-e="author"]',   card));
+  const providerTs = initPersonSelect($('[data-e="provider"]', card));
+  const listTs     = initListSelect($('[data-e="list"]', card));
+  if (f.authors.length)   authorTs.setValue(f.authors);
+  if (f.providers.length) providerTs.setValue(f.providers);
+  if (f.lists.length)     listTs.setValue(f.lists);
+
+  const orig = { lat: f.lat, lon: f.lon };
+  $('#edit-save', card).addEventListener('click', async () => {
+    const status = $('#edit-status', card);
+    status.textContent = 'Salvando…';
+    try {
+      await saveMediaEdit(f, card, authorTs, providerTs, listTs, orig);
+      status.innerHTML = '<span style="color:#6c6">Salvo! Feche esta janela pra atualizar o mapa.</span>';
+    } catch (e) {
+      status.innerHTML = `<span style="color:#e66">Erro: ${escapeHtml(e.message)}</span>`;
+    }
+  });
+}
+
+async function saveMediaEdit(f, card, authorTs, providerTs, listTs, orig) {
+  const val = (sel) => $(`[data-e="${sel}"]`, card).value.trim();
+  const dateXsd = localToXsdDateTime(val('date'), f.offset);
+  if (!dateXsd) throw new Error('data/hora inválida');
+  const lat = num(val('lat')), lon = num(val('lon'));
+  const tour = val('tour'), license = val('license');
+  const authors = authorTs.getValue(), providers = providerTs.getValue(), lists = listTs.getValue();
+  const isImg = f.kind === 'image';
+  const bearing = isImg ? num($('[data-e="bearing"]', card).value) : '';
+  const focal   = isImg ? num($('[data-e="focal"]', card).value) : '';
+  const anon = isImg && $('[data-e="anon"]', card).checked;
+  const comp = isImg && $('[data-e="comp"]', card).checked;
+
+  const iriCurie = shortIRI(f.iri);
+  const P = [`dcterms:date "${dateXsd}"^^xsd:dateTime`, `dcterms:license <${license}>`];
+  const remove = [];
+  // GPS — só mexe se mudou (evita orfanar o bnode de geo antigo).
+  const gpsChanged = String(lat) !== String(orig.lat) || String(lon) !== String(orig.lon);
+  let geoNode = '';
+  if (gpsChanged) {
+    if (lat === '' || lon === '') throw new Error('GPS (lat/lon) obrigatório');
+    P.push(`schema:locationCreated ${iriCurie}_geo`);
+    geoNode = `\n${iriCurie}_geo a schema:GeoCoordinates ;\n    schema:latitude "${lat}"^^xsd:decimal ;\n    schema:longitude "${lon}"^^xsd:decimal .`;
+  }
+  if (isImg) {
+    if (bearing !== '') P.push(`exif:gpsImgDirection "${bearing}"^^xsd:decimal`); else remove.push('exif:gpsImgDirection');
+    if (focal !== '')   P.push(`exif:focalLengthIn35mmFilm "${focal}"^^xsd:decimal`); else remove.push('exif:focalLengthIn35mmFilm');
+    if (anon) P.push('ph:anonymized true'); else remove.push('ph:anonymized');
+    if (comp) P.push('ph:compressed true'); else remove.push('ph:compressed');
+  }
+  if (tour) P.push(`ph:capturedDuring ${tour}`); else remove.push('ph:capturedDuring');
+  if (authors.length)   for (const a of authors)   P.push(`prov:wasAttributedTo ${a}`); else remove.push('prov:wasAttributedTo');
+  if (providers.length) for (const p of providers) P.push(`pav:providedBy ${p}`);        else remove.push('pav:providedBy');
+  if (lists.length)     for (const l of lists)     P.push(`schema:isPartOf ${l}`);        else remove.push('schema:isPartOf');
+
+  const prefixes = [
+    '@prefix dcterms: <http://purl.org/dc/terms/> .',
+    '@prefix exif:    <http://www.w3.org/2003/12/exif/ns#> .',
+    '@prefix pav:     <http://purl.org/pav/> .',
+    '@prefix ph:      <https://pedalhidrografi.co/terms#> .',
+    '@prefix phd:     <https://pedalhidrografi.co/data/> .',
+    '@prefix prov:    <http://www.w3.org/ns/prov#> .',
+    '@prefix schema:  <https://schema.org/> .',
+    '@prefix xsd:     <http://www.w3.org/2001/XMLSchema#> .',
+  ].join('\n');
+  const usedP = [...authors, ...providers].filter((v) => newPersons.has(v));
+  const personDecls = usedP.length
+    ? '\n# Pessoas novas\n' + usedP.map((iri) =>
+        `${iri} a schema:Person ;\n    schema:alternateName "${turtle_escape(newPersons.get(iri))}" .`).join('\n\n') + '\n'
+    : '';
+  const listDecls = buildNewListDecls(lists);
+  const body = `${iriCurie}\n    ${P.join(' ;\n    ')} .${geoNode}`;
+  const ttl = `${prefixes}\n${personDecls}${listDecls}\n${body}\n`;
+
+  const fd = new FormData();
+  fd.append('ttl', ttl);
+  fd.append('remove', remove.join(','));
+  const url = (f.kind === 'image' ? './update-image/' : './update-video/') + encodeURIComponent(f.hash);
+  const res = await fetch(url, { method: 'POST', body: fd });
+  if (!res.ok) {
+    let msg = `HTTP ${res.status}`;
+    try { const j = await res.json(); msg = (j.details && j.details.join('; ')) || j.error || msg; } catch (e) {}
+    throw new Error(msg);
+  }
+  return res.json();
+}
 
 function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
 
@@ -750,6 +1017,13 @@ function personValues(card, field) {
   const ts = card[field + 'Ts'];
   if (ts) return ts.getValue();
   return card['pending' + capitalize(field) + 's'] || [];
+}
+
+// Idem para listas do card (antes da ativação, ficam em card.pendingLists).
+function listValues(card) {
+  const ts = card.listTs;
+  if (ts) return ts.getValue();
+  return card.pendingLists || [];
 }
 
 // ===================== Ativação preguiçosa de cards (A3) ================
@@ -783,8 +1057,10 @@ function activateCard(card) {
 
   card.authorTs   = initPersonSelect($('[data-field="author"]',   card.elem));
   card.providerTs = initPersonSelect($('[data-field="provider"]', card.elem));
+  card.listTs     = initListSelect($('[data-field="list"]', card.elem));
   if (card.pendingAuthors?.length)   card.authorTs.setValue(card.pendingAuthors);
   if (card.pendingProviders?.length) card.providerTs.setValue(card.pendingProviders);
+  if (card.pendingLists?.length)     card.listTs.setValue(card.pendingLists);
 
   if (card.kind === 'video') {
     const preview = $('.card-video-preview', card.elem);
@@ -889,6 +1165,9 @@ function buildCardElem(displayIdx, file, thumbBlob) {
 
       <label>Quem subiu</label>
       <select multiple data-field="provider" placeholder="busca ou digita…"></select>
+
+      <label>Listas (álbuns)</label>
+      <select multiple data-field="list" placeholder="busca ou cria uma lista…"></select>
 
       <label>Licença</label>
       <select data-field="license">
@@ -1010,6 +1289,9 @@ function buildVideoCardElem(displayIdx, file) {
 
       <label>Quem subiu</label>
       <select multiple data-field="provider" placeholder="busca ou digita…"></select>
+
+      <label>Listas (álbuns)</label>
+      <select multiple data-field="list" placeholder="busca ou cria uma lista…"></select>
 
       <label>Licença</label>
       <select data-field="license">
@@ -1468,17 +1750,18 @@ async function createImageCard(file, defaults) {
   const card = {
     kind: 'image',
     index: cardCounter, file, phash, thumbBlob, elem,
-    authorTs: null, providerTs: null, skipAutoDetect: false,
-    pendingAuthors: [], pendingProviders: [], activated: false,
+    authorTs: null, providerTs: null, listTs: null, skipAutoDetect: false,
+    pendingAuthors: [], pendingProviders: [], pendingLists: [], activated: false,
     exifTzOffset: null,   // preenchido se o EXIF trouxer OffsetTimeOriginal (D4)
   };
   cards.push(card);
 
-  // Tom Select (autoras/quem subiu) só é montado na ativação do card (A3) —
-  // até lá os padrões do lote ficam guardados aqui e são aplicados via
+  // Tom Select (autoras/quem subiu/listas) só é montado na ativação do card
+  // (A3) — até lá os padrões do lote ficam guardados aqui e são aplicados via
   // setValue em activateCard.
   card.pendingAuthors   = defaults.authors   || [];
   card.pendingProviders = defaults.providers || [];
+  card.pendingLists     = defaults.lists     || [];
   scheduleCardActivation(card);
 
   // Aplica padrões do lote em que foi adicionado
@@ -1593,8 +1876,8 @@ async function createVideoCard(file, defaults) {
     index: cardCounter, file, elem,
     phash: vhash,           // alinha o nome com cards de imagem pra dedup compartilhada
     clipId: vhash,          // IRI: phd:video_<vhash>
-    authorTs: null, providerTs: null, skipAutoDetect: false,
-    pendingAuthors: [], pendingProviders: [], activated: false,
+    authorTs: null, providerTs: null, listTs: null, skipAutoDetect: false,
+    pendingAuthors: [], pendingProviders: [], pendingLists: [], activated: false,
     duration: 0,
     processed: null,        // { tStart, tEnd, audioOnly, thumb, audio, blob360, blob720 } — cache do último processamento local (A6)
     uploaded: false,
@@ -1602,10 +1885,11 @@ async function createVideoCard(file, defaults) {
   cards.push(card);
   $('.hash', elem).textContent = `pHash: ${vhash}`;
 
-  // Tom Select (autoras/quem subiu) e a prévia de vídeo só são montadas na
-  // ativação do card (A3) — ver activateCard/scheduleCardActivation.
+  // Tom Select (autoras/quem subiu/listas) e a prévia de vídeo só são montadas
+  // na ativação do card (A3) — ver activateCard/scheduleCardActivation.
   card.pendingAuthors   = defaults.authors   || [];
   card.pendingProviders = defaults.providers || [];
+  card.pendingLists     = defaults.lists     || [];
   scheduleCardActivation(card);
 
   // Padrões do lote
@@ -1733,6 +2017,7 @@ function readDefaults() {
     comp:      $('#d-comp').checked,
     authors:   defaultsTs.author.getValue(),
     providers: defaultsTs.provider.getValue(),
+    lists:     defaultsTs.list.getValue(),
   };
 }
 
@@ -1879,6 +2164,7 @@ function buildImageBlock(card) {
   const comp    = $('[data-field="comp"]',    elem).checked;
   const authors   = personValues(card, 'author');
   const providers = personValues(card, 'provider');
+  const lists     = listValues(card);
 
   const id    = `phd:image_${card.phash}`;
   // Nós aninhados como IRIs derivadas (`<id>_hash`, `<id>_geo`) em vez de
@@ -1896,6 +2182,7 @@ function buildImageBlock(card) {
   if (tour)           props.push(`ph:capturedDuring ${tour}`);
   for (const a of authors)   props.push(`prov:wasAttributedTo ${a}`);
   for (const p of providers) props.push(`pav:providedBy ${p}`);
+  for (const l of lists)     props.push(`schema:isPartOf ${l}`);
   if (anon) props.push(`ph:anonymized true`);
   if (comp) props.push(`ph:compressed true`);
   // schema:encodingFormat só quando o original mantém extensão não-jpg (HEIC no
@@ -1939,7 +2226,19 @@ function buildSingleImageTtl(card) {
     `${iri} a schema:Person ;\n    schema:alternateName "${turtle_escape(newPersons.get(iri))}" .`
   ).join('\n\n');
   const decls = personDecls ? `\n# Pessoas novas\n${personDecls}\n` : '';
-  return `${prefixes}\n${decls}\n${buildImageBlock(card).ttl}\n`;
+  const listDecls = buildNewListDecls(listValues(card));
+  return `${prefixes}\n${decls}${listDecls}\n${buildImageBlock(card).ttl}\n`;
+}
+
+// Declarações inline das LISTAS novas usadas (schema:Collection + schema:name),
+// no mesmo espírito das pessoas novas — persistem como sujeitos à parte.
+function buildNewListDecls(listIris) {
+  const used = (listIris || []).filter(iri => newLists.has(iri));
+  if (!used.length) return '';
+  const body = used.map(iri =>
+    `${iri} a schema:Collection ;\n    schema:name "${turtle_escape(newLists.get(iri))}" .`
+  ).join('\n\n');
+  return `\n# Listas novas\n${body}\n`;
 }
 
 // Constrói o bloco TTL para 1 clipe (ph:Video).
@@ -1957,6 +2256,7 @@ function buildClipBlock(card) {
   const audioOnly = $('[data-field="audio-only"]', elem).checked;
   const authors   = personValues(card, 'author');
   const providers = personValues(card, 'provider');
+  const lists     = listValues(card);
   // Trim window — duração é o que de fato vai parar no arquivo.
   const tStart = parseFloat($('[data-field="trim-start"]', elem).value) || 0;
   const tEnd   = parseFloat($('[data-field="trim-end"]',   elem).value) || 0;
@@ -1988,6 +2288,7 @@ function buildClipBlock(card) {
   if (tour)         props.push(`ph:capturedDuring ${tour}`);
   for (const a of authors)   props.push(`prov:wasAttributedTo ${a}`);
   for (const p of providers) props.push(`pav:providedBy ${p}`);
+  for (const l of lists)     props.push(`schema:isPartOf ${l}`);
   const body = props.map(p => `    ${p}`).join(' ;\n');
   const derived =
     `${iri}_geo a schema:GeoCoordinates ;\n` +
@@ -2015,7 +2316,8 @@ function buildSingleClipTtl(card) {
     `${iri} a schema:Person ;\n    schema:alternateName "${turtle_escape(newPersons.get(iri))}" .`
   ).join('\n\n');
   const decls = personDecls ? `\n# Pessoas novas\n${personDecls}\n` : '';
-  return `${prefixes}\n${decls}\n${buildClipBlock(card).ttl}\n`;
+  const listDecls = buildNewListDecls(listValues(card));
+  return `${prefixes}\n${decls}${listDecls}\n${buildClipBlock(card).ttl}\n`;
 }
 
 // Constrói as 3 variantes da imagem em blobs (mesma lógica do kit ZIP do
