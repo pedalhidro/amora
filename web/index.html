@@ -161,7 +161,6 @@
     <aside id="sidebar" class="sidebar">
       <div class="sidebar-head">
         <h2>Rotas</h2>
-        <a class="sidebar-link" href="./censo.html" id="censo-link" title="Métricas e tabela do censo hidrográfico">Censo →</a>
       </div>
       <div id="routes-status" class="status" role="status" aria-live="polite">Carregando…</div>
 
@@ -193,6 +192,13 @@
               <dd>
                 <ul>
                   <li>Página <strong>Pessoas</strong>: agora cada fato é uma galeria de miniaturas — os passeios também viram miniaturas (arte de divulgação → senão código da série → senão o título), <strong>destacados em amarelo</strong>. Os grupos <em>Autoria de</em> e <em>Descreveu</em> ficaram recolhíveis; nomes divergentes entre arquivos são sinalizados.</li>
+                </ul>
+              </dd>
+              <dt>05/07/2026 · v323</dt>
+              <dd>
+                <ul>
+                  <li>Modais sem barra de título por padrão — economizam espaço e fecham clicando fora ou com Esc.</li>
+                  <li>O acesso ao <strong>Censo</strong> saiu do painel de Rotas e virou um botão dentro do menu <em>⬆ Subir</em>. No Censo: <em>Pessoas</em> agora é um botão ao lado de <em>Cadastrar passeio</em>; carimbo de geração em ISO 8601 (fuso de São Paulo) apontando a fonte dos dados.</li>
                 </ul>
               </dd>
               <dt>05/07/2026 · v322</dt>
@@ -1352,6 +1358,7 @@
         <div class="subir-modal-body">
           <button type="button" id="subir-upload-media" class="subir-action">📤 Enviar fotos/vídeos</button>
           <button type="button" id="subir-new-tour" class="subir-action">🚵 Cadastrar passeio</button>
+          <button type="button" id="subir-censo" class="subir-action">📊 Censo hidrográfico</button>
         </div>
       </div>
     </div>

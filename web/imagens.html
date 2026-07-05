@@ -291,7 +291,6 @@
 <header>
   <h1>Imagens</h1>
   <span class="sub">Pedal Hidrográfico — galeria de fotos e vídeos</span>
-  <a href="./index.html">← Mapa</a>
 </header>
 
 <div id="status" role="status" aria-live="polite">Carregando catálogo de mídias…</div>
@@ -477,17 +476,11 @@ async function ensureJSZip() {
 }
 
 // ── Modo embutido (iframe do modal do app) ──────────────────────────────────
-// Igual censo.html: esconde título interno e faz o "← Mapa" fechar o modal em
-// vez de navegar o iframe pra index.html (que abriria um segundo mapa).
+// Embutida no iframe do app: o modal não tem mais barra de título própria, então
+// o título interno (<h1>/subtítulo) aparece normalmente e serve de título do
+// modal. Fecha por clique fora / Esc, como os modais de Enviar/Cadastrar passeio.
 function embeddedSetup() {
   if (window.self === window.top) return;
-  $('header h1')?.style.setProperty('display', 'none');
-  $('header .sub')?.style.setProperty('display', 'none');
-  const back = $('header a[href="./index.html"]');
-  if (back) back.addEventListener('click', (e) => {
-    e.preventDefault();
-    try { window.parent.postMessage({ type: 'phidro-gallery-back' }, '*'); } catch (_) {}
-  });
 }
 
 // ── Carregamento dos dados (manifesto void → tours.ttl + uploads.ttl) ────────

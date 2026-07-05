@@ -3514,6 +3514,10 @@ document.getElementById('subir-new-tour')?.addEventListener('click', () => {
   closeSubirModal();
   openTourModal();
 });
+document.getElementById('subir-censo')?.addEventListener('click', () => {
+  closeSubirModal();
+  openCensoModal();
+});
 
 // ─── Modal de Configurações ───────────────────────────────────────────────
 const settingsBtn        = document.getElementById('settings-btn');
