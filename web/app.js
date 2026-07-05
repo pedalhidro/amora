@@ -5861,15 +5861,19 @@ const DEFAULT_PARAMS = {
   // SUV (a potência em descida pode ser NEGATIVA — freio ativo, o SUV não
   // deixa a gravidade acelerá-lo livre como a bike faz).
   suvCompareEnabled: true,
+  // Defaults calibrados p/ ~10,7 km/L no plano (meta 10 ± 2 km/L com gasolina
+  // a 32.000 kJ/L), com valores de literatura pra um SUV a gasolina em São
+  // Paulo — ver docs/car_efficiency_methodology.md.
   carMass: 5000,           // kg
-  carCrr: 0.013,
-  carCda: 1.1,             // m²
-  carKEff: 0.12,           // 0..1 — eficiência do motor a combustão
-  carEpsilon: 0.5,         // 0..1 — recuperação de energia na descida
-  carPowerAscent: 50000,   // W — potência em subida (> +limiar)
-  carPowerFlat: 25000,     // W — potência em plano (±limiar)
-  carPowerDescent: 5000,   // W — potência em descida (< −limiar)
-  carSlopeFlatThreshold: 0.02, // 0..1 — limiar de plano próprio do SUV (±2%)
+  carCrr: 0.013,           // rolamento no asfalto (0,010–0,015 p/ pneus de SUV)
+  carCda: 1.1,             // m² — Cd~0,38 × área frontal ~2,9 m² (SUV grande/boxy)
+  carKEff: 0.28,           // 0..1 — eficiência tanque→roda em cruzeiro (0,25–0,30)
+  carEpsilon: 0.40,        // 0..1 — combustível evitado na descida; baixo p/ SP (trânsito para
+                           //        toda hora + grades rasos → motor segue queimando; DFCO raro)
+  carPowerAscent: 30000,   // W — potência em subida (> +limiar): segura ~60 km/h a +2%
+  carPowerFlat: 15000,     // W — potência em plano (±limiar): cruzeiro ~65 km/h
+  carPowerDescent: 0,      // W — potência em descida (< −limiar): pé fora do acelerador (DFCO)
+  carSlopeFlatThreshold: 0.02, // 0..1 — limiar de plano do SUV (±2%): grade de equilíbrio do coasting
   // Escala a energia mecânica da bike ("nas pernas") pra energia metabólica
   // (comida) — eficiência humana ~25% → ~4×. Usado só na comparação com o SUV.
   bikeMetabolicFactor: 4,
