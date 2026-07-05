@@ -126,7 +126,17 @@
     display: flex;
     flex-direction: column;
     gap: .25rem;
+    transition: background .2s;
   }
+  /* Fundo do card reflete o estado de envio: amarelo=pendente, verde=enviado,
+     vermelho=erro. */
+  .card.card-pending  { background: #fff9e0; }
+  .card.card-uploaded { background: #e9f7e9; }
+  .card.card-error    { background: #fdeaea; }
+  /* Quando TODAS as imagens foram enviadas com sucesso, o fundo do modal
+     inteiro (o corpo desta página no iframe) fica azul-claro. */
+  body.all-uploaded { background: #e6f1fb; }
+  body { transition: background .2s; }
   .card-header { display: flex; gap: .5rem; align-items: center; }
   .card-thumb {
     width: 56px; height: 56px;
@@ -1428,6 +1438,8 @@ function addThumbToGrid(card) {
   thumbGridEl.appendChild(btn);
   updateCarouselNav();
   escalateZoneState(1);   // adicionou imagem → grupo fica verde (se ainda não amarelo/vermelho)
+  if (!card.uploaded) setCardBg(card, 'pending');   // card novo = pendente (amarelo)
+  document.body.classList.remove('all-uploaded');   // novo card → não é mais "tudo enviado"
 }
 // Atualiza a src da miniatura (usado quando o thumb do vídeo fica pronto).
 function setGridThumbSrc(card, url) { if (card.gridThumb) card.gridThumb.src = url; }
@@ -2274,6 +2286,7 @@ function clearAllCards() {
   setUploadAllStatus('');
   updateCarouselNav();
   resetZoneState();                            // volta o grupo pra cor neutra
+  document.body.classList.remove('all-uploaded');  // limpa o azul de "tudo enviado"
 }
 
 // Botão "Limpar todos os cards"
@@ -2534,12 +2547,18 @@ async function buildVariants(card) {
 // ===================== Upload de uma foto ==============================
 const UPLOAD_URL = './upload-image';   // mesma origem (o backend serve este HTML)
 
+// Fundo do card por estado: 'pending' (amarelo), 'uploaded' (verde), 'error' (vermelho).
+function setCardBg(card, state) {
+  card.elem.classList.remove('card-pending', 'card-uploaded', 'card-error');
+  card.elem.classList.add(`card-${state}`);
+}
 function setCardStatus(card, label, kind = '') {
   const el = $('.card-send-status', card.elem);
   if (!el) return;
   el.textContent = label;
   el.className = `card-send-status ${kind}`;
-  if (kind === 'err') escalateZoneState(3);   // erro num card → grupo fica vermelho
+  if (kind === 'ok')  setCardBg(card, 'uploaded');   // enviado → card verde
+  if (kind === 'err') { setCardBg(card, 'error'); escalateZoneState(3); }  // erro → card vermelho + grupo vermelho
 }
 function setCardSendEnabled(card, enabled) {
   const btn = $('.card-send', card.elem);
@@ -2701,6 +2720,9 @@ async function uploadAll() {
       `<span class="ok">${ok} enviada(s)</span>` +
       (fail ? ` · <span class="err">${fail} com erro</span>` : ''),
     );
+    // Todas enviadas sem erro (e nenhum card pendente restante) → modal azul.
+    const allDone = fail === 0 && cards.every(c => c.uploaded);
+    document.body.classList.toggle('all-uploaded', allDone);
   });
   $$('.upload-all-btn').forEach((btn) => { btn.disabled = false; });
 }
