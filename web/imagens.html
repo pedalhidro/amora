@@ -1304,10 +1304,68 @@ function wireToolbar() {
     galleryLayout = btn.dataset.layout;
     try { localStorage.setItem('phidro:galleryLayout', galleryLayout); } catch (_) {}
     $$('#tb-layout button').forEach((b) => b.classList.toggle('active', b === btn));
-    applyGalleryLayout();
+    if (galleryWrap || overlayGroups) rerender();   // estrutura do DOM muda (contínuo)
+    else applyGalleryLayout();
   });
+  // Zoom das miniaturas: "+" = maiores (menos colunas), "−" = menores (mais).
+  function updateZoomButtons() {
+    $('#zoom-in').disabled = galleryZoom <= 0;                          // já no maior (1 col)
+    $('#zoom-out').disabled = galleryZoom >= GALLERY_COLS.length - 1;   // já no menor (36 col)
+  }
+  function setZoom(idx) {
+    galleryZoom = Math.max(0, Math.min(GALLERY_COLS.length - 1, idx));
+    try { localStorage.setItem('phidro:galleryZoom', String(galleryZoom)); } catch (_) {}
+    applyGalleryLayout();
+    if (overlayGroups) requestAnimationFrame(drawGroupPolygons);   // grade mudou → redesenha
+    updateZoomButtons();
+  }
+  $('#zoom-in').addEventListener('click', () => setZoom(galleryZoom - 1));
+  $('#zoom-out').addEventListener('click', () => setZoom(galleryZoom + 1));
+  updateZoomButtons();
+  // Toggle "Contínuo" (grupos contornados por polígono, sem quebrar o fluxo).
+  // Compatível com grade quadrada E colagem.
+  const syncWrapBtn = () => {
+    $('#tb-wrap').classList.toggle('active', galleryWrap);
+    $('#tb-wrap').setAttribute('aria-pressed', String(galleryWrap));
+  };
+  syncWrapBtn();
+  $('#tb-wrap').addEventListener('click', () => {
+    galleryWrap = !galleryWrap;
+    try { localStorage.setItem('phidro:galleryWrap', galleryWrap ? '1' : '0'); } catch (_) {}
+    syncWrapBtn();
+    rerender();
+  });
+  // Teclado: +/= aumenta, -/_ diminui (ignora ao digitar em campos, com o
+  // lightbox aberto, ou com Ctrl/Cmd — que é o zoom do navegador).
+  document.addEventListener('keydown', (e) => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const t = e.target;
+    if (t && ((t.matches && t.matches('input, textarea, select')) || t.isContentEditable)) return;
+    if (!$('#lightbox').hidden) return;
+    if (e.key === '+' || e.key === '=') { setZoom(galleryZoom - 1); e.preventDefault(); }
+    else if (e.key === '-' || e.key === '_') { setZoom(galleryZoom + 1); e.preventDefault(); }
+  });
+  // Pinça (2 dedos) na galeria = zoom das miniaturas, tipo Apple Fotos:
+  // afastar os dedos aumenta (menos colunas), aproximar diminui (mais colunas).
+  // Passo a cada ~30% de variação da distância; o gesto continua a partir do
+  // novo tamanho. touch-action:pan-x pan-y (no CSS) impede o zoom nativo aqui.
+  const gallery = $('#gallery');
+  let pinchDist0 = 0;
+  const touchDist = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+  gallery.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 2) pinchDist0 = touchDist(e.touches);
+  }, { passive: true });
+  gallery.addEventListener('touchmove', (e) => {
+    if (e.touches.length !== 2 || !pinchDist0) return;
+    e.preventDefault();   // segura a rolagem/zoom nativo durante a pinça
+    const ratio = touchDist(e.touches) / pinchDist0;
+    if (ratio > 1.3) { setZoom(galleryZoom - 1); pinchDist0 = touchDist(e.touches); }
+    else if (ratio < 0.77) { setZoom(galleryZoom + 1); pinchDist0 = touchDist(e.touches); }
+  }, { passive: false });
+  gallery.addEventListener('touchend', (e) => { if (e.touches.length < 2) pinchDist0 = 0; });
   window.addEventListener('resize', debounce(() => {
     if (galleryLayout === 'collage') layoutAllJustified();
+    if (overlayGroups) drawGroupPolygons();
     refreshTimelineActive();
   }, 120));
 }
