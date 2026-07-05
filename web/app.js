@@ -8964,6 +8964,10 @@ function fmtDistCompact(meters) {
   return `${(meters / 1000).toFixed(1).replace('.', ',')} km`;
 }
 
+// Poder calorífico da gasolina — usado só pra converter a energia de
+// combustível do SUV (carKJ) numa estimativa de litros consumidos.
+const GASOLINE_KJ_PER_LITER = 32000;
+
 function updateMetrics() {
   const sim = simulateRide(params);
   const fmt = (n, d = 1) => n.toFixed(d).replace('.', ',');
@@ -8985,11 +8989,12 @@ function updateMetrics() {
   const fPlusPct = (sim.fPlus * 100).toFixed(0);
   const epsPct = (sim.epsUsed * 100).toFixed(0);
   const kEffPct = (sim.kEff * 100).toFixed(0);
-  let carKJ = 0, carVAscentKmh = 0, carVFlatKmh = 0, carVDescentKmh = 0;
+  let carKJ = 0, carLiters = 0, carVAscentKmh = 0, carVFlatKmh = 0, carVDescentKmh = 0;
   let bikeMetabolicKJ = 0, bikeVsCarRatio = 0, carKEffPct = '0';
   if (params.suvCompareEnabled) {
     const carSim = carEnergyJ(params);
     carKJ = carSim.energyJ / 1000;
+    carLiters = carKJ / GASOLINE_KJ_PER_LITER;
     carVAscentKmh = (carSim.vAscent * 3600) / 1000;
     carVFlatKmh = (carSim.vFlat * 3600) / 1000;
     carVDescentKmh = (carSim.vDescent * 3600) / 1000;
@@ -9007,7 +9012,7 @@ function updateMetrics() {
   const thrPct = (params.slopeFlatThreshold * 100).toFixed(1).replace('.', ',');
   const effPct = (params.efficiency * 100).toFixed(0);
   const carCompact = (params.suvCompareEnabled && totalKJ > 0.01)
-    ? ` · 🚙 ${Math.round(carKJ)} kJ (🚲 ${fmt(bikeVsCarRatio)}× mais eficiente)`
+    ? ` · 🚙 ${Math.round(carKJ)} kJ / ⛽ ${fmt(carLiters, 2)} L (🚲 ${fmt(bikeVsCarRatio)}× mais eficiente)`
     : '';
 
   traceMetrics.textContent =
@@ -9048,6 +9053,7 @@ function updateMetrics() {
         `    Plano  (${params.carPowerFlat} W):  ${fmt(carVFlatKmh)} km/h\n` +
         `    Descida (${params.carPowerDescent} W): ${fmt(carVDescentKmh)} km/h\n` +
         `  Energia do SUV (combustível):                             ${fmt(carKJ)} kJ\n` +
+        `  Gasolina (${GASOLINE_KJ_PER_LITER.toLocaleString('pt-BR')} kJ/L):                            ${fmt(carLiters, 2)} L\n` +
         `  Bike (metabólica, ${params.bikeMetabolicFactor}× a mecânica, eficiência humana ~25%): ${fmt(bikeMetabolicKJ)} kJ\n` +
         `  Bike ${fmt(bikeVsCarRatio)}× mais eficiente que o SUV (comparando energia metabólica vs. combustível)`
       : '') +
