@@ -778,16 +778,20 @@ function initSelect(sel, options, { placeholder, sortByOrder } = {}) {
   if (sortByOrder) cfg.sortField = [{ field: '$order', direction: 'asc' }];
   return new window.TomSelect(sel, cfg);
 }
+// Criar-na-hora: cunha a IRI phd:list_<slug> (NÃO o texto cru) — é o valor que
+// vai pro backend, que exige o prefixo phd:list_. Função nomeada pra poder ser
+// religada em settings.create sem virar `true` (que usaria o texto como valor).
+function mintListOption(input) {
+  const iri = LIST_PREFIX + slugifyList(input);
+  pendingNewLists.set(iri, input);
+  return { value: iri, text: input };
+}
 // Select de listas COM criar-na-hora (usado no lightbox e no modal de seleção).
 function initListSelect(sel, options, initialValues) {
   const ts = new window.TomSelect(sel, {
     plugins: ['remove_button'], persist: false, createOnBlur: true, options,
     maxOptions: 2000, placeholder: 'listas…',
-    create(input) {
-      const iri = LIST_PREFIX + slugifyList(input);
-      pendingNewLists.set(iri, input);
-      return { value: iri, text: input };
-    },
+    create: mintListOption,
   });
   if (initialValues && initialValues.length) ts.setValue(initialValues, true);
   return ts;
@@ -1690,7 +1694,7 @@ function openListModal(mode) {
     $('#assign-apply').textContent = 'Remover';
   } else {
     assignTS.addOptions(listOptions());
-    assignTS.settings.create = true;
+    assignTS.settings.create = mintListOption;   // religa a cunhagem de IRI (não `true`)
     $('#assign-title').textContent = 'Adicionar às listas';
     $('#assign-desc').textContent = 'Escolha listas existentes ou digite um nome novo para criar.';
     $('#assign-apply').textContent = 'Adicionar';
