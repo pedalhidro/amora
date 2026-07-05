@@ -188,11 +188,11 @@
           <details class="help-changelog">
             <summary>Novidades (changelog)</summary>
             <dl>
-              <dt>04/07/2026 · v305</dt>
+              <dt>04/07/2026 · v306</dt>
               <dd>
                 <ul>
                   <li>Modais de Enviar imagens e Cadastrar/editar passeio: removida a barra de título (o conteúdo já mostra o próprio título) — fecham normalmente por clique fora ou Esc.</li>
-                  <li>Editar traçado: a barra de métricas agora também mostra quantas vezes a bike é mais eficiente que um SUV equivalente e quanto ele gastaria em kJ na mesma rota (modelo v2, com a energia da bike escalada pra refletir a eficiência metabólica humana, medindo os dois lados em energia "de entrada" — comida vs. combustível). Novo controle nos <strong>Parâmetros</strong>: <em>Comparação com carro (SUV)</em> — toggle pra mostrar/ocultar e um botão <em>Parâmetros do SUV…</em> pra ajustar massa, Crr, CdA, eficiência do motor, recuperação na descida, potência de equilíbrio e o fator metabólico da bike.</li>
+                  <li>Editar traçado: a barra de métricas agora também mostra quantas vezes a bike é mais eficiente que um SUV equivalente e quanto ele gastaria em kJ na mesma rota — modelo v2 por segmento, com um perfil de potência de 3 níveis próprio do carro (subida/plano/descida, potência de descida podendo ser negativa — freio ativo), energia da bike escalada pra refletir a eficiência metabólica humana, medindo os dois lados em energia "de entrada" (comida vs. combustível). Novo controle nos <strong>Parâmetros</strong>: <em>Comparação com carro (SUV)</em> — toggle pra mostrar/ocultar e um botão <em>Parâmetros do SUV…</em> pra ajustar massa, Crr, CdA, eficiência do motor, recuperação na descida, o perfil de potência/limiar do SUV e o fator metabólico da bike.</li>
                 </ul>
               </dd>
               <dt>04/07/2026 · v301</dt>
@@ -854,7 +854,7 @@
           <button class="close" id="suv-compare-close" type="button" aria-label="Fechar">&times;</button>
         </header>
         <div class="params-body">
-          <p class="muted">Energia do SUV pelo mesmo modelo v2 da bike, na mesma rota, com a física do carro abaixo — recuperação na descida sempre zero (motor a combustão não recupera) e arrasto aerodinâmico cobrado em 100% da distância, inclusive subindo (o SUV mantém a velocidade de cruzeiro; a bike desacelera o bastante numa subida pra zerar o arrasto). O <strong>fator metabólico</strong> escala a energia mecânica da bike pra energia de comida consumida (eficiência humana ~25% → ~4×), pra comparar "energia de entrada" dos dois lados.</p>
+          <p class="muted">Energia do SUV pelo mesmo modelo v2 da bike, na mesma rota e segmento a segmento, com a física do carro abaixo e um perfil de potência de 3 níveis próprio (subida/plano/descida). Arrasto aerodinâmico é cobrado em 100% da distância, inclusive subindo (o SUV mantém a velocidade do seu perfil de potência; a bike desacelera o bastante numa subida pra zerar o arrasto). O <strong>fator metabólico</strong> escala a energia mecânica da bike pra energia de comida consumida (eficiência humana ~25% → ~4×), pra comparar "energia de entrada" dos dois lados.</p>
           <label class="param-row">
             <span class="param-label">Massa do SUV</span>
             <span class="param-input"><input type="number" id="param-car-mass" step="50" min="500" max="10000"> kg</span>
@@ -871,13 +871,25 @@
             <span class="param-label">Eficiência do motor</span>
             <span class="param-input"><input type="number" id="param-car-keff" step="1" min="1" max="100"> %</span>
           </label>
-          <label class="param-row" title="Fração da energia gravitacional recuperada na descida — 0 pra um motor a combustão comum.">
+          <label class="param-row" title="Fração da energia gravitacional recuperada na descida — 0 pra um motor a combustão comum (padrão); &gt;0 simularia um híbrido/elétrico regenerativo.">
             <span class="param-label">Recuperação na descida (ε)</span>
             <span class="param-input"><input type="number" id="param-car-epsilon" step="1" min="0" max="100"> %</span>
           </label>
-          <label class="param-row" title="Potência média usada só pra achar a velocidade de equilíbrio no plano (v_f) do SUV — não simula tempo/aceleração do carro.">
-            <span class="param-label">Potência média (equilíbrio)</span>
-            <span class="param-input"><input type="number" id="param-car-power" step="500" min="1000" max="200000"> W</span>
+          <label class="param-row" title="Grade acima da qual um segmento conta como subida/descida pro perfil de potência do SUV (abaixo disso, plano).">
+            <span class="param-label">Limiar de plano do SUV (±)</span>
+            <span class="param-input"><input type="number" id="param-car-slope-threshold" step="0.1" min="0" max="20"> %</span>
+          </label>
+          <label class="param-row" title="Potência usada pra achar a velocidade de equilíbrio do SUV em segmentos de subida (acima do limiar).">
+            <span class="param-label">Potência em subida</span>
+            <span class="param-input"><input type="number" id="param-car-power-ascent" step="500" min="0" max="500000"> W</span>
+          </label>
+          <label class="param-row" title="Potência usada pra achar a velocidade de equilíbrio do SUV em segmentos de plano (dentro do limiar).">
+            <span class="param-label">Potência em plano</span>
+            <span class="param-input"><input type="number" id="param-car-power-flat" step="500" min="0" max="500000"> W</span>
+          </label>
+          <label class="param-row" title="Potência usada pra achar a velocidade de equilíbrio do SUV em segmentos de descida (abaixo do limiar). Pode ser NEGATIVA — freio ativo, o SUV não deixa a gravidade acelerá-lo livre.">
+            <span class="param-label">Potência em descida</span>
+            <span class="param-input"><input type="number" id="param-car-power-descent" step="500" min="-500000" max="500000"> W</span>
           </label>
           <label class="param-row" title="Multiplica a energia mecânica da bike pra estimar a energia metabólica (comida) consumida — eficiência humana ~25% → fator ~4.">
             <span class="param-label">Fator metabólico da bike</span>
