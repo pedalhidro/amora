@@ -1823,14 +1823,26 @@ $('#files').addEventListener('change', async (e) => {
   }
 });
 
-// Botão "Limpar todos os cards"
-$('#clearAll').addEventListener('click', () => {
-  if (cards.length && !confirm(`Remover todos os ${cards.length} card(s)?`)) return;
+function clearAllCards() {
   for (const c of [...cards]) removeCard(c);
   cardCounter = 0;
   clearNotices();
   $('#filesStatus').textContent = 'Nenhum arquivo.';
   setUploadAllStatus('');
+}
+
+// Botão "Limpar todos os cards"
+$('#clearAll').addEventListener('click', () => {
+  if (cards.length && !confirm(`Remover todos os ${cards.length} card(s)?`)) return;
+  clearAllCards();
+});
+
+// O app-pai pede pra limpar os cards ao fechar o modal de upload — evita que
+// fotos já enviadas (ou abandonadas no meio do caminho) fiquem acumuladas pra
+// próxima abertura. Sem confirm() aqui: fechar já é a intenção de terminar.
+window.addEventListener('message', (e) => {
+  if (e.origin !== window.location.origin) return;
+  if (e.data && e.data.type === 'phidro-upload-modal-closed') clearAllCards();
 });
 
 // ===================== Geração do Turtle ===============================

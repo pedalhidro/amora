@@ -2958,6 +2958,11 @@ function openUploadModal() {
 function closeUploadModal() {
   if (uploadModal) uploadModal.hidden = true;
   uploadBtn?.setAttribute('aria-pressed', 'false');
+  // Pede pro upload_images.html limpar os cards — evita acumular fotos já
+  // enviadas (ou abandonadas) entre uma abertura e outra do modal.
+  try {
+    uploadIframe?.contentWindow?.postMessage({ type: 'phidro-upload-modal-closed' }, window.location.origin);
+  } catch (_) {}
   // Pega o manifesto + tiles novos sem dance de hard-refresh.
   reloadPhotos();
 }
