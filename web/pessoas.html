@@ -103,24 +103,43 @@
   td.val a { color: var(--accent); text-decoration: none; }
   td.val a:hover { text-decoration: underline; }
 
-  .grp { margin: 10px 0; }
-  .grp-h { font-size: 12px; font-weight: 600; margin-bottom: 5px; }
-  .grp-h .n { color: var(--muted); font-weight: 400; }
-  ul.tour-list { list-style: none; margin: 0; padding: 0; }
-  ul.tour-list li { padding: 2px 0; }
-  ul.tour-list li a { color: var(--text); text-decoration: none;
-    border-bottom: 1px dotted var(--muted); }
-  ul.tour-list li a:hover { color: var(--accent); border-bottom-color: var(--accent); }
-  ul.tour-list li .d { color: var(--muted); font-size: 12px; margin-left: 6px; }
+  /* Grupo de aparições — colapsável (details/summary nativo). */
+  details.grp { margin: 8px 0; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--surface); }
+  details.grp > summary { list-style: none; cursor: pointer; padding: 7px 10px;
+    font-size: 12px; font-weight: 600; }
+  details.grp > summary::-webkit-details-marker { display: none; }
+  details.grp > summary::before { content: "▸"; color: var(--muted);
+    font-size: 11px; margin-right: 6px; }
+  details.grp[open] > summary::before { content: "▾"; }
+  details.grp > summary .n { color: var(--muted); font-weight: 400; }
+  details.grp .grp-body { padding: 0 10px 10px; }
 
   .thumbs { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 4px; }
-  .thumbs a { display: block; width: 56px; height: 56px; border-radius: 5px;
-    overflow: hidden; border: 1px solid var(--border); background: var(--surface); }
-  .thumbs img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  /* Tile uniforme de galeria — <a> (foto/vídeo/passeio com link) ou <span>
+     (vídeo sem thumb). Mesmo box 56×56 pra tudo. */
+  .thumbs .tile { display: block; width: 56px; height: 56px; border-radius: 5px;
+    overflow: hidden; border: 1px solid var(--border); background: var(--panel);
+    text-decoration: none; }
+  .thumbs .tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  /* Passeios em destaque amarelo — distingue-os das fotos/vídeos na galeria. */
+  .thumbs .tile.tour { border: 2px solid #ffd24a; }
+  .tile.tour.txt-tile { background: rgba(255, 210, 74, 0.12); }
+  .tile.tour.txt-tile .series { color: #ffd24a; }
+  a.tile.tour.txt-tile:hover { border-color: #ffe08a; color: #ffe08a; }
+  /* Tile de texto (passeio sem arte de divulgação): mostra série ou título. */
+  .tile.txt-tile { display: flex; align-items: center; justify-content: center;
+    text-align: center; padding: 3px; color: var(--text); line-height: 1.15; }
+  a.tile.txt-tile:hover { border-color: var(--accent); color: var(--accent); }
+  .tile .series { font-size: 12px; font-weight: 700; }
+  .tile .title { font-size: 8px; color: var(--muted);
+    display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical;
+    overflow: hidden; }
   .chip { display: inline-block; padding: 2px 8px; border-radius: 10px;
     background: var(--surface); border: 1px solid var(--border);
     font-size: 12px; color: var(--muted); margin: 2px 4px 2px 0; }
-  .more { color: var(--muted); font-size: 12px; align-self: center; }
+  .more { color: var(--muted); font-size: 12px; align-self: center;
+    padding: 0 4px; }
   .empty { color: var(--muted); font-style: italic; font-size: 13px; }
 
   footer { margin-top: 20px; color: var(--muted); font-size: 11px; }
@@ -198,13 +217,18 @@ const TOUR_TYPE  = PH + 'Tour';
 const ALT_PREDS   = new Set([SCHEMA + 'alternateName', 'http://schema.org/alternateName']);
 const NAME_PREDS  = new Set([SCHEMA + 'name', 'http://schema.org/name']);
 const THUMB_PREDS = new Set([SCHEMA + 'thumbnail', 'http://schema.org/thumbnail']);
+const IMAGE_PREDS = new Set([SCHEMA + 'image', 'http://schema.org/image']);
 const TITLE_PRED  = DCT + 'title';
 const DATE_PREDS  = new Set([DCT + 'date', SCHEMA + 'startDate', 'http://schema.org/startDate']);
+const IN_SERIES_EDITION = PH + 'inSeriesEdition';
+const IN_EVENT_SERIES   = PH + 'inEventSeries';
+const SEQ_IN_SERIES     = PH + 'sequenceInSeries';
+const SERIES_LABEL_OVERRIDE = { S: 'PH-S' };
 
 // Rótulos amigáveis (PT) pros grupos de "Aparições" (pessoa como objeto).
 const INVERSE_LABELS = {
   'http://www.w3.org/ns/prov#wasAttributedTo': 'Autoria de',
-  'http://purl.org/pav/providedBy': 'Forneceu',
+  'http://purl.org/pav/providedBy': 'Descreveu',
   [SCHEMA + 'attendee']: 'Participou de',
   'http://schema.org/attendee': 'Participou de',
   [PH + 'hasNewcomer']: 'Estreou em',
@@ -232,7 +256,9 @@ function curie(iri) {
 }
 const inverseLabel = (p) => INVERSE_LABELS[p] || curie(p);
 
-const MEDIA_CAP = 24;   // teto de thumbnails/chips por grupo antes de "+N mais"
+// Tetos de tiles por tipo dentro de um grupo (evita despejar centenas de
+// thumbnails de uma vez pra quem tem muita mídia). Excedente vira "+N mais".
+const TOUR_CAP = 60, PHOTO_CAP = 36, VIDEO_CAP = 24;
 
 function escapeHtml(s) {
   return String(s ?? '').replace(/[&<>"]/g, (c) =>
@@ -273,12 +299,16 @@ async function loadData() {
 }
 
 // ── Modelo ───────────────────────────────────────────────────────────────────
-// Mapas auxiliares em nível de módulo pra o render resolver títulos/thumbs.
+// Mapas auxiliares em nível de módulo pra o render resolver títulos/thumbs/série.
 const typeOf = new Map(), titleOf = new Map(), dateOf = new Map(), thumbOf = new Map();
+const imageOf = new Map();      // passeio/mídia → schema:image (arte de divulgação)
+const assocOf = new Map();      // assoc iri → { series, seq }
+const tourAssocs = new Map();   // passeio iri → [assoc iri]
 let people = [];   // [{iri, slug, label, defined, forward:[{p,o,literal}], groups:[{p, subjects:[iri]}], apCount}]
 
 function buildModel(quads) {
-  const labelOf = new Map();      // person iri → alternateName (ou name)
+  const labelOf = new Map();      // person iri → alternateName (ou name) — último vence
+  const altValuesOf = new Map();  // iri → Set de valores DISTINTOS de alternateName
   const typedPersons = new Set(); // pessoas com definição RDF (a schema:Person)
   const personSet = new Set();    // typed ∪ referenciadas
 
@@ -290,8 +320,19 @@ function buildModel(quads) {
     } else if (p === TITLE_PRED) { if (!titleOf.has(s)) titleOf.set(s, o.value); }
     else if (DATE_PREDS.has(p))  { if (!dateOf.has(s))  dateOf.set(s, o.value); }
     else if (THUMB_PREDS.has(p)) { if (!thumbOf.has(s)) thumbOf.set(s, o.value); }
+    else if (IMAGE_PREDS.has(p)) { if (!imageOf.has(s)) imageOf.set(s, o.value); }
+    else if (p === IN_SERIES_EDITION) {
+      if (!tourAssocs.has(s)) tourAssocs.set(s, []);
+      tourAssocs.get(s).push(o.value);
+    }
+    else if (p === IN_EVENT_SERIES) { (assocOf.get(s) || assocOf.set(s, {}).get(s)).series = o.value; }
+    else if (p === SEQ_IN_SERIES)   { (assocOf.get(s) || assocOf.set(s, {}).get(s)).seq = parseInt(o.value, 10); }
 
-    if (ALT_PREDS.has(p)) labelOf.set(s, o.value);
+    if (ALT_PREDS.has(p)) {
+      labelOf.set(s, o.value);
+      if (!altValuesOf.has(s)) altValuesOf.set(s, new Set());
+      altValuesOf.get(s).add(o.value);
+    }
     else if (NAME_PREDS.has(p) && !labelOf.has(s)) labelOf.set(s, o.value);
 
     // Pessoa referenciada em posição de objeto (mesmo sem definição própria).
@@ -312,16 +353,28 @@ function buildModel(quads) {
 
   people = [...personSet].map((iri) => {
     const slug = iri.startsWith(PERSON_PREFIX) ? iri.slice(PERSON_PREFIX.length) : iri.split(/[#/]/).pop();
-    const fwd = forward.get(iri) || [];
+    // Dedup: pessoas definidas em tours.ttl E uploads.ttl (ex.: pessoaDandan)
+    // trazem as mesmas triplas em ambos os arquivos; concatenar os grafos
+    // duplica os quads (N3 devolve array, não conjunto). Colapsa por valor.
+    const seenF = new Set();
+    const fwd = (forward.get(iri) || []).filter((f) => {
+      const k = `${f.p}|${f.o}|${f.literal ? 'L' : 'U'}`;
+      return seenF.has(k) ? false : (seenF.add(k), true);
+    });
     const groups = [...inverse.get(iri).entries()]
-      .map(([p, subjects]) => ({ p, subjects }))
+      .map(([p, subjects]) => ({ p, subjects: [...new Set(subjects)] }))
       .sort((a, b) => b.subjects.length - a.subjects.length);
     const apCount = groups.reduce((n, g) => n + g.subjects.length, 0);
+    // Nomes divergentes: a mesma pessoa com schema:alternateName diferente em
+    // arquivos distintos (ex.: tours.ttl vs uploads.ttl). O rótulo exibido é
+    // "último vence" (ordem do void:dataDump) — sinalizamos a divergência.
+    const altVals = [...(altValuesOf.get(iri) || [])];
     return {
       iri, slug,
       label: labelOf.get(iri) || slug,
       alt: labelOf.get(iri) || '',
       defined: typedPersons.has(iri),
+      altVals, divergent: altVals.length > 1,
       forward: fwd, groups, apCount,
     };
   }).sort((a, b) => a.label.localeCompare(b.label, 'pt-BR', { sensitivity: 'base' }));
@@ -341,6 +394,52 @@ function videoThumb(iri) {
   if (!raw) return null;
   if (/^(https?:)?\/\//.test(raw) || raw.startsWith('./') || raw.startsWith('/')) return raw;
   return './clips/' + raw.split('/').map(encodeURIComponent).join('/');
+}
+const seriesLabel = (iri) => {
+  const slug = (iri || '').split(/[#/]/).pop();
+  return SERIES_LABEL_OVERRIDE[slug] || slug;
+};
+// Código de série do passeio (ex.: "PH 98"), resolvendo assoc → série + seq.
+function seriesCodeFor(tourIri) {
+  const codes = (tourAssocs.get(tourIri) || []).map((a) => {
+    const x = assocOf.get(a);
+    return x && Number.isInteger(x.seq) ? `${seriesLabel(x.series)} ${x.seq}` : null;
+  }).filter(Boolean).sort();
+  return codes.length ? codes.join(' & ') : null;
+}
+
+// Tiles de galeria (thumbnail 56×56). Passeio: arte de divulgação
+// (schema:image) → senão código de série → senão título (fonte pequena).
+function tourTile(iri) {
+  const href = tourHref(iri);
+  const title = titleOf.get(iri) || curie(iri);
+  const d = (dateOf.get(iri) || '').slice(0, 10);
+  const hover = `${title}${d ? ' · ' + d : ''}`;
+  const code = seriesCodeFor(iri);
+  const body = code
+    ? `<span class="series">${escapeHtml(code)}</span>`
+    : `<span class="title">${escapeHtml(title)}</span>`;
+  const art = imageOf.get(iri);
+  if (art) {
+    // Se a arte 404ar, o onerror vira o tile em texto (série/título) — sem
+    // deixar um quadrado vazio.
+    return `<a class="tile tour" href="${href}" target="_blank" rel="noopener" title="${escapeHtml(hover)}">` +
+      `<img loading="lazy" src="${escapeHtml(art)}" alt="" ` +
+      `onerror="this.style.display='none';this.closest('a').classList.add('txt-tile');this.nextElementSibling.hidden=false">` +
+      `<span hidden>${body}</span></a>`;
+  }
+  return `<a class="tile tour txt-tile" href="${href}" target="_blank" rel="noopener" title="${escapeHtml(hover)}">${body}</a>`;
+}
+function photoTile(iri) {
+  const u = photoThumb(iri);
+  return `<a class="tile" href="${escapeHtml(u.replace('/thumb.jpg', '/large.jpg'))}" target="_blank" rel="noopener" title="${escapeHtml(curie(iri))}">` +
+    `<img loading="lazy" src="${escapeHtml(u)}" alt="" onerror="this.closest('a').style.display='none'"></a>`;
+}
+function videoTile(iri) {
+  const u = videoThumb(iri);
+  if (u) return `<a class="tile" href="${escapeHtml(u)}" target="_blank" rel="noopener" title="${escapeHtml(curie(iri))}">` +
+    `<img loading="lazy" src="${escapeHtml(u)}" alt="" onerror="this.closest('a').style.display='none'"></a>`;
+  return `<span class="tile txt-tile" title="${escapeHtml(curie(iri))}"><span class="series">🎬</span></span>`;
 }
 
 function renderForward(fwd) {
@@ -364,50 +463,32 @@ function renderGroup(g) {
     else if (t === VIDEO_TYPE) videos.push(s);
     else others.push(s);
   }
-  let inner = '';
-  if (tours.length) {
-    tours.sort((a, b) => (dateOf.get(b) || '').localeCompare(dateOf.get(a) || ''));
-    const items = tours.map((s) => {
-      const title = titleOf.get(s) || curie(s);
-      const d = (dateOf.get(s) || '').slice(0, 10);
-      return `<li><a href="${tourHref(s)}" target="_blank" rel="noopener">${escapeHtml(title)}</a>` +
-        (d ? `<span class="d">${escapeHtml(d)}</span>` : '') + `</li>`;
-    });
-    inner += `<ul class="tour-list">${items.join('')}</ul>`;
-  }
-  if (photos.length) {
-    const shown = photos.slice(0, MEDIA_CAP);
-    const thumbs = shown.map((s) => {
-      const u = photoThumb(s);
-      return `<a href="${escapeHtml(u.replace('/thumb.jpg', '/large.jpg'))}" target="_blank" rel="noopener" title="${escapeHtml(curie(s))}">` +
-        `<img loading="lazy" src="${escapeHtml(u)}" alt="" onerror="this.closest('a').style.display='none'"></a>`;
-    });
-    const more = photos.length > MEDIA_CAP ? `<span class="more">+${photos.length - MEDIA_CAP} foto(s)</span>` : '';
-    inner += `<div class="thumbs">${thumbs.join('')}${more}</div>`;
-  }
-  if (videos.length) {
-    const shown = videos.slice(0, MEDIA_CAP);
-    const chips = shown.map((s) => {
-      const u = videoThumb(s);
-      if (u) return `<a href="${escapeHtml(u)}" target="_blank" rel="noopener" title="${escapeHtml(curie(s))}">` +
-        `<img loading="lazy" src="${escapeHtml(u)}" alt="" onerror="this.closest('a').style.display='none'"></a>`;
-      return `<span class="chip" title="${escapeHtml(curie(s))}">🎬 vídeo</span>`;
-    });
-    const anyThumb = shown.some((s) => videoThumb(s));
-    const wrap = anyThumb ? 'thumbs' : '';
-    const more = videos.length > MEDIA_CAP ? `<span class="more">+${videos.length - MEDIA_CAP} vídeo(s)</span>` : '';
-    inner += `<div class="${wrap}">${chips.join('')}${more}</div>`;
-  }
-  if (others.length) {
-    inner += `<div>${others.map((s) => `<span class="chip">${escapeHtml(curie(s))}</span>`).join('')}</div>`;
-  }
-  return `<div class="grp"><div class="grp-h">${escapeHtml(inverseLabel(g.p))} ` +
-    `<span class="n">(${g.subjects.length})</span></div>${inner}</div>`;
+  tours.sort((a, b) => (dateOf.get(b) || '').localeCompare(dateOf.get(a) || ''));
+  // Galeria única de tiles: passeios → fotos → vídeos → outros. Cada tipo
+  // capado à parte pra que todos apareçam representados.
+  const tiles = [
+    ...tours.slice(0, TOUR_CAP).map(tourTile),
+    ...photos.slice(0, PHOTO_CAP).map(photoTile),
+    ...videos.slice(0, VIDEO_CAP).map(videoTile),
+    ...others.map((s) => `<span class="tile txt-tile" title="${escapeHtml(curie(s))}"><span class="title">${escapeHtml(curie(s))}</span></span>`),
+  ];
+  const moreBits = [];
+  if (tours.length > TOUR_CAP)   moreBits.push(`${tours.length - TOUR_CAP} passeio(s)`);
+  if (photos.length > PHOTO_CAP) moreBits.push(`${photos.length - PHOTO_CAP} foto(s)`);
+  if (videos.length > VIDEO_CAP) moreBits.push(`${videos.length - VIDEO_CAP} vídeo(s)`);
+  const more = moreBits.length ? `<span class="more">+${moreBits.join(', ')} ocultos</span>` : '';
+  return `<details class="grp" open>` +
+    `<summary>${escapeHtml(inverseLabel(g.p))} <span class="n">(${g.subjects.length})</span></summary>` +
+    `<div class="grp-body"><div class="thumbs">${tiles.join('')}${more}</div></div>` +
+  `</details>`;
 }
 
 function renderPerson(p) {
   const counts = `${p.forward.length} fato(s) · ${p.apCount} aparição(ões)`;
-  const badge = p.defined ? '' : ` <span class="badge-warn">sem definição RDF</span>`;
+  let badge = p.defined ? '' : ` <span class="badge-warn">sem definição RDF</span>`;
+  if (p.divergent) {
+    badge += ` <span class="badge-warn" title="${escapeHtml(p.altVals.join(' · '))}">⚠ nomes divergentes</span>`;
+  }
   const groupsHtml = p.groups.length
     ? p.groups.map(renderGroup).join('')
     : '<p class="empty">Nenhuma aparição no acervo.</p>';
