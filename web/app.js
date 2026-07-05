@@ -5868,7 +5868,7 @@ const DEFAULT_PARAMS = {
   carCrr: 0.013,           // rolamento no asfalto (0,010–0,015 p/ pneus de SUV)
   carCda: 1.1,             // m² — Cd~0,38 × área frontal ~2,9 m² (SUV grande/boxy)
   carKEff: 0.28,           // 0..1 — eficiência tanque→roda em cruzeiro (0,25–0,30)
-  carEpsilon: 0.40,        // 0..1 — combustível evitado na descida; baixo p/ SP (trânsito para
+  carEpsilon: 0.20,        // 0..1 — combustível evitado na descida; baixo p/ SP (trânsito para
                            //        toda hora + grades rasos → motor segue queimando; DFCO raro)
   carPowerAscent: 45000,   // W — potência em subida (> +limiar): motorista acelera na subida
                            //     (em SP não se "cruza" em morro) — ~69/50/35 km/h a +3/+5/+8%

@@ -92,7 +92,7 @@ ajustando **`carKEff` e `carPowerFlat`**.
 | `carPowerAscent` | 45 000 W | Motorista **acelera na subida** — em SP não se "cruza" em morro (acelera e freia). ~69 / 50 / 35 km/h a +3 / +5 / +8 %; sobe grades leves acima da velocidade de plano. |
 | `carPowerDescent` | 0 W | Pé fora do acelerador (corte de combustível na desaceleração — DFCO). |
 | `carSlopeFlatThreshold` | 0,03 (±3 %) | Grade de equilíbrio do *coasting*: acima dela, na descida, o motor tira o pé e entra o DFCO. Literatura: ~1,5 % (cidade) a ~3 % (estrada) — usamos o extremo de estrada. |
-| `carEpsilon` | **0,40** | Ver §4. |
+| `carEpsilon` | **0,20** | Ver §4. |
 
 Referência de economia real (INMETRO PBE Veicular / testes): SUVs a gasolina no
 Brasil fazem ~10–12 km/L cidade e ~12–14 km/L estrada (Compass, Taos, Tiguan,
@@ -132,7 +132,7 @@ motor; editável no modal.
 leve — um SUV de passeio real pesa ~2500 kg. É a massa fixada pelo usuário; a
 calibração compensa via `carKEff`.
 
-## 4. O parâmetro ε (recuperação na descida) — e por que 0,40
+## 4. O parâmetro ε (recuperação na descida) — e por que 0,20
 
 `ε` credita de volta uma fração da energia gravitacional liberada **durante** uma
 descida (`−ε·β·Δh⁻`). É o parâmetro mais sujeito a mal-entendido, então vale
@@ -149,7 +149,7 @@ detalhar o que ele **é** e o que ele **não é**:
   parar **já não é creditada**: `ε` é limitado a 1, e a ida-e-volta por um morro
   continua sendo uma **perda líquida** de combustível.
 
-### Por que baixamos de 0,70 (idealizado) para 0,40 (São Paulo)
+### Por que baixamos de 0,70 (idealizado) para 0,20 (São Paulo)
 
 Uma primeira estimativa de literatura para descidas de fluxo livre com DFCO
 sustentado dá `ε ≈ 0,7–0,85`. **Mas isso pressupõe descidas longas e limpas**,
@@ -168,15 +168,17 @@ que quase não existem no dia a dia de São Paulo:
 
 Ou seja: o regime que sustenta ε ≈ 0,7 é o de estrada aberta e serra, não o de
 São Paulo. A própria literatura coloca o trânsito parado/rasos em `ε ≈ 0,5–0,65`,
-e o ceticismo é ainda mais justificado numa cidade tão congestionada. Por isso o
-default é **`ε = 0,40`** — recuperação **modesta**, refletindo que a maior parte
-da energia de descida em São Paulo se perde em freada e marcha lenta.
+mas numa cidade tão congestionada — onde o carro para o tempo todo e joga no
+freio a energia que ganharia na descida — mesmo isso soa otimista. Por isso o
+default é **`ε = 0,20`** — recuperação **bem modesta**, assumindo que quase toda
+a energia de descida em São Paulo se perde em freada e marcha lenta.
 
 **Importante:** `ε` **não afeta a economia no plano** (a meta de 10 ± 2 km/L),
 que independe de descidas. Baixar ε só encarece rotas com relevo — o que está
 alinhado com a realidade de um carro que para o tempo todo. Uma rota ondulada de
-±3 % de exemplo cai de ~10,75 km/L (plano) para ~8,7 km/L com ε = 0,40. Quem
-quiser modelar estrada aberta/serra pode subir ε no modal.
+±5 % de exemplo cai de ~10,75 km/L (plano) para ~6,9 km/L com ε = 0,20 (seria
+~7,6 com ε = 0,40). Quem quiser modelar estrada aberta/serra pode subir ε no
+modal.
 
 ## 5. Limitações assumidas
 
