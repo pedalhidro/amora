@@ -182,6 +182,22 @@ modal.
 
 ## 5. Limitações assumidas
 
+- **A "salvaguarda de coasting" é só sobre VELOCIDADE, não sobre combustível
+  zero.** Numa descida o modelo **sempre cobra o combustível de rolamento +
+  arrasto** (`α_r·x + α_a·x`) — o carro nunca "desce de graça". A salvaguarda só
+  evita que o solver cúbico trave num piso numérico, mantendo a velocidade de
+  descida em ≥ a de plano (pro termo de arrasto). O único "desconto" da descida é
+  o crédito `ε·β·|Δh|`, e com **ε = 0,20** só 20 % da energia gravitacional é
+  creditada — os **outros 80 % representam justamente a marcha lenta (idle), a
+  freada e o para-e-arranca** que existem numa descida no trânsito de SP. Ou
+  seja: o modelo não assume descida limpa; ele assume descida "suja".
+- **Marcha lenta e para-e-arranca não têm termo próprio.** Não há um piso de
+  combustível de idle nem penalidade explícita de re-aceleração após parar — mas
+  isso vale igual pro plano e pros dois veículos (carro e bike), então em grande
+  parte se cancela na *razão*. (Detalhe: como a salvaguarda segura a descida a
+  ~65 km/h em vez da velocidade baixa do para-e-arranca real, o termo de arrasto
+  na descida é se algo **super**estimado — puxa o consumo pra cima, não pra
+  baixo.)
 - **Modelo de equilíbrio, sem paradas explícitas.** Nem o carro nem a bike pagam
   pela energia cinética perdida ao parar e re-acelerar em cada semáforo — os dois
   são comparados em "cruzeiro". Isso subestima o consumo *absoluto* dos dois em
