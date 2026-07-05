@@ -507,7 +507,8 @@ async function loadData() {
     console.warn('[imagens] manifesto indisponível, usando fallback:', e.message);
     urls = [
       new URL('./data/tours.ttl', location.href).href,
-      new URL('./data/uploads.ttl', location.href).href,
+      new URL('./data/images.ttl', location.href).href,
+      new URL('./data/identities.ttl', location.href).href,
     ];
   }
   // Baixa e concatena o texto de todos os grafos, depois parseia tudo junto.

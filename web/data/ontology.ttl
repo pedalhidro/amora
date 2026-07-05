@@ -23,43 +23,49 @@ ph:Tour a owl:Class ;
     rdfs:subClassOf prov:Activity, schema:Event .
 
 ph:Image a owl:Class ;
+    rdfs:label "Mídia visual"@pt ;
+    rdfs:comment
+        "Classe-base ABSTRATA de mídia visual capturada num passeio — foto (ph:StillImage) ou vídeo (ph:MotionImage). Reúne as exigências compartilhadas: procedência (PROV-O), coordenada GPS, data, autoria e licença. Instâncias concretas nunca são `a ph:Image` diretamente; usam uma das subclasses. (Mantém o nome histórico ph:Image por compatibilidade dos prefixos de IRI phd:image_/phd:video_ e do vocabulário.)"@pt ;
+    rdfs:subClassOf prov:Entity, schema:MediaObject .
+
+ph:StillImage a owl:Class ;
     rdfs:label "Foto"@pt ;
     rdfs:comment
-        "Fotografia tirada durante um passeio. Entidade PROV-O (atribuída a uma autora, gerada por um passeio) e schema:ImageObject (licença, hash, coordenada)."@pt ;
-    rdfs:subClassOf prov:Entity, schema:ImageObject .
+        "Fotografia (imagem estática) tirada durante um passeio. Subclasse concreta de ph:Image; acrescenta direção (exif:gpsImgDirection), focal eq. 35mm (exif:focalLengthIn35mmFilm) e hash perceptual (nfo:hasHash). IRIs no prefixo phd:image_."@pt ;
+    rdfs:subClassOf ph:Image, schema:ImageObject .
 
-ph:Video a owl:Class ;
+ph:MotionImage a owl:Class ;
     rdfs:label "Vídeo"@pt ;
     rdfs:comment
-        "Captura A/V curta gravada durante um passeio. Compartilha com ph:Image as exigências de procedência, coordenada, data, autoria e licença, mas NÃO requer direção (exif:gpsImgDirection) nem focal eq. 35mm (exif:focalLengthIn35mmFilm) — não fazem sentido pra vídeo. Adiciona schema:duration e ph:availableResolution. Quando ph:availableResolution só contém 'audio', é uma captura puramente sonora (sem trilha de vídeo)."@pt ;
-    rdfs:subClassOf prov:Entity, schema:MediaObject .
+        "Captura A/V curta (imagem em movimento) gravada durante um passeio. Subclasse concreta de ph:Image; NÃO requer direção nem focal (não fazem sentido pra vídeo) e acrescenta schema:duration, ph:availableResolution, ph:audio e as variantes de resolução. Quando ph:availableResolution só contém 'audio', é uma captura puramente sonora. IRIs no prefixo phd:video_."@pt ;
+    rdfs:subClassOf ph:Image, schema:VideoObject .
 
 ph:availableResolution a owl:DatatypeProperty ;
     rdfs:label "resolução disponível"@pt ;
     rdfs:comment
         "Resolução(ões) em que o vídeo está disponível no armazenamento. Use uma das constantes: 'audio' (apenas áudio, sem vídeo), '360p', '480p', '720p', '1080p'. Múltiplos valores são esperados (ex.: 'audio', '360p', '720p')."@pt ;
-    rdfs:domain ph:Video ;
+    rdfs:domain ph:MotionImage ;
     rdfs:range xsd:string .
 
 ph:audio a owl:DatatypeProperty ;
     rdfs:label "trilha de áudio"@pt ;
     rdfs:comment
         "Caminho relativo (sob web/clips/) para a faixa de áudio do clipe, em WAV PCM (sem compressão lossy adicional)."@pt ;
-    rdfs:domain ph:Video ;
+    rdfs:domain ph:MotionImage ;
     rdfs:range xsd:string .
 
 ph:video360p a owl:DatatypeProperty ;
     rdfs:label "webm 360p"@pt ;
     rdfs:comment
         "Caminho relativo (sob web/clips/) para o webm 360p sem áudio."@pt ;
-    rdfs:domain ph:Video ;
+    rdfs:domain ph:MotionImage ;
     rdfs:range xsd:string .
 
 ph:video720p a owl:DatatypeProperty ;
     rdfs:label "webm 720p"@pt ;
     rdfs:comment
         "Caminho relativo (sob web/clips/) para o webm 720p sem áudio."@pt ;
-    rdfs:domain ph:Video ;
+    rdfs:domain ph:MotionImage ;
     rdfs:range xsd:string .
 
 ph:RouteReference a owl:Class ;
@@ -218,20 +224,20 @@ ph:anonymized a owl:DatatypeProperty ;
     rdfs:label "anonimizada"@pt ;
     rdfs:comment
         "true se o arquivo distribuído teve seus metadados (EXIF, etc.) removidos."@pt ;
-    rdfs:domain ph:Image ;
+    rdfs:domain ph:StillImage ;
     rdfs:range xsd:boolean .
 
 ph:compressed a owl:DatatypeProperty ;
     rdfs:label "comprimida"@pt ;
     rdfs:comment
         "true se o arquivo 'original' distribuído foi reduzido para um tamanho-alvo (ex.: 500 KB)."@pt ;
-    rdfs:domain ph:Image ;
+    rdfs:domain ph:StillImage ;
     rdfs:range xsd:boolean .
 
 ph:capturedDuring a owl:ObjectProperty ;
     rdfs:label "registrada durante"@pt ;
     rdfs:comment
-        "Liga a foto ao passeio em que foi tirada."@pt ;
+        "Liga a mídia (foto ou vídeo) ao passeio em que foi capturada."@pt ;
     rdfs:domain ph:Image ;
     rdfs:range ph:Tour ;
     rdfs:subPropertyOf prov:wasGeneratedBy .

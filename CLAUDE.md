@@ -33,13 +33,19 @@ one optional hosted deploy target, not a dependency.
   and `tour_assets/<tour_id>/` directories the app reads from at runtime.
 - `backend/` — the self-hosted backend. One Flask service (`main.py`)
   that serves `web/` as static files **and** validates+stores incoming
-  photos. No SQLite; state lives in `web/data/uploads.ttl` (per-image
-  triples), `web/data/tours.ttl` (tour catalog), and
+  photos. No SQLite; state is split across three RDF catalogs:
+  `web/data/images.ttl` (media — `ph:StillImage`/`ph:MotionImage` triples;
+  was `uploads.ttl` pre-split), `web/data/identities.ttl` (people —
+  `schema:Person`, the single source of truth), and `web/data/tours.ttl`
+  (tours + associations + route refs), plus
   `web/photos/<phash>/{original,large,thumb}.*` (image variants).
   `web/data/data_graphs.ttl` is a VoID manifest the frontend still follows,
   but the backend no longer mutates it — the dump list is fixed
-  (`CATALOG_DUMPS = tours.ttl + uploads.ttl`) and `/data/data_graphs.ttl`
-  is served from a static shim (`DATA_GRAPHS_SHIM`).
+  (`CATALOG_DUMPS = tours.ttl + images.ttl + identities.ttl`) and
+  `/data/data_graphs.ttl` is served from a static shim (`DATA_GRAPHS_SHIM`).
+  (`scripts/migrate-split-catalogs.py` is the one-shot that carved
+  `uploads.ttl`→`images.ttl`+`identities.ttl` and re-typed the media classes;
+  `uploads.ttl` is now obsolete.)
   `phidro.plist` (launchd), `requirements.txt`, `README.md`. Runs locally
   (macOS/Linux) or on Cloud Run. (Was `backend/pi/` — the Raspberry Pi
   deploy was retired; the systemd unit + `pi-deploy.sh` were removed.)
@@ -121,20 +127,29 @@ pre-baked `routes.json` and resolves Turtle dumps via the manifest at
 `POST /upload-image` or `POST /upload-video` same-origin; on a static-only
 host (CDN) the form is offline-friendly but uploads have nowhere to go.
 
-**Photos and videos are described in RDF/Turtle** in a single
-`web/data/uploads.ttl` catalog. SHACL shapes live in `web/data/shapes.ttl`:
+**Photos and videos are described in RDF/Turtle** in the
+`web/data/images.ttl` catalog. Both are subclasses of an **abstract base
+`ph:Image`** ("mídia visual"), which carries the shared shape (date,
+`schema:locationCreated`→`schema:GeoCoordinates`, `ph:capturedDuring`,
+author, license, provider, `schema:isPartOf`) via `ph:VisualMediaShape`
+(`sh:targetClass ph:Image`, applied to both subclasses through the
+validator's `inference="rdfs"`). SHACL shapes live in `web/data/shapes.ttl`:
 
-- `ph:Image` — `phd:image_<phash16>` IRI; `phash` is a 64-bit perceptual
-  hash (DCT-based, computed in the browser); near-duplicate uploads share
-  an IRI and naturally cluster.
-- `ph:Video` — `phd:video_<vhash16>` IRI; `vhash` is computed by sampling
-  N=8 evenly-spaced frames, taking each frame's pHash, and majority-voting
-  per bit into a single 16-hex fingerprint. Standalone class (NOT a
-  subclass of `ph:Image`) so it doesn't inherit bearing/focal warnings
-  which don't apply to video. Adds `schema:duration`,
+- `ph:StillImage` (foto; `rdfs:subClassOf ph:Image, schema:ImageObject`) —
+  `phd:image_<phash16>` IRI; `phash` is a 64-bit perceptual hash (DCT-based,
+  computed in the browser); near-duplicate uploads share an IRI and
+  naturally cluster. `StillImageShape` adds the still-only constraints:
+  bearing (`exif:gpsImgDirection`), focal (`exif:focalLengthIn35mmFilm`),
+  `nfo:hasHash`, `ph:anonymized`, `ph:compressed`.
+- `ph:MotionImage` (vídeo; `rdfs:subClassOf ph:Image, schema:VideoObject`) —
+  `phd:video_<vhash16>` IRI; `vhash` is computed by sampling N=8
+  evenly-spaced frames, taking each frame's pHash, and majority-voting per
+  bit into a single 16-hex fingerprint. Doesn't inherit bearing/focal
+  (which don't apply to video). `MotionImageShape` adds `schema:duration`,
   `ph:availableResolution` (`sh:in` of `audio/360p/480p/720p/1080p`),
   `ph:audio`, optional `ph:video360p` / `ph:video720p`, and
-  `schema:thumbnail`.
+  `schema:thumbnail`. (Was `ph:Video`, renamed in the class-hierarchy
+  refactor; the `phd:video_` IRI prefix is unchanged.)
 
 **Nested nodes are minted IRIs, not blank nodes.** The `schema:GeoCoordinates`
 (`schema:locationCreated`), `nfo:FileHash` (`nfo:hasHash`), and

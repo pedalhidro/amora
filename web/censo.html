@@ -298,9 +298,19 @@ const seriesLabel = (iri) => {
 };
 
 async function loadTours() {
-  const res = await fetch('./data/tours.ttl', { cache: 'no-cache' });
-  if (!res.ok) throw new Error(`tours.ttl HTTP ${res.status}`);
-  const text = await res.text();
+  // tours.ttl (passeios/séries) + identities.ttl (nomes das pessoas — desde o
+  // split, alternateName vive lá, não mais em tours.ttl). Parseados juntos pro
+  // mapa `labels` resolver tanto séries quanto participantes/iniciantes.
+  const parts = [];
+  for (const url of ['./data/tours.ttl', './data/identities.ttl']) {
+    const r = await fetch(url, { cache: 'no-cache' });
+    if (!r.ok) {
+      if (url.includes('tours')) throw new Error(`tours.ttl HTTP ${r.status}`);
+      continue;   // identities.ttl ausente (host estático) — nomes caem pro slug
+    }
+    parts.push(await r.text());
+  }
+  const text = parts.join('\n\n');
   const N3 = await loadN3();
   const parser = new N3.Parser({ format: 'text/turtle' });
   return new Promise((resolve, reject) => {
@@ -411,13 +421,13 @@ async function loadTours() {
   });
 }
 
-// Conta as mídias (ph:Image + ph:Video) de uploads.ttl por passeio, via
+// Conta as mídias (ph:StillImage + ph:MotionImage) de images.ttl por passeio, via
 // ph:capturedDuring. Retorna Map<tourIri, {photos, videos}>. Best-effort:
 // num host estático sem uploads.ttl, devolve mapa vazio (coluna fica "—").
 async function loadMediaCounts() {
   let text;
   try {
-    const res = await fetch('./data/uploads.ttl', { cache: 'no-cache' });
+    const res = await fetch('./data/images.ttl', { cache: 'no-cache' });
     if (!res.ok) throw new Error(`uploads.ttl HTTP ${res.status}`);
     text = await res.text();
   } catch (_) {
@@ -434,9 +444,9 @@ async function loadMediaCounts() {
         const counts = new Map();   // tourIri → { photos, videos }
         for (const [subj, tour] of tourOf) {
           const t = types.get(subj);
-          if (t !== PH + 'Image' && t !== PH + 'Video') continue;
+          if (t !== PH + 'StillImage' && t !== PH + 'MotionImage') continue;
           const c = counts.get(tour) || { photos: 0, videos: 0 };
-          if (t === PH + 'Video') c.videos++; else c.photos++;
+          if (t === PH + 'MotionImage') c.videos++; else c.photos++;
           counts.set(tour, c);
         }
         resolve(counts);

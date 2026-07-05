@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Varre `web/clips/raw/`, re-encoda cada fonte pra 360p+720p mp4 +
 áudio .m4a em `web/clips/`, e registra cada clipe como ph:Video em
-`web/data/uploads.ttl` (catálogo único — não há mais clips.json).
+`web/data/images.ttl` (catálogo de mídia — não há mais clips.json).
 
 Cada ph:Video carrega:
   - IRI determinístico `phd:video_<md5(stem)[:16]>` (idempotente)
@@ -18,9 +18,9 @@ Requisitos: ffmpeg + exiftool no PATH.
 Roda:
     python scripts/build-clips.py
 
-Ferramenta de LOTE local: escreve `uploads.ttl` direto no disco (o único
+Ferramenta de LOTE local: escreve `images.ttl` direto no disco (o único
 writer local de catálogo que sobrou — uploads/CRUD interativos passam pelo
-servidor). Em operação normal o servidor é o dono do uploads.ttl, então
+servidor). Em operação normal o servidor é o dono do images.ttl, então
 depois de rodar isto empurre o resultado com
 `scripts/deploy-cloudrun.sh --state-only` (sync-guarded — não clobbera o que
 o servidor escreveu nesse meio-tempo). Object Versioning no bucket recupera
@@ -44,7 +44,7 @@ ROOT = Path(__file__).resolve().parent.parent
 CLIPS_OUT_DIR = ROOT / "web" / "clips"
 CLIPS_RAW_DIR = CLIPS_OUT_DIR / "raw"
 AUDIO_OUT_DIR = CLIPS_OUT_DIR / "audio"
-UPLOADS_TTL   = ROOT / "web" / "data" / "uploads.ttl"
+IMAGES_TTL    = ROOT / "web" / "data" / "images.ttl"
 TOURS_TTL     = ROOT / "web" / "data" / "tours.ttl"
 
 # Janela pra associar clipe a passeio: mesma janela assimétrica do
@@ -347,7 +347,7 @@ def upsert_clip(g: Graph, vhash: str, meta: dict, share_name: str,
         for triple in list(g.triples((subj, None, None))):
             g.remove(triple)
 
-    g.add((vid_iri, RDF.type, PH.Video))
+    g.add((vid_iri, RDF.type, PH.MotionImage))
     if meta["date_xsd"]:
         g.add((vid_iri, DCT.date, Literal(meta["date_xsd"], datatype=XSD.dateTime)))
     geo = URIRef(f"{vid_iri}_geo")
@@ -395,8 +395,8 @@ def main() -> int:
     AUDIO_OUT_DIR.mkdir(parents=True, exist_ok=True)
 
     g = Graph()
-    if UPLOADS_TTL.exists() and UPLOADS_TTL.stat().st_size > 0:
-        g.parse(UPLOADS_TTL, format="turtle")
+    if IMAGES_TTL.exists() and IMAGES_TTL.stat().st_size > 0:
+        g.parse(IMAGES_TTL, format="turtle")
     g.bind("ph", PH); g.bind("phd", PHD)
     g.bind("schema", SCHEMA); g.bind("dcterms", DCT)
     g.bind("prov", PROV); g.bind("pav", PAV)
@@ -445,7 +445,7 @@ def main() -> int:
         print(f"  ok {share_name}  vhash={vhash} lat={meta['lat']} lng={meta['lng']} "
               f"dur={meta['duration']}  {size_kb:.0f} KB{tag}")
 
-    UPLOADS_TTL.write_text(g.serialize(format="turtle"), encoding="utf-8")
+    IMAGES_TTL.write_text(g.serialize(format="turtle"), encoding="utf-8")
     print(f"\nUploads.ttl atualizado: {ok} clipe(s) ok, {skipped} pulado(s), "
           f"{matched_tour} associado(s) a passeio. Total triples: {len(g)}.")
     return 0

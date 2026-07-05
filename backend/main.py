@@ -93,7 +93,11 @@ ONTOLOGY_PATH = DATA_DIR / "ontology.ttl"
 STORE = make_store_from_env(WEB)
 
 # Keys de estado mutável (usados como `STORE.read_text(...)` etc.)
-KEY_UPLOADS  = "data/uploads.ttl"
+# Catálogos separados: images.ttl (mídia ph:StillImage/ph:MotionImage),
+# identities.ttl (pessoas schema:Person — fonte única), tours.ttl (passeios +
+# associações + rotas). Antes tudo vinha em tours.ttl + uploads.ttl.
+KEY_IMAGES   = "data/images.ttl"
+KEY_IDENTITIES = "data/identities.ttl"
 KEY_TOURS    = "data/tours.ttl"
 # routes.json é pré-bakado por scripts/build-routes.py mas também é atualizado
 # incrementalmente aqui (upsert/remove de 1 rota por upload/delete de tour).
@@ -439,7 +443,7 @@ def _load_dump_text(fname):
 # tours.ttl traz tours/pessoas/séries (referenciados por sh:class) e
 # uploads.ttl traz imagens + vídeos. shapes/ontology entram à parte no
 # validador. O manifesto vira só um shim estático servido pro frontend.
-CATALOG_DUMPS = ("tours.ttl", "uploads.ttl")
+CATALOG_DUMPS = ("tours.ttl", "images.ttl", "identities.ttl")
 
 
 def _load_catalog():
@@ -473,7 +477,7 @@ def validate_image_ttl(ttl_text):
     data = v["Graph"]().parse(data=ttl_text, format="turtle")
 
     RDFT = URIRef("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
-    images = list(data.subjects(RDFT, URIRef(PH_NS + "Image")))
+    images = list(data.subjects(RDFT, URIRef(PH_NS + "StillImage")))
     if len(images) != 1:
         return False, None, [
             f"TTL deve conter exatamente 1 ph:Image (achou {len(images)})"
@@ -561,7 +565,7 @@ DATA_GRAPHS_SHIM = """\
 
 <> a void:Dataset ;
     dcterms:title "Pedal Hidrográfico — grafos de dados"@pt ;
-    void:dataDump <tours.ttl>, <uploads.ttl> .
+    void:dataDump <tours.ttl>, <images.ttl>, <identities.ttl> .
 """
 
 
@@ -587,6 +591,36 @@ def _purge_subject(graph, root):
     return removed
 
 
+def _route_new_persons(graph):
+    """Move definições de schema:Person do `graph` (fragmento de tour/mídia sendo
+    persistido) pra identities.ttl (upsert), deixando o `graph` sem pessoas.
+
+    Pós-split, pessoas vivem SÓ em identities.ttl; tours.ttl/images.ttl apenas as
+    referenciam. Quando um cadastro de passeio ou upload de mídia declara uma
+    pessoa NOVA inline (Tom Select create-on-the-fly), esta função a desvia pro
+    arquivo certo — senão a pessoa vazaria de volta pro catálogo de mídia/passeio
+    e recriaria o problema de definição duplicada. Referências (posição de
+    objeto) não são tocadas; só definições (sujeito `a schema:Person`)."""
+    from rdflib import URIRef
+    RDFT = URIRef("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
+    person_cls = (URIRef(SCHEMA_NS + "Person"), URIRef("http://schema.org/Person"))
+    persons = set()
+    for c in person_cls:
+        persons |= set(graph.subjects(RDFT, c))
+    if not persons:
+        return
+    idg = _load_validator()["Graph"]()
+    existing = _load_dump_text("identities.ttl")
+    if existing:
+        idg.parse(data=existing, format="turtle")
+    for p in persons:
+        _purge_subject(idg, p)   # upsert: limpa def anterior (pessoas não têm derivados)
+        for t in list(graph.triples((p, None, None))):
+            idg.add(t)
+            graph.remove(t)
+    STORE.write_text(KEY_IDENTITIES, idg.serialize(format="turtle"))
+
+
 PROV_GEN_URI = "http://www.w3.org/ns/prov#generated"
 
 
@@ -598,7 +632,7 @@ def upsert_image_in_uploads(image_ttl, phash, audit_ttl):
     from rdflib import URIRef
     image_iri = URIRef(PHD_NS + "image_" + phash)
     catalog = Graph()
-    existing = STORE.read_text(KEY_UPLOADS)
+    existing = STORE.read_text(KEY_IMAGES)
     if existing:
         catalog.parse(data=existing, format="turtle")
     # 1) Tira da imagem (+ bnodes de hash/loc).
@@ -608,12 +642,14 @@ def upsert_image_in_uploads(image_ttl, phash, audit_ttl):
         _purge_subject(catalog, s)
     # 3) Mescla os novos blocos (imagem + nova activity).
     catalog += Graph().parse(data=image_ttl + audit_ttl, format="turtle")
-    STORE.write_text(KEY_UPLOADS, catalog.serialize(format="turtle"))
+    # 4) Desvia pessoas novas (autora criada on-the-fly) pra identities.ttl.
+    _route_new_persons(catalog)
+    STORE.write_text(KEY_IMAGES, catalog.serialize(format="turtle"))
 
 
 def remove_image_from_uploads(phash):
     """Remove triples da imagem + da sua activity de envio. Retorna nº de triples."""
-    existing = STORE.read_text(KEY_UPLOADS)
+    existing = STORE.read_text(KEY_IMAGES)
     if not existing:
         return 0
     v = _load_validator()
@@ -624,7 +660,7 @@ def remove_image_from_uploads(phash):
     n = _purge_subject(catalog, image_iri)
     for s in list(catalog.subjects(URIRef(PROV_GEN_URI), image_iri)):
         n += _purge_subject(catalog, s)
-    STORE.write_text(KEY_UPLOADS, catalog.serialize(format="turtle"))
+    STORE.write_text(KEY_IMAGES, catalog.serialize(format="turtle"))
     return n
 
 
@@ -649,7 +685,7 @@ def synthesize_media_patch(media_iri, patch_ttl, remove_preds):
     preds_to_replace = set(patch.predicates(media_uri)) | set(remove_preds)
 
     result = Graph()
-    existing = STORE.read_text(KEY_UPLOADS)
+    existing = STORE.read_text(KEY_IMAGES)
     if existing:
         from rdflib import BNode
         catalog = Graph().parse(data=existing, format="turtle")
@@ -683,12 +719,12 @@ def upsert_media_node(media_iri, node_ttl):
     from rdflib import URIRef
     media_uri = URIRef(media_iri)
     catalog = Graph()
-    existing = STORE.read_text(KEY_UPLOADS)
+    existing = STORE.read_text(KEY_IMAGES)
     if existing:
         catalog.parse(data=existing, format="turtle")
     _purge_subject(catalog, media_uri)
     catalog += Graph().parse(data=node_ttl, format="turtle")
-    STORE.write_text(KEY_UPLOADS, catalog.serialize(format="turtle"))
+    STORE.write_text(KEY_IMAGES, catalog.serialize(format="turtle"))
 
 
 # ── Tour upserts ─────────────────────────────────────────────────────────
@@ -786,6 +822,9 @@ def upsert_tour_in_tours_ttl(tour_ttl, tour_id):
     _purge_subject(catalog, tour_iri)
     # Mescla os novos blocos (tour + eventual associação/pessoa nova).
     catalog += Graph().parse(data=tour_ttl, format="turtle")
+    # Desvia pessoas novas (participante/autora criada on-the-fly) pra
+    # identities.ttl — tours.ttl só referencia pessoas, não as define.
+    _route_new_persons(catalog)
     STORE.write_text(KEY_TOURS, catalog.serialize(format="turtle"))
 
 
@@ -1128,10 +1167,10 @@ def get_data_ttl(filename):
         abort(404)
     text = _load_dump_text(filename)
     if text is None:
-        if filename == "uploads.ttl":
-            text = ""             # catálogo vazio — válido
+        if filename in ("images.ttl", "identities.ttl", "uploads.ttl"):
+            text = ""             # catálogo vazio — válido (uploads.ttl: legado)
         elif filename == "data_graphs.ttl":
-            text = DATA_GRAPHS_SHIM  # manifesto estático (tours + uploads)
+            text = DATA_GRAPHS_SHIM  # manifesto estático (tours + images + identities)
         else:
             abort(404)
     return _conditional(Response(text, mimetype="text/turtle",
@@ -1919,7 +1958,7 @@ def validate_video_ttl(ttl_text):
     data = v["Graph"]().parse(data=ttl_text, format="turtle")
 
     RDFT = URIRef("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
-    videos = list(data.subjects(RDFT, URIRef(PH_NS + "Video")))
+    videos = list(data.subjects(RDFT, URIRef(PH_NS + "MotionImage")))
     if len(videos) != 1:
         return False, None, [
             f"TTL deve conter exatamente 1 ph:Video (achou {len(videos)})"
@@ -2026,13 +2065,14 @@ def upload_video():
     try:
         from rdflib import URIRef, Graph as RdfGraph
         vid_iri = URIRef(PHD_NS + f"video_{vid_id}")
-        existing_text = STORE.read_text(KEY_UPLOADS) or ""
+        existing_text = STORE.read_text(KEY_IMAGES) or ""
         catalog = RdfGraph()
         if existing_text:
             catalog.parse(data=existing_text, format="turtle")
         _purge_subject(catalog, vid_iri)   # vídeo + nós derivados (geo)
         catalog.parse(data=ttl_text, format="turtle")
-        STORE.write_text(KEY_UPLOADS, catalog.serialize(format="turtle"))
+        _route_new_persons(catalog)        # autora nova → identities.ttl
+        STORE.write_text(KEY_IMAGES, catalog.serialize(format="turtle"))
         _invalidate_catalog()
     except Exception as e:  # noqa: BLE001
         # Limpa os blobs recém-gravados (órfãos sem triples) — best-effort.
@@ -2051,7 +2091,7 @@ def remove_video_from_uploads(vhash):
     """Lê os caminhos dos arquivos do vídeo, purga triples (vídeo + bnodes
     alcançáveis), persiste, e devolve (paths, n_triples) — pra que o caller
     delete os blobs no STORE."""
-    existing = STORE.read_text(KEY_UPLOADS)
+    existing = STORE.read_text(KEY_IMAGES)
     if not existing:
         return [], 0
     from rdflib import URIRef
@@ -2066,7 +2106,7 @@ def remove_video_from_uploads(vhash):
         for o in catalog.objects(vid_iri, URIRef(pred)):
             paths.append(str(o))
     n = _purge_subject(catalog, vid_iri)
-    STORE.write_text(KEY_UPLOADS, catalog.serialize(format="turtle"))
+    STORE.write_text(KEY_IMAGES, catalog.serialize(format="turtle"))
     return paths, n
 
 
@@ -2147,7 +2187,7 @@ def _do_update_media(kind, hash_):
         return jsonify(error="ttl ausente"), 400
 
     media_iri = PHD_NS + f"{kind}_{hash_}"
-    cls_local = "Image" if kind == "image" else "Video"
+    cls_local = "StillImage" if kind == "image" else "MotionImage"
     RDFT = URIRef("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
     if (URIRef(media_iri), RDFT, URIRef(PH_NS + cls_local)) not in _load_catalog():
         return jsonify(error=f"{kind} não encontrado: {hash_}"), 404
@@ -2217,8 +2257,8 @@ def assign_media_lists():
     RDFT = URIRef("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
     COLLECTION = URIRef(SCHEMA_NS + "Collection")
     NAME = URIRef(SCHEMA_NS + "name")
-    IMG_CLS = URIRef(PH_NS + "Image")
-    VID_CLS = URIRef(PH_NS + "Video")
+    IMG_CLS = URIRef(PH_NS + "StillImage")
+    VID_CLS = URIRef(PH_NS + "MotionImage")
 
     def _is_list(x):
         return isinstance(x, str) and x.startswith(LIST_PREFIX)
@@ -2231,7 +2271,7 @@ def assign_media_lists():
     v = _load_validator()
     Graph = v["Graph"]
     catalog = Graph()
-    existing = STORE.read_text(KEY_UPLOADS)
+    existing = STORE.read_text(KEY_IMAGES)
     if existing:
         catalog.parse(data=existing, format="turtle")
 
@@ -2263,7 +2303,7 @@ def assign_media_lists():
             catalog.add((mu, ISPARTOF, URIRef(li)))
         touched += 1
 
-    STORE.write_text(KEY_UPLOADS, catalog.serialize(format="turtle"))
+    STORE.write_text(KEY_IMAGES, catalog.serialize(format="turtle"))
     _invalidate_catalog()
     print(f"[assign-media-lists] iris={len(iris)} touched={touched} add={add} remove={remove}")
     return jsonify(ok=True, touched=touched)
@@ -2272,18 +2312,13 @@ def assign_media_lists():
 @app.post("/update-person/<slug>")
 @serialized
 def update_person(slug):
-    """Renomeia (schema:alternateName) a pessoa phd:pessoa<slug> nos catálogos.
+    """Renomeia (schema:alternateName) a pessoa phd:pessoa<slug> em identities.ttl.
 
-    Pessoas são sujeitos minúsculos (`phd:pessoa<Slug> a schema:Person ;
-    schema:alternateName "<nome>"`), mintadas de rebote por upload de mídia
-    (uploads.ttl) ou cadastro de passeio (tours.ttl) — podem existir em UM ou
-    nos DOIS catálogos (ex.: pessoaDandan). Este endpoint troca o alternateName
-    em TODOS os arquivos que definem a pessoa; senão o app.js, que mescla os
-    dois grafos num Map last-write-wins, poderia exibir um valor obsoleto.
-
-    Body: form field `name` (o novo alternateName). Sem SHACL — não há shape de
-    `schema:Person`; o rótulo é livre, igual à criação. Não mexe em routes.json
-    (nomes não afetam geometria). Sem auth — mesma política do resto da API.
+    Pós-split, pessoas vivem SÓ em identities.ttl (fonte única — tours/images
+    apenas as referenciam). Se a pessoa ainda não tem definição lá mas é
+    referenciada por alguma mídia/passeio, a definição é criada. Body: form
+    field `name` (o novo alternateName). Sem SHACL (rótulo livre), sem
+    routes.json. Sem auth — mesma política do resto da API.
     """
     from rdflib import URIRef, Literal
     slug = (slug or "").strip()
@@ -2303,49 +2338,27 @@ def update_person(slug):
     PERSON_CLS = (URIRef(SCHEMA_NS + "Person"), URIRef("http://schema.org/Person"))
     ALT_NAMES = (URIRef(SCHEMA_NS + "alternateName"),
                  URIRef("http://schema.org/alternateName"))
-    ALT_CANON = URIRef(SCHEMA_NS + "alternateName")
-    PERSON_CANON = URIRef(SCHEMA_NS + "Person")
 
-    def _set_name(g):
-        for alt in ALT_NAMES:
-            for o in list(g.objects(person, alt)):
-                g.remove((person, alt, o))
-        g.add((person, ALT_CANON, Literal(name)))
-        if not any((person, RDFT, c) in g for c in PERSON_CLS):
-            g.add((person, RDFT, PERSON_CANON))
-
-    graphs = {}          # key → Graph
-    defined_keys = []    # arquivos que definem a pessoa (tipo ou alternateName)
-    referenced = False   # pessoa aparece como objeto em algum catálogo?
-    for key, fname in ((KEY_TOURS, "tours.ttl"), (KEY_UPLOADS, "uploads.ttl")):
-        text = _load_dump_text(fname)
-        g = Graph().parse(data=text, format="turtle") if text else Graph()
-        graphs[key] = g
-        has_type = any((person, RDFT, c) in g for c in PERSON_CLS)
-        has_alt = any((person, alt, None) in g for alt in ALT_NAMES)
-        if has_type or has_alt:
-            defined_keys.append(key)
-        if (None, None, person) in g:
-            referenced = True
-
-    changed = []
-    if defined_keys:
-        targets = defined_keys
-    elif referenced:
-        # Referenciada mas sem definição em lugar nenhum — cria em tours.ttl.
-        targets = [KEY_TOURS]
-    else:
+    idg = Graph()
+    text = _load_dump_text("identities.ttl")
+    if text:
+        idg.parse(data=text, format="turtle")
+    defined = (any((person, RDFT, c) in idg for c in PERSON_CLS)
+               or any((person, alt, None) in idg for alt in ALT_NAMES))
+    if not defined and (None, None, person) not in _load_catalog():
+        # Nem definida em identities nem referenciada em lugar nenhum.
         return jsonify(error=f"pessoa desconhecida: {slug}"), 404
 
-    for key in targets:
-        g = graphs[key]
-        _set_name(g)
-        STORE.write_text(key, g.serialize(format="turtle"))
-        changed.append("tours.ttl" if key == KEY_TOURS else "uploads.ttl")
-
+    for alt in ALT_NAMES:
+        for o in list(idg.objects(person, alt)):
+            idg.remove((person, alt, o))
+    idg.add((person, URIRef(SCHEMA_NS + "alternateName"), Literal(name)))
+    if not any((person, RDFT, c) in idg for c in PERSON_CLS):
+        idg.add((person, RDFT, URIRef(SCHEMA_NS + "Person")))
+    STORE.write_text(KEY_IDENTITIES, idg.serialize(format="turtle"))
     _invalidate_catalog()
-    print(f"[update-person] pessoa{slug} -> {name!r} files={changed}")
-    return jsonify(ok=True, slug=slug, name=name, files=changed)
+    print(f"[update-person] pessoa{slug} -> {name!r}")
+    return jsonify(ok=True, slug=slug, name=name, files=["identities.ttl"])
 
 
 @app.post("/upload-tour")

@@ -1,5 +1,5 @@
 @prefix dcterms: <http://purl.org/dc/terms/> .
-@prefix ns1: <http://purl.org/pav/> .
+@prefix pav: <http://purl.org/pav/> .
 @prefix ph: <https://pedalhidrografi.co/terms#> .
 @prefix phd: <https://pedalhidrografi.co/data/> .
 @prefix prov: <http://www.w3.org/ns/prov#> .
@@ -1970,7 +1970,7 @@ Nosso próximo destino é o Teatro Renault, ao qual chegaremos cruzando o córre
 \r
 Por fim, margeando o córrego Boa Vista, sufocado pela Av. 23 de maio, cruzando o córrego do Sapateiro e seguindo o córrego Uberaba, vamos nos dirigir ao Parque do Povo, onde esteve o Teatro Vento Forte, demolido pela Prefeitura em 2025. Ali nos dispersaremos, mas não se esqueça: Vá ao Teatro!"""@pt ;
     dcterms:title "Teatros num contexto histórico" ;
-    ns1:providedBy phd:pessoaDandan ;
+    pav:providedBy phd:pessoaDandan ;
     prov:wasAttributedTo phd:pessoaEstevam ;
     ph:countAttendee 22 ;
     ph:countNewcomer 6 ;
@@ -2002,7 +2002,7 @@ phd:tour_ph95 a ph:Tour ;
     dcterms:date "2026-06-09T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:description "Neste pedal vamos percorrer de cabo a rabo o antirrío, aquele que foi o primeiro nome da Av. Paulista, o grande espigão, o elevado, a cordilheira, aquele que determina quais águas escorrerão pro rio Pinheiros ou pro Tietê, aquele de onde sempre haverá descida pra sua direita e pra sua esquerda e planura à sua frente e às suas costas, ele: o glorioso Caaguaçu. Convide uma mana ou pessoa nb pra beber vinho quente e ser feliz contigo neste rolê gostoso com previsão de chegada 22h30 no metrô Jabaquara (essa hora já pode colocar a bike no metrô)."@pt ;
     dcterms:title "Caaguaçu de caabo a raabo" ;
-    ns1:providedBy phd:pessoaDandan ;
+    pav:providedBy phd:pessoaDandan ;
     prov:wasAttributedTo phd:pessoaAnaju ;
     ph:countAttendee 15 ;
     ph:countNewcomer 1 ;
@@ -2017,7 +2017,7 @@ phd:tour_ph96 a ph:Tour ;
     dcterms:date "2026-06-16T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:description "Ao invés de dar a volta ao mundo em 80 dias dentro de um balão a la Júlio Verne, daremos a volta ao balão de Edu Chaves, pedalando nossas magrelas em mais uma noite hidrográfica pela Zona Norte da cidade. Nossas fluvio-vias da vez serão o Anhangabaú, o Tamanduateí, cruzando Tietê e córrego da Biquinha pra cair no riacho Novo Mundo, passando por um rio sem nome (ao que tudo indica, enterrado sem sequer ter sido batizado). Dali pegamos o córrego do Violão e o rio Cabuçu de Cima, assim chegando ao topo do nosso balão. Fechamos o pedal com águas de Maria Paula e Paciência na estação de Metrô Tucuruvi, em horário nobre para ciclistas poderem mandar suas bicis pra dentro do vagão e voltar em paz cada um pra sua foz. Vamos descobrir se esse balão é mágico? Chama as amis!"@pt ;
     dcterms:title "Super fantástico! Vamos de bike até o balão mágico" ;
-    ns1:providedBy phd:pessoaDandan ;
+    pav:providedBy phd:pessoaDandan ;
     prov:wasAttributedTo phd:pessoaAnaju,
         phd:pessoaDandan ;
     ph:arrivedAt "2026-06-16T23:21:00-03:00"^^xsd:dateTime ;
@@ -2494,48 +2494,6 @@ phd:assoc_S_6 a ph:Association ;
     ph:inEventSeries phd:S ;
     ph:sequenceInSeries 6 .
 
-phd:pessoaAlex a schema:Person ;
-    schema:alternateName "alex" .
-
-phd:pessoaAmarmo a schema:Person ;
-    schema:alternateName "amarmo" .
-
-phd:pessoaAndrio a schema:Person ;
-    schema:alternateName "andrio" .
-
-phd:pessoaBrunabom a schema:Person ;
-    schema:alternateName "brunabom" .
-
-phd:pessoaBrunotitton a schema:Person ;
-    schema:alternateName "brunotitton" .
-
-phd:pessoaDelaram a schema:Person ;
-    schema:alternateName "delaram" .
-
-phd:pessoaEricalatina a schema:Person ;
-    schema:alternateName "ericalatina" .
-
-phd:pessoaEstevam a schema:Person ;
-    schema:alternateName "estevam" .
-
-phd:pessoaGa a schema:Person ;
-    schema:alternateName "ga" .
-
-phd:pessoaGiovanna a schema:Person ;
-    schema:alternateName "giovanna" .
-
-phd:pessoaMicaelrodrigues a schema:Person ;
-    schema:alternateName "micaelrodrigues" .
-
-phd:pessoaTomb a schema:Person ;
-    schema:alternateName "tomb" .
-
-phd:pessoaTrilheiro a schema:Person ;
-    schema:alternateName "trilheiro" .
-
-phd:pessoaYas a schema:Person ;
-    schema:alternateName "yas" .
-
 phd:tour_100_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/55017982> .
@@ -2948,50 +2906,14 @@ phd:assoc_BP_4 a ph:Association ;
     ph:inEventSeries phd:BP ;
     ph:sequenceInSeries 4 .
 
-phd:pessoaLume a schema:Person ;
-    schema:alternateName "lume" .
-
-phd:pessoaZito a schema:Person ;
-    schema:alternateName "zito" .
-
 phd:BT a schema:EventSeries ;
     dcterms:title "Bondes / Trips" .
-
-phd:pessoaPedpaula a schema:Person ;
-    schema:alternateName "pedpaula" .
-
-phd:pessoaBrunoperandin a schema:Person ;
-    schema:alternateName "brunoperandin" .
-
-phd:pessoaGabrieltunes a schema:Person ;
-    schema:alternateName "gabrieltunes" .
-
-phd:pessoaGiucuci a schema:Person ;
-    schema:alternateName "giucuci" .
 
 phd:BP a schema:EventSeries ;
     dcterms:title "Bicipassarinhadas" .
 
 phd:S a schema:EventSeries ;
     dcterms:title "Pedais Hidrográficos Suados" .
-
-phd:pessoaFetiche a schema:Person ;
-    schema:alternateName "fetiche" .
-
-phd:pessoaThiagoneves a schema:Person ;
-    schema:alternateName "thiagoneves" .
-
-phd:pessoaGmard a schema:Person ;
-    schema:alternateName "gmard" .
-
-phd:pessoaAnaju a schema:Person ;
-    schema:alternateName "anaju" .
-
-phd:pessoaAlef a schema:Person ;
-    schema:alternateName "alef" .
-
-phd:pessoaDandan a schema:Person ;
-    schema:alternateName "dandan" .
 
 phd:PH a schema:EventSeries ;
     dcterms:title "Pedais Hidrográficos Regulares" .

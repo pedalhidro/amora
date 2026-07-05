@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 #
 # Guarda anti-clobber pros arquivos de estado mutável sincronizados entre o
-# repo local e o bucket GCS: uploads.ttl, data_graphs.ttl, tours.ttl,
+# repo local e o bucket GCS: images.ttl, identities.ttl,
+# data_graphs.ttl, tours.ttl,
 # routes.json. Os dois lados são escritos de forma independente (uploads e
 # Tour CRUD mutam o bucket server-side; builds e edições locais mutam o
 # repo), então um cp cego em qualquer direção descarta silenciosamente o

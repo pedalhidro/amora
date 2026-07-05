@@ -175,8 +175,8 @@
     });
 
     var records = [];
-    ['Image', 'Video'].forEach(function (cls) {
-      var kind = cls === 'Image' ? 'image' : 'video';
+    [['StillImage', 'image'], ['MotionImage', 'video']].forEach(function (pair) {
+      var cls = pair[0], kind = pair[1];
       store.getQuads(null, RDFT, nn(NS.ph + cls), null).forEach(function (q) {
         var iri = q.subject.value;
         var tourIri = obj1(iri, NS.ph + 'capturedDuring');
@@ -242,7 +242,7 @@
       'PREFIX xsd: <' + NS.xsd + '>',
     ];
     var W = [];
-    W.push('{ ?m a ph:Image } UNION { ?m a ph:Video }');
+    W.push('{ ?m a ph:StillImage } UNION { ?m a ph:MotionImage }');
     W.push('?m dcterms:date ?d .');
 
     if (facets.lists && facets.lists.length) {

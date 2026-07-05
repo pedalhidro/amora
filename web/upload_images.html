@@ -644,7 +644,7 @@ async function loadCatalog() {
   const IMAGE_IRI_PREFIX = 'https://pedalhidrografi.co/data/image_';
   const VIDEO_IRI_PREFIX = 'https://pedalhidrografi.co/data/video_';
   // tours.ttl tem os passeios; uploads.ttl tem as imagens (e seus phash via IRI).
-  for (const url of ['./data/tours.ttl', './data/uploads.ttl']) {
+  for (const url of ['./data/tours.ttl', './data/images.ttl', './data/identities.ttl']) {
     try {
       const res = await fetch(url); if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const text = await res.text();
@@ -926,7 +926,7 @@ async function extractMediaFields(iri) {
   const kind = iri.includes('/video_') ? 'video' : 'image';
   const hash = iri.split(/image_|video_/).pop();
   let Parser; ({ Parser } = await import('https://esm.sh/n3@1.17.4?bundle'));
-  const res = await fetch('./data/uploads.ttl', { cache: 'no-cache' });
+  const res = await fetch('./data/images.ttl', { cache: 'no-cache' });
   if (!res.ok) throw new Error('uploads.ttl indisponível (' + res.status + ')');
   const text = await res.text();
   const latOf = new Map(), lonOf = new Map();
@@ -2356,7 +2356,7 @@ function buildImageBlock(card) {
   // bnodes: assim o backend apaga/substitui por prefixo de IRI, sem precisar
   // percorrer bnodes alcançáveis.
   const props = [
-    `a ph:Image`,
+    `a ph:StillImage`,
     `nfo:hasHash ${id}_hash`,
     `dcterms:date "${dateXsd}"^^xsd:dateTime`,
     `dcterms:license <${license}>`,
@@ -2426,7 +2426,7 @@ function buildNewListDecls(listIris) {
   return `\n# Listas novas\n${body}\n`;
 }
 
-// Constrói o bloco TTL para 1 clipe (ph:Video).
+// Constrói o bloco TTL para 1 clipe (ph:MotionImage).
 function buildClipBlock(card) {
   const elem = card.elem;
   const dateXsd = localToXsdDateTime($('[data-field="date"]', elem).value);
@@ -2455,7 +2455,7 @@ function buildClipBlock(card) {
   // GeoCoordinates como IRI derivada (`<iri>_geo`) em vez de bnode — ver
   // buildImageBlock.
   const props = [
-    `a ph:Video`,
+    `a ph:MotionImage`,
     `dcterms:date "${dateXsd}"^^xsd:dateTime`,
     `dcterms:license <${license}>`,
     `schema:locationCreated ${iri}_geo`,

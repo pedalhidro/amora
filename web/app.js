@@ -1311,7 +1311,7 @@ async function toggleAnimation() {
 applyPhotoAnim();
 
 // ── Clips: ghost backdrop ─────────────────────────────────────────────────
-// Catálogo de clipes vive em `web/data/uploads.ttl` (ph:Video). Os arquivos
+// Catálogo de clipes vive em `web/data/images.ttl` (ph:MotionImage). Os arquivos
 // transcodados ficam em `web/clips/`. Quando Animação está ligada, um
 // `<video>` sobre o mapa toca segmentos aleatórios de 5s de cada clipe em
 // laço, com áudio. O mapa não move; só os marcadores de cada clipe acendem
@@ -1511,7 +1511,7 @@ function fadeClipVolume(v, target, durationMs)  { return fadeProp(v, 'volume',  
 
 async function loadClipsCatalog() {
   if (clipsCatalog) return clipsCatalog;
-  // Fonte única: ph:Video em web/data/uploads.ttl. Clipes processados por
+  // Fonte única: ph:MotionImage em web/data/images.ttl. Clipes processados por
   // scripts/build-clips.py vivem em web/clips/ — o próprio build-clips.py
   // escreve as triples no uploads.ttl com autoria/licença default.
   try {
@@ -1523,7 +1523,7 @@ async function loadClipsCatalog() {
   return clipsCatalog;
 }
 
-// Lê `web/data/uploads.ttl` e extrai ph:Video → entradas no formato
+// Lê `web/data/images.ttl` e extrai ph:MotionImage → entradas no formato
 // {file, file720, audio, thumb, lat, lng, duration, datetime, vhash, …}.
 // Arquivos vivem em `web/clips/<id>.{360p.mp4,720p.mp4,audio.webm,thumb.jpg}`
 // (clipes locais de build-clips.py usam stem original; uploads do form
@@ -1531,7 +1531,7 @@ async function loadClipsCatalog() {
 // ficam ausentes — o app renderiza só como fonte sonora (audio loop), não
 // como ghost-video no mapa.
 async function loadClipsFromUploadsTtl() {
-  const res = await fetch('./data/uploads.ttl', { cache: 'no-cache' });
+  const res = await fetch('./data/images.ttl', { cache: 'no-cache' });
   if (!res.ok) return [];
   const text = await res.text();
   if (!text.trim()) return [];
@@ -1548,7 +1548,7 @@ async function loadClipsFromUploadsTtl() {
       if (done) {
         const clips = [];
         for (const [_s, props] of subs) {
-          if (props.type !== PH_ + 'Video') continue;
+          if (props.type !== PH_ + 'MotionImage') continue;
           const geo = props.locationCreated ? geos.get(props.locationCreated) : null;
           if (!geo || !Number.isFinite(geo.lat) || !Number.isFinite(geo.lng)) continue;
           // Sem áudio = não tem o que tocar; ignora.
@@ -2213,7 +2213,7 @@ function buildModelFromQuads(quads) {
 
   const photos = [];
   for (const [s, ts] of types) {
-    if (!ts.has(PH_NS + 'Image')) continue;
+    if (!ts.has(PH_NS + 'StillImage')) continue;
     const locNode = locOf.get(s);
     const lat = locNode != null ? locLat.get(locNode) : undefined;
     const lng = locNode != null ? locLng.get(locNode) : undefined;
@@ -2958,7 +2958,7 @@ function renderRoutePhotos(entry) {
     : buildLabel(entry);
   // Carrega o catálogo de clipes em paralelo com photos pra renderizar a
   // tira de vídeos junto. Falha silenciosamente se uploads.ttl não tiver
-  // ph:Video — apenas o strip de fotos sai.
+  // ph:MotionImage — apenas o strip de fotos sai.
   loadClipsCatalog().then(() => {
     const cms = rideClips(entry.date, entry.tourIri);
     if (!cms.length) return;

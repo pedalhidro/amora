@@ -204,9 +204,9 @@ rm -f "$LIFECYCLE_FILE"
 # nunca fica permanentemente desatualizado.
 #
 # shapes.ttl/ontology.ttl são unidirecionais (só o deploy escreve no
-# bucket) — push incondicional. tours.ttl é dual-writer (/upload-tour e
-# /delete-tour mutam o bucket) — push guardado, senão todo deploy
-# clobberava edições feitas via Censo.
+# bucket) — push incondicional. tours.ttl e identities.ttl são dual-writer
+# (Tour CRUD / criação de pessoa mutam o bucket) mas TAMBÉM seed baked-in —
+# push guardado, senão todo deploy clobberava edições server-side.
 echo "→ Sincronizando TTLs estáticos pro bucket…"
 for f in shapes.ttl ontology.ttl; do
   if [[ -f "$REPO_ROOT/web/data/$f" ]]; then
@@ -216,11 +216,13 @@ for f in shapes.ttl ontology.ttl; do
     echo "  ⚠ $REPO_ROOT/web/data/$f não existe localmente — skip"
   fi
 done
-if [[ -f "$REPO_ROOT/web/data/tours.ttl" ]]; then
-  guarded_push "$REPO_ROOT/web/data/tours.ttl" "gs://$BUCKET/data/tours.ttl"
-else
-  echo "  ⚠ $REPO_ROOT/web/data/tours.ttl não existe localmente — skip"
-fi
+for f in tours.ttl identities.ttl; do
+  if [[ -f "$REPO_ROOT/web/data/$f" ]]; then
+    guarded_push "$REPO_ROOT/web/data/$f" "gs://$BUCKET/data/$f"
+  else
+    echo "  ⚠ $REPO_ROOT/web/data/$f não existe localmente — skip"
+  fi
+done
 
 # ── 3. Deploy ───────────────────────────────────────────────────────────
 if [[ "$DEPLOY_CODE" == 1 ]]; then
@@ -298,7 +300,7 @@ if [[ "$SYNC_STATE" == 1 ]]; then
     fi
   fi
 
-  for f in uploads.ttl data_graphs.ttl; do
+  for f in images.ttl data_graphs.ttl; do
     if [[ -f "$REPO_ROOT/web/data/$f" ]]; then
       guarded_push "$REPO_ROOT/web/data/$f" "gs://$BUCKET/data/$f"
     else

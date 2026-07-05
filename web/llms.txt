@@ -23,9 +23,12 @@ Fatos rápidos:
 - [tours.ttl](https://amora.pedalhidrografi.co/data/tours.ttl): catálogo de
   passeios (`ph:Tour`) — data, título, participantes, energia estimada
   (QUDT), link do post no Instagram e da rota no RideWithGPS.
-- [uploads.ttl](https://amora.pedalhidrografi.co/data/uploads.ttl): fotos
-  (`ph:Image`) e vídeos (`ph:Video`) georreferenciados, com hash perceptual,
-  autoria e associação ao passeio (`ph:capturedDuring`).
+- [images.ttl](https://amora.pedalhidrografi.co/data/images.ttl): fotos
+  (`ph:StillImage`) e vídeos (`ph:MotionImage`) georreferenciados — ambos
+  subclasses de `ph:Image` (mídia visual) — com hash perceptual, autoria e
+  associação ao passeio (`ph:capturedDuring`).
+- [identities.ttl](https://amora.pedalhidrografi.co/data/identities.ttl): as
+  pessoas (`schema:Person`) referenciadas por passeios e mídias — fonte única.
 - [ontology.ttl](https://amora.pedalhidrografi.co/data/ontology.ttl): a
   ontologia `ph:`. [shapes.ttl](https://amora.pedalhidrografi.co/data/shapes.ttl):
   shapes SHACL usadas na validação dos uploads.

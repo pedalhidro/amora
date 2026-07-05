@@ -11,7 +11,11 @@
 @prefix nfo: <http://www.semanticdesktop.org/ontologies/2007/03/22/nfo#> .
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 
-ph:ImageShape a sh:NodeShape ;
+# Mídia visual — base abstrata ph:Image. Restrições COMPARTILHADAS por foto e
+# vídeo. Sob inference=rdfs (que o backend usa ao validar), toda instância
+# `a ph:StillImage` / `a ph:MotionImage` é inferida `a ph:Image`, então este
+# shape dispara nas duas subclasses sem duplicação.
+ph:VisualMediaShape a sh:NodeShape ;
     sh:targetClass ph:Image ;
     sh:property [
         sh:path dcterms:date ;
@@ -19,7 +23,7 @@ ph:ImageShape a sh:NodeShape ;
         sh:minCount 1 ;
         sh:maxCount 1 ;
         sh:datatype xsd:dateTime ;
-        sh:message "Foto precisa de um único timestamp (schema:dateCreated)."@pt ;
+        sh:message "Mídia precisa de um único timestamp (dcterms:date)."@pt ;
     ] ;
     sh:property [
         sh:path schema:locationCreated ;
@@ -27,8 +31,50 @@ ph:ImageShape a sh:NodeShape ;
         sh:minCount 1 ;
         sh:maxCount 1 ;
         sh:class schema:GeoCoordinates ;
-        sh:message "Foto precisa de uma única coordenada GPS (ph:capturedAt → schema:GeoCoordinates)."@pt ;
+        sh:message "Mídia precisa de uma única coordenada GPS (schema:locationCreated → schema:GeoCoordinates)."@pt ;
     ] ;
+    sh:property [
+        sh:path ph:capturedDuring ;
+        sh:severity sh:Warning ;
+        sh:minCount 1 ;
+        sh:class ph:Tour ;
+        sh:message "Ideal: associar a mídia a um passeio."@pt ;
+    ] ;
+    sh:property [
+        sh:path prov:wasAttributedTo ;
+        sh:severity sh:Warning ;
+        sh:minCount 1 ;
+        sh:class schema:Person ;
+        sh:message "Mídia de autora (prov:wasAttributedTo)."@pt ;
+    ] ;
+    sh:property [
+        sh:path dcterms:license ;
+        sh:severity sh:Warning ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:nodeKind sh:IRI ;
+        sh:message "Mídia precisa de exatamente uma licença (IRI, ex.: CC BY-SA 4.0)."@pt ;
+    ] ;
+    sh:property [
+        sh:path pav:providedBy ;
+        sh:severity sh:Warning ;
+        sh:minCount 1 ;
+        sh:class schema:Person ;
+        sh:message "Mídia precisa de proveniência (pav:providedBy)."@pt ;
+    ] ;
+    sh:property [
+        sh:path schema:isPartOf ;
+        sh:severity sh:Warning ;
+        sh:nodeKind sh:IRI ;
+        sh:class schema:Collection ;
+        sh:message "Se declarada, a lista (schema:isPartOf) deve ser schema:Collection."@pt ;
+    ] .
+
+# Foto (ph:StillImage) — restrições específicas de imagem estática (direção,
+# focal, hash, flags de anonimização/compressão). Herda as regras de mídia via
+# ph:VisualMediaShape acima.
+ph:StillImageShape a sh:NodeShape ;
+    sh:targetClass ph:StillImage ;
     sh:property [
         sh:path exif:gpsImgDirection ;
         sh:severity sh:Warning ;
@@ -37,7 +83,7 @@ ph:ImageShape a sh:NodeShape ;
         sh:datatype xsd:decimal ;
         sh:minInclusive 0 ;
         sh:maxExclusive 360 ;
-        sh:message "Ideal: declarar direção (ph:bearing, 0–360°)."@pt ;
+        sh:message "Ideal: declarar direção (exif:gpsImgDirection, 0–360°)."@pt ;
     ] ;
     sh:property [
         sh:path exif:focalLengthIn35mmFilm ;
@@ -50,41 +96,12 @@ ph:ImageShape a sh:NodeShape ;
         sh:message "Ideal: declarar distância de focal equivalente a 35mm"@pt ;
     ] ;
     sh:property [
-        sh:path ph:capturedDuring ;
-        sh:severity sh:Warning ;
-        sh:minCount 1 ;
-        sh:class ph:Tour ;
-        sh:message "Ideal: associar a foto a um passeio."@pt ;
-    ] ;
-    sh:property [
-        sh:path prov:wasAttributedTo ;
-        sh:severity sh:Warning ;
-        sh:minCount 1 ;
-        sh:class schema:Person ;
-        sh:message "Foto de autora (prov:wasAttributedTo)."@pt ;
-    ] ;
-    sh:property [
-        sh:path dcterms:license ;
-        sh:severity sh:Warning ;
-        sh:minCount 1 ;
-        sh:maxCount 1 ;
-        sh:nodeKind sh:IRI ;
-        sh:message "Foto precisa de exatamente uma licença (IRI, ex.: CC BY-SA 4.0)."@pt ;
-    ] ;
-    sh:property [
         sh:path nfo:hasHash ;
         sh:severity sh:Warning ;
         sh:minCount 1 ;
         sh:maxCount 1 ;
         sh:class nfo:FileHash ;
         sh:message "Ideal: declarar hash do arquivo (nfo:FileHash)."@pt ;
-    ] ;
-    sh:property [
-        sh:path pav:providedBy ;
-        sh:severity sh:Warning ;
-        sh:minCount 1 ;
-        sh:class schema:Person ;
-        sh:message "Foto precisa de proveniência (pav:providedBy)."@pt ;
     ] ;
     sh:property [
         sh:path ph:anonymized ;
@@ -99,33 +116,13 @@ ph:ImageShape a sh:NodeShape ;
         sh:maxCount 1 ;
         sh:datatype xsd:boolean ;
         sh:message "Se declarado, ph:compressed deve ser booleano."@pt ;
-    ] ;
-    sh:property [
-        sh:path schema:isPartOf ;
-        sh:severity sh:Warning ;
-        sh:nodeKind sh:IRI ;
-        sh:class schema:Collection ;
-        sh:message "Se declarada, a lista (schema:isPartOf) deve ser schema:Collection."@pt ;
     ] .
 
-ph:VideoShape a sh:NodeShape ;
-    sh:targetClass ph:Video ;
-    sh:property [
-        sh:path dcterms:date ;
-        sh:severity sh:Violation ;
-        sh:minCount 1 ;
-        sh:maxCount 1 ;
-        sh:datatype xsd:dateTime ;
-        sh:message "Vídeo precisa de um único timestamp (dcterms:date)."@pt ;
-    ] ;
-    sh:property [
-        sh:path schema:locationCreated ;
-        sh:severity sh:Violation ;
-        sh:minCount 1 ;
-        sh:maxCount 1 ;
-        sh:class schema:GeoCoordinates ;
-        sh:message "Vídeo precisa de uma única coordenada GPS (schema:locationCreated → schema:GeoCoordinates)."@pt ;
-    ] ;
+# Vídeo (ph:MotionImage) — restrições específicas de imagem em movimento
+# (duração, resoluções, áudio, thumbnail). Herda as regras de mídia via
+# ph:VisualMediaShape acima.
+ph:MotionImageShape a sh:NodeShape ;
+    sh:targetClass ph:MotionImage ;
     sh:property [
         sh:path schema:duration ;
         sh:severity sh:Violation ;
@@ -170,42 +167,6 @@ ph:VideoShape a sh:NodeShape ;
         sh:maxCount 1 ;
         sh:datatype xsd:string ;
         sh:message "Ideal: declarar schema:thumbnail (caminho relativo a web/clips/) pra marker do mapa."@pt ;
-    ] ;
-    sh:property [
-        sh:path ph:capturedDuring ;
-        sh:severity sh:Warning ;
-        sh:minCount 1 ;
-        sh:class ph:Tour ;
-        sh:message "Ideal: associar o vídeo a um passeio."@pt ;
-    ] ;
-    sh:property [
-        sh:path prov:wasAttributedTo ;
-        sh:severity sh:Warning ;
-        sh:minCount 1 ;
-        sh:class schema:Person ;
-        sh:message "Vídeo de autora (prov:wasAttributedTo)."@pt ;
-    ] ;
-    sh:property [
-        sh:path dcterms:license ;
-        sh:severity sh:Warning ;
-        sh:minCount 1 ;
-        sh:maxCount 1 ;
-        sh:nodeKind sh:IRI ;
-        sh:message "Vídeo precisa de exatamente uma licença (IRI, ex.: CC BY-SA 4.0)."@pt ;
-    ] ;
-    sh:property [
-        sh:path pav:providedBy ;
-        sh:severity sh:Warning ;
-        sh:minCount 1 ;
-        sh:class schema:Person ;
-        sh:message "Vídeo precisa de proveniência (pav:providedBy)."@pt ;
-    ] ;
-    sh:property [
-        sh:path schema:isPartOf ;
-        sh:severity sh:Warning ;
-        sh:nodeKind sh:IRI ;
-        sh:class schema:Collection ;
-        sh:message "Se declarada, a lista (schema:isPartOf) deve ser schema:Collection."@pt ;
     ] .
 
 ph:TourShape a sh:NodeShape ;

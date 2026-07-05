@@ -1,0 +1,81 @@
+@prefix phd: <https://pedalhidrografi.co/data/> .
+@prefix schema: <https://schema.org/> .
+
+phd:pessoaAlef a schema:Person ;
+    schema:alternateName "alef" .
+
+phd:pessoaAlex a schema:Person ;
+    schema:alternateName "alex" .
+
+phd:pessoaAmarmo a schema:Person ;
+    schema:alternateName "amarmo" .
+
+phd:pessoaAnaju a schema:Person ;
+    schema:alternateName "anaju" .
+
+phd:pessoaAndrio a schema:Person ;
+    schema:alternateName "andrio" .
+
+phd:pessoaBrunabom a schema:Person ;
+    schema:alternateName "brunabom" .
+
+phd:pessoaBrunoperandin a schema:Person ;
+    schema:alternateName "brunoperandin" .
+
+phd:pessoaBrunotitton a schema:Person ;
+    schema:alternateName "brunotitton" .
+
+phd:pessoaDandan a schema:Person ;
+    schema:alternateName "dandan" .
+
+phd:pessoaDelaram a schema:Person ;
+    schema:alternateName "delaram" .
+
+phd:pessoaEricalatina a schema:Person ;
+    schema:alternateName "ericalatina" .
+
+phd:pessoaEstevam a schema:Person ;
+    schema:alternateName "estevam" .
+
+phd:pessoaFetiche a schema:Person ;
+    schema:alternateName "fetiche" .
+
+phd:pessoaGa a schema:Person ;
+    schema:alternateName "ga" .
+
+phd:pessoaGabrieltunes a schema:Person ;
+    schema:alternateName "gabrieltunes" .
+
+phd:pessoaGiovanna a schema:Person ;
+    schema:alternateName "giovanna" .
+
+phd:pessoaGiucuci a schema:Person ;
+    schema:alternateName "giucuci" .
+
+phd:pessoaGmard a schema:Person ;
+    schema:alternateName "gmard" .
+
+phd:pessoaLume a schema:Person ;
+    schema:alternateName "lume" .
+
+phd:pessoaMicaelrodrigues a schema:Person ;
+    schema:alternateName "micaelrodrigues" .
+
+phd:pessoaPedpaula a schema:Person ;
+    schema:alternateName "pedpaula" .
+
+phd:pessoaThiagoneves a schema:Person ;
+    schema:alternateName "thiagoneves" .
+
+phd:pessoaTomb a schema:Person ;
+    schema:alternateName "tomb" .
+
+phd:pessoaTrilheiro a schema:Person ;
+    schema:alternateName "trilheiro" .
+
+phd:pessoaYas a schema:Person ;
+    schema:alternateName "yas" .
+
+phd:pessoaZito a schema:Person ;
+    schema:alternateName "zito" .
+

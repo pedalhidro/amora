@@ -390,7 +390,7 @@ async function loadCatalog() {
   } catch { return; }
   const types = new Map(), names = new Map(), titles = new Map();
   const providers = new Set();
-  for (const url of ['./data/tours.ttl', './data/uploads.ttl']) {
+  for (const url of ['./data/tours.ttl', './data/identities.ttl']) {
     try {
       const res = await fetch(url);
       if (!res.ok) continue;

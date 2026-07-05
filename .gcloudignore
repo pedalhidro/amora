@@ -19,7 +19,7 @@
 # povoar o bucket com os transcodes locais de build-clips.py + as fotos
 # já uploadadas localmente, rode `scripts/deploy-cloudrun.sh --state`.
 web/photos/
-web/data/uploads.ttl
+web/data/images.ttl
 web/data/data_graphs.ttl
 web/clips/
 backend/data/

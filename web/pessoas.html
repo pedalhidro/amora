@@ -135,11 +135,20 @@
   .tile .title { font-size: 8px; color: var(--muted);
     display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical;
     overflow: hidden; }
+  /* Tile de mídia faltante (thumb 404): bloco vermelho com a CURIE curta. */
+  .tile.err { border-color: #ff6b6b; background: rgba(255, 107, 107, 0.14); }
+  .tile.err .err-code { font-size: 8px; font-weight: 700; color: #ff6b6b;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    word-break: break-all; line-height: 1.1; }
+  a.tile.err:hover { border-color: #ff9a9a; }
   .chip { display: inline-block; padding: 2px 8px; border-radius: 10px;
     background: var(--surface); border: 1px solid var(--border);
     font-size: 12px; color: var(--muted); margin: 2px 4px 2px 0; }
   .more { color: var(--muted); font-size: 12px; align-self: center;
     padding: 0 4px; }
+  button.more { background: none; border: 1px solid var(--border); border-radius: 6px;
+    padding: 4px 9px; cursor: pointer; font: inherit; font-size: 12px; }
+  button.more:hover { border-color: var(--accent); color: var(--accent); }
   .empty { color: var(--muted); font-style: italic; font-size: 13px; }
 
   footer { margin-top: 20px; color: var(--muted); font-size: 11px; }
@@ -215,8 +224,8 @@ const RDF_NS = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#';
 
 const PERSON_PREFIX = PHD + 'pessoa';
 const PERSON_TYPES  = new Set([SCHEMA + 'Person', 'http://schema.org/Person']);
-const IMAGE_TYPE = PH + 'Image';
-const VIDEO_TYPE = PH + 'Video';
+const IMAGE_TYPE = PH + 'StillImage';
+const VIDEO_TYPE = PH + 'MotionImage';
 const TOUR_TYPE  = PH + 'Tour';
 const ALT_PREDS   = new Set([SCHEMA + 'alternateName', 'http://schema.org/alternateName']);
 const NAME_PREDS  = new Set([SCHEMA + 'name', 'http://schema.org/name']);
@@ -260,6 +269,15 @@ function curie(iri) {
 }
 const inverseLabel = (p) => INVERSE_LABELS[p] || curie(p);
 
+// CURIE curta pra rótulo de tile faltante: ex. phd:image_804ede4… /
+// phd:video_0c1c8f… (prefixo do tipo + 7 chars do hash).
+function shortCurie(iri) {
+  const c = curie(iri);
+  const m = c.match(/^(.*_)([0-9a-f]+)$/i);
+  if (m) return `${m[1]}${m[2].slice(0, 7)}…`;
+  return c.length > 20 ? `${c.slice(0, 20)}…` : c;
+}
+
 // Tetos de tiles por tipo dentro de um grupo (evita despejar centenas de
 // thumbnails de uma vez pra quem tem muita mídia). Excedente vira "+N mais".
 const TOUR_CAP = 60, PHOTO_CAP = 36, VIDEO_CAP = 24;
@@ -288,7 +306,8 @@ async function loadData() {
     console.warn('[pessoas] manifesto indisponível, usando fallback:', e.message);
     urls = [
       new URL('./data/tours.ttl', location.href).href,
-      new URL('./data/uploads.ttl', location.href).href,
+      new URL('./data/images.ttl', location.href).href,
+      new URL('./data/identities.ttl', location.href).href,
     ];
   }
   const parts = [];
@@ -434,15 +453,21 @@ function tourTile(iri) {
   }
   return `<a class="tile tour txt-tile" href="${href}" target="_blank" rel="noopener" title="${escapeHtml(hover)}">${body}</a>`;
 }
+// Thumb que, se 404ar, vira um bloco VERMELHO com a CURIE curta (ex.
+// phd:image_804ede4…) — sinaliza a mídia faltante em vez de sumir.
+function mediaThumbTile(iri, thumbUrl, hrefUrl) {
+  return `<a class="tile" href="${escapeHtml(hrefUrl)}" target="_blank" rel="noopener" title="${escapeHtml(curie(iri))}">` +
+    `<img loading="lazy" src="${escapeHtml(thumbUrl)}" alt="" ` +
+    `onerror="this.style.display='none';this.closest('a').classList.add('txt-tile','err');this.nextElementSibling.hidden=false">` +
+    `<span class="err-code" hidden>${escapeHtml(shortCurie(iri))}</span></a>`;
+}
 function photoTile(iri) {
   const u = photoThumb(iri);
-  return `<a class="tile" href="${escapeHtml(u.replace('/thumb.jpg', '/large.jpg'))}" target="_blank" rel="noopener" title="${escapeHtml(curie(iri))}">` +
-    `<img loading="lazy" src="${escapeHtml(u)}" alt="" onerror="this.closest('a').style.display='none'"></a>`;
+  return mediaThumbTile(iri, u, u.replace('/thumb.jpg', '/large.jpg'));
 }
 function videoTile(iri) {
   const u = videoThumb(iri);
-  if (u) return `<a class="tile" href="${escapeHtml(u)}" target="_blank" rel="noopener" title="${escapeHtml(curie(iri))}">` +
-    `<img loading="lazy" src="${escapeHtml(u)}" alt="" onerror="this.closest('a').style.display='none'"></a>`;
+  if (u) return mediaThumbTile(iri, u, u);
   return `<span class="tile txt-tile" title="${escapeHtml(curie(iri))}"><span class="series">🎬</span></span>`;
 }
 
@@ -458,7 +483,11 @@ function renderForward(fwd) {
   return `<table class="facts-table"><tbody>${rows.join('')}</tbody></table>`;
 }
 
-function renderGroup(g) {
+const DEFAULT_CAPS = { tour: TOUR_CAP, photo: PHOTO_CAP, video: VIDEO_CAP };
+
+// Constrói os tiles de um grupo, com teto por tipo. caps.* = Infinity mostra
+// tudo (usado pelo botão "mostrar todas"). Devolve { tiles, moreBits }.
+function groupTiles(g, caps) {
   const tours = [], photos = [], videos = [], others = [];
   for (const s of g.subjects) {
     const t = typeOf.get(s);
@@ -471,19 +500,41 @@ function renderGroup(g) {
   // Galeria única de tiles: passeios → fotos → vídeos → outros. Cada tipo
   // capado à parte pra que todos apareçam representados.
   const tiles = [
-    ...tours.slice(0, TOUR_CAP).map(tourTile),
-    ...photos.slice(0, PHOTO_CAP).map(photoTile),
-    ...videos.slice(0, VIDEO_CAP).map(videoTile),
+    ...tours.slice(0, caps.tour).map(tourTile),
+    ...photos.slice(0, caps.photo).map(photoTile),
+    ...videos.slice(0, caps.video).map(videoTile),
     ...others.map((s) => `<span class="tile txt-tile" title="${escapeHtml(curie(s))}"><span class="title">${escapeHtml(curie(s))}</span></span>`),
   ];
   const moreBits = [];
-  if (tours.length > TOUR_CAP)   moreBits.push(`${tours.length - TOUR_CAP} passeio(s)`);
-  if (photos.length > PHOTO_CAP) moreBits.push(`${photos.length - PHOTO_CAP} foto(s)`);
-  if (videos.length > VIDEO_CAP) moreBits.push(`${videos.length - VIDEO_CAP} vídeo(s)`);
-  const more = moreBits.length ? `<span class="more">+${moreBits.join(', ')} ocultos</span>` : '';
+  if (tours.length > caps.tour)   moreBits.push(`${tours.length - caps.tour} passeio(s)`);
+  if (photos.length > caps.photo) moreBits.push(`${photos.length - caps.photo} foto(s)`);
+  if (videos.length > caps.video) moreBits.push(`${videos.length - caps.video} vídeo(s)`);
+  return { tiles, moreBits };
+}
+
+const ALL_CAPS = { tour: Infinity, photo: Infinity, video: Infinity };
+
+// Conteúdo interno da galeria de um grupo, com botão de alternância quando há
+// excedente. `expanded` mostra tudo (+ "mostrar menos"); recolhido mostra o
+// teto (+ "mostrar todas"). Os tiles são loading="lazy" — expandir 255 fotos
+// só baixa as visíveis.
+function thumbsInner(g, expanded) {
+  const collapsed = groupTiles(g, DEFAULT_CAPS);
+  const tiles = expanded ? groupTiles(g, ALL_CAPS).tiles : collapsed.tiles;
+  let btn = '';
+  if (collapsed.moreBits.length) {
+    btn = expanded
+      ? `<button type="button" class="more reveal" data-expanded="1">▲ mostrar menos</button>`
+      : `<button type="button" class="more reveal" data-expanded="0">+${collapsed.moreBits.join(', ')} ocultos · mostrar todas</button>`;
+  }
+  return tiles.join('') + btn;
+}
+
+function renderGroup(g, personIri) {
   return `<details class="grp" open>` +
     `<summary>${escapeHtml(inverseLabel(g.p))} <span class="n">(${g.subjects.length})</span></summary>` +
-    `<div class="grp-body"><div class="thumbs">${tiles.join('')}${more}</div></div>` +
+    `<div class="grp-body"><div class="thumbs" data-person="${escapeHtml(personIri)}" ` +
+      `data-pred="${escapeHtml(g.p)}">${thumbsInner(g, false)}</div></div>` +
   `</details>`;
 }
 
@@ -494,7 +545,7 @@ function renderPerson(p) {
     badge += ` <span class="badge-warn" title="${escapeHtml(p.altVals.join(' · '))}">⚠ nomes divergentes</span>`;
   }
   const groupsHtml = p.groups.length
-    ? p.groups.map(renderGroup).join('')
+    ? p.groups.map((g) => renderGroup(g, p.iri)).join('')
     : '<p class="empty">Nenhuma aparição no acervo.</p>';
   return `<details class="person" data-search="${escapeHtml((p.label + ' ' + p.slug).toLowerCase())}">` +
     `<summary>` +
@@ -576,6 +627,17 @@ function wireEvents() {
         : `erro: ${err.message}`;
       btn.disabled = false;
     }
+  });
+  // Alterna mostrar-todas ↔ mostrar-menos re-renderizando a galeria do grupo.
+  box.addEventListener('click', (e) => {
+    const btn = e.target.closest('.reveal');
+    if (!btn) return;
+    const thumbs = btn.closest('.thumbs');
+    const person = people.find((x) => x.iri === thumbs.dataset.person);
+    const g = person && person.groups.find((x) => x.p === thumbs.dataset.pred);
+    if (!g) return;
+    const expand = btn.dataset.expanded === '0';   // 0 = recolhido → expandir
+    thumbs.innerHTML = thumbsInner(g, expand);
   });
   // Busca.
   $('#q').addEventListener('input', (e) => {

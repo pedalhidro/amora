@@ -9,7 +9,7 @@
 # não precisa entrar no container. Pra povoar o bucket, rode
 # `scripts/deploy-cloudrun.sh --state`.
 web/photos/
-web/data/uploads.ttl
+web/data/images.ttl
 web/data/data_graphs.ttl
 web/clips/
 
