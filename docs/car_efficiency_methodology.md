@@ -89,7 +89,7 @@ ajustando **`carKEff` e `carPowerFlat`**.
 | `carCdA` | 1,1 m² | C_d ~0,38 × área frontal ~2,9 m² — extremo "SUV grande/boxy" (central ~1,0). |
 | `carKEff` | **0,28** | Eficiência tanque→roda em **cruzeiro estável**: fueleconomy.gov "energy to wheels" 22–30 % na estrada; BTE de motores SI modernos ~30–36 % × ~0,9 de transmissão. Faixa defensável 0,25–0,30; central 0,28. (Ciclo combinado ~0,21–0,25 = o "cerca de um quarto"; média de ciclo com cidade ~0,16–0,20.) |
 | `carPowerFlat` | **15 000 W** | Cruzeiro de equilíbrio ~65 km/h — arterial de fluxo livre em SP (entre os 50 km/h de arterial e os 80–90 km/h das Marginais). |
-| `carPowerAscent` | 30 000 W | Segura ~60 km/h a +3 %, cai p/ ~34 km/h a +5 % (mais acelerador na subida, mas sem passar da velocidade de plano). |
+| `carPowerAscent` | 45 000 W | Motorista **acelera na subida** — em SP não se "cruza" em morro (acelera e freia). ~69 / 50 / 35 km/h a +3 / +5 / +8 %; sobe grades leves acima da velocidade de plano. |
 | `carPowerDescent` | 0 W | Pé fora do acelerador (corte de combustível na desaceleração — DFCO). |
 | `carSlopeFlatThreshold` | 0,03 (±3 %) | Grade de equilíbrio do *coasting*: acima dela, na descida, o motor tira o pé e entra o DFCO. Literatura: ~1,5 % (cidade) a ~3 % (estrada) — usamos o extremo de estrada. |
 | `carEpsilon` | **0,40** | Ver §4. |
@@ -111,22 +111,26 @@ combustível equivalente é `potência_roda / carKEff`.
 | Regime | Roda | Combustível-equiv (÷0,28) | Velocidade |
 |---|---|---|---|
 | Cruzeiro no plano | 15 kW (20 hp) | ~54 kW (72 hp) | ~65 km/h |
-| Subida (pico do modelo) | 30 kW (40 hp) | ~107 kW (144 hp) | 60 km/h @+3%, 34 @+5% |
+| Subida (pico do modelo) | 45 kW (60 hp) | ~161 kW (216 hp) | 69 km/h @+3%, 50 @+5%, 35 @+8% |
 
 No cruzeiro, os 15 kW na roda se decompõem em **~11,5 kW de rolamento + ~3,5 kW
 de arrasto** — o rolamento domina justamente por causa dos 5000 kg. Isso foi
 confirmado como fisicamente correto (inclusive escalando o *road-load* de um
 caminhão Classe 8). A potência **máxima que o modelo já exige** é
-`carPowerAscent` = 30 kW na roda ≈ **107 kW de motor** — bem dentro do envelope
+`carPowerAscent` = 45 kW na roda ≈ **161 kW de motor** — bem dentro do envelope
 de um veículo real de ~5000 kg (SUV blindado / picape pesada têm pico de
-**~220–450 kW**, central ~300 kW), com folga de 2–3×.
+**~220–450 kW**, central ~300 kW), com folga confortável.
 
-**Ressalvas honestas:** (1) 5000 kg é território de picape pesada / SUV blindado
-/ caminhão leve — um SUV de passeio real pesa ~2500 kg. (2) A potência de subida
-(30 kW) modela um comportamento **conservador de cruzeiro** — o carro deixa a
-velocidade cair na subida em vez de "afundar o pé"; um motorista pisando fundo no
-motor de ~300 kW subiria +5 % a ~50 km/h (precisaria de ~45 kW na roda). É uma
-escolha de comportamento, não um limite físico, e é editável no modal.
+A potência de subida (45 kW) modela o jeito **paulistano** de encarar morro:
+o motorista **acelera na subida** (acelera e freia, não "cruza") — o SUV sobe
+grades leves (+3 %) *acima* da velocidade de plano (~69 vs. ~65 km/h) e só cai
+de verdade nos grades íngremes (~50 a +5 %, ~35 a +8 %). É uma escolha
+mediana-agressiva entre o cruzeiro suave (30 kW) e afundar o pé nos ~300 kW do
+motor; editável no modal.
+
+**Ressalva:** 5000 kg é território de picape pesada / SUV blindado / caminhão
+leve — um SUV de passeio real pesa ~2500 kg. É a massa fixada pelo usuário; a
+calibração compensa via `carKEff`.
 
 ## 4. O parâmetro ε (recuperação na descida) — e por que 0,40
 

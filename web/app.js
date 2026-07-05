@@ -5870,7 +5870,8 @@ const DEFAULT_PARAMS = {
   carKEff: 0.28,           // 0..1 — eficiência tanque→roda em cruzeiro (0,25–0,30)
   carEpsilon: 0.40,        // 0..1 — combustível evitado na descida; baixo p/ SP (trânsito para
                            //        toda hora + grades rasos → motor segue queimando; DFCO raro)
-  carPowerAscent: 30000,   // W — potência em subida (> +limiar): segura ~60 km/h a +3%
+  carPowerAscent: 45000,   // W — potência em subida (> +limiar): motorista acelera na subida
+                           //     (em SP não se "cruza" em morro) — ~69/50/35 km/h a +3/+5/+8%
   carPowerFlat: 15000,     // W — potência em plano (±limiar): cruzeiro ~65 km/h
   carPowerDescent: 0,      // W — potência em descida (< −limiar): pé fora do acelerador (DFCO)
   carSlopeFlatThreshold: 0.03, // 0..1 — limiar de plano do SUV (±3%): grade de equilíbrio do coasting em estrada
