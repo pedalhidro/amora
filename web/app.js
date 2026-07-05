@@ -3577,6 +3577,33 @@ for (const content of document.querySelectorAll('.modal > .modal-content')) {
   content.appendChild(makeCloseDot(() => modal.click()));
 }
 
+// Bolinha verde de maximizar (estilo macOS) só na galeria: alterna o modal entre
+// janela e tela cheia (classe .maximized no .modal-content), persistido.
+{
+  const content = imagensModal?.querySelector('.modal-content');
+  if (content) {
+    const KEY = 'phidro:galleryMaximized';
+    const dot = document.createElement('button');
+    dot.type = 'button';
+    dot.className = 'maximize-dot';
+    const setMax = (on, persist) => {
+      content.classList.toggle('maximized', on);
+      dot.setAttribute('aria-pressed', String(on));
+      dot.title = on ? 'Restaurar' : 'Maximizar';
+      dot.setAttribute('aria-label', dot.title);
+      if (persist) { try { localStorage.setItem(KEY, on ? '1' : '0'); } catch (_) {} }
+    };
+    dot.addEventListener('click', (e) => {
+      e.stopPropagation();   // não borbulha pro overlay (que fecharia o modal)
+      setMax(!content.classList.contains('maximized'), true);
+    });
+    content.appendChild(dot);
+    let saved = false;
+    try { saved = localStorage.getItem(KEY) === '1'; } catch (_) {}
+    setMax(saved, false);
+  }
+}
+
 // Sidebar de Rotas: a bolinha fecha o painel (mesmo caminho do ☰/toggle). Como
 // só é clicável com a sidebar aberta, o toggle sempre fecha.
 document.getElementById('sidebar')?.appendChild(

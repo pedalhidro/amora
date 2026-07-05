@@ -439,6 +439,38 @@ body.modal-open { overflow: hidden; }
 .sidebar > .close-dot {
   position: absolute; top: 8px; left: 9px; z-index: 30;
 }
+
+/* ── Botão de maximizar estilo macOS (bolinha verde) — só na galeria ─────────
+   Ao lado da vermelha, como o "sinaleiro" verde do macOS. Alterna o modal entre
+   o tamanho normal (janela) e tela cheia. Injetado por app.js (.maximize-dot). */
+.maximize-dot {
+  box-sizing: border-box;
+  width: 13px; height: 13px; padding: 0; flex: 0 0 auto;
+  border-radius: 50%; border: 0.5px solid rgba(0, 0, 0, 0.22);
+  background: #28c840; cursor: pointer; line-height: 1;
+  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.35);   /* leve brilho macOS */
+  position: relative;
+}
+/* Setas diagonais no hover — igual aos sinaleiros do macOS. */
+.maximize-dot::after {
+  content: "\002921"; position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 9px; font-weight: 700;
+  color: rgba(0, 0, 0, 0.55); opacity: 0;
+}
+.maximize-dot:hover::after { opacity: 1; }
+.modal-content > .maximize-dot {
+  position: absolute; top: 8px; left: 27px; z-index: 30;   /* à direita da vermelha */
+}
+
+/* Galeria maximizada: o contêiner vira "janela cheia" preenchendo a tela. A
+   faixa de 26px (bolinhas + título) fica; o iframe cresce pra cobrir o resto. */
+.upload-modal-content.maximized {
+  width: 100vw; height: 100vh; max-height: none;
+  border-radius: 0; border: 0;
+}
+/* Na galeria o título precisa livrar as DUAS bolinhas (fechar + maximizar). */
+#imagens-modal .modal-content header { padding-left: 46px; }
 /* Reserva de espaço pra bolinha (macOS-like): o conteúdo cai logo abaixo dela.
    Modais sem iframe têm estrutura [<header oculto>][corpo] → empurra o corpo;
    modais com iframe reservam a faixa no próprio contêiner flex (.upload-…). */
