@@ -125,6 +125,10 @@ except Exception:  # noqa: BLE001
 PH_NS  = "https://pedalhidrografi.co/terms#"
 PHD_NS = "https://pedalhidrografi.co/data/"
 SCHEMA_NS = "https://schema.org/"
+# Namespace de IDENTIDADE de pessoas — neutro (não acoplado ao app) e resolvível:
+# https://id.pedalhidrografi.co/pessoas/<slug8> (slug opaco aleatório). A página
+# humana é servida pelo amora em /pessoas/<slug> (schema:mainEntityOfPage).
+PES_NS = "https://id.pedalhidrografi.co/pessoas/"
 
 
 def _intensity_for(kj):
@@ -1149,6 +1153,16 @@ def index():
             return _conditional(Response(page, mimetype="text/html",
                                          headers={"Cache-Control": "no-cache"}))
     return send_from_directory(WEB, "index.html")
+
+
+@app.get("/pessoas/<slug>")
+def person_page(slug):
+    """Página humana de uma pessoa — alvo de schema:mainEntityOfPage
+    (https://amora.pedalhidrografi.co/pessoas/<slug>). Serve pessoas.html, que
+    foca a pessoa pelo slug da URL. O arquivo servido é SEMPRE pessoas.html
+    (slug ignorado no servidor → sem risco de path); as URLs relativas do app
+    resolvem via `<base href="/">`."""
+    return send_from_directory(WEB, "pessoas.html")
 
 
 @app.get("/data/<filename>")
@@ -2332,7 +2346,7 @@ def update_person(slug):
 
     v = _load_validator()
     Graph = v["Graph"]
-    person = URIRef(PHD_NS + "pessoa" + slug)
+    person = URIRef(PES_NS + slug)
     RDFT = URIRef("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
     # schema.org aparece nas duas formas (https/http) no acervo — trata ambas.
     PERSON_CLS = (URIRef(SCHEMA_NS + "Person"), URIRef("http://schema.org/Person"))

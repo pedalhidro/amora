@@ -785,17 +785,24 @@ populateTourSelect($('#d-tour'));
 })();
 
 // ===================== Mint pessoa nova ================================
+// Slug de identidade OPACO e aleatório (8 chars, base32 Crockford sem i/l/o/u):
+// nunca derivado do nome (que é editável). IRI = pes:<slug>. Duas pessoas com o
+// mesmo nome são pessoas distintas — reuse os já-existentes pelo picker.
+function randPersonSlug(n = 8) {
+  const A = '0123456789abcdefghjkmnpqrstvwxyz';
+  const b = crypto.getRandomValues(new Uint8Array(n));
+  let s = '';
+  for (let i = 0; i < n; i++) s += A[b[i] & 31];
+  return s;
+}
 function mintPerson(input) {
-  const slug = slugifyPerson(input);
-  if (!slug) return null;
-  const iri  = `phd:pessoa${slug}`;
   const name = input.trim();
-  if (!newPersons.has(iri)) {
-    newPersons.set(iri, name);
-    const opt = { value: iri, text: name };
-    personOptions.push(opt);
-    for (const ts of personSelects) ts.addOption(opt);
-  }
+  if (!name) return null;
+  const iri  = `pes:${randPersonSlug()}`;
+  newPersons.set(iri, name);
+  const opt = { value: iri, text: name };
+  personOptions.push(opt);
+  for (const ts of personSelects) ts.addOption(opt);
   return { value: iri, text: name };
 }
 
@@ -1075,6 +1082,7 @@ async function saveMediaEdit(f, card, authorTs, providerTs, listTs, orig) {
     '@prefix pav:     <http://purl.org/pav/> .',
     '@prefix ph:      <https://pedalhidrografi.co/terms#> .',
     '@prefix phd:     <https://pedalhidrografi.co/data/> .',
+    '@prefix pes:     <https://id.pedalhidrografi.co/pessoas/> .',
     '@prefix prov:    <http://www.w3.org/ns/prov#> .',
     '@prefix schema:  <https://schema.org/> .',
     '@prefix xsd:     <http://www.w3.org/2001/XMLSchema#> .',
@@ -2399,6 +2407,7 @@ function buildSingleImageTtl(card) {
     '@prefix pav:     <http://purl.org/pav/> .',
     '@prefix ph:      <https://pedalhidrografi.co/terms#> .',
     '@prefix phd:     <https://pedalhidrografi.co/data/> .',
+    '@prefix pes:     <https://id.pedalhidrografi.co/pessoas/> .',
     '@prefix prov:    <http://www.w3.org/ns/prov#> .',
     '@prefix schema:  <https://schema.org/> .',
     '@prefix xsd:     <http://www.w3.org/2001/XMLSchema#> .',
@@ -2489,6 +2498,7 @@ function buildSingleClipTtl(card) {
     '@prefix pav:     <http://purl.org/pav/> .',
     '@prefix ph:      <https://pedalhidrografi.co/terms#> .',
     '@prefix phd:     <https://pedalhidrografi.co/data/> .',
+    '@prefix pes:     <https://id.pedalhidrografi.co/pessoas/> .',
     '@prefix prov:    <http://www.w3.org/ns/prov#> .',
     '@prefix schema:  <https://schema.org/> .',
     '@prefix xsd:     <http://www.w3.org/2001/XMLSchema#> .',

@@ -434,12 +434,21 @@ async function loadCatalog() {
 await loadCatalog();
 
 // ────────────────────── Mints ────────────────────────────────────────
+// Slug de identidade OPACO e aleatório (8 chars, base32 Crockford) — nunca
+// derivado do nome editável. IRI = pes:<slug>.
+function randPersonSlug(n = 8) {
+  const A = '0123456789abcdefghjkmnpqrstvwxyz';
+  const b = crypto.getRandomValues(new Uint8Array(n));
+  let s = '';
+  for (let i = 0; i < n; i++) s += A[b[i] & 31];
+  return s;
+}
 function mintPerson(input) {
-  const slug = slugify(input, { upperFirst: true });
-  if (!slug) return null;
-  const iri = `phd:pessoa${slug}`;
-  if (!newPersons.has(iri)) newPersons.set(iri, input.trim());
-  return { value: iri, text: input.trim() };
+  const name = input.trim();
+  if (!name) return null;
+  const iri = `pes:${randPersonSlug()}`;
+  newPersons.set(iri, name);
+  return { value: iri, text: name };
 }
 function mintOrg(input) {
   const slug = slugify(input);
@@ -759,6 +768,7 @@ function buildTtl() {
 @prefix pav:     <http://purl.org/pav/> .
 @prefix ph:      <https://pedalhidrografi.co/terms#> .
 @prefix phd:     <https://pedalhidrografi.co/data/> .
+@prefix pes:     <https://id.pedalhidrografi.co/pessoas/> .
 @prefix prov:    <http://www.w3.org/ns/prov#> .
 @prefix qudt:    <http://qudt.org/schema/qudt/> .
 @prefix schema:  <https://schema.org/> .

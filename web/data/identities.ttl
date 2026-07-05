@@ -1,81 +1,107 @@
-@prefix phd: <https://pedalhidrografi.co/data/> .
+@prefix pes: <https://id.pedalhidrografi.co/pessoas/> .
 @prefix schema: <https://schema.org/> .
 
-phd:pessoaAlef a schema:Person ;
-    schema:alternateName "alef" .
+pes:15adbkwm a schema:Person ;
+    schema:alternateName "micaelrodrigues" ;
+    schema:mainEntityOfPage <https://amora.pedalhidrografi.co/pessoas/15adbkwm> .
 
-phd:pessoaAlex a schema:Person ;
-    schema:alternateName "alex" .
+pes:1fhkjnba a schema:Person ;
+    schema:alternateName "dandan" ;
+    schema:mainEntityOfPage <https://amora.pedalhidrografi.co/pessoas/1fhkjnba> .
 
-phd:pessoaAmarmo a schema:Person ;
-    schema:alternateName "amarmo" .
+pes:27er2byz a schema:Person ;
+    schema:alternateName "delaram" ;
+    schema:mainEntityOfPage <https://amora.pedalhidrografi.co/pessoas/27er2byz> .
 
-phd:pessoaAnaju a schema:Person ;
-    schema:alternateName "anaju" .
+pes:2dbsxchh a schema:Person ;
+    schema:alternateName "tomb" ;
+    schema:mainEntityOfPage <https://amora.pedalhidrografi.co/pessoas/2dbsxchh> .
 
-phd:pessoaAndrio a schema:Person ;
-    schema:alternateName "andrio" .
+pes:2p6f8wmh a schema:Person ;
+    schema:alternateName "fetiche" ;
+    schema:mainEntityOfPage <https://amora.pedalhidrografi.co/pessoas/2p6f8wmh> .
 
-phd:pessoaBrunabom a schema:Person ;
-    schema:alternateName "brunabom" .
+pes:2rp3wgpb a schema:Person ;
+    schema:alternateName "giucuci" ;
+    schema:mainEntityOfPage <https://amora.pedalhidrografi.co/pessoas/2rp3wgpb> .
 
-phd:pessoaBrunoperandin a schema:Person ;
-    schema:alternateName "brunoperandin" .
+pes:48v1pvkd a schema:Person ;
+    schema:alternateName "brunabom" ;
+    schema:mainEntityOfPage <https://amora.pedalhidrografi.co/pessoas/48v1pvkd> .
 
-phd:pessoaBrunotitton a schema:Person ;
-    schema:alternateName "brunotitton" .
+pes:5pkv6dd4 a schema:Person ;
+    schema:alternateName "estevam" ;
+    schema:mainEntityOfPage <https://amora.pedalhidrografi.co/pessoas/5pkv6dd4> .
 
-phd:pessoaDandan a schema:Person ;
-    schema:alternateName "dandan" .
+pes:6a95fm2k a schema:Person ;
+    schema:alternateName "thiagoneves" ;
+    schema:mainEntityOfPage <https://amora.pedalhidrografi.co/pessoas/6a95fm2k> .
 
-phd:pessoaDelaram a schema:Person ;
-    schema:alternateName "delaram" .
+pes:b2mfncg9 a schema:Person ;
+    schema:alternateName "alef" ;
+    schema:mainEntityOfPage <https://amora.pedalhidrografi.co/pessoas/b2mfncg9> .
 
-phd:pessoaEricalatina a schema:Person ;
-    schema:alternateName "ericalatina" .
+pes:bm2jns4e a schema:Person ;
+    schema:alternateName "andrio" ;
+    schema:mainEntityOfPage <https://amora.pedalhidrografi.co/pessoas/bm2jns4e> .
 
-phd:pessoaEstevam a schema:Person ;
-    schema:alternateName "estevam" .
+pes:ctzxjtxg a schema:Person ;
+    schema:alternateName "ga" ;
+    schema:mainEntityOfPage <https://amora.pedalhidrografi.co/pessoas/ctzxjtxg> .
 
-phd:pessoaFetiche a schema:Person ;
-    schema:alternateName "fetiche" .
+pes:d8nwxkn1 a schema:Person ;
+    schema:alternateName "lume" ;
+    schema:mainEntityOfPage <https://amora.pedalhidrografi.co/pessoas/d8nwxkn1> .
 
-phd:pessoaGa a schema:Person ;
-    schema:alternateName "ga" .
+pes:f3xm6khd a schema:Person ;
+    schema:alternateName "pedpaula" ;
+    schema:mainEntityOfPage <https://amora.pedalhidrografi.co/pessoas/f3xm6khd> .
 
-phd:pessoaGabrieltunes a schema:Person ;
-    schema:alternateName "gabrieltunes" .
+pes:g4k9zgev a schema:Person ;
+    schema:alternateName "alex" ;
+    schema:mainEntityOfPage <https://amora.pedalhidrografi.co/pessoas/g4k9zgev> .
 
-phd:pessoaGiovanna a schema:Person ;
-    schema:alternateName "giovanna" .
+pes:g9ac7z04 a schema:Person ;
+    schema:alternateName "trilheiro" ;
+    schema:mainEntityOfPage <https://amora.pedalhidrografi.co/pessoas/g9ac7z04> .
 
-phd:pessoaGiucuci a schema:Person ;
-    schema:alternateName "giucuci" .
+pes:h3xxftbh a schema:Person ;
+    schema:alternateName "giovanna" ;
+    schema:mainEntityOfPage <https://amora.pedalhidrografi.co/pessoas/h3xxftbh> .
 
-phd:pessoaGmard a schema:Person ;
-    schema:alternateName "gmard" .
+pes:h9jkvbct a schema:Person ;
+    schema:alternateName "gabrieltunes" ;
+    schema:mainEntityOfPage <https://amora.pedalhidrografi.co/pessoas/h9jkvbct> .
 
-phd:pessoaLume a schema:Person ;
-    schema:alternateName "lume" .
+pes:hc9v0sg7 a schema:Person ;
+    schema:alternateName "brunoperandin" ;
+    schema:mainEntityOfPage <https://amora.pedalhidrografi.co/pessoas/hc9v0sg7> .
 
-phd:pessoaMicaelrodrigues a schema:Person ;
-    schema:alternateName "micaelrodrigues" .
+pes:j7jz308h a schema:Person ;
+    schema:alternateName "amarmo" ;
+    schema:mainEntityOfPage <https://amora.pedalhidrografi.co/pessoas/j7jz308h> .
 
-phd:pessoaPedpaula a schema:Person ;
-    schema:alternateName "pedpaula" .
+pes:mqpnpqdj a schema:Person ;
+    schema:alternateName "gmard" ;
+    schema:mainEntityOfPage <https://amora.pedalhidrografi.co/pessoas/mqpnpqdj> .
 
-phd:pessoaThiagoneves a schema:Person ;
-    schema:alternateName "thiagoneves" .
+pes:rany9bvq a schema:Person ;
+    schema:alternateName "zito" ;
+    schema:mainEntityOfPage <https://amora.pedalhidrografi.co/pessoas/rany9bvq> .
 
-phd:pessoaTomb a schema:Person ;
-    schema:alternateName "tomb" .
+pes:tabw8qd5 a schema:Person ;
+    schema:alternateName "ericalatina" ;
+    schema:mainEntityOfPage <https://amora.pedalhidrografi.co/pessoas/tabw8qd5> .
 
-phd:pessoaTrilheiro a schema:Person ;
-    schema:alternateName "trilheiro" .
+pes:wgb9b5fe a schema:Person ;
+    schema:alternateName "anaju" ;
+    schema:mainEntityOfPage <https://amora.pedalhidrografi.co/pessoas/wgb9b5fe> .
 
-phd:pessoaYas a schema:Person ;
-    schema:alternateName "yas" .
+pes:wv6xxjbv a schema:Person ;
+    schema:alternateName "yas" ;
+    schema:mainEntityOfPage <https://amora.pedalhidrografi.co/pessoas/wv6xxjbv> .
 
-phd:pessoaZito a schema:Person ;
-    schema:alternateName "zito" .
+pes:xwap0dsp a schema:Person ;
+    schema:alternateName "brunotitton" ;
+    schema:mainEntityOfPage <https://amora.pedalhidrografi.co/pessoas/xwap0dsp> .
 

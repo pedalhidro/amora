@@ -2,6 +2,10 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
+<!-- Servida tanto em /pessoas.html quanto em /pessoas/<slug> (página de 1
+     pessoa). base=/ garante que ./data, ./lib, ./update-person etc. resolvam
+     da raiz nas duas rotas (amora é servida da raiz). -->
+<base href="/">
 <meta name="robots" content="noindex">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Pessoas — Pedal Hidrográfico</title>
@@ -217,12 +221,13 @@ async function loadN3() {
 
 const PH     = 'https://pedalhidrografi.co/terms#';
 const PHD    = 'https://pedalhidrografi.co/data/';
+const PES    = 'https://id.pedalhidrografi.co/pessoas/';   // IRIs de identidade
 const SCHEMA = 'https://schema.org/';
 const DCT    = 'http://purl.org/dc/terms/';
 const RDFT   = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
 const RDF_NS = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#';
 
-const PERSON_PREFIX = PHD + 'pessoa';
+const PERSON_PREFIX = PES;
 const PERSON_TYPES  = new Set([SCHEMA + 'Person', 'http://schema.org/Person']);
 const IMAGE_TYPE = PH + 'StillImage';
 const VIDEO_TYPE = PH + 'MotionImage';
@@ -251,7 +256,7 @@ const INVERSE_LABELS = {
 
 // Prefixos conhecidos → CURIE, pra encurtar IRIs na tabela de fatos.
 const CURIE_MAP = [
-  [PHD, 'phd:'], [PH, 'ph:'],
+  [PHD, 'phd:'], [PES, 'pes:'], [PH, 'ph:'],
   [SCHEMA, 'schema:'], ['http://schema.org/', 'schema:'],
   [DCT, 'dcterms:'],
   ['http://www.w3.org/ns/prov#', 'prov:'],
@@ -293,7 +298,7 @@ async function loadData() {
   const VOID = 'http://rdfs.org/ns/void#';
   let urls = null;
   try {
-    const manifestUrl = new URL('./data/data_graphs.ttl', location.href).href;
+    const manifestUrl = new URL('./data/data_graphs.ttl', document.baseURI).href;
     const res = await fetch(manifestUrl, { cache: 'no-cache' });
     if (!res.ok) throw new Error(`data_graphs.ttl HTTP ${res.status}`);
     const mQuads = new N3.Parser().parse(await res.text());
@@ -305,9 +310,9 @@ async function loadData() {
   } catch (e) {
     console.warn('[pessoas] manifesto indisponível, usando fallback:', e.message);
     urls = [
-      new URL('./data/tours.ttl', location.href).href,
-      new URL('./data/images.ttl', location.href).href,
-      new URL('./data/identities.ttl', location.href).href,
+      new URL('./data/tours.ttl', document.baseURI).href,
+      new URL('./data/images.ttl', document.baseURI).href,
+      new URL('./data/identities.ttl', document.baseURI).href,
     ];
   }
   const parts = [];
@@ -547,10 +552,10 @@ function renderPerson(p) {
   const groupsHtml = p.groups.length
     ? p.groups.map((g) => renderGroup(g, p.iri)).join('')
     : '<p class="empty">Nenhuma aparição no acervo.</p>';
-  return `<details class="person" data-search="${escapeHtml((p.label + ' ' + p.slug).toLowerCase())}">` +
+  return `<details class="person" data-slug="${escapeHtml(p.slug)}" data-search="${escapeHtml((p.label + ' ' + p.slug).toLowerCase())}">` +
     `<summary>` +
       `<span class="pname">${escapeHtml(p.label)}</span>` +
-      `<span class="pslug">phd:pessoa${escapeHtml(p.slug)}</span>` +
+      `<span class="pslug">pes:${escapeHtml(p.slug)}</span>` +
       `<span class="pcounts">${counts}</span>${badge}` +
     `</summary>` +
     `<div class="pbody">` +
@@ -648,6 +653,19 @@ function wireEvents() {
   });
 }
 
+// Página de 1 pessoa: /pessoas/<slug> abre e rola até o cartão daquela pessoa
+// (o slug da URL = a parte final do IRI pes:<slug>). É o destino de
+// schema:mainEntityOfPage; a lista em /pessoas.html não tem slug e é no-op.
+function focusPersonFromUrl() {
+  const m = location.pathname.match(/\/pessoas\/([^/]+)\/?$/);
+  if (!m) return;
+  const slug = decodeURIComponent(m[1]);
+  const d = $('#people').querySelector(`details.person[data-slug="${CSS.escape(slug)}"]`);
+  if (!d) return;
+  d.open = true;
+  d.scrollIntoView({ block: 'start' });
+}
+
 (async () => {
   try {
     const quads = await loadData();
@@ -659,6 +677,7 @@ function wireEvents() {
     $('#status').remove();
     renderAll();
     wireEvents();
+    focusPersonFromUrl();
     $('#meta-ts').textContent = ` · gerado em ${new Date().toLocaleString('pt-BR')}`;
   } catch (e) {
     $('#status').innerHTML = `<span class="err">Falha ao carregar: ${escapeHtml(e.message)}</span>`;
