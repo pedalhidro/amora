@@ -2727,24 +2727,27 @@ function mediaFilterSummary() {
   return `${names.length} listas`;
 }
 
-// Chip fixo (aparece com a camada de imagens ligada) que abre o popover.
+// O gatilho do filtro agora é o botão 🔽 na linha "Imagens contribuídas" do
+// painel de camadas (não há mais chip flutuante no mapa). Aqui só refletimos
+// o estado: destaca o botão quando há filtro ativo (≠ "Todas") e o título
+// mostra o resumo; se a camada de imagens for desligada, fecha o popover.
 function renderMediaFilterChip() {
-  let chip = document.getElementById('media-filter-chip');
+  const btn = document.querySelector('.layer-filter-toggle');
   if (!photosVisible) {
-    if (chip) chip.remove();
     closeMediaFilterPopover();
+    if (btn) {
+      btn.setAttribute('aria-pressed', 'false');
+      btn.title = 'Filtrar imagens/vídeos por lista ou SPARQL';
+    }
     return;
   }
-  if (!chip) {
-    chip = document.createElement('button');
-    chip.type = 'button';
-    chip.id = 'media-filter-chip';
-    chip.className = 'map-chip media-filter-chip';
-    chip.title = 'Filtrar imagens/vídeos por lista ou SPARQL';
-    document.getElementById('map').appendChild(chip);
-    chip.addEventListener('click', toggleMediaFilterPopover);
-  }
-  chip.innerHTML = `<span>📁 <b>${escapeHtml(mediaFilterSummary())}</b> ▾</span>`;
+  if (!btn) return;
+  const summary = mediaFilterSummary();
+  const active = summary !== 'Todas';
+  btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+  btn.title = active
+    ? `Filtro de imagens: ${summary} — clique pra ajustar`
+    : 'Filtrar imagens/vídeos por lista ou SPARQL';
 }
 
 function toggleMediaFilterPopover() {
@@ -2753,7 +2756,10 @@ function toggleMediaFilterPopover() {
   else openMediaFilterPopover();
 }
 function closeMediaFilterPopover() {
-  document.getElementById('media-filter-pop')?.remove();
+  const pop = document.getElementById('media-filter-pop');
+  if (!pop) return;
+  if (pop._cleanup) pop._cleanup();
+  pop.remove();
 }
 
 function openMediaFilterPopover() {
@@ -2784,9 +2790,24 @@ function openMediaFilterPopover() {
     `<textarea id="mf-sparql" rows="6" spellcheck="false">${escapeHtml(defaultQuery)}</textarea>` +
     `<div class="mf-adv-actions"><button type="button" id="mf-run" class="mf-btn">Aplicar consulta</button></div>` +
     `<div id="mf-err" class="mf-err"></div></details>`;
-  document.getElementById('map').appendChild(pop);
+  document.body.appendChild(pop);
   L.DomEvent.disableClickPropagation(pop);
   L.DomEvent.disableScrollPropagation(pop);
+
+  // Fecha ao clicar fora (captura no pointerdown → pega mesmo com o
+  // disableClickPropagation) ou com Esc. O setTimeout evita fechar no próprio
+  // clique de abertura.
+  const onDocPointer = (e) => {
+    if (pop.contains(e.target) || e.target.closest?.('.layer-filter-toggle')) return;
+    closeMediaFilterPopover();
+  };
+  const onKey = (e) => { if (e.key === 'Escape') closeMediaFilterPopover(); };
+  pop._cleanup = () => {
+    document.removeEventListener('pointerdown', onDocPointer, true);
+    document.removeEventListener('keydown', onKey);
+  };
+  setTimeout(() => document.addEventListener('pointerdown', onDocPointer, true), 0);
+  document.addEventListener('keydown', onKey);
 
   pop.querySelector('.mf-close').onclick = closeMediaFilterPopover;
   pop.querySelector('#mf-all').onchange = (e) => {
@@ -5010,15 +5031,19 @@ layerPanel.onAdd = function () {
     row.dataset.id = l.id;
     // "Rota destacada" só aparece quando há destaque (setRouteHighlightRow).
     if (l.id === 'route-highlight') row.classList.add('layer-row-hidden');
-    // Botões da linha num mini-grid fixo 3 colunas (sempre 3 col → checkboxes
-    // alinhados; a ação fica sempre na col 3 → ✨ de "Imagens contribuídas" e
-    // "Vídeo fantasma" no mesmo x):
-    //   col1=▲   col2=▼ (vazia quando não há setas)   col3=ação (☰/📍/✨/✎/⚙/🗑)
+    // Botões da linha num mini-grid fixo 4 colunas (sempre 4 col → checkboxes
+    // alinhados; a ação principal fica sempre na col 4 → ✨ de "Imagens
+    // contribuídas" e "Vídeo fantasma" no mesmo x):
+    //   col1=▲   col2=▼ (vazia quando não há setas)   col3=ação-2 (🔽 filtro,
+    //   só em "Imagens contribuídas")   col4=ação (☰/📍/✨/✎/⚙/🗑)
     const btns = [];
     if (reorderable) {
       btns.push('<button type="button" class="layer-move-up btn-up" title="Empilhar acima" aria-label="Empilhar acima">▲</button>');
       btns.push('<button type="button" class="layer-move-down btn-down" title="Empilhar abaixo" aria-label="Empilhar abaixo">▼</button>');
     }
+    // Ação secundária (col3): filtro de mídias na camada "Imagens contribuídas".
+    if (l.id === 'photos')
+      btns.push('<button type="button" class="layer-action layer-filter-toggle btn-filter" title="Filtrar imagens/vídeos por lista ou SPARQL" aria-label="Filtrar imagens" aria-pressed="false"><svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true"><path d="M1 2.5h14L9.5 9v4.2l-3 1.8V9L1 2.5z" fill="currentColor"/></svg></button>');
     if (l.id === 'routes')
       btns.push('<button type="button" id="routes-panel-toggle" class="layer-action btn-action" title="Mostrar rotas" aria-label="Mostrar rotas" aria-pressed="false">☰</button>');
     else if (l.id === 'live-people')
@@ -5066,6 +5091,7 @@ layerPanel.onAdd = function () {
     onAct('#routes-panel-toggle', toggleRoutesSidebar);
     onAct('#share-loc-btn', onShareLocClick);
     onAct('.layer-anim-toggle', toggleAnimation);
+    onAct('.layer-filter-toggle', toggleMediaFilterPopover);
     onAct('.layer-action-edit', () => { if (l.edit) l.edit(); });
     onAct('.layer-action-trash', () => { if (l.trashAction) l.trashAction(); });
     if (reorderable) {

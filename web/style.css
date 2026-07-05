@@ -1641,7 +1641,7 @@ body.trace-preview .tp-label { display: none !important; }
    sempre na col 3 → ✨ alinhado entre as linhas. */
 .layer-btns {
   display: grid;
-  grid-template-columns: 18px 18px 18px;
+  grid-template-columns: 18px 18px 18px 18px;
   grid-auto-rows: 18px;
   gap: 1px 2px;
   align-items: center;
@@ -1649,7 +1649,9 @@ body.trace-preview .tp-label { display: none !important; }
 }
 .layer-btns .btn-up     { grid-column: 1; grid-row: 1; }
 .layer-btns .btn-down   { grid-column: 2; grid-row: 1; }
-.layer-btns .btn-action { grid-column: 3; grid-row: 1; }
+.layer-btns .btn-filter { grid-column: 3; grid-row: 1; }   /* ação-2 (filtro) */
+.layer-btns .btn-action { grid-column: 4; grid-row: 1; }   /* ação principal */
+.layer-btns .btn-filter svg { display: block; }
 .layer-btns button {
   width: 18px; height: 18px; padding: 0;
   display: flex; align-items: center; justify-content: center;
@@ -2243,7 +2245,6 @@ body.trace-preview .tp-label { display: none !important; }
   font-size: 12px;
   box-shadow: 0 1px 6px rgba(0, 0, 0, 0.4);
 }
-#media-filter-chip { bottom: 12px; }
 #photo-filter-chip { bottom: 52px; }
 #upload-status-chip { bottom: 92px; }
 .map-chip button {
@@ -2264,22 +2265,16 @@ body.trace-preview .tp-label { display: none !important; }
 }
 .map-chip button:hover { background: rgba(255, 255, 255, 0.3); }
 
-/* Chip do filtro de listas/SPARQL das mídias (é um <button>). */
-.media-filter-chip {
-  border: none;
-  cursor: pointer;
-  font: inherit;
-}
-.media-filter-chip b { font-weight: 600; }
-
-/* Popover do filtro de mídias, ancorado acima do chip. */
+/* Popover do filtro de mídias — overlay centralizado (o gatilho é o botão 🔽
+   na camada "Imagens contribuídas" do painel; não há mais chip no mapa). */
 .media-filter-pop {
-  position: absolute;
-  left: 12px;
-  bottom: 50px;
-  z-index: 1001;
-  width: min(320px, calc(100vw - 24px));
-  max-height: min(60vh, 460px);
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 6000;   /* acima do painel de camadas (5500 no mobile) */
+  width: min(340px, calc(100vw - 24px));
+  max-height: min(72vh, 520px);
   overflow-y: auto;
   background: var(--panel, #1c1c1c);
   color: var(--text, #fff);
