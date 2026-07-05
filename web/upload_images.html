@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>Upload de imagens e vídeos — Pedal Hidrográfico</title>
+<title>Subir imagens — Pedal Hidrográfico</title>
 <style>
   body { font-family: system-ui, sans-serif; max-width: 1400px; margin: 1.5rem auto; padding: 0 1rem; color: #222; }
   h1 { font-size: 1.4rem; margin: 0 0 .25rem; }
@@ -167,8 +167,7 @@
 </head>
 <body>
 
-<h1>Upload de imagens e vídeos (ao vivo)</h1>
-<p class="lede">Cada arquivo vira um card — imagens vão pra <code>POST /upload-image</code>, vídeos pra <code>POST /upload-video</code> (transcodados em 360p/720p webm no navegador). Tipo é detectado automaticamente.</p>
+<h1>Subir imagens</h1>
 
 <form id="form">
 
@@ -1161,9 +1160,16 @@ function removeThumbFromGrid(card) {
   card.gridThumbBtn?.remove();
   card.gridThumb = null; card.gridThumbBtn = null;
 }
-// Foca um card: rola a faixa até ele e dá um realce breve.
+// Foca um card: rola SÓ a faixa horizontal até centralizar o card e dá um
+// realce breve. Usa scrollBy no próprio container (não scrollIntoView, que
+// mexeria também no scroll VERTICAL da página — os cards são altos e a página
+// pularia). A posição da tela não muda; só a faixa rola na horizontal.
 function focusCard(card) {
-  card.elem.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+  const cont = cardsStripEl;
+  const cr = card.elem.getBoundingClientRect();
+  const rr = cont.getBoundingClientRect();
+  const delta = (cr.left - rr.left) - (cont.clientWidth - cr.width) / 2;
+  cont.scrollBy({ left: delta, behavior: 'smooth' });
   card.elem.classList.add('card-flash');
   setTimeout(() => card.elem.classList.remove('card-flash'), 800);
 }
