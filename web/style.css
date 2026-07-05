@@ -860,8 +860,12 @@ body.modal-open { overflow: hidden; }
 
   /* Layer panel no mobile: bottom-sheet em vez do controle topright nativo
      do Leaflet. Quando `body.layers-hidden` está presente, fica fora da tela
-     via transform; sem ela, sobe pra ocupar até 40vh. */
-  .layer-panel {
+     via transform; sem ela, sobe pra ocupar até 40vh.
+     `body` no seletor sobe a especificidade (0,1,1) pra ganhar do `.layer-panel`
+     base (0,1,0), que vem DEPOIS neste arquivo e senão sobrescreveria o
+     `position: fixed` com o `position: relative` da âncora da bolinha — o que
+     deixava o painel "sempre ativo"/visível no celular. */
+  body .layer-panel {
     position: fixed;
     left: 0;
     right: 0;
