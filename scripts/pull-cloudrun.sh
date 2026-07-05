@@ -160,12 +160,15 @@ fi
 # raw/ NÃO existe no bucket (deploy exclui). Por isso o --exclude abaixo é
 # OBRIGATÓRIO: sem ele, `--mirror` (--delete-unmatched-destination-objects)
 # apagaria web/clips/raw/ inteiro — centenas de MB de vídeos-fonte
-# insubstituíveis — por estarem "ausentes na origem".
+# insubstituíveis — por estarem "ausentes na origem". venv/.venv/ também ficam
+# de fora — espelha o exclude do lado do deploy, pra nunca puxar (ou, em
+# --mirror, nunca proteger da exclusão só por engano) um virtualenv que tenha
+# sido acidentalmente sincronizado pro bucket.
 if [[ "$SYNC_CLIPS" == 1 ]]; then
   mkdir -p "$REPO_ROOT/web/clips"
-  echo "→ clips/ (raw/ protegido)"
+  echo "→ clips/ (raw/ e venv/.venv/ protegidos/excluídos)"
   $DRY gcloud storage rsync --recursive $MIRROR_FLAG \
-    --exclude='^raw/.*$' \
+    --exclude='^raw/.*$|^(.*/)?\.?venv/.*$' \
     "gs://$BUCKET/clips" "$REPO_ROOT/web/clips" \
     --project="$PROJECT"
 fi

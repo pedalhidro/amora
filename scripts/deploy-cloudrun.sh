@@ -322,11 +322,14 @@ if [[ "$SYNC_STATE" == 1 ]]; then
       --project="$PROJECT"
   fi
 
-  # web/clips/raw/ é fonte (originais ~800MB) — não vai pro bucket.
+  # web/clips/raw/ é fonte (originais ~800MB) — não vai pro bucket. venv/.venv/
+  # também ficam de fora — um virtualenv criado por engano dentro de web/clips/
+  # (ex: web/clips/audio/venv/) já bloatou o bucket com dezenas de milhares de
+  # objetos e deixou o rsync (que precisa diffar a árvore inteira) bem lento.
   if [[ -d "$REPO_ROOT/web/clips" ]]; then
-    echo "→ clips/ (excluindo raw/)"
+    echo "→ clips/ (excluindo raw/ e venv/.venv/)"
     $DRY gcloud storage rsync --recursive $MIRROR_FLAG \
-      --exclude='^raw/.*$' \
+      --exclude='^raw/.*$|^(.*/)?\.?venv/.*$' \
       "$REPO_ROOT/web/clips" "gs://$BUCKET/clips" \
       --project="$PROJECT"
   fi
