@@ -190,22 +190,22 @@ body.header-hidden .leaflet-top {
    a largura inteira da linha e deixa os botões quebrarem em múltiplas linhas
    em vez de rolar horizontalmente — assim todos ficam acessíveis sem scroll. */
 @media (max-width: 760px) {
-  /* Topbar com padding horizontal menor pra ganhar largura útil — caber
-     mais botões inline no iPhone SE em paisagem (667px) e em duas linhas
-     no retrato (375px). */
+  /* Topbar com padding horizontal menor pra ganhar largura útil — e botões
+     compactos (texto menor, padding/gap justos) pra caberem TODOS numa linha
+     só até no iPhone SE em retrato (375px). */
   .topbar { padding-left: 6px; padding-right: 6px; }
   .topbar-actions {
     flex: 1 1 100%;
     flex-wrap: wrap;
     overflow-x: visible;
-    gap: 3px;
+    gap: 2px;
   }
   .topbar-actions .secondary-btn {
     /* Largura natural pelo texto; a faixa centraliza os botões via
        `justify-content: center` em vez de esticá-los. */
     margin-right: 0;
-    padding: 4px 6px;
-    font-size: 11px;
+    padding: 4px 5px;
+    font-size: 10px;
   }
   /* iOS dá zoom automático ao focar um input com font-size < 16px (some com a
      barra de cima e não volta). Forçar ≥16px nos campos de texto/número impede
@@ -1641,7 +1641,7 @@ body.trace-preview .tp-label { display: none !important; }
    sempre na col 3 → ✨ alinhado entre as linhas. */
 .layer-btns {
   display: grid;
-  grid-template-columns: 18px 18px 18px 18px;
+  grid-template-columns: 18px 18px 18px;
   grid-auto-rows: 18px;
   gap: 1px 2px;
   align-items: center;
@@ -1649,8 +1649,11 @@ body.trace-preview .tp-label { display: none !important; }
 }
 .layer-btns .btn-up     { grid-column: 1; grid-row: 1; }
 .layer-btns .btn-down   { grid-column: 2; grid-row: 1; }
-.layer-btns .btn-filter { grid-column: 3; grid-row: 1; }   /* ação-2 (filtro) */
-.layer-btns .btn-action { grid-column: 4; grid-row: 1; }   /* ação principal */
+/* Filtro na col2 (à esquerda da ação): a linha "Imagens contribuídas" não tem
+   setas de reordenar, então a col2 fica livre — sem coluna dedicada só pro
+   funil (ele reaproveita a coluna do ▼). */
+.layer-btns .btn-filter { grid-column: 2; grid-row: 1; }
+.layer-btns .btn-action { grid-column: 3; grid-row: 1; }
 .layer-btns .btn-filter svg { display: block; }
 .layer-btns button {
   width: 18px; height: 18px; padding: 0;
@@ -1663,6 +1666,10 @@ body.trace-preview .tp-label { display: none !important; }
 .layer-btns button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
 .layer-btns button:disabled { opacity: 0.3; cursor: default; }
 .layer-btns button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+/* Funil (filtro de imagens): laranja SÓ com o popover aberto; azul-ciano claro
+   quando há um filtro customizado aplicado (≠ Padrão/Todas). */
+.layer-btns .layer-filter-toggle[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); }
+.layer-btns .layer-filter-toggle.is-custom { border-color: #8ce0ee; color: #8ce0ee; }
 /* Linha "Rota destacada" só aparece quando há um destaque ativo. */
 .layer-row-hidden { display: none !important; }
 .layer-row label {

@@ -871,6 +871,16 @@ function pickerHasKnownList() {
   for (const l of (mediaFilter.lists || [])) if (listCatalog.has(l)) return true;
   return false;
 }
+// O filtro é o "padrão" (não-customizado) quando: mostra Todas, OU é o picker
+// só com a lista Padrão, OU o picker aponta pra listas inexistentes (→ mostra
+// tudo). Nesses casos o botão de funil NÃO acende de azul-ciano.
+function mediaFilterIsDefault() {
+  if (mediaFilter.mode === 'all') return true;
+  if (mediaFilter.mode === 'sparql') return false;
+  if (!pickerHasKnownList()) return true;
+  const ls = mediaFilter.lists;
+  return ls.size === 1 && ls.has(PADRAO_LIST_IRI);
+}
 function mediaMatchesFilter(iri, lists) {
   if (mediaFilter.mode === 'all') return true;
   if (mediaFilter.mode === 'sparql') {
@@ -2727,27 +2737,26 @@ function mediaFilterSummary() {
   return `${names.length} listas`;
 }
 
-// O gatilho do filtro agora é o botão 🔽 na linha "Imagens contribuídas" do
-// painel de camadas (não há mais chip flutuante no mapa). Aqui só refletimos
-// o estado: destaca o botão quando há filtro ativo (≠ "Todas") e o título
-// mostra o resumo; se a camada de imagens for desligada, fecha o popover.
-function renderMediaFilterChip() {
+// O gatilho do filtro é o botão de funil na linha "Imagens contribuídas" do
+// painel de camadas (não há mais chip flutuante no mapa). Estados do botão:
+//   • popover aberto            → laranja (accent), via aria-expanded
+//   • filtro customizado fechado → azul-ciano (.is-custom)  (≠ Padrão/Todas)
+//   • Padrão / Todas / fechado   → sem destaque
+function updateMediaFilterButton() {
   const btn = document.querySelector('.layer-filter-toggle');
-  if (!photosVisible) {
-    closeMediaFilterPopover();
-    if (btn) {
-      btn.setAttribute('aria-pressed', 'false');
-      btn.title = 'Filtrar imagens/vídeos por lista ou SPARQL';
-    }
-    return;
-  }
   if (!btn) return;
-  const summary = mediaFilterSummary();
-  const active = summary !== 'Todas';
-  btn.setAttribute('aria-pressed', active ? 'true' : 'false');
-  btn.title = active
-    ? `Filtro de imagens: ${summary} — clique pra ajustar`
+  const open = !!document.getElementById('media-filter-pop');
+  const custom = photosVisible && !mediaFilterIsDefault();
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  btn.classList.toggle('is-custom', !open && custom);
+  btn.title = (open || custom)
+    ? `Filtro de imagens: ${mediaFilterSummary()} — clique pra ajustar`
     : 'Filtrar imagens/vídeos por lista ou SPARQL';
+}
+// Chamado em mudanças de filtro/visibilidade (mantém o nome pros callers).
+function renderMediaFilterChip() {
+  if (!photosVisible) closeMediaFilterPopover();
+  updateMediaFilterButton();
 }
 
 function toggleMediaFilterPopover() {
@@ -2760,6 +2769,7 @@ function closeMediaFilterPopover() {
   if (!pop) return;
   if (pop._cleanup) pop._cleanup();
   pop.remove();
+  updateMediaFilterButton();   // tira o laranja de "aberto"
 }
 
 function openMediaFilterPopover() {
@@ -2825,6 +2835,7 @@ function openMediaFilterPopover() {
     const q = pop.querySelector('#mf-sparql').value.trim();
     applyMediaFilter({ mode: 'sparql', query: q });
   };
+  updateMediaFilterButton();   // acende o laranja de "aberto"
 }
 
 // Aplica uma mudança de estado do filtro: persiste, recomputa (async no modo
@@ -5031,11 +5042,11 @@ layerPanel.onAdd = function () {
     row.dataset.id = l.id;
     // "Rota destacada" só aparece quando há destaque (setRouteHighlightRow).
     if (l.id === 'route-highlight') row.classList.add('layer-row-hidden');
-    // Botões da linha num mini-grid fixo 4 colunas (sempre 4 col → checkboxes
-    // alinhados; a ação principal fica sempre na col 4 → ✨ de "Imagens
-    // contribuídas" e "Vídeo fantasma" no mesmo x):
-    //   col1=▲   col2=▼ (vazia quando não há setas)   col3=ação-2 (🔽 filtro,
-    //   só em "Imagens contribuídas")   col4=ação (☰/📍/✨/✎/⚙/🗑)
+    // Botões da linha num mini-grid fixo 3 colunas (sempre 3 col → checkboxes
+    // alinhados; a ação fica sempre na col 3 → ✨ de "Imagens contribuídas" e
+    // "Vídeo fantasma" no mesmo x):
+    //   col1=▲   col2=▼ (ou 🔽 filtro em "Imagens contribuídas", que não tem
+    //   setas)   col3=ação (☰/📍/✨/✎/⚙/🗑)
     const btns = [];
     if (reorderable) {
       btns.push('<button type="button" class="layer-move-up btn-up" title="Empilhar acima" aria-label="Empilhar acima">▲</button>');
@@ -5043,7 +5054,7 @@ layerPanel.onAdd = function () {
     }
     // Ação secundária (col3): filtro de mídias na camada "Imagens contribuídas".
     if (l.id === 'photos')
-      btns.push('<button type="button" class="layer-action layer-filter-toggle btn-filter" title="Filtrar imagens/vídeos por lista ou SPARQL" aria-label="Filtrar imagens" aria-pressed="false"><svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true"><path d="M1 2.5h14L9.5 9v4.2l-3 1.8V9L1 2.5z" fill="currentColor"/></svg></button>');
+      btns.push('<button type="button" class="layer-action layer-filter-toggle btn-filter" title="Filtrar imagens/vídeos por lista ou SPARQL" aria-label="Filtrar imagens" aria-expanded="false"><svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true"><path d="M1 2.5h14L9.5 9v4.2l-3 1.8V9L1 2.5z" fill="currentColor"/></svg></button>');
     if (l.id === 'routes')
       btns.push('<button type="button" id="routes-panel-toggle" class="layer-action btn-action" title="Mostrar rotas" aria-label="Mostrar rotas" aria-pressed="false">☰</button>');
     else if (l.id === 'live-people')
