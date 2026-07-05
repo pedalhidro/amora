@@ -68,6 +68,18 @@
   .tb-row + .tb-row { margin-top: 8px; }
   .tb-label { color: var(--muted); font-size: 12px; }
   .tb-spacer { flex: 1 1 auto; }
+  /* Barra sempre visível (toggle + selecionar) + corpo recolhível. */
+  .tb-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .tb-toggle {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--surface); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 12px; font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  .tb-toggle:hover { border-color: var(--accent); color: var(--accent); }
+  .tb-toggle .chev { transition: transform .15s; display: inline-block; }
+  .toolbar.collapsed .tb-toggle .chev { transform: rotate(-90deg); }
+  .tb-body { margin-top: 8px; }
+  .toolbar.collapsed .tb-body { display: none; }
 
   .segmented { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
   .segmented button {
@@ -184,10 +196,10 @@
   .group-header .g-title { font-size: 15px; font-weight: 700; }
   .group-header .g-count { color: var(--muted); font-size: 12px; }
   .tiles {
-    display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 6px;
+    display: grid; grid-template-columns: repeat(var(--cols, 5), 1fr); gap: 3px;
   }
   .tile {
-    position: relative; aspect-ratio: 1 / 1; border-radius: 6px; overflow: hidden;
+    position: relative; aspect-ratio: 1 / 1; border-radius: 3px; overflow: hidden;
     background: var(--surface); cursor: pointer; border: 1px solid var(--border);
   }
   .tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
@@ -196,7 +208,7 @@
      no aspect-ratio real e cada linha preenche a largura toda. layoutJustified()
      define width/height inline de cada tile; a última linha fica na altura-alvo
      (não estica) pra não distorcer poucos itens. */
-  .gallery.collage .tiles { display: flex; flex-wrap: wrap; gap: 6px; align-content: flex-start; }
+  .gallery.collage .tiles { display: flex; flex-wrap: wrap; gap: 3px; align-content: flex-start; }
   .gallery.collage .tile { aspect-ratio: auto; width: auto; }
   .tile.no-img::after {
     content: '🖼'; position: absolute; inset: 0; display: flex; align-items: center;
@@ -258,12 +270,41 @@
   /* ── Barra de ação da seleção (fixa embaixo) ──────────────────────────── */
   .selbar {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 60;
-    background: var(--panel); border-top: 1px solid var(--border);
-    display: flex; align-items: center; gap: 12px; padding: 10px 14px;
+    background: var(--panel); border-top: 1px solid var(--accent);
+    display: flex; align-items: center; gap: 10px; padding: 7px 12px;
     box-shadow: 0 -2px 12px rgba(0,0,0,.4);
   }
-  .selbar-count { color: var(--text); font-weight: 600; }
-  .selbar-actions { display: flex; gap: 8px; margin-left: auto; }
+  .selbar-count { color: var(--text); font-weight: 600; font-size: 13px; white-space: nowrap; }
+  .selbar-actions { display: flex; gap: 6px; margin-left: auto; }
+  .selbar .btn { padding: 5px 9px; font-size: 12px; }
+  @media (max-width: 760px) {
+    /* Compacto: só ícones grandes o suficiente pra tocar, texto encolhido. */
+    .selbar { gap: 6px; padding: 6px 8px; }
+    .selbar-count { font-size: 12px; }
+    .selbar-actions { gap: 4px; }
+    .selbar .btn { padding: 6px 8px; font-size: 12px; }
+  }
+
+  /* ── Menu de contexto (botão direito) ─────────────────────────────────── */
+  .ctx-menu {
+    position: fixed; z-index: 130; min-width: 190px; padding: 5px;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 9px;
+    box-shadow: 0 6px 24px rgba(0,0,0,.45); display: flex; flex-direction: column; gap: 1px;
+  }
+  .ctx-menu button {
+    display: block; width: 100%; text-align: left; background: transparent; border: none;
+    color: var(--text); font-size: 13px; padding: 8px 10px; border-radius: 6px; cursor: pointer;
+  }
+  .ctx-menu button:hover { background: var(--surface); }
+  .ctx-menu button.danger { color: #ff8080; }
+  .ctx-menu button.danger:hover { background: rgba(255,80,80,.14); }
+
+  /* ── Aviso passageiro (toast) ─────────────────────────────────────────── */
+  .toast {
+    position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 140;
+    background: var(--panel); border: 1px solid var(--accent); border-radius: 8px;
+    padding: 8px 14px; font-size: 13px; box-shadow: 0 4px 16px rgba(0,0,0,.45); max-width: 90vw;
+  }
 
   /* ── Modal genérico (adicionar a listas) ──────────────────────────────── */
   .modal { position: fixed; inset: 0; z-index: 120; display: flex; }
@@ -279,6 +320,30 @@
   #assign-error { margin-top: 10px; font-size: 12px; }
 
   footer { margin-top: 20px; color: var(--muted); font-size: 11px; }
+
+  /* ── Aviso de link compartilhado (?pick=…) ────────────────────────────── */
+  .pick-note {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    margin: 0 0 10px; padding: 8px 12px; font-size: 13px;
+    background: var(--surface); border: 1px solid var(--accent); border-radius: 8px;
+  }
+  .pick-note .btn { margin-left: auto; padding: 4px 10px; font-size: 12px; }
+
+  /* ── Celular ─────────────────────────────────────────────────────────── */
+  @media (max-width: 760px) {
+    body { padding: 6px; }
+    body.touch-ui.select-mode { padding-bottom: 70px; }
+    .toolbar { padding: 8px; }
+    header h1 { font-size: 18px; }
+    /* Facetas empilhadas em largura total (mais usáveis no toque). */
+    .tb-facets { flex-direction: column; align-items: stretch; gap: 10px; }
+    .tb-facets .facet { width: 100%; }
+    .tb-facets .facet .ts-wrapper { max-width: none; }
+    .range-block { flex-wrap: wrap; }
+    .range-block .dual { flex: 1 1 120px; }
+    .facet-range input[type="date"].range-end { width: auto; flex: 1 1 100px; }
+    .selbar { flex-wrap: wrap; }
+  }
 </style>
 <link href="./lib/tom-select.min.css" rel="stylesheet">
 <!-- media-query.js é um <script> CLÁSSICO (publica window.PhidroMediaQuery),
@@ -296,6 +361,14 @@
 <div id="status" role="status" aria-live="polite">Carregando catálogo de mídias…</div>
 
 <div class="toolbar" hidden>
+  <div class="tb-bar">
+    <button id="tb-toggle" type="button" class="tb-toggle" aria-expanded="true" aria-controls="tb-body"><span class="chev">▾</span> Filtros &amp; agrupamento</button>
+    <div class="tb-spacer"></div>
+    <button id="btn-select" type="button" class="btn">Selecionar</button>
+    <button id="btn-select-all" type="button" class="btn" hidden>Selecionar tudo</button>
+    <span id="sel-count" class="sel-count" hidden>0 selecionadas</span>
+  </div>
+  <div class="tb-body" id="tb-body">
   <div class="tb-row tb-groups">
     <span class="tb-label">Agrupar:</span>
     <div id="tb-group" class="segmented">
@@ -850,8 +923,10 @@ function layoutJustified(container) {
   const tiles = [...container.children];
   const cw = container.clientWidth;
   if (!tiles.length || cw <= 0) return;
-  const gap = 6;
-  const targetH = cw < 500 ? 130 : 200;
+  const gap = 3;
+  // Altura-alvo derivada do zoom: ~galleryCols() fotos quadradas por linha.
+  const cols = galleryCols();
+  const targetH = Math.max(24, (cw - (cols - 1) * gap) / cols);
   const ar = (t) => {
     const img = t.querySelector('img');
     const w = img && img.naturalWidth, h = img && img.naturalHeight;
@@ -1193,6 +1268,27 @@ async function refresh() {
 
 // ── Toolbar: grupo, avançado, limpar ─────────────────────────────────────────
 function wireToolbar() {
+  // Recolher/expandir o painel de filtros & agrupamento (padrão: recolhido no
+  // celular). O botão + o "Selecionar" ficam sempre visíveis.
+  const toolbar = document.querySelector('.toolbar');
+  const saved = localStorage.getItem('phidro:filtersCollapsed');
+  let filtersCollapsed = saved != null ? saved === '1'
+    : window.matchMedia('(max-width: 760px)').matches;
+  const applyCollapse = () => {
+    toolbar.classList.toggle('collapsed', filtersCollapsed);
+    $('#tb-toggle').setAttribute('aria-expanded', String(!filtersCollapsed));
+  };
+  applyCollapse();
+  $('#tb-toggle').addEventListener('click', () => {
+    filtersCollapsed = !filtersCollapsed;
+    try { localStorage.setItem('phidro:filtersCollapsed', filtersCollapsed ? '1' : '0'); } catch (_) {}
+    applyCollapse();
+    if (galleryLayout === 'collage') layoutAllJustified();   // altura do header mudou
+    if (overlayGroups) drawGroupPolygons();
+  });
+  // Estado inicial dos botões de agrupamento reflete currentGroup (pode vir de
+  // ?pick=… como 'none') — não confia só no class="active" fixo do HTML.
+  $$('#tb-group button').forEach((b) => b.classList.toggle('active', b.dataset.group === currentGroup));
   $('#tb-group').addEventListener('click', (e) => {
     const btn = e.target.closest('button[data-group]');
     if (!btn) return;
