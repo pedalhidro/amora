@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="robots" content="noindex">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pessoas — Pedal Hidrográfico</title>
+<style>
+  :root {
+    --bg: #0f1721;
+    --panel: #15202b;
+    --surface: #0c1722;
+    --text: #e7eef5;
+    --muted: #97a3b1;
+    --accent: #ff8c2e;
+    --accent-hover: #e07320;
+    --border: #243240;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+  body { padding: 16px; max-width: 980px; margin: 0 auto; }
+
+  header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+    margin-bottom: 12px; }
+  header h1 { margin: 0; font-size: 22px; }
+  header .sub { color: var(--muted); font-size: 13px; }
+  header nav { margin-left: auto; display: flex; gap: 16px; }
+  header a { color: var(--accent); text-decoration: none; }
+  header a:hover { color: var(--accent-hover); }
+
+  #status { color: var(--muted); padding: 12px 0; }
+  .err { color: #ff6b6b; }
+  .ok  { color: #5dd29c; }
+
+  .summary-line { color: var(--muted); font-size: 12px; margin: 6px 0 14px; }
+
+  /* Busca */
+  .search { margin: 0 0 14px; }
+  .search input {
+    width: 100%; padding: 9px 12px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--surface);
+    color: var(--text); font-size: 14px;
+  }
+  .search input:focus { outline: none; border-color: var(--accent); }
+
+  /* Cartão de pessoa (accordion nativo) */
+  details.person {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; margin-bottom: 8px; overflow: hidden;
+  }
+  details.person > summary {
+    list-style: none; cursor: pointer; padding: 10px 14px;
+    display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  }
+  details.person > summary::-webkit-details-marker { display: none; }
+  details.person > summary::before {
+    content: "▸"; color: var(--muted); font-size: 12px; margin-right: 2px;
+  }
+  details.person[open] > summary::before { content: "▾"; }
+  details.person[open] > summary { border-bottom: 1px solid var(--border); }
+  .pname { font-weight: 700; font-size: 15px; }
+  .pslug { color: var(--muted); font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .pcounts { color: var(--muted); font-size: 12px; margin-left: auto; }
+  .badge-warn {
+    font-size: 10px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.03em; color: #ffbf6b;
+    background: rgba(255, 140, 46, 0.14); border: 1px solid rgba(255, 140, 46, 0.4);
+    border-radius: 10px; padding: 1px 7px;
+  }
+  .pbody { padding: 12px 14px 16px; }
+
+  /* Editor de nome */
+  .editor { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap;
+    margin-bottom: 14px; }
+  .editor label { display: flex; flex-direction: column; gap: 4px;
+    font-size: 11px; color: var(--muted); text-transform: uppercase;
+    letter-spacing: 0.03em; flex: 1 1 220px; }
+  .editor input {
+    padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--surface); color: var(--text); font-size: 14px;
+  }
+  .editor input:focus { outline: none; border-color: var(--accent); }
+  .btn-primary {
+    padding: 8px 14px; border-radius: 6px; background: var(--accent);
+    color: #fff; font-size: 13px; font-weight: 600; border: 1px solid var(--accent);
+    cursor: pointer;
+  }
+  .btn-primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
+  .btn-primary:disabled { opacity: 0.45; cursor: default; }
+  .save-msg { font-size: 12px; align-self: center; }
+
+  /* Seções de fatos */
+  .facts h3 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em;
+    color: var(--muted); margin: 14px 0 6px; }
+  table.facts-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.facts-table td { padding: 3px 8px; border-bottom: 1px solid var(--border);
+    vertical-align: top; }
+  table.facts-table tr:last-child td { border-bottom: none; }
+  td.pred { color: var(--muted); white-space: nowrap; width: 1%;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+  td.val { word-break: break-word; }
+  td.val a { color: var(--accent); text-decoration: none; }
+  td.val a:hover { text-decoration: underline; }
+
+  .grp { margin: 10px 0; }
+  .grp-h { font-size: 12px; font-weight: 600; margin-bottom: 5px; }
+  .grp-h .n { color: var(--muted); font-weight: 400; }
+  ul.tour-list { list-style: none; margin: 0; padding: 0; }
+  ul.tour-list li { padding: 2px 0; }
+  ul.tour-list li a { color: var(--text); text-decoration: none;
+    border-bottom: 1px dotted var(--muted); }
+  ul.tour-list li a:hover { color: var(--accent); border-bottom-color: var(--accent); }
+  ul.tour-list li .d { color: var(--muted); font-size: 12px; margin-left: 6px; }
+
+  .thumbs { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 4px; }
+  .thumbs a { display: block; width: 56px; height: 56px; border-radius: 5px;
+    overflow: hidden; border: 1px solid var(--border); background: var(--surface); }
+  .thumbs img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .chip { display: inline-block; padding: 2px 8px; border-radius: 10px;
+    background: var(--surface); border: 1px solid var(--border);
+    font-size: 12px; color: var(--muted); margin: 2px 4px 2px 0; }
+  .more { color: var(--muted); font-size: 12px; align-self: center; }
+  .empty { color: var(--muted); font-style: italic; font-size: 13px; }
+
+  footer { margin-top: 20px; color: var(--muted); font-size: 11px; }
+  footer code { background: var(--surface); padding: 1px 4px; border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Pessoas</h1>
+  <span class="sub">Pedal Hidrográfico — quem aparece no acervo</span>
+  <nav>
+    <a href="./censo.html">Censo →</a>
+    <a class="back" href="./index.html">← Mapa</a>
+  </nav>
+</header>
+
+<div id="status" role="status" aria-live="polite">Carregando pessoas…</div>
+
+<div class="summary-line" id="summary" hidden></div>
+<div class="search" id="searchbox" hidden>
+  <input type="search" id="q" placeholder="Filtrar por nome ou slug…" autocomplete="off">
+</div>
+<div id="people"></div>
+
+<footer>
+  Lido de <code>web/data/tours.ttl</code> + <code>web/data/uploads.ttl</code>
+  (via <code>data_graphs.ttl</code>). Cada pessoa é um
+  <code>schema:Person</code>; "Aparições" reúne os passeios e mídias que a
+  referenciam (<code>prov:wasAttributedTo</code>, <code>pav:providedBy</code>,
+  etc.). Editar o nome grava <code>schema:alternateName</code> pelo servidor.
+  <span id="meta-ts"></span>
+</footer>
+
+<script type="module">
+const $ = (q) => document.querySelector(q);
+
+// ── Modo embutido (iframe do modal do app) ──────────────────────────────────
+// Igual censo.html/imagens.html: esconde título interno e faz o "← Mapa"
+// fechar o modal em vez de navegar o iframe pra index.html (que abriria um
+// segundo mapa). Reusa a mensagem 'phidro-censo-back' — o app re-aponta o
+// iframe pra ./censo.html a cada abertura, então navegar pra cá é seguro.
+if (window.self !== window.top) {
+  $('header h1')?.style.setProperty('display', 'none');
+  $('header .sub')?.style.setProperty('display', 'none');
+  const back = $('header a.back');
+  if (back) back.addEventListener('click', (e) => {
+    e.preventDefault();
+    try { window.parent.postMessage({ type: 'phidro-censo-back' }, window.location.origin); } catch (_) {}
+  });
+}
+
+// ── N3.js (UMD vendored em ./lib/n3.min.js → popula window.N3) ───────────────
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = src; s.onload = () => resolve(); s.onerror = () => reject(new Error(`falha ao carregar ${src}`));
+    document.head.appendChild(s);
+  });
+}
+async function loadN3() {
+  if (window.N3) return window.N3;
+  await loadScript('./lib/n3.min.js');
+  return window.N3;
+}
+
+const PH     = 'https://pedalhidrografi.co/terms#';
+const PHD    = 'https://pedalhidrografi.co/data/';
+const SCHEMA = 'https://schema.org/';
+const DCT    = 'http://purl.org/dc/terms/';
+const RDFT   = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
+const RDF_NS = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#';
+
+const PERSON_PREFIX = PHD + 'pessoa';
+const PERSON_TYPES  = new Set([SCHEMA + 'Person', 'http://schema.org/Person']);
+const IMAGE_TYPE = PH + 'Image';
+const VIDEO_TYPE = PH + 'Video';
+const TOUR_TYPE  = PH + 'Tour';
+const ALT_PREDS   = new Set([SCHEMA + 'alternateName', 'http://schema.org/alternateName']);
+const NAME_PREDS  = new Set([SCHEMA + 'name', 'http://schema.org/name']);
+const THUMB_PREDS = new Set([SCHEMA + 'thumbnail', 'http://schema.org/thumbnail']);
+const TITLE_PRED  = DCT + 'title';
+const DATE_PREDS  = new Set([DCT + 'date', SCHEMA + 'startDate', 'http://schema.org/startDate']);
+
+// Rótulos amigáveis (PT) pros grupos de "Aparições" (pessoa como objeto).
+const INVERSE_LABELS = {
+  'http://www.w3.org/ns/prov#wasAttributedTo': 'Autoria de',
+  'http://purl.org/pav/providedBy': 'Forneceu',
+  [SCHEMA + 'attendee']: 'Participou de',
+  'http://schema.org/attendee': 'Participou de',
+  [PH + 'hasNewcomer']: 'Estreou em',
+  [SCHEMA + 'organizer']: 'Organizou',
+  'http://schema.org/organizer': 'Organizou',
+};
+
+// Prefixos conhecidos → CURIE, pra encurtar IRIs na tabela de fatos.
+const CURIE_MAP = [
+  [PHD, 'phd:'], [PH, 'ph:'],
+  [SCHEMA, 'schema:'], ['http://schema.org/', 'schema:'],
+  [DCT, 'dcterms:'],
+  ['http://www.w3.org/ns/prov#', 'prov:'],
+  ['http://purl.org/pav/', 'pav:'],
+  [RDF_NS, 'rdf:'],
+  ['http://www.w3.org/2000/01/rdf-schema#', 'rdfs:'],
+  ['http://www.w3.org/2001/XMLSchema#', 'xsd:'],
+  ['http://www.semanticdesktop.org/ontologies/2007/03/22/nfo#', 'nfo:'],
+  ['http://www.semanticdesktop.org/ontologies/2007/05/10/nexif#', 'nexif:'],
+  ['https://creativecommons.org/licenses/', 'cc:'],
+];
+function curie(iri) {
+  for (const [ns, pfx] of CURIE_MAP) if (iri.startsWith(ns)) return pfx + iri.slice(ns.length);
+  return iri;
+}
+const inverseLabel = (p) => INVERSE_LABELS[p] || curie(p);
+
+const MEDIA_CAP = 24;   // teto de thumbnails/chips por grupo antes de "+N mais"
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"]/g, (c) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+
+// ── Carregamento dos dados (manifesto void → tours.ttl + uploads.ttl) ────────
+async function loadData() {
+  const N3 = await loadN3();
+  const VOID = 'http://rdfs.org/ns/void#';
+  let urls = null;
+  try {
+    const manifestUrl = new URL('./data/data_graphs.ttl', location.href).href;
+    const res = await fetch(manifestUrl, { cache: 'no-cache' });
+    if (!res.ok) throw new Error(`data_graphs.ttl HTTP ${res.status}`);
+    const mQuads = new N3.Parser().parse(await res.text());
+    urls = [];
+    for (const q of mQuads) {
+      if (q.predicate.value === VOID + 'dataDump') urls.push(new URL(q.object.value, manifestUrl).href);
+    }
+    if (!urls.length) throw new Error('manifesto sem void:dataDump');
+  } catch (e) {
+    console.warn('[pessoas] manifesto indisponível, usando fallback:', e.message);
+    urls = [
+      new URL('./data/tours.ttl', location.href).href,
+      new URL('./data/uploads.ttl', location.href).href,
+    ];
+  }
+  const parts = [];
+  for (const u of urls) {
+    try {
+      const r = await fetch(u, { cache: 'no-cache' });
+      if (!r.ok) { console.warn(`[pessoas] ${u}: HTTP ${r.status}`); continue; }
+      parts.push(await r.text());
+    } catch (err) { console.warn(`[pessoas] ${u}: ${err.message}`); }
+  }
+  return new N3.Parser().parse(parts.join('\n\n'));
+}
+
+// ── Modelo ───────────────────────────────────────────────────────────────────
+// Mapas auxiliares em nível de módulo pra o render resolver títulos/thumbs.
+const typeOf = new Map(), titleOf = new Map(), dateOf = new Map(), thumbOf = new Map();
+let people = [];   // [{iri, slug, label, defined, forward:[{p,o,literal}], groups:[{p, subjects:[iri]}], apCount}]
+
+function buildModel(quads) {
+  const labelOf = new Map();      // person iri → alternateName (ou name)
+  const typedPersons = new Set(); // pessoas com definição RDF (a schema:Person)
+  const personSet = new Set();    // typed ∪ referenciadas
+
+  for (const q of quads) {
+    const s = q.subject.value, p = q.predicate.value, o = q.object;
+    if (p === RDFT) {
+      if (!typeOf.has(s)) typeOf.set(s, o.value);
+      if (PERSON_TYPES.has(o.value)) { typedPersons.add(s); personSet.add(s); }
+    } else if (p === TITLE_PRED) { if (!titleOf.has(s)) titleOf.set(s, o.value); }
+    else if (DATE_PREDS.has(p))  { if (!dateOf.has(s))  dateOf.set(s, o.value); }
+    else if (THUMB_PREDS.has(p)) { if (!thumbOf.has(s)) thumbOf.set(s, o.value); }
+
+    if (ALT_PREDS.has(p)) labelOf.set(s, o.value);
+    else if (NAME_PREDS.has(p) && !labelOf.has(s)) labelOf.set(s, o.value);
+
+    // Pessoa referenciada em posição de objeto (mesmo sem definição própria).
+    if (o.termType === 'NamedNode' && o.value.startsWith(PERSON_PREFIX)) personSet.add(o.value);
+  }
+
+  const forward = new Map(), inverse = new Map();
+  for (const iri of personSet) { forward.set(iri, []); inverse.set(iri, new Map()); }
+  for (const q of quads) {
+    const s = q.subject.value, p = q.predicate.value, o = q.object;
+    if (personSet.has(s)) forward.get(s).push({ p, o: o.value, literal: o.termType === 'Literal' });
+    if (o.termType === 'NamedNode' && personSet.has(o.value)) {
+      const m = inverse.get(o.value);
+      if (!m.has(p)) m.set(p, []);
+      m.get(p).push(s);
+    }
+  }
+
+  people = [...personSet].map((iri) => {
+    const slug = iri.startsWith(PERSON_PREFIX) ? iri.slice(PERSON_PREFIX.length) : iri.split(/[#/]/).pop();
+    const fwd = forward.get(iri) || [];
+    const groups = [...inverse.get(iri).entries()]
+      .map(([p, subjects]) => ({ p, subjects }))
+      .sort((a, b) => b.subjects.length - a.subjects.length);
+    const apCount = groups.reduce((n, g) => n + g.subjects.length, 0);
+    return {
+      iri, slug,
+      label: labelOf.get(iri) || slug,
+      alt: labelOf.get(iri) || '',
+      defined: typedPersons.has(iri),
+      forward: fwd, groups, apCount,
+    };
+  }).sort((a, b) => a.label.localeCompare(b.label, 'pt-BR', { sensitivity: 'base' }));
+}
+
+// ── Render ────────────────────────────────────────────────────────────────────
+function tourHref(iri) {
+  const id = iri.slice((PHD + 'tour_').length);
+  return `./index.html?tour=${encodeURIComponent(id)}`;
+}
+function photoThumb(iri) {
+  const phash = iri.slice((PHD + 'image_').length);
+  return `./photos/${encodeURIComponent(phash)}/thumb.jpg`;
+}
+function videoThumb(iri) {
+  const raw = thumbOf.get(iri);
+  if (!raw) return null;
+  if (/^(https?:)?\/\//.test(raw) || raw.startsWith('./') || raw.startsWith('/')) return raw;
+  return './clips/' + raw.split('/').map(encodeURIComponent).join('/');
+}
+
+function renderForward(fwd) {
+  if (!fwd.length) return '<p class="empty">Sem triplas próprias (só referenciada).</p>';
+  const rows = fwd.map((f) => {
+    let val;
+    if (f.literal) val = escapeHtml(f.o);
+    else if (f.p === RDFT) val = escapeHtml(curie(f.o));
+    else val = `<a href="${escapeHtml(f.o)}" target="_blank" rel="noopener">${escapeHtml(curie(f.o))}</a>`;
+    return `<tr><td class="pred">${escapeHtml(curie(f.p))}</td><td class="val">${val}</td></tr>`;
+  });
+  return `<table class="facts-table"><tbody>${rows.join('')}</tbody></table>`;
+}
+
+function renderGroup(g) {
+  const tours = [], photos = [], videos = [], others = [];
+  for (const s of g.subjects) {
+    const t = typeOf.get(s);
+    if (t === TOUR_TYPE) tours.push(s);
+    else if (t === IMAGE_TYPE) photos.push(s);
+    else if (t === VIDEO_TYPE) videos.push(s);
+    else others.push(s);
+  }
+  let inner = '';
+  if (tours.length) {
+    tours.sort((a, b) => (dateOf.get(b) || '').localeCompare(dateOf.get(a) || ''));
+    const items = tours.map((s) => {
+      const title = titleOf.get(s) || curie(s);
+      const d = (dateOf.get(s) || '').slice(0, 10);
+      return `<li><a href="${tourHref(s)}" target="_blank" rel="noopener">${escapeHtml(title)}</a>` +
+        (d ? `<span class="d">${escapeHtml(d)}</span>` : '') + `</li>`;
+    });
+    inner += `<ul class="tour-list">${items.join('')}</ul>`;
+  }
+  if (photos.length) {
+    const shown = photos.slice(0, MEDIA_CAP);
+    const thumbs = shown.map((s) => {
+      const u = photoThumb(s);
+      return `<a href="${escapeHtml(u.replace('/thumb.jpg', '/large.jpg'))}" target="_blank" rel="noopener" title="${escapeHtml(curie(s))}">` +
+        `<img loading="lazy" src="${escapeHtml(u)}" alt="" onerror="this.closest('a').style.display='none'"></a>`;
+    });
+    const more = photos.length > MEDIA_CAP ? `<span class="more">+${photos.length - MEDIA_CAP} foto(s)</span>` : '';
+    inner += `<div class="thumbs">${thumbs.join('')}${more}</div>`;
+  }
+  if (videos.length) {
+    const shown = videos.slice(0, MEDIA_CAP);
+    const chips = shown.map((s) => {
+      const u = videoThumb(s);
+      if (u) return `<a href="${escapeHtml(u)}" target="_blank" rel="noopener" title="${escapeHtml(curie(s))}">` +
+        `<img loading="lazy" src="${escapeHtml(u)}" alt="" onerror="this.closest('a').style.display='none'"></a>`;
+      return `<span class="chip" title="${escapeHtml(curie(s))}">🎬 vídeo</span>`;
+    });
+    const anyThumb = shown.some((s) => videoThumb(s));
+    const wrap = anyThumb ? 'thumbs' : '';
+    const more = videos.length > MEDIA_CAP ? `<span class="more">+${videos.length - MEDIA_CAP} vídeo(s)</span>` : '';
+    inner += `<div class="${wrap}">${chips.join('')}${more}</div>`;
+  }
+  if (others.length) {
+    inner += `<div>${others.map((s) => `<span class="chip">${escapeHtml(curie(s))}</span>`).join('')}</div>`;
+  }
+  return `<div class="grp"><div class="grp-h">${escapeHtml(inverseLabel(g.p))} ` +
+    `<span class="n">(${g.subjects.length})</span></div>${inner}</div>`;
+}
+
+function renderPerson(p) {
+  const counts = `${p.forward.length} fato(s) · ${p.apCount} aparição(ões)`;
+  const badge = p.defined ? '' : ` <span class="badge-warn">sem definição RDF</span>`;
+  const groupsHtml = p.groups.length
+    ? p.groups.map(renderGroup).join('')
+    : '<p class="empty">Nenhuma aparição no acervo.</p>';
+  return `<details class="person" data-search="${escapeHtml((p.label + ' ' + p.slug).toLowerCase())}">` +
+    `<summary>` +
+      `<span class="pname">${escapeHtml(p.label)}</span>` +
+      `<span class="pslug">phd:pessoa${escapeHtml(p.slug)}</span>` +
+      `<span class="pcounts">${counts}</span>${badge}` +
+    `</summary>` +
+    `<div class="pbody">` +
+      `<div class="editor">` +
+        `<label>Nome (schema:alternateName)` +
+          `<input class="alt-input" type="text" value="${escapeHtml(p.alt)}" ` +
+            `placeholder="${escapeHtml(p.slug)}" data-slug="${escapeHtml(p.slug)}" ` +
+            `data-orig="${escapeHtml(p.alt)}"></label>` +
+        `<button class="btn-primary save-btn" data-slug="${escapeHtml(p.slug)}" disabled>Salvar</button>` +
+        `<span class="save-msg"></span>` +
+      `</div>` +
+      `<div class="facts">` +
+        `<h3>Fatos diretos</h3>${renderForward(p.forward)}` +
+        `<h3>Aparições</h3>${groupsHtml}` +
+      `</div>` +
+    `</div>` +
+  `</details>`;
+}
+
+function renderAll() {
+  $('#people').innerHTML = people.map(renderPerson).join('');
+  const defined = people.filter((p) => p.defined).length;
+  $('#summary').textContent =
+    `${people.length} pessoa(s) · ${defined} com definição RDF` +
+    (people.length - defined ? ` · ${people.length - defined} só referenciada(s)` : '');
+  $('#summary').hidden = false;
+  $('#searchbox').hidden = false;
+}
+
+// ── Edição do alternateName (POST ./update-person/<slug>) ────────────────────
+async function savePerson(slug, name) {
+  const fd = new FormData();
+  fd.append('name', name);
+  const res = await fetch('./update-person/' + encodeURIComponent(slug), { method: 'POST', body: fd });
+  let j = {};
+  try { j = await res.json(); } catch (_) {}
+  if (!res.ok || j.error) throw new Error(j.error || `HTTP ${res.status}`);
+  return j;
+}
+
+function wireEvents() {
+  const box = $('#people');
+  // Habilita "Salvar" só quando o texto muda.
+  box.addEventListener('input', (e) => {
+    const inp = e.target.closest('.alt-input');
+    if (!inp) return;
+    const btn = inp.closest('.editor').querySelector('.save-btn');
+    btn.disabled = inp.value.trim() === (inp.dataset.orig || '') || !inp.value.trim();
+  });
+  box.addEventListener('click', async (e) => {
+    const btn = e.target.closest('.save-btn');
+    if (!btn) return;
+    const editor = btn.closest('.editor');
+    const inp = editor.querySelector('.alt-input');
+    const msg = editor.querySelector('.save-msg');
+    const slug = btn.dataset.slug;
+    const name = inp.value.trim();
+    if (!name) return;
+    btn.disabled = true; msg.className = 'save-msg'; msg.textContent = 'Salvando…';
+    try {
+      const j = await savePerson(slug, name);
+      // Atualiza modelo + UI in-place, sem recarregar tudo.
+      const p = people.find((x) => x.slug === slug);
+      if (p) { p.label = name; p.alt = name; }
+      inp.dataset.orig = name;
+      const summary = editor.closest('details').querySelector('summary .pname');
+      if (summary) summary.textContent = name;
+      msg.className = 'save-msg ok';
+      msg.textContent = `salvo (${(j.files || []).join(', ') || 'ok'})`;
+    } catch (err) {
+      msg.className = 'save-msg err';
+      msg.textContent = /Failed to fetch|NetworkError/i.test(err.message)
+        ? 'edição indisponível (sem servidor)'
+        : `erro: ${err.message}`;
+      btn.disabled = false;
+    }
+  });
+  // Busca.
+  $('#q').addEventListener('input', (e) => {
+    const q = e.target.value.trim().toLowerCase();
+    for (const d of box.querySelectorAll('details.person')) {
+      d.hidden = q && !d.dataset.search.includes(q);
+    }
+  });
+}
+
+(async () => {
+  try {
+    const quads = await loadData();
+    buildModel(quads);
+    if (!people.length) {
+      $('#status').innerHTML = '<span class="err">Nenhuma pessoa encontrada.</span>';
+      return;
+    }
+    $('#status').remove();
+    renderAll();
+    wireEvents();
+    $('#meta-ts').textContent = ` · gerado em ${new Date().toLocaleString('pt-BR')}`;
+  } catch (e) {
+    $('#status').innerHTML = `<span class="err">Falha ao carregar: ${escapeHtml(e.message)}</span>`;
+  }
+})();
+</script>
+</body>
+</html>
