@@ -796,8 +796,10 @@ body.modal-open { overflow: hidden; }
     padding: 6px 10px;
     gap: 6px;
   }
-  .topbar h1 { font-size: 12px; line-height: 1.2; }
-  .topbar .title { padding: 4px 4px 4px 0; flex: 1 1 100%; }
+  /* No celular o título ocupa a linha inteira (flex-basis 100%) e fica
+     centralizado na barra — não só quando embrulha (ver updateTitleAlignment). */
+  .topbar h1 { font-size: 12px; line-height: 1.2; justify-content: center; text-align: center; }
+  .topbar .title { padding: 4px 6px; flex: 1 1 100%; }
   .title-icon { width: 30px; height: 30px; }
 
   /* Mobile-friendly button heights — at least ~36 px tall for thumbs. */
