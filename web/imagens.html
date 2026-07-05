@@ -804,20 +804,47 @@ function renderGroups(rows, facets) {
     key: k, id: 'grp-' + idx, label: groupLabel(k), order: groupOrderStr(k),
     count: groups.get(k).records.length,
   }));
+  // "Nenhum": sem cabeçalhos de grupo nem linha do tempo — só uma grade contínua.
+  const noGroup = currentGroup === 'none';
+  // "Contínuo": uma grade/colagem só (miniaturas fluem entre grupos) + polígono
+  // por grupo. Funciona tanto na grade quadrada quanto na colagem — o polígono é
+  // traçado a partir dos retângulos reais dos tiles (ver drawGroupPolygons).
+  const wrapActive = galleryWrap && !noGroup;
+  if (wrapActive) {
+    const tilesHtml = keys.map((k, gi) =>
+      groups.get(k).records.map((r, ri) => tileHtml(r, ri === 0 ? { id: 'grp-' + gi } : null)).join('')
+    ).join('');
+    const collage = galleryLayout === 'collage';
+    gallery.classList.toggle('collage', collage);
+    gallery.style.setProperty('--cols', galleryCols());
+    gallery.innerHTML = `<div class="tiles wrap-tiles">${tilesHtml}</div><div class="group-overlay" aria-hidden="true"></div>`;
+    overlayGroups = groupList;
+    if (collage) {
+      const wrap = gallery.querySelector('.wrap-tiles');
+      layoutJustified(wrap);
+      wrap.querySelectorAll('img').forEach((img) => {
+        if (img.dataset.relayout) return;
+        img.dataset.relayout = '1';
+        img.addEventListener('load', scheduleRelayout);   // reflui + refaz contornos
+      });
+    }
+    requestAnimationFrame(() => drawGroupPolygons());
+    buildTimeline(groupList);
+    updateSelUI();
+    return;
+  }
+  overlayGroups = null;
   const html = keys.map((k, idx) => {
     const recs = groups.get(k).records;
-    const tiles = recs.map(tileHtml).join('');
-    return (
-      `<section class="group" id="grp-${idx}">` +
-        `<div class="group-header"><span class="g-title">${escapeHtml(groupLabel(k))}</span>` +
-        `<span class="g-count">${recs.length}</span></div>` +
-        `<div class="tiles">${tiles}</div>` +
-      `</section>`
-    );
+    const tiles = recs.map((r) => tileHtml(r)).join('');
+    const header = noGroup ? '' :
+      `<div class="group-header"><span class="g-title">${escapeHtml(groupLabel(k))}</span>` +
+      `<span class="g-count">${recs.length}</span></div>`;
+    return `<section class="group" id="grp-${idx}">${header}<div class="tiles">${tiles}</div></section>`;
   }).join('');
   gallery.innerHTML = html;
   applyGalleryLayout();
-  buildTimeline(groupList);
+  buildTimeline(noGroup ? [] : groupList);
   updateSelUI();
 }
 
@@ -912,9 +939,15 @@ function applyGalleryLayout() {
     img.addEventListener('load', scheduleRelayout);
   });
 }
-const scheduleRelayout = debounce(() => { if (galleryLayout === 'collage') layoutAllJustified(); }, 80);
+const scheduleRelayout = debounce(() => {
+  if (galleryLayout === 'collage') layoutAllJustified();
+  if (overlayGroups) drawGroupPolygons();   // tiles se moveram → refaz os contornos
+}, 80);
 function layoutAllJustified() {
-  $('#gallery').querySelectorAll('.group .tiles').forEach((c) => layoutJustified(c));
+  const g = $('#gallery');
+  g.querySelectorAll('.group .tiles').forEach((c) => layoutJustified(c));
+  const wrap = g.querySelector('.wrap-tiles');   // modo contínuo em colagem
+  if (wrap) layoutJustified(wrap);
 }
 // Empacota os tiles em linhas de altura ~alvo, cada linha esticada pra largura
 // toda (larguras ∝ aspect-ratio). A última linha fica na altura-alvo se não
@@ -954,7 +987,87 @@ function layoutJustified(container) {
   }
 }
 
-function tileHtml(rec) {
+// Modo contínuo: desenha um polígono retilíneo por grupo, contornando os tiles
+// que ele ocupa na grade/colagem única (que flui entre grupos). Traçado a partir
+// dos RETÂNGULOS REAIS dos tiles (offsetLeft/Top/Width/Height), então funciona
+// igual na grade quadrada e na colagem justificada. Reflows de imagem re-chamam
+// isto via scheduleRelayout.
+function drawGroupPolygons() {
+  const gallery = $('#gallery');
+  const wrap = gallery.querySelector('.wrap-tiles');
+  const overlay = gallery.querySelector('.group-overlay');
+  if (!wrap || !overlay || !overlayGroups) return;
+  const W = wrap.clientWidth, H = wrap.offsetHeight;
+  if (W <= 0) return;
+  overlay.style.top = wrap.offsetTop + 'px';
+  overlay.style.left = wrap.offsetLeft + 'px';
+  overlay.style.width = W + 'px';
+  overlay.style.height = H + 'px';
+  const tiles = [...wrap.children].filter((t) => t.classList && t.classList.contains('tile'));
+  const p = 3 / 2;             // folga = metade do gap (fica no meio do vão)
+  const EDGE = 2.5;            // tolerância p/ "encostou na borda do conteúdo"
+  const LEFT = -p, RIGHT = W + p;
+  let start = 0;
+  const paths = [], chips = [];
+  overlayGroups.forEach((g) => {
+    const n = g.count; if (n <= 0) return;
+    const gt = tiles.slice(start, start + n); start += n;
+    if (!gt.length) return;
+    // Agrupa os tiles do grupo em linhas visuais por offsetTop (tiles da mesma
+    // linha compartilham o topo). Cada linha vira uma faixa [l,r] × [t,b].
+    const rows = [];
+    gt.forEach((t) => {
+      const top = t.offsetTop, left = t.offsetLeft;
+      const right = left + t.offsetWidth, bot = top + t.offsetHeight;
+      let row = rows.find((r) => Math.abs(r.t0 - top) < 3);
+      if (!row) { row = { t0: top, l: left, r: right, t: top, b: bot }; rows.push(row); }
+      else { row.l = Math.min(row.l, left); row.r = Math.max(row.r, right); row.t = Math.min(row.t, top); row.b = Math.max(row.b, bot); }
+    });
+    rows.sort((a, b) => a.t - b.t);
+    const R = rows.map((r) => ({ l: r.l - p, r: r.r + p, t: r.t - p, b: r.b + p }));
+    // Vértices em escada (linhas empilhadas), sentido horário desde o topo-esq.
+    const V = [];
+    V.push([R[0].l, R[0].t], [R[0].r, R[0].t]);
+    for (let i = 0; i < R.length; i++) {
+      V.push([R[i].r, R[i].b]);
+      if (i < R.length - 1) V.push([R[i + 1].r, R[i].b]);   // degrau lateral direito
+    }
+    const last = R.length - 1;
+    V.push([R[last].l, R[last].b]);
+    for (let i = last; i >= 0; i--) {
+      V.push([R[i].l, R[i].t]);
+      if (i > 0) V.push([R[i - 1].l, R[i].t]);              // degrau lateral esquerdo
+    }
+    // OMITE os segmentos verticais que caem nas bordas esq./dir. do conteúdo (as
+    // quebras de linha) — assim a faixa "continua" da direita pra esquerda da
+    // linha seguinte. As reentrâncias internas ficam, separando grupos vizinhos.
+    const NV = V.length;
+    const edgeV = (a, b) => Math.abs(a[0] - b[0]) < 0.5 &&
+      (a[0] < LEFT + EDGE || a[0] > RIGHT - EDGE);
+    let k0 = 0; for (let i = 0; i < NV; i++) if (edgeV(V[i], V[(i + 1) % NV])) { k0 = i; break; }
+    let d = '', open = false, omitted = false;
+    for (let m = 0; m < NV; m++) {
+      const a = V[(k0 + m) % NV], b = V[(k0 + m + 1) % NV];
+      if (edgeV(a, b)) { open = false; omitted = true; continue; }
+      if (!open) { d += `M${a[0].toFixed(1)},${a[1].toFixed(1)}`; open = true; }
+      d += `L${b[0].toFixed(1)},${b[1].toFixed(1)}`;
+    }
+    if (!omitted) d += 'Z';
+    paths.push(`<path d="${d}" fill="none" stroke="#cfcfcf" stroke-width="2.5" stroke-linejoin="round"/>`);
+    // Rótulo: tamanho ∝ altura da 1ª linha; piso legível 8px. Largura limitada à
+    // extensão do grupo na 1ª linha (clipa com reticências).
+    const r0 = rows[0], rowH = r0.b - r0.t;
+    const fs = Math.max(8, Math.min(120, Math.round(rowH * 0.063)));
+    const chipMaxW = Math.max(24, (r0.r - r0.l) - 8);
+    const padY = Math.max(1, Math.round(fs * 0.12)), padX = Math.max(4, Math.round(fs * 0.4));
+    chips.push(
+      `<div class="group-chip" style="left:${(r0.l + 4).toFixed(1)}px;top:${(r0.t + 4).toFixed(1)}px;` +
+      `font-size:${fs}px;max-width:${chipMaxW.toFixed(0)}px;padding:${padY}px ${padX}px">${escapeHtml(g.label)}</div>`);
+  });
+  overlay.innerHTML = `<svg width="${W}" height="${H}" style="position:absolute;inset:0;overflow:visible">${paths.join('')}</svg>${chips.join('')}`;
+}
+
+function tileHtml(rec, opts) {
   const sel = selected.has(rec.iri) ? ' selected' : '';
   const noImg = rec.thumbUrl ? '' : ' no-img';
   const img = rec.thumbUrl
@@ -1296,7 +1409,8 @@ function wireToolbar() {
     $$('#tb-group button').forEach((b) => b.classList.toggle('active', b === btn));
     rebuildAndRun();
   });
-  // Toggle de layout (quadrado ↔ colagem justificada), persistido.
+  // Toggle de layout (quadrado ↔ colagem justificada), persistido. Colagem e
+  // "contínuo" agora coexistem (o polígono é traçado pelos retângulos reais).
   $$('#tb-layout button').forEach((b) => b.classList.toggle('active', b.dataset.layout === galleryLayout));
   $('#tb-layout').addEventListener('click', (e) => {
     const btn = e.target.closest('button[data-layout]');
