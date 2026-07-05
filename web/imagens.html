@@ -134,6 +134,32 @@
   .query-status { color: var(--muted); font-size: 12px; }
   #adv-error { margin-top: 8px; font-size: 12px; }
 
+  /* ── Linha do tempo ───────────────────────────────────────────────────── */
+  .timeline {
+    display: flex; align-items: flex-start; gap: 0;
+    margin: 8px -12px 0; padding: 8px 12px 4px;
+    border-top: 1px solid var(--border);
+    overflow-x: auto; overflow-y: hidden; scrollbar-width: thin;
+    background-image: linear-gradient(var(--border), var(--border));
+    background-size: 100% 2px; background-position: 0 13px; background-repeat: no-repeat;
+  }
+  .tl-mark {
+    flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 4px;
+    background: none; border: none; color: var(--muted); cursor: pointer;
+    padding: 2px 10px; font-size: 11px; white-space: nowrap; position: relative;
+  }
+  .tl-mark .tl-dot {
+    width: 9px; height: 9px; border-radius: 50%; background: var(--surface);
+    border: 2px solid var(--muted); transition: transform .1s, background .1s, border-color .1s;
+  }
+  .tl-mark:hover { color: var(--text); }
+  .tl-mark:hover .tl-dot { border-color: var(--accent); }
+  .tl-mark.active { color: var(--accent); font-weight: 700; }
+  .tl-mark.active .tl-dot { background: var(--accent); border-color: var(--accent); transform: scale(1.35); }
+  .tl-mark .tl-lbl { max-width: 90px; overflow: hidden; text-overflow: ellipsis; }
+  /* Âncora dos grupos abaixo do cabeçalho fixo (toolbar + timeline). */
+  .group { scroll-margin-top: 220px; }
+
   /* ── Grade estilo Apple Fotos ─────────────────────────────────────────── */
   .gallery { display: block; }
   .empty { color: var(--muted); padding: 40px 0; text-align: center; font-size: 15px; }
@@ -309,6 +335,11 @@
     </div>
     <div id="adv-error" class="err" hidden></div>
   </details>
+
+  <!-- Linha do tempo: um marcador por grupo, mais antigo à esquerda → mais
+       novo à direita (sem data/passeio fica no começo). Clique rola a galeria
+       até o grupo; rolar a galeria destaca o grupo atual. -->
+  <div id="timeline" class="timeline" hidden aria-label="Linha do tempo (mais antigo à esquerda)"></div>
 </div>
 
 <div id="gallery" class="gallery"></div>
@@ -685,14 +716,19 @@ function renderGroups(rows, facets) {
   const total = keys.reduce((n, k) => n + groups.get(k).records.length, 0);
   if (!total) {
     gallery.innerHTML = '<div class="empty">Nenhuma imagem encontrada.</div>';
+    buildTimeline([]);
     updateSelUI();
     return;
   }
-  const html = keys.map((k) => {
+  const groupList = keys.map((k, idx) => ({
+    key: k, id: 'grp-' + idx, label: groupLabel(k), order: groupOrderStr(k),
+    count: groups.get(k).records.length,
+  }));
+  const html = keys.map((k, idx) => {
     const recs = groups.get(k).records;
     const tiles = recs.map(tileHtml).join('');
     return (
-      `<section class="group">` +
+      `<section class="group" id="grp-${idx}">` +
         `<div class="group-header"><span class="g-title">${escapeHtml(groupLabel(k))}</span>` +
         `<span class="g-count">${recs.length}</span></div>` +
         `<div class="tiles">${tiles}</div>` +
@@ -701,7 +737,80 @@ function renderGroups(rows, facets) {
   }).join('');
   gallery.innerHTML = html;
   applyGalleryLayout();
+  buildTimeline(groupList);
   updateSelUI();
+}
+
+// ── Linha do tempo (um marcador por grupo) ───────────────────────────────────
+// Rótulo compacto p/ o marcador: passeio → código (ex.: "PH 98"); datas →
+// forma curta; sem data/passeio → "—".
+function timelineLabel(g) {
+  const k = g.key;
+  if (k === 'sem-passeio' || k === '') return '—';
+  if (k.startsWith(TOUR_PREFIX)) {
+    const t = model.tours[k];
+    return (t && t.code) || (t && t.date) || g.label;
+  }
+  if (/^\d{4}$/.test(k)) return k;
+  if (/^\d{4}-\d{2}$/.test(k)) { const [y, m] = k.split('-'); return `${(MESES[+m - 1] || m).slice(0, 3)}/${y.slice(2)}`; }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(k)) { const [y, m, d] = k.split('-'); return `${d}/${m}`; }
+  return g.label;
+}
+let timelineGroups = [];
+function buildTimeline(groupList) {
+  const tl = $('#timeline');
+  timelineGroups = groupList.slice();
+  if (groupList.length < 2) { tl.hidden = true; tl.innerHTML = ''; return; }
+  // Mais antigo à esquerda → mais novo à direita; sem data/passeio (order '')
+  // vai pro começo (mais antigo que o mais antigo).
+  const asc = groupList.slice().sort((a, b) => {
+    if (!a.order && !b.order) return 0;
+    if (!a.order) return -1;
+    if (!b.order) return 1;
+    return a.order.localeCompare(b.order);
+  });
+  tl.innerHTML = asc.map((g) =>
+    `<button type="button" class="tl-mark" data-target="${g.id}" title="${escapeHtml(g.label)} (${g.count})">` +
+      `<span class="tl-dot"></span><span class="tl-lbl">${escapeHtml(timelineLabel(g))}</span>` +
+    `</button>`).join('');
+  tl.hidden = false;
+  refreshTimelineActive();
+}
+function scrollToGroup(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const header = document.querySelector('.toolbar');
+  const top = el.getBoundingClientRect().top + window.scrollY - (header ? header.offsetHeight : 0) - 8;
+  window.scrollTo({ top, behavior: 'smooth' });
+}
+// Destaca o marcador do grupo que está no topo da área visível (abaixo do
+// cabeçalho fixo) e mantém esse marcador visível na régua.
+function refreshTimelineActive() {
+  const tl = $('#timeline');
+  if (tl.hidden) return;
+  const header = document.querySelector('.toolbar');
+  const cut = (header ? header.getBoundingClientRect().bottom : 0) + 6;
+  // timelineGroups está em ordem da galeria (mais novo primeiro). O grupo ativo
+  // é o último (mais antigo) cujo topo já passou pelo cabeçalho; se nenhum
+  // passou (galeria no topo), o ativo é o mais novo (timelineGroups[0]).
+  let activeId = null;
+  for (const g of timelineGroups) {
+    const el = document.getElementById(g.id);
+    if (el && el.getBoundingClientRect().top <= cut) activeId = g.id;
+  }
+  if (!activeId && timelineGroups.length) activeId = timelineGroups[0].id; // topo → mais novo
+  let activeMark = null;
+  tl.querySelectorAll('.tl-mark').forEach((m) => {
+    const on = m.dataset.target === activeId;
+    m.classList.toggle('active', on);
+    if (on) activeMark = m;
+  });
+  if (activeMark) {
+    const mLeft = activeMark.offsetLeft, mRight = mLeft + activeMark.offsetWidth;
+    if (mLeft < tl.scrollLeft || mRight > tl.scrollLeft + tl.clientWidth) {
+      tl.scrollTo({ left: mLeft - tl.clientWidth / 2 + activeMark.offsetWidth / 2, behavior: 'smooth' });
+    }
+  }
 }
 
 // ── Layout: grade quadrada vs colagem justificada ────────────────────────────
@@ -1077,7 +1186,23 @@ function wireToolbar() {
   });
   window.addEventListener('resize', debounce(() => {
     if (galleryLayout === 'collage') layoutAllJustified();
+    refreshTimelineActive();
   }, 120));
+}
+
+// Linha do tempo: clique num marcador rola até o grupo; rolar a galeria
+// (inclusive com a roda sobre a régua, que não captura o scroll vertical)
+// atualiza o marcador ativo.
+function wireTimeline() {
+  $('#timeline').addEventListener('click', (e) => {
+    const m = e.target.closest('.tl-mark');
+    if (m) scrollToGroup(m.dataset.target);
+  });
+  let raf = 0;
+  window.addEventListener('scroll', () => {
+    if (raf) return;
+    raf = requestAnimationFrame(() => { raf = 0; refreshTimelineActive(); });
+  }, { passive: true });
   $('#adv-apply').addEventListener('click', () => {
     const sparql = $('#adv-sparql').value;
     currentSparql = sparql;
@@ -1102,6 +1227,7 @@ function wireToolbar() {
     await loadAndBuild();
     buildFacetControls();
     wireToolbar();
+    wireTimeline();
     wireGallery();
     wireSelect();
     wireLightbox();
