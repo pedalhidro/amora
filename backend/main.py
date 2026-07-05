@@ -120,6 +120,7 @@ except Exception:  # noqa: BLE001
 
 PH_NS  = "https://pedalhidrografi.co/terms#"
 PHD_NS = "https://pedalhidrografi.co/data/"
+SCHEMA_NS = "https://schema.org/"
 
 
 def _intensity_for(kj):
@@ -627,6 +628,69 @@ def remove_image_from_uploads(phash):
     return n
 
 
+# ── Media metadata patch (edição, sem blobs) ─────────────────────────────
+# Análogo ao synthesize_tour_patch, mas pra phd:image_/phd:video_ em
+# uploads.ttl. Usado por /update-image e /update-video (edição de metadados +
+# listas pelo popup e pelo modo de edição do form) — NÃO toca nos blobs nem
+# regenera a activity ph:Upload (sujeito à parte, preservado).
+def synthesize_media_patch(media_iri, patch_ttl, remove_preds):
+    """Transforma um patch por-predicado (só os predicados afirmados no patch
+    sobre a mídia + os listados em `remove_preds`) no documento full-replace
+    equivalente. O estado atual da mídia em uploads.ttl é copiado verbatim; os
+    predicados a substituir (e a closure `<iri>_*` dos objetos derivados
+    descartados) são removidos; o patch inteiro é somado (inclusive sujeitos
+    auxiliares novos, ex.: schema:Collection inline). SHACL valida o ESTADO
+    FINAL. Retorna o TTL sintetizado."""
+    v = _load_validator()
+    Graph = v["Graph"]
+    from rdflib import URIRef
+    media_uri = URIRef(media_iri)
+    patch = Graph().parse(data=patch_ttl, format="turtle")
+    preds_to_replace = set(patch.predicates(media_uri)) | set(remove_preds)
+
+    result = Graph()
+    existing = STORE.read_text(KEY_UPLOADS)
+    if existing:
+        from rdflib import BNode
+        catalog = Graph().parse(data=existing, format="turtle")
+        for subj in {media_uri} | _derived_subjects(catalog, media_uri):
+            for s, p, o in catalog.triples((subj, None, None)):
+                result.add((s, p, o))
+                # Copia também a closure de 1 nível dos objetos bnode (geo/hash
+                # antigos ainda são bnodes na maioria das mídias). Sem isso, um
+                # predicado NÃO substituído (ex.: schema:locationCreated) ficaria
+                # apontando pra um bnode sem triples → SHACL sh:class falharia.
+                if isinstance(o, BNode):
+                    for s2, p2, o2 in catalog.triples((o, None, None)):
+                        result.add((s2, p2, o2))
+
+    for p in preds_to_replace:
+        for o in list(result.objects(media_uri, p)):
+            result.remove((media_uri, p, o))
+            if isinstance(o, URIRef) and str(o).startswith(str(media_uri) + "_"):
+                _purge_subject(result, o)
+    for triple in patch:
+        result.add(triple)
+    return result.serialize(format="turtle")
+
+
+def upsert_media_node(media_iri, node_ttl):
+    """Substitui as triples da mídia (sujeito + nós derivados) em uploads.ttl
+    pelo node_ttl, PRESERVANDO os blobs e a activity ph:Upload (sujeito à parte).
+    node_ttl pode trazer schema:Collection novos, persistidos como estão."""
+    v = _load_validator()
+    Graph = v["Graph"]
+    from rdflib import URIRef
+    media_uri = URIRef(media_iri)
+    catalog = Graph()
+    existing = STORE.read_text(KEY_UPLOADS)
+    if existing:
+        catalog.parse(data=existing, format="turtle")
+    _purge_subject(catalog, media_uri)
+    catalog += Graph().parse(data=node_ttl, format="turtle")
+    STORE.write_text(KEY_UPLOADS, catalog.serialize(format="turtle"))
+
+
 # ── Tour upserts ─────────────────────────────────────────────────────────
 # Mesma mecânica de validação/merge das imagens, mas pra phd:tour_<id>
 # e gravando em tours.ttl em vez de uploads.ttl. Pra dar suporte ao form
@@ -735,6 +799,7 @@ TOUR_PATCH_PREFIXES = {
     "prov":    "http://www.w3.org/ns/prov#",
     "pav":     "http://purl.org/pav/",
     "qudt":    "http://qudt.org/schema/qudt/",
+    "exif":    "http://www.w3.org/2003/12/exif/ns#",
 }
 
 
@@ -2062,6 +2127,146 @@ def delete_image(phash):
         print(f"[delete-image] erro removendo {prefix}: {e}")
     print(f"[delete-image] phash={phash} files={removed_files} triples={removed_triples}")
     return jsonify(phash=phash, files=removed_files, triples=removed_triples)
+
+
+def _do_update_media(kind, hash_):
+    """Handler compartilhado de /update-image e /update-video: patch de
+    metadados por-predicado (mode=patch), SEM reenvio de blobs. `kind` =
+    'image'|'video'. Body: `ttl` (predicados alterados + eventuais
+    schema:Collection inline) + `remove` (CURIEs de predicados a limpar)."""
+    from rdflib import URIRef
+    hash_ = (hash_ or "").strip().lower()
+    if len(hash_) != 16 or not all(c in "0123456789abcdef" for c in hash_):
+        return jsonify(error=f"{kind} hash inválido (esperado 16 hex)"), 400
+    ttl_text = request.form.get("ttl")
+    if not ttl_text:
+        f = request.files.get("ttl")
+        if f:
+            ttl_text = f.read().decode("utf-8", errors="replace")
+    if not ttl_text:
+        return jsonify(error="ttl ausente"), 400
+
+    media_iri = PHD_NS + f"{kind}_{hash_}"
+    cls_local = "Image" if kind == "image" else "Video"
+    RDFT = URIRef("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
+    if (URIRef(media_iri), RDFT, URIRef(PH_NS + cls_local)) not in _load_catalog():
+        return jsonify(error=f"{kind} não encontrado: {hash_}"), 404
+
+    try:
+        remove_preds = _expand_remove_preds(request.form.get("remove", ""))
+        result_ttl = synthesize_media_patch(media_iri, ttl_text, remove_preds)
+    except Exception as e:  # noqa: BLE001
+        return jsonify(error=f"patch: {e}"), 400
+
+    validator = validate_image_ttl if kind == "image" else validate_video_ttl
+    try:
+        ok, _hash, errors = validator(result_ttl)
+    except Exception as e:  # noqa: BLE001
+        return jsonify(error=f"parse: {e}"), 400
+    if not ok:
+        return jsonify(error="shacl", details=errors), 400
+
+    try:
+        upsert_media_node(media_iri, result_ttl)
+        _invalidate_catalog()
+    except Exception as e:  # noqa: BLE001
+        return jsonify(error=f"persistência ttl: {e}"), 500
+    print(f"[update-{kind}] {hash_} remove={request.form.get('remove','')!r}")
+    return jsonify(ok=True, **{("phash" if kind == "image" else "vhash"): hash_})
+
+
+@app.post("/update-image/<phash>")
+@serialized
+def update_image(phash):
+    return _do_update_media("image", phash)
+
+
+@app.post("/update-video/<vhash>")
+@serialized
+def update_video(vhash):
+    return _do_update_media("video", vhash)
+
+
+@app.post("/assign-media-lists")
+@serialized
+def assign_media_lists():
+    """Operação em lote de pertencimento a listas (galeria): adiciona/remove
+    schema:isPartOf em várias mídias num único ciclo de lock. Body JSON:
+    {iris:[...], add:[listIri...], remove:[listIri...], newLists:[{iri,name}...]}.
+    Só toca phd:image_/phd:video_; add/remove/newLists só aceitam phd:list_.
+    Como isPartOf é a única aresta tocada (range schema:Collection, garantido
+    pelas listas declaradas), o resultado é SHACL-válido por construção — não
+    revalidamos cada nó (seria N validações no lote)."""
+    from rdflib import URIRef, Literal
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return jsonify(error="body JSON ausente/inválido"), 400
+    iris = body.get("iris") or []
+    add = body.get("add") or []
+    remove = body.get("remove") or []
+    new_lists = body.get("newLists") or []
+    if not isinstance(iris, list) or not iris:
+        return jsonify(error="iris vazio"), 400
+    if not isinstance(add, list) or not isinstance(remove, list):
+        return jsonify(error="add/remove devem ser listas"), 400
+
+    LIST_PREFIX = PHD_NS + "list_"
+    IMG_PREFIX = PHD_NS + "image_"
+    VID_PREFIX = PHD_NS + "video_"
+    ISPARTOF = URIRef(SCHEMA_NS + "isPartOf")
+    RDFT = URIRef("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
+    COLLECTION = URIRef(SCHEMA_NS + "Collection")
+    NAME = URIRef(SCHEMA_NS + "name")
+    IMG_CLS = URIRef(PH_NS + "Image")
+    VID_CLS = URIRef(PH_NS + "Video")
+
+    def _is_list(x):
+        return isinstance(x, str) and x.startswith(LIST_PREFIX)
+    if not all(_is_list(x) for x in add) or not all(_is_list(x) for x in remove):
+        return jsonify(error="add/remove devem ser IRIs phd:list_"), 400
+    for m in iris:
+        if not (isinstance(m, str) and (m.startswith(IMG_PREFIX) or m.startswith(VID_PREFIX))):
+            return jsonify(error=f"iri de mídia inválida: {m}"), 400
+
+    v = _load_validator()
+    Graph = v["Graph"]
+    catalog = Graph()
+    existing = STORE.read_text(KEY_UPLOADS)
+    if existing:
+        catalog.parse(data=existing, format="turtle")
+
+    # Garante que as listas novas existam como schema:Collection (persistem
+    # como sujeitos à parte, iguais a pessoas novas).
+    for nl in new_lists:
+        li = (nl or {}).get("iri")
+        nm = (nl or {}).get("name")
+        if not _is_list(li) or not nm:
+            return jsonify(error=f"newList inválida: {nl}"), 400
+        lu = URIRef(li)
+        if (lu, RDFT, COLLECTION) not in catalog:
+            catalog.add((lu, RDFT, COLLECTION))
+            catalog.add((lu, NAME, Literal(str(nm))))
+
+    # Toda lista em `add` precisa existir como Collection (range de isPartOf).
+    for li in add:
+        if (URIRef(li), RDFT, COLLECTION) not in catalog:
+            return jsonify(error=f"lista inexistente (declare em newLists): {li}"), 400
+
+    touched = 0
+    for m in iris:
+        mu = URIRef(m)
+        if (mu, RDFT, IMG_CLS) not in catalog and (mu, RDFT, VID_CLS) not in catalog:
+            continue   # mídia inexistente — pula (idempotente)
+        for li in remove:
+            catalog.remove((mu, ISPARTOF, URIRef(li)))
+        for li in add:
+            catalog.add((mu, ISPARTOF, URIRef(li)))
+        touched += 1
+
+    STORE.write_text(KEY_UPLOADS, catalog.serialize(format="turtle"))
+    _invalidate_catalog()
+    print(f"[assign-media-lists] iris={len(iris)} touched={touched} add={add} remove={remove}")
+    return jsonify(ok=True, touched=touched)
 
 
 @app.post("/upload-tour")

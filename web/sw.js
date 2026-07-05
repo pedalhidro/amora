@@ -13,7 +13,7 @@
 //                    stale data, not just a stale app shell.
 //   RUNTIME_CACHE — map tiles, OSRM, elevation, etc. stale-while-revalidate.
 
-const VERSION = 'phidro-v318';
+const VERSION = 'phidro-v319';
 const STATIC_CACHE = `${VERSION}-static`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 
@@ -32,8 +32,10 @@ const STATIC_ASSETS = [
   './icon-512-maskable.png',
   './apple-touch-icon.png',
   './img/amora-icon.png',
+  './imagens.html',
   './lib/utils.js',
   './lib/n3.min.js',
+  './lib/media-query.js',   // infra de consulta (Store N3 + Comunica lazy)
   './lib/energy-worker.js',
   './lib/graph-engine.js',   // importScripts()'d pelo energy-worker no boot
   './lib/tom-select.complete.min.js',

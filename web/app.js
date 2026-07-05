@@ -821,12 +821,62 @@ let photoRideFilter = null;
 // Janela de data herdada do filtro da sidebar — {from, to} em ms, ou null.
 // Quando setada, fotos cujo datetime cai fora da janela ficam ocultas.
 let photoDateWindow = null;
+// Filtro por listas (álbuns) / SPARQL das mídias visíveis no mapa. Persiste em
+// localStorage. Default: só as mídias da lista "Padrão". Modos:
+//   'all'    → todas as mídias (escape "Todas")
+//   'picker' → união das listas marcadas (mediaFilter.lists)
+//   'sparql' → resultado de uma consulta SPARQL (mediaFilterResultSet)
+// Literal inline (PHD_NS é declarado bem mais abaixo — usar aqui cairia na TDZ
+// do const, já que este bloco roda na inicialização do módulo).
+const PADRAO_LIST_IRI = 'https://pedalhidrografi.co/data/list_padrao';
+let mediaFilter = loadMediaFilter();
+let mediaFilterResultSet = null;   // Set<iri> quando mode==='sparql'
+function loadMediaFilter() {
+  try {
+    const raw = JSON.parse(localStorage.getItem('phidro:mediaFilter') || 'null');
+    if (raw && raw.mode) {
+      return { mode: raw.mode, lists: new Set(raw.lists || [PADRAO_LIST_IRI]),
+               query: raw.query || '' };
+    }
+  } catch (e) { /* ignore */ }
+  return { mode: 'picker', lists: new Set([PADRAO_LIST_IRI]), query: '' };
+}
+function saveMediaFilter() {
+  try {
+    localStorage.setItem('phidro:mediaFilter', JSON.stringify({
+      mode: mediaFilter.mode, lists: [...mediaFilter.lists], query: mediaFilter.query || '',
+    }));
+  } catch (e) { /* ignore */ }
+}
+// Alguma lista selecionada existe de fato no catálogo? (Pré-migração a lista
+// Padrão ainda não existe — nesse caso o picker se comporta como "Todas" pra
+// não deixar o mapa vazio.)
+function pickerHasKnownList() {
+  for (const l of (mediaFilter.lists || [])) if (listCatalog.has(l)) return true;
+  return false;
+}
+function mediaMatchesFilter(iri, lists) {
+  if (mediaFilter.mode === 'all') return true;
+  if (mediaFilter.mode === 'sparql') {
+    return mediaFilterResultSet ? mediaFilterResultSet.has(iri) : true;
+  }
+  // picker
+  if (!mediaFilter.lists || mediaFilter.lists.size === 0) return true;
+  if (!pickerHasKnownList()) return true;   // listas inexistentes → todas
+  for (const l of (lists || [])) if (mediaFilter.lists.has(l)) return true;
+  return false;
+}
 // Conteúdo bruto da última .ttl carregada (para o "Baixar .ttl").
 let lastTtlText  = '';
 let lastTtlOrigin = '';   // URL / nome de arquivo de origem (para debug + status)
-// Catálogos derivados do TTL: tours[iri]={title,date}, persons[iri]={name}.
+// Catálogos derivados do TTL: tours[iri]={title,date}, persons[iri]={name},
+// lists[iri]={name} (álbuns schema:Collection).
 let tourCatalog   = new Map();
 let personCatalog = new Map();
+let listCatalog   = new Map();
+// Store N3 em memória (fotos+clipes+tours) pro filtro SPARQL avançado do mapa;
+// (re)construído em buildPhotoMarkers a partir dos quads já parseados.
+let mediaStore    = null;
 
 // Delegação de clique nos popups de foto: link no Passeio abre o modal da
 // rota correspondente (mesma janela que a barra lateral usa).
@@ -836,6 +886,34 @@ document.addEventListener('click', (ev) => {
     ev.preventDefault();
     const id = a.getAttribute('data-route-id');
     if (id && typeof openRouteModal === 'function') openRouteModal(id);
+    return;
+  }
+  // Botão "📁 Listas" no popup: abre o editor de listas da mídia.
+  const le = ev.target.closest?.('.photo-popup button.media-lists-edit[data-hash]');
+  if (le) {
+    ev.preventDefault();
+    const kind = le.getAttribute('data-kind');
+    const hash = le.getAttribute('data-hash');
+    let cur = [];
+    if (kind === 'image') {
+      cur = photoMarkers.find((m) => m._photo && m._photo.phash === hash)?._photo.lists || [];
+    } else {
+      const e = clipsMarkers.find((x) => x && x.clip && x.clip.vhash === hash);
+      cur = e ? (e.clip.lists || []) : [];
+    }
+    openMediaListsEditor(kind, hash, cur);
+    return;
+  }
+  // Botão "✎ Editar" no popup: abre upload_images.html?edit=<iri> no modal.
+  const me = ev.target.closest?.('.photo-popup button.media-edit[data-hash]');
+  if (me) {
+    ev.preventDefault();
+    const kind = me.getAttribute('data-kind');
+    const hash = me.getAttribute('data-hash');
+    const iri = PHD_NS + kind + '_' + hash;
+    const ifr = document.getElementById('upload-iframe');
+    if (ifr) ifr.src = './upload_images.html?edit=' + encodeURIComponent(iri);
+    if (typeof openUploadModal === 'function') openUploadModal();
     return;
   }
   // Botão "Excluir" no popup: chama o backend e recarrega a camada.
@@ -1490,6 +1568,7 @@ async function loadClipsFromUploadsTtl() {
             datetime: props.dateXsd || null,
             tourIri: props.capturedDuring,
             license: props.license,
+            lists: props.lists || [],
             audioOnly: !file360 && !file720,
           });
         }
@@ -1511,6 +1590,7 @@ async function loadClipsFromUploadsTtl() {
       else if (p === PH_ + 'video720p')          sub.video720p = o.value;
       else if (p === PH_ + 'audio')              sub.audio = o.value;
       else if (p === SCHEMA_ + 'thumbnail')      sub.thumbnail = o.value;
+      else if (p === SCHEMA_ + 'isPartOf')       { (sub.lists = sub.lists || []).push(o.value); }
       else if (p === 'http://purl.org/dc/terms/date') sub.dateXsd = o.value;
       subs.set(s, sub);
     });
@@ -1547,6 +1627,12 @@ function renderClipPopupHtml(c) {
   const delBtn = c.vhash
     ? `<button type="button" class="photo-del video-del" data-vhash="${escapeHtml(c.vhash)}">Excluir ✕</button>`
     : '';
+  const listsBtn = c.vhash
+    ? `<button type="button" class="media-lists-edit" data-kind="video" data-hash="${escapeHtml(c.vhash)}">📁 Listas</button>`
+    : '';
+  const listNames = (c.lists && c.lists.length)
+    ? c.lists.map((l) => escapeHtml(listCatalog.get(l)?.name || l.split(/[/#]/).pop())).join(', ')
+    : null;
   const enc = (p) => p.split('/').map(encodeURIComponent).join('/');
   const videoSrc = c.file  ? CLIPS_DIR + enc(c.file)  : '';
   const v720Src  = c.file720 && c.file720 !== c.file ? CLIPS_DIR + enc(c.file720) : '';
@@ -1561,7 +1647,7 @@ function renderClipPopupHtml(c) {
   if (videoSrc) dlChips.push(`<a class="photo-dl" href="${videoSrc}" download="${escapeHtml(c.file)}">Vídeo 360p ↓</a>`);
   if (v720Src)  dlChips.push(`<a class="photo-dl" href="${v720Src}"  download="${escapeHtml(c.file720)}">Vídeo 720p ↓</a>`);
   if (audioSrc) dlChips.push(`<a class="photo-dl" href="${audioSrc}" download="${escapeHtml((c.audio || '').split('/').pop())}">Áudio ↓</a>`);
-  const actions = [...dlChips, delBtn].filter(Boolean).join('');
+  const actions = [...dlChips, listsBtn, delBtn].filter(Boolean).join('');
   return (
     `<div class="photo-popup video-popup">` +
       playerHtml +
@@ -1569,6 +1655,7 @@ function renderClipPopupHtml(c) {
         `<dt>Quando</dt><dd>${whenHuman}</dd>` +
         `<dt>Duração</dt><dd>${dur}</dd>` +
         `<dt>Passeio</dt><dd>${tourHtml}</dd>` +
+        (listNames ? `<dt>Listas</dt><dd>${listNames}</dd>` : '') +
         `<dt>Licença</dt><dd>${license}</dd>` +
         (c.vhash ? `<dt>vHash</dt><dd><code>${escapeHtml(c.vhash)}</code></dd>` : '') +
       `</dl>` +
@@ -2003,6 +2090,8 @@ function buildModelFromQuads(quads) {
   const licenses = new Map();
   const origFmts = new Map();   // imageIri → MIME do original (schema:encodingFormat)
   const locOf = new Map(), locLat = new Map(), locLng = new Map();
+  // Pertencimento a listas (álbuns): mídia --schema:isPartOf--> schema:Collection.
+  const listsOf = new Map();   // mediaIri → Set(listIri)
   // Activity (ph:Upload) → { startedAt, generated: imageIri }
   const uploadProps    = new Map();
   const uploadByImage  = new Map();   // image IRI → activity props
@@ -2019,6 +2108,9 @@ function buildModelFromQuads(quads) {
     else if (p === SCHEMA + 'longitude')    locLng.set(s, parseFloat(ov));
     else if (p === SCHEMA + 'elevation')    elev.set(s, parseFloat(ov));
     else if (p === SCHEMA + 'locationCreated') locOf.set(s, ov);
+    else if (p === SCHEMA + 'isPartOf') {
+      if (!listsOf.has(s)) listsOf.set(s, new Set()); listsOf.get(s).add(ov);
+    }
     else if (p === EXIF + 'gpsImgDirection')   bearings.set(s, parseFloat(ov));
     else if (p === EXIF + 'focalLengthIn35mmFilm') focals.set(s, parseFloat(ov));
     else if (p === PH_NS + 'capturedDuring')   tours.set(s, ov);
@@ -2085,6 +2177,7 @@ function buildModelFromQuads(quads) {
 
   tourCatalog = new Map();
   personCatalog = new Map();
+  listCatalog = new Map();
   for (const [s, ts] of types) {
     if (ts.has(PH_NS + 'Tour')) {
       tourCatalog.set(s, {
@@ -2096,6 +2189,9 @@ function buildModelFromQuads(quads) {
     }
     if (ts.has(SCHEMA + 'Person')) {
       personCatalog.set(s, { name: names.get(s) || s });
+    }
+    if (ts.has(SCHEMA + 'Collection')) {
+      listCatalog.set(s, { name: names.get(s) || s.split(/[/#]/).pop() });
     }
   }
 
@@ -2140,6 +2236,7 @@ function buildModelFromQuads(quads) {
       ride,
       authors:   authorNames,
       providers: providerNames,
+      lists:     [...(listsOf.get(s) || [])],
       license:   licenses.get(s) || null,
       upload,    // { startedAt } | null
       origExt,
@@ -2148,6 +2245,13 @@ function buildModelFromQuads(quads) {
       full:      resolvePhotoUrl(phash, 'original', origExt),
     });
   }
+  // Store N3 com TODOS os quads (fotos+vídeos+tours+listas) pro filtro SPARQL
+  // avançado do mapa (via Comunica, lazy). Guardado em módulo; reconstruído a
+  // cada reload de fotos.
+  try {
+    if (window.PhidroMediaQuery) mediaStore = window.PhidroMediaQuery.makeStore(quads);
+    else if (window.N3 && window.N3.Store) mediaStore = new window.N3.Store(quads);
+  } catch (e) { console.warn('[media-store] falhou:', e); }
   return photos;
 }
 
@@ -2272,6 +2376,10 @@ function _photoDetailRows(ph) {
   if (ph.providers && ph.providers.length) {
     rows.push(['Quem subiu', escapeHtml(ph.providers.join(', '))]);
   }
+  if (ph.lists && ph.lists.length) {
+    const names = ph.lists.map((l) => escapeHtml(listCatalog.get(l)?.name || l.split(/[/#]/).pop()));
+    rows.push(['Listas', names.join(', ')]);
+  }
   if (ph.license) {
     // Texto compacto para CC; fallback pra URL inteira.
     let label = ph.license;
@@ -2327,7 +2435,13 @@ function buildPhotoMarkers(photos) {
     const delBtn = (ph.phash && photoSource === 'server')
       ? `<button type="button" class="photo-del" data-phash="${escapeHtml(ph.phash)}">Excluir ✕</button>`
       : '';
-    const actions = [dlBtn, delBtn].filter(Boolean).join('');
+    const listsBtn = (ph.phash && photoSource === 'server')
+      ? `<button type="button" class="media-lists-edit" data-kind="image" data-hash="${escapeHtml(ph.phash)}">📁 Listas</button>`
+      : '';
+    const editBtn = (ph.phash && photoSource === 'server')
+      ? `<button type="button" class="media-edit" data-kind="image" data-hash="${escapeHtml(ph.phash)}">✎ Editar</button>`
+      : '';
+    const actions = [dlBtn, listsBtn, editBtn, delBtn].filter(Boolean).join('');
     m.bindPopup(
       `<div class="photo-popup">` +
         `<img src="${escapeHtml(ph.file)}" loading="lazy" alt="${escapeHtml(ph.orig)}" />` +
@@ -2481,12 +2595,14 @@ function applyPhotoVisibility() {
         matchesDate = t >= photoDateWindow.from && t <= photoDateWindow.to;
       }
     }
-    const shouldShow = photosVisible && matchesRide && matchesDate;
+    const matchesList = mediaMatchesFilter(ph.id, ph.lists);
+    const shouldShow = photosVisible && matchesRide && matchesDate && matchesList;
     if (shouldShow && !map.hasLayer(m)) m.addTo(map);
     else if (!shouldShow && map.hasLayer(m)) map.removeLayer(m);
   }
   applyClipMarkersVisibility();
   renderPhotoFilterChip();
+  renderMediaFilterChip();
   relaxPhotoMarkers();
 }
 
@@ -2507,15 +2623,19 @@ function applyClipMarkersVisibility() {
   for (const e of clipsMarkers) {
     if (!e) continue;
     const m = e.marker;
-    const onMap = photosVisible || animOn;
+    // O dot estático respeita o filtro de listas; a animação (ghost-video)
+    // ignora o filtro e toca todos os clipes.
+    const matchesList = mediaMatchesFilter(e.clip.iri, e.clip.lists);
+    const showStatic = photosVisible && matchesList;
+    const onMap = showStatic || animOn;
     if (onMap && !map.hasLayer(m)) m.addTo(map);
     else if (!onMap && map.hasLayer(m)) map.removeLayer(m);
     if (!map.hasLayer(m)) continue;
     const el = m.getElement();
-    if (el) el.classList.toggle('clip-dot-hidden', !photosVisible);
+    if (el) el.classList.toggle('clip-dot-hidden', !showStatic);
     // Com fotos ligadas o dot acompanha a opacidade do slider; com só a
     // animação no ar, o anel pulsa em opacidade cheia.
-    m.setOpacity(photosVisible ? photosOpacity : 1);
+    m.setOpacity(showStatic ? photosOpacity : 1);
   }
 }
 
@@ -2524,6 +2644,7 @@ function showPhotos() {
   loadPhotos().then(() => {
     if (!photosVisible) return;
     applyPhotoVisibility();
+    recomputeSparqlFilterIfNeeded();
     if (photoMarkers.length === 0) {
       showToast('Nenhuma imagem carregada (suba via upload_images.html)');
     }
@@ -2576,6 +2697,239 @@ function renderPhotoFilterChip() {
     `<span>Fotos: ${escapeHtml(photoRideFilter.label)} (${n})</span>` +
     `<button type="button" title="Ver todas as imagens">✕</button>`;
   chip.querySelector('button').onclick = clearPhotoRideFilter;
+}
+
+// ── Filtro de mídias por listas (álbuns) / SPARQL ──────────────────────────
+function mediaFilterSummary() {
+  if (mediaFilter.mode === 'all') return 'Todas';
+  if (mediaFilter.mode === 'sparql') return 'SPARQL';
+  const names = [...mediaFilter.lists].map(
+    (l) => listCatalog.get(l)?.name || l.split(/[/#]/).pop());
+  if (!names.length) return 'nenhuma lista';
+  if (!pickerHasKnownList()) return 'Todas';
+  if (names.length <= 2) return names.join(', ');
+  return `${names.length} listas`;
+}
+
+// Chip fixo (aparece com a camada de imagens ligada) que abre o popover.
+function renderMediaFilterChip() {
+  let chip = document.getElementById('media-filter-chip');
+  if (!photosVisible) {
+    if (chip) chip.remove();
+    closeMediaFilterPopover();
+    return;
+  }
+  if (!chip) {
+    chip = document.createElement('button');
+    chip.type = 'button';
+    chip.id = 'media-filter-chip';
+    chip.className = 'map-chip media-filter-chip';
+    chip.title = 'Filtrar imagens/vídeos por lista ou SPARQL';
+    document.getElementById('map').appendChild(chip);
+    chip.addEventListener('click', toggleMediaFilterPopover);
+  }
+  chip.innerHTML = `<span>📁 <b>${escapeHtml(mediaFilterSummary())}</b> ▾</span>`;
+}
+
+function toggleMediaFilterPopover() {
+  const pop = document.getElementById('media-filter-pop');
+  if (pop) closeMediaFilterPopover();
+  else openMediaFilterPopover();
+}
+function closeMediaFilterPopover() {
+  document.getElementById('media-filter-pop')?.remove();
+}
+
+function openMediaFilterPopover() {
+  closeMediaFilterPopover();
+  const pop = document.createElement('div');
+  pop.id = 'media-filter-pop';
+  pop.className = 'media-filter-pop';
+  const isAll = mediaFilter.mode === 'all';
+  const isSparql = mediaFilter.mode === 'sparql';
+  const lists = [...listCatalog.entries()]
+    .sort((a, b) => (a[1].name || '').localeCompare(b[1].name || '', 'pt'));
+  const rows = lists.length
+    ? lists.map(([iri, o]) =>
+        `<label class="mf-row"><input type="checkbox" class="mf-list" value="${escapeHtml(iri)}"` +
+        `${mediaFilter.lists.has(iri) ? ' checked' : ''}${isAll || isSparql ? ' disabled' : ''}>` +
+        `<span>${escapeHtml(o.name || iri.split(/[/#]/).pop())}</span></label>`).join('')
+    : '<div class="mf-empty">Nenhuma lista ainda. Suba imagens com listas ou rode a migração da Padrão.</div>';
+  const defaultQuery = mediaFilter.query
+    || (window.PhidroMediaQuery
+        ? window.PhidroMediaQuery.listMembershipQuery(PADRAO_LIST_IRI)
+        : `SELECT ?m WHERE { ?m <${SCHEMA}isPartOf> <${PADRAO_LIST_IRI}> }`);
+  pop.innerHTML =
+    `<div class="mf-head">Filtro de imagens<button type="button" class="mf-close" title="Fechar">✕</button></div>` +
+    `<label class="mf-row mf-todas"><input type="checkbox" id="mf-all"${isAll ? ' checked' : ''}>` +
+    `<span><b>Todas</b> (ignora listas)</span></label>` +
+    `<div class="mf-lists">${rows}</div>` +
+    `<details class="mf-adv"${isSparql ? ' open' : ''}><summary>Avançado (SPARQL)</summary>` +
+    `<textarea id="mf-sparql" rows="6" spellcheck="false">${escapeHtml(defaultQuery)}</textarea>` +
+    `<div class="mf-adv-actions"><button type="button" id="mf-run" class="mf-btn">Aplicar consulta</button></div>` +
+    `<div id="mf-err" class="mf-err"></div></details>`;
+  document.getElementById('map').appendChild(pop);
+  L.DomEvent.disableClickPropagation(pop);
+  L.DomEvent.disableScrollPropagation(pop);
+
+  pop.querySelector('.mf-close').onclick = closeMediaFilterPopover;
+  pop.querySelector('#mf-all').onchange = (e) => {
+    if (e.target.checked) applyMediaFilter({ mode: 'all' });
+    else applyMediaFilter({ mode: 'picker' });
+    openMediaFilterPopover();   // re-render (habilita/desabilita rows)
+  };
+  pop.querySelectorAll('.mf-list').forEach((cb) => {
+    cb.onchange = () => {
+      const sel = new Set([...pop.querySelectorAll('.mf-list:checked')].map((c) => c.value));
+      applyMediaFilter({ mode: 'picker', lists: sel });
+    };
+  });
+  pop.querySelector('#mf-run').onclick = () => {
+    const q = pop.querySelector('#mf-sparql').value.trim();
+    applyMediaFilter({ mode: 'sparql', query: q });
+  };
+}
+
+// Aplica uma mudança de estado do filtro: persiste, recomputa (async no modo
+// SPARQL) e reprojeta a visibilidade das mídias.
+function applyMediaFilter(patch) {
+  if (patch.mode) mediaFilter.mode = patch.mode;
+  if (patch.lists) mediaFilter.lists = patch.lists;
+  if (patch.query != null) mediaFilter.query = patch.query;
+  saveMediaFilter();
+  const errBox = document.getElementById('mf-err');
+  if (errBox) errBox.textContent = '';
+  if (mediaFilter.mode === 'sparql') {
+    if (!window.PhidroMediaQuery || !mediaStore) {
+      if (errBox) errBox.textContent = 'Carregue as imagens primeiro (ligue a camada).';
+      return;
+    }
+    if (errBox) errBox.textContent = 'Consultando…';
+    window.PhidroMediaQuery.queryMediaIris(mediaStore, mediaFilter.query)
+      .then((set) => {
+        mediaFilterResultSet = set;
+        if (errBox) errBox.textContent = `${set.size} mídia(s).`;
+        applyPhotoVisibility();
+        renderMediaFilterChip();
+      })
+      .catch((e) => {
+        mediaFilterResultSet = new Set();
+        if (errBox) errBox.textContent = 'Erro na consulta: ' + (e.message || e);
+        applyPhotoVisibility();
+      });
+    return;
+  }
+  mediaFilterResultSet = null;
+  applyPhotoVisibility();
+  renderMediaFilterChip();
+}
+
+// Recomputa o result-set do modo SPARQL depois que as mídias carregam (boot com
+// filtro SPARQL persistido, ou reload após mutação). No-op nos outros modos.
+function recomputeSparqlFilterIfNeeded() {
+  if (mediaFilter.mode !== 'sparql') return;
+  if (!window.PhidroMediaQuery || !mediaStore) return;
+  window.PhidroMediaQuery.queryMediaIris(mediaStore, mediaFilter.query)
+    .then((set) => { mediaFilterResultSet = set; applyPhotoVisibility(); })
+    .catch((e) => {
+      console.warn('[media-filter] SPARQL:', e.message || e);
+      mediaFilterResultSet = new Set(); applyPhotoVisibility();
+    });
+}
+
+// ── Editor de listas por mídia (popup do mapa) ─────────────────────────────
+function slugifyList(name) {
+  return (name || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'lista';
+}
+function ttlEscapeStr(s) {
+  return String(s || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n');
+}
+
+// Persiste a nova lista de listas de UMA mídia via /update-image|/update-video
+// (mode=patch, remove=schema:isPartOf → substitui o pertencimento inteiro).
+async function saveMediaLists(kind, hash, listIris, pendingNew) {
+  let ttl = '@prefix schema: <https://schema.org/> .\n';
+  const mediaIri = PHD_NS + kind + '_' + hash;
+  if (listIris.length) {
+    ttl += `<${mediaIri}> schema:isPartOf ${listIris.map((i) => '<' + i + '>').join(', ')} .\n`;
+  }
+  for (const nl of (pendingNew || [])) {
+    if (listIris.includes(nl.iri)) {
+      ttl += `<${nl.iri}> a schema:Collection ; schema:name "${ttlEscapeStr(nl.name)}" .\n`;
+    }
+  }
+  const fd = new FormData();
+  fd.append('ttl', ttl);
+  fd.append('remove', 'schema:isPartOf');
+  const url = (kind === 'image' ? './update-image/' : './update-video/') + encodeURIComponent(hash);
+  const res = await fetch(url, { method: 'POST', body: fd });
+  if (!res.ok) {
+    let msg = `HTTP ${res.status}`;
+    try { const j = await res.json(); msg = (j.details && j.details.join('; ')) || j.error || msg; } catch (e) {}
+    throw new Error(msg);
+  }
+  return res.json();
+}
+
+function openMediaListsEditor(kind, hash, currentLists) {
+  document.getElementById('media-lists-editor')?.remove();
+  const modal = document.createElement('div');
+  modal.id = 'media-lists-editor';
+  modal.className = 'modal media-lists-modal';
+  const cur = new Set(currentLists || []);
+  const lists = [...listCatalog.entries()]
+    .sort((a, b) => (a[1].name || '').localeCompare(b[1].name || '', 'pt'));
+  const rows = lists.length
+    ? lists.map(([li, o]) =>
+        `<label class="mle-row"><input type="checkbox" class="mle-list" value="${escapeHtml(li)}"` +
+        `${cur.has(li) ? ' checked' : ''}><span>${escapeHtml(o.name || li.split(/[/#]/).pop())}</span></label>`).join('')
+    : '<div class="mle-empty">Nenhuma lista ainda — crie uma abaixo.</div>';
+  modal.innerHTML =
+    `<div class="modal-content media-lists-content">` +
+    `<header><h3>Listas da mídia</h3><button class="close" title="Fechar" aria-label="Fechar">✕</button></header>` +
+    `<div class="mle-lists">${rows}</div>` +
+    `<div class="mle-new"><input type="text" id="mle-newname" placeholder="Nova lista (álbum)…" maxlength="60">` +
+    `<button type="button" id="mle-add" class="mle-btn">+ criar</button></div>` +
+    `<div class="mle-actions"><button type="button" id="mle-save" class="mle-save">Salvar</button></div>` +
+    `<div id="mle-err" class="mle-err"></div></div>`;
+  document.body.appendChild(modal);
+  modal.hidden = false;
+  const close = () => modal.remove();
+  modal.querySelector('.close').onclick = close;
+  modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
+  const pendingNew = [];
+  modal.querySelector('#mle-add').onclick = () => {
+    const inp = modal.querySelector('#mle-newname');
+    const nm = inp.value.trim();
+    if (!nm) return;
+    const li = PHD_NS + 'list_' + slugifyList(nm);
+    const exists = [...modal.querySelectorAll('.mle-list')].some((c) => c.value === li);
+    if (!exists) {
+      pendingNew.push({ iri: li, name: nm });
+      const lab = document.createElement('label');
+      lab.className = 'mle-row';
+      lab.innerHTML = `<input type="checkbox" class="mle-list" value="${escapeHtml(li)}" checked>` +
+        `<span>${escapeHtml(nm)} <em>(nova)</em></span>`;
+      modal.querySelector('.mle-empty')?.remove();
+      modal.querySelector('.mle-lists').appendChild(lab);
+    }
+    inp.value = '';
+  };
+  modal.querySelector('#mle-save').onclick = async () => {
+    const chosen = [...modal.querySelectorAll('.mle-list:checked')].map((c) => c.value);
+    const errBox = modal.querySelector('#mle-err');
+    errBox.textContent = 'Salvando…';
+    try {
+      await saveMediaLists(kind, hash, chosen, pendingNew);
+      close();
+      showToast('Listas atualizadas.');
+      if (kind === 'image') reloadPhotos();
+      else { clipsCatalog = null; loadClipsCatalog().then((clips) => makeClipMarkers(clips)); }
+    } catch (e) {
+      errBox.textContent = 'Erro: ' + (e.message || e);
+    }
+  };
 }
 
 // Tira de miniaturas das fotos do pedal, exibida no modal da rota.
@@ -3050,12 +3404,73 @@ censoModal?.addEventListener('click', (e) => {
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && censoModal && !censoModal.hidden) closeCensoModal();
 });
-// O "← Mapa" dentro do iframe do Censo pede pro app fechar o modal (em vez de
-// navegar o iframe pro index e abrir um segundo mapa). Só mesma origem.
+// Mensagens dos iframes filhos (Censo, Galeria). Só mesma origem.
 window.addEventListener('message', (e) => {
   if (e.origin !== window.location.origin) return;
-  if (e.data && e.data.type === 'phidro-censo-back') closeCensoModal();
+  if (!e.data || !e.data.type) return;
+  switch (e.data.type) {
+    case 'phidro-censo-back':     closeCensoModal(); break;
+    case 'phidro-gallery-back':   closeImagensModal(); break;
+    case 'phidro-gallery-reload':
+      reloadPhotos();
+      clipsCatalog = null;
+      loadClipsCatalog().then((clips) => makeClipMarkers(clips));
+      break;
+    case 'phidro-gallery-show':   galleryShowMedia(e.data.iri); break;
+    default: break;
+  }
 });
+
+// Galeria de imagens em iframe — mesma mecânica do Censo.
+const imagensBtn        = document.getElementById('imagens-btn');
+const imagensModal      = document.getElementById('imagens-modal');
+const imagensModalClose = document.getElementById('imagens-modal-close');
+const imagensIframe     = document.getElementById('imagens-iframe');
+const IMAGENS_URL = './imagens.html';
+function openImagensModal() {
+  if (!imagensModal) return;
+  closeOtherMobileDialogs('imagens');
+  let needsReset = true;
+  try {
+    const path = imagensIframe.contentWindow?.location?.pathname || '';
+    needsReset = !path.endsWith('/imagens.html');
+  } catch (_) {
+    needsReset = !imagensIframe.getAttribute('src');
+  }
+  if (needsReset) imagensIframe.src = IMAGENS_URL;
+  imagensModal.hidden = false;
+  imagensBtn?.setAttribute('aria-pressed', 'true');
+}
+function closeImagensModal() {
+  if (imagensModal) imagensModal.hidden = true;
+  imagensBtn?.setAttribute('aria-pressed', 'false');
+}
+imagensBtn?.addEventListener('click', openImagensModal);
+imagensModalClose?.addEventListener('click', closeImagensModal);
+imagensModal?.addEventListener('click', (e) => {
+  if (e.target === imagensModal) closeImagensModal();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && imagensModal && !imagensModal.hidden) closeImagensModal();
+});
+// "Ver no mapa" da galeria → fecha o modal, voa até o marcador e abre o popup.
+function galleryShowMedia(iri) {
+  closeImagensModal();
+  if (!iri) return;
+  let marker = photoMarkers.find((m) => m._photo && m._photo.id === iri) || null;
+  if (!marker) {
+    const cm = clipsMarkers.find((x) => x && x.clip && x.clip.iri === iri);
+    if (cm) marker = cm.marker;
+  }
+  if (!marker) { showToast('Mídia não está no mapa.'); return; }
+  photosVisible = true;
+  const ll = marker.getLatLng();
+  map.flyTo(ll, Math.max(map.getZoom(), 16));
+  setTimeout(() => {
+    if (!map.hasLayer(marker)) marker.addTo(map);
+    marker.openPopup();
+  }, 450);
+}
 
 // Menu "Subir" — atalho no topbar que abre um mini-modal com as duas ações
 // de contribuição (enviar mídia / cadastrar passeio), cada uma delegando pro
@@ -4748,6 +5163,10 @@ function closeOtherMobileDialogs(except) {
   }
   if (except !== 'censo' && censoModal && !censoModal.hidden) {
     censoModal.hidden = true;
+  }
+  if (except !== 'imagens' && imagensModal && !imagensModal.hidden) {
+    imagensModal.hidden = true;
+    imagensBtn?.setAttribute('aria-pressed', 'false');
   }
   if (except !== 'share') {
     const shareModal = document.getElementById('share-name-modal');
