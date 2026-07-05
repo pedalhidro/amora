@@ -147,8 +147,16 @@
      direita, em destaque (preenchido, não outline). */
   .table-toolbar {
     display: flex;
-    justify-content: flex-end;
+    justify-content: flex-start;
+    align-items: center;
+    gap: 8px;
     margin: 0 0 10px;
+  }
+  .table-toolbar .meta-ts {
+    margin-left: auto;
+    color: var(--muted);
+    font-size: 11px;
+    text-align: right;
   }
   .btn-primary {
     display: inline-block;
@@ -183,7 +191,6 @@
   <h1>Censo Hidrográfico</h1>
   <span class="sub">Pedal Hidrográfico — métricas agregadas dos passeios</span>
   <nav>
-    <a href="./pessoas.html">Pessoas →</a>
     <a href="./index.html">← Mapa</a>
   </nav>
 </header>
@@ -193,8 +200,11 @@
 <div id="metrics" class="metrics" hidden></div>
 
 <div class="table-toolbar" hidden>
+  <a class="btn-primary" href="./pessoas.html"
+     title="Ver e editar as pessoas do acervo">👥 Pessoas</a>
   <a class="btn-primary" href="./upload_tour.html"
      title="Cadastrar um novo passeio em tours.ttl">＋ Cadastrar passeio</a>
+  <span id="meta-ts" class="meta-ts"></span>
 </div>
 
 <div class="table-wrap" hidden>
@@ -222,14 +232,6 @@
   </table>
 </div>
 
-<footer>
-  Calculado a partir de <code>web/data/tours.ttl</code> (mídias de
-  <code>web/data/uploads.ttl</code> via <code>ph:capturedDuring</code>);
-  intensidade segue a faixa declarada na ontologia (kJ por participante, não
-  pelo coletivo).
-  <span id="meta-ts"></span>
-</footer>
-
 <script type="module">
 const $ = (q) => document.querySelector(q);
 
@@ -239,11 +241,10 @@ const $ = (q) => document.querySelector(q);
 // o modal, revelando o mapa que já está embaixo. Standalone (aberto direto),
 // o link navega pro mapa normalmente.
 if (window.self !== window.top) {
-  // A barra do modal Censo já mostra o título — esconde o <h1>/subtítulo
-  // internos pra não duplicar. O "← Mapa" fecha o modal (em vez de navegar o
-  // iframe pra index.html, o que abriria um segundo mapa dentro da janela).
-  $('header h1')?.style.setProperty('display', 'none');
-  $('header .sub')?.style.setProperty('display', 'none');
+  // O modal Censo não tem mais barra de título própria, então o <h1>/subtítulo
+  // internos aparecem normalmente (dão o título do modal). O "← Mapa" fecha o
+  // modal (em vez de navegar o iframe pra index.html, o que abriria um segundo
+  // mapa dentro da janela).
   const back = $('header a[href="./index.html"]');
   if (back) back.addEventListener('click', (e) => {
     e.preventDefault();
@@ -453,6 +454,15 @@ async function loadMediaCounts() {
 // missing (ao mesmo tempo que null/undefined). Sumas ignoram esses.
 const isMissing = (n) => n == null || !Number.isFinite(n) || n === 0;
 
+// Timestamp ISO 8601 em horário de São Paulo (-03; sem horário de verão desde
+// 2019). `sv-SE` formata como "AAAA-MM-DD HH:MM:SS" — troca o espaço por T.
+function saoPauloIso() {
+  const p = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+  }).format(new Date());
+  return `${p.replace(' ', 'T')}-03`;
+}
 function fmtInt(n)  { return isMissing(n) ? '—' : n.toLocaleString('pt-BR'); }
 function fmtKJ(n)   { return isMissing(n) ? '—' : `${Math.round(n).toLocaleString('pt-BR')} kJ`; }
 function fmtH(n)    {
@@ -673,7 +683,7 @@ function attachSort(tours) {
     renderMetrics(tours);
     renderTable(tours);
     attachSort(tours);
-    $('#meta-ts').textContent = ` · gerado em ${new Date().toLocaleString('pt-BR')}`;
+    $('#meta-ts').textContent = `gerado em ${saoPauloIso()}, a partir de https://amora.pedalhidrografi.co/data/tours.ttl`;
   } catch (e) {
     $('#status').innerHTML = `<span class="err">Falha ao carregar: ${escapeHtml(e.message)}</span>`;
   }

@@ -420,8 +420,12 @@ body.modal-open { overflow: hidden; }
   background: #fff;
 }
 
+/* Por padrão os modais NÃO mostram barra de título: economizam espaço e todos
+   fecham clicando fora (overlay) ou com Esc. O conteúdo de cada modal já traz
+   o próprio contexto. Pra reexibir um header específico, sobrescreva com
+   `display: flex` no id do modal. */
 .modal-content header {
-  display: flex;
+  display: none;
   align-items: center;
   justify-content: space-between;
   padding: 12px 16px;
