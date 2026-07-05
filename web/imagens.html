@@ -476,11 +476,12 @@ async function ensureJSZip() {
 }
 
 // ── Modo embutido (iframe do modal do app) ──────────────────────────────────
-// Embutida no iframe do app: o modal não tem mais barra de título própria, então
-// o título interno (<h1>/subtítulo) aparece normalmente e serve de título do
-// modal. Fecha por clique fora / Esc, como os modais de Enviar/Cadastrar passeio.
+// No modal, esconde o header inteiro (título "Imagens", subtítulo e nav "← Mapa")
+// — o modal já é claramente a galeria; fecha pelo botão vermelho / clique fora /
+// Esc. Standalone (aberto direto), o header aparece normalmente.
 function embeddedSetup() {
   if (window.self === window.top) return;
+  $('header')?.style.setProperty('display', 'none');
 }
 
 // ── Carregamento dos dados (manifesto void → tours.ttl + uploads.ttl) ────────

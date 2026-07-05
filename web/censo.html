@@ -241,15 +241,10 @@ const $ = (q) => document.querySelector(q);
 // o modal, revelando o mapa que já está embaixo. Standalone (aberto direto),
 // o link navega pro mapa normalmente.
 if (window.self !== window.top) {
-  // O modal Censo não tem mais barra de título própria, então o <h1>/subtítulo
-  // internos aparecem normalmente (dão o título do modal). O "← Mapa" fecha o
-  // modal (em vez de navegar o iframe pra index.html, o que abriria um segundo
-  // mapa dentro da janela).
-  const back = $('header a[href="./index.html"]');
-  if (back) back.addEventListener('click', (e) => {
-    e.preventDefault();
-    try { window.parent.postMessage({ type: 'phidro-censo-back' }, window.location.origin); } catch (_) {}
-  });
+  // No modal, o <h1>/subtítulo internos aparecem (dão o título do modal), mas a
+  // nav ("← Mapa") some — quem fecha o modal é o botão vermelho / clique fora /
+  // Esc. Standalone (aberto direto), a nav aparece e navega normalmente.
+  $('header nav')?.style.setProperty('display', 'none');
 }
 
 // ── N3.js ────────────────────────────────────────────────────────────────
@@ -683,7 +678,8 @@ function attachSort(tours) {
     renderMetrics(tours);
     renderTable(tours);
     attachSort(tours);
-    $('#meta-ts').textContent = `gerado em ${saoPauloIso()}, a partir de https://amora.pedalhidrografi.co/data/tours.ttl`;
+    const toursUrl = new URL('./data/tours.ttl', location.href).href;   // origem real (localhost em dev, produção no ar)
+    $('#meta-ts').textContent = `gerado em ${saoPauloIso()}, a partir de ${toursUrl}`;
   } catch (e) {
     $('#status').innerHTML = `<span class="err">Falha ao carregar: ${escapeHtml(e.message)}</span>`;
   }

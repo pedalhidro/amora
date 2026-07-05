@@ -3519,6 +3519,24 @@ document.getElementById('subir-censo')?.addEventListener('click', () => {
   openCensoModal();
 });
 
+// ─── Botão de fechar (bolinha vermelha estilo macOS) em TODO modal ───────────
+// Como os modais não têm mais barra de título, injeta uma bolinha vermelha
+// discreta no canto superior esquerdo de cada `.modal-content`. Ao clicar,
+// dispara o clique-no-overlay (`modal.click()`), reusando o handler de
+// clique-fora que cada modal já tem (e.target === modal → fecha corretamente,
+// com toda a limpeza específica: reloadPhotos, reset de iframe, aria, etc.).
+for (const content of document.querySelectorAll('.modal > .modal-content')) {
+  const modal = content.closest('.modal');
+  if (!modal) continue;
+  const dot = document.createElement('button');
+  dot.type = 'button';
+  dot.className = 'modal-close-dot';
+  dot.title = 'Fechar';
+  dot.setAttribute('aria-label', 'Fechar');
+  dot.addEventListener('click', (e) => { e.stopPropagation(); modal.click(); });
+  content.appendChild(dot);
+}
+
 // ─── Modal de Configurações ───────────────────────────────────────────────
 const settingsBtn        = document.getElementById('settings-btn');
 const settingsModal      = document.getElementById('settings-modal');
