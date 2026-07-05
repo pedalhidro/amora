@@ -270,9 +270,10 @@ body.header-hidden .leaflet-top {
 
 .sidebar {
   grid-area: sidebar;
+  position: relative;              /* âncora da bolinha de fechar */
   background: var(--panel);
   border-left: 1px solid var(--border);
-  padding: 14px 16px;
+  padding: 30px 16px 14px;         /* faixa superior reservada pra bolinha */
   overflow-y: auto;
 }
 
@@ -406,22 +407,39 @@ body.modal-open { overflow: hidden; }
   position: relative;   /* âncora do botão de fechar (bolinha) no canto */
 }
 
-/* Botão de fechar estilo macOS: bolinha vermelha pequena e discreta no canto
-   superior esquerdo. position:absolute → não ocupa espaço no layout do modal.
-   Fecha disparando o mesmo caminho do clique-fora (ver app.js). */
-.modal-close-dot {
-  position: absolute; top: 9px; left: 9px; z-index: 30;
-  width: 13px; height: 13px; padding: 0;
+/* ── Botão de fechar estilo macOS (bolinha vermelha) ────────────────────────
+   Reutilizável em modais e nos painéis flutuantes (camadas, rotas, barra de
+   traçado). Pequena e discreta. Cada contêiner reserva uma folga no canto
+   superior esquerdo pra bolinha não cobrir títulos — como a zona dos
+   "sinaleiros" numa janela do macOS. Fecha disparando o mesmo caminho de cada
+   contêiner (clique-fora nos modais; toggles nos painéis — ver app.js). */
+.close-dot {
+  box-sizing: border-box;
+  width: 13px; height: 13px; padding: 0; flex: 0 0 auto;
   border-radius: 50%; border: 1px solid rgba(0, 0, 0, 0.28);
   background: #ff5f57; cursor: pointer; line-height: 1;
+  position: relative;   /* centra o × do ::after */
 }
-.modal-close-dot:hover { background: #ff453a; }
-.modal-close-dot::after {
+.close-dot:hover { background: #ff453a; }
+.close-dot::after {
   content: "\00d7"; position: absolute; inset: 0;
   display: flex; align-items: center; justify-content: center;
   font-size: 11px; color: rgba(0, 0, 0, 0.6); opacity: 0;
 }
-.modal-close-dot:hover::after { opacity: 1; }
+.close-dot:hover::after { opacity: 1; }
+
+/* Nos modais e nos painéis de camadas/rotas a bolinha ancora no canto (a barra
+   de traçado a trata como item inline do flex — ver .trace-controls). */
+.modal-content > .close-dot,
+.layer-panel > .close-dot,
+.sidebar > .close-dot {
+  position: absolute; top: 8px; left: 9px; z-index: 30;
+}
+/* Reserva de espaço pra bolinha (macOS-like): o conteúdo cai logo abaixo dela.
+   Modais sem iframe têm estrutura [<header oculto>][corpo] → empurra o corpo;
+   modais com iframe reservam a faixa no próprio contêiner flex (.upload-…). */
+.modal-content > header + * { padding-top: 26px; }
+.upload-modal-content { padding-top: 24px; }
 
 /* Upload modal: muito mais largo (cards do form em grade); iframe preenche. */
 .upload-modal-content {
@@ -1280,6 +1298,18 @@ body.drawing .draft-line:active { cursor: grabbing; }
   opacity: 0.4;
   cursor: not-allowed;
 }
+/* Bolinha de fechar (macOS) como 1º item da barra de traçado. Re-afirma o
+   visual da bolinha por cima das regras genéricas de `.trace-controls button`
+   (especificidade maior + fica depois no arquivo). É item inline do flex, então
+   fica "ao lado" dos botões (sem faixa reservada — a folga vem do gap). */
+.trace-controls > .close-dot {
+  width: 13px; height: 13px; padding: 0; margin-right: 2px;
+  border-radius: 50%; border: 1px solid rgba(0, 0, 0, 0.28);
+  background: #ff5f57;
+}
+.trace-controls > .close-dot:hover:not(:disabled) {
+  background: #ff453a; border-color: rgba(0, 0, 0, 0.28);
+}
 .trace-controls .trace-save {
   border-color: #3a6b3a;
   color: #b1ffb1;
@@ -1527,11 +1557,12 @@ body.trace-preview .tp-label { display: none !important; }
 
 /* Combined layer panel: visibility toggles + per-layer opacity sliders. */
 .layer-panel {
+  position: relative;              /* âncora da bolinha de fechar */
   background: var(--panel);
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 6px 8px;
+  padding: 24px 8px 6px;           /* faixa superior reservada pra bolinha */
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
   font-size: 11px;
   min-width: 240px;

@@ -3519,22 +3519,40 @@ document.getElementById('subir-censo')?.addEventListener('click', () => {
   openCensoModal();
 });
 
-// ─── Botão de fechar (bolinha vermelha estilo macOS) em TODO modal ───────────
-// Como os modais não têm mais barra de título, injeta uma bolinha vermelha
-// discreta no canto superior esquerdo de cada `.modal-content`. Ao clicar,
-// dispara o clique-no-overlay (`modal.click()`), reusando o handler de
-// clique-fora que cada modal já tem (e.target === modal → fecha corretamente,
-// com toda a limpeza específica: reloadPhotos, reset de iframe, aria, etc.).
+// ─── Botão de fechar (bolinha vermelha estilo macOS) ─────────────────────────
+// Como os modais e painéis não têm mais barra de título, injeta uma bolinha
+// vermelha discreta no canto superior esquerdo. Cada contêiner reserva a folga
+// no CSS (.close-dot). `onClose` roda no clique.
+function makeCloseDot(onClose, title = 'Fechar') {
+  const dot = document.createElement('button');
+  dot.type = 'button';
+  dot.className = 'close-dot';
+  dot.title = title;
+  dot.setAttribute('aria-label', title);
+  dot.addEventListener('click', (e) => { e.stopPropagation(); onClose(e); });
+  return dot;
+}
+
+// Modais: a bolinha dispara o clique-no-overlay (`modal.click()`), reusando o
+// handler de clique-fora que cada modal já tem (e.target === modal → fecha
+// corretamente, com toda a limpeza: reloadPhotos, reset de iframe, aria, etc.).
 for (const content of document.querySelectorAll('.modal > .modal-content')) {
   const modal = content.closest('.modal');
   if (!modal) continue;
-  const dot = document.createElement('button');
-  dot.type = 'button';
-  dot.className = 'modal-close-dot';
-  dot.title = 'Fechar';
-  dot.setAttribute('aria-label', 'Fechar');
-  dot.addEventListener('click', (e) => { e.stopPropagation(); modal.click(); });
-  content.appendChild(dot);
+  content.appendChild(makeCloseDot(() => modal.click()));
+}
+
+// Sidebar de Rotas: a bolinha fecha o painel (mesmo caminho do ☰/toggle). Como
+// só é clicável com a sidebar aberta, o toggle sempre fecha.
+document.getElementById('sidebar')?.appendChild(
+  makeCloseDot(() => toggleRoutesSidebar(), 'Fechar rotas'),
+);
+
+// Barra de edição de traçado: bolinha como 1º item (inline, ao lado dos
+// botões); fechar = cancelar a edição, igual ao "✕ Cancelar" do botão Traçar.
+{
+  const tc = document.getElementById('trace-controls');
+  if (tc) tc.insertBefore(makeCloseDot(() => exitDrawingMode(), 'Fechar edição'), tc.firstChild);
 }
 
 // ─── Modal de Configurações ───────────────────────────────────────────────
@@ -5068,6 +5086,15 @@ layerPanel.onAdd = function () {
     applyLayerOrder();
     layoutRows();
   });
+
+  // Bolinha de fechar (macOS) no canto do painel — fecha as camadas (mesmo
+  // caminho do botão ⧉ Camadas: esconde + persiste). Absolute → não desloca
+  // as linhas; a faixa superior reservada no CSS evita colisão com o conteúdo.
+  div.appendChild(makeCloseDot(() => {
+    closeOtherMobileDialogs('layers');
+    applyLayersVisibility(true);
+    try { localStorage.setItem(LAYERS_HIDDEN_KEY, '1'); } catch {}
+  }, 'Fechar camadas'));
 
   L.DomEvent.disableClickPropagation(div);
   L.DomEvent.disableScrollPropagation(div);

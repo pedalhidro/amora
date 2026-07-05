@@ -241,9 +241,10 @@ const $ = (q) => document.querySelector(q);
 // o modal, revelando o mapa que já está embaixo. Standalone (aberto direto),
 // o link navega pro mapa normalmente.
 if (window.self !== window.top) {
-  // No modal, o <h1>/subtítulo internos aparecem (dão o título do modal), mas a
-  // nav ("← Mapa") some — quem fecha o modal é o botão vermelho / clique fora /
-  // Esc. Standalone (aberto direto), a nav aparece e navega normalmente.
+  // No modal, mostra só o <h1> ("Censo Hidrográfico") como título; esconde o
+  // subtítulo e a nav ("← Mapa") — quem fecha o modal é o botão vermelho /
+  // clique fora / Esc. Standalone (aberto direto), tudo aparece normalmente.
+  $('header .sub')?.style.setProperty('display', 'none');
   $('header nav')?.style.setProperty('display', 'none');
 }
 
