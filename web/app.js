@@ -5783,7 +5783,7 @@ const traceMetrics = document.getElementById('trace-metrics');
 // extra speed beyond the flat-equivalent: v = v_flat + ε·(v_coast − v_flat).
 const G = 9.81;
 // Stored as fractions in the params object; surfaced as % in the UI.
-const PCT_PARAMS = new Set(['epsilon', 'efficiency', 'slopeFlatThreshold', 'kEff']);
+const PCT_PARAMS = new Set(['epsilon', 'efficiency', 'slopeFlatThreshold', 'kEff', 'carKEff', 'carEpsilon']);
 const DEFAULT_PARAMS = {
   mass: 75,                 // kg (rider + bike)
   crr: 0.008,
@@ -5826,6 +5826,19 @@ const DEFAULT_PARAMS = {
   // pontes/túneis via portais (atalho no tabuleiro). Desligado = água é barreira
   // total (sem travessia). Não afeta o "pelo viário" (já roteia nas vias).
   usePortals: true,
+  // Comparação com um SUV (editar traçado): liga/desliga o cálculo e a exibição
+  // na barra de métricas + tooltip. Os campos abaixo são a física do carro
+  // usada nesse cálculo — mesmo modelo v2 da bike, ver carEnergyJ().
+  suvCompareEnabled: true,
+  carMass: 5000,          // kg
+  carCrr: 0.013,
+  carCda: 1.1,             // m²
+  carKEff: 0.12,           // 0..1 — eficiência do motor a combustão
+  carEpsilon: 0,           // 0..1 — recuperação de energia na descida (0 = nenhuma)
+  carPowerFlat: 25000,     // W — potência média p/ achar o v_f de equilíbrio do SUV
+  // Escala a energia mecânica da bike ("nas pernas") pra energia metabólica
+  // (comida) — eficiência humana ~25% → ~4×. Usado só na comparação com o SUV.
+  bikeMetabolicFactor: 4,
 };
 
 function powerFor(gradient, p) {
@@ -8821,38 +8834,32 @@ function simulateRide(p) {
 // ─── Comparação "quantas vezes mais eficiente é a bike" vs. um SUV ───────────
 // Mesma forma fechada do modelo v2 (bicycling-energy-model/notas.md):
 //   E = α_r·x + α_a·x·f + β·(h+ − ε·h−),  α_r=m·g·Crr/k_ef, α_a=½ρCdA·v_f²/k_ef, β=m·g/k_ef
-// só que com massa/Crr/CdA/eficiência de carro e duas diferenças físicas fixas:
-//   • ε = 0  → nenhuma recuperação de energia na descida (ao contrário da bike,
-//     cujo ε é estimado do perfil da rota — um motor a combustão não converte
-//     a descida de volta em propulsão). Escrito explicitamente abaixo (em vez
-//     de simplesmente omitir o termo) pra continuar correto se CAR_PARAMS.epsilon
-//     for mudado no futuro.
-//   • f = 1  → o arrasto aerodinâmico entra em 100% da distância, inclusive
-//     subindo (a bike só carrega arrasto fora das subidas, porque desacelera
-//     o bastante pra zerar a contribuição aero; o SUV mantém velocidade de
-//     cruzeiro mesmo subindo, então o arrasto nunca some).
+// só que com massa/Crr/CdA/eficiência de carro (p.carMass/carCrr/carCda/carKEff,
+// configuráveis no modal "Comparação com carro (SUV)") e duas diferenças
+// físicas fixas:
+//   • ε = p.carEpsilon (default 0)  → nenhuma recuperação de energia na
+//     descida por padrão (ao contrário da bike, cujo ε é estimado do perfil
+//     da rota — um motor a combustão comum não converte a descida de volta em
+//     propulsão; um híbrido/elétrico regenerativo teria ε > 0).
+//   • f = 1 (sempre)  → o arrasto aerodinâmico entra em 100% da distância,
+//     inclusive subindo (a bike só carrega arrasto fora das subidas, porque
+//     desacelera o bastante pra zerar a contribuição aero; o SUV mantém
+//     velocidade de cruzeiro mesmo subindo, então o arrasto nunca some).
 // v_f (a velocidade usada no termo aero) é a velocidade de equilíbrio do
 // PRÓPRIO SUV — resolve a mesma cúbica da bike (solveSpeedAtGradient), só que
-// com a potência média de um motor de carro (25 000 W) e a massa/Crr/CdA do
-// SUV, em vez de reaproveitar o v_f da bike.
-const CAR_PARAMS = { mass: 5000, crr: 0.013, cda: 1.1, kEff: 0.12, epsilon: 0, powerFlat: 25000 };
-// A energia "nas pernas" (eLegJ) é só a saída mecânica do ciclista — o corpo
-// humano só converte ~25% da comida que queima em propulsão, então a energia
-// METABÓLICA (o que realmente "custou" à pessoa) é ~4× isso. O SUV já é medido
-// em energia de combustível (mecânica ÷ CAR_PARAMS.kEff), então comparar maçã
-// com maçã exige escalar a bike pro mesmo referencial antes de tirar a razão.
-const BIKE_METABOLIC_FACTOR = 4;
+// com a potência média do carro (p.carPowerFlat) e a massa/Crr/CdA do SUV, em
+// vez de reaproveitar o v_f da bike.
 function carEnergyJ(sim, p) {
-  const vf = solveSpeedAtGradient(CAR_PARAMS.powerFlat, 0, {
-    rho: p.rho, cda: CAR_PARAMS.cda, mass: CAR_PARAMS.mass, crr: CAR_PARAMS.crr,
+  const vf = solveSpeedAtGradient(p.carPowerFlat, 0, {
+    rho: p.rho, cda: p.carCda, mass: p.carMass, crr: p.carCrr,
   });
-  const aero = 0.5 * p.rho * CAR_PARAMS.cda * vf * vf; // J por metro no plano
-  const alphaR = (CAR_PARAMS.crr * CAR_PARAMS.mass * G) / CAR_PARAMS.kEff;
-  const alphaA = aero / CAR_PARAMS.kEff;
-  const beta = (CAR_PARAMS.mass * G) / CAR_PARAMS.kEff;
-  // f=1 → termo aero de subida pleno; − ε·β·h− → crédito de descida (0 hoje).
+  const aero = 0.5 * p.rho * p.carCda * vf * vf; // J por metro no plano
+  const alphaR = (p.carCrr * p.carMass * G) / p.carKEff;
+  const alphaA = aero / p.carKEff;
+  const beta = (p.carMass * G) / p.carKEff;
+  // f=1 → termo aero de subida pleno; − ε·β·h− → crédito de descida (0 por padrão).
   const energyJ = alphaR * sim.distMeters + alphaA * sim.distMeters + beta * sim.ascentM
-    - CAR_PARAMS.epsilon * beta * sim.descentM;
+    - p.carEpsilon * beta * sim.descentM;
   return { energyJ, vf };
 }
 
@@ -8897,12 +8904,15 @@ function updateMetrics() {
   const fPlusPct = (sim.fPlus * 100).toFixed(0);
   const epsPct = (sim.epsUsed * 100).toFixed(0);
   const kEffPct = (sim.kEff * 100).toFixed(0);
-  const carSim = carEnergyJ(sim, params);
-  const carKJ = carSim.energyJ / 1000;
-  const carVfKmh = (carSim.vf * 3600) / 1000;
-  const bikeMetabolicKJ = totalKJ * BIKE_METABOLIC_FACTOR;
-  const bikeVsCarRatio = bikeMetabolicKJ > 0.01 ? carKJ / bikeMetabolicKJ : 0;
-  const carKEffPct = (CAR_PARAMS.kEff * 100).toFixed(0);
+  let carKJ = 0, carVfKmh = 0, bikeMetabolicKJ = 0, bikeVsCarRatio = 0, carKEffPct = '0';
+  if (params.suvCompareEnabled) {
+    const carSim = carEnergyJ(sim, params);
+    carKJ = carSim.energyJ / 1000;
+    carVfKmh = (carSim.vf * 3600) / 1000;
+    bikeMetabolicKJ = totalKJ * params.bikeMetabolicFactor;
+    bikeVsCarRatio = bikeMetabolicKJ > 0.01 ? carKJ / bikeMetabolicKJ : 0;
+    carKEffPct = (params.carKEff * 100).toFixed(0);
+  }
   const movingTimeSec = sim.timeSec;
   const totalTimeSec = movingTimeSec / Math.max(0.01, params.efficiency);
   const haveAllElev = sim.elevMissing === 0;
@@ -8912,7 +8922,7 @@ function updateMetrics() {
     : `↑${sim.ascentM.toFixed(0)}… ↓${sim.descentM.toFixed(0)}…`;
   const thrPct = (params.slopeFlatThreshold * 100).toFixed(1).replace('.', ',');
   const effPct = (params.efficiency * 100).toFixed(0);
-  const carCompact = totalKJ > 0.01
+  const carCompact = (params.suvCompareEnabled && totalKJ > 0.01)
     ? ` · 🚙 ${Math.round(carKJ)} kJ (🚲 ${fmt(bikeVsCarRatio)}× mais eficiente)`
     : '';
 
@@ -8942,15 +8952,17 @@ function updateMetrics() {
     `  ────────────────────────────────────\n` +
     `  Energia nas pernas:                                       ${fmt(totalKJ)} kJ\n` +
     `\n` +
-    `Modelo v2 (bicycling-energy-model). Energia metabólica ≈ 4× isto (eficiência humana ~25%).\n` +
-    `\n` +
-    `Comparação com um SUV (mesma rota, modelo v2 com m=${CAR_PARAMS.mass} kg, ` +
-    `Crr=${CAR_PARAMS.crr}, CdA=${CAR_PARAMS.cda} m², k_ef=${carKEffPct}%, v_f=${fmt(carVfKmh)} km/h ` +
-    `(equilíbrio a ${CAR_PARAMS.powerFlat} W), sem recuperação na descida (ε=0) e arrasto em 100% da ` +
-    `distância mesmo subindo (f=1)):\n` +
-    `  Energia do SUV (combustível):                             ${fmt(carKJ)} kJ\n` +
-    `  Bike (metabólica, ${BIKE_METABOLIC_FACTOR}× a mecânica, eficiência humana ~25%): ${fmt(bikeMetabolicKJ)} kJ\n` +
-    `  Bike ${fmt(bikeVsCarRatio)}× mais eficiente que o SUV (comparando energia metabólica vs. combustível)` +
+    `Modelo v2 (bicycling-energy-model). Energia metabólica ≈ ${params.bikeMetabolicFactor}× isto (eficiência humana ~25%).` +
+    (params.suvCompareEnabled
+      ? `\n\n` +
+        `Comparação com um SUV (mesma rota, modelo v2 com m=${params.carMass} kg, ` +
+        `Crr=${params.carCrr}, CdA=${params.carCda} m², k_ef=${carKEffPct}%, v_f=${fmt(carVfKmh)} km/h ` +
+        `(equilíbrio a ${params.carPowerFlat} W), sem recuperação na descida (ε=${(params.carEpsilon * 100).toFixed(0)}%) ` +
+        `e arrasto em 100% da distância mesmo subindo (f=1)):\n` +
+        `  Energia do SUV (combustível):                             ${fmt(carKJ)} kJ\n` +
+        `  Bike (metabólica, ${params.bikeMetabolicFactor}× a mecânica, eficiência humana ~25%): ${fmt(bikeMetabolicKJ)} kJ\n` +
+        `  Bike ${fmt(bikeVsCarRatio)}× mais eficiente que o SUV (comparando energia metabólica vs. combustível)`
+      : '') +
     (sim.elevMissing > 0 ? `\n\n${sim.elevMissing} ponto(s) ainda sem elevação.` : '');
 }
 
@@ -8976,6 +8988,14 @@ const PARAM_INPUTS = {
   deadbandM:          document.getElementById('param-deadband'),
   // FABDEM + energy-routing
   energySearchMarginPct: document.getElementById('param-energy-margin'),
+  // Comparação com carro (SUV)
+  carMass:            document.getElementById('param-car-mass'),
+  carCrr:             document.getElementById('param-car-crr'),
+  carCda:             document.getElementById('param-car-cda'),
+  carKEff:            document.getElementById('param-car-keff'),
+  carEpsilon:         document.getElementById('param-car-epsilon'),
+  carPowerFlat:       document.getElementById('param-car-power'),
+  bikeMetabolicFactor: document.getElementById('param-bike-metabolic-factor'),
 };
 const PARAM_CHECKBOXES = {
   useFabdem: document.getElementById('param-use-fabdem'),
@@ -8983,6 +9003,7 @@ const PARAM_CHECKBOXES = {
   useViarioGpkg: document.getElementById('param-use-viario-gpkg'),
   useWaterMask: document.getElementById('param-use-water-mask'),
   usePortals: document.getElementById('param-use-portals'),
+  suvCompareEnabled: document.getElementById('param-suv-compare-enabled'),
 };
 // Leitura (read-only) dos coeficientes de custo v2 derivados (kJ/m): α_r = custo
 // horizontal de rolamento (m·g·Crr/k_ef); α_a = custo horizontal de arrasto no
@@ -9032,6 +9053,9 @@ for (const [key, input] of Object.entries(PARAM_CHECKBOXES)) {
       // Fonte de elevação: limpa o cache (senão os valores antigos persistiam e
       // o toggle não tinha efeito), reamostra e — no modo energia — re-roteia.
       recomputeAfterDemChange();
+    } else if (key === 'suvCompareEnabled') {
+      // Só liga/desliga um display — não afeta a geometria roteada.
+      updateMetrics();
     } else {
       // Viário / máscara d'água / portais: afetam só a geometria roteada.
       updateMetrics();
@@ -9054,11 +9078,19 @@ function fillParamInputs() {
   PARAM_INPUTS.kEff.value = (params.kEff * 100).toFixed(0);
   PARAM_INPUTS.deadbandM.value = params.deadbandM;
   PARAM_INPUTS.energySearchMarginPct.value = params.energySearchMarginPct;
+  PARAM_INPUTS.carMass.value = params.carMass;
+  PARAM_INPUTS.carCrr.value = params.carCrr;
+  PARAM_INPUTS.carCda.value = params.carCda;
+  PARAM_INPUTS.carKEff.value = (params.carKEff * 100).toFixed(0);
+  PARAM_INPUTS.carEpsilon.value = (params.carEpsilon * 100).toFixed(0);
+  PARAM_INPUTS.carPowerFlat.value = params.carPowerFlat;
+  PARAM_INPUTS.bikeMetabolicFactor.value = params.bikeMetabolicFactor;
   PARAM_CHECKBOXES.useFabdem.checked       = params.useFabdem !== false;
   PARAM_CHECKBOXES.useSampaDem.checked     = !!params.useSampaDem;
   PARAM_CHECKBOXES.useViarioGpkg.checked   = params.useViarioGpkg !== false;
   PARAM_CHECKBOXES.useWaterMask.checked    = params.useWaterMask !== false;
   PARAM_CHECKBOXES.usePortals.checked      = params.usePortals !== false;
+  PARAM_CHECKBOXES.suvCompareEnabled.checked = params.suvCompareEnabled !== false;
   updateCostReadout();
 }
 
@@ -9192,6 +9224,21 @@ if (dsModal && dsOpenBtn) {
   });
 }
 
+// ─── Modal "Comparação com carro (SUV)" ──────────────────────────────────────
+// Aberto pelo botão na seção "Comparação com carro (SUV)" dos Parâmetros. Os
+// campos são os mesmos PARAM_INPUTS/PARAM_CHECKBOXES do modal principal — só
+// hospedados aqui pra não lotar o modal de Parâmetros — então persistem e
+// recalculam a métrica pela MESMA fiação genérica (loops acima), sem código
+// extra de leitura/escrita.
+const suvCompareModal    = document.getElementById('suv-compare-modal');
+const suvCompareOpenBtn  = document.getElementById('open-suv-compare');
+const suvCompareCloseBtn = document.getElementById('suv-compare-close');
+if (suvCompareModal && suvCompareOpenBtn) {
+  suvCompareOpenBtn.addEventListener('click', () => { fillParamInputs(); suvCompareModal.hidden = false; });
+  suvCompareCloseBtn?.addEventListener('click', () => { suvCompareModal.hidden = true; });
+  suvCompareModal.addEventListener('click', (e) => { if (e.target === suvCompareModal) suvCompareModal.hidden = true; });
+}
+
 // ─── Modal da Câmera Topográfica (engrenagem na camada) ──────────────────────
 const ctopoModal    = document.getElementById('camera-topo-modal');
 const ctopoMinElev  = document.getElementById('ctopo-min-elev');
@@ -9300,6 +9347,14 @@ const QUDT_PROFILE = {
   kEff:               { iri: 'transmissionEfficiency',         kind: 'kind:DimensionlessRatio',   unit: 'unit:UNITLESS' },
   deadbandM:          { iri: 'elevationDeadband',               kind: 'kind:Length',                unit: 'unit:M' },
   energySearchMarginPct: { iri: 'energySearchMargin',           kind: 'kind:DimensionlessRatio',   unit: 'unit:PERCENT' },
+  // Comparação com carro (SUV)
+  carMass:            { iri: 'carTotalMass',                    kind: 'kind:Mass',                 unit: 'unit:KiloGM' },
+  carCrr:             { iri: 'carRollingResistanceCoefficient',  kind: 'kind:DimensionlessRatio',   unit: 'unit:UNITLESS' },
+  carCda:             { iri: 'carDragArea',                      kind: 'kind:Area',                 unit: 'unit:M2' },
+  carKEff:            { iri: 'carEngineEfficiency',              kind: 'kind:DimensionlessRatio',   unit: 'unit:UNITLESS' },
+  carEpsilon:         { iri: 'carDescentEnergyRecoveryFraction', kind: 'kind:DimensionlessRatio',   unit: 'unit:UNITLESS' },
+  carPowerFlat:       { iri: 'carPowerFlat',                     kind: 'kind:Power',                unit: 'unit:W' },
+  bikeMetabolicFactor:{ iri: 'bikeMetabolicFactor',              kind: 'kind:DimensionlessRatio',   unit: 'unit:UNITLESS' },
 };
 
 function paramsToJsonLd(p) {

@@ -188,11 +188,11 @@
           <details class="help-changelog">
             <summary>Novidades (changelog)</summary>
             <dl>
-              <dt>04/07/2026 · v304</dt>
+              <dt>04/07/2026 · v305</dt>
               <dd>
                 <ul>
                   <li>Modais de Enviar imagens e Cadastrar/editar passeio: removida a barra de título (o conteúdo já mostra o próprio título) — fecham normalmente por clique fora ou Esc.</li>
-                  <li>Editar traçado: a barra de métricas agora também mostra quantas vezes a bike é mais eficiente que um SUV equivalente e quanto ele gastaria em kJ na mesma rota (modelo v2 com massa/Crr/CdA/eficiência de carro, velocidade de equilíbrio própria do SUV a 25.000 W, sem recuperação de energia na descida e com arrasto aerodinâmico o tempo todo, inclusive subindo; a comparação escala a energia da bike por 4× pra refletir a eficiência metabólica humana de ~25%, medindo os dois lados em energia "de entrada" — comida vs. combustível).</li>
+                  <li>Editar traçado: a barra de métricas agora também mostra quantas vezes a bike é mais eficiente que um SUV equivalente e quanto ele gastaria em kJ na mesma rota (modelo v2, com a energia da bike escalada pra refletir a eficiência metabólica humana, medindo os dois lados em energia "de entrada" — comida vs. combustível). Novo controle nos <strong>Parâmetros</strong>: <em>Comparação com carro (SUV)</em> — toggle pra mostrar/ocultar e um botão <em>Parâmetros do SUV…</em> pra ajustar massa, Crr, CdA, eficiência do motor, recuperação na descida, potência de equilíbrio e o fator metabólico da bike.</li>
                 </ul>
               </dd>
               <dt>04/07/2026 · v301</dt>
@@ -774,6 +774,13 @@
             <span class="param-input"><input type="checkbox" id="param-use-portals"></span>
           </label>
 
+          <h3 style="margin: 1.2rem 0 .35rem; font-size: .95rem; border-top: 1px dashed #ccc; padding-top: .75rem">Comparação com carro (SUV)</h3>
+          <label class="param-row" title="Mostra, ao editar o traçado, quanto um SUV equivalente gastaria (kJ) na mesma rota e quantas vezes a bike é mais eficiente.">
+            <span class="param-label">Mostrar comparação com SUV</span>
+            <span class="param-input"><input type="checkbox" id="param-suv-compare-enabled"></span>
+          </label>
+          <button type="button" id="open-suv-compare" class="ds-open-btn" title="Ajustar a massa/Crr/CdA/eficiência do SUV e o fator metabólico da bike usados na comparação">Parâmetros do SUV…</button>
+
           <div class="params-actions">
             <input type="file" id="params-import" accept="application/ld+json,application/json,.json,.jsonld" hidden />
             <button type="button" id="params-load">Carregar de arquivo…</button>
@@ -834,6 +841,48 @@
             </div>
             <p class="muted ds-hint">GeoPackage (camada LINESTRING) ou GeoJSON de linhas, em WGS84. Tem prioridade sobre o gpkg de SP e o Overpass. Tags <code>bridge</code>/<code>tunnel</code>/<code>layer</code> (se houver) achatam o tabuleiro. Fica só em memória (some ao recarregar).</p>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Comparação com carro (SUV): física do carro + fator metabólico da bike.
+         Aberto pelo botão na seção "Comparação com carro (SUV)" dos Parâmetros. -->
+    <div id="suv-compare-modal" class="modal" hidden>
+      <div class="modal-content params-modal-content">
+        <header>
+          <h2>Comparação com carro (SUV)</h2>
+          <button class="close" id="suv-compare-close" type="button" aria-label="Fechar">&times;</button>
+        </header>
+        <div class="params-body">
+          <p class="muted">Energia do SUV pelo mesmo modelo v2 da bike, na mesma rota, com a física do carro abaixo — recuperação na descida sempre zero (motor a combustão não recupera) e arrasto aerodinâmico cobrado em 100% da distância, inclusive subindo (o SUV mantém a velocidade de cruzeiro; a bike desacelera o bastante numa subida pra zerar o arrasto). O <strong>fator metabólico</strong> escala a energia mecânica da bike pra energia de comida consumida (eficiência humana ~25% → ~4×), pra comparar "energia de entrada" dos dois lados.</p>
+          <label class="param-row">
+            <span class="param-label">Massa do SUV</span>
+            <span class="param-input"><input type="number" id="param-car-mass" step="50" min="500" max="10000"> kg</span>
+          </label>
+          <label class="param-row">
+            <span class="param-label">Coef. de rolamento (Crr)</span>
+            <span class="param-input"><input type="number" id="param-car-crr" step="0.001" min="0.001" max="0.05"></span>
+          </label>
+          <label class="param-row">
+            <span class="param-label">Área de arrasto (CdA)</span>
+            <span class="param-input"><input type="number" id="param-car-cda" step="0.05" min="0.1" max="3"> m²</span>
+          </label>
+          <label class="param-row" title="Eficiência do motor a combustão (energia mecânica ÷ isto = energia de combustível).">
+            <span class="param-label">Eficiência do motor</span>
+            <span class="param-input"><input type="number" id="param-car-keff" step="1" min="1" max="100"> %</span>
+          </label>
+          <label class="param-row" title="Fração da energia gravitacional recuperada na descida — 0 pra um motor a combustão comum.">
+            <span class="param-label">Recuperação na descida (ε)</span>
+            <span class="param-input"><input type="number" id="param-car-epsilon" step="1" min="0" max="100"> %</span>
+          </label>
+          <label class="param-row" title="Potência média usada só pra achar a velocidade de equilíbrio no plano (v_f) do SUV — não simula tempo/aceleração do carro.">
+            <span class="param-label">Potência média (equilíbrio)</span>
+            <span class="param-input"><input type="number" id="param-car-power" step="500" min="1000" max="200000"> W</span>
+          </label>
+          <label class="param-row" title="Multiplica a energia mecânica da bike pra estimar a energia metabólica (comida) consumida — eficiência humana ~25% → fator ~4.">
+            <span class="param-label">Fator metabólico da bike</span>
+            <span class="param-input"><input type="number" id="param-bike-metabolic-factor" step="0.1" min="1" max="10"></span>
+          </label>
         </div>
       </div>
     </div>
