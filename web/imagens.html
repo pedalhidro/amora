@@ -249,6 +249,9 @@
   }
   .lb-lists { border-top: 1px solid var(--border); padding-top: 12px; margin-top: 4px; }
   .lb-lists .facet { margin-bottom: 8px; }
+  .lb-lists-hint { font-style: normal; color: var(--muted); font-weight: 400; text-transform: none; }
+  .lb-lists-status { font-size: 12px; color: var(--muted); min-height: 16px; display: block; }
+  .lb-lists-status.ok { color: #5dd29c; }
   .lb-panel .btn { width: 100%; margin-top: 8px; }
   #lb-error { margin-top: 8px; font-size: 12px; }
 
@@ -364,8 +367,8 @@
     <div class="lb-panel">
       <div class="lb-meta" id="lb-meta"></div>
       <div class="lb-lists">
-        <label class="facet"><span>Listas desta mídia</span><select id="lb-lists-select" multiple placeholder="nenhuma"></select></label>
-        <button id="lb-lists-save" type="button" class="btn">Salvar listas</button>
+        <label class="facet"><span>Listas desta mídia <em class="lb-lists-hint">(salva sozinho)</em></span><select id="lb-lists-select" multiple placeholder="nenhuma"></select></label>
+        <span id="lb-lists-status" class="lb-lists-status"></span>
         <div id="lb-error" class="err" hidden></div>
       </div>
       <button id="lb-map" type="button" class="btn btn-primary">📍 Ver no mapa</button>
@@ -969,8 +972,11 @@ function wireLightbox() {
     try { window.parent.postMessage({ type: 'phidro-gallery-show', iri: lbRecord.iri }, '*'); } catch (_) {}
     closeLightbox();
   });
-  $('#lb-lists-save').addEventListener('click', saveLightboxLists);
+  // Listas salvam sozinhas ao mudar (sem botão). setValue(...,true) na abertura
+  // é silencioso, então só mudanças do usuário disparam o auto-save.
+  lbTS.on('change', () => { if (lbRecord) scheduleLbSave(); });
 }
+const scheduleLbSave = debounce(saveLightboxLists, 500);
 function openLightbox(rec) {
   lbRecord = rec;
   $('#lb-error').hidden = true;
@@ -1004,35 +1010,51 @@ function openLightbox(rec) {
   lbTS.setValue(rec.lists || [], true);
   $('#lightbox').hidden = false;
 }
+let _lbDirty = false;   // houve save no lightbox → refaz galeria+mapa ao fechar
 function closeLightbox() {
   $('#lightbox').hidden = true;
   $('#lb-media').innerHTML = '';   // para o vídeo/áudio ao fechar
   lbRecord = null;
+  if (_lbDirty) { _lbDirty = false; refresh(); }   // re-fetch + re-render + avisa o mapa
 }
-// Salva o pertencimento COMPLETO da mídia (substitui isPartOf) via /update-*.
+// Auto-save: salva o pertencimento COMPLETO da mídia (substitui isPartOf) via
+// /update-*. NÃO fecha o lightbox nem re-renderiza (isso fica pro closeLightbox,
+// pra não piscar a galeria a cada toggle); só atualiza o registro + os chips.
 async function saveLightboxLists() {
   if (!lbRecord) return;
   const rec = lbRecord;
-  const listIris = lbTS.getValue();
+  const listIris = lbTS.getValue().slice();
+  const status = $('#lb-lists-status');
   const ttl = membershipTtl(rec, listIris);
   const fd = new FormData();
   fd.append('ttl', ttl);
   fd.append('remove', 'schema:isPartOf');   // troca o pertencimento inteiro
   const url = rec.kind === 'image' ? `./update-image/${rec.phash}` : `./update-video/${rec.vhash}`;
-  const btn = $('#lb-lists-save');
-  btn.disabled = true; btn.textContent = 'Salvando…';
+  status.textContent = 'salvando…'; status.className = 'lb-lists-status';
+  $('#lb-error').hidden = true;
   try {
     const resp = await fetch(url, { method: 'POST', body: fd });
     const j = await resp.json().catch(() => ({}));
     if (!resp.ok || j.error) throw new Error(j.error || (j.details ? JSON.stringify(j.details) : 'HTTP ' + resp.status));
   } catch (e) {
-    const el = $('#lb-error'); el.textContent = 'Falha: ' + e.message; el.hidden = false;
-    btn.disabled = false; btn.textContent = 'Salvar listas';
+    const el = $('#lb-error'); el.textContent = 'Falha ao salvar listas: ' + e.message; el.hidden = false;
+    status.textContent = '';
     return;
   }
-  btn.disabled = false; btn.textContent = 'Salvar listas';
-  closeLightbox();
-  await refresh();
+  // Atualiza o registro (mesma referência em model.records) + catálogo de listas
+  // + chips exibidos; marca dirty pra sincronizar galeria/mapa ao fechar.
+  rec.lists = listIris;
+  for (const li of listIris) {
+    if (!model.lists[li]) model.lists[li] = pendingNewLists.get(li) || short(li);
+  }
+  const chips = (rec.lists || []).map((l) => `<span class="chip">${escapeHtml(model.lists[l] || short(l))}</span>`).join('');
+  let chipsEl = $('#lb-meta .chips');
+  if (chips) {
+    if (!chipsEl) { chipsEl = document.createElement('div'); chipsEl.className = 'chips'; $('#lb-meta').appendChild(chipsEl); }
+    chipsEl.innerHTML = chips;
+  } else if (chipsEl) { chipsEl.remove(); }
+  _lbDirty = true;
+  status.textContent = 'salvo ✓'; status.className = 'lb-lists-status ok';
 }
 // Fragmento Turtle: pertencimento da mídia + Collections novas inline.
 function membershipTtl(rec, listIris) {
