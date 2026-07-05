@@ -154,8 +154,17 @@
 
       <div>
         <label for="files">Arquivos</label>
-        <input type="file" id="files" accept="image/*,video/*" multiple>
-        <small id="filesStatus">Imagens: pHash e EXIF, dedup por pHash ≤ 5. Vídeos: transcodados em 360p+720p webm, trim por card (máx 30 s).</small>
+        <!-- accept com MIME HEIC explícito: sinaliza ao iOS que aceitamos o
+             arquivo original, então em algumas versões ele entrega os bytes crus
+             sem transcodificar HEIC→JPEG na hora de escolher (seleção bem mais
+             rápida). NÃO corrige o truncamento do seletor de Fotos do macOS/iOS
+             (entrega 1 arquivo só numa multi-seleção grande — bug do seletor a
+             nível de SO, idêntico em Safari e Chrome, pois ambos usam o mesmo
+             seletor do sistema). Caminho confiável p/ lotes grandes: arrastar-e-
+             soltar no desktop (contorna o seletor); no celular, escolher em lotes
+             menores — os cards se acumulam (dedup evita repetição). -->
+        <input type="file" id="files" accept="image/*,image/heic,image/heif,video/*" multiple>
+        <small id="filesStatus">Escolha os arquivos <strong>ou arraste-os aqui</strong>. No celular, pode enviar em vários lotes — eles se somam. Imagens: pHash e EXIF, dedup por pHash ≤ 5. Vídeos: 360p+720p webm, trim por card (máx 30 s).</small>
         <small id="catalogStatus">Carregando catálogo…</small>
         <div id="notices" role="status" aria-live="polite" style="margin: .5rem 0;"></div>
         <div style="margin-top: .5rem">
@@ -724,6 +733,73 @@ const defaultsTs = { author: null, provider: null };
 defaultsTs.author   = initPersonSelect($('#d-author'));
 defaultsTs.provider = initPersonSelect($('#d-provider'));
 
+function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+
+// Lê autoras/quem-subiu de um card mesmo antes do Tom Select ser ativado
+// (A3): antes da ativação, os valores ficam em `card.pendingAuthors`/
+// `pendingProviders` (aplicados via setValue só na hora da ativação).
+// `field` é 'author' ou 'provider'.
+function personValues(card, field) {
+  const ts = card[field + 'Ts'];
+  if (ts) return ts.getValue();
+  return card['pending' + capitalize(field) + 's'] || [];
+}
+
+// ===================== Ativação preguiçosa de cards (A3) ================
+// Tom Select (2 instâncias/card) e a prévia de vídeo custam CPU/memória —
+// num lote de 180 cards seriam 360 instâncias TS + 20 <video> montados de
+// uma vez. Só ativamos quando o card entra perto da viewport (rootMargin
+// 200px) OU ganha foco antes disso (navegação por teclado/leitor de tela).
+const cardActivationObserver = new IntersectionObserver((entries) => {
+  for (const entry of entries) {
+    if (entry.isIntersecting && entry.target._card) activateCard(entry.target._card);
+  }
+}, { rootMargin: '200px' });
+
+function scheduleCardActivation(card) {
+  card.elem._card = card;
+  cardActivationObserver.observe(card.elem);
+  card.elem.addEventListener('focusin', () => activateCard(card), { once: true });
+}
+
+// Retorna uma Promise: p/ cards não-vídeo resolve assim que os efeitos
+// síncronos de ativação terminam; p/ vídeo só resolve depois do
+// 'loadedmetadata' (ou 'error', p/ não travar num arquivo quebrado — os
+// checks de validade do uploadVideoCard cuidam desse caso) da prévia, já
+// que é esse evento que popula card.duration + os defaults de recorte.
+// Idempotente e reentrante: chamadas repetidas (incl. concorrentes) num
+// card já ativado resolvem na hora, sem reativar nada.
+function activateCard(card) {
+  if (card.activated) return Promise.resolve();
+  card.activated = true;
+  cardActivationObserver.unobserve(card.elem);
+
+  card.authorTs   = initPersonSelect($('[data-field="author"]',   card.elem));
+  card.providerTs = initPersonSelect($('[data-field="provider"]', card.elem));
+  if (card.pendingAuthors?.length)   card.authorTs.setValue(card.pendingAuthors);
+  if (card.pendingProviders?.length) card.providerTs.setValue(card.pendingProviders);
+
+  if (card.kind === 'video') {
+    const preview = $('.card-video-preview', card.elem);
+    return new Promise((resolve) => {
+      if (!preview) { resolve(); return; }
+      if (preview.src) { resolve(); return; }   // já ativado por outra via — não deveria acontecer, mas não trava
+      // Timeout de segurança (mesmo padrão do waitVideoEvent): sem isto, uma
+      // prévia que nunca dispara loadedmetadata/error (arquivo problemático)
+      // travaria activateCard — e com ele, uploadVideoCard e o loop inteiro
+      // de "Enviar todas" — pra sempre.
+      let to = 0;
+      const off  = () => { clearTimeout(to); preview.removeEventListener('loadedmetadata', ok); preview.removeEventListener('error', ok); };
+      const ok   = () => { off(); resolve(); };
+      preview.addEventListener('loadedmetadata', ok, { once: true });
+      preview.addEventListener('error',          ok, { once: true });
+      to = setTimeout(ok, 15000);
+      preview.src = URL.createObjectURL(card.file);
+    });
+  }
+  return Promise.resolve();
+}
+
 // ===================== Auto-detecção do passeio ========================
 function autoDetectTour(card) {
   if (card.skipAutoDetect) return;
@@ -749,7 +825,7 @@ function autoDetectTour(card) {
 }
 
 // ===================== Card factory ====================================
-function buildCardElem(displayIdx, file) {
+function buildCardElem(displayIdx, file, thumbBlob) {
   const elem = document.createElement('div');
   elem.className = 'card';
   elem.innerHTML = `
@@ -834,7 +910,12 @@ function buildCardElem(displayIdx, file) {
     </div>
   `;
   $('.card-meta strong', elem).textContent = `${displayIdx}. ${file.name}`;
-  $('.card-thumb', elem).src = URL.createObjectURL(file);
+  // Miniatura vem do thumbBlob (256px) já gerado em createImageCard, não do
+  // arquivo full-res — evita decodificar a foto inteira só pra pintar ~56px.
+  const thumbImg = $('.card-thumb', elem);
+  const thumbUrl = URL.createObjectURL(thumbBlob);
+  thumbImg.addEventListener('load', () => URL.revokeObjectURL(thumbUrl), { once: true });
+  thumbImg.src = thumbUrl;
   populateTourSelect($('[data-field="tour"]', elem));
   return elem;
 }
@@ -947,14 +1028,12 @@ function buildVideoCardElem(displayIdx, file) {
 }
 
 function removeCard(card) {
+  cardActivationObserver.unobserve(card.elem);   // no-op se já ativado/desativado
   destroyPersonSelect(card.authorTs);
   destroyPersonSelect(card.providerTs);
   try { URL.revokeObjectURL($('.card-thumb', card.elem).src); } catch (_) {}
   const previewEl = $('.card-video-preview', card.elem);
   if (previewEl?.src) { try { URL.revokeObjectURL(previewEl.src); } catch (_) {} }
-  // Fecha o ImageBitmap decodificado (memória nativa/GPU) — antes só era
-  // fechado nos caminhos de rejeição por dedup, vazando em cards aceitos.
-  try { card.bitmap?.close?.(); } catch (_) {}
   card.elem.remove();
   const i = cards.indexOf(card);
   if (i >= 0) cards.splice(i, 1);
@@ -1314,14 +1393,32 @@ async function createCard(file, defaults) {
 }
 
 async function createImageCard(file, defaults) {
-  // 0) HEIC → JPEG. Substituímos `file` para que o resto do pipeline (pHash,
-  //    EXIF, compressão, splicer Exif) trate como JPEG. A conversão preserva
-  //    os metadados, então o splicer continua propagando-os para large/original.
-  if (isHeicFile(file)) {
+  // 1) Decodifica e computa pHash ANTES de criar DOM/TS, para rejeitar
+  //    duplicatas barato. Tentamos createImageBitmap direto em TODOS os
+  //    arquivos primeiro: o Safari (iOS/macOS) decodifica HEIC nativamente e os
+  //    arquivos entregues pelo seletor de Fotos já chegam como JPEG. Só se esse
+  //    decode nativo falhar E o arquivo for HEIC caímos no heic2any (caminho
+  //    frio p/ Chrome/Firefox no desktop, que não decodificam HEIC). No caminho
+  //    nativo `file` permanece o HEIC cru do disco — é isso que faz buildVariants
+  //    preservar o original bit a bit e o exifr ler os metadados HEIC de verdade.
+  // imageOrientation: 'from-image' é MANDATÓRIO: garante que o bitmap nasce com
+  // a EXIF Orientation aplicada; sem isso browsers que default-am 'none' devolvem
+  // pixels crus e o canvas grava fotos verticais deitadas.
+  let bitmap, phash;
+  try {
+    bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+  } catch (nativeErr) {
+    // Só HEIC tem fallback; qualquer outro erro de decode é fatal.
+    if (!isHeicFile(file)) {
+      notify(`<strong>${escapeHtml(file.name)}</strong>: não consegui ler (${escapeHtml(nativeErr.message)}).`, 'err');
+      return { ok: false, reason: 'decode-error' };
+    }
     if (!heic2any) {
       notify(`<strong>${escapeHtml(file.name)}</strong>: HEIC requer heic2any (CDN indisponível).`, 'err');
       return { ok: false, reason: 'heic-unavailable' };
     }
+    // Fallback HEIC→JPEG: reassinala `file` p/ o resto do pipeline tratar como
+    // JPEG (perde o original cru, mas é o único jeito nesses browsers).
     try {
       const out = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.92 });
       const blob = Array.isArray(out) ? out[0] : out;
@@ -1331,18 +1428,17 @@ async function createImageCard(file, defaults) {
       notify(`<strong>${escapeHtml(file.name)}</strong>: conversão HEIC falhou (${escapeHtml(e.message)}).`, 'err');
       return { ok: false, reason: 'heic-convert-failed' };
     }
+    try {
+      bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+    } catch (e) {
+      notify(`<strong>${escapeHtml(file.name)}</strong>: não consegui ler (${escapeHtml(e.message)}).`, 'err');
+      return { ok: false, reason: 'decode-error' };
+    }
   }
-
-  // 1) Decodifica e computa pHash ANTES de criar DOM/TS,
-  //    para podermos rejeitar duplicatas barato.
-  let bitmap, phash;
   try {
-    // imageOrientation: 'from-image' garante que o bitmap nasce com EXIF
-    // Orientation aplicado. Caso contrário, em browsers que ainda default-aram
-    // 'none', os pixels ficam crus e o canvas grava errado.
-    bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
-    phash  = computePHash(bitmap);
+    phash = computePHash(bitmap);
   } catch (e) {
+    try { bitmap.close?.(); } catch (_) {}
     notify(`<strong>${escapeHtml(file.name)}</strong>: não consegui ler (${escapeHtml(e.message)}).`, 'err');
     return { ok: false, reason: 'decode-error' };
   }
@@ -1375,21 +1471,32 @@ async function createImageCard(file, defaults) {
     }
   }
 
-  // 3) Aceita: cria o card.
+  // 3) Aceita: gera a miniatura (256px) ainda com o bitmap aberto e fecha
+  //    o bitmap logo em seguida — não retemos o full-res decodificado no
+  //    card (cada bitmap fica ~46 MB; um lote de 90+ fotos estourava a aba).
+  //    O bitmap é redecodificado sob demanda em buildVariants na hora do envio.
+  const thumbBlob = await makeThumbnail(bitmap);
+  try { bitmap.close(); } catch (_) {}
+
   cardCounter += 1;
-  const elem = buildCardElem(cardCounter, file);
+  const elem = buildCardElem(cardCounter, file, thumbBlob);
   $('#cards').appendChild(elem);
 
   const card = {
     kind: 'image',
-    index: cardCounter, file, phash, bitmap, elem,
+    index: cardCounter, file, phash, thumbBlob, elem,
     authorTs: null, providerTs: null, skipAutoDetect: false,
+    pendingAuthors: [], pendingProviders: [], activated: false,
     exifTzOffset: null,   // preenchido se o EXIF trouxer OffsetTimeOriginal (D4)
   };
   cards.push(card);
 
-  card.authorTs   = initPersonSelect($('[data-field="author"]',   elem));
-  card.providerTs = initPersonSelect($('[data-field="provider"]', elem));
+  // Tom Select (autoras/quem subiu) só é montado na ativação do card (A3) —
+  // até lá os padrões do lote ficam guardados aqui e são aplicados via
+  // setValue em activateCard.
+  card.pendingAuthors   = defaults.authors   || [];
+  card.pendingProviders = defaults.providers || [];
+  scheduleCardActivation(card);
 
   // Aplica padrões do lote em que foi adicionado
   if (defaults.tour) {
@@ -1397,8 +1504,6 @@ async function createImageCard(file, defaults) {
     card.skipAutoDetect = true;
   }
   if (defaults.license) $('[data-field="license"]', elem).value = defaults.license;
-  if (defaults.authors?.length)   card.authorTs.setValue(defaults.authors);
-  if (defaults.providers?.length) card.providerTs.setValue(defaults.providers);
   $('[data-field="anon"]', elem).checked = !!defaults.anon;
   $('[data-field="comp"]', elem).checked = !!defaults.comp;
 
@@ -1506,15 +1611,19 @@ async function createVideoCard(file, defaults) {
     phash: vhash,           // alinha o nome com cards de imagem pra dedup compartilhada
     clipId: vhash,          // IRI: phd:video_<vhash>
     authorTs: null, providerTs: null, skipAutoDetect: false,
+    pendingAuthors: [], pendingProviders: [], activated: false,
     duration: 0,
-    processed: null,        // { audio, blob360, blob720 } depois do processamento
+    processed: null,        // { tStart, tEnd, audioOnly, thumb, audio, blob360, blob720 } — cache do último processamento local (A6)
     uploaded: false,
   };
   cards.push(card);
   $('.hash', elem).textContent = `pHash: ${vhash}`;
 
-  card.authorTs   = initPersonSelect($('[data-field="author"]',   elem));
-  card.providerTs = initPersonSelect($('[data-field="provider"]', elem));
+  // Tom Select (autoras/quem subiu) e a prévia de vídeo só são montadas na
+  // ativação do card (A3) — ver activateCard/scheduleCardActivation.
+  card.pendingAuthors   = defaults.authors   || [];
+  card.pendingProviders = defaults.providers || [];
+  scheduleCardActivation(card);
 
   // Padrões do lote
   if (defaults.tour) {
@@ -1522,8 +1631,6 @@ async function createVideoCard(file, defaults) {
     card.skipAutoDetect = true;
   }
   if (defaults.license) $('[data-field="license"]', elem).value = defaults.license;
-  if (defaults.authors?.length)   card.authorTs.setValue(defaults.authors);
-  if (defaults.providers?.length) card.providerTs.setValue(defaults.providers);
 
   // Listeners
   $('[data-field="tour"]', elem).addEventListener('change', () => { card.skipAutoDetect = true; });
@@ -1556,7 +1663,8 @@ async function createVideoCard(file, defaults) {
   const outStart = $('[data-out="start"]', elem);
   const outEnd   = $('[data-out="end"]',   elem);
   const outDur   = $('[data-out="dur"]',   elem);
-  preview.src = URL.createObjectURL(file);
+  // preview.src só é setado na ativação do card (A3, ver activateCard) —
+  // evita montar 1 <video> com objectURL de arquivo cheio por card criado.
 
   function fmtSec(s) {
     return (Math.round(s * 100) / 100).toFixed(2).replace('.', ',') + 's';
@@ -1645,6 +1753,53 @@ function readDefaults() {
   };
 }
 
+// ===================== Screen Wake Lock (A5) ============================
+// Um lote grande (~90 fotos + ~10 vídeos) fica 30–60 min em processamento/
+// envio em pé — vídeo transcoda em tempo real (áudio + 720p + 360p, cada
+// passe ≈ a duração do recorte). Se a tela apaga, o navegador suspende a
+// aba e o lote morre no meio. `navigator.wakeLock` mantém a tela acesa
+// enquanto isso — feature-detect + falhas engolidas: nunca deve travar
+// nada em navegadores sem suporte (ex: Firefox desktop).
+let _wakeLock = null;
+// Contagem de referências: o picker (>5 arquivos) e "Enviar todas" podem
+// rodar concorrentemente (uploadAll libera assim que cards.length > 0, bem
+// antes do lote do picker terminar) — um boolean simples faria o primeiro
+// withWakeLock a terminar liberar a tela enquanto o outro ainda tá rodando.
+// Com refcount só libera de verdade quando a última chamada ativa sai.
+let _wakeLockRefCount = 0;   // > 0 enquanto algum lote/envio está em andamento
+
+async function acquireWakeLock() {
+  if (_wakeLock) return;   // já seguro — evita instância duplicada
+  try {
+    const lock = await navigator.wakeLock?.request('screen');
+    if (lock) {
+      _wakeLock = lock;
+      _wakeLock.addEventListener('release', () => { _wakeLock = null; });
+    }
+  } catch (_) {
+    _wakeLock = null;   // sem suporte / permissão negada / aba não visível — segue sem travar nada
+  }
+}
+async function releaseWakeLock() {
+  try { await _wakeLock?.release(); } catch (_) {}
+  _wakeLock = null;
+}
+// Reconquista o lock ao voltar pro primeiro plano se algum lote/envio ainda
+// está rodando (o SO/navegador libera o lock sozinho ao esconder a aba).
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && _wakeLockRefCount > 0) acquireWakeLock();
+});
+async function withWakeLock(fn) {
+  _wakeLockRefCount++;
+  await acquireWakeLock();
+  try {
+    return await fn();
+  } finally {
+    _wakeLockRefCount--;
+    if (_wakeLockRefCount === 0) await releaseWakeLock();
+  }
+}
+
 // ===================== File pickers ====================================
 // Picker único: cada seleção APPENDA aos cards existentes
 $('#files').addEventListener('change', async (e) => {
@@ -1657,11 +1812,21 @@ $('#files').addEventListener('change', async (e) => {
     const defaults = readDefaults();
     const tally = { ok: 0, duplicate: 0, 'decode-error': 0, 'vhash-failed': 0,
                     'heic-unavailable': 0, 'heic-convert-failed': 0 };
-    for (const f of files) {         // sequencial: dedup precisa ver os recém-aceitos
-      const r = await createCard(f, defaults);
-      const key = r?.ok ? 'ok' : (r?.reason || 'decode-error');
-      tally[key] = (tally[key] || 0) + 1;
-    }
+    const processBatch = async () => {
+      for (let i = 0; i < files.length; i++) {   // sequencial: dedup precisa ver os recém-aceitos
+        const f = files[i];
+        $('#filesStatus').textContent = `processando ${i + 1}/${files.length} — ${f.name}…`;
+        const r = await createCard(f, defaults);
+        const key = r?.ok ? 'ok' : (r?.reason || 'decode-error');
+        tally[key] = (tally[key] || 0) + 1;
+        // Cede o event loop entre arquivos — deixa o navegador pintar o
+        // progresso e rodar GC (o bitmap full-res do arquivo anterior já
+        // foi fechado em createImageCard, mas precisa de um tick pra coletar).
+        await new Promise(res => setTimeout(res));
+      }
+    };
+    if (files.length > 5) await withWakeLock(processBatch);
+    else await processBatch();
     const parts = [`+${tally.ok} card(s)`];
     if (tally.duplicate)             parts.push(`<span class="warn">${tally.duplicate} duplicado(s)</span>`);
     const errs = tally['decode-error'] + tally['heic-unavailable'] + tally['heic-convert-failed'] + tally['vhash-failed'];
@@ -1694,6 +1859,24 @@ function num(s) {
   return String(s ?? '').trim().replace(/,/g, '.');
 }
 
+// Formato ("original") que buildVariants vai efetivamente GRAVAR — fonte única
+// da extensão/MIME do original, consultada tanto pela nomeação do blob em
+// buildVariants quanto pela emissão de schema:encodingFormat em buildImageBlock,
+// pros dois nunca divergirem. Regras (espelham buildVariants + o whitelist do
+// backend jpg/jpeg→jpg, png, heic, heif; resto→jpg):
+//   - comp OU anon marcado → original é um JPEG de canvas (original.jpg);
+//   - nenhum marcado → preservamos o arquivo do disco com a extensão real.
+function originalFormat(card) {
+  const anon = $('[data-field="anon"]', card.elem).checked;
+  const comp = $('[data-field="comp"]', card.elem).checked;
+  if (comp || anon) return { ext: 'jpg', mime: 'image/jpeg' };
+  const raw = (card.file.name.match(/\.([a-z0-9]+)$/i)?.[1] || 'jpg').toLowerCase();
+  if (raw === 'png')  return { ext: 'png',  mime: 'image/png'  };
+  if (raw === 'heic') return { ext: 'heic', mime: 'image/heic' };
+  if (raw === 'heif') return { ext: 'heif', mime: 'image/heif' };
+  return { ext: 'jpg', mime: 'image/jpeg' };  // jpg/jpeg e qualquer outro → jpg
+}
+
 function buildImageBlock(card) {
   const elem    = card.elem;
   const dateXsd = localToXsdDateTime($('[data-field="date"]',    elem).value, card.exifTzOffset);
@@ -1711,8 +1894,8 @@ function buildImageBlock(card) {
   const license = $('[data-field="license"]', elem).value;
   const anon    = $('[data-field="anon"]',    elem).checked;
   const comp    = $('[data-field="comp"]',    elem).checked;
-  const authors   = card.authorTs.getValue();
-  const providers = card.providerTs.getValue();
+  const authors   = personValues(card, 'author');
+  const providers = personValues(card, 'provider');
 
   const id    = `phd:image_${card.phash}`;
   // Nós aninhados como IRIs derivadas (`<id>_hash`, `<id>_geo`) em vez de
@@ -1732,6 +1915,12 @@ function buildImageBlock(card) {
   for (const p of providers) props.push(`pav:providedBy ${p}`);
   if (anon) props.push(`ph:anonymized true`);
   if (comp) props.push(`ph:compressed true`);
+  // schema:encodingFormat só quando o original mantém extensão não-jpg (HEIC no
+  // caminho nativo, ou PNG). O app.js usa isso p/ montar a URL do original com a
+  // extensão certa; ausência = jpg (default). Fonte única: originalFormat(card),
+  // a MESMA que buildVariants usa p/ nomear o blob — não podem divergir.
+  const { ext: origExt, mime: origMime } = originalFormat(card);
+  if (origExt !== 'jpg') props.push(`schema:encodingFormat "${origMime}"`);
   const body = props.map(p => `    ${p}`).join(' ;\n');
   const derived =
     `${id}_hash a nfo:FileHash ;\n` +
@@ -1760,7 +1949,7 @@ function buildSingleImageTtl(card) {
     '@prefix xsd:     <http://www.w3.org/2001/XMLSchema#> .',
   ].join('\n');
   const used = new Set();
-  for (const v of [...card.authorTs.getValue(), ...card.providerTs.getValue()]) {
+  for (const v of [...personValues(card, 'author'), ...personValues(card, 'provider')]) {
     if (newPersons.has(v)) used.add(v);
   }
   const personDecls = [...used].map(iri =>
@@ -1783,8 +1972,8 @@ function buildClipBlock(card) {
   const tour    = $('[data-field="tour"]',    elem).value.trim();
   const license = $('[data-field="license"]', elem).value;
   const audioOnly = $('[data-field="audio-only"]', elem).checked;
-  const authors   = card.authorTs.getValue();
-  const providers = card.providerTs.getValue();
+  const authors   = personValues(card, 'author');
+  const providers = personValues(card, 'provider');
   // Trim window — duração é o que de fato vai parar no arquivo.
   const tStart = parseFloat($('[data-field="trim-start"]', elem).value) || 0;
   const tEnd   = parseFloat($('[data-field="trim-end"]',   elem).value) || 0;
@@ -1836,7 +2025,7 @@ function buildSingleClipTtl(card) {
     '@prefix xsd:     <http://www.w3.org/2001/XMLSchema#> .',
   ].join('\n');
   const used = new Set();
-  for (const v of [...card.authorTs.getValue(), ...card.providerTs.getValue()]) {
+  for (const v of [...personValues(card, 'author'), ...personValues(card, 'provider')]) {
     if (newPersons.has(v)) used.add(v);
   }
   const personDecls = [...used].map(iri =>
@@ -1852,27 +2041,37 @@ function buildSingleClipTtl(card) {
 async function buildVariants(card) {
   const anon = $('[data-field="anon"]', card.elem).checked;
   const comp = $('[data-field="comp"]', card.elem).checked;
-  let originalBlob, originalName;
-  if (comp) {
-    originalBlob = await compressToTarget(card.bitmap, COMPRESS_TARGET_BYTES);
-    if (!anon) originalBlob = await copyExifSegment(card.file, originalBlob);
-    originalName = 'original.jpg';
-  } else if (anon) {
-    originalBlob = await anonymizeJpeg(card.bitmap);
-    originalName = 'original.jpg';
-  } else {
-    originalBlob = card.file;
-    const ext = (card.file.name.match(/\.([a-z0-9]+)$/i)?.[1] || 'jpg').toLowerCase();
-    originalName = `original.${ext}`;
+  // Redecodifica o bitmap aqui: o card não retém mais o bitmap full-res (A1),
+  // só o `file`. imageOrientation: 'from-image' é MANDATÓRIO pelo mesmo motivo
+  // do decode em createImageCard — sem isso, fotos verticais de iPhone saem
+  // deitadas em large/original.
+  const bitmap = await createImageBitmap(card.file, { imageOrientation: 'from-image' });
+  try {
+    let originalBlob, originalName;
+    if (comp) {
+      originalBlob = await compressToTarget(bitmap, COMPRESS_TARGET_BYTES);
+      if (!anon) originalBlob = await copyExifSegment(card.file, originalBlob);
+      originalName = 'original.jpg';
+    } else if (anon) {
+      originalBlob = await anonymizeJpeg(bitmap);
+      originalName = 'original.jpg';
+    } else {
+      // Preserva o arquivo do disco bit a bit; extensão via originalFormat (a
+      // MESMA fonte que buildImageBlock usa p/ decidir schema:encodingFormat).
+      originalBlob = card.file;
+      originalName = `original.${originalFormat(card).ext}`;
+    }
+    let largeBlob = await compressToTarget(bitmap, COMPRESS_TARGET_BYTES);
+    if (!anon) largeBlob = await copyExifSegment(card.file, largeBlob);
+    const thumbBlob = card.thumbBlob ?? await makeThumbnail(bitmap);
+    return {
+      original: { blob: originalBlob, name: originalName },
+      large:    { blob: largeBlob,    name: 'large.jpg' },
+      thumb:    { blob: thumbBlob,    name: 'thumb.jpg' },
+    };
+  } finally {
+    try { bitmap.close(); } catch (_) {}
   }
-  let largeBlob = await compressToTarget(card.bitmap, COMPRESS_TARGET_BYTES);
-  if (!anon) largeBlob = await copyExifSegment(card.file, largeBlob);
-  const thumbBlob = await makeThumbnail(card.bitmap);
-  return {
-    original: { blob: originalBlob, name: originalName },
-    large:    { blob: largeBlob,    name: 'large.jpg' },
-    thumb:    { blob: thumbBlob,    name: 'thumb.jpg' },
-  };
 }
 
 // ===================== Upload de uma foto ==============================
@@ -1895,7 +2094,7 @@ async function uploadCard(card) {
 }
 
 async function uploadImageCard(card) {
-  if (!card.phash || !card.bitmap) {
+  if (!card.phash) {
     setCardStatus(card, 'erro: imagem não pronta', 'err');
     return false;
   }
@@ -1939,6 +2138,11 @@ async function uploadImageCard(card) {
 const UPLOAD_VIDEO_URL = './upload-video';
 
 async function uploadVideoCard(card) {
+  // Garante que o card já passou pela ativação preguiçosa (A3) — inclusive
+  // quando chamado via "Enviar todas" antes do usuário rolar até ele —
+  // senão card.duration/trim ficam nos defaults do template e o recorte
+  // é rejeitado por engano. No-op instantâneo se já ativado.
+  await activateCard(card);
   if (!card.clipId || !card.file) {
     setCardStatus(card, 'erro: vídeo não pronto', 'err');
     return false;
@@ -1959,16 +2163,32 @@ async function uploadVideoCard(card) {
 
   setCardSendEnabled(card, false);
   let ttl, audioBlob, thumbBlob = null, blob360 = null, blob720 = null;
+  // A6: se um envio anterior já processou este card com o MESMO recorte
+  // (trim início/fim) e a mesma opção "apenas áudio", reaproveita os blobs
+  // em vez de reextrair áudio + retranscodar 2× (cada passe ≈ a duração do
+  // recorte, em tempo real). Qualquer mudança no recorte invalida o cache.
+  const cached = card.processed;
+  const cacheHit = !!cached && cached.tStart === tStart && cached.tEnd === tEnd &&
+    cached.audioOnly === audioOnly;
   try {
-    setCardStatus(card, 'extraindo thumbnail…', 'warn');
-    thumbBlob = await videoFirstFrameBlob(card.file).catch(() => null);
-    setCardStatus(card, 'extraindo áudio (opus 192k)…', 'warn');
-    audioBlob = await extractAudio(card.file, tStart, tEnd);
-    if (!audioOnly) {
-      setCardStatus(card, 'transcodando 720p…', 'warn');
-      blob720 = await transcodeAtShortSide(card.file, tStart, tEnd, 720);
-      setCardStatus(card, 'transcodando 360p…', 'warn');
-      blob360 = await transcodeAtShortSide(card.file, tStart, tEnd, 360);
+    if (cacheHit) {
+      setCardStatus(card, 'reaproveitando processamento anterior…', 'warn');
+      thumbBlob = cached.thumb;
+      audioBlob = cached.audio;
+      blob360   = cached.blob360;
+      blob720   = cached.blob720;
+    } else {
+      setCardStatus(card, 'extraindo thumbnail…', 'warn');
+      thumbBlob = await videoFirstFrameBlob(card.file).catch(() => null);
+      setCardStatus(card, 'extraindo áudio (opus 192k)…', 'warn');
+      audioBlob = await extractAudio(card.file, tStart, tEnd);
+      if (!audioOnly) {
+        setCardStatus(card, 'transcodando 720p…', 'warn');
+        blob720 = await transcodeAtShortSide(card.file, tStart, tEnd, 720);
+        setCardStatus(card, 'transcodando 360p…', 'warn');
+        blob360 = await transcodeAtShortSide(card.file, tStart, tEnd, 360);
+      }
+      card.processed = { tStart, tEnd, audioOnly, thumb: thumbBlob, audio: audioBlob, blob360, blob720 };
     }
     ttl = buildSingleClipTtl(card);
   } catch (e) {
@@ -2008,15 +2228,17 @@ async function uploadAll() {
   const pending = cards.filter(c => !c.uploaded);
   if (!pending.length) { $('#uploadAllStatus').textContent = 'tudo enviado.'; return; }
   $('#uploadAll').disabled = true;
-  let ok = 0, fail = 0;
-  for (let i = 0; i < pending.length; i++) {
-    $('#uploadAllStatus').textContent = `enviando ${i + 1}/${pending.length}…`;
-    const success = await uploadCard(pending[i]);
-    if (success) ok++; else fail++;
-  }
-  $('#uploadAllStatus').innerHTML =
-    `<span class="ok">${ok} enviada(s)</span>` +
-    (fail ? ` · <span class="err">${fail} com erro</span>` : '');
+  await withWakeLock(async () => {
+    let ok = 0, fail = 0;
+    for (let i = 0; i < pending.length; i++) {
+      $('#uploadAllStatus').textContent = `enviando ${i + 1}/${pending.length}…`;
+      const success = await uploadCard(pending[i]);
+      if (success) ok++; else fail++;
+    }
+    $('#uploadAllStatus').innerHTML =
+      `<span class="ok">${ok} enviada(s)</span>` +
+      (fail ? ` · <span class="err">${fail} com erro</span>` : '');
+  });
   $('#uploadAll').disabled = false;
 }
 

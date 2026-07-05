@@ -1945,13 +1945,28 @@ const NFO    = 'http://www.semanticdesktop.org/ontologies/2007/03/22/nfo#';
 const EXIF   = 'http://www.w3.org/2003/12/exif/ns#';
 const RDFT   = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
 
-// Resolve a URL de uma variante de imagem com base na fonte ativa.
-function resolvePhotoUrl(phash, variant /* 'large' | 'thumb' | 'original' */) {
+// Mapeia o MIME de `schema:encodingFormat` do original pra extensão do blob
+// armazenado (`photos/<phash>/original.<ext>`). Só os três valores não-jpg
+// aparecem no catálogo; ausência/qualquer-outro cai em 'jpg' (retrocompatível).
+function origMimeToExt(mime) {
+  switch (mime) {
+    case 'image/heic': return 'heic';
+    case 'image/heif': return 'heif';
+    case 'image/png':  return 'png';
+    default:           return 'jpg';
+  }
+}
+
+// Resolve a URL de uma variante de imagem com base na fonte ativa. Pro
+// original, `origExt` é a extensão real do blob guardado (default 'jpg');
+// `large`/`thumb` são sempre .jpg.
+function resolvePhotoUrl(phash, variant /* 'large' | 'thumb' | 'original' */, origExt = 'jpg') {
   if (!phash) return '';
   if (localKit) {
     const candidates = variant === 'original'
       ? [`photos/${phash}/original.jpg`, `photos/${phash}/original.png`,
-         `photos/${phash}/original.heic`, `photos/${phash}/original.jpeg`]
+         `photos/${phash}/original.heic`, `photos/${phash}/original.heif`,
+         `photos/${phash}/original.jpeg`]
       : [`photos/${phash}/${variant}.jpg`];
     for (const p of candidates) {
       const u = localKit.files.get(p);
@@ -1959,7 +1974,8 @@ function resolvePhotoUrl(phash, variant /* 'large' | 'thumb' | 'original' */) {
     }
     return '';
   }
-  return `./${PHOTOS_DIR_REL}${phash}/${variant}.jpg`;
+  const ext = variant === 'original' ? origExt : 'jpg';
+  return `./${PHOTOS_DIR_REL}${phash}/${variant}.${ext}`;
 }
 
 // Parse de um texto TTL em quads (lista de triples N3.js).
@@ -1985,6 +2001,7 @@ function buildModelFromQuads(quads) {
   const subjectUrl    = new Map();   // subject IRI/bn → URL string
   const authors = new Map(), provs = new Map();
   const licenses = new Map();
+  const origFmts = new Map();   // imageIri → MIME do original (schema:encodingFormat)
   const locOf = new Map(), locLat = new Map(), locLng = new Map();
   // Activity (ph:Upload) → { startedAt, generated: imageIri }
   const uploadProps    = new Map();
@@ -1996,6 +2013,7 @@ function buildModelFromQuads(quads) {
     else if (p === DCT + 'title')           titles.set(s, ov);
     else if (p === DCT + 'date')            dates.set(s, ov);
     else if (p === DCT + 'license')         licenses.set(s, ov);
+    else if (p === SCHEMA + 'encodingFormat') origFmts.set(s, ov);
     else if (p === SCHEMA + 'alternateName' || p === SCHEMA + 'name') names.set(s, ov);
     else if (p === SCHEMA + 'latitude')     locLat.set(s, parseFloat(ov));
     else if (p === SCHEMA + 'longitude')    locLng.set(s, parseFloat(ov));
@@ -2108,6 +2126,8 @@ function buildModelFromQuads(quads) {
     // Activity (`ph:Upload`) que gerou esta imagem, se houver — o servidor a
     // adiciona junto do upload, com ip / user-agent / timestamp de envio.
     const upload = uploadByImage.get(s) || null;
+    // Extensão real do original guardado (heic/heif/png; jpg por padrão).
+    const origExt = origMimeToExt(origFmts.get(s));
     photos.push({
       id: s,
       phash,
@@ -2122,9 +2142,10 @@ function buildModelFromQuads(quads) {
       providers: providerNames,
       license:   licenses.get(s) || null,
       upload,    // { startedAt } | null
+      origExt,
       file:      resolvePhotoUrl(phash, 'large'),
       thumb:     resolvePhotoUrl(phash, 'thumb'),
-      full:      resolvePhotoUrl(phash, 'original'),
+      full:      resolvePhotoUrl(phash, 'original', origExt),
     });
   }
   return photos;
@@ -2421,12 +2442,14 @@ async function downloadKit() {
     const ph = m._photo;
     if (!ph.phash) continue;
     const folder = photosFolder.folder(ph.phash);
-    for (const [variant, url] of [['large', ph.file], ['thumb', ph.thumb], ['original', ph.full]]) {
+    // O original conserva sua extensão real (heic/heif/png; jpg por padrão);
+    // large/thumb são sempre .jpg.
+    for (const [variant, url, ext] of [['large', ph.file, 'jpg'], ['thumb', ph.thumb, 'jpg'], ['original', ph.full, ph.origExt || 'jpg']]) {
       if (!url) { missing++; continue; }
       try {
         const res = await fetch(url);
         if (!res.ok) { missing++; continue; }
-        folder.file(`${variant}.jpg`, await res.blob());
+        folder.file(`${variant}.${ext}`, await res.blob());
         added++;
       } catch { missing++; }
     }
