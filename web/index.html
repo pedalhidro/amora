@@ -159,9 +159,6 @@
     </main>
 
     <aside id="sidebar" class="sidebar">
-      <div class="sidebar-head">
-        <h2>Rotas</h2>
-      </div>
       <div id="routes-status" class="status" role="status" aria-live="polite">Carregando…</div>
 
       <section class="date-filter" id="date-filter" hidden>
@@ -188,6 +185,48 @@
           <details class="help-changelog">
             <summary>Novidades (changelog)</summary>
             <dl>
+              <dt>05/07/2026 · v329</dt>
+              <dd>
+                <ul>
+                  <li>No celular, o título "amora: ajudante bicigeoenergético" fica centralizado na barra de cima.</li>
+                </ul>
+              </dd>
+              <dt>05/07/2026 · v328</dt>
+              <dd>
+                <ul>
+                  <li>Página <strong>Pessoas</strong>: agora cada fato é uma galeria de miniaturas — os passeios também viram miniaturas (arte de divulgação → senão código da série → senão o título), <strong>destacados em amarelo</strong>. Os grupos <em>Autoria de</em> e <em>Descreveu</em> ficaram recolhíveis; nomes divergentes entre arquivos são sinalizados.</li>
+                </ul>
+              </dd>
+              <dt>05/07/2026 · v327</dt>
+              <dd>
+                <ul>
+                  <li>Título também na faixa do header dos modais em iframe e do painel de Camadas: <strong>Galeria de imagens</strong>, <strong>Camadas</strong>, <strong>Subir/Editar imagens</strong> e <strong>Subir/Editar passeio</strong>.</li>
+                  <li>No Censo, o título saiu do formulário e passou pra faixa do header do modal (sem duplicar).</li>
+                </ul>
+              </dd>
+              <dt>05/07/2026 · v326</dt>
+              <dd>
+                <ul>
+                  <li>Os títulos dos modais voltaram — agora numa faixa fininha ao lado da bolinha de fechar (sem ocupar espaço vertical a mais).</li>
+                  <li>A bolinha de fechar ficou mais parecida com o botão do macOS: × branco e forte que aparece ao passar o mouse.</li>
+                </ul>
+              </dd>
+              <dt>05/07/2026 · v325</dt>
+              <dd>
+                <ul>
+                  <li>O botão vermelho de fechar agora também aparece no painel de <strong>Rotas</strong>, no painel de <strong>Camadas</strong> e na <strong>barra de edição de traçado</strong> — fecha/cancela cada um deles.</li>
+                  <li>A bolinha ganhou folga reservada ao redor (estilo macOS): o conteúdo e os títulos não colidem mais com ela.</li>
+                  <li>No modal do Censo, o cabeçalho mostra só <strong>Censo Hidrográfico</strong> (sem o subtítulo).</li>
+                </ul>
+              </dd>
+              <dt>05/07/2026 · v324</dt>
+              <dd>
+                <ul>
+                  <li>Todos os modais ganharam um botão vermelho de fechar no canto superior esquerdo (estilo macOS), pequeno e discreto.</li>
+                  <li>Painel de Rotas sem o rótulo "Rotas" no topo; Censo e Pessoas sem os links de navegação no canto (fecham pelo botão vermelho ou clicando fora); a Galeria de imagens perdeu o título do topo.</li>
+                  <li>No Censo, a origem dos dados ("a partir de …") reflete o servidor real (localhost ou produção).</li>
+                </ul>
+              </dd>
               <dt>05/07/2026 · v323</dt>
               <dd>
                 <ul>
@@ -1358,37 +1397,41 @@
     </div>
 
     <!-- Upload de imagens — iframe para upload_images.html, isolando estado.
-         Sem header/barra de título: o iframe já mostra seu próprio <h1>;
-         fecha por clique fora ou Esc (ver openUploadModal/closeUploadModal). -->
+         O título vive na faixa do header (o <h1> interno some quando embutido);
+         fecha pela bolinha, clique fora ou Esc (ver openUploadModal). -->
     <div id="upload-modal" class="modal" hidden>
       <div class="modal-content upload-modal-content">
+        <header><h2>Subir imagens</h2></header>
         <iframe id="upload-iframe" src="" title="Upload de imagens"></iframe>
       </div>
     </div>
 
-    <!-- Cadastro / edição de passeio — iframe para upload_tour.html.
-         Sem header/barra de título: o iframe já mostra seu próprio título;
-         fecha por clique fora ou Esc (ver openTourModal/closeTourModal). -->
+    <!-- Cadastro / edição de passeio — iframe para upload_tour.html. Título na
+         faixa do header (Subir/Editar, setado em openTourModal; o <h1> interno
+         some quando embutido); fecha pela bolinha, clique fora ou Esc. -->
     <div id="tour-modal" class="modal" hidden>
       <div class="modal-content upload-modal-content">
+        <header><h2 id="tour-modal-title">Subir passeio</h2></header>
         <iframe id="tour-iframe" src="" title="Cadastro de passeio"></iframe>
       </div>
     </div>
 
-    <!-- Censo hidrográfico — iframe para censo.html. Sem header: o conteúdo já
-         mostra o próprio título; fecha por clique fora, Esc, ou o "← Mapa"
-         interno (postMessage). -->
+    <!-- Censo hidrográfico — iframe para censo.html. Título na faixa do header
+         (o header interno some quando embutido); fecha pela bolinha, clique
+         fora, Esc, ou o "← Mapa" interno (postMessage). -->
     <div id="censo-modal" class="modal" hidden>
       <div class="modal-content upload-modal-content">
+        <header><h2>Censo Hidrográfico</h2></header>
         <iframe id="censo-iframe" src="" title="Censo hidrográfico"></iframe>
       </div>
     </div>
 
-    <!-- Galeria de imagens/vídeos — iframe para imagens.html. Sem header: o
-         conteúdo já mostra o próprio título; fecha por clique fora, Esc, ou o
-         "← Mapa" interno (postMessage). -->
+    <!-- Galeria de imagens/vídeos — iframe para imagens.html. Título na faixa
+         do header (o header interno já some quando embutido); fecha pela
+         bolinha, clique fora, Esc, ou o "← Mapa" interno (postMessage). -->
     <div id="imagens-modal" class="modal" hidden>
       <div class="modal-content upload-modal-content">
+        <header><h2>Galeria de imagens</h2></header>
         <iframe id="imagens-iframe" src="" title="Galeria de imagens"></iframe>
       </div>
     </div>

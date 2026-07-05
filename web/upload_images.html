@@ -309,6 +309,10 @@
 const $  = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
+// Embutido no iframe do app: o título vive na faixa do header do modal —
+// esconde o <h1> interno pra não duplicar. Standalone mostra normalmente.
+if (window.self !== window.top) $('h1')?.style.setProperty('display', 'none');
+
 // ===================== Dependências CDN ================================
 let exifr = null;
 try {

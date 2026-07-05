@@ -270,9 +270,10 @@ body.header-hidden .leaflet-top {
 
 .sidebar {
   grid-area: sidebar;
+  position: relative;              /* âncora da bolinha de fechar */
   background: var(--panel);
   border-left: 1px solid var(--border);
-  padding: 14px 16px;
+  padding: 30px 16px 14px;         /* faixa superior reservada pra bolinha */
   overflow-y: auto;
 }
 
@@ -403,7 +404,49 @@ body.modal-open { overflow: hidden; }
   max-height: 90vh;
   overflow-y: auto;
   box-shadow: var(--shadow);
+  position: relative;   /* âncora do botão de fechar (bolinha) no canto */
 }
+
+/* ── Botão de fechar estilo macOS (bolinha vermelha) ────────────────────────
+   Reutilizável em modais e nos painéis flutuantes (camadas, rotas, barra de
+   traçado). Pequena e discreta. Cada contêiner reserva uma folga no canto
+   superior esquerdo pra bolinha não cobrir títulos — como a zona dos
+   "sinaleiros" numa janela do macOS. Fecha disparando o mesmo caminho de cada
+   contêiner (clique-fora nos modais; toggles nos painéis — ver app.js). */
+.close-dot {
+  box-sizing: border-box;
+  width: 13px; height: 13px; padding: 0; flex: 0 0 auto;
+  border-radius: 50%; border: 0.5px solid rgba(0, 0, 0, 0.22);
+  background: #ff5f57; cursor: pointer; line-height: 1;
+  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.35);   /* leve brilho macOS */
+  position: relative;   /* centra o × do ::after */
+}
+.close-dot:hover { background: #ff5f57; }
+/* × branco e forte, aparece só no hover — igual aos "sinaleiros" do macOS. */
+.close-dot::after {
+  content: "\00d7"; position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700;
+  color: #fff; opacity: 0;
+  text-shadow: 0 0 1px rgba(0, 0, 0, 0.35);
+}
+.close-dot:hover::after { opacity: 1; }
+
+/* Nos modais e nos painéis de camadas/rotas a bolinha ancora no canto (a barra
+   de traçado a trata como item inline do flex — ver .trace-controls). */
+.modal-content > .close-dot,
+.layer-panel > .close-dot,
+.sidebar > .close-dot {
+  position: absolute; top: 8px; left: 9px; z-index: 30;
+}
+/* Reserva de espaço pra bolinha (macOS-like): o conteúdo cai logo abaixo dela.
+   Modais sem iframe têm estrutura [<header oculto>][corpo] → empurra o corpo;
+   modais com iframe reservam a faixa no próprio contêiner flex (.upload-…). */
+.modal-content > header + *:not(iframe) { padding-top: 26px; }
+/* Modais com iframe: a faixa (título + bolinha) vem do padding do contêiner
+   flex, empurrando o iframe pra baixo (padding no próprio iframe não é
+   confiável). O header fica absoluto por cima dessa faixa. */
+.upload-modal-content { padding-top: 26px; }
 
 /* Upload modal: muito mais largo (cards do form em grade); iframe preenche. */
 .upload-modal-content {
@@ -420,17 +463,33 @@ body.modal-open { overflow: hidden; }
   background: #fff;
 }
 
-/* Por padrão os modais NÃO mostram barra de título: economizam espaço e todos
-   fecham clicando fora (overlay) ou com Esc. O conteúdo de cada modal já traz
-   o próprio contexto. Pra reexibir um header específico, sobrescreva com
-   `display: flex` no id do modal. */
+/* Barra de título dos modais: uma faixa fininha SOBRE a folga já reservada pra
+   bolinha de fechar (position:absolute → NÃO acrescenta altura vertical). O
+   título fica ao lado da bolinha, à esquerda, como no titlebar do macOS. O ×
+   antigo some — quem fecha é a bolinha / clique-fora / Esc. Modais com iframe
+   não têm header (o conteúdo embutido já traz o próprio título). */
 .modal-content header {
-  display: none;
+  display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--border);
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 26px;
+  padding: 0 12px 0 30px;      /* 30px à esquerda livram a bolinha */
+  border-bottom: none;
+  z-index: 20;                 /* abaixo da bolinha (z 30), acima do corpo */
+  pointer-events: none;        /* o título não intercepta cliques */
 }
+.modal-content header h2 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.modal-content header .close { display: none; }
 
 .modal-content h2 { margin: 0; font-size: 16px; }
 
@@ -737,8 +796,10 @@ body.modal-open { overflow: hidden; }
     padding: 6px 10px;
     gap: 6px;
   }
-  .topbar h1 { font-size: 12px; line-height: 1.2; }
-  .topbar .title { padding: 4px 4px 4px 0; flex: 1 1 100%; }
+  /* No celular o título ocupa a linha inteira (flex-basis 100%) e fica
+     centralizado na barra — não só quando embrulha (ver updateTitleAlignment). */
+  .topbar h1 { font-size: 12px; line-height: 1.2; justify-content: center; text-align: center; }
+  .topbar .title { padding: 4px 6px; flex: 1 1 100%; }
   .title-icon { width: 30px; height: 30px; }
 
   /* Mobile-friendly button heights — at least ~36 px tall for thumbs. */
@@ -1262,6 +1323,19 @@ body.drawing .draft-line:active { cursor: grabbing; }
   opacity: 0.4;
   cursor: not-allowed;
 }
+/* Bolinha de fechar (macOS) como 1º item da barra de traçado. Re-afirma o
+   visual da bolinha por cima das regras genéricas de `.trace-controls button`
+   (especificidade maior + fica depois no arquivo). É item inline do flex, então
+   fica "ao lado" dos botões (sem faixa reservada — a folga vem do gap). */
+.trace-controls > .close-dot {
+  width: 13px; height: 13px; padding: 0; margin-right: 2px;
+  border-radius: 50%; border: 0.5px solid rgba(0, 0, 0, 0.22);
+  background: #ff5f57;
+  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.35);
+}
+.trace-controls > .close-dot:hover:not(:disabled) {
+  background: #ff5f57; border-color: rgba(0, 0, 0, 0.22);
+}
 .trace-controls .trace-save {
   border-color: #3a6b3a;
   color: #b1ffb1;
@@ -1509,14 +1583,33 @@ body.trace-preview .tp-label { display: none !important; }
 
 /* Combined layer panel: visibility toggles + per-layer opacity sliders. */
 .layer-panel {
+  position: relative;              /* âncora da bolinha de fechar */
   background: var(--panel);
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 6px 8px;
+  padding: 24px 8px 6px;           /* faixa superior reservada pra bolinha */
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
   font-size: 11px;
   min-width: 240px;
+}
+/* Título "Camadas" na faixa reservada, ao lado da bolinha (igual ao header dos
+   modais). Absolute → não desloca as linhas. */
+.layer-panel-title {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  padding: 0 8px 0 30px;           /* 30px à esquerda livram a bolinha */
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
 }
 .layer-section-title {
   color: var(--muted);

@@ -254,6 +254,13 @@
 const $  = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
+// Embutido no iframe do app: o título vive na faixa do header do modal —
+// esconde o <h1>/lede internos pra não duplicar. Standalone mostra normalmente.
+if (window.self !== window.top) {
+  $('h1')?.style.setProperty('display', 'none');
+  $('.lede')?.style.setProperty('display', 'none');
+}
+
 // ────────────────────── Tom Select on-demand load ─────────────────────
 async function loadScript(src) {
   return new Promise((res, rej) => {

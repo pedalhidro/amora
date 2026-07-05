@@ -3357,6 +3357,9 @@ function openTourModal(tourId) {
   const src = tourId
     ? `./upload_tour.html?id=${encodeURIComponent(tourId)}`
     : './upload_tour.html';
+  // Título da faixa reflete o modo (criar vs editar).
+  const tourTitle = document.getElementById('tour-modal-title');
+  if (tourTitle) tourTitle.textContent = tourId ? 'Editar passeio' : 'Subir passeio';
   // Forçar reload mesmo quando o ?id é o mesmo: substitui o src.
   tourIframe.src = src;
   tourModal.hidden = false;
@@ -3518,6 +3521,42 @@ document.getElementById('subir-censo')?.addEventListener('click', () => {
   closeSubirModal();
   openCensoModal();
 });
+
+// ─── Botão de fechar (bolinha vermelha estilo macOS) ─────────────────────────
+// Como os modais e painéis não têm mais barra de título, injeta uma bolinha
+// vermelha discreta no canto superior esquerdo. Cada contêiner reserva a folga
+// no CSS (.close-dot). `onClose` roda no clique.
+function makeCloseDot(onClose, title = 'Fechar') {
+  const dot = document.createElement('button');
+  dot.type = 'button';
+  dot.className = 'close-dot';
+  dot.title = title;
+  dot.setAttribute('aria-label', title);
+  dot.addEventListener('click', (e) => { e.stopPropagation(); onClose(e); });
+  return dot;
+}
+
+// Modais: a bolinha dispara o clique-no-overlay (`modal.click()`), reusando o
+// handler de clique-fora que cada modal já tem (e.target === modal → fecha
+// corretamente, com toda a limpeza: reloadPhotos, reset de iframe, aria, etc.).
+for (const content of document.querySelectorAll('.modal > .modal-content')) {
+  const modal = content.closest('.modal');
+  if (!modal) continue;
+  content.appendChild(makeCloseDot(() => modal.click()));
+}
+
+// Sidebar de Rotas: a bolinha fecha o painel (mesmo caminho do ☰/toggle). Como
+// só é clicável com a sidebar aberta, o toggle sempre fecha.
+document.getElementById('sidebar')?.appendChild(
+  makeCloseDot(() => toggleRoutesSidebar(), 'Fechar rotas'),
+);
+
+// Barra de edição de traçado: bolinha como 1º item (inline, ao lado dos
+// botões); fechar = cancelar a edição, igual ao "✕ Cancelar" do botão Traçar.
+{
+  const tc = document.getElementById('trace-controls');
+  if (tc) tc.insertBefore(makeCloseDot(() => exitDrawingMode(), 'Fechar edição'), tc.firstChild);
+}
 
 // ─── Modal de Configurações ───────────────────────────────────────────────
 const settingsBtn        = document.getElementById('settings-btn');
@@ -5050,6 +5089,20 @@ layerPanel.onAdd = function () {
     applyLayerOrder();
     layoutRows();
   });
+
+  // Título "Camadas" na faixa reservada, ao lado da bolinha (absolute → não
+  // desloca as linhas).
+  const panelTitle = L.DomUtil.create('div', 'layer-panel-title', div);
+  panelTitle.textContent = 'Camadas';
+
+  // Bolinha de fechar (macOS) no canto do painel — fecha as camadas (mesmo
+  // caminho do botão ⧉ Camadas: esconde + persiste). Absolute → não desloca
+  // as linhas; a faixa superior reservada no CSS evita colisão com o conteúdo.
+  div.appendChild(makeCloseDot(() => {
+    closeOtherMobileDialogs('layers');
+    applyLayersVisibility(true);
+    try { localStorage.setItem(LAYERS_HIDDEN_KEY, '1'); } catch {}
+  }, 'Fechar camadas'));
 
   L.DomEvent.disableClickPropagation(div);
   L.DomEvent.disableScrollPropagation(div);
