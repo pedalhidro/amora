@@ -32,7 +32,22 @@
     grid-template-columns: 1fr;
     gap: 1rem;
   }
-  #upload-zone { margin-top: 1rem; }
+  #upload-zone { margin-top: 0; transition: background .2s, border-color .2s; }
+
+  /* Grupo colapsável: a legenda vira um botão que expande/recolhe o corpo. */
+  #upload-zone legend { padding: 0; }
+  .zone-toggle {
+    font: inherit; font-weight: 600; background: none; border: 0; cursor: pointer;
+    padding: 0 .3rem; color: inherit; display: inline-flex; align-items: center; gap: .35rem;
+  }
+  .zone-toggle .caret { display: inline-block; font-size: .8em; transition: transform .15s; }
+  #upload-zone.collapsed .caret { transform: rotate(-90deg); }
+  #upload-zone.collapsed .upload-row { display: none; }
+
+  /* Cor do grupo reflete o estado do lote: verde=ok, amarelo=aviso, vermelho=erro. */
+  #upload-zone.state-ok   { background: #f0faf0; border-color: #b7dfb7; }
+  #upload-zone.state-warn { background: #fffbe6; border-color: #ead98f; }
+  #upload-zone.state-err  { background: #fdf0f0; border-color: #e2acac; }
 
   /* Painel de "Opções de saída" (anonimizar/comprimir) */
   .opts { display: flex; gap: 1rem; flex-wrap: wrap; }
@@ -136,6 +151,14 @@
   .card .row > div { flex: 1; min-width: 0; }
   .card .tour-auto-status { font-size: .7rem; margin-top: .1rem; }
 
+  /* Campos compactos: rótulo e valor na MESMA linha (cards mais enxutos). */
+  .card .fi { display: flex; align-items: center; gap: .35rem; margin: .2rem 0; }
+  .card .fi > span { flex: 0 0 auto; min-width: 2.6rem; font-size: .72rem; color: #555; }
+  .card .fi > input, .card .fi > select { flex: 1 1 auto; min-width: 0; margin: 0; }
+  .card .fi-row { display: flex; gap: .4rem; align-items: center; margin: .2rem 0; }
+  .card .fi-row > .fi { flex: 1; margin: 0; }
+  .card .fi-row > .pick-on-map { flex: 0 0 auto; padding: .25rem .45rem; font-size: 1rem; line-height: 1; }
+
   /* Tom Select compactado dentro dos cards */
   .ts-wrapper { font-size: .85rem; }
   .card .ts-control { padding: .2rem .3rem !important; min-height: 0; }
@@ -173,8 +196,8 @@
 
   <!-- Grupo "Adicionar imagens e vídeos" — no topo, acima do Enviar todas. -->
   <fieldset id="upload-zone">
-    <legend>Adicionar imagens e vídeos</legend>
-    <div class="upload-row">
+    <legend><button type="button" class="zone-toggle" id="upload-zone-toggle" aria-expanded="true" aria-controls="upload-zone-body"><span class="caret" aria-hidden="true">▾</span> Adicionar imagens e vídeos</button></legend>
+    <div class="upload-row" id="upload-zone-body">
       <div>
         <label style="font-weight:600;margin-top:0">Padrões da Atribuição</label>
 
@@ -908,34 +931,19 @@ function buildCardElem(displayIdx, file, thumbBlob) {
 
     <div class="card-section">
       <h4>Quando / Onde</h4>
-      <label class="required">Data e hora</label>
-      <input type="datetime-local" data-field="date" step="1" required>
-      <div class="row">
-        <div>
-          <label class="required">Latitude</label>
-          <input type="number" data-field="lat" step="any" min="-90" max="90" required>
-        </div>
-        <div>
-          <label class="required">Longitude</label>
-          <input type="number" data-field="lon" step="any" min="-180" max="180" required>
-        </div>
+      <label class="fi"><span class="required">Data/hora</span><input type="datetime-local" data-field="date" step="1" required></label>
+      <div class="fi-row">
+        <label class="fi"><span class="required">Lat</span><input type="number" data-field="lat" step="any" min="-90" max="90" required></label>
+        <label class="fi"><span class="required">Lon</span><input type="number" data-field="lon" step="any" min="-180" max="180" required></label>
+        <button type="button" class="pick-on-map" title="Escolher no mapa" aria-label="Escolher no mapa">🗺</button>
       </div>
-      <button type="button" class="pick-on-map" style="margin-top:.35rem;padding:.25rem .5rem;font-size:.8rem;">
-        🗺 Escolher no mapa
-      </button>
     </div>
 
     <div class="card-section">
       <h4>Câmera</h4>
-      <div class="row">
-        <div>
-          <label>Direção (°)</label>
-          <input type="number" data-field="bearing" step="any" min="0" max="359.999">
-        </div>
-        <div>
-          <label>Focal eq. 35 mm</label>
-          <input type="number" data-field="focal" step="any" min="0.001" max="100000">
-        </div>
+      <div class="fi-row">
+        <label class="fi"><span title="Direção da câmera, em graus">Dir°</span><input type="number" data-field="bearing" step="any" min="0" max="359.999"></label>
+        <label class="fi"><span title="Distância focal equivalente a 35 mm">Focal</span><input type="number" data-field="focal" step="any" min="0.001" max="100000"></label>
       </div>
     </div>
 
@@ -1036,21 +1044,12 @@ function buildVideoCardElem(displayIdx, file) {
 
     <div class="card-section">
       <h4>Quando / Onde</h4>
-      <label class="required">Data e hora</label>
-      <input type="datetime-local" data-field="date" step="1" required>
-      <div class="row">
-        <div>
-          <label class="required">Latitude</label>
-          <input type="number" data-field="lat" step="any" min="-90" max="90" required>
-        </div>
-        <div>
-          <label class="required">Longitude</label>
-          <input type="number" data-field="lon" step="any" min="-180" max="180" required>
-        </div>
+      <label class="fi"><span class="required">Data/hora</span><input type="datetime-local" data-field="date" step="1" required></label>
+      <div class="fi-row">
+        <label class="fi"><span class="required">Lat</span><input type="number" data-field="lat" step="any" min="-90" max="90" required></label>
+        <label class="fi"><span class="required">Lon</span><input type="number" data-field="lon" step="any" min="-180" max="180" required></label>
+        <button type="button" class="pick-on-map" title="Escolher no mapa" aria-label="Escolher no mapa">🗺</button>
       </div>
-      <button type="button" class="pick-on-map" style="margin-top:.35rem;padding:.25rem .5rem;font-size:.8rem;">
-        🗺 Escolher no mapa
-      </button>
     </div>
 
     <div class="card-section">
@@ -1146,6 +1145,7 @@ function addThumbToGrid(card) {
   card.gridThumbBtn = btn;
   thumbGridEl.appendChild(btn);
   updateCarouselNav();
+  escalateZoneState(1);   // adicionou imagem → grupo fica verde (se ainda não amarelo/vermelho)
 }
 // Atualiza a src da miniatura (usado quando o thumb do vídeo fica pronto).
 function setGridThumbSrc(card, url) { if (card.gridThumb) card.gridThumb.src = url; }
@@ -1185,7 +1185,29 @@ navRightBtn.addEventListener('click', () => scrollCardsStrip(1));
 cardsStripEl.addEventListener('scroll', updateCarouselNav, { passive: true });
 window.addEventListener('resize', updateCarouselNav);
 
+// ─── Grupo "Adicionar" colapsável + cor por estado do lote ───────────────────
+const uploadZoneEl = $('#upload-zone');
+$('#upload-zone-toggle')?.addEventListener('click', (e) => {
+  const collapsed = uploadZoneEl.classList.toggle('collapsed');
+  e.currentTarget.setAttribute('aria-expanded', String(!collapsed));
+});
+// Estado do lote: 0 nenhum · 1 ok (verde) · 2 aviso (amarelo) · 3 erro (vermelho).
+// Monotônico — só escala pra cima até "Limpar" (reflete "teve algum X no lote").
+let uploadZoneSeverity = 0;
+const ZONE_CLASS = { 1: 'state-ok', 2: 'state-warn', 3: 'state-err' };
+function escalateZoneState(sev) {
+  if (!uploadZoneEl || sev <= uploadZoneSeverity) return;
+  uploadZoneSeverity = sev;
+  uploadZoneEl.classList.remove('state-ok', 'state-warn', 'state-err');
+  uploadZoneEl.classList.add(ZONE_CLASS[sev]);
+}
+function resetZoneState() {
+  uploadZoneSeverity = 0;
+  uploadZoneEl?.classList.remove('state-ok', 'state-warn', 'state-err');
+}
+
 function notify(html, kind = 'warn') {
+  escalateZoneState(kind === 'err' ? 3 : 2);   // aviso→amarelo, erro→vermelho
   const div = document.createElement('div');
   div.className = kind;
   div.style.cssText =
@@ -1966,6 +1988,7 @@ function clearAllCards() {
   $('#filesStatus').textContent = 'Nenhum arquivo.';
   setUploadAllStatus('');
   updateCarouselNav();
+  resetZoneState();                            // volta o grupo pra cor neutra
 }
 
 // Botão "Limpar todos os cards"
@@ -2214,6 +2237,7 @@ function setCardStatus(card, label, kind = '') {
   if (!el) return;
   el.textContent = label;
   el.className = `card-send-status ${kind}`;
+  if (kind === 'err') escalateZoneState(3);   // erro num card → grupo fica vermelho
 }
 function setCardSendEnabled(card, enabled) {
   const btn = $('.card-send', card.elem);
