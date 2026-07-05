@@ -20,6 +20,10 @@
     --danger-hover: #922f0f;
   }
   * { box-sizing: border-box; }
+  /* O atributo `hidden` precisa vencer os `display:flex/block` dos seletores de
+     classe (.modal/.lightbox/.selbar/.toolbar) — senão eles aparecem no boot
+     mesmo marcados hidden. Toda a visibilidade desses blocos é via `.hidden`. */
+  [hidden] { display: none !important; }
   html, body { margin: 0; background: var(--bg); color: var(--text);
     font: 14px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
   body { padding: 12px; margin: 0; }
