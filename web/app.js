@@ -5837,11 +5837,11 @@ const DEFAULT_PARAMS = {
   carCrr: 0.013,
   carCda: 1.1,             // m²
   carKEff: 0.12,           // 0..1 — eficiência do motor a combustão
-  carEpsilon: 0,           // 0..1 — recuperação de energia na descida (0 = nenhuma)
+  carEpsilon: 0.5,         // 0..1 — recuperação de energia na descida
   carPowerAscent: 50000,   // W — potência em subida (> +limiar)
   carPowerFlat: 25000,     // W — potência em plano (±limiar)
-  carPowerDescent: -10000, // W — potência em descida (< −limiar); negativa = freio ativo
-  carSlopeFlatThreshold: 0.03, // 0..1 — limiar de plano próprio do SUV (±3%)
+  carPowerDescent: 5000,   // W — potência em descida (< −limiar)
+  carSlopeFlatThreshold: 0.02, // 0..1 — limiar de plano próprio do SUV (±2%)
   // Escala a energia mecânica da bike ("nas pernas") pra energia metabólica
   // (comida) — eficiência humana ~25% → ~4×. Usado só na comparação com o SUV.
   bikeMetabolicFactor: 4,
@@ -8848,6 +8848,20 @@ function powerForCar(gradient, p) {
   return p.carPowerFlat;
 }
 
+// Velocidade de equilíbrio do SUV num gradiente — mesmo solver cúbico da
+// bike (solveSpeedAtGradient), com a MESMA salvaguarda que segmentSpeed() usa
+// pra descidas: perto do limiar (ou com potência de descida pequena/positiva),
+// o Newton do solver parte de v=5 e pode ficar preso no piso (0,5 m/s) em vez
+// de achar a raiz real — um artefato numérico, não uma velocidade física.
+// vFlatRef (equilíbrio no plano, sempre bem-comportado) serve de piso: se a
+// "velocidade de descida" resolvida vier menor ou igual a ela, é sinal de que
+// o solver não convergiu (ou a potência de descida é baixa demais pra superar
+// rolamento+arrasto), então usa vFlatRef em vez do valor quebrado.
+function speedForCar(gradient, power, carP, vFlatRef) {
+  const v = solveSpeedAtGradient(power, gradient, carP);
+  return (gradient < 0 && v <= vFlatRef) ? vFlatRef : v;
+}
+
 // ─── Comparação "quantas vezes mais eficiente é a bike" vs. um SUV ───────────
 // Caminha o MESMO traçado/perfil de elevação (deadbanded) que simulateRide()
 // usa pra bike, segmento a segmento, com duas diferenças físicas do carro:
@@ -8874,6 +8888,7 @@ function carEnergyJ(p) {
   const carP = { rho: p.rho, cda: p.carCda, mass: p.carMass, crr: p.carCrr };
   const alphaR = (p.carCrr * p.carMass * G) / p.carKEff;
   const beta = (p.carMass * G) / p.carKEff;
+  const vFlatRef = solveSpeedAtGradient(p.carPowerFlat, 0, carP);
 
   let energyJ = 0;
   for (let i = 1; i < latlngs.length; i++) {
@@ -8885,7 +8900,7 @@ function carEnergyJ(p) {
     const gradS = dhS / seg;
 
     const power = powerForCar(gradS, p);
-    const v = solveSpeedAtGradient(power, gradS, carP);
+    const v = speedForCar(gradS, power, carP, vFlatRef);
     const aeroJPerM = (0.5 * p.rho * p.carCda * v * v) / p.carKEff;
 
     energyJ += alphaR * seg + aeroJPerM * seg; // rolamento + arrasto (f=1, sempre)
@@ -8896,10 +8911,9 @@ function carEnergyJ(p) {
   // Velocidades de referência (só pra exibição): equilíbrio em cada nível do
   // perfil de potência, avaliado exatamente no limiar de plano configurado.
   const vAscent  = solveSpeedAtGradient(p.carPowerAscent, p.carSlopeFlatThreshold, carP);
-  const vFlat    = solveSpeedAtGradient(p.carPowerFlat, 0, carP);
-  const vDescent = solveSpeedAtGradient(p.carPowerDescent, -p.carSlopeFlatThreshold, carP);
+  const vDescent = speedForCar(-p.carSlopeFlatThreshold, p.carPowerDescent, carP, vFlatRef);
 
-  return { energyJ, vAscent, vFlat, vDescent };
+  return { energyJ, vAscent, vFlat: vFlatRef, vDescent };
 }
 
 // Duração compacta pra barra de edição: uma unidade só (dias é a exceção,
