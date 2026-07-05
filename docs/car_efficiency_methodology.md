@@ -89,9 +89,9 @@ ajustando **`carKEff` e `carPowerFlat`**.
 | `carCdA` | 1,1 m² | C_d ~0,38 × área frontal ~2,9 m² — extremo "SUV grande/boxy" (central ~1,0). |
 | `carKEff` | **0,28** | Eficiência tanque→roda em **cruzeiro estável**: fueleconomy.gov "energy to wheels" 22–30 % na estrada; BTE de motores SI modernos ~30–36 % × ~0,9 de transmissão. Faixa defensável 0,25–0,30; central 0,28. (Ciclo combinado ~0,21–0,25 = o "cerca de um quarto"; média de ciclo com cidade ~0,16–0,20.) |
 | `carPowerFlat` | **15 000 W** | Cruzeiro de equilíbrio ~65 km/h — arterial de fluxo livre em SP (entre os 50 km/h de arterial e os 80–90 km/h das Marginais). |
-| `carPowerAscent` | 30 000 W | Segura ~60 km/h a +2 %, cai p/ ~34 km/h a +5 % (mais acelerador na subida, mas sem passar da velocidade de plano). |
+| `carPowerAscent` | 30 000 W | Segura ~60 km/h a +3 %, cai p/ ~34 km/h a +5 % (mais acelerador na subida, mas sem passar da velocidade de plano). |
 | `carPowerDescent` | 0 W | Pé fora do acelerador (corte de combustível na desaceleração — DFCO). |
-| `carSlopeFlatThreshold` | 0,02 (±2 %) | Grade de equilíbrio do *coasting*: acima dela, no descida, o motor tira o pé e entra o DFCO. Literatura: ~1,5 % (cidade) a ~3 % (estrada). |
+| `carSlopeFlatThreshold` | 0,03 (±3 %) | Grade de equilíbrio do *coasting*: acima dela, na descida, o motor tira o pé e entra o DFCO. Literatura: ~1,5 % (cidade) a ~3 % (estrada) — usamos o extremo de estrada. |
 | `carEpsilon` | **0,40** | Ver §4. |
 
 Referência de economia real (INMETRO PBE Veicular / testes): SUVs a gasolina no
@@ -100,6 +100,34 @@ Corolla Cross, Tracker). ~10–11 km/L é uma cifra de cruzeiro plano conservado
 coerente — lembrando que o veículo modelado aqui (5000 kg) é bem mais pesado que
 um SUV real, então tirar 10 km/L dele já exige uma eficiência generosa.
 
+### 3.1 As potências são plausíveis para 5000 kg?
+
+**Importante:** `carPower*` são **potências mecânicas de tração (na roda) em
+equilíbrio** — NÃO a potência de pico do motor. A cúbica
+`solveSpeedAtGradient` resolve `potência = F_resist · v`, então a potência é o
+que a roda entrega para manter a velocidade naquele terreno. A potência de
+combustível equivalente é `potência_roda / carKEff`.
+
+| Regime | Roda | Combustível-equiv (÷0,28) | Velocidade |
+|---|---|---|---|
+| Cruzeiro no plano | 15 kW (20 hp) | ~54 kW (72 hp) | ~65 km/h |
+| Subida (pico do modelo) | 30 kW (40 hp) | ~107 kW (144 hp) | 60 km/h @+3%, 34 @+5% |
+
+No cruzeiro, os 15 kW na roda se decompõem em **~11,5 kW de rolamento + ~3,5 kW
+de arrasto** — o rolamento domina justamente por causa dos 5000 kg. Isso foi
+confirmado como fisicamente correto (inclusive escalando o *road-load* de um
+caminhão Classe 8). A potência **máxima que o modelo já exige** é
+`carPowerAscent` = 30 kW na roda ≈ **107 kW de motor** — bem dentro do envelope
+de um veículo real de ~5000 kg (SUV blindado / picape pesada têm pico de
+**~220–450 kW**, central ~300 kW), com folga de 2–3×.
+
+**Ressalvas honestas:** (1) 5000 kg é território de picape pesada / SUV blindado
+/ caminhão leve — um SUV de passeio real pesa ~2500 kg. (2) A potência de subida
+(30 kW) modela um comportamento **conservador de cruzeiro** — o carro deixa a
+velocidade cair na subida em vez de "afundar o pé"; um motorista pisando fundo no
+motor de ~300 kW subiria +5 % a ~50 km/h (precisaria de ~45 kW na roda). É uma
+escolha de comportamento, não um limite físico, e é editável no modal.
+
 ## 4. O parâmetro ε (recuperação na descida) — e por que 0,40
 
 `ε` credita de volta uma fração da energia gravitacional liberada **durante** uma
@@ -107,7 +135,7 @@ descida (`−ε·β·Δh⁻`). É o parâmetro mais sujeito a mal-entendido, ent
 detalhar o que ele **é** e o que ele **não é**:
 
 - **É**: a energia potencial que, na descida, a gravidade usa para *propelir* o
-  carro no lugar do motor. Acima do grade de equilíbrio (~2 %), um motor moderno
+  carro no lugar do motor. Acima do grade de equilíbrio (~3 %), um motor moderno
   corta o combustível (DFCO) e a gravidade faz o trabalho de tração que o
   combustível faria no plano → combustível evitado **naquele segmento**.
 - **NÃO é** transporte de energia de um morro para o outro. O modelo **nunca**
@@ -128,7 +156,7 @@ que quase não existem no dia a dia de São Paulo:
   a energia cinética acumulada — que o modelo, corretamente, já não credita, mas
   que na prática também significa que o regime "coasting limpo" raramente se
   sustenta.
-- **Grades rasos** (< 2 %) dominam a malha urbana. Abaixo do grade de equilíbrio,
+- **Grades rasos** (< 3 %) dominam a malha urbana. Abaixo do grade de equilíbrio,
   a gravidade **não** basta para manter a velocidade, então o **motor continua
   queimando** combustível — sem o corte que justificaria um ε alto.
 - Há ainda um **piso de marcha lenta** (idle) que consome combustível mesmo com

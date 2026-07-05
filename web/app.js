@@ -5870,10 +5870,10 @@ const DEFAULT_PARAMS = {
   carKEff: 0.28,           // 0..1 — eficiência tanque→roda em cruzeiro (0,25–0,30)
   carEpsilon: 0.40,        // 0..1 — combustível evitado na descida; baixo p/ SP (trânsito para
                            //        toda hora + grades rasos → motor segue queimando; DFCO raro)
-  carPowerAscent: 30000,   // W — potência em subida (> +limiar): segura ~60 km/h a +2%
+  carPowerAscent: 30000,   // W — potência em subida (> +limiar): segura ~60 km/h a +3%
   carPowerFlat: 15000,     // W — potência em plano (±limiar): cruzeiro ~65 km/h
   carPowerDescent: 0,      // W — potência em descida (< −limiar): pé fora do acelerador (DFCO)
-  carSlopeFlatThreshold: 0.02, // 0..1 — limiar de plano do SUV (±2%): grade de equilíbrio do coasting
+  carSlopeFlatThreshold: 0.03, // 0..1 — limiar de plano do SUV (±3%): grade de equilíbrio do coasting em estrada
   // Escala a energia mecânica da bike ("nas pernas") pra energia metabólica
   // (comida) — eficiência humana ~25% → ~4×. Usado só na comparação com o SUV.
   bikeMetabolicFactor: 4,
