@@ -125,7 +125,8 @@
       <nav class="topbar-actions">
       <input type="file" id="photos-import-input" accept=".ttl,.zip,text/turtle,application/zip" hidden />
       <input type="file" id="edit-gpx-input" accept=".gpx,application/gpx+xml" hidden />
-      <button id="trace-btn" type="button" class="secondary-btn" title="Traçar GPX" aria-label="Traçar GPX">＋🗺︎ Traçar</button>
+      <button id="subir-btn" type="button" class="secondary-btn" title="Subir" aria-label="Subir">⬆ Subir</button>
+      <button id="trace-btn" type="button" class="secondary-btn" title="Traçar GPX" aria-label="Traçar GPX">🗺︎ Traçar</button>
       <span class="topbar-break" aria-hidden="true"></span>
       <button id="help-btn" type="button" class="secondary-btn" title="Como usar" aria-label="Instruções">? Ajuda</button>
       <button id="settings-btn" type="button" class="secondary-btn" title="Configurações" aria-label="Configurações">⚙ Ajustes</button>
@@ -187,16 +188,37 @@
           <details class="help-changelog">
             <summary>Novidades (changelog)</summary>
             <dl>
+              <dt>04/07/2026 · v305</dt>
+              <dd>
+                <ul>
+                  <li>Corrigido: nos campos Autoras e Quem subiu do formulário de envio, o texto digitado na busca ficava no campo depois de escolher uma sugestão (clique ou Enter) — agora limpa sozinho.</li>
+                </ul>
+              </dd>
+              <dt>04/07/2026 · v304</dt>
+              <dd>
+                <ul>
+                  <li>Modais de Enviar imagens e Cadastrar/editar passeio: removida a barra de título (o conteúdo já mostra o próprio título) — fecham normalmente por clique fora ou Esc.</li>
+                  <li>Editar traçado: a barra de métricas agora também mostra quantas vezes a bike é mais eficiente que um SUV equivalente e quanto ele gastaria em kJ na mesma rota — modelo v2 por segmento, com um perfil de potência de 3 níveis próprio do carro (subida/plano/descida, potência de descida podendo ser negativa — freio ativo), energia da bike escalada pra refletir a eficiência metabólica humana, medindo os dois lados em energia "de entrada" (comida vs. combustível). Corrigido: em descidas suaves com potência baixa, a velocidade de equilíbrio do SUV podia ficar presa num piso numérico do solver — agora cai pra velocidade de plano nesse caso, igual à salvaguarda já usada pela bike. Novo controle nos <strong>Parâmetros</strong>: <em>Comparação com carro (SUV)</em> — toggle pra mostrar/ocultar e um botão <em>Parâmetros do SUV…</em> pra ajustar massa, Crr, CdA, eficiência do motor, recuperação na descida, o perfil de potência/limiar do SUV e o fator metabólico da bike.</li>
+                </ul>
+              </dd>
+              <dt>04/07/2026 · v303</dt>
+              <dd>
+                <ul>
+                  <li>Removido o ícone "⬆" da camada "Imagens contribuídas" no painel de camadas — redundante desde o novo botão "⬆ Subir" na barra de cima.</li>
+                </ul>
+              </dd>
+              <dt>04/07/2026 · v302</dt>
+              <dd>
+                <ul>
+                  <li>Novo botão "⬆ Subir" na barra de cima, antes do "Traçar" (que perdeu o ícone de +): abre um menu com atalhos pra Enviar fotos/vídeos ou Cadastrar passeio.</li>
+                  <li>Formulário de envio de imagens/vídeos: o botão "Enviar todas" agora também aparece no topo, antes dos cards. Removido o botão "Pré-visualizar TTL".</li>
+                </ul>
+              </dd>
               <dt>04/07/2026 · v301</dt>
               <dd>
                 <ul>
                   <li>Fotos HEIC do iPhone: a seleção ficou mais rápida — o Safari decodifica o HEIC direto, sem converter o arquivo no aparelho (a conversão vira só um plano B nos navegadores sem suporte nativo a HEIC), e o arquivo original é preservado bit a bit no acervo, então baixar/exportar entrega o formato real da foto (HEIC/PNG) em vez de um JPEG recomprimido.</li>
                   <li>No formulário de envio, a dica dos Arquivos agora lembra que dá pra arrastar e soltar os arquivos ou enviar em vários lotes — eles se acumulam.</li>
-                </ul>
-              </dd>
-              <dt>04/07/2026 · v300</dt>
-              <dd>
-                <ul>
                   <li>Formulário de envio de fotos/vídeos: lotes grandes (dezenas de arquivos) não travam mais o navegador do celular — a memória usada por foto/vídeo fica constante em vez de acumular, as miniaturas dos cards usam uma versão reduzida em vez da foto inteira, os seletores de autor/responsável e a prévia de vídeo de cada card só são inicializados quando o card fica visível na tela, a barra de status mostra o progresso arquivo por arquivo durante a seleção, e a tela do celular é mantida acesa durante o processamento e o envio.</li>
                 </ul>
               </dd>
@@ -766,6 +788,13 @@
             <span class="param-input"><input type="checkbox" id="param-use-portals"></span>
           </label>
 
+          <h3 style="margin: 1.2rem 0 .35rem; font-size: .95rem; border-top: 1px dashed #ccc; padding-top: .75rem">Comparação com carro (SUV)</h3>
+          <label class="param-row" title="Mostra, ao editar o traçado, quanto um SUV equivalente gastaria (kJ) na mesma rota e quantas vezes a bike é mais eficiente.">
+            <span class="param-label">Mostrar comparação com SUV</span>
+            <span class="param-input"><input type="checkbox" id="param-suv-compare-enabled"></span>
+          </label>
+          <button type="button" id="open-suv-compare" class="ds-open-btn" title="Ajustar a massa/Crr/CdA/eficiência do SUV e o fator metabólico da bike usados na comparação">Parâmetros do SUV…</button>
+
           <div class="params-actions">
             <input type="file" id="params-import" accept="application/ld+json,application/json,.json,.jsonld" hidden />
             <button type="button" id="params-load">Carregar de arquivo…</button>
@@ -826,6 +855,60 @@
             </div>
             <p class="muted ds-hint">GeoPackage (camada LINESTRING) ou GeoJSON de linhas, em WGS84. Tem prioridade sobre o gpkg de SP e o Overpass. Tags <code>bridge</code>/<code>tunnel</code>/<code>layer</code> (se houver) achatam o tabuleiro. Fica só em memória (some ao recarregar).</p>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Comparação com carro (SUV): física do carro + fator metabólico da bike.
+         Aberto pelo botão na seção "Comparação com carro (SUV)" dos Parâmetros. -->
+    <div id="suv-compare-modal" class="modal" hidden>
+      <div class="modal-content params-modal-content">
+        <header>
+          <h2>Comparação com carro (SUV)</h2>
+          <button class="close" id="suv-compare-close" type="button" aria-label="Fechar">&times;</button>
+        </header>
+        <div class="params-body">
+          <p class="muted">Energia do SUV pelo mesmo modelo v2 da bike, na mesma rota e segmento a segmento, com a física do carro abaixo e um perfil de potência de 3 níveis próprio (subida/plano/descida). Arrasto aerodinâmico é cobrado em 100% da distância, inclusive subindo (o SUV mantém a velocidade do seu perfil de potência; a bike desacelera o bastante numa subida pra zerar o arrasto). O <strong>fator metabólico</strong> escala a energia mecânica da bike pra energia de comida consumida (eficiência humana ~25% → ~4×), pra comparar "energia de entrada" dos dois lados.</p>
+          <label class="param-row">
+            <span class="param-label">Massa do SUV</span>
+            <span class="param-input"><input type="number" id="param-car-mass" step="50" min="500" max="10000"> kg</span>
+          </label>
+          <label class="param-row">
+            <span class="param-label">Coef. de rolamento (Crr)</span>
+            <span class="param-input"><input type="number" id="param-car-crr" step="0.001" min="0.001" max="0.05"></span>
+          </label>
+          <label class="param-row">
+            <span class="param-label">Área de arrasto (CdA)</span>
+            <span class="param-input"><input type="number" id="param-car-cda" step="0.05" min="0.1" max="3"> m²</span>
+          </label>
+          <label class="param-row" title="Eficiência do motor a combustão (energia mecânica ÷ isto = energia de combustível).">
+            <span class="param-label">Eficiência do motor</span>
+            <span class="param-input"><input type="number" id="param-car-keff" step="1" min="1" max="100"> %</span>
+          </label>
+          <label class="param-row" title="Fração da energia gravitacional recuperada na descida — 0 pra um motor a combustão comum (padrão); &gt;0 simularia um híbrido/elétrico regenerativo.">
+            <span class="param-label">Recuperação na descida (ε)</span>
+            <span class="param-input"><input type="number" id="param-car-epsilon" step="1" min="0" max="100"> %</span>
+          </label>
+          <label class="param-row" title="Grade acima da qual um segmento conta como subida/descida pro perfil de potência do SUV (abaixo disso, plano).">
+            <span class="param-label">Limiar de plano do SUV (±)</span>
+            <span class="param-input"><input type="number" id="param-car-slope-threshold" step="0.1" min="0" max="20"> %</span>
+          </label>
+          <label class="param-row" title="Potência usada pra achar a velocidade de equilíbrio do SUV em segmentos de subida (acima do limiar).">
+            <span class="param-label">Potência em subida</span>
+            <span class="param-input"><input type="number" id="param-car-power-ascent" step="500" min="0" max="500000"> W</span>
+          </label>
+          <label class="param-row" title="Potência usada pra achar a velocidade de equilíbrio do SUV em segmentos de plano (dentro do limiar).">
+            <span class="param-label">Potência em plano</span>
+            <span class="param-input"><input type="number" id="param-car-power-flat" step="500" min="0" max="500000"> W</span>
+          </label>
+          <label class="param-row" title="Potência usada pra achar a velocidade de equilíbrio do SUV em segmentos de descida (abaixo do limiar). Pode ser NEGATIVA — freio ativo, o SUV não deixa a gravidade acelerá-lo livre.">
+            <span class="param-label">Potência em descida</span>
+            <span class="param-input"><input type="number" id="param-car-power-descent" step="500" min="-500000" max="500000"> W</span>
+          </label>
+          <label class="param-row" title="Multiplica a energia mecânica da bike pra estimar a energia metabólica (comida) consumida — eficiência humana ~25% → fator ~4.">
+            <span class="param-label">Fator metabólico da bike</span>
+            <span class="param-input"><input type="number" id="param-bike-metabolic-factor" step="0.1" min="1" max="10"></span>
+          </label>
         </div>
       </div>
     </div>
@@ -1147,24 +1230,34 @@
       </div>
     </div>
 
-    <!-- Upload de imagens — iframe para upload_images.html, isolando estado. -->
+    <!-- Menu "Subir" — atalho no topbar pras duas ações de contribuição. -->
+    <div id="subir-modal" class="modal" hidden>
+      <div class="modal-content subir-modal-content">
+        <header>
+          <h2>⬆ Subir</h2>
+          <button class="close" id="subir-modal-close" type="button" aria-label="Fechar">&times;</button>
+        </header>
+        <div class="subir-modal-body">
+          <button type="button" id="subir-upload-media" class="subir-action">📤 Enviar fotos/vídeos</button>
+          <button type="button" id="subir-new-tour" class="subir-action">🚵 Cadastrar passeio</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Upload de imagens — iframe para upload_images.html, isolando estado.
+         Sem header/barra de título: o iframe já mostra seu próprio <h1>;
+         fecha por clique fora ou Esc (ver openUploadModal/closeUploadModal). -->
     <div id="upload-modal" class="modal" hidden>
       <div class="modal-content upload-modal-content">
-        <header>
-          <h2>Enviar imagens ao acervo</h2>
-          <button class="close" id="upload-modal-close" type="button" aria-label="Fechar">&times;</button>
-        </header>
         <iframe id="upload-iframe" src="" title="Upload de imagens"></iframe>
       </div>
     </div>
 
-    <!-- Cadastro / edição de passeio — iframe para upload_tour.html. -->
+    <!-- Cadastro / edição de passeio — iframe para upload_tour.html.
+         Sem header/barra de título: o iframe já mostra seu próprio título;
+         fecha por clique fora ou Esc (ver openTourModal/closeTourModal). -->
     <div id="tour-modal" class="modal" hidden>
       <div class="modal-content upload-modal-content">
-        <header>
-          <h2 id="tour-modal-title">Cadastrar passeio</h2>
-          <button class="close" id="tour-modal-close" type="button" aria-label="Fechar">&times;</button>
-        </header>
         <iframe id="tour-iframe" src="" title="Cadastro de passeio"></iframe>
       </div>
     </div>

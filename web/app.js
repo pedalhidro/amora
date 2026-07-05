@@ -2942,7 +2942,6 @@ function renderUploadChip() {
 // uploadModal limpo a cada abertura.
 const uploadBtn        = document.getElementById('upload-btn');
 const uploadModal      = document.getElementById('upload-modal');
-const uploadModalClose = document.getElementById('upload-modal-close');
 const uploadIframe     = document.getElementById('upload-iframe');
 function openUploadModal() {
   if (!uploadModal) return;
@@ -2963,7 +2962,6 @@ function closeUploadModal() {
   reloadPhotos();
 }
 uploadBtn?.addEventListener('click', openUploadModal);
-uploadModalClose?.addEventListener('click', closeUploadModal);
 // Clique no overlay (fora do conteúdo) fecha.
 uploadModal?.addEventListener('click', (e) => {
   if (e.target === uploadModal) closeUploadModal();
@@ -2976,16 +2974,11 @@ document.addEventListener('keydown', (e) => {
 // Cadastro/edição de passeio em iframe — o src é remontado a cada abertura
 // porque o ?id pode mudar entre invocações (novo vs editar X vs editar Y).
 const tourModal      = document.getElementById('tour-modal');
-const tourModalClose = document.getElementById('tour-modal-close');
-const tourModalTitle = document.getElementById('tour-modal-title');
 const tourIframe     = document.getElementById('tour-iframe');
 function openTourModal(tourId) {
   if (!tourModal) return;
   closeOtherMobileDialogs('tour');
   if (closeRouteModal && !routeModal?.hidden) closeRouteModal();
-  if (tourModalTitle) {
-    tourModalTitle.textContent = tourId ? 'Editar passeio' : 'Cadastrar passeio';
-  }
   const src = tourId
     ? `./upload_tour.html?id=${encodeURIComponent(tourId)}`
     : './upload_tour.html';
@@ -3002,7 +2995,6 @@ function closeTourModal() {
   // abertura, então mudanças aparecem sem refresh.
   reloadPhotos();
 }
-tourModalClose?.addEventListener('click', closeTourModal);
 tourModal?.addEventListener('click', (e) => {
   if (e.target === tourModal) closeTourModal();
 });
@@ -3058,6 +3050,37 @@ document.addEventListener('keydown', (e) => {
 window.addEventListener('message', (e) => {
   if (e.origin !== window.location.origin) return;
   if (e.data && e.data.type === 'phidro-censo-back') closeCensoModal();
+});
+
+// Menu "Subir" — atalho no topbar que abre um mini-modal com as duas ações
+// de contribuição (enviar mídia / cadastrar passeio), cada uma delegando pro
+// modal já existente.
+const subirBtn        = document.getElementById('subir-btn');
+const subirModal      = document.getElementById('subir-modal');
+const subirModalClose = document.getElementById('subir-modal-close');
+function openSubirModal() {
+  if (!subirModal) return;
+  closeOtherMobileDialogs('subir');
+  subirModal.hidden = false;
+}
+function closeSubirModal() {
+  if (subirModal) subirModal.hidden = true;
+}
+subirBtn?.addEventListener('click', openSubirModal);
+subirModalClose?.addEventListener('click', closeSubirModal);
+subirModal?.addEventListener('click', (e) => {
+  if (e.target === subirModal) closeSubirModal();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && subirModal && !subirModal.hidden) closeSubirModal();
+});
+document.getElementById('subir-upload-media')?.addEventListener('click', () => {
+  closeSubirModal();
+  openUploadModal();
+});
+document.getElementById('subir-new-tour')?.addEventListener('click', () => {
+  closeSubirModal();
+  openTourModal();
 });
 
 // ─── Modal de Configurações ───────────────────────────────────────────────
@@ -4515,7 +4538,7 @@ layerPanel.onAdd = function () {
     // Botões da linha num mini-grid fixo 3 colunas (sempre 3 col → checkboxes
     // alinhados; a ação fica sempre na col 3 → ✨ de "Imagens contribuídas" e
     // "Vídeo fantasma" no mesmo x):
-    //   col1=▲   col2=▼ (ou ⬆ enviar, quando não há setas)   col3=ação (☰/📍/✨/✎/⚙/🗑)
+    //   col1=▲   col2=▼ (vazia quando não há setas)   col3=ação (☰/📍/✨/✎/⚙/🗑)
     const btns = [];
     if (reorderable) {
       btns.push('<button type="button" class="layer-move-up btn-up" title="Empilhar acima" aria-label="Empilhar acima">▲</button>');
@@ -4533,8 +4556,6 @@ layerPanel.onAdd = function () {
       btns.push('<button type="button" class="layer-action layer-action-edit btn-action" title="Configurar" aria-label="Configurar">⚙</button>');
     else if (l.trash)
       btns.push('<button type="button" class="layer-action layer-action-trash btn-action" title="Remover destaque" aria-label="Remover destaque">🗑</button>');
-    if (l.id === 'photos')
-      btns.push('<button type="button" class="layer-action layer-upload-act btn-upload" title="Enviar imagens ao acervo" aria-label="Enviar imagens">⬆</button>');
     const buttons = `<span class="layer-btns">${btns.join('')}</span>`;
     const opacity = l.noOpacity ? ''
       : `<input type="range" class="opacity-slider" data-id="${l.id}" min="0" max="100" value="${l.defaultPct}" aria-label="Opacidade — ${l.label}" />`
@@ -4570,7 +4591,6 @@ layerPanel.onAdd = function () {
     onAct('#routes-panel-toggle', toggleRoutesSidebar);
     onAct('#share-loc-btn', onShareLocClick);
     onAct('.layer-anim-toggle', toggleAnimation);
-    onAct('.layer-upload-act', openUploadModal);
     onAct('.layer-action-edit', () => { if (l.edit) l.edit(); });
     onAct('.layer-action-trash', () => { if (l.trashAction) l.trashAction(); });
     if (reorderable) {
@@ -4727,6 +4747,9 @@ function closeOtherMobileDialogs(except) {
   if (except !== 'share') {
     const shareModal = document.getElementById('share-name-modal');
     if (shareModal && !shareModal.hidden) shareModal.hidden = true;
+  }
+  if (except !== 'subir' && subirModal && !subirModal.hidden) {
+    subirModal.hidden = true;
   }
 }
 
@@ -5783,7 +5806,7 @@ const traceMetrics = document.getElementById('trace-metrics');
 // extra speed beyond the flat-equivalent: v = v_flat + ε·(v_coast − v_flat).
 const G = 9.81;
 // Stored as fractions in the params object; surfaced as % in the UI.
-const PCT_PARAMS = new Set(['epsilon', 'efficiency', 'slopeFlatThreshold', 'kEff']);
+const PCT_PARAMS = new Set(['epsilon', 'efficiency', 'slopeFlatThreshold', 'kEff', 'carKEff', 'carEpsilon', 'carSlopeFlatThreshold']);
 const DEFAULT_PARAMS = {
   mass: 75,                 // kg (rider + bike)
   crr: 0.008,
@@ -5826,6 +5849,25 @@ const DEFAULT_PARAMS = {
   // pontes/túneis via portais (atalho no tabuleiro). Desligado = água é barreira
   // total (sem travessia). Não afeta o "pelo viário" (já roteia nas vias).
   usePortals: true,
+  // Comparação com um SUV (editar traçado): liga/desliga o cálculo e a exibição
+  // na barra de métricas + tooltip. Os campos abaixo são a física do carro
+  // usada nesse cálculo — mesmo modelo v2 por segmento da bike, ver
+  // carEnergyJ() e powerForCar(). Perfil de potência de 3 níveis próprio do
+  // SUV (a potência em descida pode ser NEGATIVA — freio ativo, o SUV não
+  // deixa a gravidade acelerá-lo livre como a bike faz).
+  suvCompareEnabled: true,
+  carMass: 5000,           // kg
+  carCrr: 0.013,
+  carCda: 1.1,             // m²
+  carKEff: 0.12,           // 0..1 — eficiência do motor a combustão
+  carEpsilon: 0.5,         // 0..1 — recuperação de energia na descida
+  carPowerAscent: 50000,   // W — potência em subida (> +limiar)
+  carPowerFlat: 25000,     // W — potência em plano (±limiar)
+  carPowerDescent: 5000,   // W — potência em descida (< −limiar)
+  carSlopeFlatThreshold: 0.02, // 0..1 — limiar de plano próprio do SUV (±2%)
+  // Escala a energia mecânica da bike ("nas pernas") pra energia metabólica
+  // (comida) — eficiência humana ~25% → ~4×. Usado só na comparação com o SUV.
+  bikeMetabolicFactor: 4,
 };
 
 function powerFor(gradient, p) {
@@ -6045,7 +6087,7 @@ function exitDrawingMode() {
     if (layersBtn) layersBtn.setAttribute('aria-pressed', 'true');
     layersWasVisible = false;
   }
-  traceBtn.textContent = '＋🗺︎ Traçar';
+  traceBtn.textContent = '🗺︎ Traçar';
   traceBtn.setAttribute('aria-label', 'Traçar GPX');
   traceBtn.setAttribute('title', 'Traçar GPX');
   traceBtn.removeAttribute('aria-pressed');
@@ -8818,6 +8860,85 @@ function simulateRide(p) {
   };
 }
 
+// Perfil de potência de 3 níveis do SUV — mesma lógica de powerFor() da bike,
+// mas com o limiar e as potências próprios do carro. A potência em descida
+// pode ser NEGATIVA (freio ativo): o SUV não deixa a gravidade acelerá-lo
+// livre como a bike faz (que só reduz o pedal e deixa o ε de velocidade —
+// tempo, não energia — abrir parte da diferença).
+function powerForCar(gradient, p) {
+  if (gradient > p.carSlopeFlatThreshold) return p.carPowerAscent;
+  if (gradient < -p.carSlopeFlatThreshold) return p.carPowerDescent;
+  return p.carPowerFlat;
+}
+
+// Velocidade de equilíbrio do SUV num gradiente — mesmo solver cúbico da
+// bike (solveSpeedAtGradient), com a MESMA salvaguarda que segmentSpeed() usa
+// pra descidas: perto do limiar (ou com potência de descida pequena/positiva),
+// o Newton do solver parte de v=5 e pode ficar preso no piso (0,5 m/s) em vez
+// de achar a raiz real — um artefato numérico, não uma velocidade física.
+// vFlatRef (equilíbrio no plano, sempre bem-comportado) serve de piso: se a
+// "velocidade de descida" resolvida vier menor ou igual a ela, é sinal de que
+// o solver não convergiu (ou a potência de descida é baixa demais pra superar
+// rolamento+arrasto), então usa vFlatRef em vez do valor quebrado.
+function speedForCar(gradient, power, carP, vFlatRef) {
+  const v = solveSpeedAtGradient(power, gradient, carP);
+  return (gradient < 0 && v <= vFlatRef) ? vFlatRef : v;
+}
+
+// ─── Comparação "quantas vezes mais eficiente é a bike" vs. um SUV ───────────
+// Caminha o MESMO traçado/perfil de elevação (deadbanded) que simulateRide()
+// usa pra bike, segmento a segmento, com duas diferenças físicas do carro:
+//   • arrasto SEMPRE cobrado (mesmo subindo) — a bike desacelera o bastante
+//     numa subida pra zerar a contribuição aero; o SUV mantém a velocidade do
+//     seu próprio perfil de potência o tempo todo (f=1, nunca cai fora).
+//   • ε (recuperação na descida) é FIXO (p.carEpsilon), não estimado do
+//     perfil da rota como o da bike.
+// A velocidade de cada segmento vem do MESMO solver cúbico da bike
+// (solveSpeedAtGradient), só que com o perfil de potência de 3 níveis e a
+// massa/Crr/CdA do carro (powerForCar) — logo o termo aero varia por
+// segmento (velocidade de subida ≠ plano ≠ descida), ao contrário do v_f
+// único que o modelo fechado da bike usa.
+function carEnergyJ(p) {
+  const latlngs = assembleLatLngs();
+  if (latlngs.length < 2) return { energyJ: 0, vAscent: 0, vFlat: 0, vDescent: 0 };
+
+  const elev = latlngs.map((q) => {
+    const e = elevationCache.get(elevKey(q.lat, q.lng));
+    return Number.isFinite(e) ? e : NaN;
+  });
+  const elevS = deadbandElev(elev, p.deadbandM ?? 2);
+
+  const carP = { rho: p.rho, cda: p.carCda, mass: p.carMass, crr: p.carCrr };
+  const alphaR = (p.carCrr * p.carMass * G) / p.carKEff;
+  const beta = (p.carMass * G) / p.carKEff;
+  const vFlatRef = solveSpeedAtGradient(p.carPowerFlat, 0, carP);
+
+  let energyJ = 0;
+  for (let i = 1; i < latlngs.length; i++) {
+    const seg = latlngs[i - 1].distanceTo(latlngs[i]);
+    if (seg < 0.5) continue;
+
+    const eAs = elevS[i - 1], eBs = elevS[i];
+    const dhS = (Number.isFinite(eAs) && Number.isFinite(eBs)) ? eBs - eAs : 0;
+    const gradS = dhS / seg;
+
+    const power = powerForCar(gradS, p);
+    const v = speedForCar(gradS, power, carP, vFlatRef);
+    const aeroJPerM = (0.5 * p.rho * p.carCda * v * v) / p.carKEff;
+
+    energyJ += alphaR * seg + aeroJPerM * seg; // rolamento + arrasto (f=1, sempre)
+    if (dhS >= 0) energyJ += beta * dhS;                          // subida
+    else energyJ -= p.carEpsilon * beta * (-dhS);                 // descida (ε fixo)
+  }
+
+  // Velocidades de referência (só pra exibição): equilíbrio em cada nível do
+  // perfil de potência, avaliado exatamente no limiar de plano configurado.
+  const vAscent  = solveSpeedAtGradient(p.carPowerAscent, p.carSlopeFlatThreshold, carP);
+  const vDescent = speedForCar(-p.carSlopeFlatThreshold, p.carPowerDescent, carP, vFlatRef);
+
+  return { energyJ, vAscent, vFlat: vFlatRef, vDescent };
+}
+
 // Duração compacta pra barra de edição: uma unidade só (dias é a exceção,
 // mostra d+h). 7d14h · 3h52 · 42m59 · 30s. Sem segundos a partir de 1 h.
 function fmtDurCompact(sec) {
@@ -8859,6 +8980,18 @@ function updateMetrics() {
   const fPlusPct = (sim.fPlus * 100).toFixed(0);
   const epsPct = (sim.epsUsed * 100).toFixed(0);
   const kEffPct = (sim.kEff * 100).toFixed(0);
+  let carKJ = 0, carVAscentKmh = 0, carVFlatKmh = 0, carVDescentKmh = 0;
+  let bikeMetabolicKJ = 0, bikeVsCarRatio = 0, carKEffPct = '0';
+  if (params.suvCompareEnabled) {
+    const carSim = carEnergyJ(params);
+    carKJ = carSim.energyJ / 1000;
+    carVAscentKmh = (carSim.vAscent * 3600) / 1000;
+    carVFlatKmh = (carSim.vFlat * 3600) / 1000;
+    carVDescentKmh = (carSim.vDescent * 3600) / 1000;
+    bikeMetabolicKJ = totalKJ * params.bikeMetabolicFactor;
+    bikeVsCarRatio = bikeMetabolicKJ > 0.01 ? carKJ / bikeMetabolicKJ : 0;
+    carKEffPct = (params.carKEff * 100).toFixed(0);
+  }
   const movingTimeSec = sim.timeSec;
   const totalTimeSec = movingTimeSec / Math.max(0.01, params.efficiency);
   const haveAllElev = sim.elevMissing === 0;
@@ -8868,9 +9001,12 @@ function updateMetrics() {
     : `↑${sim.ascentM.toFixed(0)}… ↓${sim.descentM.toFixed(0)}…`;
   const thrPct = (params.slopeFlatThreshold * 100).toFixed(1).replace('.', ',');
   const effPct = (params.efficiency * 100).toFixed(0);
+  const carCompact = (params.suvCompareEnabled && totalKJ > 0.01)
+    ? ` · 🚙 ${Math.round(carKJ)} kJ (🚲 ${fmt(bikeVsCarRatio)}× mais eficiente)`
+    : '';
 
   traceMetrics.textContent =
-    `${fmtDistCompact(sim.distMeters)} · ${ascDesc} · ${fmtDurCompact(movingTimeSec)} mov · ${fmtDurCompact(totalTimeSec)} tot · ${Math.round(totalKJ)} kJ${elevHint}`;
+    `${fmtDistCompact(sim.distMeters)} · ${ascDesc} · ${fmtDurCompact(movingTimeSec)} mov · ${fmtDurCompact(totalTimeSec)} tot · ${Math.round(totalKJ)} kJ${carCompact}${elevHint}`;
   traceMetrics.title =
     `Simulação por segmento.\n` +
     `  Distância:        ${fmt(km, 2)} km\n` +
@@ -8895,7 +9031,21 @@ function updateMetrics() {
     `  ────────────────────────────────────\n` +
     `  Energia nas pernas:                                       ${fmt(totalKJ)} kJ\n` +
     `\n` +
-    `Modelo v2 (bicycling-energy-model). Energia metabólica ≈ 4× isto (eficiência humana ~25%).` +
+    `Modelo v2 (bicycling-energy-model). Energia metabólica ≈ ${params.bikeMetabolicFactor}× isto (eficiência humana ~25%).` +
+    (params.suvCompareEnabled
+      ? `\n\n` +
+        `Comparação com um SUV (mesma rota, modelo v2 por segmento com m=${params.carMass} kg, ` +
+        `Crr=${params.carCrr}, CdA=${params.carCda} m², k_ef=${carKEffPct}%, sem recuperação na ` +
+        `descida (ε=${(params.carEpsilon * 100).toFixed(0)}%) e arrasto em 100% da distância mesmo ` +
+        `subindo (f=1)):\n` +
+        `  Potência/velocidade de equilíbrio (limiar ±${(params.carSlopeFlatThreshold * 100).toFixed(1).replace('.', ',')}%):\n` +
+        `    Subida (${params.carPowerAscent} W):  ${fmt(carVAscentKmh)} km/h\n` +
+        `    Plano  (${params.carPowerFlat} W):  ${fmt(carVFlatKmh)} km/h\n` +
+        `    Descida (${params.carPowerDescent} W): ${fmt(carVDescentKmh)} km/h\n` +
+        `  Energia do SUV (combustível):                             ${fmt(carKJ)} kJ\n` +
+        `  Bike (metabólica, ${params.bikeMetabolicFactor}× a mecânica, eficiência humana ~25%): ${fmt(bikeMetabolicKJ)} kJ\n` +
+        `  Bike ${fmt(bikeVsCarRatio)}× mais eficiente que o SUV (comparando energia metabólica vs. combustível)`
+      : '') +
     (sim.elevMissing > 0 ? `\n\n${sim.elevMissing} ponto(s) ainda sem elevação.` : '');
 }
 
@@ -8921,6 +9071,17 @@ const PARAM_INPUTS = {
   deadbandM:          document.getElementById('param-deadband'),
   // FABDEM + energy-routing
   energySearchMarginPct: document.getElementById('param-energy-margin'),
+  // Comparação com carro (SUV)
+  carMass:            document.getElementById('param-car-mass'),
+  carCrr:             document.getElementById('param-car-crr'),
+  carCda:             document.getElementById('param-car-cda'),
+  carKEff:            document.getElementById('param-car-keff'),
+  carEpsilon:         document.getElementById('param-car-epsilon'),
+  carPowerAscent:     document.getElementById('param-car-power-ascent'),
+  carPowerFlat:       document.getElementById('param-car-power-flat'),
+  carPowerDescent:    document.getElementById('param-car-power-descent'),
+  carSlopeFlatThreshold: document.getElementById('param-car-slope-threshold'),
+  bikeMetabolicFactor: document.getElementById('param-bike-metabolic-factor'),
 };
 const PARAM_CHECKBOXES = {
   useFabdem: document.getElementById('param-use-fabdem'),
@@ -8928,6 +9089,7 @@ const PARAM_CHECKBOXES = {
   useViarioGpkg: document.getElementById('param-use-viario-gpkg'),
   useWaterMask: document.getElementById('param-use-water-mask'),
   usePortals: document.getElementById('param-use-portals'),
+  suvCompareEnabled: document.getElementById('param-suv-compare-enabled'),
 };
 // Leitura (read-only) dos coeficientes de custo v2 derivados (kJ/m): α_r = custo
 // horizontal de rolamento (m·g·Crr/k_ef); α_a = custo horizontal de arrasto no
@@ -8977,6 +9139,9 @@ for (const [key, input] of Object.entries(PARAM_CHECKBOXES)) {
       // Fonte de elevação: limpa o cache (senão os valores antigos persistiam e
       // o toggle não tinha efeito), reamostra e — no modo energia — re-roteia.
       recomputeAfterDemChange();
+    } else if (key === 'suvCompareEnabled') {
+      // Só liga/desliga um display — não afeta a geometria roteada.
+      updateMetrics();
     } else {
       // Viário / máscara d'água / portais: afetam só a geometria roteada.
       updateMetrics();
@@ -8999,11 +9164,22 @@ function fillParamInputs() {
   PARAM_INPUTS.kEff.value = (params.kEff * 100).toFixed(0);
   PARAM_INPUTS.deadbandM.value = params.deadbandM;
   PARAM_INPUTS.energySearchMarginPct.value = params.energySearchMarginPct;
+  PARAM_INPUTS.carMass.value = params.carMass;
+  PARAM_INPUTS.carCrr.value = params.carCrr;
+  PARAM_INPUTS.carCda.value = params.carCda;
+  PARAM_INPUTS.carKEff.value = (params.carKEff * 100).toFixed(0);
+  PARAM_INPUTS.carEpsilon.value = (params.carEpsilon * 100).toFixed(0);
+  PARAM_INPUTS.carPowerAscent.value = params.carPowerAscent;
+  PARAM_INPUTS.carPowerFlat.value = params.carPowerFlat;
+  PARAM_INPUTS.carPowerDescent.value = params.carPowerDescent;
+  PARAM_INPUTS.carSlopeFlatThreshold.value = (params.carSlopeFlatThreshold * 100).toFixed(1);
+  PARAM_INPUTS.bikeMetabolicFactor.value = params.bikeMetabolicFactor;
   PARAM_CHECKBOXES.useFabdem.checked       = params.useFabdem !== false;
   PARAM_CHECKBOXES.useSampaDem.checked     = !!params.useSampaDem;
   PARAM_CHECKBOXES.useViarioGpkg.checked   = params.useViarioGpkg !== false;
   PARAM_CHECKBOXES.useWaterMask.checked    = params.useWaterMask !== false;
   PARAM_CHECKBOXES.usePortals.checked      = params.usePortals !== false;
+  PARAM_CHECKBOXES.suvCompareEnabled.checked = params.suvCompareEnabled !== false;
   updateCostReadout();
 }
 
@@ -9137,6 +9313,21 @@ if (dsModal && dsOpenBtn) {
   });
 }
 
+// ─── Modal "Comparação com carro (SUV)" ──────────────────────────────────────
+// Aberto pelo botão na seção "Comparação com carro (SUV)" dos Parâmetros. Os
+// campos são os mesmos PARAM_INPUTS/PARAM_CHECKBOXES do modal principal — só
+// hospedados aqui pra não lotar o modal de Parâmetros — então persistem e
+// recalculam a métrica pela MESMA fiação genérica (loops acima), sem código
+// extra de leitura/escrita.
+const suvCompareModal    = document.getElementById('suv-compare-modal');
+const suvCompareOpenBtn  = document.getElementById('open-suv-compare');
+const suvCompareCloseBtn = document.getElementById('suv-compare-close');
+if (suvCompareModal && suvCompareOpenBtn) {
+  suvCompareOpenBtn.addEventListener('click', () => { fillParamInputs(); suvCompareModal.hidden = false; });
+  suvCompareCloseBtn?.addEventListener('click', () => { suvCompareModal.hidden = true; });
+  suvCompareModal.addEventListener('click', (e) => { if (e.target === suvCompareModal) suvCompareModal.hidden = true; });
+}
+
 // ─── Modal da Câmera Topográfica (engrenagem na camada) ──────────────────────
 const ctopoModal    = document.getElementById('camera-topo-modal');
 const ctopoMinElev  = document.getElementById('ctopo-min-elev');
@@ -9245,6 +9436,17 @@ const QUDT_PROFILE = {
   kEff:               { iri: 'transmissionEfficiency',         kind: 'kind:DimensionlessRatio',   unit: 'unit:UNITLESS' },
   deadbandM:          { iri: 'elevationDeadband',               kind: 'kind:Length',                unit: 'unit:M' },
   energySearchMarginPct: { iri: 'energySearchMargin',           kind: 'kind:DimensionlessRatio',   unit: 'unit:PERCENT' },
+  // Comparação com carro (SUV)
+  carMass:            { iri: 'carTotalMass',                    kind: 'kind:Mass',                 unit: 'unit:KiloGM' },
+  carCrr:             { iri: 'carRollingResistanceCoefficient',  kind: 'kind:DimensionlessRatio',   unit: 'unit:UNITLESS' },
+  carCda:             { iri: 'carDragArea',                      kind: 'kind:Area',                 unit: 'unit:M2' },
+  carKEff:            { iri: 'carEngineEfficiency',              kind: 'kind:DimensionlessRatio',   unit: 'unit:UNITLESS' },
+  carEpsilon:         { iri: 'carDescentEnergyRecoveryFraction', kind: 'kind:DimensionlessRatio',   unit: 'unit:UNITLESS' },
+  carPowerAscent:     { iri: 'carPowerAscent',                   kind: 'kind:Power',                unit: 'unit:W' },
+  carPowerFlat:       { iri: 'carPowerFlat',                     kind: 'kind:Power',                unit: 'unit:W' },
+  carPowerDescent:    { iri: 'carPowerDescent',                  kind: 'kind:Power',                unit: 'unit:W' },
+  carSlopeFlatThreshold: { iri: 'carSlopeFlatThreshold',         kind: 'kind:DimensionlessRatio',   unit: 'unit:UNITLESS' },
+  bikeMetabolicFactor:{ iri: 'bikeMetabolicFactor',              kind: 'kind:DimensionlessRatio',   unit: 'unit:UNITLESS' },
 };
 
 function paramsToJsonLd(p) {

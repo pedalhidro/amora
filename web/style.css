@@ -1536,7 +1536,6 @@ body.trace-preview .tp-label { display: none !important; }
 }
 /* Mini-grid de botões da linha: 3 colunas fixas × 2 linhas.
      col1=▲ (btn-up)   col2=▼ (btn-down)   col3=ação (btn-action)
-                       col2=⬆ (btn-upload, abaixo da seta-baixo)
    Sempre 3 colunas reservadas (mesmo vazias) → checkboxes alinhados; a ação
    sempre na col 3 → ✨ alinhado entre as linhas. */
 .layer-btns {
@@ -1550,9 +1549,6 @@ body.trace-preview .tp-label { display: none !important; }
 .layer-btns .btn-up     { grid-column: 1; grid-row: 1; }
 .layer-btns .btn-down   { grid-column: 2; grid-row: 1; }
 .layer-btns .btn-action { grid-column: 3; grid-row: 1; }
-/* ⬆ Enviar fica na col 2 / linha 1 — em linha com a ✨ (col 3). "Imagens
-   contribuídas" não tem setas, então a col 2 está livre. */
-.layer-btns .btn-upload { grid-column: 2; grid-row: 1; }
 .layer-btns button {
   width: 18px; height: 18px; padding: 0;
   display: flex; align-items: center; justify-content: center;
@@ -2613,6 +2609,17 @@ body.trace-preview .tp-label { display: none !important; }
   border: 1px solid var(--border); border-radius: 4px; color: var(--muted); cursor: pointer;
 }
 .live-ctrl .lc-reset:hover { border-color: var(--accent); color: var(--accent); }
+
+/* Modal "Subir" — atalho pra enviar mídia ou cadastrar passeio. */
+.subir-modal-content { width: min(320px, 92vw); }
+.subir-modal-body { padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+.subir-modal-body .subir-action {
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 12px 14px; font-size: 14px; font-weight: 600;
+  cursor: pointer; text-align: left;
+}
+.subir-modal-body .subir-action:hover { border-color: var(--accent); background: rgba(45,169,255,0.12); }
 
 /* Modal "Compartilhar localização" (apelido + tempo de retenção). */
 .share-name-content { width: min(380px, 92vw); }
