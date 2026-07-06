@@ -595,6 +595,65 @@ def _purge_subject(graph, root):
     return removed
 
 
+# ── Dereferência (Linked Data) — content negotiation + slice de recurso ──────
+# id.pedalhidrografi.co/<tipo>/<slug> é o IRI das coisas; a Cloudflare faz um
+# 303 path-preserving pra amora.pedalhidrografi.co/<tipo>/<slug>, onde estes
+# handlers respondem: Accept: text/turtle → as triples do recurso; senão a
+# página humana (SSR/SPA). Padrão httpRange-14: o IRI nunca devolve 200, o
+# documento sobre ele sim.
+_RDF_MIMES = ("text/turtle", "application/x-turtle", "application/ld+json",
+              "application/rdf+xml", "application/n-triples")
+
+
+def _wants_turtle(request):
+    """True quando o cliente prefere RDF/turtle a HTML. `?format=ttl|turtle`
+    força; senão negocia pelo Accept (curl/browser com */* ou text/html → HTML)."""
+    fmt = (request.args.get("format") or "").lower()
+    if fmt in ("ttl", "turtle", "rdf"):
+        return True
+    if fmt in ("html", "web"):
+        return False
+    best = request.accept_mimetypes.best_match(["text/html"] + list(_RDF_MIMES))
+    return best is not None and best != "text/html"
+
+
+def _resource_slice_ttl(subject_iri, *dump_keys):
+    """Turtle descrevendo `subject_iri`: suas triples + os nós derivados
+    `<iri>_*` (geo/hash/route) + a closure de 1 nível dos objetos bnode (geo/hash
+    legados). Referências a IRIs nomeadas (pessoas, passeios, edições) ficam como
+    referência — cada uma dereferencia por conta própria. Lê os dumps dados
+    (bucket-first). Devolve turtle str, ou None se o sujeito não tem triples."""
+    v = _load_validator()
+    Graph = v["Graph"]
+    from rdflib import URIRef, BNode
+    cat = Graph()
+    for k in dump_keys:
+        text = _load_dump_text(k)
+        if text:
+            cat.parse(data=text, format="turtle")
+    subj = URIRef(subject_iri)
+    roots = {subj} | _derived_subjects(cat, subj)
+    out = Graph()
+    for pfx, ns in (("ph", PH_NS), ("phd", PHD_NS), ("pes", PES_NS),
+                    ("schema", SCHEMA_NS), ("dcterms", "http://purl.org/dc/terms/"),
+                    ("prov", "http://www.w3.org/ns/prov#"), ("pav", "http://purl.org/pav/"),
+                    ("nfo", "http://www.semanticdesktop.org/ontologies/2007/03/22/nfo#"),
+                    ("exif", "http://www.w3.org/2003/12/exif/ns#"),
+                    ("rdfs", "http://www.w3.org/2000/01/rdf-schema#")):
+        out.bind(pfx, ns)
+    seen = set()
+    for r in roots:
+        for s, p, o in cat.triples((r, None, None)):
+            out.add((s, p, o))
+            if isinstance(o, BNode) and o not in seen:   # closure só p/ bnodes
+                seen.add(o)
+                for t in cat.triples((o, None, None)):
+                    out.add(t)
+    if len(out) == 0:
+        return None
+    return out.serialize(format="turtle")
+
+
 def _route_new_persons(graph):
     """Move definições de schema:Person do `graph` (fragmento de tour/mídia sendo
     persistido) pra identities.ttl (upsert), deixando o `graph` sem pessoas.
@@ -1157,11 +1216,20 @@ def index():
 
 @app.get("/pessoas/<slug>")
 def person_page(slug):
-    """Página humana de uma pessoa — alvo de schema:mainEntityOfPage
-    (https://amora.pedalhidrografi.co/pessoas/<slug>). Serve pessoas.html, que
-    foca a pessoa pelo slug da URL. O arquivo servido é SEMPRE pessoas.html
-    (slug ignorado no servidor → sem risco de path); as URLs relativas do app
-    resolvem via `<base href="/">`."""
+    """Dereferência de uma pessoa. O IRI é https://id.pedalhidrografi.co/pessoas/
+    <slug> (a Cloudflare faz 303 path-preserving pra cá).
+
+    Conneg (httpRange-14): `Accept: text/turtle` (ou `?format=ttl`) devolve as
+    triples da pessoa fatiadas de identities.ttl; senão serve pessoas.html — a
+    página humana, que foca a pessoa pelo slug da URL. O arquivo servido é SEMPRE
+    pessoas.html (slug ignorado no servidor → sem risco de path); as URLs
+    relativas do app resolvem via `<base href="/">`."""
+    if _wants_turtle(request):
+        ttl = _resource_slice_ttl(PES_NS + slug, "identities.ttl")
+        if ttl is None:
+            abort(404)
+        return _conditional(Response(ttl, mimetype="text/turtle",
+                                     headers={"Cache-Control": "no-cache"}))
     return send_from_directory(WEB, "pessoas.html")
 
 
