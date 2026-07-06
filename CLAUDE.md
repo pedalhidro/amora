@@ -134,14 +134,19 @@ senão a página/documento humano. Esquema (prefixos usados nos TTLs e no códig
 | Passeio | `pas:` | `…/passeio/<slug8>` | `GET /passeio/<slug>` (turtle \| 303 `/?tour=<slug>`) |
 | Edição de série | (IRI full) | `…/passeio/<ES>/<seq>` (ex.: `…/passeio/BP/4`) | `GET /passeio/<es>/<seq>` (turtle \| 303 pro passeio) |
 | Série | `ser:` | `…/serie/<ES>` (PH/BT/BP/S/SESC) | (sem resolver dedicado ainda) |
-| Mídia | `med:` | `…/midia/image_<phash16>` / `…/midia/video_<vhash16>` | `GET /midia/<local>` (turtle \| 303 `/imagens.html?pick=`) |
+| Mídia | `med:` | `…/midia/<hash16>` (opaco — foto OU vídeo) | `GET /midia/<hash>` (turtle \| 303 `/imagens.html?pick=`) |
 | Lista/álbum | `lst:` | `…/listas/<slug>` | `GET /listas/<slug>` (turtle \| 303 `/imagens.html`) |
 | Envio (ph:Upload) | `env:` | `…/envio/<ts>` | (sem resolver; provenance interna) |
 
-Invariantes: o hash continua sendo a IDENTIDADE da mídia (só o host mudou — os
-blobs `photos/<phash>/…` e a dedup dependem do hash, não do IRI); o discriminador
-`image_`/`video_` fica no local name (detecção de tipo é por CLASSE
-`ph:StillImage`/`ph:MotionImage`, não por prefixo). Nós derivados mantêm o sufixo
+Invariantes: o hash é a IDENTIDADE da mídia e o localname do IRI é ele SOZINHO
+(`med:<hash16>`, opaco — sem discriminador image_/video_; uniforme com pessoas/
+passeios). O TIPO (foto/vídeo) vem SEMPRE da CLASSE `ph:StillImage`/
+`ph:MotionImage`, nunca do IRI; os blobs `photos/<phash>/…` e a dedup dependem do
+hash. Como phash e vhash compartilham o espaço de 16 hex, o backend tem uma
+GUARDA cross-type no upload: rejeita um phash que já existe como vídeo (e
+vice-versa), senão os dois virariam o mesmo IRI. Links de compartilhamento
+antigos (`?p=`/`?pick=image_<hash>`) e `/midia/image_<hash>` seguem funcionando
+(o prefixo é tirado na leitura). Nós derivados mantêm o sufixo
 `_` (`pas:<slug>_route`, `med:image_<ph>_geo|_hash`) — o purge do backend é
 aritmética de prefixo `str(root)+"_"`, agnóstica ao formato do IRI. Slug =
 Crockford base32 (`0123456789abcdefghjkmnpqrstvwxyz`, 8 chars) pra pessoas e
@@ -153,8 +158,8 @@ SHACL `ph:SeriesEditionShape` impõe isso).
 **`phd:` = `https://pedalhidrografi.co/data/` (host ANTIGO) ainda aparece:** só em
 `ph:capturedDuring`→`pas:` (migrado), nos IRIs derivados como convenção, e em
 menções históricas nos comentários deste arquivo — onde o texto abaixo diz
-`phd:image_`/`phd:video_`/`phd:tour_`/`phd:assoc_`, leia `med:image_`/
-`med:video_`/`pas:<slug>`/`<…/passeio/<ES>/<seq>>`. `phd:org_` (organizadores) NÃO
+`phd:image_`/`phd:video_`/`phd:tour_`/`phd:assoc_`, leia `med:<hash>` (foto E
+vídeo)/`pas:<slug>`/`<…/passeio/<ES>/<seq>>`. `phd:org_` (organizadores) NÃO
 migrou (fora de escopo). A migração foi feita por scripts idempotentes
 (`scripts/migrate-{georeferenced,lists-split,media-host,tour-iris,editions}.py`),
 com `scripts/tour-iri-map.json` (id-numérico antigo ↔ slug) baked no container.

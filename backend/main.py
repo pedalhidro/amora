@@ -505,23 +505,30 @@ def validate_image_ttl(ttl_text):
             f"TTL deve conter exatamente 1 ph:Image (achou {len(images)})"
         ]
     image_iri = str(images[0])
-    if not image_iri.startswith(MED_NS + "image_"):
+    # IRI de mídia é opaco: med:<hash> (sem discriminador image_/video_ — o tipo
+    # vem da CLASSE). phash = pHash de 64 bits → exatamente 16 hex (evita cunhar
+    # diretórios photos/<phash>/ de tamanho arbitrário).
+    if not image_iri.startswith(MED_NS):
         return False, None, [
-            f"IRI da Image deve começar com med:image_ (atual: {image_iri})"
+            f"IRI da Image deve começar com med: (atual: {image_iri})"
         ]
-    phash = image_iri[len(MED_NS + "image_"):]
-    # phash é um pHash de 64 bits → exatamente 16 hex. Espelha o check do
-    # video (len==16) pra que um cliente não consiga cunhar diretórios
-    # photos/<phash>/ de tamanho arbitrário nem poluir o catálogo.
+    phash = image_iri[len(MED_NS):]
     if len(phash) != 16 or not all(c in "0123456789abcdef" for c in phash.lower()):
         return False, phash, [f"phash inválido na IRI (esperado 16 hex): {phash}"]
 
+    img_uri = URIRef(image_iri)
+    catalog = _load_catalog()
+    # Guarda de colisão CROSS-TYPE: sem o discriminador, um phash igual a um
+    # vhash existente viraria o MESMO IRI. Rejeita antes de sobrescrever o vídeo.
+    if (img_uri, RDFT, URIRef(PH_NS + "MotionImage")) in catalog:
+        return False, phash, [
+            f"colisão: med:{phash} já existe como VÍDEO (ph:MotionImage) — "
+            f"phash colidiu com um vhash. Não dá pra reusar o IRI."
+        ]
     # Mescla data + ontology + catálogo, MAS exclui triples do catálogo cujo
     # subject é a imagem em curso (ou bnodes alcançáveis a partir dela). Sem
     # isso, re-upload da mesma foto sobrepõe os triples antigos aos novos, e
     # SHACL flagra cardinalidade > 1 em `dcterms:date` etc.
-    img_uri = URIRef(image_iri)
-    catalog = _load_catalog()
     # Exclui o próprio sujeito + seus nós derivados (hash, locationCreated).
     exclude = {img_uri} | _derived_subjects(catalog, img_uri)
     merged = data + v["ont"]
@@ -589,7 +596,7 @@ def _legacy_tour_iri(slug):
 
 def _build_audit_ttl(upload_local, phash):
     """Bloco PROV server-side anexado ao TTL do upload. A atividade de envio vira
-    env:<ts> (resolvível) e aponta pra mídia em med:image_<phash>."""
+    env:<ts> (resolvível) e aponta pra mídia em med:<phash>."""
     ts = datetime.now(timezone.utc).isoformat(timespec="microseconds")
     ts = ts.replace("+00:00", "Z")
     # env:<ts> — descarta o prefixo `upload_` do local (o path `/envio/` já diz).
@@ -604,7 +611,7 @@ def _build_audit_ttl(upload_local, phash):
         "\n"
         f"env:{env_local} a ph:Upload ;\n"
         f"    prov:startedAtTime \"{ts}\"^^xsd:dateTime ;\n"
-        f"    prov:generated med:image_{phash} .\n"
+        f"    prov:generated med:{phash} .\n"
     )
 
 
@@ -772,7 +779,7 @@ def upsert_image_in_uploads(image_ttl, phash, audit_ttl):
     v = _load_validator()
     Graph = v["Graph"]
     from rdflib import URIRef
-    image_iri = URIRef(MED_NS + "image_" + phash)
+    image_iri = URIRef(MED_NS + phash)
     catalog = Graph()
     existing = STORE.read_text(KEY_IMAGES)
     if existing:
@@ -798,7 +805,7 @@ def remove_image_from_uploads(phash):
         return 0
     v = _load_validator()
     from rdflib import URIRef
-    image_iri = URIRef(MED_NS + "image_" + phash)
+    image_iri = URIRef(MED_NS + phash)
     catalog = v["Graph"]()
     catalog.parse(data=existing, format="turtle")
     n = _purge_subject(catalog, image_iri)
@@ -809,7 +816,7 @@ def remove_image_from_uploads(phash):
 
 
 # ── Media metadata patch (edição, sem blobs) ─────────────────────────────
-# Análogo ao synthesize_tour_patch, mas pra med:image_/med:video_ em
+# Análogo ao synthesize_tour_patch, mas pra med:<hash> (foto ou vídeo) em
 # uploads.ttl. Usado por /update-image e /update-video (edição de metadados +
 # listas pelo popup e pelo modo de edição do form) — NÃO toca nos blobs nem
 # regenera a activity ph:Upload (sujeito à parte, preservado).
@@ -1575,12 +1582,17 @@ def edition_page(es, seq):
 
 @app.get("/midia/<local>")
 def media_page(local):
-    """Dereferência de uma mídia (foto/vídeo). IRI:
-    https://id.pedalhidrografi.co/midia/image_<phash> | .../video_<vhash>
-    (CF 303 pra cá). Conneg: Accept: text/turtle (ou ?format=ttl) → as triples
-    da mídia fatiadas de images.ttl; senão 303 pra galeria com a mídia
-    pré-selecionada (imagens.html?pick=<local>, formato de deep link)."""
-    if not (local.startswith("image_") or local.startswith("video_")):
+    """Dereferência de uma mídia (foto/vídeo). IRI opaco:
+    https://id.pedalhidrografi.co/midia/<hash16> (o tipo vem da classe, não do
+    IRI). CF 303 pra cá. Conneg: Accept: text/turtle (ou ?format=ttl) → as
+    triples da mídia fatiadas de images.ttl; senão 303 pra galeria com a mídia
+    pré-selecionada (imagens.html?pick=<hash>). Aceita a forma legada
+    /midia/image_<hash> / video_<hash> (tira o prefixo)."""
+    for pfx in ("image_", "video_"):
+        if local.startswith(pfx):
+            local = local[len(pfx):]
+            break
+    if len(local) != 16 or not all(c in "0123456789abcdef" for c in local.lower()):
         abort(404)
     if not _wants_turtle(request):
         return redirect("/imagens.html?pick=" + local, code=303)
@@ -2436,16 +2448,24 @@ def validate_video_ttl(ttl_text):
             f"TTL deve conter exatamente 1 ph:Video (achou {len(videos)})"
         ]
     video_iri = str(videos[0])
-    if not video_iri.startswith(MED_NS + "video_"):
+    # IRI opaco med:<hash> (tipo vem da CLASSE, não do prefixo).
+    if not video_iri.startswith(MED_NS):
         return False, None, [
-            f"IRI do Video deve começar com med:video_ (atual: {video_iri})"
+            f"IRI do Video deve começar com med: (atual: {video_iri})"
         ]
-    vhash = video_iri[len(MED_NS + "video_"):]
+    vhash = video_iri[len(MED_NS):]
     if len(vhash) != 16 or not all(c in "0123456789abcdef" for c in vhash.lower()):
         return False, vhash, [f"vhash inválido na IRI (esperado 16 hex): {vhash}"]
 
     vid_uri = URIRef(video_iri)
     catalog = _load_catalog()
+    # Guarda de colisão CROSS-TYPE: vhash igual a um phash existente viraria o
+    # MESMO IRI. Rejeita antes de sobrescrever a foto.
+    if (vid_uri, RDFT, URIRef(PH_NS + "StillImage")) in catalog:
+        return False, vhash, [
+            f"colisão: med:{vhash} já existe como FOTO (ph:StillImage) — "
+            f"vhash colidiu com um phash. Não dá pra reusar o IRI."
+        ]
     # Exclui o próprio sujeito + seus nós derivados (locationCreated).
     exclude = {vid_uri} | _derived_subjects(catalog, vid_uri)
     merged = data + v["ont"]
@@ -2481,7 +2501,7 @@ def upload_video():
       - `id`        : pHash de vídeo (16 hex)
     Valida com SHACL (ph:VideoShape), persiste os arquivos em `clips/<id>.*`
     e mescla os triples no único `data/uploads.ttl` (que serve imagens E
-    vídeos — namespaces de IRI distinguem: med:image_ vs med:video_)."""
+    vídeos — o tipo vem da CLASSE StillImage/MotionImage, não do IRI)."""
     ttl_text = request.form.get("ttl")
     if not ttl_text:
         f = request.files.get("ttl")
@@ -2536,7 +2556,7 @@ def upload_video():
     # por IRI (re-upload sobrescreve triples antigos do mesmo vhash).
     try:
         from rdflib import URIRef, Graph as RdfGraph
-        vid_iri = URIRef(MED_NS + f"video_{vid_id}")
+        vid_iri = URIRef(MED_NS + vid_id)
         existing_text = STORE.read_text(KEY_IMAGES) or ""
         catalog = RdfGraph()
         if existing_text:
@@ -2569,7 +2589,7 @@ def remove_video_from_uploads(vhash):
         return [], 0
     from rdflib import URIRef
     v = _load_validator()
-    vid_iri = URIRef(MED_NS + "video_" + vhash)
+    vid_iri = URIRef(MED_NS + vhash)
     catalog = v["Graph"]()
     catalog.parse(data=existing, format="turtle")
     SCHEMA = "https://schema.org/"
@@ -2659,7 +2679,7 @@ def _do_update_media(kind, hash_):
     if not ttl_text:
         return jsonify(error="ttl ausente"), 400
 
-    media_iri = MED_NS + f"{kind}_{hash_}"
+    media_iri = MED_NS + hash_
     cls_local = "StillImage" if kind == "image" else "MotionImage"
     RDFT = URIRef("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
     if (URIRef(media_iri), RDFT, URIRef(PH_NS + cls_local)) not in _load_catalog():
@@ -2725,8 +2745,6 @@ def assign_media_lists():
         return jsonify(error="add/remove devem ser listas"), 400
 
     LIST_PREFIX = LST_NS
-    IMG_PREFIX = MED_NS + "image_"
-    VID_PREFIX = MED_NS + "video_"
     ISPARTOF = URIRef(SCHEMA_NS + "isPartOf")
     RDFT = URIRef("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
     COLLECTION = URIRef(SCHEMA_NS + "Collection")
@@ -2736,10 +2754,13 @@ def assign_media_lists():
 
     def _is_list(x):
         return isinstance(x, str) and x.startswith(LIST_PREFIX)
+    def _is_media(x):
+        # med:<16hex> — foto ou vídeo (o tipo vem da classe no catálogo).
+        return isinstance(x, str) and x.startswith(MED_NS) and len(x[len(MED_NS):]) == 16
     if not all(_is_list(x) for x in add) or not all(_is_list(x) for x in remove):
         return jsonify(error="add/remove devem ser IRIs lst: (listas)"), 400
     for m in iris:
-        if not (isinstance(m, str) and (m.startswith(IMG_PREFIX) or m.startswith(VID_PREFIX))):
+        if not _is_media(m):
             return jsonify(error=f"iri de mídia inválida: {m}"), 400
 
     v = _load_validator()

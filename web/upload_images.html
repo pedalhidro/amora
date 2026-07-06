@@ -685,7 +685,7 @@ async function copyExifSegment(sourceFile, targetBlob) {
 const PHD_NS    = 'https://pedalhidrografi.co/data/';
 const PH_NS     = 'https://id.pedalhidrografi.co/terms#';
 const PES_NS    = 'https://id.pedalhidrografi.co/pessoas/';   // identidades resolvíveis (prefixo pes:)
-const MED_NS    = 'https://id.pedalhidrografi.co/midia/';     // mídia (prefixo med:; image_/video_ + hash)
+const MED_NS    = 'https://id.pedalhidrografi.co/midia/';     // mídia (prefixo med:; IRI opaco med:<hash16>, tipo pela classe)
 const LST_NS    = 'https://id.pedalhidrografi.co/listas/';    // listas/álbuns (prefixo lst:)
 const SCHEMA    = 'https://schema.org/';
 const RDF_TYPE  = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
@@ -721,13 +721,12 @@ async function loadCatalog() {
   const tours = new Map(), persons = new Map(), lists = new Map();
   const types = new Map(), titles = new Map(), dts = new Map(), names = new Map();
   const inSE = new Map(), aSer = new Map(), aSeq = new Map();
-  // pHashes já presentes no servidor — usados pra rejeitar re-uploads.
-  // Imagens e vídeos vivem em namespaces de IRI distintos (image_ vs video_).
+  // hashes já presentes no servidor — usados pra rejeitar re-uploads. O IRI de
+  // mídia é opaco (med:<hash>); o TIPO (foto/vídeo) vem da CLASSE, não do
+  // prefixo — então classificamos DEPOIS do loop, com o `types` já montado.
   const existingPhashes = new Set();
   const existingVhashes = new Set();
-  const IMAGE_IRI_PREFIX = 'https://id.pedalhidrografi.co/midia/image_';
-  const VIDEO_IRI_PREFIX = 'https://id.pedalhidrografi.co/midia/video_';
-  // tours.ttl tem os passeios; uploads.ttl tem as imagens (e seus phash via IRI).
+  // tours.ttl tem os passeios; images.ttl tem as mídias (e seus hashes via IRI).
   for (const url of ['./data/tours.ttl', './data/images.ttl', './data/identities.ttl', './data/lists.ttl']) {
     try {
       const res = await fetch(url); if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -741,20 +740,18 @@ async function loadCatalog() {
         else if (p === PH_NS + 'inSeriesEdition') { if (!inSE.has(s)) inSE.set(s, new Set()); inSE.get(s).add(o); }
         else if (p === PH_NS + 'inEventSeries')    aSer.set(s, o);
         else if (p === PH_NS + 'sequenceInSeries') aSeq.set(s, parseInt(o, 10));
-        // Imagens — extrai pHash do próprio IRI (`phd:image_<phash16>`).
-        if (s.startsWith(IMAGE_IRI_PREFIX)) {
-          const ph = s.slice(IMAGE_IRI_PREFIX.length);
-          if (/^[0-9a-f]{16}$/i.test(ph)) existingPhashes.add(ph.toLowerCase());
-        }
-        // Vídeos — `phd:video_<vhash16>`.
-        if (s.startsWith(VIDEO_IRI_PREFIX)) {
-          const vh = s.slice(VIDEO_IRI_PREFIX.length);
-          if (/^[0-9a-f]{16}$/i.test(vh)) existingVhashes.add(vh.toLowerCase());
-        }
       }
     } catch (e) {
       console.warn(`Catálogo: ${url} indisponível —`, e.message);
     }
+  }
+  // Classifica os hashes por CLASSE (foto → phash, vídeo → vhash).
+  for (const [s, ts] of types) {
+    if (!s.startsWith(MED_NS)) continue;
+    const h = s.slice(MED_NS.length);
+    if (!/^[0-9a-f]{16}$/i.test(h)) continue;
+    if (ts.has(PH_NS + 'StillImage')) existingPhashes.add(h.toLowerCase());
+    else if (ts.has(PH_NS + 'MotionImage')) existingVhashes.add(h.toLowerCase());
   }
   for (const [s, ts] of types) {
     if (ts.has(PH_NS + 'Tour')) {
@@ -1013,14 +1010,15 @@ async function extractMediaFields(iri) {
   const PROV = 'http://www.w3.org/ns/prov#';
   const PAV  = 'http://purl.org/pav/';
   const DCT_LIC = 'http://purl.org/dc/terms/license';
-  const kind = iri.includes('/video_') ? 'video' : 'image';
-  const hash = iri.split(/image_|video_/).pop();
+  // IRI de mídia é opaco (med:<hash>); o hash é o localname, e o TIPO
+  // (foto/vídeo) vem da CLASSE no catálogo (detectado no loop abaixo).
+  const hash = iri.startsWith(MED_NS) ? iri.slice(MED_NS.length) : iri.split('/').pop();
   let Parser; ({ Parser } = await import('https://esm.sh/n3@1.17.4?bundle'));
   const res = await fetch('./data/images.ttl', { cache: 'no-cache' });
   if (!res.ok) throw new Error('uploads.ttl indisponível (' + res.status + ')');
   const text = await res.text();
   const latOf = new Map(), lonOf = new Map();
-  const f = { kind, hash, iri, date: '', offset: null, lat: '', lon: '',
+  const f = { kind: 'image', hash, iri, date: '', offset: null, lat: '', lon: '',
     bearing: '', focal: '', tour: '', authors: [], providers: [], lists: [],
     license: '', anon: false, comp: false, found: false };
   let locTarget = null;
@@ -1030,7 +1028,8 @@ async function extractMediaFields(iri) {
     if (p === SCHEMA + 'longitude') lonOf.set(s, o);
     if (s !== iri) continue;
     f.found = true;
-    if (p === DCT_DATE) { f.offset = xsdOffset(o); f.date = o.slice(0, 16); }
+    if (p === RDF_TYPE && o === PH_NS + 'MotionImage') f.kind = 'video';   // tipo pela classe
+    else if (p === DCT_DATE) { f.offset = xsdOffset(o); f.date = o.slice(0, 16); }
     else if (p === SCHEMA + 'locationCreated') locTarget = o;
     else if (p === EXIF + 'gpsImgDirection') f.bearing = o;
     else if (p === EXIF + 'focalLengthIn35mmFilm') f.focal = o;
@@ -2507,7 +2506,7 @@ function buildImageBlock(card) {
   const providers = personValues(card, 'provider');
   const lists     = listValues(card);
 
-  const id    = `med:image_${card.phash}`;
+  const id    = `med:${card.phash}`;
   // Nós aninhados como IRIs derivadas (`<id>_hash`, `<id>_geo`) em vez de
   // bnodes: assim o backend apaga/substitui por prefixo de IRI, sem precisar
   // percorrer bnodes alcançáveis.
@@ -2611,7 +2610,7 @@ function buildClipBlock(card) {
   const isoDur = `PT${Math.round(durSec * 100) / 100}S`;
 
   const id = card.clipId;
-  const iri = `med:video_${id}`;
+  const iri = `med:${id}`;
   const audioFile = `${id}.audio.webm`;
   const thumbFile = `${id}.thumb.jpg`;
   // GeoCoordinates como IRI derivada (`<iri>_geo`) em vez de bnode — ver

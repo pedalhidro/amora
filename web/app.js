@@ -1051,7 +1051,7 @@ document.addEventListener('click', (ev) => {
     ev.preventDefault();
     const kind = me.getAttribute('data-kind');
     const hash = me.getAttribute('data-hash');
-    const iri = MED_NS + kind + '_' + hash;
+    const iri = MED_NS + hash;   // IRI opaco (tipo é a classe, não o prefixo)
     const ifr = document.getElementById('upload-iframe');
     if (ifr) ifr.src = './upload_images.html?edit=' + encodeURIComponent(iri);
     if (typeof openUploadModal === 'function') openUploadModal();
@@ -1695,9 +1695,7 @@ async function loadClipsFromUploadsTtl() {
           const date = props.dateXsd ? props.dateXsd.slice(0, 10) : null;
           clips.push({
             iri: _s,
-            vhash: _s.startsWith(MED_NS + 'video_')
-                   ? _s.slice((MED_NS + 'video_').length)
-                   : null,
+            vhash: _s.startsWith(MED_NS) ? _s.slice(MED_NS.length) : null,
             file,
             file720: file720 || file360 || audio,
             audio,
@@ -2349,7 +2347,7 @@ function buildModelFromQuads(quads) {
     const lat = locNode != null ? locLat.get(locNode) : undefined;
     const lng = locNode != null ? locLng.get(locNode) : undefined;
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
-    const phash = s.startsWith(MED_NS + 'image_') ? s.slice((MED_NS + 'image_').length) : null;
+    const phash = s.startsWith(MED_NS) ? s.slice(MED_NS.length) : null;
     const tourIri = tours.get(s);
     const t = tourIri ? tourCatalog.get(tourIri) : null;
     const ride = t
@@ -3019,7 +3017,7 @@ function ttlEscapeStr(s) {
 // (mode=patch, remove=schema:isPartOf → substitui o pertencimento inteiro).
 async function saveMediaLists(kind, hash, listIris, pendingNew) {
   let ttl = '@prefix schema: <https://schema.org/> .\n';
-  const mediaIri = MED_NS + kind + '_' + hash;
+  const mediaIri = MED_NS + hash;   // IRI opaco (tipo é a classe)
   if (listIris.length) {
     ttl += `<${mediaIri}> schema:isPartOf ${listIris.map((i) => '<' + i + '>').join(', ')} .\n`;
   }

@@ -440,7 +440,7 @@ function tourHref(iri) {
   return `./index.html?tour=${encodeURIComponent(id)}`;
 }
 function photoThumb(iri) {
-  const phash = iri.slice((MED + 'image_').length);
+  const phash = iri.slice(MED.length);   // med:<hash> opaco (dispatch é por classe)
   return `./photos/${encodeURIComponent(phash)}/thumb.jpg`;
 }
 function videoThumb(iri) {

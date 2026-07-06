@@ -1633,19 +1633,22 @@ function b64urlToHex(s) {
   for (let i = 0; i < bin.length; i++) hex += bin.charCodeAt(i).toString(16).padStart(2, '0');
   return hex;
 }
-function encodeMediaToken(iri) {
-  const suf = iri.slice(MED.length);                 // image_<hex> / video_<hex>
-  const type = suf.charCodeAt(0) === 118 /* 'v' */ ? 'v' : 'i';
-  return type + hexToB64url(suf.slice(suf.indexOf('_') + 1));
+// Token de 12 chars: 1 char de tipo (vestigial — o IRI virou opaco med:<hash>,
+// então o decode IGNORA esse char; fica só p/ manter o stride de 12 e por
+// legibilidade) + 11 chars base64url do hash de 64 bits.
+function encodeMediaToken(rec) {
+  const hex = rec.iri.slice(MED.length);   // hash de 16 hex (sem prefixo)
+  const type = rec.vhash ? 'v' : 'i';
+  return type + hexToB64url(hex);
 }
 function decodeMediaToken(tok) {
-  const type = tok[0], hex = b64urlToHex(tok.slice(1));
-  return MED + (type === 'v' ? 'video_' : 'image_') + hex;
+  // Aceita tokens antigos (i/v + hash) e novos igualmente — só o hash importa.
+  return MED + b64urlToHex(tok.slice(1));
 }
 function shareSelectedLink() {
   const recs = selectedRecords();
   if (!recs.length) return;
-  const packed = recs.map((r) => encodeMediaToken(r.iri)).join('');   // tokens de 12 chars, colados
+  const packed = recs.map((r) => encodeMediaToken(r)).join('');   // tokens de 12 chars, colados
   const url = new URL(location.href);
   url.hash = '';
   url.searchParams.delete('pick');
@@ -1960,7 +1963,10 @@ function applyPickParam() {
     }
   } else {
     const raw = qs.get('pick');
-    if (raw) iris = raw.split(',').map((s) => s.trim()).filter(Boolean).map((t) => MED + t);
+    // Aceita ?pick=<hash> (novo) e o legado ?pick=image_<hash>/video_<hash>
+    // (tira o prefixo — o IRI agora é opaco med:<hash>).
+    if (raw) iris = raw.split(',').map((s) => s.trim()).filter(Boolean)
+      .map((t) => MED + t.replace(/^(image_|video_)/, ''));
   }
   if (!iris || !iris.length) return;
   pickSet = new Set(iris);
