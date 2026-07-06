@@ -809,7 +809,7 @@ def remove_image_from_uploads(phash):
 
 
 # ── Media metadata patch (edição, sem blobs) ─────────────────────────────
-# Análogo ao synthesize_tour_patch, mas pra phd:image_/phd:video_ em
+# Análogo ao synthesize_tour_patch, mas pra med:image_/med:video_ em
 # uploads.ttl. Usado por /update-image e /update-video (edição de metadados +
 # listas pelo popup e pelo modo de edição do form) — NÃO toca nos blobs nem
 # regenera a activity ph:Upload (sujeito à parte, preservado).
@@ -2479,7 +2479,7 @@ def upload_video():
       - `id`        : pHash de vídeo (16 hex)
     Valida com SHACL (ph:VideoShape), persiste os arquivos em `clips/<id>.*`
     e mescla os triples no único `data/uploads.ttl` (que serve imagens E
-    vídeos — namespaces de IRI distinguem: phd:image_ vs phd:video_)."""
+    vídeos — namespaces de IRI distinguem: med:image_ vs med:video_)."""
     ttl_text = request.form.get("ttl")
     if not ttl_text:
         f = request.files.get("ttl")

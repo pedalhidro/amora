@@ -13,6 +13,14 @@ Fatos rápidos:
 - O acervo (passeios, fotos, vídeos) é descrito em RDF com vocabulários
   consolidados (schema.org, PROV-O, QUDT, Dublin Core, GeoSPARQL) e termos
   próprios no namespace `https://id.pedalhidrografi.co/terms#` (prefixo `ph:`).
+- **Os IRIs DEREFERENCIAM** (Linked Data, httpRange-14): tudo mora sob
+  `https://id.pedalhidrografi.co/` e responde a coisa via content negotiation —
+  `Accept: text/turtle` (ou `?format=ttl`) devolve as triples; senão a página
+  humana. Vocabulário `…/terms#<Termo>` (doc inteiro em `/terms`); pessoas
+  `…/pessoas/<slug>`; passeios `…/passeio/<slug>`; edições de série
+  `…/passeio/<série>/<nº>` (ex.: `…/passeio/BP/4`); séries `…/serie/<código>`;
+  mídia `…/midia/image_<phash>` e `…/midia/video_<vhash>`; listas/álbuns
+  `…/listas/<slug>`. (A Cloudflare faz 303 path-preserving de `id.` p/ `amora`.)
 - Fotos e clipes são, em geral, licenciados CC BY-SA 4.0 — cada item carrega
   sua própria licença nos triples.
 
@@ -29,6 +37,8 @@ Fatos rápidos:
   associação ao passeio (`ph:capturedDuring`).
 - [identities.ttl](https://amora.pedalhidrografi.co/data/identities.ttl): as
   pessoas (`schema:Person`) referenciadas por passeios e mídias — fonte única.
+- [lists.ttl](https://amora.pedalhidrografi.co/data/lists.ttl): as listas/álbuns
+  (`schema:Collection`) em que fotos/vídeos são agrupados (`schema:isPartOf`).
 - [ontology.ttl](https://amora.pedalhidrografi.co/data/ontology.ttl): a
   ontologia `ph:`. [shapes.ttl](https://amora.pedalhidrografi.co/data/shapes.ttl):
   shapes SHACL usadas na validação dos uploads.

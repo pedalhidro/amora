@@ -118,6 +118,59 @@ one optional hosted deploy target, not a dependency.
   `www/`, `node_modules/`. Edits to `web/` alone need NO native rebuild — the
   app loads the remote site (so iterate by deploying `web/`, not rebuilding).
 
+## IRIs são dereferenciáveis (Linked Data) — esquema atual
+
+**Todos os IRIs de instância + o vocabulário migraram pra
+`https://id.pedalhidrografi.co/` e DEREFERENCIAM** (padrão httpRange-14). A
+Cloudflare faz um 303 path-preserving de `id.pedalhidrografi.co/<path>` →
+`amora.pedalhidrografi.co/<path>`, onde handlers Flask respondem por content
+negotiation: `Accept: text/turtle` (ou `?format=ttl`) → as triples do recurso;
+senão a página/documento humano. Esquema (prefixos usados nos TTLs e no código):
+
+| Coisa | Prefixo | IRI | Resolver (amora) |
+|---|---|---|---|
+| Vocabulário | `ph:` | `…/terms#<Termo>` | `GET /terms` (turtle=ontology.ttl \| HTML doc) |
+| Pessoa | `pes:` | `…/pessoas/<slug8>` | `GET /pessoas/<slug>` (turtle \| pessoas.html) |
+| Passeio | `pas:` | `…/passeio/<slug8>` | `GET /passeio/<slug>` (turtle \| 303 `/?tour=<slug>`) |
+| Edição de série | (IRI full) | `…/passeio/<ES>/<seq>` (ex.: `…/passeio/BP/4`) | `GET /passeio/<es>/<seq>` (turtle \| 303 pro passeio) |
+| Série | `ser:` | `…/serie/<ES>` (PH/BT/BP/S/SESC) | (sem resolver dedicado ainda) |
+| Mídia | `med:` | `…/midia/image_<phash16>` / `…/midia/video_<vhash16>` | `GET /midia/<local>` (turtle \| 303 `/imagens.html?pick=`) |
+| Lista/álbum | `lst:` | `…/listas/<slug>` | `GET /listas/<slug>` (turtle \| 303 `/imagens.html`) |
+| Envio (ph:Upload) | `env:` | `…/envio/<ts>` | (sem resolver; provenance interna) |
+
+Invariantes: o hash continua sendo a IDENTIDADE da mídia (só o host mudou — os
+blobs `photos/<phash>/…` e a dedup dependem do hash, não do IRI); o discriminador
+`image_`/`video_` fica no local name (detecção de tipo é por CLASSE
+`ph:StillImage`/`ph:MotionImage`, não por prefixo). Nós derivados mantêm o sufixo
+`_` (`pas:<slug>_route`, `med:image_<ph>_geo|_hash`) — o purge do backend é
+aritmética de prefixo `str(root)+"_"`, agnóstica ao formato do IRI. Slug =
+Crockford base32 (`0123456789abcdefghjkmnpqrstvwxyz`, 8 chars) pra pessoas e
+passeios; validador de tour REJEITA `_` (colidiria com o nó derivado). Séries e
+edições são chaves naturais (edição = `…/passeio/<ES>/<seq>`, realizada por
+EXATAMENTE um passeio — colisão de numeração vira edição distinta, ex.: `BP/3-5`;
+SHACL `ph:SeriesEditionShape` impõe isso).
+
+**`phd:` = `https://pedalhidrografi.co/data/` (host ANTIGO) ainda aparece:** só em
+`ph:capturedDuring`→`pas:` (migrado), nos IRIs derivados como convenção, e em
+menções históricas nos comentários deste arquivo — onde o texto abaixo diz
+`phd:image_`/`phd:video_`/`phd:tour_`/`phd:assoc_`, leia `med:image_`/
+`med:video_`/`pas:<slug>`/`<…/passeio/<ES>/<seq>>`. `phd:org_` (organizadores) NÃO
+migrou (fora de escopo). A migração foi feita por scripts idempotentes
+(`scripts/migrate-{georeferenced,lists-split,media-host,tour-iris,editions}.py`),
+com `scripts/tour-iri-map.json` (id-numérico antigo ↔ slug) baked no container.
+
+**Continuidade de deep link + gotcha da Cloudflare.** Links antigos
+`?tour=<id-numérico>` são preservados: o worker da Cloudflare que fronteia amora
+reescreve `/` → `/index.html` ANTES de chegar na origem, então `index()` está
+registrado em `@app.get("/")` E `@app.get("/index.html")` — senão o SSR por
+passeio e o 303 de alias (`?tour=<numid>` → `?tour=<slug>`, via
+`_tour_iri_map`/`_legacy_tour_iri`) não rodariam via amora. `app.js` também
+resolve o alias no cliente (busca `/data/tour-iri-map.json` sob demanda) como
+defesa. Guid do feed emite o IRI legado `phd:tour_<numid>` pra passeios migrados
+(RSS estável). Resolvers path-based não sofrem com o strip de query (só `?query=`
+era afetado; paths sempre chegam). **Só `amora.pedalhidrografi.co/?query=` era
+afetado — os IRIs `id.…/<path>` sempre preservam.**
+
 ## Architecture
 
 The app is fully static and works offline (service worker). It reads
