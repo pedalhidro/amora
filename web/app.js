@@ -5569,24 +5569,46 @@ boot()
     tryOpenTourFromQuery();
   });
 
-// Deep link por passeio: /?tour=<id> abre o modal da rota correspondente
-// (e ajusta o canonical, já que o estático aponta tudo pra home). São as
-// URLs que o sitemap dinâmico do backend anuncia — inclusive no bloco
-// Google News dos passeios recentes.
-function tryOpenTourFromQuery() {
-  const id = new URLSearchParams(location.search).get('tour');
-  if (!id) return;
+// Abre o modal da rota cujo tourIri termina em `slug`. Retorna true se abriu.
+function _openTourBySlug(slug) {
   for (const [key, r] of routes) {
-    if (_tourIdFromIri(r.entry?.tourIri) !== id) continue;
+    if (_tourIdFromIri(r.entry?.tourIri) !== slug) continue;
     const canon = document.querySelector('link[rel="canonical"]');
-    if (canon) canon.href = `https://amora.pedalhidrografi.co/?tour=${encodeURIComponent(id)}`;
+    if (canon) canon.href = `https://amora.pedalhidrografi.co/?tour=${encodeURIComponent(slug)}`;
     // O backend injeta um <article> SSR pra crawlers/no-JS; com o modal
     // aberto ele é redundante — remove. Se o tour NÃO está em routes.json
     // (sem rota), o article fica como conteúdo de fallback abaixo do mapa.
     document.getElementById('tour-article')?.remove();
     openRouteModal(key);
-    return;
+    return true;
   }
+  return false;
+}
+
+// Deep link por passeio: /?tour=<slug> abre o modal da rota correspondente
+// (e ajusta o canonical, já que o estático aponta tudo pra home). São as
+// URLs que o sitemap dinâmico do backend anuncia — inclusive no bloco
+// Google News dos passeios recentes.
+//
+// A resolução do LEGADO (?tour=<id-numérico> antigo → slug) é feita AQUI, no
+// cliente: a Cloudflare tira a query string antes de chegar no backend, então
+// o 303 de continuidade do index() não roda via amora. O mapa (só byOldId) é
+// buscado sob demanda, só quando o id não bate direto — o caso comum (slug
+// novo) não paga nada.
+async function tryOpenTourFromQuery() {
+  const id = new URLSearchParams(location.search).get('tour');
+  if (!id) return;
+  if (_openTourBySlug(id)) return;
+  try {
+    const res = await fetch('./data/tour-iri-map.json', { cache: 'no-cache' });
+    if (res.ok) {
+      const slug = ((await res.json()).byOldId || {})[id];
+      if (slug && _openTourBySlug(slug)) {
+        history.replaceState(null, '', `?tour=${encodeURIComponent(slug)}`);
+        return;
+      }
+    }
+  } catch (_) { /* sem mapa — degrada pro warning */ }
   console.warn(`[tour] deep link ?tour=${id} não encontrado em routes.json`);
 }
 

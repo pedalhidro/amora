@@ -1557,6 +1557,16 @@ def get_data_ttl(filename):
     não existe em nenhum dos dois lugares, devolve um seed razoável pros
     dois mutáveis ou 404 pros demais.
     """
+    # Mapa de IRIs de passeio (JSON, estático): o app precisa dele client-side
+    # pra resolver deep links ?tour=<id-numérico> antigos → slug (a Cloudflare
+    # tira a query string antes de chegar no backend, então o 303 do index()
+    # não roda via amora — a continuidade é feita no app.js). Servido do
+    # container (byOldId só; byNewSlug não interessa ao cliente).
+    if filename == "tour-iri-map.json":
+        body = json.dumps({"byOldId": _tour_iri_map().get("byOldId", {})},
+                          ensure_ascii=False, separators=(",", ":"))
+        return _conditional(Response(body, mimetype="application/json",
+                                     headers={"Cache-Control": "no-cache"}))
     # O converter padrão do Flask bloqueia "/" mas não um ".." solto —
     # `DATA_DIR / ".."` é um diretório existente e o read_text estourava
     # IsADirectoryError → 500 feio. Só servimos *.ttl de nome simples.
