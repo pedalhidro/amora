@@ -509,43 +509,78 @@ async function computeVideoPHash(file, N = 8) {
   const v = document.createElement('video');
   const url = URL.createObjectURL(file);
   v.src = url;
+  const SIDE = 32;
+  const C = document.createElement('canvas');
+  C.width = SIDE; C.height = SIDE;
+  const ctx = C.getContext('2d', { willReadFrequently: true });
+  const bitsHistogram = new Uint16Array(64);
+  let got = 0;
+  // Desenha o quadro ATUAL do vídeo e soma seus bits no histograma.
+  const accumulate = () => {
+    ctx.drawImage(v, 0, 0, SIDE, SIDE);
+    const hex = pHashFromRgba(ctx.getImageData(0, 0, SIDE, SIDE).data, SIDE);
+    for (let row = 0; row < 8; row++) {
+      const byte = parseInt(hex.substr(row * 2, 2), 16);
+      for (let b = 0; b < 8; b++) if (byte & (1 << (7 - b))) bitsHistogram[row * 8 + b]++;
+    }
+    got++;
+  };
   try {
     await primeVideoForFrames(v, 'vídeo não carregou pro pHash');
-    const dur = Math.max(0.1, v.duration || 0.1);
-    const C = document.createElement('canvas');
-    const SIDE = 32;
-    C.width = SIDE; C.height = SIDE;
-    const ctx = C.getContext('2d');
-    const bitsHistogram = new Uint16Array(64);
-    for (let i = 0; i < N; i++) {
-      // Pula o frame inicial absoluto (muitas vezes preto) e o final-final.
-      const t = Math.min(Math.max(0.05, ((i + 0.5) / N) * dur), Math.max(0.05, dur - 0.05));
-      await robustVideoSeek(v, t, 'seek falhou no pHash');
-      await new Promise((r) => setTimeout(r, 24));   // deixa o iOS pintar o quadro
-      ctx.drawImage(v, 0, 0, SIDE, SIDE);
-      const data = ctx.getImageData(0, 0, SIDE, SIDE).data;
-      const hex = pHashFromRgba(data, SIDE);
-      for (let row = 0; row < 8; row++) {
-        const byte = parseInt(hex.substr(row * 2, 2), 16);
-        for (let b = 0; b < 8; b++) {
-          if (byte & (1 << (7 - b))) bitsHistogram[row * 8 + b]++;
+    const dur = Number.isFinite(v.duration) && v.duration > 0 ? v.duration : 0;
+    if (dur > 0.15) {
+      // Amostra N quadros ao longo da duração. Alguns navegadores (Firefox/
+      // Safari) NÃO conseguem fazer seek em HEVC 4K 10-bit HDR — nesse caso o
+      // seek falha; pulamos o quadro e, se NENHUM der certo (bail após 2
+      // falhas seguidas sem sucesso), caímos pro quadro já decodificado.
+      for (let i = 0; i < N; i++) {
+        const t = Math.min(Math.max(0.05, ((i + 0.5) / N) * dur), Math.max(0.05, dur - 0.05));
+        try {
+          await robustVideoSeek(v, t, 'seek', 6000);
+          await new Promise((r) => setTimeout(r, 24));   // deixa pintar o quadro
+          accumulate();
+        } catch (_) {
+          if (got === 0 && i >= 1) break;
         }
       }
     }
-    const half = N / 2;
+    // Sem nenhum seek: usa o quadro já decodificado (o prime garante o 1º).
+    if (got === 0) { try { await new Promise((r) => setTimeout(r, 24)); accumulate(); } catch (_) {} }
+    // Último recurso: nem o quadro atual deu — hash do conteúdo do arquivo.
+    if (got === 0) return await fileFallbackHash(file);
+    const half = got / 2;
     let out = '';
     for (let row = 0; row < 8; row++) {
       let byte = 0;
-      for (let b = 0; b < 8; b++) {
-        if (bitsHistogram[row * 8 + b] > half) byte |= (1 << (7 - b));
-      }
+      for (let b = 0; b < 8; b++) if (bitsHistogram[row * 8 + b] > half) byte |= (1 << (7 - b));
       out += byte.toString(16).padStart(2, '0');
     }
+    // pHash uniforme (0000…/ffff…) = quadro preto/uniforme — o navegador
+    // decodificou mas não desenhou o HEVC/HDR no canvas. Colidiria entre vídeos
+    // diferentes (todos viram o mesmo IRI → 2º upload rejeitado como duplicado)
+    // → cai pro hash do arquivo, que é único por arquivo.
+    if (/^(.)\1{15}$/.test(out)) return await fileFallbackHash(file);
     return out;
   } finally {
     URL.revokeObjectURL(url);
     try { v.pause(); } catch (_) {}
     v.remove();
+  }
+}
+
+// Fallback quando não dá pra extrair NENHUM quadro (ex.: HEVC 4K HDR que o
+// navegador decodifica o 1º quadro mas trava no seek/canvas). Deriva 16 hex do
+// início + tamanho do arquivo — dedup de re-upload EXATO (não é perceptual, mas
+// evita travar o envio).
+async function fileFallbackHash(file) {
+  try {
+    const digest = await crypto.subtle.digest('SHA-256', await file.slice(0, 1 << 20).arrayBuffer());
+    const bytes = new Uint8Array(digest);
+    let h = '';
+    for (let i = 0; i < 6; i++) h += bytes[i].toString(16).padStart(2, '0');
+    return (h + (file.size >>> 0).toString(16)).slice(0, 16).padEnd(16, '0');
+  } catch (_) {
+    return ((file.size || 0).toString(16) + '0000000000000000').slice(0, 16);
   }
 }
 
@@ -1673,9 +1708,13 @@ async function videoFirstFrameBlob(file) {
   v.src = url;
   try {
     await primeVideoForFrames(v, 'vídeo não pôde carregar');
-    // Seek pra ~5% da duração — evita o frame todo preto da partida.
-    const t = Math.min(Math.max(0.2, v.duration * 0.05), Math.max(0.2, v.duration - 0.1));
-    await robustVideoSeek(v, t, 'seek falhou no thumb');
+    // Seek pra ~5% da duração — evita o frame todo preto da partida. Se o seek
+    // falhar (HEVC 4K HDR no Firefox/Safari), usa o quadro já decodificado.
+    const dur = Number.isFinite(v.duration) && v.duration > 0 ? v.duration : 0;
+    if (dur > 0.4) {
+      const t = Math.min(Math.max(0.2, dur * 0.05), Math.max(0.2, dur - 0.1));
+      try { await robustVideoSeek(v, t, 'seek', 6000); } catch (_) { /* usa o 1º quadro */ }
+    }
     await new Promise((r) => setTimeout(r, 24));
     const W = Math.min(320, v.videoWidth || 320);
     const H = Math.round((v.videoHeight || 180) * (W / (v.videoWidth || 320)));
