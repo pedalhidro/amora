@@ -1980,6 +1980,18 @@ function applyPickParam() {
   });
 }
 
+// Deep link por lista: ?list=<slug>[,<slug>…] pré-seleciona a faceta Listas
+// (é pra onde /listas/<slug> — o IRI dereferenciável do álbum — redireciona).
+// Roda DEPOIS de buildFacetControls (ftLists já existe); o rebuildAndRun do
+// boot então filtra. Só aplica listas que existem no catálogo.
+function applyListParam() {
+  const raw = new URLSearchParams(location.search).get('list');
+  if (!raw || !ftLists) return;
+  const iris = raw.split(',').map((s) => s.trim()).filter(Boolean)
+    .map((s) => LIST_PREFIX + s).filter((iri) => model.lists[iri]);
+  if (iris.length) ftLists.setValue(iris, true);   // silent — rebuildAndRun roda no boot
+}
+
 // ── Boot ─────────────────────────────────────────────────────────────────────
 (async () => {
   try {
@@ -1988,6 +2000,7 @@ function applyPickParam() {
     await loadAndBuild();
     applyPickParam();          // antes dos controles p/ refletirem o estado do link
     buildFacetControls();
+    applyListParam();          // ?list=<slug> → pré-seleciona a faceta Listas
     wireToolbar();
     wireTimeline();
     wireGallery();

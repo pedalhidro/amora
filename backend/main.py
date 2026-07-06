@@ -1489,10 +1489,12 @@ def list_page(slug):
     https://id.pedalhidrografi.co/listas/<slug> (CF 303 pra cá). Conneg:
     Accept: text/turtle (ou ?format=ttl) → a Collection (de lists.ttl) + seus
     membros como schema:hasPart (calculados de images.ttl via schema:isPartOf
-    inverso); senão 303 pra galeria (imagens.html), onde a lista é navegável."""
+    inverso); senão 303 pra galeria JÁ FILTRADA por esta lista
+    (imagens.html?list=<slug> — a galeria pré-seleciona a faceta Listas)."""
     list_iri = LST_NS + slug
     if not _wants_turtle(request):
-        return redirect("/imagens.html", code=303)
+        from urllib.parse import quote
+        return redirect(f"/imagens.html?list={quote(slug, safe='')}", code=303)
     from rdflib import URIRef, Literal
     Graph = _load_validator()["Graph"]
     ISPARTOF = URIRef(SCHEMA_NS + "isPartOf")
