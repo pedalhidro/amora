@@ -122,7 +122,7 @@ try:  # python-dotenv é dep do build-routes; pode faltar no container slim.
 except Exception:  # noqa: BLE001
     pass
 
-PH_NS  = "https://pedalhidrografi.co/terms#"
+PH_NS  = "https://id.pedalhidrografi.co/terms#"
 PHD_NS = "https://pedalhidrografi.co/data/"
 SCHEMA_NS = "https://schema.org/"
 # Namespace de IDENTIDADE de pessoas — neutro (não acoplado ao app) e resolvível:
@@ -548,7 +548,7 @@ def _build_audit_ttl(upload_local, phash):
     return (
         "\n# Registro de envio (provenance) — adicionado server-side.\n"
         "@prefix prov: <http://www.w3.org/ns/prov#> .\n"
-        "@prefix ph:   <https://pedalhidrografi.co/terms#> .\n"
+        "@prefix ph:   <https://id.pedalhidrografi.co/terms#> .\n"
         "@prefix phd:  <https://pedalhidrografi.co/data/> .\n"
         "@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .\n"
         "\n"
@@ -1231,6 +1231,161 @@ def person_page(slug):
         return _conditional(Response(ttl, mimetype="text/turtle",
                                      headers={"Cache-Control": "no-cache"}))
     return send_from_directory(WEB, "pessoas.html")
+
+
+def _render_terms_html():
+    """Página humana do vocabulário ph: — gerada de ontology.ttl (bucket-first).
+    Cada termo ganha um âncora = seu localname, então o fragmento do IRI
+    (id.pedalhidrografi.co/terms#StillImage) rola até a definição certa depois
+    do 303 pra cá. Best-effort: se o ontology.ttl não parsear, devolve None e o
+    handler cai pro turtle."""
+    from rdflib import Graph, URIRef, RDF, RDFS, Namespace
+    OWL = Namespace("http://www.w3.org/2002/07/owl#")
+    DCT = Namespace("http://purl.org/dc/terms/")
+    text = _load_dump_text("ontology.ttl")
+    if not text:
+        return None
+    g = Graph()
+    g.parse(data=text, format="turtle")
+    NS = {
+        "https://id.pedalhidrografi.co/terms#": "ph:",
+        "https://schema.org/": "schema:", "http://schema.org/": "schema:",
+        "http://www.w3.org/ns/prov#": "prov:",
+        "http://purl.org/dc/terms/": "dcterms:",
+        "http://www.w3.org/2001/XMLSchema#": "xsd:",
+        "http://www.w3.org/2000/01/rdf-schema#": "rdfs:",
+        "http://www.w3.org/2002/07/owl#": "owl:",
+        "http://www.semanticdesktop.org/ontologies/2007/03/22/nfo#": "nfo:",
+        "http://www.w3.org/2003/12/exif/ns#": "exif:",
+        "http://purl.org/pav/": "pav:",
+    }
+    def curie(u):
+        s = str(u)
+        for full, pfx in NS.items():
+            if s.startswith(full):
+                return pfx + s[len(full):]
+        return s
+    def esc(s):
+        return (str(s).replace("&", "&amp;").replace("<", "&lt;")
+                .replace(">", "&gt;").replace('"', "&quot;"))
+    def label(subj):
+        return next((str(o) for o in g.objects(subj, RDFS.label)), None)
+    def comment(subj):
+        return next((str(o) for o in g.objects(subj, RDFS.comment)), None)
+    def objs(subj, pred):
+        return sorted(curie(o) for o in g.objects(subj, pred))
+
+    PH = Namespace("https://id.pedalhidrografi.co/terms#")
+    onto = URIRef("https://id.pedalhidrografi.co/terms")
+    title = next((str(o) for o in g.objects(onto, DCT.title)), "Vocabulário ph:")
+    desc = next((str(o) for o in g.objects(onto, DCT.description)), "")
+    ver = next((str(o) for o in g.objects(onto, OWL.versionInfo)), "")
+
+    def is_ph(subj):
+        return isinstance(subj, URIRef) and str(subj).startswith(str(PH))
+    classes = sorted((s for s in g.subjects(RDF.type, OWL.Class) if is_ph(s)), key=str)
+    props = sorted(
+        (s for s in set(g.subjects(RDF.type, OWL.ObjectProperty))
+         | set(g.subjects(RDF.type, OWL.DatatypeProperty)) if is_ph(s)),
+        key=str)
+
+    def term_card(subj, extra_rows):
+        loc = str(subj)[len(str(PH)):]
+        lab = label(subj)
+        com = comment(subj)
+        dep = (subj, OWL.deprecated, None) in g \
+            and next(g.objects(subj, OWL.deprecated)) \
+            and str(next(g.objects(subj, OWL.deprecated))).lower() == "true"
+        rows = "".join(
+            f'<div class="row"><span class="k">{esc(k)}</span>'
+            f'<span class="v">{esc(v)}</span></div>'
+            for k, v in extra_rows if v)
+        badge = ' <span class="dep">deprecado</span>' if dep else ""
+        return (
+            f'<section id="{esc(loc)}" class="term">'
+            f'<h3><code>ph:{esc(loc)}</code>{" — " + esc(lab) if lab else ""}{badge}</h3>'
+            f'{f"<p>{esc(com)}</p>" if com else ""}'
+            f'<div class="meta">{rows}</div></section>')
+
+    class_html = "".join(term_card(c, [
+        ("subclasse de", ", ".join(objs(c, RDFS.subClassOf)) or None),
+    ]) for c in classes)
+    prop_kind = {}
+    for p in props:
+        prop_kind[p] = ("ObjectProperty"
+                        if (p, RDF.type, OWL.ObjectProperty) in g
+                        else "DatatypeProperty")
+    prop_html = "".join(term_card(p, [
+        ("tipo", prop_kind[p]),
+        ("domínio", ", ".join(objs(p, RDFS.domain)) or None),
+        ("imagem", ", ".join(objs(p, RDFS.range)) or None),
+        ("subpropriedade de", ", ".join(objs(p, RDFS.subPropertyOf)) or None),
+    ]) for p in props)
+
+    return f"""<!doctype html><html lang="pt"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{esc(title)}</title>
+<style>
+:root{{color-scheme:dark}}
+body{{margin:0;background:#12141a;color:#e6e8ee;font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;padding:0 1rem 4rem}}
+.wrap{{max-width:820px;margin:0 auto}}
+header{{padding:2rem 0 1rem;border-bottom:1px solid #2a2e39}}
+h1{{margin:0 0 .3rem;font-size:1.6rem}}
+h2{{margin:2.4rem 0 .6rem;font-size:1.15rem;color:#9fd3c7;border-bottom:1px solid #2a2e39;padding-bottom:.3rem}}
+h3{{margin:0 0 .35rem;font-size:1rem;font-weight:600}}
+code{{background:#1c2029;padding:.08em .35em;border-radius:4px;color:#cfe3ff;font-size:.92em}}
+a{{color:#7fb2ff}}
+p{{margin:.35rem 0 .5rem;color:#c2c6d2}}
+.lede{{color:#c2c6d2}}
+.term{{padding:.9rem 0;border-bottom:1px solid #21252f;scroll-margin-top:1rem}}
+.meta{{display:flex;flex-direction:column;gap:.15rem;margin-top:.3rem}}
+.row{{display:flex;gap:.5rem;font-size:.86rem}}
+.k{{color:#7d8296;min-width:9.5rem;flex:0 0 auto}}
+.v{{color:#d7dbe6;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}}
+.dep{{color:#f2a5a5;font-size:.72rem;border:1px solid #6a3a3a;border-radius:4px;padding:.05em .4em;vertical-align:middle}}
+.ttl-link{{margin-top:.8rem;font-size:.9rem}}
+footer{{margin-top:3rem;color:#7d8296;font-size:.82rem}}
+</style></head><body><div class="wrap">
+<header>
+<h1>{esc(title)}</h1>
+<p class="lede">{esc(desc)}</p>
+<p class="lede"><code>@prefix ph: &lt;https://id.pedalhidrografi.co/terms#&gt;</code>{f" · versão {esc(ver)}" if ver else ""}</p>
+<p class="ttl-link"><a href="/terms?format=ttl">↓ ontology.ttl (Turtle)</a></p>
+</header>
+<h2>Classes</h2>
+{class_html}
+<h2>Propriedades</h2>
+{prop_html}
+<footer>Pedal Hidrográfico · vocabulário servido de <code>ontology.ttl</code>.
+Reusa PROV-O, schema.org, Dublin Core, NFO, EXIF, GeoSPARQL.</footer>
+</div></body></html>"""
+
+
+@app.get("/terms")
+def terms_vocab():
+    """Dereferência do vocabulário ph:. O namespace é
+    https://id.pedalhidrografi.co/terms# — o fragmento (#StillImage) é
+    resolvido pelo cliente contra o documento inteiro (F8). Conneg:
+    Accept: text/turtle (ou ?format=ttl) → ontology.ttl; senão a página humana
+    gerada de ontology.ttl (com âncora por termo). Sem `#` no path — a CF já
+    tira o fragmento antes do 303 pra cá."""
+    if _wants_turtle(request):
+        text = _load_dump_text("ontology.ttl")
+        if text is None:
+            abort(404)
+        return _conditional(Response(text, mimetype="text/turtle",
+                                     headers={"Cache-Control": "no-cache"}))
+    try:
+        html = _render_terms_html()
+    except Exception as e:  # noqa: BLE001
+        print(f"[terms] render falhou: {e}")
+        html = None
+    if html is None:  # fallback: entrega o turtle mesmo sem Accept
+        text = _load_dump_text("ontology.ttl") or ""
+        return _conditional(Response(text, mimetype="text/turtle",
+                                     headers={"Cache-Control": "no-cache"}))
+    return _conditional(Response(html, mimetype="text/html",
+                                 headers={"Cache-Control": "no-cache"}))
 
 
 @app.get("/data/<filename>")

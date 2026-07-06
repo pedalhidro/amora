@@ -12,7 +12,7 @@ Fatos rápidos:
   funciona offline via service worker.
 - O acervo (passeios, fotos, vídeos) é descrito em RDF com vocabulários
   consolidados (schema.org, PROV-O, QUDT, Dublin Core, GeoSPARQL) e termos
-  próprios no namespace `https://pedalhidrografi.co/terms#` (prefixo `ph:`).
+  próprios no namespace `https://id.pedalhidrografi.co/terms#` (prefixo `ph:`).
 - Fotos e clipes são, em geral, licenciados CC BY-SA 4.0 — cada item carrega
   sua própria licença nos triples.
 

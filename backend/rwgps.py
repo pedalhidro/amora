@@ -154,7 +154,7 @@ def tour_entry_from_graph(g, tour) -> dict | None:
     from rdflib import Namespace, RDF
     from rdflib.namespace import DCTERMS
 
-    PH     = Namespace("https://pedalhidrografi.co/terms#")
+    PH     = Namespace("https://id.pedalhidrografi.co/terms#")
     SCHEMA = Namespace("https://schema.org/")
 
     # Rota (RWGPS) — sem ela, o passeio fica fora do routes.json.

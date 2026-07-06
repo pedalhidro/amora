@@ -297,7 +297,7 @@ if (!window.TomSelect) await loadScript('./lib/tom-select.complete.min.js');
 const TomSelect = window.TomSelect;
 
 // ────────────────────── Constantes RDF ───────────────────────────────
-const PH_NS  = 'https://pedalhidrografi.co/terms#';
+const PH_NS  = 'https://id.pedalhidrografi.co/terms#';
 const PHD_NS = 'https://pedalhidrografi.co/data/';
 const SCHEMA = 'https://schema.org/';
 const DCT    = 'http://purl.org/dc/terms/';
@@ -797,7 +797,7 @@ function buildTtl() {
   const prefixes = `\
 @prefix dcterms: <http://purl.org/dc/terms/> .
 @prefix pav:     <http://purl.org/pav/> .
-@prefix ph:      <https://pedalhidrografi.co/terms#> .
+@prefix ph:      <https://id.pedalhidrografi.co/terms#> .
 @prefix phd:     <https://pedalhidrografi.co/data/> .
 @prefix pes:     <https://id.pedalhidrografi.co/pessoas/> .
 @prefix prov:    <http://www.w3.org/ns/prov#> .

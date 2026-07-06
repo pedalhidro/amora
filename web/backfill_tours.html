@@ -91,7 +91,7 @@
 // afirma os campos que MUDARAM (mais `a ph:Tour` pra identificar o alvo) e
 // lista em `remove` os que foram esvaziados — o backend substitui predicado
 // a predicado e preserva todo o resto do tour, então não há round-trip.
-const PH_NS  = 'https://pedalhidrografi.co/terms#';
+const PH_NS  = 'https://id.pedalhidrografi.co/terms#';
 const PHD_NS = 'https://pedalhidrografi.co/data/';
 const SCHEMA = 'https://schema.org/';
 const DCT    = 'http://purl.org/dc/terms/';
@@ -113,7 +113,7 @@ for (const [k, preds] of Object.entries(FIELD_PREDS))
 
 const PREFIXES = `\
 @prefix dcterms: <http://purl.org/dc/terms/> .
-@prefix ph:      <https://pedalhidrografi.co/terms#> .
+@prefix ph:      <https://id.pedalhidrografi.co/terms#> .
 @prefix phd:     <https://pedalhidrografi.co/data/> .
 @prefix qudt:    <http://qudt.org/schema/qudt/> .
 @prefix schema:  <https://schema.org/> .

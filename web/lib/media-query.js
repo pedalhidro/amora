@@ -15,7 +15,7 @@
   'use strict';
 
   var NS = {
-    ph:      'https://pedalhidrografi.co/terms#',
+    ph:      'https://id.pedalhidrografi.co/terms#',
     phd:     'https://pedalhidrografi.co/data/',
     schema:  'https://schema.org/',
     dcterms: 'http://purl.org/dc/terms/',

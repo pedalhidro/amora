@@ -34,7 +34,7 @@ from pathlib import Path
 
 from rdflib import Graph, RDF, URIRef, BNode, Namespace
 
-PH = Namespace("https://pedalhidrografi.co/terms#")
+PH = Namespace("https://id.pedalhidrografi.co/terms#")
 PHD = Namespace("https://pedalhidrografi.co/data/")
 SCHEMA = Namespace("https://schema.org/")
 

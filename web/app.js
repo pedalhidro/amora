@@ -1663,7 +1663,7 @@ async function loadClipsFromUploadsTtl() {
   await ensureN3();
   return new Promise((resolve) => {
     const parser = new window.N3.Parser({ format: 'text/turtle' });
-    const PH_ = 'https://pedalhidrografi.co/terms#';
+    const PH_ = 'https://id.pedalhidrografi.co/terms#';
     const SCHEMA_ = 'https://schema.org/';
     const RDF_TYPE = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
     const subs = new Map();
@@ -2167,7 +2167,7 @@ async function ensureN3() {
   return _n3Promise;
 }
 
-const PH_NS  = 'https://pedalhidrografi.co/terms#';
+const PH_NS  = 'https://id.pedalhidrografi.co/terms#';
 const PHD_NS = 'https://pedalhidrografi.co/data/';
 const SCHEMA = 'https://schema.org/';
 const DCT    = 'http://purl.org/dc/terms/';
@@ -4087,7 +4087,7 @@ wireSettingsControls();
 // Export / Import dos settings em JSON-LD.
 const SETTINGS_JSONLD_CONTEXT = {
   '@vocab': 'https://pedalhidrografi.co/terms/settings#',
-  ph:        'https://pedalhidrografi.co/terms#',
+  ph:        'https://id.pedalhidrografi.co/terms#',
 };
 // Snapshot do estado atual dos controles do painel Camadas (checkbox de
 // visibilidade + slider de opacidade) por ID de layer. Fica fora de
@@ -6118,7 +6118,7 @@ function _tourIdFromIri(iri) {
 // → série+edição), mapeia pessoas/séries pra nomes via declarações no próprio
 // arquivo e devolve HTML pronto pra render no modal.
 async function _renderTourSummary(tourId) {
-  const PH    = 'https://pedalhidrografi.co/terms#';
+  const PH    = 'https://id.pedalhidrografi.co/terms#';
   const PHD   = 'https://pedalhidrografi.co/data/';
   const SCHEMA = 'https://schema.org/';
   const DCT   = 'http://purl.org/dc/terms/';

@@ -28,7 +28,7 @@ from rdflib import Graph, URIRef, BNode
 WEB = Path(__file__).resolve().parent.parent / "web"
 DATA = WEB / "data"
 
-PH = "https://pedalhidrografi.co/terms#"
+PH = "https://id.pedalhidrografi.co/terms#"
 SCHEMA = "https://schema.org/"
 NFO = "http://www.semanticdesktop.org/ontologies/2007/03/22/nfo#"
 

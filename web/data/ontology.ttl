@@ -1,4 +1,4 @@
-@prefix ph:      <https://pedalhidrografi.co/terms#> .
+@prefix ph:      <https://id.pedalhidrografi.co/terms#> .
 @prefix rdfs:    <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix owl:     <http://www.w3.org/2002/07/owl#> .
 @prefix xsd:     <http://www.w3.org/2001/XMLSchema#> .
@@ -6,7 +6,7 @@
 @prefix schema:  <https://schema.org/> .
 @prefix prov:    <http://www.w3.org/ns/prov#> .
 
-<https://pedalhidrografi.co/terms> a owl:Ontology ;
+<https://id.pedalhidrografi.co/terms> a owl:Ontology ;
     dcterms:title "Pedal Hidrográfico — vocabulário"@pt ;
     dcterms:description
         "Vocabulário específico do coletivo Pedal Hidrográfico. Reutiliza PROV-O, schema.org, Dublin Core, NFO, EXIF, GeoSPARQL; mint termos ph: apenas para conceitos próprios."@pt ;

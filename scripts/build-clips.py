@@ -59,7 +59,7 @@ SHARE_SUFFIX_HD = ".720p.mp4"
 AUDIO_SUFFIX    = ".m4a"
 THUMB_SUFFIX    = ".thumb.jpg"
 
-PH    = Namespace("https://pedalhidrografi.co/terms#")
+PH    = Namespace("https://id.pedalhidrografi.co/terms#")
 PHD   = Namespace("https://pedalhidrografi.co/data/")
 SCHEMA = Namespace("https://schema.org/")
 DCT   = Namespace("http://purl.org/dc/terms/")

@@ -1,6 +1,6 @@
 @prefix dcterms: <http://purl.org/dc/terms/> .
 @prefix geo: <http://www.opengis.net/ont/geosparql#> .
-@prefix ph: <https://pedalhidrografi.co/terms#> .
+@prefix ph: <https://id.pedalhidrografi.co/terms#> .
 @prefix phd: <https://pedalhidrografi.co/data/> .
 @prefix prov: <http://www.w3.org/ns/prov#> .
 @prefix pav: <http://purl.org/pav/> .

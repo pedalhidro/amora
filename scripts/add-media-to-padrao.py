@@ -35,7 +35,7 @@ from rdflib import Graph, URIRef, Literal, RDF
 WEB = Path(__file__).resolve().parent.parent / "web"
 UPLOADS = WEB / "data" / "uploads.ttl"
 
-PH = "https://pedalhidrografi.co/terms#"
+PH = "https://id.pedalhidrografi.co/terms#"
 SCHEMA = "https://schema.org/"
 PHD = "https://pedalhidrografi.co/data/"
 

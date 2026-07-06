@@ -19,7 +19,7 @@ from pathlib import Path
 
 from rdflib import Graph, Namespace, RDF
 
-PH = Namespace("https://pedalhidrografi.co/terms#")
+PH = Namespace("https://id.pedalhidrografi.co/terms#")
 SCHEMA = Namespace("https://schema.org/")
 
 REPO = Path(__file__).resolve().parent.parent

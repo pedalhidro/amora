@@ -1,5 +1,5 @@
 @prefix sh: <http://www.w3.org/ns/shacl#> .
-@prefix ph: <https://pedalhidrografi.co/terms#> .
+@prefix ph: <https://id.pedalhidrografi.co/terms#> .
 @prefix dcterms: <http://purl.org/dc/terms/> .
 @prefix prov: <http://www.w3.org/ns/prov#> .
 @prefix schema: <https://schema.org/> .
@@ -339,10 +339,10 @@ ph:TourShape a sh:NodeShape ;
         sh:severity sh:Violation ;
         sh:message "Pessoa já é iniciante em outro passeio da mesma série."@pt ;
         sh:prefixes [
-            sh:declare [ sh:prefix "ph"     ; sh:namespace "https://pedalhidrografi.co/terms#"^^xsd:anyURI ] ;
+            sh:declare [ sh:prefix "ph"     ; sh:namespace "https://id.pedalhidrografi.co/terms#"^^xsd:anyURI ] ;
         ] ;
         sh:select """
-            PREFIX ph: <https://pedalhidrografi.co/terms#>
+            PREFIX ph: <https://id.pedalhidrografi.co/terms#>
             SELECT $this ?value ?series WHERE {
                 $this ph:hasNewcomer ?value ;
                       ph:inSeriesEdition/ph:inEventSeries ?series .

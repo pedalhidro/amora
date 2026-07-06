@@ -62,7 +62,7 @@ TOURS_TTL    = REPO_ROOT / "web" / "data" / "tours.ttl"
 OUTPUT_PATH  = REPO_ROOT / "web" / "routes.json"
 CONCURRENCY  = 4     # paralelismo de fetches no RWGPS
 
-PH = Namespace("https://pedalhidrografi.co/terms#")
+PH = Namespace("https://id.pedalhidrografi.co/terms#")
 
 
 # ─── Leitura do tours.ttl ─────────────────────────────────────────────────────
