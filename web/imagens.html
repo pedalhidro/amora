@@ -593,7 +593,7 @@ window.addEventListener('pointerdown', (e) => {
   else if (e.pointerType === 'mouse') setTouchUI(false);
 }, true);
 const LIST_PREFIX = NS.lst;   // listas/álbuns (schema:Collection) → lst:<slug>
-const TOUR_PREFIX = PHD + 'tour_';
+const TOUR_PREFIX = NS.pas;   // passeios → pas:<slug>
 
 // ── Helpers básicos ─────────────────────────────────────────────────────────
 function escapeHtml(s) {

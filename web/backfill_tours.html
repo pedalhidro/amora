@@ -93,6 +93,7 @@
 // a predicado e preserva todo o resto do tour, então não há round-trip.
 const PH_NS  = 'https://id.pedalhidrografi.co/terms#';
 const PHD_NS = 'https://pedalhidrografi.co/data/';
+const PAS_NS = 'https://id.pedalhidrografi.co/passeio/';   // passeios (slug)
 const SCHEMA = 'https://schema.org/';
 const DCT    = 'http://purl.org/dc/terms/';
 const RDF_TYPE = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
@@ -115,6 +116,7 @@ const PREFIXES = `\
 @prefix dcterms: <http://purl.org/dc/terms/> .
 @prefix ph:      <https://id.pedalhidrografi.co/terms#> .
 @prefix phd:     <https://pedalhidrografi.co/data/> .
+@prefix pas:     <https://id.pedalhidrografi.co/passeio/> .
 @prefix qudt:    <http://qudt.org/schema/qudt/> .
 @prefix schema:  <https://schema.org/> .
 @prefix unit:    <http://qudt.org/vocab/unit/> .
@@ -237,7 +239,7 @@ function buildTourPatch(id, tour, cur) {
   });
   const derivedBlock = derived.length ? `\n${derived.join('\n')}\n` : '';
   const ttl = PREFIXES +
-    `\n# Patch do backfill — só os campos alterados\nphd:tour_${id}\n    ${newProps.join(' ;\n    ')} .\n` +
+    `\n# Patch do backfill — só os campos alterados\npas:${id}\n    ${newProps.join(' ;\n    ')} .\n` +
     derivedBlock;
   return { ttl, remove };
 }
@@ -270,13 +272,13 @@ async function loadTours() {
     if (!subjBy.has(sval)) subjBy.set(sval, []);
     subjBy.get(sval).push(q);
     if (q.predicate.value === RDF_TYPE && q.object.value === PH_NS + 'Tour'
-        && q.subject.value.startsWith(PHD_NS + 'tour_')) {
+        && q.subject.value.startsWith(PAS_NS)) {
       tourIris.push(q.subject.value);
     }
   }
   for (const iri of tourIris) {
     const state = extractTour(subjBy.get(iri), subjBy);
-    tours.push({ id: iri.slice((PHD_NS + 'tour_').length), iri, state });
+    tours.push({ id: iri.slice(PAS_NS.length), iri, state });
   }
   // Mais recentes primeiro — é onde o backfill costuma acontecer.
   tours.sort((a, b) => (b.state.date || '').localeCompare(a.state.date || ''));

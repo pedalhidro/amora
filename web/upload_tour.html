@@ -101,7 +101,7 @@
 
 <h1>Cadastrar / editar passeio</h1>
 <p class="lede">
-  Gera um <code>phd:tour_&lt;id&gt;</code> conforme <code>ph:TourShape</code>
+  Gera um <code>pas:&lt;slug&gt;</code> conforme <code>ph:TourShape</code>
   e envia pra <code>POST /upload-tour</code>. Campos com "+ adicionar"
   suportam criar entidades novas (séries, pessoas, organizadores, provedores)
   inline.
@@ -113,9 +113,9 @@
     <legend>Identificação</legend>
     <div class="row">
       <div>
-        <label class="required" for="t-id">ID curto (slug do passeio)</label>
-        <input type="text" id="t-id" required pattern="[A-Za-z0-9_\-]+" placeholder="ex.: 103, agua-branca">
-        <small>Vira <code>phd:tour_&lt;id&gt;</code>. Edição: digite o ID existente pra sobrescrever.</small>
+        <label class="required" for="t-id">Slug do passeio (IRI)</label>
+        <input type="text" id="t-id" required pattern="[A-Za-z0-9\-]+" placeholder="slug aleatório">
+        <small>Vira <code>pas:&lt;slug&gt;</code>. Já vem preenchido com um slug aleatório — pode trocar (sem <code>_</code>). Edição: campo travado.</small>
       </div>
       <div>
         <label class="required" for="t-title">Nome do passeio</label>
@@ -299,6 +299,8 @@ const TomSelect = window.TomSelect;
 // ────────────────────── Constantes RDF ───────────────────────────────
 const PH_NS  = 'https://id.pedalhidrografi.co/terms#';
 const PHD_NS = 'https://pedalhidrografi.co/data/';
+const PAS_NS = 'https://id.pedalhidrografi.co/passeio/';   // passeios (slug)
+const SER_NS = 'https://id.pedalhidrografi.co/serie/';     // séries de eventos
 const SCHEMA = 'https://schema.org/';
 const DCT    = 'http://purl.org/dc/terms/';
 const RDF_TYPE = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
@@ -344,6 +346,8 @@ function slugify(s, { upperFirst = false } = {}) {
   ).join('');
 }
 function shortIRI(iri) {
+  if (iri.startsWith(PAS_NS)) return 'pas:' + iri.slice(PAS_NS.length);
+  if (iri.startsWith(SER_NS)) return 'ser:' + iri.slice(SER_NS.length);
   if (iri.startsWith(PHD_NS)) return 'phd:' + iri.slice(PHD_NS.length);
   if (iri.startsWith(PH_NS))  return 'ph:'  + iri.slice(PH_NS.length);
   return `<${iri}>`;
@@ -444,7 +448,7 @@ async function loadCatalog() {
       orgOptions.push({ value: shortIRI(iri), text: names.get(iri) || titles.get(iri) || iri });
     }
     if (ts.has(SCHEMA + 'EventSeries')) {
-      const code = iri.slice(PHD_NS.length);
+      const code = iri.slice(SER_NS.length);
       seriesOptions.push({
         value: code,
         text: `${code} — ${titles.get(iri) || code}`,
@@ -491,7 +495,7 @@ function mintOrg(input) {
 function mintSeries(input) {
   const code = input.trim().replace(/[^A-Za-z0-9]/g, '');
   if (!code) return null;
-  if (!newSeries.has(`phd:${code}`)) newSeries.set(`phd:${code}`, code);
+  if (!newSeries.has(`ser:${code}`)) newSeries.set(`ser:${code}`, code);
   return { value: code, text: `${code} — ${code}` };
 }
 function mintProvider(input) {
@@ -699,7 +703,7 @@ function buildTtl() {
     throw new Error('pelo menos uma série + edição é obrigatória');
   }
 
-  const tourIri = `phd:tour_${id}`;
+  const tourIri = `pas:${id}`;
   const props = [
     'a ph:Tour',
     `dcterms:title "${turtleEscape(title)}"`,
@@ -762,7 +766,7 @@ function buildTtl() {
   let auxDecls = '\n# Associações à série(s)\n';
   for (const { code, edition } of seriesPairs) {
     auxDecls += `phd:assoc_${code}_${edition} a ph:Association ;\n` +
-                `    ph:inEventSeries phd:${code} ;\n` +
+                `    ph:inEventSeries ser:${code} ;\n` +
                 `    ph:sequenceInSeries ${edition} .\n`;
   }
   if (newSeries.size) {
@@ -799,6 +803,8 @@ function buildTtl() {
 @prefix pav:     <http://purl.org/pav/> .
 @prefix ph:      <https://id.pedalhidrografi.co/terms#> .
 @prefix phd:     <https://pedalhidrografi.co/data/> .
+@prefix pas:     <https://id.pedalhidrografi.co/passeio/> .
+@prefix ser:     <https://id.pedalhidrografi.co/serie/> .
 @prefix pes:     <https://id.pedalhidrografi.co/pessoas/> .
 @prefix prov:    <http://www.w3.org/ns/prov#> .
 @prefix qudt:    <http://qudt.org/schema/qudt/> .
@@ -862,7 +868,7 @@ $('#form').addEventListener('submit', async (ev) => {
       const aurl = saneUrl(json.announcement_url)
         ? ` · <a href="${escapeHtml(json.announcement_url)}" target="_blank">imagem</a>`
         : '';
-      notice(`✓ Salvo: <code>phd:tour_${escapeHtml(json.tour_id)}</code>${aurl}. Catálogo recarregado.`, 'ok');
+      notice(`✓ Salvo: <code>pas:${escapeHtml(json.tour_id)}</code>${aurl}. Catálogo recarregado.`, 'ok');
       // Status da sincronização da rota (routes.json) — best-effort no backend.
       const r = json.route || {};
       if (r.status === 'ok') {
@@ -899,7 +905,7 @@ notice(
 );
 
 // ────────────────────── Modo edição: prefill via ?id=<tour_id> ──────────
-// Quando aberto com ?id=foo, busca o bloco de phd:tour_foo em tours.ttl,
+// Quando aberto com ?id=foo, busca o bloco de pas:foo em tours.ttl,
 // popula todos os campos com os valores atuais e tranca o ID (pra não
 // trocar acidentalmente). Submit faz upsert (mesmo endpoint).
 async function prefillFromId(tourId) {
@@ -919,7 +925,7 @@ async function prefillFromId(tourId) {
     notice(`Tours.ttl indisponível: ${escapeHtml(e.message)}`, 'err');
     return;
   }
-  const tourIri = `${PHD_NS}tour_${tourId}`;
+  const tourIri = `${PAS_NS}${tourId}`;
   const triples = [];
   const subjBy = new Map();   // subject IRI → quads (pra resolver bnodes)
   try {
@@ -1011,7 +1017,7 @@ async function prefillFromId(tourId) {
       const seq  = subjBy.get(assocIri)?.find(x =>
         x.predicate.value === PH_NS + 'sequenceInSeries');
       if (inEv && seq) {
-        const code = inEv.object.value.slice(PHD_NS.length);
+        const code = inEv.object.value.slice(SER_NS.length);
         series.push({ code, edition: parseInt(seq.object.value, 10) });
       }
     }
@@ -1132,7 +1138,7 @@ async function prefillFromId(tourId) {
   const delBtn = $('#delete-tour');
   delBtn.hidden = false;
   delBtn.addEventListener('click', async () => {
-    if (!confirm(`Apagar passeio phd:tour_${tourId} de tours.ttl + assets do bucket? Esta ação não pode ser desfeita pelo form.`)) return;
+    if (!confirm(`Apagar passeio pas:${tourId} de tours.ttl + assets do bucket? Esta ação não pode ser desfeita pelo form.`)) return;
     delBtn.disabled = true;
     const orig = delBtn.textContent;
     delBtn.textContent = 'Apagando…';
@@ -1155,11 +1161,26 @@ async function prefillFromId(tourId) {
     }
   });
 
-  notice(`Carregado <code>phd:tour_${escapeHtml(tourId)}</code> em modo edição. Submit faz upsert.`, 'ok');
+  notice(`Carregado <code>pas:${escapeHtml(tourId)}</code> em modo edição. Submit faz upsert.`, 'ok');
+}
+
+// Slug aleatório Crockford base32 (8 chars, sem i/l/o/u) — igual às pessoas.
+// Passeios novos nascem com um slug opaco (o IRI é pas:<slug>); o campo fica
+// editável (dá pra trocar), mas o default é aleatório — nada de id sequencial.
+function mintTourSlug() {
+  const A = '0123456789abcdefghjkmnpqrstvwxyz';
+  const b = new Uint8Array(8); crypto.getRandomValues(b);
+  return Array.from(b, (x) => A[x % 32]).join('');
 }
 
 const editId = new URLSearchParams(location.search).get('id');
-if (editId) prefillFromId(editId);
+if (editId) {
+  prefillFromId(editId);
+} else {
+  // Modo criação: pré-preenche um slug aleatório.
+  const el = document.getElementById('t-id');
+  if (el && !el.value) el.value = mintTourSlug();
+}
 </script>
 </body>
 </html>

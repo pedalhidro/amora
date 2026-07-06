@@ -141,6 +141,12 @@ KEY_LISTS = "data/lists.ttl"
 MED_NS = "https://id.pedalhidrografi.co/midia/"
 # Atividade de envio (ph:Upload) — provenance server-side. IRI: .../envio/<ts>.
 ENV_NS = "https://id.pedalhidrografi.co/envio/"
+# Passeio (ph:Tour) — id agora é um slug aleatório Crockford (não mais o id
+# numérico legado). IRI: https://id.pedalhidrografi.co/passeio/<slug8>. O "tour_id"
+# no código passa a ser esse slug (localname após o prefixo).
+PAS_NS = "https://id.pedalhidrografi.co/passeio/"
+# Série de eventos (schema:EventSeries). IRI: .../serie/<ES> (PH/BT/BP/S/SESC).
+SER_NS = "https://id.pedalhidrografi.co/serie/"
 
 
 def _intensity_for(kj):
@@ -553,6 +559,34 @@ def _ttl_escape(s):
     return (s or "").replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
 
 
+# ── Mapa de IRIs de passeio (migração P4) ────────────────────────────────
+# tour-iri-map.json: id numérico legado ↔ slug novo. Só os 109 passeios da
+# migração precisam dele — passeios novos já nascem com slug e não têm id
+# antigo. Usado pra: (a) alias 303 de deep links ?tour=<id-numérico> antigos,
+# (b) guids estáveis no feed (emite o IRI antigo pra não churnar o RSS).
+_TOUR_MAP_PATH = WEB / "data" / "tour-iri-map.json"
+_tour_map_cache = None
+
+
+def _tour_iri_map():
+    """{'byOldId': {<numid>: <slug>}, 'byNewSlug': {<slug>: <numid>}}.
+    Estático (baked no container); cache em processo. Vazio se ausente."""
+    global _tour_map_cache
+    if _tour_map_cache is None:
+        try:
+            _tour_map_cache = json.loads(_TOUR_MAP_PATH.read_text())
+        except Exception:  # noqa: BLE001 — sem mapa = degrada sem alias/guid antigo
+            _tour_map_cache = {"byOldId": {}, "byNewSlug": {}}
+    return _tour_map_cache
+
+
+def _legacy_tour_iri(slug):
+    """IRI antigo (phd:tour_<numid>) de um passeio migrado, ou None. Pra guid
+    estável do feed — o IRI antigo é opaco/permanente, o slug novo churna."""
+    numid = _tour_iri_map().get("byNewSlug", {}).get(slug)
+    return (PHD_NS + "tour_" + numid) if numid else None
+
+
 def _build_audit_ttl(upload_local, phash):
     """Bloco PROV server-side anexado ao TTL do upload. A atividade de envio vira
     env:<ts> (resolvível) e aponta pra mídia em med:image_<phash>."""
@@ -840,15 +874,15 @@ def upsert_media_node(media_iri, node_ttl):
 
 
 # ── Tour upserts ─────────────────────────────────────────────────────────
-# Mesma mecânica de validação/merge das imagens, mas pra phd:tour_<id>
+# Mesma mecânica de validação/merge das imagens, mas pra pas:<slug>
 # e gravando em tours.ttl em vez de uploads.ttl. Pra dar suporte ao form
 # upload_tour.html, que cria/edita 1 tour por vez.
 
 def _single_tour_id(data):
     """Acha exatamente 1 ph:Tour no graph `data` e devolve (tour_id, errors).
 
-    `tour_id` é o sufixo após `phd:tour_`. Compartilhado entre a validação e
-    a síntese de patch (que precisa do ID antes de montar o resultado).
+    `tour_id` é o sufixo após `pas:` (o slug do passeio). Compartilhado entre a
+    validação e a síntese de patch (que precisa do ID antes de montar o resultado).
     """
     from rdflib import URIRef
     RDFT = URIRef("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
@@ -858,21 +892,23 @@ def _single_tour_id(data):
             f"TTL deve conter exatamente 1 ph:Tour (achou {len(tours)})"
         ]
     tour_iri = str(tours[0])
-    if not tour_iri.startswith(PHD_NS + "tour_"):
+    if not tour_iri.startswith(PAS_NS):
         return None, [
-            f"IRI do Tour deve começar com phd:tour_ (atual: {tour_iri})"
+            f"IRI do Tour deve começar com pas: (atual: {tour_iri})"
         ]
-    tour_id = tour_iri[len(PHD_NS + "tour_"):]
+    tour_id = tour_iri[len(PAS_NS):]
     if not tour_id:
         return None, ["IRI do Tour vazio"]
     # Mesmo charset que delete_tour exige. Sem isso, um IRI completo tipo
-    # <https://pedalhidrografi.co/data/tour_../x> passa (a forma full-IRI
+    # <https://id.pedalhidrografi.co/passeio/../x> passa (a forma full-IRI
     # aceita "/" e "."), e o tour_id vira componente de path no store
     # (tour_assets/<id>/...) — traversal pra qualquer lugar sob web/ — além
-    # de criar tours que o delete-tour depois recusa.
-    if not all(c.isalnum() or c in "_-" for c in tour_id):
+    # de criar tours que o delete-tour depois recusa. `_` é REJEITADO: é o
+    # separador dos nós derivados (pas:<slug>_route), então um slug com `_`
+    # colidiria com um irmão derivado na hora do purge.
+    if not all(c.isalnum() or c == "-" for c in tour_id):
         return None, [
-            f"tour_id inválido (apenas [A-Za-z0-9_-]): {tour_id!r}"
+            f"tour_id inválido (apenas [A-Za-z0-9-], sem '_'): {tour_id!r}"
         ]
     return tour_id, []
 
@@ -880,7 +916,7 @@ def _single_tour_id(data):
 def validate_tour_ttl(ttl_text):
     """Verifica que o TTL contém exatamente 1 ph:Tour e satisfaz TourShape.
 
-    Retorna (ok, tour_id, errors). `tour_id` é o sufixo após `phd:tour_`.
+    Retorna (ok, tour_id, errors). `tour_id` é o slug (sufixo após `pas:`).
     """
     v = _load_validator()
     from rdflib import URIRef, Namespace
@@ -892,7 +928,7 @@ def validate_tour_ttl(ttl_text):
 
     # Mescla com ontology + catálogo (excluindo o próprio tour + seus nós
     # derivados pra evitar cardinalidade falsa por sobreposição de re-upload).
-    tour_uri = URIRef(PHD_NS + "tour_" + tour_id)
+    tour_uri = URIRef(PAS_NS + tour_id)
     catalog = _load_catalog()
     exclude = {tour_uri} | _derived_subjects(catalog, tour_uri)
     merged = data + v["ont"]
@@ -926,7 +962,7 @@ def upsert_tour_in_tours_ttl(tour_ttl, tour_id):
     v = _load_validator()
     Graph = v["Graph"]
     from rdflib import URIRef
-    tour_iri = URIRef(PHD_NS + "tour_" + tour_id)
+    tour_iri = URIRef(PAS_NS + tour_id)
     catalog = Graph()
     existing = _load_dump_text("tours.ttl")
     if existing:
@@ -996,7 +1032,7 @@ def synthesize_tour_patch(patch_ttl, remove_preds, replace_image=False):
     route-sync), ou seja, o SHACL valida o ESTADO FINAL do tour.
 
     Retorna (tour_id, result_ttl). Levanta ValueError se o patch não contém
-    exatamente 1 ph:Tour com IRI phd:tour_<id> válido.
+    exatamente 1 ph:Tour com IRI pas:<slug> válido.
     """
     v = _load_validator()
     Graph = v["Graph"]
@@ -1006,7 +1042,7 @@ def synthesize_tour_patch(patch_ttl, remove_preds, replace_image=False):
     tour_id, errors = _single_tour_id(patch)
     if tour_id is None:
         raise ValueError("; ".join(errors))
-    tour_uri = URIRef(PHD_NS + "tour_" + tour_id)
+    tour_uri = URIRef(PAS_NS + tour_id)
 
     preds_to_replace = set(patch.predicates(tour_uri)) | set(remove_preds)
     if replace_image:
@@ -1045,7 +1081,7 @@ def remove_tour_from_tours_ttl(tour_id):
     v = _load_validator()
     Graph = v["Graph"]
     from rdflib import URIRef
-    tour_iri = URIRef(PHD_NS + "tour_" + tour_id)
+    tour_iri = URIRef(PAS_NS + tour_id)
     catalog = Graph()
     catalog.parse(data=existing, format="turtle")
     n = _purge_subject(catalog, tour_iri)
@@ -1111,7 +1147,7 @@ def _current_tour_route_id(tour_id):
         return None
     try:
         g = _RdfGraph().parse(data=text, format="turtle")
-        meta = rwgps.tour_entry_from_graph(g, _URIRef(PHD_NS + "tour_" + tour_id))
+        meta = rwgps.tour_entry_from_graph(g, _URIRef(PAS_NS + tour_id))
     except Exception:  # noqa: BLE001
         return None
     return meta["id"] if meta else None
@@ -1141,7 +1177,7 @@ def _sync_tour_route(tour_id):
     import rwgps
     from rdflib import Graph as _RdfGraph, URIRef as _URIRef
 
-    tour_iri = PHD_NS + "tour_" + tour_id
+    tour_iri = PAS_NS + tour_id
     text = _load_dump_text("tours.ttl")
     if not text:
         return {"status": "error", "error": "tours.ttl ausente"}
@@ -1203,7 +1239,7 @@ def _sync_tour_route(tour_id):
 def _remove_tour_route(tour_id):
     """Remove a entrada de routes.json do tour (chamado no delete-tour).
     Retorna nº de entradas removidas. Sob lock curto (sem IO de rede)."""
-    tour_iri = PHD_NS + "tour_" + tour_id
+    tour_iri = PAS_NS + tour_id
     with _state_lock:
         payload = _load_routes_payload()
         before = len(payload["routes"])
@@ -1251,7 +1287,12 @@ def index():
     de sempre. Ver _render_tour_index lá embaixo."""
     import re
     tour_id = (request.args.get("tour") or "").strip()
-    if tour_id and re.fullmatch(r"[A-Za-z0-9_\-]+", tour_id):
+    # Continuidade (F4): deep links antigos usam ?tour=<id-numérico>. Se o id
+    # bater num passeio migrado, 303 pro slug novo — o link antigo segue vivo.
+    legacy_slug = _tour_iri_map().get("byOldId", {}).get(tour_id)
+    if legacy_slug and legacy_slug != tour_id:
+        return redirect(f"/?tour={legacy_slug}", code=303)
+    if tour_id and re.fullmatch(r"[A-Za-z0-9\-]+", tour_id):
         try:
             page = _render_tour_index(tour_id)
         except Exception as e:  # noqa: BLE001
@@ -1470,6 +1511,22 @@ def list_page(slug):
         abort(404)
     return _conditional(Response(out.serialize(format="turtle"),
                                  mimetype="text/turtle",
+                                 headers={"Cache-Control": "no-cache"}))
+
+
+@app.get("/passeio/<slug>")
+def tour_page(slug):
+    """Dereferência de um passeio. IRI: https://id.pedalhidrografi.co/passeio/
+    <slug> (CF 303 pra cá). Conneg: Accept: text/turtle (ou ?format=ttl) → as
+    triples do passeio fatiadas de tours.ttl; senão 303 pro deep link do app
+    (/?tour=<slug>), que abre o modal da rota (com SSR pra crawlers/no-JS).
+    (A forma de 2 segmentos /passeio/<ES>/<seq> é a edição — rota à parte.)"""
+    if not _wants_turtle(request):
+        return redirect(f"/?tour={slug}", code=303)
+    ttl = _resource_slice_ttl(PAS_NS + slug, "tours.ttl")
+    if ttl is None:
+        abort(404)
+    return _conditional(Response(ttl, mimetype="text/turtle",
                                  headers={"Cache-Control": "no-cache"}))
 
 
@@ -1879,11 +1936,17 @@ def _build_feed_xml(tours_text):
         # "]]>" dentro de CDATA encerraria a seção — quebra o token em duas.
         content = "\n".join(html).replace("]]>", "]]]]><![CDATA[>")
 
+        # guid ESTÁVEL (F4): p/ passeios migrados emite o IRI legado
+        # (phd:tour_<numid>), que é opaco e permanente — assim a troca do IRI
+        # pra pas:<slug> não faz todos os itens reaparecerem como novos no RSS.
+        _slug = str(t)[len(PAS_NS):] if str(t).startswith(PAS_NS) else None
+        guid = (_legacy_tour_iri(_slug) if _slug else None) or str(t)
+
         items.append(
             "    <item>\n"
             f"      <title>{escape(title)}</title>\n"
             f"      <link>{escape(link)}</link>\n"
-            f"      <guid isPermaLink=\"false\">{escape(str(t))}</guid>\n"
+            f"      <guid isPermaLink=\"false\">{escape(guid)}</guid>\n"
             + (f"      <pubDate>{format_datetime(dt)}</pubDate>\n" if dt else "")
             + f"      <description>{escape(desc)}</description>\n"
             + (f"      <content:encoded><![CDATA[{content}]]></content:encoded>\n"
@@ -1974,7 +2037,7 @@ def _build_sitemap_xml(tours_text):
                 dt = datetime.fromisoformat(str(date)) if date else None
             except ValueError:
                 dt = None
-            tour_id = str(t).rsplit("tour_", 1)[-1]
+            tour_id = str(t)[len(PAS_NS):] if str(t).startswith(PAS_NS) else str(t).rsplit("/", 1)[-1]
             title = str(g.value(t, DCT.title) or tour_id).strip()
             tours.append((dt, tour_id, title))
     tours.sort(key=lambda x: _tour_date_sort_key(x[0]), reverse=True)
@@ -2085,7 +2148,7 @@ def _render_tour_index(tour_id):
     PROV = Namespace("http://www.w3.org/ns/prov#")
 
     g = _tours_graph()
-    t = URIRef(PHD_NS + "tour_" + tour_id)
+    t = URIRef(PAS_NS + tour_id)
     if (t, RDF.type, PH.Tour) not in g:
         return None
 
@@ -2761,7 +2824,7 @@ def update_person(slug):
 def upload_tour():
     """Cria/atualiza 1 ph:Tour em tours.ttl.
 
-    Espera `ttl` (form field ou file) com exatamente 1 `phd:tour_<id> a ph:Tour`
+    Espera `ttl` (form field ou file) com exatamente 1 `pas:<slug> a ph:Tour`
     + opcionalmente declarações novas de `phd:assoc_*`, `phd:pessoa*`, etc.
 
     Dois modos (form field `mode`):

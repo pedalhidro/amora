@@ -18,6 +18,8 @@
     ph:      'https://id.pedalhidrografi.co/terms#',
     phd:     'https://pedalhidrografi.co/data/',
     med:     'https://id.pedalhidrografi.co/midia/',
+    pas:     'https://id.pedalhidrografi.co/passeio/',
+    ser:     'https://id.pedalhidrografi.co/serie/',
     lst:     'https://id.pedalhidrografi.co/listas/',
     schema:  'https://schema.org/',
     dcterms: 'http://purl.org/dc/terms/',

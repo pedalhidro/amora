@@ -6104,14 +6104,16 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && !routeModal.hidden) closeRouteModal();
 });
 
-// Extrai o curtoID do passeio (sufixo após `phd:tour_` ou IRI completa).
+// Extrai o slug do passeio (sufixo após `pas:` / IRI completa). Aceita também
+// as formas legadas phd:tour_ por segurança (dados/links pré-migração).
 function _tourIdFromIri(iri) {
   if (!iri) return null;
+  const PAS = 'https://id.pedalhidrografi.co/passeio/';
   const PHD = 'https://pedalhidrografi.co/data/';
-  const PFX_SHORT = 'phd:tour_';
-  const PFX_LONG  = PHD + 'tour_';
-  if (iri.startsWith(PFX_SHORT)) return iri.slice(PFX_SHORT.length);
-  if (iri.startsWith(PFX_LONG))  return iri.slice(PFX_LONG.length);
+  if (iri.startsWith(PAS))            return iri.slice(PAS.length);
+  if (iri.startsWith('pas:'))         return iri.slice('pas:'.length);
+  if (iri.startsWith(PHD + 'tour_'))  return iri.slice((PHD + 'tour_').length);
+  if (iri.startsWith('phd:tour_'))    return iri.slice('phd:tour_'.length);
   return null;
 }
 
@@ -6122,6 +6124,7 @@ function _tourIdFromIri(iri) {
 async function _renderTourSummary(tourId) {
   const PH    = 'https://id.pedalhidrografi.co/terms#';
   const PHD   = 'https://pedalhidrografi.co/data/';
+  const PAS   = 'https://id.pedalhidrografi.co/passeio/';
   const SCHEMA = 'https://schema.org/';
   const DCT   = 'http://purl.org/dc/terms/';
   const RDFT  = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
@@ -6144,7 +6147,7 @@ async function _renderTourSummary(tourId) {
     return `<p class="muted">tours.ttl indisponível: ${escapeHtml(e.message)}.</p>`;
   }
 
-  const tourIri = `${PHD}tour_${tourId}`;
+  const tourIri = `${PAS}${tourId}`;
   const subjBy = new Map();  // subject IRI/bnode-id → array of quads
   const types = new Map();   // subject → Set of types
   const labels = new Map();  // subject → human label (name/title/code)
@@ -6167,7 +6170,7 @@ async function _renderTourSummary(tourId) {
   }
   const own = subjBy.get(tourIri) || [];
   if (!own.length) {
-    return `<p class="muted">Passeio <code>phd:tour_${escapeHtml(tourId)}</code> não encontrado.</p>`;
+    return `<p class="muted">Passeio <code>pas:${escapeHtml(tourId)}</code> não encontrado.</p>`;
   }
 
   function nameOf(iri) {

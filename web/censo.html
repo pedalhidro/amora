@@ -271,6 +271,7 @@ async function loadN3() {
 
 const PH     = 'https://id.pedalhidrografi.co/terms#';
 const PHD    = 'https://pedalhidrografi.co/data/';
+const PAS    = 'https://id.pedalhidrografi.co/passeio/';   // passeios (slug)
 const SCHEMA = 'https://schema.org/';
 const DCT    = 'http://purl.org/dc/terms/';
 const RDFT   = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
@@ -609,8 +610,11 @@ function renderTable(tours) {
       : '<span class="missing">—</span>';
     // Link pro upload_tour.html com `?id=<tour_id>` — o formulário lê o
     // param via prefillFromId() e abre em modo edição (upsert).
-    const slug = t.iri.startsWith(PHD) ? t.iri.slice(PHD.length) : t.iri;
-    const tourId = slug.startsWith('tour_') ? slug.slice('tour_'.length) : slug;
+    // Passeios agora são pas:<slug>; o tourId (= slug) é o localname. Aceita a
+    // forma legada phd:tour_<id> por segurança (dados pré-migração).
+    let tourId = t.iri;
+    if (t.iri.startsWith(PAS)) tourId = t.iri.slice(PAS.length);
+    else if (t.iri.startsWith(PHD + 'tour_')) tourId = t.iri.slice((PHD + 'tour_').length);
     const editHref = `./upload_tour.html?id=${encodeURIComponent(tourId)}`;
     // Mídias: total com breakdown foto/vídeo no title (hover).
     const mediaTitle = isMissing(t.media)
