@@ -151,7 +151,7 @@
     <div class="actions">
       <button type="button" class="linkish" id="add-series">+ adicionar outra série</button>
     </div>
-    <small>Cada linha vira <code>ph:inSeriesEdition phd:assoc_&lt;série&gt;_&lt;n&gt;</code>.</small>
+    <small>Cada linha vira <code>ph:inSeriesEdition &lt;…/passeio/&lt;série&gt;/&lt;n&gt;&gt;</code> (uma edição de série).</small>
 
     <label for="t-organizer">Organização(ões) — opcional</label>
     <select multiple id="t-organizer" placeholder="busca ou digita…"></select>
@@ -714,7 +714,8 @@ function buildTtl() {
   // de IRI, sem walk de bnodes. Acumulados aqui e anexados ao final.
   const derived = [];
   for (const { code, edition } of seriesPairs) {
-    props.push(`ph:inSeriesEdition phd:assoc_${code}_${edition}`);
+    // Edição = IRI com path /passeio/<ES>/<seq> (o `/` impede CURIE → IRI full).
+    props.push(`ph:inSeriesEdition <${PAS_NS}${code}/${edition}>`);
   }
   for (const org of organizers) props.push(`schema:organizer ${org}`);
   if (routeUrl) {
@@ -765,7 +766,7 @@ function buildTtl() {
   // Declarações auxiliares (associações, séries novas, pessoas novas, orgs novas).
   let auxDecls = '\n# Associações à série(s)\n';
   for (const { code, edition } of seriesPairs) {
-    auxDecls += `phd:assoc_${code}_${edition} a ph:Association ;\n` +
+    auxDecls += `<${PAS_NS}${code}/${edition}> a ph:SeriesEdition ;\n` +
                 `    ph:inEventSeries ser:${code} ;\n` +
                 `    ph:sequenceInSeries ${edition} .\n`;
   }
@@ -1009,16 +1010,17 @@ async function prefillFromId(tourId) {
       const iri = objIri(q); if (iri) newcomersList.push(shortIRI(iri));
     }
     else if (p === PH_NS + 'inSeriesEdition') {
-      // Resolve a associação → {code, edition} via subjBy.
-      const assocIri = objIri(q);
-      if (!assocIri) continue;
-      const inEv = subjBy.get(assocIri)?.find(x =>
-        x.predicate.value === PH_NS + 'inEventSeries');
-      const seq  = subjBy.get(assocIri)?.find(x =>
-        x.predicate.value === PH_NS + 'sequenceInSeries');
+      // A edição é <…/passeio/<ES>/<seq>>. code+edition saem do inEventSeries /
+      // sequenceInSeries do nó da edição (o form modela edição = nº sequencial).
+      // Edições desambiguadas manualmente (ex.: BP/3-5, seq 4) não são editáveis
+      // pelo form sem recolidir — a SHACL "exatamente 1 passeio" barra o save.
+      const edIri = objIri(q);
+      if (!edIri) continue;
+      const inEv = subjBy.get(edIri)?.find(x => x.predicate.value === PH_NS + 'inEventSeries');
+      const seq  = subjBy.get(edIri)?.find(x => x.predicate.value === PH_NS + 'sequenceInSeries');
       if (inEv && seq) {
-        const code = inEv.object.value.slice(SER_NS.length);
-        series.push({ code, edition: parseInt(seq.object.value, 10) });
+        series.push({ code: inEv.object.value.slice(SER_NS.length),
+                      edition: parseInt(seq.object.value, 10) });
       }
     }
     else if (p === PH_NS + 'linkRoute') {

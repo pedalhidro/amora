@@ -1279,8 +1279,13 @@ def reload_caches():
 
 
 @app.get("/")
+@app.get("/index.html")
 def index():
     """index.html — com SSR mínimo por passeio quando há ?tour=<id>.
+
+    Também registrado em /index.html: a Cloudflare reescreve `/` → `/index.html`
+    antes do worker, então o deep link /?tour= chega na origem como
+    /index.html?tour= — sem esta rota, cairia no static file (sem SSR/alias).
 
     O render é best-effort: qualquer falha (catálogo corrompido, tour sem
     os campos esperados) degrada pro index estático, que é o comportamento
@@ -1527,6 +1532,42 @@ def tour_page(slug):
     if ttl is None:
         abort(404)
     return _conditional(Response(ttl, mimetype="text/turtle",
+                                 headers={"Cache-Control": "no-cache"}))
+
+
+@app.get("/passeio/<es>/<seq>")
+def edition_page(es, seq):
+    """Dereferência de uma EDIÇÃO de série (ph:SeriesEdition). IRI:
+    https://id.pedalhidrografi.co/passeio/<ES>/<seq> (ex.: .../passeio/BP/4,
+    .../passeio/BP/3-5). 2 segmentos — não confunde com o passeio (1 segmento,
+    /passeio/<slug>). Conneg: turtle → as triples da edição (de tours.ttl) + a
+    aresta do passeio que a realiza; senão 303 pro passeio realizador
+    (/?tour=<slug>), resolvido via ph:inSeriesEdition inverso em tours.ttl."""
+    from rdflib import URIRef
+    edition_iri = f"{PAS_NS}{es}/{seq}"
+    Graph = _load_validator()["Graph"]
+    tours_text = _load_dump_text("tours.ttl")
+    if not tours_text:
+        abort(404)
+    g = Graph().parse(data=tours_text, format="turtle")
+    ed = URIRef(edition_iri)
+    INSERIES = URIRef(PH_NS + "inSeriesEdition")
+    realizer = next(iter(g.subjects(INSERIES, ed)), None)
+    if not _wants_turtle(request):
+        if realizer is None:
+            abort(404)
+        return redirect(f"/?tour={str(realizer)[len(PAS_NS):]}", code=303)
+    out = Graph()
+    for pfx, ns in (("pas", PAS_NS), ("ser", SER_NS), ("ph", PH_NS)):
+        out.bind(pfx, ns)
+    for t in g.triples((ed, None, None)):
+        out.add(t)
+    if len(out) == 0:
+        abort(404)
+    if realizer is not None:
+        out.add((realizer, INSERIES, ed))
+    return _conditional(Response(out.serialize(format="turtle"),
+                                 mimetype="text/turtle",
                                  headers={"Cache-Control": "no-cache"}))
 
 

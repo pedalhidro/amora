@@ -3,7 +3,6 @@
 @prefix pav: <http://purl.org/pav/> .
 @prefix pes: <https://id.pedalhidrografi.co/pessoas/> .
 @prefix ph: <https://id.pedalhidrografi.co/terms#> .
-@prefix phd: <https://pedalhidrografi.co/data/> .
 @prefix prov: <http://www.w3.org/ns/prov#> .
 @prefix schema: <https://schema.org/> .
 @prefix ser: <https://id.pedalhidrografi.co/serie/> .
@@ -21,7 +20,7 @@ pas:05cr6685 a ph:Tour ;
     ph:countNewcomer 9 ;
     ph:departedAt "2026-06-16T20:45:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 296.0 ;
-    ph:inSeriesEdition phd:assoc_PH_96 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/96> ;
     ph:linkInstagram "https://www.instagram.com/p/DZnXZA8DkM9"^^xsd:anyURI ;
     ph:linkRoute pas:05cr6685_route ;
     ph:measuredEnergy 262.0 ;
@@ -43,7 +42,7 @@ O Antonico nasce em Paraisópolis, passando sob a área do Estádio do Morumbi(s
     ph:countNewcomer 2 ;
     ph:departedAt "2025-09-02T20:28:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 276.0 ;
-    ph:inSeriesEdition phd:assoc_PH_53 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/53> ;
     ph:linkInstagram "https://www.instagram.com/p/DOGOOV5joSC/"^^xsd:anyURI ;
     ph:linkRoute pas:0vcw4tnh_route ;
     ph:measuredEnergy 300.0 ;
@@ -59,7 +58,7 @@ pas:0zx5nzpj a ph:Tour ;
     ph:countAttendee 7 ;
     ph:countNewcomer 1 ;
     ph:departedAt "2026-03-04T20:46:00-03:00"^^xsd:dateTime ;
-    ph:inSeriesEdition phd:assoc_PH_82 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/82> ;
     ph:linkInstagram "https://www.instagram.com/p/DVbP7QsDiYA/"^^xsd:anyURI ;
     ph:linkRoute pas:0zx5nzpj_route ;
     ph:measuredEnergy 347.4 ;
@@ -78,7 +77,7 @@ Passeamos por estes altos no meio do luar crescente pelo tempo e caminho que é 
     ph:countNewcomer 0 ;
     ph:departedAt "2025-08-19T20:28:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 373.0 ;
-    ph:inSeriesEdition phd:assoc_PH_51 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/51> ;
     ph:linkInstagram "https://www.instagram.com/p/DNgw3pBBoaV/?img_index=1"^^xsd:anyURI ;
     ph:linkRoute pas:10j3w60x_route ;
     ph:measuredEnergy 460.0 ;
@@ -98,7 +97,7 @@ pas:140b5xtt a ph:Tour ;
     ph:countNewcomer 1 ;
     ph:departedAt "2025-01-14T20:36:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 370.0 ;
-    ph:inSeriesEdition phd:assoc_PH_22 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/22> ;
     ph:linkInstagram "https://www.instagram.com/p/DEz0L0vud94/?img_index=1"^^xsd:anyURI ;
     ph:linkRoute pas:140b5xtt_route ;
     ph:mediaCount 41 ;
@@ -127,7 +126,7 @@ Por fim, margeando o córrego Boa Vista, sufocado pela Av. 23 de maio, cruzando 
     ph:countAttendee 22 ;
     ph:countNewcomer 6 ;
     ph:energyEstimate 343.0 ;
-    ph:inSeriesEdition phd:assoc_PH_94 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/94> ;
     ph:linkInstagram "https://www.instagram.com/p/DY7f96pDuCJ/?igsh=ZXlwYnVtczR6cWwy"^^xsd:anyURI ;
     ph:linkRoute pas:1b9zreed_route ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/Ph94/announcement.jpg> .
@@ -142,7 +141,7 @@ pas:1fp9pvd4 a ph:Tour ;
     ph:countNewcomer 0 ;
     ph:departedAt "2024-11-19T20:21:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 523.0 ;
-    ph:inSeriesEdition phd:assoc_PH_14 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/14> ;
     ph:linkInstagram "https://www.instagram.com/p/DChWox3ObhU/"^^xsd:anyURI ;
     ph:linkRoute pas:1fp9pvd4_route ;
     ph:mediaCount 42 ;
@@ -163,7 +162,7 @@ Contornado este seco e alto meandro de terra, não demora para termos contato co
     ph:countNewcomer 1 ;
     ph:departedAt "2025-08-12T20:20:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 360.0 ;
-    ph:inSeriesEdition phd:assoc_PH_50 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/50> ;
     ph:linkInstagram "https://www.instagram.com/p/DNPJZ3JOtPZ/"^^xsd:anyURI ;
     ph:linkRoute pas:1g186aee_route ;
     ph:measuredEnergy 410.0 ;
@@ -183,7 +182,7 @@ Sairemos na Praça Roosevelt - o fundão da nascente do Córrego Anhanguera, e d
     ph:countNewcomer 1 ;
     ph:departedAt "2025-01-28T20:20:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 340.0 ;
-    ph:inSeriesEdition phd:assoc_PH_24 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/24> ;
     ph:linkRoute pas:1q3wkxmh_route ;
     ph:measuredEnergy 301.9 ;
     ph:mediaCount 7 ;
@@ -196,7 +195,7 @@ pas:1wb9e39g a ph:Tour ;
     prov:wasAttributedTo pes:g4k9zgev ;
     ph:countAttendee 15 ;
     ph:countNewcomer 5 ;
-    ph:inSeriesEdition phd:assoc_PH_83 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/83> ;
     ph:linkInstagram "https://www.instagram.com/p/DWB1tpeDqJO/"^^xsd:anyURI ;
     ph:linkRoute pas:1wb9e39g_route .
 
@@ -206,8 +205,8 @@ pas:2qv2h9ak a ph:Tour ;
     prov:wasAttributedTo pes:wgb9b5fe ;
     ph:countAttendee 12 ;
     ph:energyEstimate 149.0 ;
-    ph:inSeriesEdition phd:assoc_BP_3,
-        phd:assoc_PH_76 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/BP/3>,
+        <https://id.pedalhidrografi.co/passeio/PH/76> ;
     ph:linkInstagram "https://www.instagram.com/p/DUJI_AnjrgP/"^^xsd:anyURI ;
     ph:linkRoute pas:2qv2h9ak_route ;
     ph:mediaCount 53 .
@@ -221,7 +220,7 @@ pas:32gatmca a ph:Tour ;
     ph:countAttendee 4 ;
     ph:countNewcomer 0 ;
     ph:energyEstimate 385.0 ;
-    ph:inSeriesEdition phd:assoc_PH_88 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/88> ;
     ph:linkInstagram "https://www.instagram.com/p/DXYDQDKjjhH/"^^xsd:anyURI ;
     ph:linkRoute pas:32gatmca_route .
 
@@ -237,7 +236,7 @@ Começamos no metro Conceição, Linha Azul, no alto do Caaguaçu, com o Ipirang
     ph:countNewcomer 17 ;
     ph:departedAt "2025-02-11T20:10:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 291.0 ;
-    ph:inSeriesEdition phd:assoc_PH_26 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/26> ;
     ph:linkRoute pas:3sk51hs2_route ;
     ph:measuredEnergy 259.8 ;
     ph:mediaCount 45 ;
@@ -258,7 +257,7 @@ No Passo da Vaca, transportamo-nos para o vale do Baixo Cabuçu sem sequer notar
     ph:countNewcomer 1 ;
     ph:departedAt "2025-05-27T20:35:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 317.0 ;
-    ph:inSeriesEdition phd:assoc_PH_38 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/38> ;
     ph:linkInstagram "https://www.instagram.com/p/DKKpRsjOxkw/"^^xsd:anyURI ;
     ph:linkRoute pas:4d184nra_route ;
     ph:measuredEnergy 264.4 ;
@@ -280,7 +279,7 @@ Transladamos para o outro lado deste grande rio, fazendo breve passagem pela Gua
     ph:countNewcomer 3 ;
     ph:departedAt "2025-09-16T20:26:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 400.0 ;
-    ph:inSeriesEdition phd:assoc_PH_55 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/55> ;
     ph:linkInstagram "https://www.instagram.com/p/DOoaZqEjqKg/"^^xsd:anyURI ;
     ph:linkRoute pas:4hgp9tqv_route ;
     ph:measuredEnergy 430.0 ;
@@ -293,7 +292,7 @@ pas:4p6ev531 a ph:Tour ;
     dcterms:description "Pirajussara encontra Pinheiros - e ali nos encontramos também, na altura da Ponte da Cidade Universitária (Coffee Run Bike). Seguimos no contrafluxo do grande rio até chegar em seu passado-presente-permanente: os afluentes que lhe dão matéria - Rio Guarapiranga e Rio Jurubatuba. Damos tchau a este último para percorrer o Parque Barragem da Guarapiranga e passar por uma série de pontos excelentes para observação de aves aquáticas. Ao longo do percurso observaremos mais de 30 espécies. Paramos na frutaria para um coco melancia e seguimos para a Praia do Sol, onde esticaremos cangamapas-agora-no-modo-canga para desenhar aves e partilhar comidinhas."@pt ;
     dcterms:title "Guarapiranga desenhar pássaros" ;
     ph:energyEstimate 270.0 ;
-    ph:inSeriesEdition phd:assoc_BP_5 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/BP/5> ;
     ph:linkRoute pas:4p6ev531_route ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/bp5/announcement.jpg> .
 
@@ -308,7 +307,7 @@ Em homenagem ao Tamanduateí, após a visita no AHM, faremos um Pedal Hidrográf
     ph:countAttendee 52 ;
     ph:countNewcomer 28 ;
     ph:energyEstimate 143.0 ;
-    ph:inSeriesEdition phd:assoc_PH_98 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/98> ;
     ph:linkInstagram "https://www.instagram.com/p/DaTMdj_Jjkg/"^^xsd:anyURI ;
     ph:linkRoute pas:5jnr6mhz_route ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/ph98/announcement.jpg> .
@@ -323,7 +322,7 @@ pas:5nwqa4hm a ph:Tour ;
     ph:countNewcomer 1 ;
     ph:energyEstimate 346.0 ;
     ph:hadIncident "Anajú trouxe vinho quente"@pt ;
-    ph:inSeriesEdition phd:assoc_PH_95 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/95> ;
     ph:linkInstagram "https://www.instagram.com/p/DZWWbtIDr0i"^^xsd:anyURI ;
     ph:linkRoute pas:5nwqa4hm_route ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/ph95/announcement.jpg> .
@@ -347,7 +346,7 @@ Convictos que somos estendeu-se a rota, mesclando-a com o roteiro do referido ri
     ph:countAttendee 16 ;
     ph:countNewcomer 0 ;
     ph:energyEstimate 340.0 ;
-    ph:inSeriesEdition phd:assoc_PH_41 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/41> ;
     ph:linkInstagram "https://www.instagram.com/p/DLALcgZOaN7/"^^xsd:anyURI ;
     ph:linkRoute pas:5q98rxhp_route ;
     ph:mediaCount 77 ;
@@ -363,7 +362,7 @@ pas:5vrpn785 a ph:Tour ;
     ph:countNewcomer 2 ;
     ph:departedAt "2024-09-09T20:11:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 142.0 ;
-    ph:inSeriesEdition phd:assoc_PH_1 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/1> ;
     ph:linkRoute pas:5vrpn785_route ;
     ph:measuredEnergy 140.0 ;
     ph:mediaCount 2 ;
@@ -378,7 +377,7 @@ pas:5z6w47dx a ph:Tour ;
     ph:countNewcomer 8 ;
     ph:departedAt "2024-10-22T20:54:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 271.0 ;
-    ph:inSeriesEdition phd:assoc_PH_7 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/7> ;
     ph:linkRoute pas:5z6w47dx_route ;
     ph:measuredEnergy 183.1 ;
     ph:mediaCount 56 ;
@@ -396,7 +395,7 @@ Começamos descendo do Caaguaçu até o Rio Verde II pegando um atalho no Hospit
     ph:countNewcomer 2 ;
     ph:departedAt "2024-12-17T20:17:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 436.0 ;
-    ph:inSeriesEdition phd:assoc_PH_20 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/20> ;
     ph:linkInstagram "https://www.instagram.com/p/DDrYzskuaZy/"^^xsd:anyURI ;
     ph:linkRoute pas:65ptagq2_route ;
     ph:measuredEnergy 424.5 ;
@@ -411,7 +410,7 @@ pas:6myfn5e9 a ph:Tour ;
     ph:countAttendee 1 ;
     ph:countNewcomer 1 ;
     ph:energyEstimate 150.0 ;
-    ph:inSeriesEdition phd:assoc_PH_6 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/6> ;
     ph:mediaCount 11 ;
     ph:movingDuration "PT1H"^^xsd:duration .
 
@@ -433,7 +432,7 @@ Para finalizar, desceremos ao Anhangabaú, palco da celebração, neste 25 de no
     ph:countNewcomer 3 ;
     ph:departedAt "2025-11-25T20:27:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 267.0 ;
-    ph:inSeriesEdition phd:assoc_PH_66 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/66> ;
     ph:linkInstagram "https://www.instagram.com/p/DRfuROkgcc5/?img_index=1"^^xsd:anyURI ;
     ph:linkRoute pas:7d5ss8m1_route ;
     ph:measuredEnergy 215.0 ;
@@ -453,7 +452,7 @@ pas:7r767mt2 a ph:Tour ;
     ph:countNewcomer 4 ;
     ph:departedAt "2025-08-05T20:25:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 381.0 ;
-    ph:inSeriesEdition phd:assoc_PH_49 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/49> ;
     ph:linkInstagram "https://www.instagram.com/p/DM9AQl_uj-j/"^^xsd:anyURI ;
     ph:linkRoute pas:7r767mt2_route ;
     ph:measuredEnergy 420.0 ;
@@ -467,7 +466,7 @@ pas:7rnbkmfk a ph:Tour ;
     prov:wasAttributedTo pes:rany9bvq ;
     ph:countAttendee 3 ;
     ph:countNewcomer 0 ;
-    ph:inSeriesEdition phd:assoc_PH_80 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/80> ;
     ph:linkInstagram "https://www.instagram.com/p/DU6gCmNARaV/"^^xsd:anyURI ;
     ph:mediaCount 7 .
 
@@ -482,7 +481,7 @@ pas:81z8cp2q a ph:Tour ;
     ph:countNewcomer 6 ;
     ph:departedAt "2026-01-28T20:44:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 330.0 ;
-    ph:inSeriesEdition phd:assoc_PH_75 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/75> ;
     ph:linkInstagram "https://www.instagram.com/p/DUDeC9sjogH/"^^xsd:anyURI ;
     ph:linkRoute pas:81z8cp2q_route ;
     ph:measuredEnergy 239.9 ;
@@ -510,7 +509,7 @@ Vamos pedalar pelo senhor Hélio. Vamos pedalar pelo Tiquatira. Vamos pedalar pe
     ph:countNewcomer 3 ;
     ph:departedAt "2025-04-08T20:51:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 294.0 ;
-    ph:inSeriesEdition phd:assoc_PH_31 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/31> ;
     ph:linkRoute pas:84cae3s4_route ;
     ph:measuredEnergy 290.1 ;
     ph:mediaCount 67 ;
@@ -531,7 +530,7 @@ Uma vez separados da planície e estando situados neste divisor de águas e solo
     ph:countNewcomer 1 ;
     ph:departedAt "2025-05-20T20:14:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 424.0 ;
-    ph:inSeriesEdition phd:assoc_PH_37 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/37> ;
     ph:linkInstagram "https://www.instagram.com/p/DJ4WBFBODqO/"^^xsd:anyURI ;
     ph:linkRoute pas:8xwbzhxh_route ;
     ph:measuredEnergy 421.0 ;
@@ -552,7 +551,7 @@ Se o vale ainda estivesse ativo, a nascente do Rio Tietê poderia ser considerad
     ph:countNewcomer 3 ;
     ph:departedAt "2025-11-30T09:31:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 918.0 ;
-    ph:inSeriesEdition phd:assoc_PH_67 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/67> ;
     ph:linkInstagram "https://www.instagram.com/p/DRnmMqYgSxz/"^^xsd:anyURI ;
     ph:linkRoute pas:9qyjjshm_route ;
     ph:measuredEnergy 856.0 ;
@@ -566,7 +565,7 @@ pas:9s8bhtjw a ph:Tour ;
     prov:wasAttributedTo pes:wv6xxjbv ;
     ph:countAttendee 0 ;
     ph:countNewcomer 0 ;
-    ph:inSeriesEdition phd:assoc_PH_84 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/84> ;
     ph:linkInstagram "https://www.instagram.com/p/DWIIvKyDq1i/"^^xsd:anyURI ;
     ph:linkRoute pas:9s8bhtjw_route .
 
@@ -577,7 +576,7 @@ pas:a5w1920c a ph:Tour ;
     ph:countAttendee 0 ;
     ph:countNewcomer 0 ;
     ph:energyEstimate 104.0 ;
-    ph:inSeriesEdition phd:assoc_BP_4 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/BP/4> ;
     ph:linkInstagram "https://www.instagram.com/p/DW9UkzAEQs85hloy_Q4a05uhVxS8efAVUUOr4c0/"^^xsd:anyURI ;
     ph:linkRoute pas:a5w1920c_route .
 
@@ -598,7 +597,7 @@ Será uma oportunidade para construir pontes entre esta criatura-bebê de 1 ano 
     ph:countAttendee 13 ;
     ph:countNewcomer 2 ;
     ph:energyEstimate 293.0 ;
-    ph:inSeriesEdition phd:assoc_PH_91 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/91> ;
     ph:linkInstagram "https://www.instagram.com/p/DYFi8wRDjFL/?img_index=1"^^xsd:anyURI ;
     ph:linkRoute pas:a9spchfk_route ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/100/announcement.jpg> .
@@ -615,7 +614,7 @@ Reaja com joinha pra dizer que vai! E com chuva pra dizer que vai mesmo com chuv
     ph:countNewcomer 0 ;
     ph:departedAt "2024-10-24T20:47:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 300.0 ;
-    ph:inSeriesEdition phd:assoc_PH_8 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/8> ;
     ph:linkInstagram "https://www.instagram.com/p/DBhH6IpPZO3/"^^xsd:anyURI ;
     ph:linkRoute pas:acjb6h8s_route ;
     ph:measuredEnergy 163.9 ;
@@ -640,7 +639,7 @@ Ainda na cidade, cruzaremos a Rodovia dos Imigrantes por baixo - a segunda rodov
     ph:countNewcomer 0 ;
     ph:departedAt "2025-07-08T20:26:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 393.0 ;
-    ph:inSeriesEdition phd:assoc_PH_44 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/44> ;
     ph:linkInstagram "https://www.instagram.com/pedalhidrografico/p/DL0tL4Yu7I7/"^^xsd:anyURI ;
     ph:linkRoute pas:aqvmvk5f_route ;
     ph:measuredEnergy 482.0 ;
@@ -656,7 +655,7 @@ pas:avenpksx a ph:Tour ;
     ph:countNewcomer 45 ;
     ph:departedAt "2026-02-01T09:38:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 298.0 ;
-    ph:inSeriesEdition phd:assoc_SESC_1 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/SESC/1> ;
     ph:linkInstagram "https://www.instagram.com/p/DUBptxLEW6g/?img_index=1"^^xsd:anyURI ;
     ph:movingDuration "PT2H"^^xsd:duration .
 
@@ -676,7 +675,7 @@ Devidamente hidratados, cruzamos um nano divisor de águas para acessar o braço
     ph:countNewcomer 0 ;
     ph:departedAt "2025-03-11T20:00:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 206.0 ;
-    ph:inSeriesEdition phd:assoc_PH_28 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/28> ;
     ph:linkRoute pas:b4rs49rh_route ;
     ph:measuredEnergy 202.6 ;
     ph:mediaCount 83 ;
@@ -689,7 +688,7 @@ pas:bkbpnjf2 a ph:Tour ;
     dcterms:title "Conhecer cachoeira do Córrego Augusta e cantar rios no karaokê" ;
     prov:wasAttributedTo pes:wgb9b5fe ;
     ph:energyEstimate 30.0 ;
-    ph:inSeriesEdition phd:assoc_PH_97 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/97> ;
     ph:linkInstagram "https://www.instagram.com/p/DZ6VH2Eub8s/"^^xsd:anyURI ;
     ph:linkRoute pas:bkbpnjf2_route ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/ph97/announcement.jpg> .
@@ -701,8 +700,8 @@ pas:bs81z5bx a ph:Tour ;
         pes:wgb9b5fe ;
     ph:countAttendee 10 ;
     ph:energyEstimate 204.0 ;
-    ph:inSeriesEdition phd:assoc_BP_4,
-        phd:assoc_PH_79 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/BP/3-5>,
+        <https://id.pedalhidrografi.co/passeio/PH/79> ;
     ph:linkInstagram "https://www.instagram.com/p/DUogixyDldM/?img_index=1"^^xsd:anyURI ;
     ph:linkRoute pas:bs81z5bx_route ;
     ph:mediaCount 55 .
@@ -722,7 +721,7 @@ A bifurcação se apresenta: deveríamos seguir ao alto pelo esporão que se bif
     ph:countNewcomer 0 ;
     ph:departedAt "2026-03-25T20:11:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 372.0 ;
-    ph:inSeriesEdition phd:assoc_PH_85 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/85> ;
     ph:linkInstagram "https://www.instagram.com/p/DWSt3WbDg-X/"^^xsd:anyURI ;
     ph:linkRoute pas:c0spydxq_route ;
     ph:measuredEnergy 408.1 ;
@@ -737,7 +736,7 @@ pas:c0t00a05 a ph:Tour ;
     ph:countNewcomer 4 ;
     ph:departedAt "2024-10-08T20:16:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 245.0 ;
-    ph:inSeriesEdition phd:assoc_PH_5 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/5> ;
     ph:linkRoute pas:c0t00a05_route ;
     ph:measuredEnergy 246.3 ;
     ph:mediaCount 63 ;
@@ -750,7 +749,7 @@ pas:cwnbf0jz a ph:Tour ;
     ph:countAttendee 8 ;
     ph:countNewcomer 0 ;
     ph:energyEstimate 1200.0 ;
-    ph:inSeriesEdition phd:assoc_S_5 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/S/5> ;
     ph:measuredEnergy 1500.0 ;
     ph:mediaCount 321 ;
     ph:movingDuration "PT4H8M"^^xsd:duration .
@@ -776,7 +775,7 @@ No caminho, cruzamos nomes que soam como versos: Itararé, Poesia, Charque Grand
     ph:countNewcomer 4 ;
     ph:departedAt "2025-04-22T20:20:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 351.0 ;
-    ph:inSeriesEdition phd:assoc_PH_34 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/34> ;
     ph:linkRoute pas:e12025y8_route ;
     ph:measuredEnergy 349.1 ;
     ph:mediaCount 52 ;
@@ -802,7 +801,7 @@ As hills forming the canyons around Sausal Creek dissipate away, the time is nea
     ph:countNewcomer 33 ;
     ph:departedAt "2025-10-17T17:39:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 416.0 ;
-    ph:inSeriesEdition phd:assoc_PH_61 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/61> ;
     ph:linkInstagram "https://www.instagram.com/p/DPzHuRhAVjW/"^^xsd:anyURI ;
     ph:linkRoute pas:e3cxpdtn_route ;
     ph:measuredEnergy 707.0 ;
@@ -825,7 +824,7 @@ Já tendo percorrido metade do caminho, transpostamo-nos ao riacho da aldeia, af
     ph:countNewcomer 3 ;
     ph:departedAt "2025-06-24T20:52:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 349.0 ;
-    ph:inSeriesEdition phd:assoc_PH_42 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/42> ;
     ph:linkInstagram "https://www.instagram.com/p/DLSGeNfuQk6/"^^xsd:anyURI ;
     ph:linkRoute pas:erekmg3j_route ;
     ph:measuredEnergy 389.5 ;
@@ -840,7 +839,7 @@ pas:eyve1vph a ph:Tour ;
     ph:countAttendee 5 ;
     ph:countNewcomer 1 ;
     ph:energyEstimate 650.0 ;
-    ph:inSeriesEdition phd:assoc_S_3 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/S/3> ;
     ph:linkRoute pas:eyve1vph_route ;
     ph:mediaCount 70 ;
     ph:movingDuration "PT2H35M"^^xsd:duration .
@@ -857,7 +856,7 @@ Iniciaremos a partida da praça no Terminal Lapa, no qual acessamos a confluênc
     ph:countNewcomer 1 ;
     ph:departedAt "2024-12-10T20:33:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 330.0 ;
-    ph:inSeriesEdition phd:assoc_PH_19 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/19> ;
     ph:linkInstagram "https://www.instagram.com/p/DDXvWs7ByTI/"^^xsd:anyURI ;
     ph:linkRoute pas:fexen1sa_route ;
     ph:measuredEnergy 327.8 ;
@@ -879,7 +878,7 @@ Lá, testemunhamos um aterramento vultoso que soterra o riacho Clara. Continuamo
     ph:countNewcomer 0 ;
     ph:departedAt "2025-09-24T20:28:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 343.0 ;
-    ph:inSeriesEdition phd:assoc_PH_57 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/57> ;
     ph:linkInstagram "https://www.instagram.com/p/DO88VWtDtJj/"^^xsd:anyURI ;
     ph:linkRoute pas:ggn4hx6t_route ;
     ph:measuredEnergy 406.0 ;
@@ -893,7 +892,7 @@ pas:gw6hn4mk a ph:Tour ;
     prov:wasAttributedTo pes:2p6f8wmh,
         pes:wgb9b5fe ;
     ph:countAttendee 7 ;
-    ph:inSeriesEdition phd:assoc_PH_77 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/77> ;
     ph:linkInstagram "https://www.instagram.com/p/DUTydjOgXYq/"^^xsd:anyURI ;
     ph:linkRoute pas:gw6hn4mk_route ;
     ph:mediaCount 29 .
@@ -909,7 +908,7 @@ pas:gz6rv9a9 a ph:Tour ;
     ph:countNewcomer 1 ;
     ph:departedAt "2026-05-13T20:50:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 313.0 ;
-    ph:inSeriesEdition phd:assoc_PH_92 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/92> ;
     ph:linkInstagram "https://www.instagram.com/p/DYQyPoYDlVe/"^^xsd:anyURI ;
     ph:linkRoute pas:gz6rv9a9_route ;
     ph:measuredEnergy 270.3 ;
@@ -928,7 +927,7 @@ A rota começa por estar junto com as águas do Guarapiranga até desembarcar de
     ph:countNewcomer 3 ;
     ph:departedAt "2024-11-23T08:13:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 789.0 ;
-    ph:inSeriesEdition phd:assoc_PH_15 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/15> ;
     ph:linkInstagram "https://www.instagram.com/p/DCpl4FQOqFc/"^^xsd:anyURI ;
     ph:linkRoute pas:hnj18jf3_route ;
     ph:measuredEnergy 651.8 ;
@@ -953,7 +952,7 @@ Mudamos o curso a fim de acessar o Rio Perus enquanto este está acima do planal
     ph:countNewcomer 2 ;
     ph:departedAt "2026-02-24T20:35:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 280.0 ;
-    ph:inSeriesEdition phd:assoc_PH_81 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/81> ;
     ph:linkInstagram "https://www.instagram.com/p/DVIEJtmjmCK/?img_index=1"^^xsd:anyURI ;
     ph:linkRoute pas:j62vy0kx_route ;
     ph:measuredEnergy 328.0 ;
@@ -968,7 +967,7 @@ pas:j9xwshxe a ph:Tour ;
     ph:countAttendee 4 ;
     ph:countNewcomer 0 ;
     ph:energyEstimate 1700.0 ;
-    ph:inSeriesEdition phd:assoc_PH_12 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/12> ;
     ph:linkRoute pas:j9xwshxe_route ;
     ph:mediaCount 222 ;
     ph:movingDuration "PT5H20M"^^xsd:duration .
@@ -980,7 +979,7 @@ pas:jkjx9f82 a ph:Tour ;
     ph:countAttendee 4 ;
     ph:countNewcomer 1 ;
     ph:energyEstimate 520.0 ;
-    ph:inSeriesEdition phd:assoc_BP_1 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/BP/1> ;
     ph:mediaCount 2 ;
     ph:movingDuration "PT3H"^^xsd:duration .
 
@@ -996,7 +995,7 @@ A rota terá inicio nas proximidades da colina histórica paulistana, nos quais 
     ph:countNewcomer 7 ;
     ph:departedAt "2025-01-21T20:24:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 441.0 ;
-    ph:inSeriesEdition phd:assoc_PH_23 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/23> ;
     ph:linkRoute pas:jrnf8kvk_route ;
     ph:measuredEnergy 435.3 ;
     ph:mediaCount 48 ;
@@ -1018,7 +1017,7 @@ Após isso, cada rio que se segue traz consigo uma nova grande crista, formando 
     ph:countNewcomer 1 ;
     ph:departedAt "2025-12-17T20:58:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 275.0 ;
-    ph:inSeriesEdition phd:assoc_PH_70 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/70> ;
     ph:linkInstagram "https://www.instagram.com/p/DSVgvNRAQu9/"^^xsd:anyURI ;
     ph:linkRoute pas:k7fgsn4t_route ;
     ph:measuredEnergy 303.0 ;
@@ -1033,7 +1032,7 @@ pas:kj5r72a5 a ph:Tour ;
     ph:countAttendee 2 ;
     ph:countNewcomer 1 ;
     ph:energyEstimate 417.0 ;
-    ph:inSeriesEdition phd:assoc_PH_4 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/4> ;
     ph:linkRoute pas:kj5r72a5_route ;
     ph:mediaCount 43 ;
     ph:movingDuration "PT1H30M"^^xsd:duration .
@@ -1052,7 +1051,7 @@ Lá no alto deste planalto, seguimos pelos Alpes do Jaraguá, que separa as águ
     ph:countNewcomer 2 ;
     ph:departedAt "2025-04-01T20:25:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 323.0 ;
-    ph:inSeriesEdition phd:assoc_PH_30 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/30> ;
     ph:linkRoute pas:kqxvk5jj_route ;
     ph:measuredEnergy 322.5 ;
     ph:mediaCount 99 ;
@@ -1073,7 +1072,7 @@ Pedal que segue o escoamento das águas na Zona Norte e acessa a Linha Verde do 
     ph:countNewcomer 0 ;
     ph:departedAt "2025-08-03T08:56:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 392.0 ;
-    ph:inSeriesEdition phd:assoc_PH_48 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/48> ;
     ph:linkInstagram "https://www.instagram.com/p/DM2jxeIOHJ6/"^^xsd:anyURI ;
     ph:linkRoute pas:mhn8hxv9_route ;
     ph:measuredEnergy 462.0 ;
@@ -1090,7 +1089,7 @@ pas:mr1k3qth a ph:Tour ;
     ph:countNewcomer 0 ;
     ph:departedAt "2025-06-01T07:34:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 650.0 ;
-    ph:inSeriesEdition phd:assoc_S_4 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/S/4> ;
     ph:mediaCount 185 ;
     ph:movingDuration "PT2H20M"^^xsd:duration .
 
@@ -1108,7 +1107,7 @@ Subimos o Rio Oratório, enquanto testemunhamos o mosaico do estado e transiçõ
     ph:countNewcomer 5 ;
     ph:departedAt "2025-06-10T20:38:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 399.0 ;
-    ph:inSeriesEdition phd:assoc_PH_40 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/40> ;
     ph:linkInstagram "https://www.instagram.com/p/DKuhIZVONOA/"^^xsd:anyURI ;
     ph:linkRoute pas:mw831nsm_route ;
     ph:measuredEnergy 400.8 ;
@@ -1130,7 +1129,7 @@ No encontro desta semana, o Hidrográfico rememora a história da enchente de 19
     ph:countNewcomer 17 ;
     ph:departedAt "2025-07-22T20:24:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 280.0 ;
-    ph:inSeriesEdition phd:assoc_PH_46 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/46> ;
     ph:linkInstagram "https://www.instagram.com/p/DMY_UtgOaoz/"^^xsd:anyURI ;
     ph:linkRoute pas:mwdts221_route ;
     ph:measuredEnergy 220.0 ;
@@ -1147,7 +1146,7 @@ pas:n3dxjrgb a ph:Tour ;
     ph:countNewcomer 2 ;
     ph:departedAt "2024-09-16T20:07:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 184.0 ;
-    ph:inSeriesEdition phd:assoc_PH_2 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/2> ;
     ph:linkRoute pas:n3dxjrgb_route ;
     ph:measuredEnergy 73.0 ;
     ph:mediaCount 6 ;
@@ -1168,7 +1167,7 @@ Chegando à foz do Moinho Velho, o lado canhoto e ignorado do morro do Ipiranga,
     ph:countNewcomer 4 ;
     ph:departedAt "2025-04-15T20:25:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 314.0 ;
-    ph:inSeriesEdition phd:assoc_PH_33 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/33> ;
     ph:linkRoute pas:ndchce80_route ;
     ph:measuredEnergy 314.6 ;
     ph:mediaCount 70 ;
@@ -1187,7 +1186,7 @@ Começamos no metrô, no qual rapidamente subimos parte do Pirajuçara até cheg
     ph:countNewcomer 5 ;
     ph:departedAt "2025-02-04T20:49:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 292.0 ;
-    ph:inSeriesEdition phd:assoc_PH_25 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/25> ;
     ph:linkRoute pas:nmgja8t0_route ;
     ph:measuredEnergy 286.3 ;
     ph:mediaCount 132 ;
@@ -1199,7 +1198,7 @@ pas:nqkvbx78 a ph:Tour ;
     dcterms:description "Começamos contemplando os passarinhos que amam os brejinhos do Jurubatubaçu. Dali, seguimos asfalto, fazendo um apêndice em estradinha de terra para escutar o canto de paz da Mata Atlântica. Voltamos pro liso até chegar ao mirante da Serra do Mar. Passamos na igrejinha pra Oli e Theo darem um beijinho com vista para a Vila Histórica de Paranapiacaba. Tomamos sorvete de cambuci e almoçamos à vontade no Cantinho do Beija-flor. Dali, procuramos chocolate quente e voltamos pra estação. Levar: bike revisada, câmara extra, casaco, luvinha e binóculo. Este não é um pedal pra correr e nem ir com caixa de som: vamo ouvir o que o mato tem a dizer 🙏🍃🍄"@pt ;
     dcterms:title "Paranapiacaba: brejinhos e beijinhos" ;
     ph:energyEstimate 504.0 ;
-    ph:inSeriesEdition phd:assoc_BP_6 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/BP/6> ;
     ph:linkRoute pas:nqkvbx78_route ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/bp6/announcement.jpg> .
 
@@ -1219,7 +1218,7 @@ As curvas do Tietê nos levam para as origens operárias da expansão da cidade,
     ph:countNewcomer 9 ;
     ph:departedAt "2026-04-14T21:29:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 336.0 ;
-    ph:inSeriesEdition phd:assoc_PH_87 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/87> ;
     ph:linkInstagram "https://www.instagram.com/p/DXDkpWnDmEO/?img_index=1"^^xsd:anyURI ;
     ph:linkRoute pas:paxn5xk2_route ;
     ph:measuredEnergy 221.0 ;
@@ -1240,7 +1239,7 @@ Após o fim da Av. Roberto Marinho, a paisagem se altera: saem de cena os prédi
     ph:countNewcomer 3 ;
     ph:departedAt "2025-06-03T20:26:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 280.0 ;
-    ph:inSeriesEdition phd:assoc_PH_39 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/39> ;
     ph:linkInstagram "https://www.instagram.com/p/DKag2XjuRJd/"^^xsd:anyURI ;
     ph:linkRoute pas:pbdgaaab_route ;
     ph:measuredEnergy 250.2 ;
@@ -1264,7 +1263,7 @@ Dali, surfamos água abaixo pelas paisagens abertas e fechadas do córrego Busso
     ph:countNewcomer 0 ;
     ph:departedAt "2025-03-26T20:15:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 363.0 ;
-    ph:inSeriesEdition phd:assoc_PH_29 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/29> ;
     ph:linkRoute pas:pf066hc5_route ;
     ph:mediaCount 75 ;
     ph:movingDuration "PT1H46M"^^xsd:duration ;
@@ -1287,7 +1286,7 @@ Pedreira adentro, pedalamos um córrego até o ponto de sela entre bacias para d
     ph:countNewcomer 4 ;
     ph:departedAt "2025-12-23T20:20:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 378.0 ;
-    ph:inSeriesEdition phd:assoc_PH_71 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/71> ;
     ph:linkInstagram "https://www.instagram.com/p/DSk7MGcgTAP/"^^xsd:anyURI ;
     ph:linkRoute pas:phg8t492_route ;
     ph:measuredEnergy 309.0 ;
@@ -1304,7 +1303,7 @@ Um pouco após a foz deste, acessamos o divisor Cantareira - Engorda Sapo o qual
 Cantareira foi o nome dado à Serra pelos tropeiros que faziam o comércio entre São Paulo e as outras regiões do país, nos Séculos XVI e XVII, devido à grande quantidade de nascentes e córregos encontrados na região.Pedal que segue o escoamento das águas na Zona Norte e acessa a Linha Verde do futuro trecho do Rodoanel. Obra que esta parada há muito tempo e hoje a população local ocupou na forma de lazer."""@pt ;
     dcterms:title "Sopés da Cantareira: Alto Piqueri e Tremembé" ;
     prov:wasAttributedTo pes:6a95fm2k ;
-    ph:inSeriesEdition phd:assoc_PH_36 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/36> ;
     ph:linkInstagram "https://www.instagram.com/p/DJmCzVGuRwK/"^^xsd:anyURI ;
     ph:linkRoute pas:q5artzrc_route ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/41/announcement.jpg> .
@@ -1316,7 +1315,7 @@ pas:qgzyzyh7 a ph:Tour ;
     ph:countAttendee 4 ;
     ph:countNewcomer 1 ;
     ph:energyEstimate 614.0 ;
-    ph:inSeriesEdition phd:assoc_S_2 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/S/2> ;
     ph:linkRoute pas:qgzyzyh7_route ;
     ph:mediaCount 11 ;
     ph:movingDuration "PT1H40M"^^xsd:duration .
@@ -1339,7 +1338,7 @@ Por fim, desceremos o córrego cujo nome desconheço, mas que escorre abaixo do 
     ph:countAttendee 7 ;
     ph:countNewcomer 0 ;
     ph:energyEstimate 396.0 ;
-    ph:inSeriesEdition phd:assoc_PH_93 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/93> ;
     ph:linkInstagram "https://www.instagram.com/p/DYfyG_IDhaM/"^^xsd:anyURI ;
     ph:linkRoute pas:qvzfkd5y_route ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/102/announcement.jpg> .
@@ -1363,7 +1362,7 @@ Seguiremos pelo último braço do divisor que visitaremos no passeio e pegaremos
     ph:countNewcomer 0 ;
     ph:departedAt "2025-08-26T20:31:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 358.0 ;
-    ph:inSeriesEdition phd:assoc_PH_52 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/52> ;
     ph:linkInstagram "https://www.instagram.com/p/DNzHbJjWDhL/"^^xsd:anyURI ;
     ph:linkRoute pas:r0qfg6tv_route ;
     ph:measuredEnergy 430.0 ;
@@ -1387,7 +1386,7 @@ Lá no alto deste planalto, seguimos pelos Alpes do Jaraguá, que separa as águ
     ph:countNewcomer 1 ;
     ph:departedAt "2025-11-11T20:21:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 306.0 ;
-    ph:inSeriesEdition phd:assoc_PH_65 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/65> ;
     ph:linkInstagram "https://www.instagram.com/p/DQ5DpR3DkW4/"^^xsd:anyURI ;
     ph:linkRoute pas:rb651j6e_route ;
     ph:measuredEnergy 324.0 ;
@@ -1407,7 +1406,7 @@ Daí surfamos um pouco na crista até pegarmos o curso do córrego das corujas c
     ph:countNewcomer 3 ;
     ph:departedAt "2025-12-10T20:20:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 287.0 ;
-    ph:inSeriesEdition phd:assoc_PH_69 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/69> ;
     ph:linkInstagram "https://www.instagram.com/p/DSGJhd9geOh/"^^xsd:anyURI ;
     ph:linkRoute pas:rjvbv0at_route ;
     ph:measuredEnergy 215.0 ;
@@ -1427,7 +1426,7 @@ pas:rnhfg16f a ph:Tour ;
     ph:countNewcomer 1 ;
     ph:departedAt "2026-05-06T20:25:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 388.0 ;
-    ph:inSeriesEdition phd:assoc_PH_90 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/90> ;
     ph:linkInstagram "https://www.instagram.com/p/DX-3psUjtYV/"^^xsd:anyURI ;
     ph:linkRoute pas:rnhfg16f_route ;
     ph:measuredEnergy 383.2 ;
@@ -1451,7 +1450,7 @@ Ao chegar no leito do Tietê que ainda existe, retornamos pela sua margem direit
     ph:countNewcomer 4 ;
     ph:departedAt "2025-05-06T20:19:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 316.0 ;
-    ph:inSeriesEdition phd:assoc_PH_35 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/35> ;
     ph:linkInstagram "https://www.instagram.com/p/DJSCz_SOyyS/"^^xsd:anyURI ;
     ph:linkRoute pas:s6dyja5b_route ;
     ph:measuredEnergy 318.6 ;
@@ -1467,7 +1466,7 @@ pas:sbb356df a ph:Tour ;
     ph:countNewcomer 2 ;
     ph:departedAt "2025-09-30T21:08:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 358.0 ;
-    ph:inSeriesEdition phd:assoc_PH_58 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/58> ;
     ph:linkRoute pas:sbb356df_route ;
     ph:mediaCount 31 ;
     ph:movingDuration "PT1H20M"^^xsd:duration .
@@ -1482,7 +1481,7 @@ pas:sgkjtbmj a ph:Tour ;
     ph:countNewcomer 1 ;
     ph:departedAt "2026-03-31T20:24:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 371.0 ;
-    ph:inSeriesEdition phd:assoc_PH_86 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/86> ;
     ph:linkInstagram "https://www.instagram.com/p/DWj9C_-Dxdq/?img_index=1"^^xsd:anyURI ;
     ph:linkRoute pas:sgkjtbmj_route ;
     ph:measuredEnergy 376.1 ;
@@ -1495,8 +1494,8 @@ pas:sj0b0w3d a ph:Tour ;
     ph:countAttendee 8 ;
     ph:countNewcomer 5 ;
     ph:energyEstimate 850.0 ;
-    ph:inSeriesEdition phd:assoc_BT_1,
-        phd:assoc_PH_10 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/BT/1>,
+        <https://id.pedalhidrografi.co/passeio/PH/10> ;
     ph:linkInstagram "https://www.instagram.com/p/DBweYi-vMXc/?img_index=1"^^xsd:anyURI ;
     ph:linkRoute pas:sj0b0w3d_route ;
     ph:mediaCount 467 ;
@@ -1511,8 +1510,8 @@ pas:sw2w45w4 a ph:Tour ;
     ph:countNewcomer 3 ;
     ph:departedAt "2024-11-30T07:46:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 850.0 ;
-    ph:inSeriesEdition phd:assoc_BP_2,
-        phd:assoc_PH_17 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/BP/2>,
+        <https://id.pedalhidrografi.co/passeio/PH/17> ;
     ph:linkRoute pas:sw2w45w4_route ;
     ph:measuredEnergy 601.1 ;
     ph:mediaCount 103 ;
@@ -1526,7 +1525,7 @@ pas:swpv8nrx a ph:Tour ;
     ph:countAttendee 7 ;
     ph:countNewcomer 1 ;
     ph:energyEstimate 301.0 ;
-    ph:inSeriesEdition phd:assoc_PH_72 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/72> ;
     ph:linkInstagram "https://www.instagram.com/p/DTMEVNdDmcu/"^^xsd:anyURI ;
     ph:linkRoute pas:swpv8nrx_route ;
     ph:mediaCount 9 .
@@ -1538,7 +1537,7 @@ pas:szvx0nej a ph:Tour ;
     ph:countAttendee 3 ;
     ph:countNewcomer 0 ;
     ph:energyEstimate 750.0 ;
-    ph:inSeriesEdition phd:assoc_S_1 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/S/1> ;
     ph:linkRoute pas:szvx0nej_route ;
     ph:mediaCount 16 ;
     ph:movingDuration "PT3H6M"^^xsd:duration .
@@ -1550,7 +1549,7 @@ pas:t0a8k010 a ph:Tour ;
     ph:countAttendee 10 ;
     ph:countNewcomer 0 ;
     ph:departedAt "2026-01-21T19:47:00-03:00"^^xsd:dateTime ;
-    ph:inSeriesEdition phd:assoc_PH_74 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/74> ;
     ph:linkRoute pas:t0a8k010_route ;
     ph:measuredEnergy 96.1 ;
     ph:mediaCount 13 ;
@@ -1572,7 +1571,7 @@ A partir daí, não se pedala duas ou três quadras sem antes avistar uma ponte.
     ph:countNewcomer 0 ;
     ph:departedAt "2025-11-04T20:24:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 390.0 ;
-    ph:inSeriesEdition phd:assoc_PH_64 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/64> ;
     ph:linkInstagram "https://www.instagram.com/p/DQndVvpji_q/"^^xsd:anyURI ;
     ph:linkRoute pas:t9bb4v7t_route ;
     ph:measuredEnergy 586.0 ;
@@ -1594,7 +1593,7 @@ Todos os córregos por aqui são verdes no nome! Felizmente, o córrego irmão d
     ph:countNewcomer 2 ;
     ph:departedAt "2024-10-29T21:12:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 290.0 ;
-    ph:inSeriesEdition phd:assoc_PH_9 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/9> ;
     ph:linkInstagram "https://www.instagram.com/p/DBrLDD9u7ZE/"^^xsd:anyURI ;
     ph:linkRoute pas:tsrdc0hc_route ;
     ph:measuredEnergy 210.0 ;
@@ -1614,7 +1613,7 @@ De lá, cruza-se o braço da crista parapegar o último córrego ocidental do Ri
     ph:countNewcomer 1 ;
     ph:departedAt "2024-11-12T20:03:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 260.0 ;
-    ph:inSeriesEdition phd:assoc_PH_13 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/13> ;
     ph:linkInstagram "https://www.instagram.com/p/DCQKAoVuD7f/?img_index=1"^^xsd:anyURI ;
     ph:linkRoute pas:tw0thy4z_route ;
     ph:measuredEnergy 266.4 ;
@@ -1631,7 +1630,7 @@ pas:v1nmg1q7 a ph:Tour ;
     ph:countNewcomer 0 ;
     ph:departedAt "2024-09-23T20:53:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 179.0 ;
-    ph:inSeriesEdition phd:assoc_PH_3 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/3> ;
     ph:linkRoute pas:v1nmg1q7_route ;
     ph:measuredEnergy 157.7 ;
     ph:mediaCount 7 ;
@@ -1655,7 +1654,7 @@ Referências: Caio Prado Jr. "A cidade de São Paulo - Geografia e História" (1
     ph:countNewcomer 1 ;
     ph:departedAt "2025-10-07T20:17:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 387.0 ;
-    ph:inSeriesEdition phd:assoc_PH_59 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/59> ;
     ph:linkInstagram "https://www.instagram.com/p/DPhFHJSDthY/"^^xsd:anyURI ;
     ph:linkRoute pas:vz6tn6gr_route ;
     ph:mediaCount 12 ;
@@ -1674,7 +1673,7 @@ Começamos na Barra Funda - no Instituto de Física Teórica, nas bordas dos ant
     ph:countNewcomer 1 ;
     ph:departedAt "2025-02-25T20:06:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 307.0 ;
-    ph:inSeriesEdition phd:assoc_PH_27 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/27> ;
     ph:linkRoute pas:wadkznrs_route ;
     ph:measuredEnergy 309.0 ;
     ph:mediaCount 87 ;
@@ -1698,7 +1697,7 @@ Este Pedal Hidrográfico é um convite à contemplação e a prova de que a natu
     ph:countNewcomer 3 ;
     ph:departedAt "2025-07-29T20:15:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 337.0 ;
-    ph:inSeriesEdition phd:assoc_PH_47 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/47> ;
     ph:linkInstagram "https://www.instagram.com/p/DMqJrLbu66G/"^^xsd:anyURI ;
     ph:linkRoute pas:wd0b91kh_route ;
     ph:mediaCount 123 ;
@@ -1714,7 +1713,7 @@ pas:wp83fvt6 a ph:Tour ;
     ph:countNewcomer 0 ;
     ph:departedAt "2026-01-14T20:48:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 359.0 ;
-    ph:inSeriesEdition phd:assoc_PH_73 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/73> ;
     ph:linkInstagram "https://www.instagram.com/p/DTd-l-TgQyf/"^^xsd:anyURI ;
     ph:linkRoute pas:wp83fvt6_route ;
     ph:measuredEnergy 313.9 ;
@@ -1743,8 +1742,8 @@ Também contaremos com a presença das equipes da 1ª Gincana Climática de Sant
         pes:hc9v0sg7 ;
     ph:countAttendee 28 ;
     ph:energyEstimate 750.0 ;
-    ph:inSeriesEdition phd:assoc_BT_3,
-        phd:assoc_PH_32 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/BT/3>,
+        <https://id.pedalhidrografi.co/passeio/PH/32> ;
     ph:linkInstagram "https://www.instagram.com/p/DIHLiuKO-vH/"^^xsd:anyURI ;
     ph:linkRoute pas:wqj9kj0k_route ;
     ph:mediaCount 172 ;
@@ -1770,7 +1769,7 @@ Descemos tudo até chegar no Parque Novo Mundo, várzea do Tietê, que cruzaremo
     ph:countNewcomer 0 ;
     ph:departedAt "2025-10-28T20:29:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 392.0 ;
-    ph:inSeriesEdition phd:assoc_PH_63 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/63> ;
     ph:linkInstagram "https://www.instagram.com/p/DQW54WjjobD/"^^xsd:anyURI ;
     ph:linkRoute pas:x0xe3tgk_route ;
     ph:measuredEnergy 428.0 ;
@@ -1788,7 +1787,7 @@ pas:x1csnktf a ph:Tour ;
     ph:countNewcomer 8 ;
     ph:departedAt "2025-01-07T20:16:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 271.0 ;
-    ph:inSeriesEdition phd:assoc_PH_21 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/21> ;
     ph:linkInstagram "https://www.instagram.com/p/DEgLpSQOj37/"^^xsd:anyURI ;
     ph:linkRoute pas:x1csnktf_route ;
     ph:mediaCount 28 ;
@@ -1814,7 +1813,7 @@ A descida do morro finalizará no Tatuapé, com um belo encontro de ciclistas no
     ph:countNewcomer 2 ;
     ph:departedAt "2025-12-03T20:26:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 297.0 ;
-    ph:inSeriesEdition phd:assoc_PH_68 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/68> ;
     ph:linkInstagram "https://www.instagram.com/p/DRzyPXPDuLA/"^^xsd:anyURI ;
     ph:linkRoute pas:x3q1p1qz_route ;
     ph:measuredEnergy 263.0 ;
@@ -1842,8 +1841,8 @@ A. N. Ab’Saber, Geomorfologia do sítio urbano de São Paulo. USP-FFCL, 1957."
     ph:countNewcomer 4 ;
     ph:departedAt "2025-09-21T09:21:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 801.0 ;
-    ph:inSeriesEdition phd:assoc_PH_56,
-        phd:assoc_S_6 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/56>,
+        <https://id.pedalhidrografi.co/passeio/S/6> ;
     ph:linkInstagram "https://www.instagram.com/p/DOzM8syATYo/"^^xsd:anyURI ;
     ph:linkRoute pas:x3sdp4j5_route ;
     ph:measuredEnergy 840.0 ;
@@ -1865,7 +1864,7 @@ pas:xm85cdrp a ph:Tour ;
     ph:countNewcomer 20 ;
     ph:departedAt "2025-09-09T20:36:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 183.0 ;
-    ph:inSeriesEdition phd:assoc_PH_54 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/54> ;
     ph:linkInstagram "https://www.instagram.com/p/DOTyz43DjpV/?img_index=1"^^xsd:anyURI ;
     ph:linkRoute pas:xm85cdrp_route ;
     ph:measuredEnergy 187.0 ;
@@ -1882,7 +1881,7 @@ pas:xpxa6v8g a ph:Tour ;
     ph:countNewcomer 1 ;
     ph:departedAt "2024-11-26T20:36:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 260.0 ;
-    ph:inSeriesEdition phd:assoc_PH_16 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/16> ;
     ph:linkInstagram "https://www.instagram.com/p/DC1bTVfuL0A/"^^xsd:anyURI ;
     ph:linkRoute pas:xpxa6v8g_route ;
     ph:mediaCount 66 ;
@@ -1898,7 +1897,7 @@ pas:xrzsy7gz a ph:Tour ;
     ph:countNewcomer 3 ;
     ph:departedAt "2024-11-05T20:35:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 370.0 ;
-    ph:inSeriesEdition phd:assoc_PH_11 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/11> ;
     ph:linkInstagram "https://www.instagram.com/p/DB-P8zUOg67/"^^xsd:anyURI ;
     ph:linkRoute pas:xrzsy7gz_route ;
     ph:measuredEnergy 323.8 ;
@@ -1913,7 +1912,7 @@ pas:xzb05rn3 a ph:Tour ;
     ph:countAttendee 11 ;
     ph:countNewcomer 4 ;
     ph:energyEstimate 600.0 ;
-    ph:inSeriesEdition phd:assoc_BT_2 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/BT/2> ;
     ph:linkRoute pas:xzb05rn3_route ;
     ph:mediaCount 56 ;
     ph:movingDuration "PT2H50M"^^xsd:duration .
@@ -1935,7 +1934,7 @@ Passamos ainda pelas nascentes dos córregos das Cubas e da Cocaia, que conta co
     ph:countNewcomer 1 ;
     ph:departedAt "2025-07-01T20:20:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 385.0 ;
-    ph:inSeriesEdition phd:assoc_PH_43 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/43> ;
     ph:linkInstagram "https://www.instagram.com/pedalhidrografico/p/DLipKMHuCLY/"^^xsd:anyURI ;
     ph:linkRoute pas:yaszq6sb_route ;
     ph:measuredEnergy 421.0 ;
@@ -1959,7 +1958,7 @@ A descida dos morros nos levará para o final do pedal, no metrô do Capão, na 
     ph:countNewcomer 1 ;
     ph:departedAt "2025-07-15T20:32:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 380.0 ;
-    ph:inSeriesEdition phd:assoc_PH_45 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/45> ;
     ph:linkInstagram "https://www.instagram.com/pedalhidrografico/p/DMGodnSO1Qc/"^^xsd:anyURI ;
     ph:linkRoute pas:ydhm40gy_route ;
     ph:measuredEnergy 415.0 ;
@@ -1979,7 +1978,7 @@ Ao chegar no divisor triplo de águas Iquiririm-Jaguaré-Pirajuçara. Lá, pegam
     ph:countNewcomer 4 ;
     ph:departedAt "2024-12-03T20:29:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 400.0 ;
-    ph:inSeriesEdition phd:assoc_PH_18 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/18> ;
     ph:linkInstagram "https://www.instagram.com/p/DDF8IjTuMaK/"^^xsd:anyURI ;
     ph:linkRoute pas:ys01exfm_route ;
     ph:measuredEnergy 378.8 ;
@@ -1999,7 +1998,7 @@ pas:z9fgwpkw a ph:Tour ;
     ph:countNewcomer 0 ;
     ph:departedAt "2025-10-21T20:21:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 340.0 ;
-    ph:inSeriesEdition phd:assoc_PH_60 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/60> ;
     ph:linkInstagram "https://www.instagram.com/p/DQFZDYmAaCC/"^^xsd:anyURI ;
     ph:linkRoute pas:z9fgwpkw_route ;
     ph:mediaCount 55 ;
@@ -2029,7 +2028,7 @@ Aho!"""@pt ;
     ph:countNewcomer 25 ;
     ph:departedAt "2025-10-26T07:38:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 694.0 ;
-    ph:inSeriesEdition phd:assoc_PH_62 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/62> ;
     ph:linkInstagram "https://www.instagram.com/p/DQPNof-DnxY/?img_index=1"^^xsd:anyURI ;
     ph:linkRoute pas:zjnyyrv5_route ;
     ph:mediaCount 110 ;
@@ -2045,7 +2044,7 @@ pas:zspawe0m a ph:Tour ;
     ph:countNewcomer 2 ;
     ph:departedAt "2026-04-28T20:15:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 356.0 ;
-    ph:inSeriesEdition phd:assoc_PH_89 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/89> ;
     ph:linkInstagram "https://www.instagram.com/p/DXrwudMjrZL/"^^xsd:anyURI ;
     ph:linkRoute pas:zspawe0m_route ;
     ph:measuredEnergy 378.8 ;
@@ -2057,7 +2056,7 @@ pas:zv43bb5y a ph:Tour ;
     prov:wasAttributedTo pes:b2mfncg9 ;
     ph:countAttendee 14 ;
     ph:countNewcomer 3 ;
-    ph:inSeriesEdition phd:assoc_PH_78 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/78> ;
     ph:linkInstagram "https://www.instagram.com/p/DUoNFoEgdlN/"^^xsd:anyURI ;
     ph:linkRoute pas:zv43bb5y_route ;
     ph:mediaCount 81 .
@@ -2177,6 +2176,466 @@ pas:9qyjjshm_route a ph:RouteReference ;
 pas:9s8bhtjw_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/54320499> .
+
+<https://id.pedalhidrografi.co/passeio/BP/1> a ph:SeriesEdition ;
+    ph:inEventSeries ser:BP ;
+    ph:sequenceInSeries 1 .
+
+<https://id.pedalhidrografi.co/passeio/BP/2> a ph:SeriesEdition ;
+    ph:inEventSeries ser:BP ;
+    ph:sequenceInSeries 2 .
+
+<https://id.pedalhidrografi.co/passeio/BP/3> a ph:SeriesEdition ;
+    ph:inEventSeries ser:BP ;
+    ph:sequenceInSeries 3 .
+
+<https://id.pedalhidrografi.co/passeio/BP/3-5> a ph:SeriesEdition ;
+    ph:inEventSeries ser:BP ;
+    ph:sequenceInSeries "4"^^xsd:positiveInteger .
+
+<https://id.pedalhidrografi.co/passeio/BP/4> a ph:SeriesEdition ;
+    ph:inEventSeries ser:BP ;
+    ph:sequenceInSeries 4 .
+
+<https://id.pedalhidrografi.co/passeio/BP/5> a ph:SeriesEdition ;
+    ph:inEventSeries ser:BP ;
+    ph:sequenceInSeries 5 .
+
+<https://id.pedalhidrografi.co/passeio/BP/6> a ph:SeriesEdition ;
+    ph:inEventSeries ser:BP ;
+    ph:sequenceInSeries 6 .
+
+<https://id.pedalhidrografi.co/passeio/BT/1> a ph:SeriesEdition ;
+    ph:inEventSeries ser:BT ;
+    ph:sequenceInSeries 1 .
+
+<https://id.pedalhidrografi.co/passeio/BT/2> a ph:SeriesEdition ;
+    ph:inEventSeries ser:BT ;
+    ph:sequenceInSeries 2 .
+
+<https://id.pedalhidrografi.co/passeio/BT/3> a ph:SeriesEdition ;
+    ph:inEventSeries ser:BT ;
+    ph:sequenceInSeries 3 .
+
+<https://id.pedalhidrografi.co/passeio/PH/1> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 1 .
+
+<https://id.pedalhidrografi.co/passeio/PH/10> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 10 .
+
+<https://id.pedalhidrografi.co/passeio/PH/11> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 11 .
+
+<https://id.pedalhidrografi.co/passeio/PH/12> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 12 .
+
+<https://id.pedalhidrografi.co/passeio/PH/13> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 13 .
+
+<https://id.pedalhidrografi.co/passeio/PH/14> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 14 .
+
+<https://id.pedalhidrografi.co/passeio/PH/15> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 15 .
+
+<https://id.pedalhidrografi.co/passeio/PH/16> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 16 .
+
+<https://id.pedalhidrografi.co/passeio/PH/17> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 17 .
+
+<https://id.pedalhidrografi.co/passeio/PH/18> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 18 .
+
+<https://id.pedalhidrografi.co/passeio/PH/19> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 19 .
+
+<https://id.pedalhidrografi.co/passeio/PH/2> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 2 .
+
+<https://id.pedalhidrografi.co/passeio/PH/20> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 20 .
+
+<https://id.pedalhidrografi.co/passeio/PH/21> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 21 .
+
+<https://id.pedalhidrografi.co/passeio/PH/22> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 22 .
+
+<https://id.pedalhidrografi.co/passeio/PH/23> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 23 .
+
+<https://id.pedalhidrografi.co/passeio/PH/24> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 24 .
+
+<https://id.pedalhidrografi.co/passeio/PH/25> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 25 .
+
+<https://id.pedalhidrografi.co/passeio/PH/26> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 26 .
+
+<https://id.pedalhidrografi.co/passeio/PH/27> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 27 .
+
+<https://id.pedalhidrografi.co/passeio/PH/28> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 28 .
+
+<https://id.pedalhidrografi.co/passeio/PH/29> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 29 .
+
+<https://id.pedalhidrografi.co/passeio/PH/3> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 3 .
+
+<https://id.pedalhidrografi.co/passeio/PH/30> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 30 .
+
+<https://id.pedalhidrografi.co/passeio/PH/31> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 31 .
+
+<https://id.pedalhidrografi.co/passeio/PH/32> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 32 .
+
+<https://id.pedalhidrografi.co/passeio/PH/33> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 33 .
+
+<https://id.pedalhidrografi.co/passeio/PH/34> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 34 .
+
+<https://id.pedalhidrografi.co/passeio/PH/35> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 35 .
+
+<https://id.pedalhidrografi.co/passeio/PH/36> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 36 .
+
+<https://id.pedalhidrografi.co/passeio/PH/37> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 37 .
+
+<https://id.pedalhidrografi.co/passeio/PH/38> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 38 .
+
+<https://id.pedalhidrografi.co/passeio/PH/39> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 39 .
+
+<https://id.pedalhidrografi.co/passeio/PH/4> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 4 .
+
+<https://id.pedalhidrografi.co/passeio/PH/40> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 40 .
+
+<https://id.pedalhidrografi.co/passeio/PH/41> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 41 .
+
+<https://id.pedalhidrografi.co/passeio/PH/42> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 42 .
+
+<https://id.pedalhidrografi.co/passeio/PH/43> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 43 .
+
+<https://id.pedalhidrografi.co/passeio/PH/44> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 44 .
+
+<https://id.pedalhidrografi.co/passeio/PH/45> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 45 .
+
+<https://id.pedalhidrografi.co/passeio/PH/46> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 46 .
+
+<https://id.pedalhidrografi.co/passeio/PH/47> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 47 .
+
+<https://id.pedalhidrografi.co/passeio/PH/48> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 48 .
+
+<https://id.pedalhidrografi.co/passeio/PH/49> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 49 .
+
+<https://id.pedalhidrografi.co/passeio/PH/5> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 5 .
+
+<https://id.pedalhidrografi.co/passeio/PH/50> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 50 .
+
+<https://id.pedalhidrografi.co/passeio/PH/51> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 51 .
+
+<https://id.pedalhidrografi.co/passeio/PH/52> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 52 .
+
+<https://id.pedalhidrografi.co/passeio/PH/53> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 53 .
+
+<https://id.pedalhidrografi.co/passeio/PH/54> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 54 .
+
+<https://id.pedalhidrografi.co/passeio/PH/55> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 55 .
+
+<https://id.pedalhidrografi.co/passeio/PH/56> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 56 .
+
+<https://id.pedalhidrografi.co/passeio/PH/57> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 57 .
+
+<https://id.pedalhidrografi.co/passeio/PH/58> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 58 .
+
+<https://id.pedalhidrografi.co/passeio/PH/59> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 59 .
+
+<https://id.pedalhidrografi.co/passeio/PH/6> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 6 .
+
+<https://id.pedalhidrografi.co/passeio/PH/60> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 60 .
+
+<https://id.pedalhidrografi.co/passeio/PH/61> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 61 .
+
+<https://id.pedalhidrografi.co/passeio/PH/62> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 62 .
+
+<https://id.pedalhidrografi.co/passeio/PH/63> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 63 .
+
+<https://id.pedalhidrografi.co/passeio/PH/64> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 64 .
+
+<https://id.pedalhidrografi.co/passeio/PH/65> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 65 .
+
+<https://id.pedalhidrografi.co/passeio/PH/66> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 66 .
+
+<https://id.pedalhidrografi.co/passeio/PH/67> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 67 .
+
+<https://id.pedalhidrografi.co/passeio/PH/68> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 68 .
+
+<https://id.pedalhidrografi.co/passeio/PH/69> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 69 .
+
+<https://id.pedalhidrografi.co/passeio/PH/7> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 7 .
+
+<https://id.pedalhidrografi.co/passeio/PH/70> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 70 .
+
+<https://id.pedalhidrografi.co/passeio/PH/71> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 71 .
+
+<https://id.pedalhidrografi.co/passeio/PH/72> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 72 .
+
+<https://id.pedalhidrografi.co/passeio/PH/73> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 73 .
+
+<https://id.pedalhidrografi.co/passeio/PH/74> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 74 .
+
+<https://id.pedalhidrografi.co/passeio/PH/75> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 75 .
+
+<https://id.pedalhidrografi.co/passeio/PH/76> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 76 .
+
+<https://id.pedalhidrografi.co/passeio/PH/77> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 77 .
+
+<https://id.pedalhidrografi.co/passeio/PH/78> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 78 .
+
+<https://id.pedalhidrografi.co/passeio/PH/79> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 79 .
+
+<https://id.pedalhidrografi.co/passeio/PH/8> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 8 .
+
+<https://id.pedalhidrografi.co/passeio/PH/80> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 80 .
+
+<https://id.pedalhidrografi.co/passeio/PH/81> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 81 .
+
+<https://id.pedalhidrografi.co/passeio/PH/82> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 82 .
+
+<https://id.pedalhidrografi.co/passeio/PH/83> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 83 .
+
+<https://id.pedalhidrografi.co/passeio/PH/84> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 84 .
+
+<https://id.pedalhidrografi.co/passeio/PH/85> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 85 .
+
+<https://id.pedalhidrografi.co/passeio/PH/86> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 86 .
+
+<https://id.pedalhidrografi.co/passeio/PH/87> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 87 .
+
+<https://id.pedalhidrografi.co/passeio/PH/88> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 88 .
+
+<https://id.pedalhidrografi.co/passeio/PH/89> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 89 .
+
+<https://id.pedalhidrografi.co/passeio/PH/9> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 9 .
+
+<https://id.pedalhidrografi.co/passeio/PH/90> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 90 .
+
+<https://id.pedalhidrografi.co/passeio/PH/91> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 91 .
+
+<https://id.pedalhidrografi.co/passeio/PH/92> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 92 .
+
+<https://id.pedalhidrografi.co/passeio/PH/93> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 93 .
+
+<https://id.pedalhidrografi.co/passeio/PH/94> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 94 .
+
+<https://id.pedalhidrografi.co/passeio/PH/95> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 95 .
+
+<https://id.pedalhidrografi.co/passeio/PH/96> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 96 .
+
+<https://id.pedalhidrografi.co/passeio/PH/97> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 97 .
+
+<https://id.pedalhidrografi.co/passeio/PH/98> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 98 .
+
+<https://id.pedalhidrografi.co/passeio/S/1> a ph:SeriesEdition ;
+    ph:inEventSeries ser:S ;
+    ph:sequenceInSeries 1 .
+
+<https://id.pedalhidrografi.co/passeio/S/2> a ph:SeriesEdition ;
+    ph:inEventSeries ser:S ;
+    ph:sequenceInSeries 2 .
+
+<https://id.pedalhidrografi.co/passeio/S/3> a ph:SeriesEdition ;
+    ph:inEventSeries ser:S ;
+    ph:sequenceInSeries 3 .
+
+<https://id.pedalhidrografi.co/passeio/S/4> a ph:SeriesEdition ;
+    ph:inEventSeries ser:S ;
+    ph:sequenceInSeries 4 .
+
+<https://id.pedalhidrografi.co/passeio/S/5> a ph:SeriesEdition ;
+    ph:inEventSeries ser:S ;
+    ph:sequenceInSeries 5 .
+
+<https://id.pedalhidrografi.co/passeio/S/6> a ph:SeriesEdition ;
+    ph:inEventSeries ser:S ;
+    ph:sequenceInSeries 6 .
+
+<https://id.pedalhidrografi.co/passeio/SESC/1> a ph:SeriesEdition ;
+    ph:inEventSeries ser:SESC ;
+    ph:sequenceInSeries 1 .
 
 pas:a5w1920c_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
@@ -2477,470 +2936,14 @@ pas:zv43bb5y_route a ph:RouteReference ;
 ser:SESC a schema:EventSeries ;
     dcterms:title "SESC" .
 
-phd:assoc_BP_1 a ph:Association ;
-    ph:inEventSeries ser:BP ;
-    ph:sequenceInSeries 1 .
-
-phd:assoc_BP_2 a ph:Association ;
-    ph:inEventSeries ser:BP ;
-    ph:sequenceInSeries 2 .
-
-phd:assoc_BP_3 a ph:Association ;
-    ph:inEventSeries ser:BP ;
-    ph:sequenceInSeries 3 .
-
-phd:assoc_BP_5 a ph:Association ;
-    ph:inEventSeries ser:BP ;
-    ph:sequenceInSeries 5 .
-
-phd:assoc_BP_6 a ph:Association ;
-    ph:inEventSeries ser:BP ;
-    ph:sequenceInSeries 6 .
-
-phd:assoc_BT_1 a ph:Association ;
-    ph:inEventSeries ser:BT ;
-    ph:sequenceInSeries 1 .
-
-phd:assoc_BT_2 a ph:Association ;
-    ph:inEventSeries ser:BT ;
-    ph:sequenceInSeries 2 .
-
-phd:assoc_BT_3 a ph:Association ;
-    ph:inEventSeries ser:BT ;
-    ph:sequenceInSeries 3 .
-
-phd:assoc_PH_1 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 1 .
-
-phd:assoc_PH_10 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 10 .
-
-phd:assoc_PH_11 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 11 .
-
-phd:assoc_PH_12 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 12 .
-
-phd:assoc_PH_13 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 13 .
-
-phd:assoc_PH_14 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 14 .
-
-phd:assoc_PH_15 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 15 .
-
-phd:assoc_PH_16 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 16 .
-
-phd:assoc_PH_17 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 17 .
-
-phd:assoc_PH_18 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 18 .
-
-phd:assoc_PH_19 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 19 .
-
-phd:assoc_PH_2 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 2 .
-
-phd:assoc_PH_20 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 20 .
-
-phd:assoc_PH_21 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 21 .
-
-phd:assoc_PH_22 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 22 .
-
-phd:assoc_PH_23 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 23 .
-
-phd:assoc_PH_24 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 24 .
-
-phd:assoc_PH_25 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 25 .
-
-phd:assoc_PH_26 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 26 .
-
-phd:assoc_PH_27 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 27 .
-
-phd:assoc_PH_28 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 28 .
-
-phd:assoc_PH_29 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 29 .
-
-phd:assoc_PH_3 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 3 .
-
-phd:assoc_PH_30 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 30 .
-
-phd:assoc_PH_31 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 31 .
-
-phd:assoc_PH_32 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 32 .
-
-phd:assoc_PH_33 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 33 .
-
-phd:assoc_PH_34 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 34 .
-
-phd:assoc_PH_35 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 35 .
-
-phd:assoc_PH_36 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 36 .
-
-phd:assoc_PH_37 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 37 .
-
-phd:assoc_PH_38 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 38 .
-
-phd:assoc_PH_39 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 39 .
-
-phd:assoc_PH_4 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 4 .
-
-phd:assoc_PH_40 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 40 .
-
-phd:assoc_PH_41 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 41 .
-
-phd:assoc_PH_42 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 42 .
-
-phd:assoc_PH_43 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 43 .
-
-phd:assoc_PH_44 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 44 .
-
-phd:assoc_PH_45 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 45 .
-
-phd:assoc_PH_46 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 46 .
-
-phd:assoc_PH_47 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 47 .
-
-phd:assoc_PH_48 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 48 .
-
-phd:assoc_PH_49 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 49 .
-
-phd:assoc_PH_5 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 5 .
-
-phd:assoc_PH_50 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 50 .
-
-phd:assoc_PH_51 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 51 .
-
-phd:assoc_PH_52 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 52 .
-
-phd:assoc_PH_53 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 53 .
-
-phd:assoc_PH_54 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 54 .
-
-phd:assoc_PH_55 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 55 .
-
-phd:assoc_PH_56 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 56 .
-
-phd:assoc_PH_57 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 57 .
-
-phd:assoc_PH_58 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 58 .
-
-phd:assoc_PH_59 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 59 .
-
-phd:assoc_PH_6 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 6 .
-
-phd:assoc_PH_60 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 60 .
-
-phd:assoc_PH_61 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 61 .
-
-phd:assoc_PH_62 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 62 .
-
-phd:assoc_PH_63 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 63 .
-
-phd:assoc_PH_64 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 64 .
-
-phd:assoc_PH_65 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 65 .
-
-phd:assoc_PH_66 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 66 .
-
-phd:assoc_PH_67 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 67 .
-
-phd:assoc_PH_68 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 68 .
-
-phd:assoc_PH_69 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 69 .
-
-phd:assoc_PH_7 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 7 .
-
-phd:assoc_PH_70 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 70 .
-
-phd:assoc_PH_71 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 71 .
-
-phd:assoc_PH_72 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 72 .
-
-phd:assoc_PH_73 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 73 .
-
-phd:assoc_PH_74 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 74 .
-
-phd:assoc_PH_75 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 75 .
-
-phd:assoc_PH_76 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 76 .
-
-phd:assoc_PH_77 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 77 .
-
-phd:assoc_PH_78 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 78 .
-
-phd:assoc_PH_79 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 79 .
-
-phd:assoc_PH_8 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 8 .
-
-phd:assoc_PH_80 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 80 .
-
-phd:assoc_PH_81 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 81 .
-
-phd:assoc_PH_82 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 82 .
-
-phd:assoc_PH_83 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 83 .
-
-phd:assoc_PH_84 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 84 .
-
-phd:assoc_PH_85 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 85 .
-
-phd:assoc_PH_86 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 86 .
-
-phd:assoc_PH_87 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 87 .
-
-phd:assoc_PH_88 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 88 .
-
-phd:assoc_PH_89 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 89 .
-
-phd:assoc_PH_9 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 9 .
-
-phd:assoc_PH_90 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 90 .
-
-phd:assoc_PH_91 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 91 .
-
-phd:assoc_PH_92 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 92 .
-
-phd:assoc_PH_93 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 93 .
-
-phd:assoc_PH_94 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 94 .
-
-phd:assoc_PH_95 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 95 .
-
-phd:assoc_PH_96 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 96 .
-
-phd:assoc_PH_97 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 97 .
-
-phd:assoc_PH_98 a ph:Association ;
-    ph:inEventSeries ser:PH ;
-    ph:sequenceInSeries 98 .
-
-phd:assoc_SESC_1 a ph:Association ;
-    ph:inEventSeries ser:SESC ;
-    ph:sequenceInSeries 1 .
-
-phd:assoc_S_1 a ph:Association ;
-    ph:inEventSeries ser:S ;
-    ph:sequenceInSeries 1 .
-
-phd:assoc_S_2 a ph:Association ;
-    ph:inEventSeries ser:S ;
-    ph:sequenceInSeries 2 .
-
-phd:assoc_S_3 a ph:Association ;
-    ph:inEventSeries ser:S ;
-    ph:sequenceInSeries 3 .
-
-phd:assoc_S_4 a ph:Association ;
-    ph:inEventSeries ser:S ;
-    ph:sequenceInSeries 4 .
-
-phd:assoc_S_5 a ph:Association ;
-    ph:inEventSeries ser:S ;
-    ph:sequenceInSeries 5 .
-
-phd:assoc_S_6 a ph:Association ;
-    ph:inEventSeries ser:S ;
-    ph:sequenceInSeries 6 .
-
-phd:assoc_BP_4 a ph:Association ;
-    ph:inEventSeries ser:BP ;
-    ph:sequenceInSeries 4 .
-
 ser:BT a schema:EventSeries ;
     dcterms:title "Bondes / Trips" .
 
-ser:BP a schema:EventSeries ;
-    dcterms:title "Bicipassarinhadas" .
-
 ser:S a schema:EventSeries ;
     dcterms:title "Pedais Hidrográficos Suados" .
+
+ser:BP a schema:EventSeries ;
+    dcterms:title "Bicipassarinhadas" .
 
 ser:PH a schema:EventSeries ;
     dcterms:title "Pedais Hidrográficos Regulares" .

@@ -79,10 +79,10 @@ ph:RouteReference a owl:Class ;
     rdfs:comment
         "Ligação para uma rota publicada em um serviço externo (RideWithGPS, Strava, etc.). Carrega URL e provedor."@pt .
 
-ph:Association a owl:Class ;
-    rdfs:label "Filiação a série"@pt ;
+ph:SeriesEdition a owl:Class ;
+    rdfs:label "Edição de série"@pt ;
     rdfs:comment
-        "Reificação da relação entre um Passeio e uma schema:EventSeries, carregando a posição na sequência (ex.: o 1º Pedal Hidrográfico Regular). Não confundir com prov:Association (atribuição de responsabilidade a um agente)."@pt .
+        "Uma edição concreta de uma schema:EventSeries — a posição na sequência (ex.: o 4º Baixada Paulista) realizada por um passeio. IRI própria e resolvível em …/passeio/<série>/<nº> (ex.: …/passeio/BP/4). Cada edição é realizada por EXATAMENTE um passeio (colisões de numeração viram edições distintas, ex.: BP/3-5). Ex-ph:Association; não confundir com prov:Association (atribuição de responsabilidade a um agente)."@pt .
 
 # =====================================================================
 # Propriedades — Passeio (ph:Tour)
@@ -249,7 +249,7 @@ ph:capturedDuring a owl:ObjectProperty ;
     rdfs:subPropertyOf prov:wasGeneratedBy .
 
 # =====================================================================
-# Propriedades — Filiação a série (ph:Association)
+# Propriedades — Filiação a série (ph:SeriesEdition)
 # =====================================================================
 # Sucessores propostos para os usos atuais
 # ( `schema:EventSeries` como predicado e `ph:EventSeriesSequenceNumber`
@@ -260,13 +260,13 @@ ph:inSeriesEdition a owl:ObjectProperty ;
     rdfs:comment
         "Liga um passeio à filiação que registra sua posição em uma série de eventos. Um passeio pode pertencer a mais de uma série (cada uma com sua Association)."@pt ;
     rdfs:domain ph:Tour ;
-    rdfs:range ph:Association .
+    rdfs:range ph:SeriesEdition .
 
 ph:inEventSeries a owl:ObjectProperty ;
     rdfs:label "na série"@pt ;
     rdfs:comment
         "Série de eventos à qual o passeio pertence. Substitui o uso (incorreto) de schema:EventSeries como predicado."@pt ;
-    rdfs:domain ph:Association ;
+    rdfs:domain ph:SeriesEdition ;
     rdfs:range schema:EventSeries ;
     rdfs:subPropertyOf schema:partOfSeries .
 
@@ -274,7 +274,7 @@ ph:sequenceInSeries a owl:DatatypeProperty ;
     rdfs:label "posição na série"@pt ;
     rdfs:comment
         "Número ordinal na sequência da série (1 = primeira edição). Substitui ph:EventSeriesSequenceNumber."@pt ;
-    rdfs:domain ph:Association ;
+    rdfs:domain ph:SeriesEdition ;
     rdfs:range xsd:positiveInteger ;
     rdfs:subPropertyOf schema:position .
 

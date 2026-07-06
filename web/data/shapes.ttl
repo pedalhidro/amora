@@ -221,8 +221,8 @@ ph:TourShape a sh:NodeShape ;
         sh:path ph:inSeriesEdition ;
         sh:severity sh:Warning ;
         sh:minCount 1 ;
-        sh:class ph:Association ;
-        sh:message "Passeio precisa de filiação a série (ph:inSeriesEdition → ph:Association)."@pt ;
+        sh:class ph:SeriesEdition ;
+        sh:message "Passeio precisa de edição de série (ph:inSeriesEdition → ph:SeriesEdition)."@pt ;
     ] ;
     sh:property [
         sh:path prov:wasAttributedTo ;
@@ -370,6 +370,38 @@ ph:RouteReferenceShape a sh:NodeShape ;
         sh:maxCount 1 ;
         sh:class schema:Organization ;
         sh:message "Rota precisa de provedor (schema:provider — ex.: ph:rwgps, ph:strava)."@pt ;
+    ] .
+
+# Edição de série (ph:SeriesEdition) — o IRI …/passeio/<ES>/<n> é a chave natural
+# da edição. Cada edição é realizada por EXATAMENTE um passeio (via
+# ph:inSeriesEdition, caminho inverso): uma colisão de numeração (dois pedais
+# ambos "BP 4") deve virar edições distintas (ex.: BP/4 e BP/3-5), NÃO um nó
+# compartilhado. NÃO se exige unicidade de (série, sequência) — a duplicata de
+# sequência é legítima; o que não pode é uma edição servir a dois passeios.
+ph:SeriesEditionShape a sh:NodeShape ;
+    sh:targetClass ph:SeriesEdition ;
+    sh:property [
+        sh:path [ sh:inversePath ph:inSeriesEdition ] ;
+        sh:severity sh:Violation ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:message "Cada edição de série deve ser realizada por exatamente um passeio (colisão de numeração → edição distinta, ex.: BP/3-5)."@pt ;
+    ] ;
+    sh:property [
+        sh:path ph:inEventSeries ;
+        sh:severity sh:Warning ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:class schema:EventSeries ;
+        sh:message "Edição precisa da série a que pertence (ph:inEventSeries → schema:EventSeries)."@pt ;
+    ] ;
+    sh:property [
+        sh:path ph:sequenceInSeries ;
+        sh:severity sh:Warning ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:positiveInteger ;
+        sh:message "Edição precisa da posição na sequência (ph:sequenceInSeries)."@pt ;
     ] .
 
 ph:GeoCoordinatesShape a sh:NodeShape ;
