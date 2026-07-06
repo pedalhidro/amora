@@ -685,6 +685,7 @@ async function copyExifSegment(sourceFile, targetBlob) {
 const PHD_NS    = 'https://pedalhidrografi.co/data/';
 const PH_NS     = 'https://id.pedalhidrografi.co/terms#';
 const PES_NS    = 'https://id.pedalhidrografi.co/pessoas/';   // identidades resolvíveis (prefixo pes:)
+const MED_NS    = 'https://id.pedalhidrografi.co/midia/';     // mídia (prefixo med:; image_/video_ + hash)
 const LST_NS    = 'https://id.pedalhidrografi.co/listas/';    // listas/álbuns (prefixo lst:)
 const SCHEMA    = 'https://schema.org/';
 const RDF_TYPE  = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
@@ -695,6 +696,7 @@ function shortIRI(iri) {
   if (iri.startsWith(PHD_NS)) return `phd:${iri.slice(PHD_NS.length)}`;
   if (iri.startsWith(PH_NS))  return `ph:${iri.slice(PH_NS.length)}`;
   if (iri.startsWith(PES_NS)) return `pes:${iri.slice(PES_NS.length)}`;
+  if (iri.startsWith(MED_NS)) return `med:${iri.slice(MED_NS.length)}`;
   if (iri.startsWith(LST_NS)) return `lst:${iri.slice(LST_NS.length)}`;
   // IRI completo de namespace desconhecido → bracketa, senão vira TTL inválido
   // ("Bad syntax (Prefix https: not bound)") ao ser emitido como termo.
@@ -723,8 +725,8 @@ async function loadCatalog() {
   // Imagens e vídeos vivem em namespaces de IRI distintos (image_ vs video_).
   const existingPhashes = new Set();
   const existingVhashes = new Set();
-  const IMAGE_IRI_PREFIX = 'https://pedalhidrografi.co/data/image_';
-  const VIDEO_IRI_PREFIX = 'https://pedalhidrografi.co/data/video_';
+  const IMAGE_IRI_PREFIX = 'https://id.pedalhidrografi.co/midia/image_';
+  const VIDEO_IRI_PREFIX = 'https://id.pedalhidrografi.co/midia/video_';
   // tours.ttl tem os passeios; uploads.ttl tem as imagens (e seus phash via IRI).
   for (const url of ['./data/tours.ttl', './data/images.ttl', './data/identities.ttl', './data/lists.ttl']) {
     try {
@@ -1176,6 +1178,7 @@ async function saveMediaEdit(f, card, authorTs, providerTs, listTs, orig) {
     '@prefix ph:      <https://id.pedalhidrografi.co/terms#> .',
     '@prefix phd:     <https://pedalhidrografi.co/data/> .',
     '@prefix pes:     <https://id.pedalhidrografi.co/pessoas/> .',
+    '@prefix med:     <https://id.pedalhidrografi.co/midia/> .',
     '@prefix lst:     <https://id.pedalhidrografi.co/listas/> .',
     '@prefix prov:    <http://www.w3.org/ns/prov#> .',
     '@prefix schema:  <https://schema.org/> .',
@@ -2504,7 +2507,7 @@ function buildImageBlock(card) {
   const providers = personValues(card, 'provider');
   const lists     = listValues(card);
 
-  const id    = `phd:image_${card.phash}`;
+  const id    = `med:image_${card.phash}`;
   // Nós aninhados como IRIs derivadas (`<id>_hash`, `<id>_geo`) em vez de
   // bnodes: assim o backend apaga/substitui por prefixo de IRI, sem precisar
   // percorrer bnodes alcançáveis.
@@ -2556,6 +2559,7 @@ function buildSingleImageTtl(card) {
     '@prefix ph:      <https://id.pedalhidrografi.co/terms#> .',
     '@prefix phd:     <https://pedalhidrografi.co/data/> .',
     '@prefix pes:     <https://id.pedalhidrografi.co/pessoas/> .',
+    '@prefix med:     <https://id.pedalhidrografi.co/midia/> .',
     '@prefix lst:     <https://id.pedalhidrografi.co/listas/> .',
     '@prefix prov:    <http://www.w3.org/ns/prov#> .',
     '@prefix schema:  <https://schema.org/> .',
@@ -2607,7 +2611,7 @@ function buildClipBlock(card) {
   const isoDur = `PT${Math.round(durSec * 100) / 100}S`;
 
   const id = card.clipId;
-  const iri = `phd:video_${id}`;
+  const iri = `med:video_${id}`;
   const audioFile = `${id}.audio.webm`;
   const thumbFile = `${id}.thumb.jpg`;
   // GeoCoordinates como IRI derivada (`<iri>_geo`) em vez de bnode — ver
@@ -2649,6 +2653,7 @@ function buildSingleClipTtl(card) {
     '@prefix ph:      <https://id.pedalhidrografi.co/terms#> .',
     '@prefix phd:     <https://pedalhidrografi.co/data/> .',
     '@prefix pes:     <https://id.pedalhidrografi.co/pessoas/> .',
+    '@prefix med:     <https://id.pedalhidrografi.co/midia/> .',
     '@prefix lst:     <https://id.pedalhidrografi.co/listas/> .',
     '@prefix prov:    <http://www.w3.org/ns/prov#> .',
     '@prefix schema:  <https://schema.org/> .',

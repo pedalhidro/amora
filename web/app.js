@@ -1051,7 +1051,7 @@ document.addEventListener('click', (ev) => {
     ev.preventDefault();
     const kind = me.getAttribute('data-kind');
     const hash = me.getAttribute('data-hash');
-    const iri = PHD_NS + kind + '_' + hash;
+    const iri = MED_NS + kind + '_' + hash;
     const ifr = document.getElementById('upload-iframe');
     if (ifr) ifr.src = './upload_images.html?edit=' + encodeURIComponent(iri);
     if (typeof openUploadModal === 'function') openUploadModal();
@@ -1695,8 +1695,8 @@ async function loadClipsFromUploadsTtl() {
           const date = props.dateXsd ? props.dateXsd.slice(0, 10) : null;
           clips.push({
             iri: _s,
-            vhash: _s.startsWith('https://pedalhidrografi.co/data/video_')
-                   ? _s.slice('https://pedalhidrografi.co/data/video_'.length)
+            vhash: _s.startsWith(MED_NS + 'video_')
+                   ? _s.slice((MED_NS + 'video_').length)
                    : null,
             file,
             file720: file720 || file360 || audio,
@@ -2169,6 +2169,7 @@ async function ensureN3() {
 
 const PH_NS  = 'https://id.pedalhidrografi.co/terms#';
 const PHD_NS = 'https://pedalhidrografi.co/data/';
+const MED_NS = 'https://id.pedalhidrografi.co/midia/';    // mídia (image_/video_ + hash)
 const LST_NS = 'https://id.pedalhidrografi.co/listas/';   // listas/álbuns (schema:Collection)
 const SCHEMA = 'https://schema.org/';
 const DCT    = 'http://purl.org/dc/terms/';
@@ -2348,7 +2349,7 @@ function buildModelFromQuads(quads) {
     const lat = locNode != null ? locLat.get(locNode) : undefined;
     const lng = locNode != null ? locLng.get(locNode) : undefined;
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
-    const phash = s.startsWith(PHD_NS + 'image_') ? s.slice((PHD_NS + 'image_').length) : null;
+    const phash = s.startsWith(MED_NS + 'image_') ? s.slice((MED_NS + 'image_').length) : null;
     const tourIri = tours.get(s);
     const t = tourIri ? tourCatalog.get(tourIri) : null;
     const ride = t
@@ -3018,7 +3019,7 @@ function ttlEscapeStr(s) {
 // (mode=patch, remove=schema:isPartOf → substitui o pertencimento inteiro).
 async function saveMediaLists(kind, hash, listIris, pendingNew) {
   let ttl = '@prefix schema: <https://schema.org/> .\n';
-  const mediaIri = PHD_NS + kind + '_' + hash;
+  const mediaIri = MED_NS + kind + '_' + hash;
   if (listIris.length) {
     ttl += `<${mediaIri}> schema:isPartOf ${listIris.map((i) => '<' + i + '>').join(', ')} .\n`;
   }

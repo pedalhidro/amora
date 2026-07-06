@@ -228,6 +228,7 @@ async function loadN3() {
 
 const PH     = 'https://id.pedalhidrografi.co/terms#';
 const PHD    = 'https://pedalhidrografi.co/data/';
+const MED    = 'https://id.pedalhidrografi.co/midia/';     // mídia (image_/video_ + hash)
 const PES    = 'https://id.pedalhidrografi.co/pessoas/';   // IRIs de identidade
 const SCHEMA = 'https://schema.org/';
 const DCT    = 'http://purl.org/dc/terms/';
@@ -265,7 +266,7 @@ const INVERSE_LABELS = {
 
 // Prefixos conhecidos → CURIE, pra encurtar IRIs na tabela de fatos.
 const CURIE_MAP = [
-  [PHD, 'phd:'], [PES, 'pes:'], [PH, 'ph:'],
+  [MED, 'med:'], [PHD, 'phd:'], [PES, 'pes:'], [PH, 'ph:'],
   [SCHEMA, 'schema:'], ['http://schema.org/', 'schema:'],
   [DCT, 'dcterms:'],
   ['http://www.w3.org/ns/prov#', 'prov:'],
@@ -437,7 +438,7 @@ function tourHref(iri) {
   return `./index.html?tour=${encodeURIComponent(id)}`;
 }
 function photoThumb(iri) {
-  const phash = iri.slice((PHD + 'image_').length);
+  const phash = iri.slice((MED + 'image_').length);
   return `./photos/${encodeURIComponent(phash)}/thumb.jpg`;
 }
 function videoThumb(iri) {

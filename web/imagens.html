@@ -574,7 +574,7 @@ if (!MQ) {
   throw new Error('PhidroMediaQuery ausente');
 }
 const NS = MQ.NS;
-const PHD = NS.phd, PH = NS.ph, SCHEMA = NS.schema;
+const PHD = NS.phd, PH = NS.ph, SCHEMA = NS.schema, MED = NS.med;
 // Desktop (mouse, baseado em clique) vs. smartphone (toque): decide o chrome de
 // seleção — check circles + barra de ação inferior só no toque; no desktop a
 // seleção é só o realce e as ações vêm do menu de contexto (botão direito).
@@ -1634,13 +1634,13 @@ function b64urlToHex(s) {
   return hex;
 }
 function encodeMediaToken(iri) {
-  const suf = iri.slice(PHD.length);                 // image_<hex> / video_<hex>
+  const suf = iri.slice(MED.length);                 // image_<hex> / video_<hex>
   const type = suf.charCodeAt(0) === 118 /* 'v' */ ? 'v' : 'i';
   return type + hexToB64url(suf.slice(suf.indexOf('_') + 1));
 }
 function decodeMediaToken(tok) {
   const type = tok[0], hex = b64urlToHex(tok.slice(1));
-  return PHD + (type === 'v' ? 'video_' : 'image_') + hex;
+  return MED + (type === 'v' ? 'video_' : 'image_') + hex;
 }
 function shareSelectedLink() {
   const recs = selectedRecords();
@@ -1960,7 +1960,7 @@ function applyPickParam() {
     }
   } else {
     const raw = qs.get('pick');
-    if (raw) iris = raw.split(',').map((s) => s.trim()).filter(Boolean).map((t) => PHD + t);
+    if (raw) iris = raw.split(',').map((s) => s.trim()).filter(Boolean).map((t) => MED + t);
   }
   if (!iris || !iris.length) return;
   pickSet = new Set(iris);

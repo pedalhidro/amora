@@ -17,6 +17,7 @@
   var NS = {
     ph:      'https://id.pedalhidrografi.co/terms#',
     phd:     'https://pedalhidrografi.co/data/',
+    med:     'https://id.pedalhidrografi.co/midia/',
     lst:     'https://id.pedalhidrografi.co/listas/',
     schema:  'https://schema.org/',
     dcterms: 'http://purl.org/dc/terms/',
@@ -195,13 +196,13 @@
           weekday: weekdayOf(obj1(iri, NS.dcterms + 'date')),
         };
         if (kind === 'image') {
-          var phash = iri.slice((NS.phd + 'image_').length);
+          var phash = iri.slice((NS.med + 'image_').length);
           rec.phash = phash;
           rec.thumbUrl = './photos/' + phash + '/thumb.jpg';
           rec.largeUrl = './photos/' + phash + '/large.jpg';
           rec.fullUrl = './photos/' + phash + '/original.' + origExt(obj1(iri, NS.schema + 'encodingFormat'));
         } else {
-          var vhash = iri.slice((NS.phd + 'video_').length);
+          var vhash = iri.slice((NS.med + 'video_').length);
           rec.vhash = vhash;
           var thumb = obj1(iri, NS.schema + 'thumbnail');
           var v = obj1(iri, NS.ph + 'video360p') || obj1(iri, NS.ph + 'video720p');
