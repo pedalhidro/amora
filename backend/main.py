@@ -1455,6 +1455,17 @@ def _tour_date_sort_key(dt):
     return (True, dt.timestamp())
 
 
+def _tours_with_identities_text():
+    """tours.ttl + identities.ttl concatenados. Pós-split de catálogos, pessoas
+    (schema:name/alternateName) vivem só em identities.ttl — qualquer render
+    que resolve nomes de autoria (feed, página SSR do passeio) via
+    prov:wasAttributedTo precisa das duas, senão _person_name cai pro slug
+    opaco da IRI (pes:<slug8>) por falta da definição da pessoa no grafo."""
+    tours = _load_dump_text("tours.ttl") or ""
+    idents = _load_dump_text("identities.ttl") or ""
+    return tours + "\n\n" + idents
+
+
 def _build_feed_xml(tours_text):
     import re
     from email.utils import format_datetime
@@ -1601,7 +1612,7 @@ def get_feed():
     tour tiver schema:image. ETag igual aos demais mutáveis — leitores de
     feed revalidam de graça."""
     import hashlib
-    text = _load_dump_text("tours.ttl") or ""
+    text = _tours_with_identities_text()
     digest = hashlib.sha1(text.encode("utf-8")).hexdigest()
     with _feed_lock:
         if _feed_cache["digest"] != digest:
@@ -1719,11 +1730,13 @@ _MONTHS_PT = ["janeiro", "fevereiro", "março", "abril", "maio", "junho",
 
 
 def _tours_graph():
-    """Grafo parseado de tours.ttl, cacheado por hash do texto (parsear
-    100 KB de Turtle por request seria o custo dominante da página)."""
+    """Grafo parseado de tours.ttl + identities.ttl (autoria via
+    prov:wasAttributedTo resolve nome de pessoa — ver _tours_with_identities_text),
+    cacheado por hash do texto (parsear ~100 KB de Turtle por request seria o
+    custo dominante da página)."""
     import hashlib
     from rdflib import Graph
-    text = _load_dump_text("tours.ttl") or ""
+    text = _tours_with_identities_text()
     digest = hashlib.sha1(text.encode("utf-8")).hexdigest()
     with _feed_lock:
         if _tours_graph_cache["digest"] != digest:
