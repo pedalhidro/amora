@@ -685,6 +685,7 @@ async function copyExifSegment(sourceFile, targetBlob) {
 const PHD_NS    = 'https://pedalhidrografi.co/data/';
 const PH_NS     = 'https://id.pedalhidrografi.co/terms#';
 const PES_NS    = 'https://id.pedalhidrografi.co/pessoas/';   // identidades resolvíveis (prefixo pes:)
+const LST_NS    = 'https://id.pedalhidrografi.co/listas/';    // listas/álbuns (prefixo lst:)
 const SCHEMA    = 'https://schema.org/';
 const RDF_TYPE  = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
 const DCT_TITLE = 'http://purl.org/dc/terms/title';
@@ -694,6 +695,7 @@ function shortIRI(iri) {
   if (iri.startsWith(PHD_NS)) return `phd:${iri.slice(PHD_NS.length)}`;
   if (iri.startsWith(PH_NS))  return `ph:${iri.slice(PH_NS.length)}`;
   if (iri.startsWith(PES_NS)) return `pes:${iri.slice(PES_NS.length)}`;
+  if (iri.startsWith(LST_NS)) return `lst:${iri.slice(LST_NS.length)}`;
   // IRI completo de namespace desconhecido → bracketa, senão vira TTL inválido
   // ("Bad syntax (Prefix https: not bound)") ao ser emitido como termo.
   if (/^https?:\/\//i.test(iri)) return `<${iri}>`;
@@ -724,7 +726,7 @@ async function loadCatalog() {
   const IMAGE_IRI_PREFIX = 'https://pedalhidrografi.co/data/image_';
   const VIDEO_IRI_PREFIX = 'https://pedalhidrografi.co/data/video_';
   // tours.ttl tem os passeios; uploads.ttl tem as imagens (e seus phash via IRI).
-  for (const url of ['./data/tours.ttl', './data/images.ttl', './data/identities.ttl']) {
+  for (const url of ['./data/tours.ttl', './data/images.ttl', './data/identities.ttl', './data/lists.ttl']) {
     try {
       const res = await fetch(url); if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const text = await res.text();
@@ -777,7 +779,7 @@ const cards         = [];                  // [{ index, file, phash, bitmap, ele
 const personSelects = [];                  // todas as instâncias TomSelect ligadas a pessoas
 // Listas (álbuns) — mesmo trio que pessoas: opções, listas novas cunhadas, e
 // todas as instâncias TomSelect ligadas a listas (pra propagar opções novas).
-const listOptions   = [];                  // { value: 'phd:list_x', text: 'Nome' }
+const listOptions   = [];                  // { value: 'lst:x', text: 'Nome' }
 const newLists      = new Map();           // iri → nome
 const listSelects   = [];
 // pHashes (16-hex) das imagens já no servidor — preenchido pelo bootstrap
@@ -930,9 +932,8 @@ function destroyPersonSelect(ts) {
 }
 
 // ===================== Mint / picker de LISTAS (álbuns) ================
-// Slug minúsculo idêntico ao app.js e ao imagens.html (e à migração da
-// Padrão) — pra que a MESMA lista criada em lugares diferentes case na
-// mesma IRI phd:list_<slug>.
+// Slug minúsculo idêntico ao app.js e ao imagens.html — pra que a MESMA lista
+// criada em lugares diferentes case na mesma IRI lst:<slug>.
 function slugifyList(name) {
   return (name || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'lista';
@@ -940,7 +941,7 @@ function slugifyList(name) {
 function mintList(input) {
   const name = (input || '').trim();
   if (!name) return null;
-  const iri = `phd:list_${slugifyList(name)}`;
+  const iri = `lst:${slugifyList(name)}`;
   if (!newLists.has(iri) && !listOptions.some(o => o.value === iri)) {
     newLists.set(iri, name);
     const opt = { value: iri, text: name };
@@ -1175,6 +1176,7 @@ async function saveMediaEdit(f, card, authorTs, providerTs, listTs, orig) {
     '@prefix ph:      <https://id.pedalhidrografi.co/terms#> .',
     '@prefix phd:     <https://pedalhidrografi.co/data/> .',
     '@prefix pes:     <https://id.pedalhidrografi.co/pessoas/> .',
+    '@prefix lst:     <https://id.pedalhidrografi.co/listas/> .',
     '@prefix prov:    <http://www.w3.org/ns/prov#> .',
     '@prefix schema:  <https://schema.org/> .',
     '@prefix xsd:     <http://www.w3.org/2001/XMLSchema#> .',
@@ -2554,6 +2556,7 @@ function buildSingleImageTtl(card) {
     '@prefix ph:      <https://id.pedalhidrografi.co/terms#> .',
     '@prefix phd:     <https://pedalhidrografi.co/data/> .',
     '@prefix pes:     <https://id.pedalhidrografi.co/pessoas/> .',
+    '@prefix lst:     <https://id.pedalhidrografi.co/listas/> .',
     '@prefix prov:    <http://www.w3.org/ns/prov#> .',
     '@prefix schema:  <https://schema.org/> .',
     '@prefix xsd:     <http://www.w3.org/2001/XMLSchema#> .',
@@ -2646,6 +2649,7 @@ function buildSingleClipTtl(card) {
     '@prefix ph:      <https://id.pedalhidrografi.co/terms#> .',
     '@prefix phd:     <https://pedalhidrografi.co/data/> .',
     '@prefix pes:     <https://id.pedalhidrografi.co/pessoas/> .',
+    '@prefix lst:     <https://id.pedalhidrografi.co/listas/> .',
     '@prefix prov:    <http://www.w3.org/ns/prov#> .',
     '@prefix schema:  <https://schema.org/> .',
     '@prefix xsd:     <http://www.w3.org/2001/XMLSchema#> .',

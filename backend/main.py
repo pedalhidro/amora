@@ -129,6 +129,11 @@ SCHEMA_NS = "https://schema.org/"
 # https://id.pedalhidrografi.co/pessoas/<slug8> (slug opaco aleatório). A página
 # humana é servida pelo amora em /pessoas/<slug> (schema:mainEntityOfPage).
 PES_NS = "https://id.pedalhidrografi.co/pessoas/"
+# Namespace de LISTAS/álbuns (schema:Collection) — resolvível e fora do catálogo
+# de mídia: as Collections vivem em lists.ttl (não mais inline em images.ttl).
+# IRI: https://id.pedalhidrografi.co/listas/<slug>.
+LST_NS = "https://id.pedalhidrografi.co/listas/"
+KEY_LISTS = "data/lists.ttl"
 
 
 def _intensity_for(kj):
@@ -447,7 +452,7 @@ def _load_dump_text(fname):
 # tours.ttl traz tours/pessoas/séries (referenciados por sh:class) e
 # uploads.ttl traz imagens + vídeos. shapes/ontology entram à parte no
 # validador. O manifesto vira só um shim estático servido pro frontend.
-CATALOG_DUMPS = ("tours.ttl", "images.ttl", "identities.ttl")
+CATALOG_DUMPS = ("tours.ttl", "images.ttl", "identities.ttl", "lists.ttl")
 
 
 def _load_catalog():
@@ -569,7 +574,7 @@ DATA_GRAPHS_SHIM = """\
 
 <> a void:Dataset ;
     dcterms:title "Pedal Hidrográfico — grafos de dados"@pt ;
-    void:dataDump <tours.ttl>, <images.ttl>, <identities.ttl> .
+    void:dataDump <tours.ttl>, <images.ttl>, <identities.ttl>, <lists.ttl> .
 """
 
 
@@ -684,6 +689,35 @@ def _route_new_persons(graph):
     STORE.write_text(KEY_IDENTITIES, idg.serialize(format="turtle"))
 
 
+def _route_new_collections(graph):
+    """Move definições de schema:Collection (listas/álbuns) do `graph` pra
+    lists.ttl (upsert), deixando o `graph` de mídia sem Collections.
+
+    Pós-split as listas vivem SÓ em lists.ttl; images.ttl só as referencia via
+    schema:isPartOf. Quando um upload/edição de mídia declara uma lista NOVA
+    inline (create-on-the-fly na galeria/form), esta função a desvia pro arquivo
+    certo — mesma mecânica de [_route_new_persons]. Só definições (sujeito
+    `a schema:Collection`) são movidas; referências (isPartOf) ficam."""
+    from rdflib import URIRef
+    RDFT = URIRef("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
+    coll_cls = (URIRef(SCHEMA_NS + "Collection"), URIRef("http://schema.org/Collection"))
+    colls = set()
+    for c in coll_cls:
+        colls |= set(graph.subjects(RDFT, c))
+    if not colls:
+        return
+    lg = _load_validator()["Graph"]()
+    existing = _load_dump_text("lists.ttl")
+    if existing:
+        lg.parse(data=existing, format="turtle")
+    for li in colls:
+        _purge_subject(lg, li)   # upsert: substitui def anterior (listas não têm derivados)
+        for t in list(graph.triples((li, None, None))):
+            lg.add(t)
+            graph.remove(t)
+    STORE.write_text(KEY_LISTS, lg.serialize(format="turtle"))
+
+
 PROV_GEN_URI = "http://www.w3.org/ns/prov#generated"
 
 
@@ -705,8 +739,10 @@ def upsert_image_in_uploads(image_ttl, phash, audit_ttl):
         _purge_subject(catalog, s)
     # 3) Mescla os novos blocos (imagem + nova activity).
     catalog += Graph().parse(data=image_ttl + audit_ttl, format="turtle")
-    # 4) Desvia pessoas novas (autora criada on-the-fly) pra identities.ttl.
+    # 4) Desvia pessoas novas (autora criada on-the-fly) pra identities.ttl
+    #    e listas novas inline pra lists.ttl.
     _route_new_persons(catalog)
+    _route_new_collections(catalog)
     STORE.write_text(KEY_IMAGES, catalog.serialize(format="turtle"))
 
 
@@ -774,9 +810,10 @@ def synthesize_media_patch(media_iri, patch_ttl, remove_preds):
 
 
 def upsert_media_node(media_iri, node_ttl):
-    """Substitui as triples da mídia (sujeito + nós derivados) em uploads.ttl
+    """Substitui as triples da mídia (sujeito + nós derivados) em images.ttl
     pelo node_ttl, PRESERVANDO os blobs e a activity ph:Upload (sujeito à parte).
-    node_ttl pode trazer schema:Collection novos, persistidos como estão."""
+    node_ttl pode trazer schema:Collection novos inline — desviados pra lists.ttl
+    por _route_new_collections, nunca persistidos em images.ttl."""
     v = _load_validator()
     Graph = v["Graph"]
     from rdflib import URIRef
@@ -787,6 +824,7 @@ def upsert_media_node(media_iri, node_ttl):
         catalog.parse(data=existing, format="turtle")
     _purge_subject(catalog, media_uri)
     catalog += Graph().parse(data=node_ttl, format="turtle")
+    _route_new_collections(catalog)   # listas novas inline → lists.ttl
     STORE.write_text(KEY_IMAGES, catalog.serialize(format="turtle"))
 
 
@@ -1388,6 +1426,42 @@ def terms_vocab():
                                  headers={"Cache-Control": "no-cache"}))
 
 
+@app.get("/listas/<slug>")
+def list_page(slug):
+    """Dereferência de uma lista/álbum (schema:Collection). IRI:
+    https://id.pedalhidrografi.co/listas/<slug> (CF 303 pra cá). Conneg:
+    Accept: text/turtle (ou ?format=ttl) → a Collection (de lists.ttl) + seus
+    membros como schema:hasPart (calculados de images.ttl via schema:isPartOf
+    inverso); senão 303 pra galeria (imagens.html), onde a lista é navegável."""
+    list_iri = LST_NS + slug
+    if not _wants_turtle(request):
+        return redirect("/imagens.html", code=303)
+    from rdflib import URIRef, Literal
+    Graph = _load_validator()["Graph"]
+    ISPARTOF = URIRef(SCHEMA_NS + "isPartOf")
+    HASPART = URIRef(SCHEMA_NS + "hasPart")
+    lu = URIRef(list_iri)
+    lists_text = _load_dump_text("lists.ttl")
+    out = Graph()
+    for pfx, ns in (("lst", LST_NS), ("phd", PHD_NS), ("schema", SCHEMA_NS)):
+        out.bind(pfx, ns)
+    if lists_text:
+        lg = Graph().parse(data=lists_text, format="turtle")
+        for t in lg.triples((lu, None, None)):
+            out.add(t)
+    # Membros: mídias que declaram schema:isPartOf <lista> em images.ttl.
+    img_text = _load_dump_text("images.ttl")
+    if img_text:
+        ig = Graph().parse(data=img_text, format="turtle")
+        for m in ig.subjects(ISPARTOF, lu):
+            out.add((lu, HASPART, m))
+    if len(out) == 0:
+        abort(404)
+    return _conditional(Response(out.serialize(format="turtle"),
+                                 mimetype="text/turtle",
+                                 headers={"Cache-Control": "no-cache"}))
+
+
 @app.get("/data/<filename>")
 def get_data_ttl(filename):
     """Handler único pra /data/*.ttl — bucket-first, container fallback.
@@ -1404,7 +1478,7 @@ def get_data_ttl(filename):
         abort(404)
     text = _load_dump_text(filename)
     if text is None:
-        if filename in ("images.ttl", "identities.ttl", "uploads.ttl"):
+        if filename in ("images.ttl", "identities.ttl", "uploads.ttl", "lists.ttl"):
             text = ""             # catálogo vazio — válido (uploads.ttl: legado)
         elif filename == "data_graphs.ttl":
             text = DATA_GRAPHS_SHIM  # manifesto estático (tours + images + identities)
@@ -2325,6 +2399,7 @@ def upload_video():
         _purge_subject(catalog, vid_iri)   # vídeo + nós derivados (geo)
         catalog.parse(data=ttl_text, format="turtle")
         _route_new_persons(catalog)        # autora nova → identities.ttl
+        _route_new_collections(catalog)    # lista nova inline → lists.ttl
         STORE.write_text(KEY_IMAGES, catalog.serialize(format="turtle"))
         _invalidate_catalog()
     except Exception as e:  # noqa: BLE001
@@ -2486,10 +2561,11 @@ def assign_media_lists():
     """Operação em lote de pertencimento a listas (galeria): adiciona/remove
     schema:isPartOf em várias mídias num único ciclo de lock. Body JSON:
     {iris:[...], add:[listIri...], remove:[listIri...], newLists:[{iri,name}...]}.
-    Só toca phd:image_/phd:video_; add/remove/newLists só aceitam phd:list_.
+    Só toca phd:image_/phd:video_; add/remove/newLists só aceitam lst: (listas).
     Como isPartOf é a única aresta tocada (range schema:Collection, garantido
     pelas listas declaradas), o resultado é SHACL-válido por construção — não
-    revalidamos cada nó (seria N validações no lote)."""
+    revalidamos cada nó (seria N validações no lote). As arestas isPartOf ficam
+    em images.ttl; as Collections (defs de lista) vivem em lists.ttl."""
     from rdflib import URIRef, Literal
     body = request.get_json(silent=True)
     if not isinstance(body, dict):
@@ -2503,7 +2579,7 @@ def assign_media_lists():
     if not isinstance(add, list) or not isinstance(remove, list):
         return jsonify(error="add/remove devem ser listas"), 400
 
-    LIST_PREFIX = PHD_NS + "list_"
+    LIST_PREFIX = LST_NS
     IMG_PREFIX = PHD_NS + "image_"
     VID_PREFIX = PHD_NS + "video_"
     ISPARTOF = URIRef(SCHEMA_NS + "isPartOf")
@@ -2516,7 +2592,7 @@ def assign_media_lists():
     def _is_list(x):
         return isinstance(x, str) and x.startswith(LIST_PREFIX)
     if not all(_is_list(x) for x in add) or not all(_is_list(x) for x in remove):
-        return jsonify(error="add/remove devem ser IRIs phd:list_"), 400
+        return jsonify(error="add/remove devem ser IRIs lst: (listas)"), 400
     for m in iris:
         if not (isinstance(m, str) and (m.startswith(IMG_PREFIX) or m.startswith(VID_PREFIX))):
             return jsonify(error=f"iri de mídia inválida: {m}"), 400
@@ -2527,22 +2603,29 @@ def assign_media_lists():
     existing = STORE.read_text(KEY_IMAGES)
     if existing:
         catalog.parse(data=existing, format="turtle")
+    # Listas (schema:Collection) vivem em lists.ttl — grafo à parte.
+    lists_g = Graph()
+    existing_lists = STORE.read_text(KEY_LISTS)
+    if existing_lists:
+        lists_g.parse(data=existing_lists, format="turtle")
 
-    # Garante que as listas novas existam como schema:Collection (persistem
-    # como sujeitos à parte, iguais a pessoas novas).
+    # Garante que as listas novas existam como schema:Collection em lists.ttl
+    # (persistem como sujeitos à parte, iguais a pessoas em identities.ttl).
+    lists_dirty = False
     for nl in new_lists:
         li = (nl or {}).get("iri")
         nm = (nl or {}).get("name")
         if not _is_list(li) or not nm:
             return jsonify(error=f"newList inválida: {nl}"), 400
         lu = URIRef(li)
-        if (lu, RDFT, COLLECTION) not in catalog:
-            catalog.add((lu, RDFT, COLLECTION))
-            catalog.add((lu, NAME, Literal(str(nm))))
+        if (lu, RDFT, COLLECTION) not in lists_g:
+            lists_g.add((lu, RDFT, COLLECTION))
+            lists_g.add((lu, NAME, Literal(str(nm))))
+            lists_dirty = True
 
     # Toda lista em `add` precisa existir como Collection (range de isPartOf).
     for li in add:
-        if (URIRef(li), RDFT, COLLECTION) not in catalog:
+        if (URIRef(li), RDFT, COLLECTION) not in lists_g:
             return jsonify(error=f"lista inexistente (declare em newLists): {li}"), 400
 
     touched = 0
@@ -2556,6 +2639,8 @@ def assign_media_lists():
             catalog.add((mu, ISPARTOF, URIRef(li)))
         touched += 1
 
+    if lists_dirty:
+        STORE.write_text(KEY_LISTS, lists_g.serialize(format="turtle"))
     STORE.write_text(KEY_IMAGES, catalog.serialize(format="turtle"))
     _invalidate_catalog()
     print(f"[assign-media-lists] iris={len(iris)} touched={touched} add={add} remove={remove}")

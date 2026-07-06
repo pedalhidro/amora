@@ -17,6 +17,7 @@
   var NS = {
     ph:      'https://id.pedalhidrografi.co/terms#',
     phd:     'https://pedalhidrografi.co/data/',
+    lst:     'https://id.pedalhidrografi.co/listas/',
     schema:  'https://schema.org/',
     dcterms: 'http://purl.org/dc/terms/',
     prov:    'http://www.w3.org/ns/prov#',
@@ -25,7 +26,7 @@
     rdf:     'http://www.w3.org/1999/02/22-rdf-syntax-ns#',
     xsd:     'http://www.w3.org/2001/XMLSchema#',
   };
-  var PADRAO_IRI = NS.phd + 'list_padrao';
+  var PADRAO_IRI = NS.lst + 'padrao';
 
   // Bundle browser single-file (global `Comunica`), pinado por commit SHA no
   // repo rdfjs/comunica-browser (o arquivo pronto-pra-<script> não existe no

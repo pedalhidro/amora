@@ -13,7 +13,7 @@
 //                    stale data, not just a stale app shell.
 //   RUNTIME_CACHE — map tiles, OSRM, elevation, etc. stale-while-revalidate.
 
-const VERSION = 'phidro-v344';
+const VERSION = 'phidro-v345';
 const STATIC_CACHE = `${VERSION}-static`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 
@@ -114,6 +114,9 @@ self.addEventListener('fetch', (event) => {
     if (url.pathname.endsWith('/data/data_graphs.ttl')
         || url.pathname.endsWith('/data/uploads.ttl')
         || url.pathname.endsWith('/data/tours.ttl')
+        || url.pathname.endsWith('/data/images.ttl')
+        || url.pathname.endsWith('/data/identities.ttl')
+        || url.pathname.endsWith('/data/lists.ttl')
         || url.pathname.endsWith('/routes.json')) {
       event.respondWith(networkFirst(req, STATIC_CACHE));
     } else {

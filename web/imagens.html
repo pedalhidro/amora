@@ -592,7 +592,7 @@ window.addEventListener('pointerdown', (e) => {
   if (e.pointerType === 'touch') setTouchUI(true);
   else if (e.pointerType === 'mouse') setTouchUI(false);
 }, true);
-const LIST_PREFIX = PHD + 'list_';
+const LIST_PREFIX = NS.lst;   // listas/álbuns (schema:Collection) → lst:<slug>
 const TOUR_PREFIX = PHD + 'tour_';
 
 // ── Helpers básicos ─────────────────────────────────────────────────────────
@@ -610,8 +610,8 @@ function debounce(fn, ms) {
   let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
 }
 // Slug minúsculo p/ IRI de lista nova — IDÊNTICO ao app.js e ao
-// upload_images.html (e à migração da Padrão), pra que a MESMA lista criada em
-// lugares diferentes case na mesma IRI phd:list_<slug>.
+// upload_images.html, pra que a MESMA lista criada em lugares diferentes case
+// na mesma IRI lst:<slug>.
 function slugifyList(s) {
   return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'lista';
@@ -690,6 +690,7 @@ async function loadData() {
       new URL('./data/tours.ttl', location.href).href,
       new URL('./data/images.ttl', location.href).href,
       new URL('./data/identities.ttl', location.href).href,
+      new URL('./data/lists.ttl', location.href).href,
     ];
   }
   // Baixa e concatena o texto de todos os grafos, depois parseia tudo junto.
@@ -779,8 +780,8 @@ function initSelect(sel, options, { placeholder, sortByOrder } = {}) {
   if (sortByOrder) cfg.sortField = [{ field: '$order', direction: 'asc' }];
   return new window.TomSelect(sel, cfg);
 }
-// Criar-na-hora: cunha a IRI phd:list_<slug> (NÃO o texto cru) — é o valor que
-// vai pro backend, que exige o prefixo phd:list_. Função nomeada pra poder ser
+// Criar-na-hora: cunha a IRI lst:<slug> (NÃO o texto cru) — é o valor que
+// vai pro backend, que exige o prefixo lst: (listas). Função nomeada pra poder ser
 // religada em settings.create sem virar `true` (que usaria o texto como valor).
 function mintListOption(input) {
   const iri = LIST_PREFIX + slugifyList(input);

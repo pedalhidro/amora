@@ -300,7 +300,7 @@ if [[ "$SYNC_STATE" == 1 ]]; then
     fi
   fi
 
-  for f in images.ttl data_graphs.ttl; do
+  for f in images.ttl lists.ttl data_graphs.ttl; do
     if [[ -f "$REPO_ROOT/web/data/$f" ]]; then
       guarded_push "$REPO_ROOT/web/data/$f" "gs://$BUCKET/data/$f"
     else

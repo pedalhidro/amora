@@ -957,9 +957,9 @@ let photoDateWindow = null;
 //   'all'    → todas as mídias (escape "Todas")
 //   'picker' → união das listas marcadas (mediaFilter.lists)
 //   'sparql' → resultado de uma consulta SPARQL (mediaFilterResultSet)
-// Literal inline (PHD_NS é declarado bem mais abaixo — usar aqui cairia na TDZ
+// Literal inline (LST_NS é declarado bem mais abaixo — usar aqui cairia na TDZ
 // do const, já que este bloco roda na inicialização do módulo).
-const PADRAO_LIST_IRI = 'https://pedalhidrografi.co/data/list_padrao';
+const PADRAO_LIST_IRI = 'https://id.pedalhidrografi.co/listas/padrao';
 let mediaFilter = loadMediaFilter();
 let mediaFilterResultSet = null;   // Set<iri> quando mode==='sparql'
 function loadMediaFilter() {
@@ -2169,6 +2169,7 @@ async function ensureN3() {
 
 const PH_NS  = 'https://id.pedalhidrografi.co/terms#';
 const PHD_NS = 'https://pedalhidrografi.co/data/';
+const LST_NS = 'https://id.pedalhidrografi.co/listas/';   // listas/álbuns (schema:Collection)
 const SCHEMA = 'https://schema.org/';
 const DCT    = 'http://purl.org/dc/terms/';
 const PROV   = 'http://www.w3.org/ns/prov#';
@@ -3070,7 +3071,7 @@ function openMediaListsEditor(kind, hash, currentLists) {
     const inp = modal.querySelector('#mle-newname');
     const nm = inp.value.trim();
     if (!nm) return;
-    const li = PHD_NS + 'list_' + slugifyList(nm);
+    const li = LST_NS + slugifyList(nm);
     const exists = [...modal.querySelectorAll('.mle-list')].some((c) => c.value === li);
     if (!exists) {
       pendingNew.push({ iri: li, name: nm });

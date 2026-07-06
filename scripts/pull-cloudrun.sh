@@ -126,7 +126,7 @@ fi
 # ── Dados mutáveis (uploads.ttl + data_graphs.ttl + tours.ttl) ──────────
 if [[ "$SYNC_DATA" == 1 ]]; then
   mkdir -p "$REPO_ROOT/web/data"
-  for f in images.ttl identities.ttl data_graphs.ttl tours.ttl; do
+  for f in images.ttl identities.ttl lists.ttl data_graphs.ttl tours.ttl; do
     guarded_pull "gs://$BUCKET/data/$f" "$REPO_ROOT/web/data/$f"
   done
 
