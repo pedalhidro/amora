@@ -207,13 +207,9 @@ const $ = (q) => document.querySelector(q);
 // segundo mapa). Reusa a mensagem 'phidro-censo-back' — o app re-aponta o
 // iframe pra ./censo.html a cada abertura, então navegar pra cá é seguro.
 if (window.self !== window.top) {
-  $('header h1')?.style.setProperty('display', 'none');
-  $('header .sub')?.style.setProperty('display', 'none');
-  const back = $('header a.back');
-  if (back) back.addEventListener('click', (e) => {
-    e.preventDefault();
-    try { window.parent.postMessage({ type: 'phidro-censo-back' }, window.location.origin); } catch (_) {}
-  });
+  // No modal, mostra o próprio título (o modal não tem barra), mas esconde a
+  // nav ("Censo →" / "← Mapa") — fecha pelo botão vermelho / clique fora / Esc.
+  $('header nav')?.style.setProperty('display', 'none');
 }
 
 // ── N3.js (UMD vendored em ./lib/n3.min.js → popula window.N3) ───────────────

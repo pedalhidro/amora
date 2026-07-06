@@ -1403,15 +1403,18 @@ def _fmt_moving_duration(dur):
 
 
 def _person_name(g, p):
-    """Nome de exibição: schema:alternateName, senão o slug da IRI
-    sem o prefixo 'pessoa' (phd:pessoaAnaju → 'anaju')."""
+    """Nome de exibição: schema:name (nome real), senão schema:alternateName
+    (apelido/handle), senão o slug opaco da IRI (pes:<slug8> → '<slug8>') como
+    último recurso — alternateName é só Warning no PersonShape, não obrigatório."""
     from rdflib import Namespace
     SCHEMA = Namespace("https://schema.org/")
+    name = g.value(p, SCHEMA.name)
+    if name:
+        return str(name)
     alt = g.value(p, SCHEMA.alternateName)
     if alt:
         return str(alt)
-    slug = str(p).split("/")[-1].split("#")[-1]
-    return (slug[6:] if slug.startswith("pessoa") else slug).lower() or slug
+    return str(p).split("/")[-1].split("#")[-1]
 
 
 def _tour_display_title(g, t):

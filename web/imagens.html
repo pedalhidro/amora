@@ -27,7 +27,9 @@
   html, body { margin: 0; background: var(--bg); color: var(--text);
     font: 14px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
   body { padding: 12px; margin: 0; }
-  body.select-mode { padding-bottom: 76px; }  /* espaço p/ a barra de ação fixa */
+  /* A barra de ação inferior (e o espaço p/ ela) só existe no toque; no desktop
+     as ações vêm do menu de contexto (botão direito). */
+  body.touch-ui.select-mode { padding-bottom: 76px; }
 
   header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
     margin-bottom: 10px; }
@@ -68,6 +70,18 @@
   .tb-row + .tb-row { margin-top: 8px; }
   .tb-label { color: var(--muted); font-size: 12px; }
   .tb-spacer { flex: 1 1 auto; }
+  /* Barra sempre visível (toggle + selecionar) + corpo recolhível. */
+  .tb-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .tb-toggle {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--surface); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 12px; font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  .tb-toggle:hover { border-color: var(--accent); color: var(--accent); }
+  .tb-toggle .chev { transition: transform .15s; display: inline-block; }
+  .toolbar.collapsed .tb-toggle .chev { transform: rotate(-90deg); }
+  .tb-body { margin-top: 8px; }
+  .toolbar.collapsed .tb-body { display: none; }
 
   .segmented { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
   .segmented button {
@@ -77,6 +91,18 @@
   .segmented button + button { border-left: 1px solid var(--border); }
   .segmented button.active { background: var(--accent); color: #fff; }
   .segmented button:hover:not(.active) { color: var(--accent); }
+  /* Segmento de ÍCONES (toggle de layout estilo Apple Fotos). */
+  .iconseg button { display: inline-flex; align-items: center; justify-content: center; padding: 5px 9px; }
+  .iconseg svg { display: block; }
+  /* Stepper de zoom das miniaturas (− / +). */
+  .zoomctl { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .zoomctl button {
+    width: 30px; height: 32px; background: var(--surface); color: var(--text);
+    border: none; font-size: 17px; line-height: 1; cursor: pointer;
+  }
+  .zoomctl button + button { border-left: 1px solid var(--border); }
+  .zoomctl button:hover:not(:disabled) { color: var(--accent); }
+  .zoomctl button:disabled { opacity: .4; cursor: default; }
 
   .sel-count { color: var(--muted); font-size: 12px; }
 
@@ -88,8 +114,32 @@
     background: var(--surface); color: var(--text); border: 1px solid var(--border);
     border-radius: 6px; padding: 5px 6px; font-size: 12px; min-height: 32px;
   }
-  .facet-date input { width: 140px; }
-  .facet-kj input { width: 84px; }
+  /* Faixas (data / kJ): slider de duas alças + campos nas pontas. */
+  .range-block { display: flex; align-items: center; gap: 6px; }
+  .range-end {
+    background: var(--surface); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 4px 5px; font-size: 11px; min-height: 30px;
+  }
+  .facet-range input[type="date"].range-end { width: 118px; }
+  .range-num { width: 52px; }
+  /* Slider de duas alças: dois <input type=range> sobrepostos; só as alças
+     capturam clique (pointer-events), pra ambas serem arrastáveis. */
+  .dual { position: relative; width: 130px; height: 28px; flex: none; }
+  .dual::before { content: ''; position: absolute; left: 0; right: 0; top: 13px; height: 3px; background: var(--border); border-radius: 2px; }
+  .dual-fill { position: absolute; top: 13px; height: 3px; background: var(--accent); border-radius: 2px; }
+  .dual input[type="range"] {
+    position: absolute; top: 0; left: 0; width: 100%; height: 28px; margin: 0;
+    -webkit-appearance: none; appearance: none; background: none; pointer-events: none;
+  }
+  .dual input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; pointer-events: auto; width: 15px; height: 15px; border-radius: 50%;
+    background: var(--accent); border: 2px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,.5); cursor: pointer;
+  }
+  .dual input[type="range"]::-moz-range-thumb {
+    pointer-events: auto; width: 15px; height: 15px; border-radius: 50%;
+    background: var(--accent); border: 2px solid #fff; cursor: pointer;
+  }
+  .dual input[type="range"]::-moz-range-track { background: none; }
   .facet-wd {
     border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px 6px; margin: 0;
     display: flex; flex-direction: column; gap: 2px;
@@ -112,6 +162,8 @@
     background: var(--accent); color: #fff; border-radius: 4px;
   }
   .ts-wrapper.multi .ts-control .item .remove { border-left-color: rgba(255,255,255,.35); }
+  /* Valores (chips) das facetas de seleção menores — cabem mais por linha. */
+  .facet .ts-control .item { font-size: 10px; padding: 0 5px; line-height: 1.5; }
   /* O tom-select.min.css é carregado DEPOIS deste <style> (link abaixo), então
      nas empatadas de especificidade o CSS vendido (tema claro) vence — por isso
      as opções do dropdown precisam de !important pra não ficarem texto escuro
@@ -122,7 +174,7 @@
   }
   .ts-dropdown .option {
     color: var(--text) !important; background: transparent !important;
-    font-size: 13px; padding: 7px 10px;
+    font-size: 11px; padding: 5px 9px;
   }
   .ts-dropdown .option.active,
   .ts-dropdown .active { background: var(--accent) !important; color: #fff !important; }
@@ -172,7 +224,28 @@
   .group { scroll-margin-top: 220px; }
 
   /* ── Grade estilo Apple Fotos ─────────────────────────────────────────── */
-  .gallery { display: block; }
+  /* touch-action: pan-x pan-y => o navegador ainda rola com 1 dedo, mas cede o
+     gesto de pinça (2 dedos) pra gente controlar o zoom das miniaturas. */
+  .gallery { display: block; position: relative; touch-action: pan-x pan-y; }
+  /* Modo contínuo: overlay dos polígonos de grupo (não intercepta cliques). */
+  .group-overlay { position: absolute; pointer-events: none; z-index: 3; }
+  .group-chip {
+    position: absolute; pointer-events: none; z-index: 4;
+    background: rgba(0, 0, 0, 0.72); color: #fff;
+    border: 1px solid rgba(255, 255, 255, 0.35); border-radius: 5px;
+    padding: 1px 6px; font-size: 11px; font-weight: 600; max-width: 60%;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  /* Botão-toggle de ícone ("Contínuo"). */
+  .icon-toggle {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 34px; height: 32px; padding: 0;
+    background: var(--surface); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; cursor: pointer;
+  }
+  .icon-toggle svg { display: block; }
+  .icon-toggle:hover { border-color: var(--accent); color: var(--accent); }
+  .icon-toggle.active { background: var(--accent); border-color: var(--accent); color: #fff; }
   .empty { color: var(--muted); padding: 40px 0; text-align: center; font-size: 15px; }
   .group { margin-bottom: 20px; }
   .group-header {
@@ -184,10 +257,10 @@
   .group-header .g-title { font-size: 15px; font-weight: 700; }
   .group-header .g-count { color: var(--muted); font-size: 12px; }
   .tiles {
-    display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 6px;
+    display: grid; grid-template-columns: repeat(var(--cols, 5), 1fr); gap: 3px;
   }
   .tile {
-    position: relative; aspect-ratio: 1 / 1; border-radius: 6px; overflow: hidden;
+    position: relative; aspect-ratio: 1 / 1; border-radius: 3px; overflow: hidden;
     background: var(--surface); cursor: pointer; border: 1px solid var(--border);
   }
   .tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
@@ -196,7 +269,7 @@
      no aspect-ratio real e cada linha preenche a largura toda. layoutJustified()
      define width/height inline de cada tile; a última linha fica na altura-alvo
      (não estica) pra não distorcer poucos itens. */
-  .gallery.collage .tiles { display: flex; flex-wrap: wrap; gap: 6px; align-content: flex-start; }
+  .gallery.collage .tiles { display: flex; flex-wrap: wrap; gap: 3px; align-content: flex-start; }
   .gallery.collage .tile { aspect-ratio: auto; width: auto; }
   .tile.no-img::after {
     content: '🖼'; position: absolute; inset: 0; display: flex; align-items: center;
@@ -210,7 +283,8 @@
     position: absolute; top: 6px; right: 6px; width: 20px; height: 20px; border-radius: 50%;
     border: 2px solid #fff; background: rgba(0,0,0,.4); display: none;
   }
-  .gallery.select-mode .tile .check { display: block; }
+  /* Check circle só no toque (smartphone). No desktop a seleção é só o realce. */
+  body.touch-ui .gallery.select-mode .tile .check { display: block; }
   .tile.selected { outline: 3px solid var(--accent); outline-offset: -3px; }
   .tile.selected .check { background: var(--accent); border-color: #fff; }
   .tile.selected .check::after {
@@ -258,12 +332,41 @@
   /* ── Barra de ação da seleção (fixa embaixo) ──────────────────────────── */
   .selbar {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 60;
-    background: var(--panel); border-top: 1px solid var(--border);
-    display: flex; align-items: center; gap: 12px; padding: 10px 14px;
+    background: var(--panel); border-top: 1px solid var(--accent);
+    display: flex; align-items: center; gap: 10px; padding: 7px 12px;
     box-shadow: 0 -2px 12px rgba(0,0,0,.4);
   }
-  .selbar-count { color: var(--text); font-weight: 600; }
-  .selbar-actions { display: flex; gap: 8px; margin-left: auto; }
+  .selbar-count { color: var(--text); font-weight: 600; font-size: 13px; white-space: nowrap; }
+  .selbar-actions { display: flex; gap: 6px; margin-left: auto; }
+  .selbar .btn { padding: 5px 9px; font-size: 12px; }
+  @media (max-width: 760px) {
+    /* Compacto: só ícones grandes o suficiente pra tocar, texto encolhido. */
+    .selbar { gap: 6px; padding: 6px 8px; }
+    .selbar-count { font-size: 12px; }
+    .selbar-actions { gap: 4px; }
+    .selbar .btn { padding: 6px 8px; font-size: 12px; }
+  }
+
+  /* ── Menu de contexto (botão direito) ─────────────────────────────────── */
+  .ctx-menu {
+    position: fixed; z-index: 130; min-width: 190px; padding: 5px;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 9px;
+    box-shadow: 0 6px 24px rgba(0,0,0,.45); display: flex; flex-direction: column; gap: 1px;
+  }
+  .ctx-menu button {
+    display: block; width: 100%; text-align: left; background: transparent; border: none;
+    color: var(--text); font-size: 13px; padding: 8px 10px; border-radius: 6px; cursor: pointer;
+  }
+  .ctx-menu button:hover { background: var(--surface); }
+  .ctx-menu button.danger { color: #ff8080; }
+  .ctx-menu button.danger:hover { background: rgba(255,80,80,.14); }
+
+  /* ── Aviso passageiro (toast) ─────────────────────────────────────────── */
+  .toast {
+    position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 140;
+    background: var(--panel); border: 1px solid var(--accent); border-radius: 8px;
+    padding: 8px 14px; font-size: 13px; box-shadow: 0 4px 16px rgba(0,0,0,.45); max-width: 90vw;
+  }
 
   /* ── Modal genérico (adicionar a listas) ──────────────────────────────── */
   .modal { position: fixed; inset: 0; z-index: 120; display: flex; }
@@ -279,6 +382,30 @@
   #assign-error { margin-top: 10px; font-size: 12px; }
 
   footer { margin-top: 20px; color: var(--muted); font-size: 11px; }
+
+  /* ── Aviso de link compartilhado (?pick=…) ────────────────────────────── */
+  .pick-note {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    margin: 0 0 10px; padding: 8px 12px; font-size: 13px;
+    background: var(--surface); border: 1px solid var(--accent); border-radius: 8px;
+  }
+  .pick-note .btn { margin-left: auto; padding: 4px 10px; font-size: 12px; }
+
+  /* ── Celular ─────────────────────────────────────────────────────────── */
+  @media (max-width: 760px) {
+    body { padding: 6px; }
+    body.touch-ui.select-mode { padding-bottom: 70px; }
+    .toolbar { padding: 8px; }
+    header h1 { font-size: 18px; }
+    /* Facetas empilhadas em largura total (mais usáveis no toque). */
+    .tb-facets { flex-direction: column; align-items: stretch; gap: 10px; }
+    .tb-facets .facet { width: 100%; }
+    .tb-facets .facet .ts-wrapper { max-width: none; }
+    .range-block { flex-wrap: wrap; }
+    .range-block .dual { flex: 1 1 120px; }
+    .facet-range input[type="date"].range-end { width: auto; flex: 1 1 100px; }
+    .selbar { flex-wrap: wrap; }
+  }
 </style>
 <link href="./lib/tom-select.min.css" rel="stylesheet">
 <!-- media-query.js é um <script> CLÁSSICO (publica window.PhidroMediaQuery),
@@ -296,6 +423,14 @@
 <div id="status" role="status" aria-live="polite">Carregando catálogo de mídias…</div>
 
 <div class="toolbar" hidden>
+  <div class="tb-bar">
+    <button id="tb-toggle" type="button" class="tb-toggle" aria-expanded="true" aria-controls="tb-body"><span class="chev">▾</span> Filtros &amp; agrupamento</button>
+    <div class="tb-spacer"></div>
+    <button id="btn-select" type="button" class="btn">Selecionar</button>
+    <button id="btn-select-all" type="button" class="btn" hidden>Selecionar tudo</button>
+    <span id="sel-count" class="sel-count" hidden>0 selecionadas</span>
+  </div>
+  <div class="tb-body" id="tb-body">
   <div class="tb-row tb-groups">
     <span class="tb-label">Agrupar:</span>
     <div id="tb-group" class="segmented">
@@ -303,16 +438,17 @@
       <button type="button" data-group="day">Dia</button>
       <button type="button" data-group="month">Mês</button>
       <button type="button" data-group="year">Ano</button>
+      <button type="button" data-group="none">Nenhum</button>
     </div>
-    <span class="tb-label">Layout:</span>
-    <div id="tb-layout" class="segmented">
-      <button type="button" data-layout="grid" class="active">Quadrado</button>
-      <button type="button" data-layout="collage">Colagem</button>
+    <button type="button" id="tb-wrap" class="icon-toggle" title="Contínuo: grupos contornados, sem quebrar a grade" aria-label="Contínuo" aria-pressed="false"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><g fill="currentColor"><rect x="4" y="4" width="3.5" height="3.5" rx=".8"/><rect x="10" y="4" width="3.5" height="3.5" rx=".8"/><rect x="16" y="4" width="3.5" height="3.5" rx=".8"/><rect x="4" y="10" width="3.5" height="3.5" rx=".8"/><rect x="10" y="10" width="3.5" height="3.5" rx=".8"/><rect x="16" y="10" width="3.5" height="3.5" rx=".8"/><rect x="4" y="16" width="3.5" height="3.5" rx=".8"/><rect x="10" y="16" width="3.5" height="3.5" rx=".8"/><rect x="16" y="16" width="3.5" height="3.5" rx=".8"/></g><rect x="2.3" y="2.3" width="13" height="13" rx="3" fill="none" stroke="currentColor" stroke-width="1.7"/></svg></button>
+    <div id="tb-layout" class="segmented iconseg" role="group" aria-label="Layout">
+      <button type="button" data-layout="grid" class="active" title="Grade quadrada" aria-label="Grade quadrada"><svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="3" y="3" width="5" height="5" rx="1"/><rect x="9.5" y="3" width="5" height="5" rx="1"/><rect x="16" y="3" width="5" height="5" rx="1"/><rect x="3" y="9.5" width="5" height="5" rx="1"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/><rect x="16" y="9.5" width="5" height="5" rx="1"/><rect x="3" y="16" width="5" height="5" rx="1"/><rect x="9.5" y="16" width="5" height="5" rx="1"/><rect x="16" y="16" width="5" height="5" rx="1"/></svg></button>
+      <button type="button" data-layout="collage" title="Colagem — proporção real" aria-label="Colagem"><svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="3" y="3" width="9" height="6" rx="1"/><rect x="13.5" y="3" width="7.5" height="6" rx="1"/><rect x="3" y="10.5" width="5.5" height="4.5" rx="1"/><rect x="10" y="10.5" width="11" height="4.5" rx="1"/><rect x="3" y="16.5" width="11" height="4.5" rx="1"/><rect x="15.5" y="16.5" width="5.5" height="4.5" rx="1"/></svg></button>
     </div>
-    <div class="tb-spacer"></div>
-    <button id="btn-select" type="button" class="btn">Selecionar</button>
-    <button id="btn-select-all" type="button" class="btn" hidden>Selecionar tudo</button>
-    <span id="sel-count" class="sel-count" hidden>0 selecionadas</span>
+    <div id="tb-zoom" class="zoomctl" role="group" aria-label="Tamanho das miniaturas">
+      <button type="button" id="zoom-out" title="Diminuir (mais fotos por linha)" aria-label="Diminuir miniaturas">&minus;</button>
+      <button type="button" id="zoom-in" title="Aumentar (menos fotos por linha)" aria-label="Aumentar miniaturas">+</button>
+    </div>
   </div>
 
   <div class="tb-row tb-facets">
@@ -320,10 +456,20 @@
     <label class="facet"><span>Autoras</span><select id="f-authors" multiple placeholder="todas"></select></label>
     <label class="facet"><span>Quem subiu</span><select id="f-uploaders" multiple placeholder="todos"></select></label>
     <label class="facet"><span>Passeio</span><select id="f-tours" multiple placeholder="todos"></select></label>
-    <label class="facet facet-date"><span>De</span><input type="date" id="f-date-from"></label>
-    <label class="facet facet-date"><span>Até</span><input type="date" id="f-date-to"></label>
-    <label class="facet facet-kj"><span>kJ mín</span><input type="number" id="f-kj-min" min="0" step="10"></label>
-    <label class="facet facet-kj"><span>kJ máx</span><input type="number" id="f-kj-max" min="0" step="10"></label>
+    <div class="facet facet-range"><span>Datas</span>
+      <div class="range-block">
+        <input type="date" id="f-date-from" class="range-end" title="De">
+        <div class="dual" id="dual-date"><div class="dual-fill"></div><input type="range" class="dual-lo" aria-label="Data inicial"><input type="range" class="dual-hi" aria-label="Data final"></div>
+        <input type="date" id="f-date-to" class="range-end" title="Até">
+      </div>
+    </div>
+    <div class="facet facet-range"><span>Quilojoules</span>
+      <div class="range-block">
+        <input type="number" id="f-kj-min" class="range-end range-num" min="0" step="10" placeholder="mín" title="kJ mín">
+        <div class="dual" id="dual-kj"><div class="dual-fill"></div><input type="range" class="dual-lo" aria-label="kJ mínimo"><input type="range" class="dual-hi" aria-label="kJ máximo"></div>
+        <input type="number" id="f-kj-max" class="range-end range-num" min="0" step="10" placeholder="máx" title="kJ máx">
+      </div>
+    </div>
     <fieldset class="facet facet-wd" id="f-weekdays">
       <legend>Dia da semana</legend>
       <div class="wd-boxes">
@@ -348,6 +494,7 @@
     </div>
     <div id="adv-error" class="err" hidden></div>
   </details>
+  </div>
 
   <!-- Linha do tempo: um marcador por grupo, mais antigo à esquerda → mais
        novo à direita (sem data/passeio fica no começo). Clique rola a galeria
@@ -355,6 +502,7 @@
   <div id="timeline" class="timeline" hidden aria-label="Linha do tempo (mais antigo à esquerda)"></div>
 </div>
 
+<div id="pick-note" class="pick-note" hidden></div>
 <div id="gallery" class="gallery"></div>
 
 <!-- Lightbox -->
@@ -375,22 +523,37 @@
   </div>
 </div>
 
-<!-- Barra de ação da seleção -->
+<!-- Barra de ação da seleção (aparece quando há fotos selecionadas). No celular
+     faz o papel do menu de contexto do botão direito. -->
 <div id="selbar" class="selbar" hidden>
   <span id="selbar-count" class="selbar-count">0 selecionadas</span>
   <div class="selbar-actions">
-    <button id="sel-lists" type="button" class="btn">＋ Listas</button>
-    <button id="sel-download" type="button" class="btn">Baixar</button>
-    <button id="sel-delete" type="button" class="btn btn-danger">Excluir</button>
+    <button id="sel-share" type="button" class="btn" title="Compartilhar link">🔗 Link</button>
+    <button id="sel-lists" type="button" class="btn" title="Adicionar a listas">＋ Listas</button>
+    <button id="sel-unlist" type="button" class="btn" title="Remover de listas">－ Listas</button>
+    <button id="sel-download" type="button" class="btn" title="Baixar">⤓ Baixar</button>
+    <button id="sel-delete" type="button" class="btn btn-danger" title="Excluir">🗑 Excluir</button>
   </div>
+</div>
+
+<!-- Aviso passageiro (ex.: link copiado) -->
+<div id="toast" class="toast" hidden></div>
+
+<!-- Menu de contexto (botão direito no desktop) sobre as imagens selecionadas -->
+<div id="ctx-menu" class="ctx-menu" hidden role="menu">
+  <button type="button" role="menuitem" data-act="share">🔗 Compartilhar link</button>
+  <button type="button" role="menuitem" data-act="lists">＋ Adicionar a listas</button>
+  <button type="button" role="menuitem" data-act="unlist">－ Remover de listas</button>
+  <button type="button" role="menuitem" data-act="download">⤓ Baixar</button>
+  <button type="button" role="menuitem" data-act="delete" class="danger">🗑 Excluir</button>
 </div>
 
 <!-- Modal: adicionar seleção a listas -->
 <div id="assign-modal" class="modal" hidden>
   <div class="modal-backdrop" id="assign-backdrop"></div>
   <div class="modal-box">
-    <h2>Adicionar às listas</h2>
-    <p class="muted">Escolha listas existentes ou digite um nome novo para criar.</p>
+    <h2 id="assign-title">Adicionar às listas</h2>
+    <p class="muted" id="assign-desc">Escolha listas existentes ou digite um nome novo para criar.</p>
     <select id="assign-select" multiple placeholder="listas…"></select>
     <div class="modal-actions">
       <button id="assign-close" type="button" class="btn btn-ghost">Cancelar</button>
@@ -412,6 +575,23 @@ if (!MQ) {
 }
 const NS = MQ.NS;
 const PHD = NS.phd, PH = NS.ph, SCHEMA = NS.schema;
+// Desktop (mouse, baseado em clique) vs. smartphone (toque): decide o chrome de
+// seleção — check circles + barra de ação inferior só no toque; no desktop a
+// seleção é só o realce e as ações vêm do menu de contexto (botão direito).
+// Detecção DINÂMICA pelo tipo de ponteiro do último gesto — o media query
+// estático não pega a simulação de toque do Firefox nem aparelhos híbridos.
+let TOUCH_UI = window.matchMedia('(hover: none), (pointer: coarse)').matches;
+document.body.classList.toggle('touch-ui', TOUCH_UI);
+function setTouchUI(on) {
+  if (on === TOUCH_UI) return;
+  TOUCH_UI = on;
+  document.body.classList.toggle('touch-ui', on);
+  if (typeof selectMode !== 'undefined' && selectMode) syncSelectMode();   // barra inferior segue o input
+}
+window.addEventListener('pointerdown', (e) => {
+  if (e.pointerType === 'touch') setTouchUI(true);
+  else if (e.pointerType === 'mouse') setTouchUI(false);
+}, true);
 const LIST_PREFIX = PHD + 'list_';
 const TOUR_PREFIX = PHD + 'tour_';
 
@@ -476,11 +656,12 @@ async function ensureJSZip() {
 }
 
 // ── Modo embutido (iframe do modal do app) ──────────────────────────────────
-// Embutida no iframe do app: o modal não tem mais barra de título própria, então
-// o título interno (<h1>/subtítulo) aparece normalmente e serve de título do
-// modal. Fecha por clique fora / Esc, como os modais de Enviar/Cadastrar passeio.
+// No modal, esconde o header inteiro (título "Imagens", subtítulo e nav "← Mapa")
+// — o modal já é claramente a galeria; fecha pelo botão vermelho / clique fora /
+// Esc. Standalone (aberto direto), o header aparece normalmente.
 function embeddedSetup() {
   if (window.self === window.top) return;
+  $('header')?.style.setProperty('display', 'none');
 }
 
 // ── Carregamento dos dados (manifesto void → tours.ttl + uploads.ttl) ────────
@@ -526,12 +707,29 @@ async function loadData() {
 
 // ── Estado do módulo ─────────────────────────────────────────────────────────
 let store = null, model = null, recordByIri = new Map();
+let pickSet = null;          // ?pick=… → restringe a galeria a estas mídias (link compartilhado)
 let currentGroup = 'tour';
 let currentSparql = '';
 let isCustom = false;
 let galleryLayout = (localStorage.getItem('phidro:galleryLayout') === 'collage') ? 'collage' : 'grid';
+// Zoom das miniaturas = nº de fotos (quadradas) por linha. "+" aumpenta (menos
+// colunas), "−" diminui (mais colunas). Índice no array; default 5 col/linha.
+const GALLERY_COLS = [1, 2, 3, 5, 7, 9, 18, 36];
+let galleryZoom = (() => {
+  const n = parseInt(localStorage.getItem('phidro:galleryZoom'), 10);
+  return (Number.isInteger(n) && n >= 0 && n < GALLERY_COLS.length) ? n : GALLERY_COLS.indexOf(5);
+})();
+function galleryCols() { return GALLERY_COLS[galleryZoom]; }
+// Modo "contínuo": em vez de uma seção (linhas próprias) por grupo, todas as
+// miniaturas fluem numa grade só e cada grupo é contornado por um polígono
+// (só faz sentido na grade quadrada). Persistido.
+let galleryWrap = localStorage.getItem('phidro:galleryWrap') === '1';
+let overlayGroups = null;   // groupList do último render contínuo (p/ redesenhar)
 let runSeq = 0;
 let selectMode = false;
+let _forceSelectMode = false;        // botão "Selecionar" ligou a seleção com 0 itens
+let selectAnchor = null;             // IRI âncora p/ shift-range (desktop) e drag (celular)
+let _downType = null;                // pointerType do último pointerdown na grade
 const selected = new Set();          // IRIs de mídia selecionadas
 const pendingNewLists = new Map();   // listIri → nome (listas criadas na sessão, ainda não persistidas)
 let ftLists, ftAuthors, ftUploaders, ftTours, assignTS, lbTS;
@@ -581,19 +779,75 @@ function initSelect(sel, options, { placeholder, sortByOrder } = {}) {
   if (sortByOrder) cfg.sortField = [{ field: '$order', direction: 'asc' }];
   return new window.TomSelect(sel, cfg);
 }
+// Criar-na-hora: cunha a IRI phd:list_<slug> (NÃO o texto cru) — é o valor que
+// vai pro backend, que exige o prefixo phd:list_. Função nomeada pra poder ser
+// religada em settings.create sem virar `true` (que usaria o texto como valor).
+function mintListOption(input) {
+  const iri = LIST_PREFIX + slugifyList(input);
+  pendingNewLists.set(iri, input);
+  return { value: iri, text: input };
+}
 // Select de listas COM criar-na-hora (usado no lightbox e no modal de seleção).
 function initListSelect(sel, options, initialValues) {
   const ts = new window.TomSelect(sel, {
     plugins: ['remove_button'], persist: false, createOnBlur: true, options,
     maxOptions: 2000, placeholder: 'listas…',
-    create(input) {
-      const iri = LIST_PREFIX + slugifyList(input);
-      pendingNewLists.set(iri, input);
-      return { value: iri, text: input };
-    },
+    create: mintListOption,
   });
   if (initialValues && initialValues.length) ts.setValue(initialValues, true);
   return ts;
+}
+
+// ── Faixas (data / kJ) com slider de duas alças ──────────────────────────────
+let dateMinISO = '2020-01-01', dateMaxISO = '2020-01-01', dateSpanDays = 1, kjMax = 1000;
+let dualDate = null, dualKj = null;
+function daysBetweenISO(a, b) { return Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000); }
+function addDaysISO(base, n) { return new Date(Date.parse(base + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10); }
+const clampN = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+function computeRangeBounds() {
+  const ds = (model.records || []).map((r) => r.datetime).filter(Boolean).map((d) => d.slice(0, 10)).sort();
+  dateMinISO = ds[0] || '2020-01-01';
+  dateMaxISO = ds[ds.length - 1] || dateMinISO;
+  dateSpanDays = Math.max(1, daysBetweenISO(dateMinISO, dateMaxISO));
+  kjMax = Math.max(10, Math.ceil(Math.max(0, ...(model.records || []).map((r) => r.energyKj || 0)) / 10) * 10);
+}
+// Slider de duas alças ligado aos dois campos de ponta (data ou número). Os
+// campos são a fonte de verdade lida por readFacets; o slider os espelha (e
+// vice-versa). Alças nas pontas → campo vazio (sem filtro daquele lado).
+function makeDualRange(cfg) {
+  const dual = document.getElementById(cfg.dualId);
+  const lo = dual.querySelector('.dual-lo'), hi = dual.querySelector('.dual-hi');
+  const fill = dual.querySelector('.dual-fill');
+  const loEnd = $(cfg.loEnd), hiEnd = $(cfg.hiEnd);
+  const { sMin, sMax, sStep } = cfg, mid = (sMin + sMax) / 2;
+  lo.min = hi.min = sMin; lo.max = hi.max = sMax; lo.step = hi.step = sStep;
+  const paint = () => {
+    const lv = +lo.value, hv = +hi.value, span = (sMax - sMin) || 1;
+    fill.style.left = (lv - sMin) / span * 100 + '%';
+    fill.style.width = Math.max(0, (hv - lv) / span * 100) + '%';
+    lo.style.zIndex = lv > mid ? 5 : 3; hi.style.zIndex = 4;   // alça arrastável quando juntas
+  };
+  const applyFromSlider = () => {
+    loEnd.value = cfg.toEnd(+lo.value, 'lo');
+    hiEnd.value = cfg.toEnd(+hi.value, 'hi');
+    paint(); debouncedRebuild();
+  };
+  lo.addEventListener('input', () => { if (+lo.value > +hi.value) lo.value = hi.value; applyFromSlider(); });
+  hi.addEventListener('input', () => { if (+hi.value < +lo.value) hi.value = lo.value; applyFromSlider(); });
+  const endsChanged = () => {
+    let l = cfg.toSlider(loEnd.value, 'lo'), h = cfg.toSlider(hiEnd.value, 'hi');
+    if (l > h) { const t = l; l = h; h = t; }
+    lo.value = l; hi.value = h; paint(); debouncedRebuild();
+  };
+  loEnd.addEventListener('change', endsChanged);
+  hiEnd.addEventListener('change', endsChanged);
+  const syncFromEnds = () => {
+    lo.value = cfg.toSlider(loEnd.value, 'lo'); hi.value = cfg.toSlider(hiEnd.value, 'hi');
+    if (+lo.value > +hi.value) { const t = lo.value; lo.value = hi.value; hi.value = t; }
+    paint();
+  };
+  syncFromEnds();
+  return { syncFromEnds };
 }
 
 function buildFacetControls() {
@@ -603,8 +857,23 @@ function buildFacetControls() {
   ftTours     = initSelect('#f-tours', tourOptions(), { placeholder: 'todos', sortByOrder: true });
   [ftLists, ftAuthors, ftUploaders, ftTours].forEach((ts) => ts.on('change', debouncedRebuild));
 
-  ['#f-date-from', '#f-date-to', '#f-kj-min', '#f-kj-max'].forEach((s) =>
-    $(s).addEventListener('input', debouncedRebuild));
+  // Faixas data/kJ: campos nas pontas (digitáveis/selecionáveis) + slider duplo.
+  computeRangeBounds();
+  $('#f-date-from').min = $('#f-date-to').min = dateMinISO;
+  $('#f-date-from').max = $('#f-date-to').max = dateMaxISO;
+  $('#f-kj-min').max = $('#f-kj-max').max = kjMax;
+  dualDate = makeDualRange({
+    dualId: 'dual-date', loEnd: '#f-date-from', hiEnd: '#f-date-to',
+    sMin: 0, sMax: dateSpanDays, sStep: 1,
+    toEnd: (v, side) => side === 'lo' ? (v <= 0 ? '' : addDaysISO(dateMinISO, v)) : (v >= dateSpanDays ? '' : addDaysISO(dateMinISO, v)),
+    toSlider: (str, side) => str ? clampN(daysBetweenISO(dateMinISO, str), 0, dateSpanDays) : (side === 'lo' ? 0 : dateSpanDays),
+  });
+  dualKj = makeDualRange({
+    dualId: 'dual-kj', loEnd: '#f-kj-min', hiEnd: '#f-kj-max',
+    sMin: 0, sMax: kjMax, sStep: 10,
+    toEnd: (v, side) => side === 'lo' ? (v <= 0 ? '' : v) : (v >= kjMax ? '' : v),
+    toSlider: (str, side) => (str !== '' && str != null) ? clampN(+str, 0, kjMax) : (side === 'lo' ? 0 : kjMax),
+  });
   $$('#f-weekdays input').forEach((cb) => cb.addEventListener('change', debouncedRebuild));
 
   // Selects de listas com criar-na-hora (lightbox + modal de seleção).
@@ -691,7 +960,10 @@ function groupLabel(key) {
   return key;
 }
 
+let lastRows = null, lastFacets = null;   // cache p/ re-render sem re-consultar
+function rerender() { if (lastRows) renderGroups(lastRows, lastFacets); }
 function renderGroups(rows, facets) {
+  lastRows = rows; lastFacets = facets;
   const wds = facets.weekdays || [];
   // Dia-da-semana NÃO existe em SPARQL → filtrado no cliente, aqui.
   const filterWd = wds.length > 0 && wds.length < 7;
@@ -701,6 +973,7 @@ function renderGroups(rows, facets) {
   for (const row of rows) {
     const iri = row.m && row.m.value;
     if (!iri) continue;
+    if (pickSet && !pickSet.has(iri)) continue;   // link compartilhado: só a seleção
     const rec = recordByIri.get(iri);
     if (!rec) continue;
     if (filterWd && (rec.weekday == null || !wdSet.has(rec.weekday))) continue;
@@ -732,20 +1005,47 @@ function renderGroups(rows, facets) {
     key: k, id: 'grp-' + idx, label: groupLabel(k), order: groupOrderStr(k),
     count: groups.get(k).records.length,
   }));
+  // "Nenhum": sem cabeçalhos de grupo nem linha do tempo — só uma grade contínua.
+  const noGroup = currentGroup === 'none';
+  // "Contínuo": uma grade/colagem só (miniaturas fluem entre grupos) + polígono
+  // por grupo. Funciona tanto na grade quadrada quanto na colagem — o polígono é
+  // traçado a partir dos retângulos reais dos tiles (ver drawGroupPolygons).
+  const wrapActive = galleryWrap && !noGroup;
+  if (wrapActive) {
+    const tilesHtml = keys.map((k, gi) =>
+      groups.get(k).records.map((r, ri) => tileHtml(r, ri === 0 ? { id: 'grp-' + gi } : null)).join('')
+    ).join('');
+    const collage = galleryLayout === 'collage';
+    gallery.classList.toggle('collage', collage);
+    gallery.style.setProperty('--cols', galleryCols());
+    gallery.innerHTML = `<div class="tiles wrap-tiles">${tilesHtml}</div><div class="group-overlay" aria-hidden="true"></div>`;
+    overlayGroups = groupList;
+    if (collage) {
+      const wrap = gallery.querySelector('.wrap-tiles');
+      layoutJustified(wrap);
+      wrap.querySelectorAll('img').forEach((img) => {
+        if (img.dataset.relayout) return;
+        img.dataset.relayout = '1';
+        img.addEventListener('load', scheduleRelayout);   // reflui + refaz contornos
+      });
+    }
+    requestAnimationFrame(() => drawGroupPolygons());
+    buildTimeline(groupList);
+    updateSelUI();
+    return;
+  }
+  overlayGroups = null;
   const html = keys.map((k, idx) => {
     const recs = groups.get(k).records;
-    const tiles = recs.map(tileHtml).join('');
-    return (
-      `<section class="group" id="grp-${idx}">` +
-        `<div class="group-header"><span class="g-title">${escapeHtml(groupLabel(k))}</span>` +
-        `<span class="g-count">${recs.length}</span></div>` +
-        `<div class="tiles">${tiles}</div>` +
-      `</section>`
-    );
+    const tiles = recs.map((r) => tileHtml(r)).join('');
+    const header = noGroup ? '' :
+      `<div class="group-header"><span class="g-title">${escapeHtml(groupLabel(k))}</span>` +
+      `<span class="g-count">${recs.length}</span></div>`;
+    return `<section class="group" id="grp-${idx}">${header}<div class="tiles">${tiles}</div></section>`;
   }).join('');
   gallery.innerHTML = html;
   applyGalleryLayout();
-  buildTimeline(groupList);
+  buildTimeline(noGroup ? [] : groupList);
   updateSelUI();
 }
 
@@ -826,6 +1126,7 @@ function refreshTimelineActive() {
 // (re)anexa os relayouts em cada imagem que carrega (as miniaturas chegam lazy).
 function applyGalleryLayout() {
   const gallery = $('#gallery');
+  gallery.style.setProperty('--cols', galleryCols());   // zoom → nº de colunas
   const collage = galleryLayout === 'collage';
   gallery.classList.toggle('collage', collage);
   if (!collage) {
@@ -840,9 +1141,15 @@ function applyGalleryLayout() {
     img.addEventListener('load', scheduleRelayout);
   });
 }
-const scheduleRelayout = debounce(() => { if (galleryLayout === 'collage') layoutAllJustified(); }, 80);
+const scheduleRelayout = debounce(() => {
+  if (galleryLayout === 'collage') layoutAllJustified();
+  if (overlayGroups) drawGroupPolygons();   // tiles se moveram → refaz os contornos
+}, 80);
 function layoutAllJustified() {
-  $('#gallery').querySelectorAll('.group .tiles').forEach((c) => layoutJustified(c));
+  const g = $('#gallery');
+  g.querySelectorAll('.group .tiles').forEach((c) => layoutJustified(c));
+  const wrap = g.querySelector('.wrap-tiles');   // modo contínuo em colagem
+  if (wrap) layoutJustified(wrap);
 }
 // Empacota os tiles em linhas de altura ~alvo, cada linha esticada pra largura
 // toda (larguras ∝ aspect-ratio). A última linha fica na altura-alvo se não
@@ -851,8 +1158,10 @@ function layoutJustified(container) {
   const tiles = [...container.children];
   const cw = container.clientWidth;
   if (!tiles.length || cw <= 0) return;
-  const gap = 6;
-  const targetH = cw < 500 ? 130 : 200;
+  const gap = 3;
+  // Altura-alvo derivada do zoom: ~galleryCols() fotos quadradas por linha.
+  const cols = galleryCols();
+  const targetH = Math.max(24, (cw - (cols - 1) * gap) / cols);
   const ar = (t) => {
     const img = t.querySelector('img');
     const w = img && img.naturalWidth, h = img && img.naturalHeight;
@@ -880,7 +1189,87 @@ function layoutJustified(container) {
   }
 }
 
-function tileHtml(rec) {
+// Modo contínuo: desenha um polígono retilíneo por grupo, contornando os tiles
+// que ele ocupa na grade/colagem única (que flui entre grupos). Traçado a partir
+// dos RETÂNGULOS REAIS dos tiles (offsetLeft/Top/Width/Height), então funciona
+// igual na grade quadrada e na colagem justificada. Reflows de imagem re-chamam
+// isto via scheduleRelayout.
+function drawGroupPolygons() {
+  const gallery = $('#gallery');
+  const wrap = gallery.querySelector('.wrap-tiles');
+  const overlay = gallery.querySelector('.group-overlay');
+  if (!wrap || !overlay || !overlayGroups) return;
+  const W = wrap.clientWidth, H = wrap.offsetHeight;
+  if (W <= 0) return;
+  overlay.style.top = wrap.offsetTop + 'px';
+  overlay.style.left = wrap.offsetLeft + 'px';
+  overlay.style.width = W + 'px';
+  overlay.style.height = H + 'px';
+  const tiles = [...wrap.children].filter((t) => t.classList && t.classList.contains('tile'));
+  const p = 3 / 2;             // folga = metade do gap (fica no meio do vão)
+  const EDGE = 2.5;            // tolerância p/ "encostou na borda do conteúdo"
+  const LEFT = -p, RIGHT = W + p;
+  let start = 0;
+  const paths = [], chips = [];
+  overlayGroups.forEach((g) => {
+    const n = g.count; if (n <= 0) return;
+    const gt = tiles.slice(start, start + n); start += n;
+    if (!gt.length) return;
+    // Agrupa os tiles do grupo em linhas visuais por offsetTop (tiles da mesma
+    // linha compartilham o topo). Cada linha vira uma faixa [l,r] × [t,b].
+    const rows = [];
+    gt.forEach((t) => {
+      const top = t.offsetTop, left = t.offsetLeft;
+      const right = left + t.offsetWidth, bot = top + t.offsetHeight;
+      let row = rows.find((r) => Math.abs(r.t0 - top) < 3);
+      if (!row) { row = { t0: top, l: left, r: right, t: top, b: bot }; rows.push(row); }
+      else { row.l = Math.min(row.l, left); row.r = Math.max(row.r, right); row.t = Math.min(row.t, top); row.b = Math.max(row.b, bot); }
+    });
+    rows.sort((a, b) => a.t - b.t);
+    const R = rows.map((r) => ({ l: r.l - p, r: r.r + p, t: r.t - p, b: r.b + p }));
+    // Vértices em escada (linhas empilhadas), sentido horário desde o topo-esq.
+    const V = [];
+    V.push([R[0].l, R[0].t], [R[0].r, R[0].t]);
+    for (let i = 0; i < R.length; i++) {
+      V.push([R[i].r, R[i].b]);
+      if (i < R.length - 1) V.push([R[i + 1].r, R[i].b]);   // degrau lateral direito
+    }
+    const last = R.length - 1;
+    V.push([R[last].l, R[last].b]);
+    for (let i = last; i >= 0; i--) {
+      V.push([R[i].l, R[i].t]);
+      if (i > 0) V.push([R[i - 1].l, R[i].t]);              // degrau lateral esquerdo
+    }
+    // OMITE os segmentos verticais que caem nas bordas esq./dir. do conteúdo (as
+    // quebras de linha) — assim a faixa "continua" da direita pra esquerda da
+    // linha seguinte. As reentrâncias internas ficam, separando grupos vizinhos.
+    const NV = V.length;
+    const edgeV = (a, b) => Math.abs(a[0] - b[0]) < 0.5 &&
+      (a[0] < LEFT + EDGE || a[0] > RIGHT - EDGE);
+    let k0 = 0; for (let i = 0; i < NV; i++) if (edgeV(V[i], V[(i + 1) % NV])) { k0 = i; break; }
+    let d = '', open = false, omitted = false;
+    for (let m = 0; m < NV; m++) {
+      const a = V[(k0 + m) % NV], b = V[(k0 + m + 1) % NV];
+      if (edgeV(a, b)) { open = false; omitted = true; continue; }
+      if (!open) { d += `M${a[0].toFixed(1)},${a[1].toFixed(1)}`; open = true; }
+      d += `L${b[0].toFixed(1)},${b[1].toFixed(1)}`;
+    }
+    if (!omitted) d += 'Z';
+    paths.push(`<path d="${d}" fill="none" stroke="#cfcfcf" stroke-width="2.5" stroke-linejoin="round"/>`);
+    // Rótulo: tamanho ∝ altura da 1ª linha; piso legível 8px. Largura limitada à
+    // extensão do grupo na 1ª linha (clipa com reticências).
+    const r0 = rows[0], rowH = r0.b - r0.t;
+    const fs = Math.max(8, Math.min(120, Math.round(rowH * 0.063)));
+    const chipMaxW = Math.max(24, (r0.r - r0.l) - 8);
+    const padY = Math.max(1, Math.round(fs * 0.12)), padX = Math.max(4, Math.round(fs * 0.4));
+    chips.push(
+      `<div class="group-chip" style="left:${(r0.l + 4).toFixed(1)}px;top:${(r0.t + 4).toFixed(1)}px;` +
+      `font-size:${fs}px;max-width:${chipMaxW.toFixed(0)}px;padding:${padY}px ${padX}px">${escapeHtml(g.label)}</div>`);
+  });
+  overlay.innerHTML = `<svg width="${W}" height="${H}" style="position:absolute;inset:0;overflow:visible">${paths.join('')}</svg>${chips.join('')}`;
+}
+
+function tileHtml(rec, opts) {
   const sel = selected.has(rec.iri) ? ' selected' : '';
   const noImg = rec.thumbUrl ? '' : ' no-img';
   const img = rec.thumbUrl
@@ -889,60 +1278,162 @@ function tileHtml(rec) {
     : '';
   const badge = rec.kind === 'video' ? `<span class="badge">▶</span>` : '';
   const title = escapeHtml(rec.tourLabel || fmtDateTimePt(rec.datetime) || '');
+  const idAttr = opts && opts.id ? ` id="${opts.id}"` : '';   // 1ª do grupo (linha do tempo)
   return (
-    `<div class="tile${sel}${noImg}" data-iri="${escapeHtml(rec.iri)}" role="button" tabindex="0" title="${title}">` +
+    `<div class="tile${sel}${noImg}"${idAttr} data-iri="${escapeHtml(rec.iri)}" role="button" tabindex="0" title="${title}">` +
       `${img}${badge}<span class="check"></span>` +
     `</div>`
   );
 }
 
-// ── Interação com a grade (delegação) ────────────────────────────────────────
+// ── Interação com a grade: seleção estilo Apple Fotos/Finder ─────────────────
+// Desktop (mouse): clique = seleciona só ela; Cmd/Ctrl+clique = alterna;
+//   Shift+clique = intervalo desde a âncora; duplo-clique / Enter / Espaço =
+//   abre; clique fora = limpa; botão direito = menu de contexto.
+// Celular (toque): toque = abre (ou alterna, se já há seleção); segurar =
+//   entra em seleção; segurar+arrastar = pinta o intervalo; toque fora = limpa.
+const LONGPRESS_MS = 450, MOVE_TOL = 10;
+let _pressTimer = null, _pressTile = null, _pressXY = null;
+let dragSelecting = false, _dragBase = null;
+
+const tileByIri = (iri) => $(`#gallery .tile[data-iri="${(window.CSS && CSS.escape) ? CSS.escape(iri) : iri}"]`);
+function markSelected(iri, on) {
+  if (on) selected.add(iri); else selected.delete(iri);
+  const t = tileByIri(iri); if (t) t.classList.toggle('selected', on);
+}
+function selectOnly(iri) { clearSelection(false); markSelected(iri, true); selectAnchor = iri; syncSelectMode(); }
+function toggleOne(iri) { markSelected(iri, !selected.has(iri)); selectAnchor = iri; syncSelectMode(); }
+// Seleção = intervalo [âncora..alvo] na ordem do DOM, unido a `base` (Set ou null).
+function selectRange(fromIri, toIri, base) {
+  const tiles = $$('#gallery .tile');
+  const order = tiles.map((t) => t.dataset.iri);
+  let i = order.indexOf(fromIri), j = order.indexOf(toIri);
+  if (i < 0 || j < 0) return;
+  if (i > j) { const tmp = i; i = j; j = tmp; }
+  const baseSet = base || new Set();
+  selected.clear();
+  tiles.forEach((t, k) => {
+    const on = (k >= i && k <= j) || baseSet.has(t.dataset.iri);
+    t.classList.toggle('selected', on);
+    if (on) selected.add(t.dataset.iri);
+  });
+  syncSelectMode();
+}
+function clearSelection(sync = true) {
+  selected.forEach((iri) => { const t = tileByIri(iri); if (t) t.classList.remove('selected'); });
+  selected.clear(); selectAnchor = null; _forceSelectMode = false;
+  if (sync) syncSelectMode();
+}
+// Toque curto: abre (nada selecionado) ou alterna (já em seleção).
+function handleTap(tile) {
+  const rec = recordByIri.get(tile.dataset.iri); if (!rec) return;
+  if (selectMode) toggleOne(tile.dataset.iri);
+  else openLightbox(rec);
+}
+
 function wireGallery() {
   const gallery = $('#gallery');
-  gallery.addEventListener('click', (e) => {
+
+  // Registra o tipo de ponteiro + arma o long-press no toque.
+  gallery.addEventListener('pointerdown', (e) => {
+    _downType = e.pointerType;
     const tile = e.target.closest('.tile');
     if (!tile) return;
-    onTileActivate(tile);
+    if (e.pointerType === 'touch') {
+      _pressTile = tile; _pressXY = [e.clientX, e.clientY];
+      clearTimeout(_pressTimer);
+      _pressTimer = setTimeout(() => {                 // segurou → entra em seleção
+        _pressTimer = null; dragSelecting = true;
+        _dragBase = new Set(selected);
+        selectAnchor = tile.dataset.iri;
+        markSelected(selectAnchor, true); _dragBase.add(selectAnchor);
+        syncSelectMode();
+        if (navigator.vibrate) { try { navigator.vibrate(12); } catch (_) {} }
+      }, LONGPRESS_MS);
+    }
+  });
+  gallery.addEventListener('pointermove', (e) => {
+    if (e.pointerType !== 'touch') return;
+    if (_pressTimer && _pressXY) {                     // ainda esperando: se rolou, cancela
+      if (Math.hypot(e.clientX - _pressXY[0], e.clientY - _pressXY[1]) > MOVE_TOL) {
+        clearTimeout(_pressTimer); _pressTimer = null; _pressTile = null;
+      }
+      return;
+    }
+    if (!dragSelecting || !selectAnchor) return;
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    const tile = el && el.closest ? el.closest('#gallery .tile') : null;
+    if (tile) selectRange(selectAnchor, tile.dataset.iri, _dragBase);
+  });
+  // Durante o drag-select, segura a rolagem (não-passivo pra poder preventDefault).
+  gallery.addEventListener('touchmove', (e) => { if (dragSelecting && e.cancelable) e.preventDefault(); }, { passive: false });
+  const endTouch = () => { dragSelecting = false; _dragBase = null; _pressTile = null; };
+  gallery.addEventListener('pointerup', (e) => {
+    if (e.pointerType !== 'touch') return;
+    if (_pressTimer) {                                 // toque curto (long-press não disparou)
+      clearTimeout(_pressTimer); _pressTimer = null;
+      const tile = _pressTile; _pressTile = null;
+      if (tile) handleTap(tile);
+      return;
+    }
+    endTouch();
+  });
+  gallery.addEventListener('pointercancel', () => { if (_pressTimer) { clearTimeout(_pressTimer); _pressTimer = null; } endTouch(); });
+
+  // Clique de mouse (o toque é tratado no pointerup acima).
+  gallery.addEventListener('click', (e) => {
+    if (_downType === 'touch') return;
+    const tile = e.target.closest('.tile'); if (!tile) return;
+    const iri = tile.dataset.iri;
+    if (e.shiftKey && selectAnchor) selectRange(selectAnchor, iri, null);
+    else if (e.metaKey || e.ctrlKey) toggleOne(iri);
+    else selectOnly(iri);
+  });
+  gallery.addEventListener('dblclick', (e) => {
+    if (_downType === 'touch') return;
+    const tile = e.target.closest('.tile'); if (!tile) return;
+    const rec = recordByIri.get(tile.dataset.iri); if (rec) openLightbox(rec);
   });
   gallery.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter' && e.key !== ' ') return;
-    const tile = e.target.closest('.tile');
-    if (!tile) return;
+    const tile = e.target.closest('.tile'); if (!tile) return;
     e.preventDefault();
-    onTileActivate(tile);
+    const rec = recordByIri.get(tile.dataset.iri); if (rec) openLightbox(rec);
   });
-}
-function onTileActivate(tile) {
-  const iri = tile.dataset.iri;
-  const rec = recordByIri.get(iri);
-  if (!rec) return;
-  if (selectMode) {
-    if (selected.has(iri)) { selected.delete(iri); tile.classList.remove('selected'); }
-    else { selected.add(iri); tile.classList.add('selected'); }
-    updateSelUI();
-  } else {
-    openLightbox(rec);
-  }
+  // Menu de contexto (botão direito) sobre as imagens — ver wireContextMenu.
+  gallery.addEventListener('contextmenu', onGalleryContextMenu);
+
+  // Clique/toque fora de qualquer foto e da UI de seleção → limpa a seleção.
+  document.addEventListener('pointerdown', (e) => {
+    if (!selected.size && !_forceSelectMode) return;
+    if (e.target.closest('.tile, #selbar, .toolbar, #lightbox, .modal, #ctx-menu')) return;
+    clearSelection();
+  });
 }
 
 // ── Modo seleção ─────────────────────────────────────────────────────────────
+// selectMode (checkboxes + barra de ação) fica ligado sempre que há algo
+// selecionado, OU quando o botão "Selecionar" o força (0 itens, p/ descoberta).
+function syncSelectMode() {
+  const active = selected.size > 0 || _forceSelectMode;
+  selectMode = active;
+  $('#gallery').classList.toggle('select-mode', active);
+  document.body.classList.toggle('select-mode', active);
+  $('#btn-select').textContent = active ? 'Concluir' : 'Selecionar';
+  $('#btn-select').classList.toggle('active', active);
+  $('#btn-select-all').hidden = !active;
+  $('#sel-count').hidden = !active;
+  $('#selbar').hidden = !active || !TOUCH_UI;   // barra inferior só no toque
+  updateSelUI();
+}
 function wireSelect() {
   $('#btn-select').addEventListener('click', () => {
-    selectMode = !selectMode;
-    $('#gallery').classList.toggle('select-mode', selectMode);
-    document.body.classList.toggle('select-mode', selectMode);
-    $('#btn-select').textContent = selectMode ? 'Concluir' : 'Selecionar';
-    $('#btn-select').classList.toggle('active', selectMode);
-    $('#btn-select-all').hidden = !selectMode;
-    $('#sel-count').hidden = !selectMode;
-    $('#selbar').hidden = !selectMode;
-    if (!selectMode) { selected.clear(); $$('#gallery .tile.selected').forEach((t) => t.classList.remove('selected')); }
-    updateSelUI();
+    if (selectMode) clearSelection();                  // "Concluir"
+    else { _forceSelectMode = true; syncSelectMode(); } // entra em seleção vazia
   });
   $('#btn-select-all').addEventListener('click', () => {
-    // Seleciona todas as mídias atualmente renderizadas.
     $$('#gallery .tile').forEach((t) => { selected.add(t.dataset.iri); t.classList.add('selected'); });
-    updateSelUI();
+    syncSelectMode();
   });
 }
 function updateSelUI() {
@@ -951,13 +1442,20 @@ function updateSelUI() {
   $('#sel-count').textContent = label;
   $('#selbar-count').textContent = label;
   const none = n === 0;
-  ['#sel-lists', '#sel-download', '#sel-delete'].forEach((s) => { $(s).disabled = none; });
+  ['#sel-share', '#sel-lists', '#sel-unlist', '#sel-download', '#sel-delete'].forEach((s) => { $(s).disabled = none; });
 }
 
 // ── Lightbox ─────────────────────────────────────────────────────────────────
 function wireLightbox() {
   $('#lb-close').addEventListener('click', closeLightbox);
-  $('#lb-backdrop').addEventListener('click', closeLightbox);
+  // Clicar fora da foto E do painel de infos fecha (backdrop, moldura ou a
+  // área vazia ao redor da imagem). Cliques na própria mídia/painel não fecham.
+  $('#lightbox').addEventListener('click', (e) => {
+    if (e.target.closest('.lb-panel')) return;
+    if (e.target.matches('img, video, audio')) return;
+    if (e.target.closest('.lb-close')) return;
+    closeLightbox();
+  });
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && !$('#lightbox').hidden) closeLightbox();
   });
@@ -1072,36 +1570,156 @@ function selectedRecords() {
   return [...selected].map((iri) => recordByIri.get(iri)).filter(Boolean);
 }
 function wireSelbar() {
+  $('#sel-share').addEventListener('click', shareSelectedLink);
   $('#sel-lists').addEventListener('click', openAssignModal);
+  $('#sel-unlist').addEventListener('click', openUnassignModal);
   $('#sel-download').addEventListener('click', downloadSelected);
   $('#sel-delete').addEventListener('click', deleteSelected);
 }
 
-// Adicionar a listas (lote) → POST /assign-media-lists.
+// ── Menu de contexto (botão direito) — mesmas 4 ações da barra de seleção ────
+function onGalleryContextMenu(e) {
+  const tile = e.target.closest('.tile');
+  if (!tile) return;
+  e.preventDefault();                     // some o menu do navegador sobre as fotos
+  if (TOUCH_UI) return;                    // no toque, as ações vêm da barra inferior
+  // Se clicou fora da seleção atual, seleciona só essa (comportamento padrão).
+  if (!selected.has(tile.dataset.iri)) selectOnly(tile.dataset.iri);
+  showCtxMenu(e.clientX, e.clientY);
+}
+function showCtxMenu(x, y) {
+  const m = $('#ctx-menu');
+  m.hidden = false;
+  // Mantém dentro da viewport.
+  const w = m.offsetWidth, h = m.offsetHeight;
+  m.style.left = Math.min(x, window.innerWidth - w - 6) + 'px';
+  m.style.top = Math.min(y, window.innerHeight - h - 6) + 'px';
+}
+function hideCtxMenu() { $('#ctx-menu').hidden = true; }
+function wireContextMenu() {
+  $('#ctx-menu').addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-act]'); if (!btn) return;
+    hideCtxMenu();
+    const act = btn.dataset.act;
+    if (act === 'share') shareSelectedLink();
+    else if (act === 'lists') openAssignModal();
+    else if (act === 'unlist') openUnassignModal();
+    else if (act === 'download') downloadSelected();
+    else if (act === 'delete') deleteSelected();
+  });
+  // Fecha ao clicar fora, rolar, redimensionar ou Esc.
+  document.addEventListener('pointerdown', (e) => { if (!e.target.closest('#ctx-menu')) hideCtxMenu(); });
+  window.addEventListener('scroll', hideCtxMenu, true);
+  window.addEventListener('resize', hideCtxMenu);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideCtxMenu(); });
+}
+
+// ── Compartilhar link → galeria filtrada à seleção, sem agrupar, contínuo e
+//    em colagem. Codifica cada mídia num token FIXO de 12 chars, sem separador:
+//    1 char de tipo ('i'/'v') + 11 chars base64url do hash de 64 bits (16 hex).
+//    Ex.: ?p=iha6…(11)vk2…(11)  — bem mais curto que image_<16hex>,video_….
+//    (O formato antigo ?pick=image_…,video_… continua sendo aceito na leitura.)
+function hexToB64url(hex) {
+  let bin = '';
+  for (let i = 0; i < hex.length; i += 2) bin += String.fromCharCode(parseInt(hex.substr(i, 2), 16));
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function b64urlToHex(s) {
+  s = s.replace(/-/g, '+').replace(/_/g, '/');
+  while (s.length % 4) s += '=';
+  const bin = atob(s);
+  let hex = '';
+  for (let i = 0; i < bin.length; i++) hex += bin.charCodeAt(i).toString(16).padStart(2, '0');
+  return hex;
+}
+function encodeMediaToken(iri) {
+  const suf = iri.slice(PHD.length);                 // image_<hex> / video_<hex>
+  const type = suf.charCodeAt(0) === 118 /* 'v' */ ? 'v' : 'i';
+  return type + hexToB64url(suf.slice(suf.indexOf('_') + 1));
+}
+function decodeMediaToken(tok) {
+  const type = tok[0], hex = b64urlToHex(tok.slice(1));
+  return PHD + (type === 'v' ? 'video_' : 'image_') + hex;
+}
+function shareSelectedLink() {
+  const recs = selectedRecords();
+  if (!recs.length) return;
+  const packed = recs.map((r) => encodeMediaToken(r.iri)).join('');   // tokens de 12 chars, colados
+  const url = new URL(location.href);
+  url.hash = '';
+  url.searchParams.delete('pick');
+  url.searchParams.set('p', packed);
+  const link = url.toString();
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(link).then(
+      () => toast(`✓ Link de ${recs.length} mídia${recs.length === 1 ? '' : 's'} copiado`),
+      () => prompt('Copie o link:', link));
+  } else {
+    prompt('Copie o link:', link);
+  }
+}
+// Aviso passageiro no rodapé (funciona no desktop, onde a barra fica escondida).
+let _toastT = null;
+function toast(msg) {
+  const el = $('#toast'); if (!el) return;
+  el.textContent = msg; el.hidden = false;
+  clearTimeout(_toastT);
+  _toastT = setTimeout(() => { el.hidden = true; }, 1800);
+}
+
+// Adicionar/remover listas (lote) → POST /assign-media-lists. O mesmo modal
+// serve os dois modos ('add' cria-na-hora; 'remove' só lista o que a seleção tem).
+let assignMode = 'add';
 function wireAssignModal() {
   $('#assign-close').addEventListener('click', closeAssignModal);
   $('#assign-backdrop').addEventListener('click', closeAssignModal);
   $('#assign-apply').addEventListener('click', applyAssign);
 }
-function openAssignModal() {
+function openAssignModal() { openListModal('add'); }
+function openUnassignModal() { openListModal('remove'); }
+function openListModal(mode) {
   if (!selected.size) return;
+  assignMode = mode;
   $('#assign-error').hidden = true;
-  assignTS.addOptions(listOptions());
+  assignTS.clearOptions();
   assignTS.clear(true);
+  if (mode === 'remove') {
+    // Opções = união das listas presentes na seleção (nada de criar-na-hora).
+    const present = new Set();
+    selectedRecords().forEach((r) => (r.lists || []).forEach((l) => present.add(l)));
+    assignTS.addOptions([...present].map((iri) => ({ value: iri, text: model.lists[iri] || short(iri) })));
+    assignTS.settings.create = false;
+    $('#assign-title').textContent = 'Remover das listas';
+    $('#assign-desc').textContent = present.size
+      ? 'Escolha listas para tirar da seleção.' : 'A seleção não está em nenhuma lista.';
+    $('#assign-apply').textContent = 'Remover';
+  } else {
+    assignTS.addOptions(listOptions());
+    assignTS.settings.create = mintListOption;   // religa a cunhagem de IRI (não `true`)
+    $('#assign-title').textContent = 'Adicionar às listas';
+    $('#assign-desc').textContent = 'Escolha listas existentes ou digite um nome novo para criar.';
+    $('#assign-apply').textContent = 'Adicionar';
+  }
   $('#assign-modal').hidden = false;
 }
 function closeAssignModal() { $('#assign-modal').hidden = true; }
 async function applyAssign() {
   const listIris = assignTS.getValue();
-  if (!listIris.length) { closeAssignModal(); return; }
   const recs = selectedRecords();
-  if (!recs.length) { closeAssignModal(); return; }
-  // Listas que ainda não existem no catálogo → declaradas em newLists.
-  const newLists = listIris.filter((li) => !model.lists[li])
+  if (!listIris.length || !recs.length) { closeAssignModal(); return; }
+  const removing = assignMode === 'remove';
+  const verb = removing ? 'Remover' : 'Adicionar';
+  // Listas que ainda não existem no catálogo → declaradas em newLists (só no add).
+  const newLists = removing ? [] : listIris.filter((li) => !model.lists[li])
     .map((li) => ({ iri: li, name: pendingNewLists.get(li) || short(li) }));
-  const body = { iris: recs.map((r) => r.iri), add: listIris, remove: [], newLists };
+  const body = {
+    iris: recs.map((r) => r.iri),
+    add: removing ? [] : listIris,
+    remove: removing ? listIris : [],
+    newLists,
+  };
   const btn = $('#assign-apply');
-  btn.disabled = true; btn.textContent = 'Adicionando…';
+  btn.disabled = true; btn.textContent = removing ? 'Removendo…' : 'Adicionando…';
   try {
     const resp = await fetch('./assign-media-lists', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
@@ -1110,10 +1728,10 @@ async function applyAssign() {
     if (!resp.ok || j.error) throw new Error(j.error || 'HTTP ' + resp.status);
   } catch (e) {
     const el = $('#assign-error'); el.textContent = 'Falha: ' + e.message; el.hidden = false;
-    btn.disabled = false; btn.textContent = 'Adicionar';
+    btn.disabled = false; btn.textContent = verb;
     return;
   }
-  btn.disabled = false; btn.textContent = 'Adicionar';
+  btn.disabled = false; btn.textContent = verb;
   closeAssignModal();
   await refresh();
 }
@@ -1194,6 +1812,27 @@ async function refresh() {
 
 // ── Toolbar: grupo, avançado, limpar ─────────────────────────────────────────
 function wireToolbar() {
+  // Recolher/expandir o painel de filtros & agrupamento (padrão: recolhido no
+  // celular). O botão + o "Selecionar" ficam sempre visíveis.
+  const toolbar = document.querySelector('.toolbar');
+  const saved = localStorage.getItem('phidro:filtersCollapsed');
+  let filtersCollapsed = saved != null ? saved === '1'
+    : window.matchMedia('(max-width: 760px)').matches;
+  const applyCollapse = () => {
+    toolbar.classList.toggle('collapsed', filtersCollapsed);
+    $('#tb-toggle').setAttribute('aria-expanded', String(!filtersCollapsed));
+  };
+  applyCollapse();
+  $('#tb-toggle').addEventListener('click', () => {
+    filtersCollapsed = !filtersCollapsed;
+    try { localStorage.setItem('phidro:filtersCollapsed', filtersCollapsed ? '1' : '0'); } catch (_) {}
+    applyCollapse();
+    if (galleryLayout === 'collage') layoutAllJustified();   // altura do header mudou
+    if (overlayGroups) drawGroupPolygons();
+  });
+  // Estado inicial dos botões de agrupamento reflete currentGroup (pode vir de
+  // ?pick=… como 'none') — não confia só no class="active" fixo do HTML.
+  $$('#tb-group button').forEach((b) => b.classList.toggle('active', b.dataset.group === currentGroup));
   $('#tb-group').addEventListener('click', (e) => {
     const btn = e.target.closest('button[data-group]');
     if (!btn) return;
@@ -1201,7 +1840,8 @@ function wireToolbar() {
     $$('#tb-group button').forEach((b) => b.classList.toggle('active', b === btn));
     rebuildAndRun();
   });
-  // Toggle de layout (quadrado ↔ colagem justificada), persistido.
+  // Toggle de layout (quadrado ↔ colagem justificada), persistido. Colagem e
+  // "contínuo" agora coexistem (o polígono é traçado pelos retângulos reais).
   $$('#tb-layout button').forEach((b) => b.classList.toggle('active', b.dataset.layout === galleryLayout));
   $('#tb-layout').addEventListener('click', (e) => {
     const btn = e.target.closest('button[data-layout]');
@@ -1209,10 +1849,68 @@ function wireToolbar() {
     galleryLayout = btn.dataset.layout;
     try { localStorage.setItem('phidro:galleryLayout', galleryLayout); } catch (_) {}
     $$('#tb-layout button').forEach((b) => b.classList.toggle('active', b === btn));
-    applyGalleryLayout();
+    if (galleryWrap || overlayGroups) rerender();   // estrutura do DOM muda (contínuo)
+    else applyGalleryLayout();
   });
+  // Zoom das miniaturas: "+" = maiores (menos colunas), "−" = menores (mais).
+  function updateZoomButtons() {
+    $('#zoom-in').disabled = galleryZoom <= 0;                          // já no maior (1 col)
+    $('#zoom-out').disabled = galleryZoom >= GALLERY_COLS.length - 1;   // já no menor (36 col)
+  }
+  function setZoom(idx) {
+    galleryZoom = Math.max(0, Math.min(GALLERY_COLS.length - 1, idx));
+    try { localStorage.setItem('phidro:galleryZoom', String(galleryZoom)); } catch (_) {}
+    applyGalleryLayout();
+    if (overlayGroups) requestAnimationFrame(drawGroupPolygons);   // grade mudou → redesenha
+    updateZoomButtons();
+  }
+  $('#zoom-in').addEventListener('click', () => setZoom(galleryZoom - 1));
+  $('#zoom-out').addEventListener('click', () => setZoom(galleryZoom + 1));
+  updateZoomButtons();
+  // Toggle "Contínuo" (grupos contornados por polígono, sem quebrar o fluxo).
+  // Compatível com grade quadrada E colagem.
+  const syncWrapBtn = () => {
+    $('#tb-wrap').classList.toggle('active', galleryWrap);
+    $('#tb-wrap').setAttribute('aria-pressed', String(galleryWrap));
+  };
+  syncWrapBtn();
+  $('#tb-wrap').addEventListener('click', () => {
+    galleryWrap = !galleryWrap;
+    try { localStorage.setItem('phidro:galleryWrap', galleryWrap ? '1' : '0'); } catch (_) {}
+    syncWrapBtn();
+    rerender();
+  });
+  // Teclado: +/= aumenta, -/_ diminui (ignora ao digitar em campos, com o
+  // lightbox aberto, ou com Ctrl/Cmd — que é o zoom do navegador).
+  document.addEventListener('keydown', (e) => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const t = e.target;
+    if (t && ((t.matches && t.matches('input, textarea, select')) || t.isContentEditable)) return;
+    if (!$('#lightbox').hidden) return;
+    if (e.key === '+' || e.key === '=') { setZoom(galleryZoom - 1); e.preventDefault(); }
+    else if (e.key === '-' || e.key === '_') { setZoom(galleryZoom + 1); e.preventDefault(); }
+  });
+  // Pinça (2 dedos) na galeria = zoom das miniaturas, tipo Apple Fotos:
+  // afastar os dedos aumenta (menos colunas), aproximar diminui (mais colunas).
+  // Passo a cada ~30% de variação da distância; o gesto continua a partir do
+  // novo tamanho. touch-action:pan-x pan-y (no CSS) impede o zoom nativo aqui.
+  const gallery = $('#gallery');
+  let pinchDist0 = 0;
+  const touchDist = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+  gallery.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 2) pinchDist0 = touchDist(e.touches);
+  }, { passive: true });
+  gallery.addEventListener('touchmove', (e) => {
+    if (e.touches.length !== 2 || !pinchDist0) return;
+    e.preventDefault();   // segura a rolagem/zoom nativo durante a pinça
+    const ratio = touchDist(e.touches) / pinchDist0;
+    if (ratio > 1.3) { setZoom(galleryZoom - 1); pinchDist0 = touchDist(e.touches); }
+    else if (ratio < 0.77) { setZoom(galleryZoom + 1); pinchDist0 = touchDist(e.touches); }
+  }, { passive: false });
+  gallery.addEventListener('touchend', (e) => { if (e.touches.length < 2) pinchDist0 = 0; });
   window.addEventListener('resize', debounce(() => {
     if (galleryLayout === 'collage') layoutAllJustified();
+    if (overlayGroups) drawGroupPolygons();
     refreshTimelineActive();
   }, 120));
 }
@@ -1241,8 +1939,43 @@ function wireTimeline() {
     ftLists.clear(true); ftAuthors.clear(true); ftUploaders.clear(true); ftTours.clear(true);
     $('#f-date-from').value = ''; $('#f-date-to').value = '';
     $('#f-kj-min').value = ''; $('#f-kj-max').value = '';
+    dualDate && dualDate.syncFromEnds(); dualKj && dualKj.syncFromEnds();
     $$('#f-weekdays input').forEach((cb) => { cb.checked = false; });
     rebuildAndRun();
+  });
+}
+
+// Link compartilhado: restringe a galeria à seleção e abre sem agrupar, em modo
+// contínuo e colagem (estado só em memória, não grava). Aceita o formato compacto
+// ?p=<tokens de 12 chars colados> e o legado ?pick=image_…,video_….
+function applyPickParam() {
+  const qs = new URLSearchParams(location.search);
+  let iris = null;
+  const packed = qs.get('p');
+  if (packed) {
+    iris = [];
+    for (let i = 0; i + 12 <= packed.length; i += 12) {
+      try { iris.push(decodeMediaToken(packed.slice(i, i + 12))); } catch (_) {}
+    }
+  } else {
+    const raw = qs.get('pick');
+    if (raw) iris = raw.split(',').map((s) => s.trim()).filter(Boolean).map((t) => PHD + t);
+  }
+  if (!iris || !iris.length) return;
+  pickSet = new Set(iris);
+  currentGroup = 'none';
+  galleryWrap = true;
+  galleryLayout = 'collage';
+  const note = $('#pick-note');
+  note.innerHTML = `<span>Mostrando ${pickSet.size} mídia${pickSet.size === 1 ? '' : 's'} de um link compartilhado.</span>` +
+    `<button type="button" id="pick-clear" class="btn btn-ghost">Ver todas</button>`;
+  note.hidden = false;
+  $('#pick-clear').addEventListener('click', () => {
+    pickSet = null; note.hidden = true;
+    const u = new URL(location.href);
+    u.searchParams.delete('p'); u.searchParams.delete('pick');
+    history.replaceState(null, '', u);
+    rerender();
   });
 }
 
@@ -1252,6 +1985,7 @@ function wireTimeline() {
     embeddedSetup();
     await Promise.all([loadN3(), loadTomSelect()]);
     await loadAndBuild();
+    applyPickParam();          // antes dos controles p/ refletirem o estado do link
     buildFacetControls();
     wireToolbar();
     wireTimeline();
@@ -1259,6 +1993,7 @@ function wireTimeline() {
     wireSelect();
     wireLightbox();
     wireSelbar();
+    wireContextMenu();
     wireAssignModal();
     $('#status').hidden = true;
     $('.toolbar').hidden = false;

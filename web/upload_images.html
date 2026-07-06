@@ -6,25 +6,47 @@
 <meta name="robots" content="noindex">
 <title>Subir imagens — Pedal Hidrográfico</title>
 <style>
-  body { font-family: system-ui, sans-serif; max-width: 1400px; margin: 1.5rem auto; padding: 0 1rem; color: #222; }
+  /* Paleta espelhada do app (style.css) pra o formulário combinar com o modal. */
+  :root {
+    --bg: #0f1721; --panel: #15202b; --surface: #0c1722;
+    --text: #e7eef5; --muted: #97a3b1;
+    --accent: #ff8c2e; --accent-hover: #e07320; --border: #243240;
+    /* estados (verde/amarelo/vermelho) em versões que leem bem no escuro */
+    --ok: #5fd97a; --warn: #e8c14a; --err: #ff8a8a;
+  }
+  body { font-family: system-ui, sans-serif; max-width: 1400px; margin: 1.5rem auto; padding: 0 1rem;
+    color: var(--text); background: var(--bg); transition: background .2s; }
   h1 { font-size: 1.4rem; margin: 0 0 .25rem; }
-  p.lede { color: #666; margin: 0 0 1rem; }
-  fieldset { border: 1px solid #ccc; padding: 1rem; margin: 1rem 0; }
-  legend { font-weight: 600; padding: 0 .4rem; }
-  label { display: block; margin: .6rem 0 .2rem; font-size: .9rem; }
+  p.lede { color: var(--muted); margin: 0 0 1rem; }
+  a { color: var(--accent); }
+  fieldset { border: 1px solid var(--border); padding: 1rem; margin: 1rem 0; border-radius: 8px; background: var(--panel); }
+  legend { font-weight: 600; padding: 0 .4rem; color: var(--text); }
+  label { display: block; margin: .6rem 0 .2rem; font-size: .9rem; color: var(--text); }
   input[type="file"], input[type="text"], input[type="number"], input[type="datetime-local"], select {
     width: 100%; padding: .45rem; box-sizing: border-box; font-size: 1rem; font-family: inherit;
+    background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 5px;
   }
-  small { display: block; color: #666; font-size: .8rem; margin-top: .25rem; }
-  pre { background: #f4f4f4; padding: 1rem; overflow-x: auto; font-size: .85rem; border-radius: 4px; white-space: pre-wrap; word-break: break-word; }
+  input::placeholder { color: var(--muted); }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
+  small { display: block; color: var(--muted); font-size: .8rem; margin-top: .25rem; }
+  pre { background: var(--surface); color: var(--text); padding: 1rem; overflow-x: auto; font-size: .85rem; border-radius: 4px; white-space: pre-wrap; word-break: break-word; border: 1px solid var(--border); }
   .actions { margin: 1rem 0; display: flex; gap: .5rem; flex-wrap: wrap; }
-  button { padding: .5rem 1rem; font-size: 1rem; cursor: pointer; border: 1px solid #888; background: #f8f8f8; border-radius: 4px; }
-  button[disabled] { opacity: .5; cursor: not-allowed; }
-  .required::after { content: " *"; color: #c00; }
-  .ok { color: #080; }
-  .warn { color: #c80; }
-  .err { color: #c00; }
-  code { background: #eee; padding: 0 .25rem; border-radius: 2px; font-size: .9em; }
+  button { padding: .5rem 1rem; font-size: 1rem; cursor: pointer; border: 1px solid var(--border);
+    background: var(--surface); color: var(--text); border-radius: 5px; }
+  button:hover:not([disabled]) { border-color: var(--accent); color: var(--accent); }
+  button[disabled] { opacity: .45; cursor: not-allowed; }
+  /* Ações primárias (Enviar / Salvar) em laranja de destaque, como o app. */
+  .upload-all-btn, .card-send {
+    background: var(--accent); border-color: var(--accent); color: #201206; font-weight: 600;
+  }
+  .upload-all-btn:hover:not([disabled]), .card-send:hover:not([disabled]) {
+    background: var(--accent-hover); border-color: var(--accent-hover); color: #201206;
+  }
+  .required::after { content: " *"; color: var(--err); }
+  .ok { color: var(--ok); }
+  .warn { color: var(--warn); }
+  .err { color: var(--err); }
+  code { background: var(--surface); border: 1px solid var(--border); padding: 0 .25rem; border-radius: 3px; font-size: .9em; }
 
   /* Upload zone (padrões em cima, seletor de arquivos embaixo) */
   .upload-row {
@@ -40,19 +62,20 @@
     font: inherit; font-weight: 600; background: none; border: 0; cursor: pointer;
     padding: 0 .3rem; color: inherit; display: inline-flex; align-items: center; gap: .35rem;
   }
+  .zone-toggle:hover { color: var(--accent); }
   .zone-toggle .caret { display: inline-block; font-size: .8em; transition: transform .15s; }
   #upload-zone.collapsed .caret { transform: rotate(-90deg); }
   #upload-zone.collapsed .upload-row { display: none; }
 
   /* Cor do grupo reflete o estado do lote: verde=ok, amarelo=aviso, vermelho=erro. */
-  #upload-zone.state-ok   { background: #f0faf0; border-color: #b7dfb7; }
-  #upload-zone.state-warn { background: #fffbe6; border-color: #ead98f; }
-  #upload-zone.state-err  { background: #fdf0f0; border-color: #e2acac; }
+  #upload-zone.state-ok   { background: rgba(64, 200, 96, 0.12);  border-color: rgba(64, 200, 96, 0.5); }
+  #upload-zone.state-warn { background: rgba(240, 200, 60, 0.12); border-color: rgba(240, 200, 60, 0.5); }
+  #upload-zone.state-err  { background: rgba(230, 90, 90, 0.13);  border-color: rgba(230, 90, 90, 0.55); }
 
   /* Painel de "Opções de saída" (anonimizar/comprimir) */
   .opts { display: flex; gap: 1rem; flex-wrap: wrap; }
   .opts label { display: flex; align-items: center; gap: .35rem; margin: 0; font-size: .9rem; }
-  .opts input[type="checkbox"] { width: auto; }
+  .opts input[type="checkbox"] { width: auto; accent-color: var(--accent); }
 
   /* Grid de cards (1 por foto) */
   /* Grade de miniaturas (visão geral de tudo que foi adicionado). */
@@ -65,8 +88,8 @@
   #thumb-grid:empty { display: none; margin: 0; }
   .thumb-grid-item {
     position: relative; aspect-ratio: 1; cursor: pointer;
-    border: 1px solid #ccc; border-radius: 4px; overflow: hidden; background: #eee;
-    padding: 0;
+    border: 2px solid var(--border); border-radius: 4px; overflow: hidden; background: var(--surface);
+    padding: 0; transition: border-color .15s, box-shadow .15s;
   }
   .thumb-grid-item img { width: 100%; height: 100%; object-fit: cover; display: block; }
   .thumb-grid-item .tg-idx {
@@ -77,22 +100,26 @@
     content: "▶"; position: absolute; right: 2px; bottom: 0; font-size: .7rem;
     color: #fff; text-shadow: 0 0 3px #000;
   }
-  .thumb-grid-item:hover, .thumb-grid-item:focus-visible { border-color: #06c; outline: none; }
+  .thumb-grid-item:hover, .thumb-grid-item:focus-visible { border-color: var(--accent); outline: none; }
+  /* Estado de envio espelhado do card: amarelo=pendente, verde=enviado, vermelho=erro. */
+  .thumb-grid-item.tg-pending  { border-color: rgba(240, 200, 60, 0.85); box-shadow: 0 0 0 1px rgba(240, 200, 60, 0.4); }
+  .thumb-grid-item.tg-uploaded { border-color: rgba(64, 200, 96, 0.9);   box-shadow: 0 0 0 1px rgba(64, 200, 96, 0.4); }
+  .thumb-grid-item.tg-error    { border-color: rgba(230, 90, 90, 0.95);  box-shadow: 0 0 0 1px rgba(230, 90, 90, 0.45); }
 
   /* Faixa de cards + botões de navegação nos cantos. */
   .cards-carousel { position: relative; }
   .cards-nav {
     position: absolute; top: 50%; transform: translateY(-50%); z-index: 5;
-    width: 34px; height: 46px; border: 1px solid #bbb; border-radius: 6px;
-    background: rgba(255,255,255,.92); color: #333; font-size: 1.4rem; line-height: 1;
-    cursor: pointer; box-shadow: 0 1px 4px rgba(0,0,0,.2); padding: 0;
+    width: 34px; height: 46px; border: 1px solid var(--border); border-radius: 6px;
+    background: rgba(21, 32, 43, .92); color: var(--text); font-size: 1.4rem; line-height: 1;
+    cursor: pointer; box-shadow: 0 1px 4px rgba(0,0,0,.4); padding: 0;
   }
-  .cards-nav:hover { background: #fff; border-color: #888; }
+  .cards-nav:hover { background: var(--panel); border-color: var(--accent); color: var(--accent); }
   .cards-nav[disabled] { opacity: .3; cursor: default; }
   .cards-nav-left  { left: -4px; }
   .cards-nav-right { right: -4px; }
   /* Realce breve quando o card é alcançado via clique numa miniatura. */
-  .card.card-flash { box-shadow: 0 0 0 3px #06c; transition: box-shadow .2s; }
+  .card.card-flash { box-shadow: 0 0 0 3px var(--accent); transition: box-shadow .2s; }
 
   /* Galeria horizontal: os cards viram uma faixa que rola pra esquerda/direita
      em vez de empilhar verticalmente. Mostra ~1 card no celular e vários no
@@ -113,46 +140,46 @@
   }
   #cards:empty { display: none; margin: 0; }   /* sem faixa vazia quando não há cards */
   #cards::-webkit-scrollbar { height: 9px; }
-  #cards::-webkit-scrollbar-thumb { background: #bbb; border-radius: 5px; }
-  #cards::-webkit-scrollbar-thumb:hover { background: #999; }
+  #cards::-webkit-scrollbar-thumb { background: var(--border); border-radius: 5px; }
+  #cards::-webkit-scrollbar-thumb:hover { background: #35485a; }
   .card {
     flex: 0 0 min(360px, 82vw);
     scroll-snap-align: start;
-    border: 1px solid #ccc;
-    border-radius: 6px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
     padding: .75rem;
-    background: #fff;
+    background: var(--panel);
     font-size: .9rem;
     display: flex;
     flex-direction: column;
     gap: .25rem;
-    transition: background .2s;
+    transition: background .2s, border-color .2s;
   }
   /* Fundo do card reflete o estado de envio: amarelo=pendente, verde=enviado,
-     vermelho=erro. */
-  .card.card-pending  { background: #fff9e0; }
-  .card.card-uploaded { background: #e9f7e9; }
-  .card.card-error    { background: #fdeaea; }
+     vermelho=erro (tons que leem bem no escuro). */
+  .card.card-pending  { background: rgba(240, 200, 60, 0.13); border-color: rgba(240, 200, 60, 0.45); }
+  .card.card-uploaded { background: rgba(64, 200, 96, 0.15);  border-color: rgba(64, 200, 96, 0.5); }
+  .card.card-error    { background: rgba(230, 90, 90, 0.15);  border-color: rgba(230, 90, 90, 0.55); }
   /* Quando TODAS as imagens foram enviadas com sucesso, o fundo do modal
-     inteiro (o corpo desta página no iframe) fica azul-claro. */
-  body.all-uploaded { background: #e6f1fb; }
+     inteiro (o corpo desta página no iframe) fica levemente azulado. */
+  body.all-uploaded { background: #0d2436; }
   body { transition: background .2s; }
   .card-header { display: flex; gap: .5rem; align-items: center; }
   .card-thumb {
     width: 56px; height: 56px;
-    object-fit: cover; border-radius: 4px; background: #eee;
+    object-fit: cover; border-radius: 4px; background: var(--surface);
   }
   .card-meta { flex: 1; min-width: 0; }
   .card-meta strong { display: block; font-size: .85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .card-meta .hash { font-size: .65rem; color: #666; word-break: break-all; }
+  .card-meta .hash { font-size: .65rem; color: var(--muted); word-break: break-all; }
   .card-remove {
     border: 0; background: transparent; cursor: pointer;
-    font-size: 1.2rem; color: #c00; padding: 0 .25rem; line-height: 1;
+    font-size: 1.2rem; color: var(--err); padding: 0 .25rem; line-height: 1;
   }
-  .card-remove:hover { color: #800; }
-  .card-section { border-top: 1px dashed #ddd; padding-top: .4rem; margin-top: .25rem; }
+  .card-remove:hover { color: #ff5555; }
+  .card-section { border-top: 1px dashed var(--border); padding-top: .4rem; margin-top: .25rem; }
   .card-section h4 {
-    font-size: .7rem; color: #888; font-weight: 600;
+    font-size: .7rem; color: var(--muted); font-weight: 600;
     text-transform: uppercase; margin: 0 0 .25rem; letter-spacing: .04em;
   }
   .card label { font-size: .75rem; margin: .3rem 0 .1rem; }
@@ -163,15 +190,21 @@
 
   /* Campos compactos: rótulo e valor na MESMA linha (cards mais enxutos). */
   .card .fi { display: flex; align-items: center; gap: .35rem; margin: .2rem 0; }
-  .card .fi > span { flex: 0 0 auto; min-width: 2.6rem; font-size: .72rem; color: #555; }
+  .card .fi > span { flex: 0 0 auto; min-width: 2.6rem; font-size: .72rem; color: var(--muted); }
   .card .fi > input, .card .fi > select { flex: 1 1 auto; min-width: 0; margin: 0; }
   .card .fi-row { display: flex; gap: .4rem; align-items: center; margin: .2rem 0; }
   .card .fi-row > .fi { flex: 1; margin: 0; }
   .card .fi-row > .pick-on-map { flex: 0 0 auto; padding: .25rem .45rem; font-size: 1rem; line-height: 1; }
 
-  /* Tom Select compactado dentro dos cards */
+  /* Tom Select compactado dentro dos cards + tema escuro pra combinar. */
   .ts-wrapper { font-size: .85rem; }
   .card .ts-control { padding: .2rem .3rem !important; min-height: 0; }
+  .ts-control { background: var(--surface) !important; border-color: var(--border) !important; color: var(--text); }
+  .ts-control input, .ts-control input::placeholder { color: var(--text) !important; }
+  .ts-dropdown { background: var(--panel); border-color: var(--border); color: var(--text); }
+  .ts-dropdown .option.active, .ts-dropdown .option:hover { background: rgba(255, 140, 46, 0.18); color: var(--text); }
+  .ts-dropdown .create:hover { background: rgba(255, 140, 46, 0.18); }
+  .ts-control .item { background: rgba(255, 255, 255, 0.08); color: var(--text); }
 
   /* Card de vídeo: prévia + trim sliders */
   .card-video-preview {
@@ -182,19 +215,20 @@
     display: grid; grid-template-columns: 40px 1fr auto; align-items: center;
     gap: .35rem; margin: .3rem 0 .1rem;
   }
-  .trim-row > span { font-size: .72rem; color: #666; }
+  .trim-row > span { font-size: .72rem; color: var(--muted); }
+  input[type="range"] { accent-color: var(--accent); }
   .trim-steppers { display: flex; gap: .15rem; }
   .trim-step-btn {
-    background: #f0f0f0; border: 1px solid #888; border-radius: 3px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 3px; color: var(--text);
     padding: 0 .3rem; cursor: pointer; font-family: ui-monospace, monospace; font-size: .75rem;
   }
-  .trim-step-btn:hover { background: #e0e0e0; }
+  .trim-step-btn:hover { background: var(--panel); border-color: var(--accent); }
   .trim-times {
     display: flex; justify-content: space-between; gap: .4rem;
-    font-family: ui-monospace, monospace; font-size: .7rem; color: #666;
+    font-family: ui-monospace, monospace; font-size: .7rem; color: var(--muted);
     margin-top: .25rem;
   }
-  .trim-times .warn { color: #c00; }
+  .trim-times .warn { color: var(--err); }
 </style>
 <link href="./lib/tom-select.min.css" rel="stylesheet">
 </head>
@@ -308,6 +342,10 @@
 <script type="module">
 const $  = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
+
+// Embutido no iframe do app: o título vive na faixa do header do modal —
+// esconde o <h1> interno pra não duplicar. Standalone mostra normalmente.
+if (window.self !== window.top) $('h1')?.style.setProperty('display', 'none');
 
 // ===================== Dependências CDN ================================
 let exifr = null;
@@ -470,9 +508,9 @@ function computePHash(bitmap) {
 async function computeVideoPHash(file, N = 8) {
   const v = document.createElement('video');
   const url = URL.createObjectURL(file);
-  v.src = url; v.muted = true; v.playsInline = true; v.preload = 'auto';
+  v.src = url;
   try {
-    await waitVideoEvent(v, 'loadedmetadata', 'vídeo não carregou pro pHash');
+    await primeVideoForFrames(v, 'vídeo não carregou pro pHash');
     const dur = Math.max(0.1, v.duration || 0.1);
     const C = document.createElement('canvas');
     const SIDE = 32;
@@ -482,8 +520,8 @@ async function computeVideoPHash(file, N = 8) {
     for (let i = 0; i < N; i++) {
       // Pula o frame inicial absoluto (muitas vezes preto) e o final-final.
       const t = Math.min(Math.max(0.05, ((i + 0.5) / N) * dur), Math.max(0.05, dur - 0.05));
-      v.currentTime = t;
-      await waitVideoEvent(v, 'seeked', 'seek falhou no pHash');
+      await robustVideoSeek(v, t, 'seek falhou no pHash');
+      await new Promise((r) => setTimeout(r, 24));   // deixa o iOS pintar o quadro
       ctx.drawImage(v, 0, 0, SIDE, SIDE);
       const data = ctx.getImageData(0, 0, SIDE, SIDE).data;
       const hex = pHashFromRgba(data, SIDE);
@@ -506,6 +544,8 @@ async function computeVideoPHash(file, N = 8) {
     return out;
   } finally {
     URL.revokeObjectURL(url);
+    try { v.pause(); } catch (_) {}
+    v.remove();
   }
 }
 
@@ -1630,12 +1670,13 @@ async function tryExtractVideoCreationDate(f) {
 async function videoFirstFrameBlob(file) {
   const v = document.createElement('video');
   const url = URL.createObjectURL(file);
-  v.src = url; v.muted = true; v.playsInline = true; v.preload = 'metadata';
+  v.src = url;
   try {
-    await waitVideoEvent(v, 'loadedmetadata', 'vídeo não pôde carregar');
+    await primeVideoForFrames(v, 'vídeo não pôde carregar');
     // Seek pra ~5% da duração — evita o frame todo preto da partida.
-    v.currentTime = Math.min(Math.max(0.2, v.duration * 0.05), Math.max(0.2, v.duration - 0.1));
-    await waitVideoEvent(v, 'seeked', 'seek falhou no thumb');
+    const t = Math.min(Math.max(0.2, v.duration * 0.05), Math.max(0.2, v.duration - 0.1));
+    await robustVideoSeek(v, t, 'seek falhou no thumb');
+    await new Promise((r) => setTimeout(r, 24));
     const W = Math.min(320, v.videoWidth || 320);
     const H = Math.round((v.videoHeight || 180) * (W / (v.videoWidth || 320)));
     const c = document.createElement('canvas');
@@ -1644,6 +1685,8 @@ async function videoFirstFrameBlob(file) {
     return await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.8));
   } finally {
     URL.revokeObjectURL(url);
+    try { v.pause(); } catch (_) {}
+    v.remove();
   }
 }
 
@@ -1666,6 +1709,46 @@ function waitVideoEvent(el, name, errMsg, timeoutMs = 15000) {
     el.addEventListener(name, ok, { once: true });
     el.addEventListener('error', bad, { once: true });
     to = setTimeout(bad, timeoutMs);
+  });
+}
+
+// iOS Safari é chato pra extrair quadros de <video>: com o elemento DESANEXADO
+// e "frio", os seeks muitas vezes não disparam 'seeked' (o pHash/thumb falhava
+// com "seek falhou"). Anexa fora da tela, espera decodificar (loadeddata) e
+// esquenta o decoder com um play/pause mudo — aí os seeks passam a funcionar.
+async function primeVideoForFrames(v, errMsg = 'vídeo não decodificou') {
+  v.muted = true; v.defaultMuted = true; v.playsInline = true; v.preload = 'auto';
+  v.setAttribute('muted', ''); v.setAttribute('playsinline', '');
+  Object.assign(v.style, {
+    position: 'fixed', left: '-9999px', top: '0', width: '1px', height: '1px',
+    opacity: '0', pointerEvents: 'none',
+  });
+  if (!v.isConnected) document.body.appendChild(v);
+  await waitVideoEvent(v, 'loadeddata', errMsg, 20000);
+  try { const p = v.play(); if (p) await p; v.pause(); } catch (_) { /* autoplay bloqueado: segue */ }
+}
+// Seek robusto: resolve no 'seeked' OU quando currentTime chega perto do alvo
+// (poll) — contorna o iOS, que às vezes não emite 'seeked'. `v` já deve estar
+// "quente" (ver primeVideoForFrames).
+function robustVideoSeek(v, t, errMsg = 'seek falhou', timeoutMs = 12000) {
+  return new Promise((resolve, reject) => {
+    let done = false;
+    const finish = (ok) => {
+      if (done) return; done = true;
+      v.removeEventListener('seeked', onSeeked);
+      v.removeEventListener('error', onErr);
+      clearInterval(iv); clearTimeout(to);
+      ok ? resolve() : reject(new Error(errMsg));
+    };
+    const onSeeked = () => { if (!v.seeking) finish(true); };
+    const onErr = () => finish(false);
+    v.addEventListener('seeked', onSeeked);
+    v.addEventListener('error', onErr);
+    const iv = setInterval(() => {
+      if (!v.seeking && v.readyState >= 2 && Math.abs(v.currentTime - t) < 0.1) finish(true);
+    }, 80);
+    const to = setTimeout(() => finish(false), timeoutMs);
+    try { v.currentTime = t; } catch (_) { finish(false); }
   });
 }
 
@@ -2558,9 +2641,14 @@ async function buildVariants(card) {
 const UPLOAD_URL = './upload-image';   // mesma origem (o backend serve este HTML)
 
 // Fundo do card por estado: 'pending' (amarelo), 'uploaded' (verde), 'error' (vermelho).
+// Espelha o mesmo estado na miniatura do grid (destaque verde/amarelo/vermelho).
 function setCardBg(card, state) {
   card.elem.classList.remove('card-pending', 'card-uploaded', 'card-error');
   card.elem.classList.add(`card-${state}`);
+  if (card.gridThumbBtn) {
+    card.gridThumbBtn.classList.remove('tg-pending', 'tg-uploaded', 'tg-error');
+    card.gridThumbBtn.classList.add(`tg-${state}`);
+  }
 }
 function setCardStatus(card, label, kind = '') {
   const el = $('.card-send-status', card.elem);

@@ -44,10 +44,20 @@
     border-radius: 8px;
     padding: 12px 14px;
   }
-  .metric .v { font-size: 22px; font-weight: 700; color: var(--accent); line-height: 1.1; }
+  .metric .v { font-size: 22px; font-weight: 700; color: var(--accent); line-height: 1.1;
+    overflow-wrap: anywhere; }
   .metric .l { font-size: 11px; color: var(--muted); text-transform: uppercase;
     letter-spacing: 0.04em; margin-top: 4px; }
   .metric .h { font-size: 11px; color: var(--muted); margin-top: 6px; line-height: 1.3; }
+  /* No celular: grade de 3 colunas, cards compactos (sem a nota longa, que
+     deixaria os cards altos e desalinhados numa coluna estreita). */
+  @media (max-width: 600px) {
+    .metrics { grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 10px 0 16px; }
+    .metric { padding: 8px 7px; }
+    .metric .v { font-size: 15px; }
+    .metric .l { font-size: 9px; margin-top: 3px; letter-spacing: 0.02em; }
+    .metric .h { display: none; }
+  }
 
   /* Tabela — compacta pra caber muitas colunas sem rolagem horizontal.
      `.table-wrap` NÃO tem overflow: se setamos `overflow-x: auto`, o
@@ -241,15 +251,10 @@ const $ = (q) => document.querySelector(q);
 // o modal, revelando o mapa que já está embaixo. Standalone (aberto direto),
 // o link navega pro mapa normalmente.
 if (window.self !== window.top) {
-  // O modal Censo não tem mais barra de título própria, então o <h1>/subtítulo
-  // internos aparecem normalmente (dão o título do modal). O "← Mapa" fecha o
-  // modal (em vez de navegar o iframe pra index.html, o que abriria um segundo
-  // mapa dentro da janela).
-  const back = $('header a[href="./index.html"]');
-  if (back) back.addEventListener('click', (e) => {
-    e.preventDefault();
-    try { window.parent.postMessage({ type: 'phidro-censo-back' }, window.location.origin); } catch (_) {}
-  });
+  // No modal, esconde o header interno inteiro — o título ("Censo Hidrográfico")
+  // agora vive na faixa do header do modal. Quem fecha é a bolinha / clique fora
+  // / Esc. Standalone (aberto direto), o header aparece normalmente.
+  $('header')?.style.setProperty('display', 'none');
 }
 
 // ── N3.js ────────────────────────────────────────────────────────────────
@@ -694,7 +699,8 @@ function attachSort(tours) {
     renderMetrics(tours);
     renderTable(tours);
     attachSort(tours);
-    $('#meta-ts').textContent = `gerado em ${saoPauloIso()}, a partir de https://amora.pedalhidrografi.co/data/tours.ttl`;
+    const toursUrl = new URL('./data/tours.ttl', location.href).href;   // origem real (localhost em dev, produção no ar)
+    $('#meta-ts').textContent = `gerado em ${saoPauloIso()}, a partir de ${toursUrl}`;
   } catch (e) {
     $('#status').innerHTML = `<span class="err">Falha ao carregar: ${escapeHtml(e.message)}</span>`;
   }

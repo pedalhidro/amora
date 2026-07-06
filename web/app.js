@@ -305,6 +305,7 @@ function showPhotoFallbackModal(innerHtml) {
         pauseMediaIn(modal);
         modal.hidden = true;
         restoreMapViewAfterPhoto();
+        clearPhotoPreview();
       }
     });
     document.body.appendChild(modal);
@@ -318,8 +319,12 @@ function showPhotoFallbackModal(innerHtml) {
     pauseMediaIn(modal);
     modal.hidden = true;
     restoreMapViewAfterPhoto();
+    clearPhotoPreview();
   });
   modal.hidden = false;
+  // Navegação também no modal promovido: arrastar ↔ + manter as setas visíveis.
+  attachPhotoSwipe(modal.querySelector('.photo-fallback-content'));
+  updatePhotoNavArrows();
 }
 function popupFitsViewport(el) {
   const rect = el.getBoundingClientRect();
@@ -340,13 +345,18 @@ map.on('popupopen', (e) => {
   // Destaca o marcador de foto clicado (vídeos já se distinguem pela borda).
   const srcMarker = popup._source;
   if (srcMarker && srcMarker._photo) highlightPhotoMarker(srcMarker);
+  // Preview ativo → habilita a navegação por tempo (setas / ← → / arrastar).
+  photoPreviewMarker = srcMarker || null;
+  updatePhotoNavArrows();
+  attachPhotoSwipe(el);
   // Se já tem um modal aberto (de outro marker), fecha — evita dois previews
-  // visíveis e o snap-back de map view ficar incoerente.
+  // visíveis e o snap-back de map view ficar incoerente. Durante uma navegação
+  // NÃO restaura a view (senão voltaria pro ponto de origem a cada pulo).
   const existingModal = document.getElementById('photo-fallback-modal');
   if (existingModal && !existingModal.hidden) {
     pauseMediaIn(existingModal);
     existingModal.hidden = true;
-    restoreMapViewAfterPhoto();
+    if (!_photoNavigating) restoreMapViewAfterPhoto();
   }
   const promoteIfNeeded = () => {
     if (!el.isConnected || el.style.visibility === 'hidden') return;
@@ -370,6 +380,111 @@ map.on('popupopen', (e) => {
       media.addEventListener(evt, () => requestAnimationFrame(promoteIfNeeded), { once: true });
     }
   }
+});
+
+// ─── Navegação entre fotos no preview (ordenação por TEMPO) ───────────────────
+// Com um preview aberto: ← (ou seta ‹, ou arrastar →) vai pra foto ANTERIOR no
+// tempo; → (ou seta ›, ou arrastar ←) vai pra PRÓXIMA. Só entre as fotos
+// visíveis no momento (respeita o filtro de listas/SPARQL, a janela de data e o
+// filtro de pedal). Fotos sem data-hora ficam de fora.
+let photoPreviewMarker = null;
+let _photoNavigating = false;
+
+// Marcadores de foto visíveis com data válida, ordenados por tempo (asc).
+function visiblePhotoMarkersByTime() {
+  return photoMarkers
+    .filter((m) => map.hasLayer(m) && m._photo && Number.isFinite(Date.parse(m._photo.datetime)))
+    .map((m) => ({ m, t: Date.parse(m._photo.datetime) }))
+    .sort((a, b) => a.t - b.t
+      || String(a.m._photo.phash || '').localeCompare(String(b.m._photo.phash || '')))
+    .map((x) => x.m);
+}
+// forward=true → próxima no tempo; forward=false → anterior. Sem wrap.
+function findTimeNeighbor(fromMarker, forward) {
+  if (!fromMarker?._photo) return null;
+  const list = visiblePhotoMarkersByTime();
+  const idx = list.indexOf(fromMarker);
+  if (idx === -1) return null;
+  const j = forward ? idx + 1 : idx - 1;
+  return (j >= 0 && j < list.length) ? list[j] : null;
+}
+function navigatePhoto(forward) {
+  const from = photoPreviewMarker;
+  if (!from || !from._photo) return;
+  const target = findTimeNeighbor(from, forward);
+  if (!target) return;
+  if (!savedMapViewForPhoto) savedMapViewForPhoto = { center: map.getCenter(), zoom: map.getZoom() };
+  _photoNavigating = true;
+  map.setView(target.getLatLng(), map.getZoom(), { animate: false });
+  target.openPopup();          // dispara popupopen → seta photoPreviewMarker + promove se preciso
+  photoPreviewMarker = target;
+  _photoNavigating = false;
+}
+
+// Setas fixas nos cantos (‹ ›), visíveis com um preview aberto.
+const photoNavPrev = document.createElement('button');
+photoNavPrev.type = 'button';
+photoNavPrev.className = 'photo-nav-arrow photo-nav-prev';
+photoNavPrev.innerHTML = '‹';
+photoNavPrev.title = 'Foto anterior no tempo (←)';
+photoNavPrev.setAttribute('aria-label', photoNavPrev.title);
+photoNavPrev.hidden = true;
+const photoNavNext = document.createElement('button');
+photoNavNext.type = 'button';
+photoNavNext.className = 'photo-nav-arrow photo-nav-next';
+photoNavNext.innerHTML = '›';
+photoNavNext.title = 'Próxima foto no tempo (→)';
+photoNavNext.setAttribute('aria-label', photoNavNext.title);
+photoNavNext.hidden = true;
+photoNavPrev.addEventListener('click', (e) => { e.stopPropagation(); navigatePhoto(false); });
+photoNavNext.addEventListener('click', (e) => { e.stopPropagation(); navigatePhoto(true); });
+document.body.append(photoNavPrev, photoNavNext);
+
+function updatePhotoNavArrows() {
+  const on = !!photoPreviewMarker;
+  photoNavPrev.hidden = !(on && findTimeNeighbor(photoPreviewMarker, false));
+  photoNavNext.hidden = !(on && findTimeNeighbor(photoPreviewMarker, true));
+}
+function clearPhotoPreview() {
+  photoPreviewMarker = null;
+  updatePhotoNavArrows();
+}
+// Arrasta ↔ pra navegar (toque): arrastar pra ESQUERDA → próxima; pra DIREITA → anterior.
+function attachPhotoSwipe(el) {
+  if (!el || el._swipeBound) return;
+  el._swipeBound = true;
+  let x0 = null, y0 = null;
+  el.addEventListener('touchstart', (e) => {
+    const t = e.changedTouches[0]; x0 = t.clientX; y0 = t.clientY;
+  }, { passive: true });
+  el.addEventListener('touchend', (e) => {
+    if (x0 == null) return;
+    const t = e.changedTouches[0], dx = t.clientX - x0, dy = t.clientY - y0;
+    x0 = null;
+    if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.5) navigatePhoto(dx < 0);
+  }, { passive: true });
+}
+// ← / → navegam quando há preview (e o foco não está num campo de texto).
+document.addEventListener('keydown', (e) => {
+  if (!photoPreviewMarker) return;
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || '')) return;
+  if (e.key === 'ArrowRight') { e.preventDefault(); navigatePhoto(true); }
+  else if (e.key === 'ArrowLeft') { e.preventDefault(); navigatePhoto(false); }
+});
+// Fechamento REAL do popup (não promoção pro modal nem navegação) limpa o
+// preview e restaura a view salva.
+map.on('popupclose', (e) => {
+  const el = e.popup?.getElement?.();
+  if (!el || !el.classList.contains('photo-popup-wrap')) return;
+  if (_photoNavigating) return;
+  setTimeout(() => {
+    if (_photoNavigating) return;
+    const modal = document.getElementById('photo-fallback-modal');
+    if (modal && !modal.hidden) return;                              // promovido pro modal
+    if (document.querySelector('.leaflet-popup .photo-popup')) return; // outro popup abriu
+    clearPhotoPreview();
+    restoreMapViewAfterPhoto();
+  }, 0);
 });
 
 const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -870,6 +985,16 @@ function saveMediaFilter() {
 function pickerHasKnownList() {
   for (const l of (mediaFilter.lists || [])) if (listCatalog.has(l)) return true;
   return false;
+}
+// O filtro é o "padrão" (não-customizado) quando: mostra Todas, OU é o picker
+// só com a lista Padrão, OU o picker aponta pra listas inexistentes (→ mostra
+// tudo). Nesses casos o botão de funil NÃO acende de azul-ciano.
+function mediaFilterIsDefault() {
+  if (mediaFilter.mode === 'all') return true;
+  if (mediaFilter.mode === 'sparql') return false;
+  if (!pickerHasKnownList()) return true;
+  const ls = mediaFilter.lists;
+  return ls.size === 1 && ls.has(PADRAO_LIST_IRI);
 }
 function mediaMatchesFilter(iri, lists) {
   if (mediaFilter.mode === 'all') return true;
@@ -2728,24 +2853,26 @@ function mediaFilterSummary() {
   return `${names.length} listas`;
 }
 
-// Chip fixo (aparece com a camada de imagens ligada) que abre o popover.
+// O gatilho do filtro é o botão de funil na linha "Imagens contribuídas" do
+// painel de camadas (não há mais chip flutuante no mapa). Estados do botão:
+//   • popover aberto            → laranja (accent), via aria-expanded
+//   • filtro customizado fechado → azul-ciano (.is-custom)  (≠ Padrão/Todas)
+//   • Padrão / Todas / fechado   → sem destaque
+function updateMediaFilterButton() {
+  const btn = document.querySelector('.layer-filter-toggle');
+  if (!btn) return;
+  const open = !!document.getElementById('media-filter-pop');
+  const custom = photosVisible && !mediaFilterIsDefault();
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  btn.classList.toggle('is-custom', !open && custom);
+  btn.title = (open || custom)
+    ? `Filtro de imagens: ${mediaFilterSummary()} — clique pra ajustar`
+    : 'Filtrar imagens/vídeos por lista ou SPARQL';
+}
+// Chamado em mudanças de filtro/visibilidade (mantém o nome pros callers).
 function renderMediaFilterChip() {
-  let chip = document.getElementById('media-filter-chip');
-  if (!photosVisible) {
-    if (chip) chip.remove();
-    closeMediaFilterPopover();
-    return;
-  }
-  if (!chip) {
-    chip = document.createElement('button');
-    chip.type = 'button';
-    chip.id = 'media-filter-chip';
-    chip.className = 'map-chip media-filter-chip';
-    chip.title = 'Filtrar imagens/vídeos por lista ou SPARQL';
-    document.getElementById('map').appendChild(chip);
-    chip.addEventListener('click', toggleMediaFilterPopover);
-  }
-  chip.innerHTML = `<span>📁 <b>${escapeHtml(mediaFilterSummary())}</b> ▾</span>`;
+  if (!photosVisible) closeMediaFilterPopover();
+  updateMediaFilterButton();
 }
 
 function toggleMediaFilterPopover() {
@@ -2754,7 +2881,11 @@ function toggleMediaFilterPopover() {
   else openMediaFilterPopover();
 }
 function closeMediaFilterPopover() {
-  document.getElementById('media-filter-pop')?.remove();
+  const pop = document.getElementById('media-filter-pop');
+  if (!pop) return;
+  if (pop._cleanup) pop._cleanup();
+  pop.remove();
+  updateMediaFilterButton();   // tira o laranja de "aberto"
 }
 
 function openMediaFilterPopover() {
@@ -2785,9 +2916,24 @@ function openMediaFilterPopover() {
     `<textarea id="mf-sparql" rows="6" spellcheck="false">${escapeHtml(defaultQuery)}</textarea>` +
     `<div class="mf-adv-actions"><button type="button" id="mf-run" class="mf-btn">Aplicar consulta</button></div>` +
     `<div id="mf-err" class="mf-err"></div></details>`;
-  document.getElementById('map').appendChild(pop);
+  document.body.appendChild(pop);
   L.DomEvent.disableClickPropagation(pop);
   L.DomEvent.disableScrollPropagation(pop);
+
+  // Fecha ao clicar fora (captura no pointerdown → pega mesmo com o
+  // disableClickPropagation) ou com Esc. O setTimeout evita fechar no próprio
+  // clique de abertura.
+  const onDocPointer = (e) => {
+    if (pop.contains(e.target) || e.target.closest?.('.layer-filter-toggle')) return;
+    closeMediaFilterPopover();
+  };
+  const onKey = (e) => { if (e.key === 'Escape') closeMediaFilterPopover(); };
+  pop._cleanup = () => {
+    document.removeEventListener('pointerdown', onDocPointer, true);
+    document.removeEventListener('keydown', onKey);
+  };
+  setTimeout(() => document.addEventListener('pointerdown', onDocPointer, true), 0);
+  document.addEventListener('keydown', onKey);
 
   pop.querySelector('.mf-close').onclick = closeMediaFilterPopover;
   pop.querySelector('#mf-all').onchange = (e) => {
@@ -2805,6 +2951,7 @@ function openMediaFilterPopover() {
     const q = pop.querySelector('#mf-sparql').value.trim();
     applyMediaFilter({ mode: 'sparql', query: q });
   };
+  updateMediaFilterButton();   // acende o laranja de "aberto"
 }
 
 // Aplica uma mudança de estado do filtro: persiste, recomputa (async no modo
@@ -3358,6 +3505,9 @@ function openTourModal(tourId) {
   const src = tourId
     ? `./upload_tour.html?id=${encodeURIComponent(tourId)}`
     : './upload_tour.html';
+  // Título da faixa reflete o modo (criar vs editar).
+  const tourTitle = document.getElementById('tour-modal-title');
+  if (tourTitle) tourTitle.textContent = tourId ? 'Editar passeio' : 'Subir passeio';
   // Forçar reload mesmo quando o ?id é o mesmo: substitui o src.
   tourIframe.src = src;
   tourModal.hidden = false;
@@ -3519,6 +3669,70 @@ document.getElementById('subir-censo')?.addEventListener('click', () => {
   closeSubirModal();
   openCensoModal();
 });
+
+// ─── Botão de fechar (bolinha vermelha estilo macOS) ─────────────────────────
+// Como os modais e painéis não têm mais barra de título, injeta uma bolinha
+// vermelha discreta no canto superior esquerdo. Cada contêiner reserva a folga
+// no CSS (.close-dot). `onClose` roda no clique.
+function makeCloseDot(onClose, title = 'Fechar') {
+  const dot = document.createElement('button');
+  dot.type = 'button';
+  dot.className = 'close-dot';
+  dot.title = title;
+  dot.setAttribute('aria-label', title);
+  dot.addEventListener('click', (e) => { e.stopPropagation(); onClose(e); });
+  return dot;
+}
+
+// Modais: a bolinha dispara o clique-no-overlay (`modal.click()`), reusando o
+// handler de clique-fora que cada modal já tem (e.target === modal → fecha
+// corretamente, com toda a limpeza: reloadPhotos, reset de iframe, aria, etc.).
+for (const content of document.querySelectorAll('.modal > .modal-content')) {
+  const modal = content.closest('.modal');
+  if (!modal) continue;
+  content.appendChild(makeCloseDot(() => modal.click()));
+}
+
+// Bolinha verde de maximizar (estilo macOS) nos modais em iframe: alterna entre
+// janela e tela cheia (classe .maximized no .modal-content), persistido por
+// chave. Usada na galeria e no censo.
+function addMaximizeDot(modalEl, key) {
+  const content = modalEl?.querySelector('.modal-content');
+  if (!content) return;
+  const dot = document.createElement('button');
+  dot.type = 'button';
+  dot.className = 'maximize-dot';
+  const setMax = (on, persist) => {
+    content.classList.toggle('maximized', on);
+    dot.setAttribute('aria-pressed', String(on));
+    dot.title = on ? 'Restaurar' : 'Maximizar';
+    dot.setAttribute('aria-label', dot.title);
+    if (persist) { try { localStorage.setItem(key, on ? '1' : '0'); } catch (_) {} }
+  };
+  dot.addEventListener('click', (e) => {
+    e.stopPropagation();   // não borbulha pro overlay (que fecharia o modal)
+    setMax(!content.classList.contains('maximized'), true);
+  });
+  content.appendChild(dot);
+  let saved = false;
+  try { saved = localStorage.getItem(key) === '1'; } catch (_) {}
+  setMax(saved, false);
+}
+addMaximizeDot(imagensModal, 'phidro:galleryMaximized');
+addMaximizeDot(censoModal, 'phidro:censoMaximized');
+
+// Sidebar de Rotas: a bolinha fecha o painel (mesmo caminho do ☰/toggle). Como
+// só é clicável com a sidebar aberta, o toggle sempre fecha.
+document.getElementById('sidebar')?.appendChild(
+  makeCloseDot(() => toggleRoutesSidebar(), 'Fechar rotas'),
+);
+
+// Barra de edição de traçado: bolinha como 1º item (inline, ao lado dos
+// botões); fechar = cancelar a edição, igual ao "✕ Cancelar" do botão Traçar.
+{
+  const tc = document.getElementById('trace-controls');
+  if (tc) tc.insertBefore(makeCloseDot(() => exitDrawingMode(), 'Fechar edição'), tc.firstChild);
+}
 
 // ─── Modal de Configurações ───────────────────────────────────────────────
 const settingsBtn        = document.getElementById('settings-btn');
@@ -4975,12 +5189,16 @@ layerPanel.onAdd = function () {
     // Botões da linha num mini-grid fixo 3 colunas (sempre 3 col → checkboxes
     // alinhados; a ação fica sempre na col 3 → ✨ de "Imagens contribuídas" e
     // "Vídeo fantasma" no mesmo x):
-    //   col1=▲   col2=▼ (vazia quando não há setas)   col3=ação (☰/📍/✨/✎/⚙/🗑)
+    //   col1=▲   col2=▼ (ou 🔽 filtro em "Imagens contribuídas", que não tem
+    //   setas)   col3=ação (☰/📍/✨/✎/⚙/🗑)
     const btns = [];
     if (reorderable) {
       btns.push('<button type="button" class="layer-move-up btn-up" title="Empilhar acima" aria-label="Empilhar acima">▲</button>');
       btns.push('<button type="button" class="layer-move-down btn-down" title="Empilhar abaixo" aria-label="Empilhar abaixo">▼</button>');
     }
+    // Ação secundária (col3): filtro de mídias na camada "Imagens contribuídas".
+    if (l.id === 'photos')
+      btns.push('<button type="button" class="layer-action layer-filter-toggle btn-filter" title="Filtrar imagens/vídeos por lista ou SPARQL" aria-label="Filtrar imagens" aria-expanded="false"><svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true"><path d="M1 2.5h14L9.5 9v4.2l-3 1.8V9L1 2.5z" fill="currentColor"/></svg></button>');
     if (l.id === 'routes')
       btns.push('<button type="button" id="routes-panel-toggle" class="layer-action btn-action" title="Mostrar rotas" aria-label="Mostrar rotas" aria-pressed="false">☰</button>');
     else if (l.id === 'live-people')
@@ -5028,6 +5246,7 @@ layerPanel.onAdd = function () {
     onAct('#routes-panel-toggle', toggleRoutesSidebar);
     onAct('#share-loc-btn', onShareLocClick);
     onAct('.layer-anim-toggle', toggleAnimation);
+    onAct('.layer-filter-toggle', toggleMediaFilterPopover);
     onAct('.layer-action-edit', () => { if (l.edit) l.edit(); });
     onAct('.layer-action-trash', () => { if (l.trashAction) l.trashAction(); });
     if (reorderable) {
@@ -5051,6 +5270,20 @@ layerPanel.onAdd = function () {
     applyLayerOrder();
     layoutRows();
   });
+
+  // Título "Camadas" na faixa reservada, ao lado da bolinha (absolute → não
+  // desloca as linhas).
+  const panelTitle = L.DomUtil.create('div', 'layer-panel-title', div);
+  panelTitle.textContent = 'Camadas';
+
+  // Bolinha de fechar (macOS) no canto do painel — fecha as camadas (mesmo
+  // caminho do botão ⧉ Camadas: esconde + persiste). Absolute → não desloca
+  // as linhas; a faixa superior reservada no CSS evita colisão com o conteúdo.
+  div.appendChild(makeCloseDot(() => {
+    closeOtherMobileDialogs('layers');
+    applyLayersVisibility(true);
+    try { localStorage.setItem(LAYERS_HIDDEN_KEY, '1'); } catch {}
+  }, 'Fechar camadas'));
 
   L.DomEvent.disableClickPropagation(div);
   L.DomEvent.disableScrollPropagation(div);
@@ -11164,6 +11397,7 @@ async function loadGpxIntoEditor(gpxText) {
 
   const bgEls = () => Array.from(document.body.children).filter((el) =>
     !el.classList.contains('modal') &&
+    !el.classList.contains('photo-nav-arrow') &&   // setas de navegação de foto ficam ativas sobre o preview
     el.id !== 'toast' && el.id !== 'route-tooltip' &&
     el.tagName !== 'SCRIPT' && el.tagName !== 'TEMPLATE');
 
