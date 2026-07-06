@@ -355,7 +355,9 @@ function buildModel(quads) {
   for (const q of quads) {
     const s = q.subject.value, p = q.predicate.value, o = q.object;
     if (p === RDFT) {
-      if (!typeOf.has(s)) typeOf.set(s, o.value);
+      // ph:GeoreferencedImage é mixin (2º tipo da mídia com GPS) — não pode
+      // "vencer" o tipo concreto (StillImage/MotionImage) no dispatch abaixo.
+      if (o.value !== PH + 'GeoreferencedImage' && !typeOf.has(s)) typeOf.set(s, o.value);
       if (PERSON_TYPES.has(o.value)) { typedPersons.add(s); personSet.add(s); }
     } else if (p === TITLE_PRED) { if (!titleOf.has(s)) titleOf.set(s, o.value); }
     else if (DATE_PREDS.has(p))  { if (!dateOf.has(s))  dateOf.set(s, o.value); }

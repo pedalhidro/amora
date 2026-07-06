@@ -1673,7 +1673,7 @@ async function loadClipsFromUploadsTtl() {
       if (done) {
         const clips = [];
         for (const [_s, props] of subs) {
-          if (props.type !== PH_ + 'MotionImage') continue;
+          if (!props.types?.has(PH_ + 'MotionImage')) continue;
           const geo = props.locationCreated ? geos.get(props.locationCreated) : null;
           if (!geo || !Number.isFinite(geo.lat) || !Number.isFinite(geo.lng)) continue;
           // Sem áudio = não tem o que tocar; ignora.
@@ -1720,7 +1720,10 @@ async function loadClipsFromUploadsTtl() {
       const p = quad.predicate.value;
       const o = quad.object;
       const sub = subs.get(s) || {};
-      if (p === RDF_TYPE) sub.type = o.value;
+      // Set, não valor único: mídia georreferenciada carrega DOIS tipos
+      // (ph:MotionImage + ph:GeoreferencedImage) — o último quad não pode
+      // "vencer" e esconder o MotionImage.
+      if (p === RDF_TYPE) (sub.types = sub.types || new Set()).add(o.value);
       else if (p === SCHEMA_ + 'latitude')   { const g = geos.get(s) || {}; g.lat = parseFloat(o.value); geos.set(s, g); }
       else if (p === SCHEMA_ + 'longitude')  { const g = geos.get(s) || {}; g.lng = parseFloat(o.value); geos.set(s, g); }
       else if (p === SCHEMA_ + 'duration')       sub.duration = o.value;

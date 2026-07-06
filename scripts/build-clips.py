@@ -348,6 +348,9 @@ def upsert_clip(g: Graph, vhash: str, meta: dict, share_name: str,
             g.remove(triple)
 
     g.add((vid_iri, RDF.type, PH.MotionImage))
+    # Todo clipe deste script tem GPS (os sem GPS são pulados acima) → é
+    # mídia georreferenciada, o subconjunto que vira marcador no mapa.
+    g.add((vid_iri, RDF.type, PH.GeoreferencedImage))
     if meta["date_xsd"]:
         g.add((vid_iri, DCT.date, Literal(meta["date_xsd"], datatype=XSD.dateTime)))
     geo = URIRef(f"{vid_iri}_geo")

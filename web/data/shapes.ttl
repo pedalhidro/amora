@@ -20,19 +20,19 @@ ph:VisualMediaShape a sh:NodeShape ;
     sh:targetClass ph:Image ;
     sh:property [
         sh:path dcterms:date ;
-        sh:severity sh:Violation ;
+        sh:severity sh:Warning ;
         sh:minCount 1 ;
         sh:maxCount 1 ;
         sh:datatype xsd:dateTime ;
-        sh:message "Mídia precisa de um único timestamp (dcterms:date)."@pt ;
+        sh:message "Ideal: mídia com um único timestamp (dcterms:date). Sem ele, a mídia não participa de filtros/navegação temporais."@pt ;
     ] ;
     sh:property [
         sh:path schema:locationCreated ;
-        sh:severity sh:Violation ;
+        sh:severity sh:Warning ;
         sh:minCount 1 ;
         sh:maxCount 1 ;
         sh:class schema:GeoCoordinates ;
-        sh:message "Mídia precisa de uma única coordenada GPS (schema:locationCreated → schema:GeoCoordinates)."@pt ;
+        sh:message "Ideal: mídia com uma única coordenada GPS (schema:locationCreated → schema:GeoCoordinates). Sem ela, a mídia não vira marcador no mapa (ver ph:GeoreferencedImage)."@pt ;
     ] ;
     sh:property [
         sh:path ph:capturedDuring ;
@@ -168,6 +168,22 @@ ph:MotionImageShape a sh:NodeShape ;
         sh:maxCount 1 ;
         sh:datatype xsd:string ;
         sh:message "Ideal: declarar schema:thumbnail (caminho relativo a web/clips/) pra marker do mapa."@pt ;
+    ] .
+
+# Mídia georreferenciada (ph:GeoreferencedImage) — o SUBCONJUNTO das mídias que
+# vira marcador de foto/vídeo no mapa. Pra essas, a coordenada deixa de ser
+# ideal e vira obrigatória (a base ph:Image só emite Warning). Os emitters
+# (upload_images.html, build-clips.py) acrescentam este tipo quando a mídia tem
+# GPS; o lat/long em si é validado por ph:GeoCoordinatesShape abaixo.
+ph:GeoreferencedImageShape a sh:NodeShape ;
+    sh:targetClass ph:GeoreferencedImage ;
+    sh:property [
+        sh:path schema:locationCreated ;
+        sh:severity sh:Violation ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:class schema:GeoCoordinates ;
+        sh:message "Mídia georreferenciada exige exatamente uma coordenada GPS (schema:locationCreated → schema:GeoCoordinates)."@pt ;
     ] .
 
 ph:TourShape a sh:NodeShape ;

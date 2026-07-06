@@ -40,6 +40,12 @@ ph:MotionImage a owl:Class ;
         "Captura A/V curta (imagem em movimento) gravada durante um passeio. Subclasse concreta de ph:Image; NÃO requer direção nem focal (não fazem sentido pra vídeo) e acrescenta schema:duration, ph:availableResolution, ph:audio e as variantes de resolução. Quando ph:availableResolution só contém 'audio', é uma captura puramente sonora. IRIs no prefixo phd:video_."@pt ;
     rdfs:subClassOf ph:Image, schema:VideoObject .
 
+ph:GeoreferencedImage a owl:Class ;
+    rdfs:label "Mídia georreferenciada"@pt ;
+    rdfs:comment
+        "Mixin: mídia visual (foto OU vídeo) com coordenada GPS — o subconjunto que o mapa renderiza como marcador de foto/vídeo. Usada JUNTO com a subclasse concreta (ex.: `a ph:StillImage, ph:GeoreferencedImage`). Na base ph:Image a coordenada é apenas ideal (sh:Warning); aqui ela vira obrigatória (ph:GeoreferencedImageShape). Os emitters (upload_images.html, build-clips.py) acrescentam este tipo quando a mídia tem GPS."@pt ;
+    rdfs:subClassOf ph:Image .
+
 ph:availableResolution a owl:DatatypeProperty ;
     rdfs:label "resolução disponível"@pt ;
     rdfs:comment

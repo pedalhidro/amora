@@ -1,4 +1,5 @@
 @prefix pes: <https://id.pedalhidrografi.co/pessoas/> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix schema: <https://schema.org/> .
 
 pes:15adbkwm a schema:Person ;
@@ -6,8 +7,10 @@ pes:15adbkwm a schema:Person ;
     schema:mainEntityOfPage <https://amora.pedalhidrografi.co/pessoas/15adbkwm> .
 
 pes:1fhkjnba a schema:Person ;
+    rdfs:seeAlso <https://www.instagram.com/dandanlessa> ;
     schema:alternateName "dandan" ;
-    schema:mainEntityOfPage <https://amora.pedalhidrografi.co/pessoas/1fhkjnba> .
+    schema:mainEntityOfPage <https://amora.pedalhidrografi.co/pessoas/1fhkjnba> ;
+    schema:name "Danilo Lessa Bernardineli" .
 
 pes:27er2byz a schema:Person ;
     schema:alternateName "delaram" ;

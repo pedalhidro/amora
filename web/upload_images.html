@@ -1124,7 +1124,6 @@ async function startEditMode(iri) {
 async function saveMediaEdit(f, card, authorTs, providerTs, listTs, orig) {
   const val = (sel) => $(`[data-e="${sel}"]`, card).value.trim();
   const dateXsd = localToXsdDateTime(val('date'), f.offset);
-  if (!dateXsd) throw new Error('data/hora inválida');
   const lat = num(val('lat')), lon = num(val('lon'));
   const tour = val('tour'), license = val('license');
   const authors = authorTs.getValue(), providers = providerTs.getValue(), lists = listTs.getValue();
@@ -1134,16 +1133,29 @@ async function saveMediaEdit(f, card, authorTs, providerTs, listTs, orig) {
   const anon = isImg && $('[data-e="anon"]', card).checked;
   const comp = isImg && $('[data-e="comp"]', card).checked;
 
+  // Data e GPS opcionais (SHACL só avisa) — mas metade de um GPS é erro.
+  if ((lat === '') !== (lon === '')) throw new Error('GPS incompleto: preencha lat E lon (ou nenhum)');
+  const hasGeo = lat !== '' && lon !== '';
+
   const iriCurie = shortIRI(f.iri);
-  const P = [`dcterms:date "${dateXsd}"^^xsd:dateTime`, `dcterms:license <${license}>`];
+  // rdf:type SEMPRE afirmado no patch: synthesize_media_patch substitui todo
+  // predicado afirmado, então o conjunto de tipos final é exatamente este —
+  // ph:GeoreferencedImage entra/sai conforme o GPS (mídia com GPS = marcador).
+  const baseType = isImg ? 'ph:StillImage' : 'ph:MotionImage';
+  const P = [`a ${baseType}${hasGeo ? ', ph:GeoreferencedImage' : ''}`,
+             `dcterms:license <${license}>`];
   const remove = [];
-  // GPS — só mexe se mudou (evita orfanar o bnode de geo antigo).
+  if (dateXsd) P.push(`dcterms:date "${dateXsd}"^^xsd:dateTime`); else remove.push('dcterms:date');
+  // GPS — só mexe se mudou (evita orfanar o nó de geo antigo).
   const gpsChanged = String(lat) !== String(orig.lat) || String(lon) !== String(orig.lon);
   let geoNode = '';
   if (gpsChanged) {
-    if (lat === '' || lon === '') throw new Error('GPS (lat/lon) obrigatório');
-    P.push(`schema:locationCreated ${iriCurie}_geo`);
-    geoNode = `\n${iriCurie}_geo a schema:GeoCoordinates ;\n    schema:latitude "${lat}"^^xsd:decimal ;\n    schema:longitude "${lon}"^^xsd:decimal .`;
+    if (hasGeo) {
+      P.push(`schema:locationCreated ${iriCurie}_geo`);
+      geoNode = `\n${iriCurie}_geo a schema:GeoCoordinates ;\n    schema:latitude "${lat}"^^xsd:decimal ;\n    schema:longitude "${lon}"^^xsd:decimal .`;
+    } else {
+      remove.push('schema:locationCreated');   // limpou o GPS → some a coordenada (e o tipo georref acima)
+    }
   }
   if (isImg) {
     if (bearing !== '') P.push(`exif:gpsImgDirection "${bearing}"^^xsd:decimal`); else remove.push('exif:gpsImgDirection');
@@ -1305,10 +1317,13 @@ function buildCardElem(displayIdx, file, thumbBlob) {
 
     <div class="card-section">
       <h4>Quando / Onde</h4>
-      <label class="fi"><span class="required">Data/hora</span><input type="datetime-local" data-field="date" step="1" required></label>
+      <!-- Opcionais desde a v(georef): mídia sem GPS/data é aceita (SHACL só
+           avisa), mas NÃO vira marcador no mapa (ph:GeoreferencedImage exige
+           coordenada). -->
+      <label class="fi"><span>Data/hora</span><input type="datetime-local" data-field="date" step="1"></label>
       <div class="fi-row">
-        <label class="fi"><span class="required">Lat</span><input type="number" data-field="lat" step="any" min="-90" max="90" required></label>
-        <label class="fi"><span class="required">Lon</span><input type="number" data-field="lon" step="any" min="-180" max="180" required></label>
+        <label class="fi"><span>Lat</span><input type="number" data-field="lat" step="any" min="-90" max="90"></label>
+        <label class="fi"><span>Lon</span><input type="number" data-field="lon" step="any" min="-180" max="180"></label>
         <button type="button" class="pick-on-map" title="Escolher no mapa" aria-label="Escolher no mapa">🗺</button>
       </div>
     </div>
@@ -1421,10 +1436,13 @@ function buildVideoCardElem(displayIdx, file) {
 
     <div class="card-section">
       <h4>Quando / Onde</h4>
-      <label class="fi"><span class="required">Data/hora</span><input type="datetime-local" data-field="date" step="1" required></label>
+      <!-- Opcionais desde a v(georef): mídia sem GPS/data é aceita (SHACL só
+           avisa), mas NÃO vira marcador no mapa (ph:GeoreferencedImage exige
+           coordenada). -->
+      <label class="fi"><span>Data/hora</span><input type="datetime-local" data-field="date" step="1"></label>
       <div class="fi-row">
-        <label class="fi"><span class="required">Lat</span><input type="number" data-field="lat" step="any" min="-90" max="90" required></label>
-        <label class="fi"><span class="required">Lon</span><input type="number" data-field="lon" step="any" min="-180" max="180" required></label>
+        <label class="fi"><span>Lat</span><input type="number" data-field="lat" step="any" min="-90" max="90"></label>
+        <label class="fi"><span>Lon</span><input type="number" data-field="lon" step="any" min="-180" max="180"></label>
         <button type="button" class="pick-on-map" title="Escolher no mapa" aria-label="Escolher no mapa">🗺</button>
       </div>
     </div>
@@ -2472,12 +2490,10 @@ function buildImageBlock(card) {
   const lon     = num($('[data-field="lon"]',     elem).value);
   const bearing = num($('[data-field="bearing"]', elem).value);
   const focal   = num($('[data-field="focal"]',   elem).value);
-  // Defesa em profundidade: o form já marca data/lat/lon `required` (bloqueado
-  // por reportValidity() antes daqui), mas sem isso um valor vazio/inválido
-  // viraria um literal Turtle malformado ("null"^^xsd:dateTime, ""^^xsd:decimal)
-  // que só o SHACL do backend rejeitaria, com um erro genérico e confuso.
-  if (!dateXsd) throw new Error('data/hora inválida ou ausente');
-  if (lat === '' || lon === '') throw new Error('GPS (latitude/longitude) obrigatório');
+  // Data e GPS são OPCIONAIS: sem eles a mídia é aceita (SHACL só avisa), mas
+  // não vira marcador no mapa. COM GPS, a mídia ganha o tipo extra
+  // ph:GeoreferencedImage (aí a coordenada é obrigatória por SHACL).
+  const hasGeo = lat !== '' && lon !== '';
   const tour    = $('[data-field="tour"]',    elem).value.trim();
   const license = $('[data-field="license"]', elem).value;
   const anon    = $('[data-field="anon"]',    elem).checked;
@@ -2491,12 +2507,12 @@ function buildImageBlock(card) {
   // bnodes: assim o backend apaga/substitui por prefixo de IRI, sem precisar
   // percorrer bnodes alcançáveis.
   const props = [
-    `a ph:StillImage`,
+    `a ph:StillImage${hasGeo ? ', ph:GeoreferencedImage' : ''}`,
     `nfo:hasHash ${id}_hash`,
-    `dcterms:date "${dateXsd}"^^xsd:dateTime`,
     `dcterms:license <${license}>`,
-    `schema:locationCreated ${id}_geo`,
   ];
+  if (dateXsd) props.push(`dcterms:date "${dateXsd}"^^xsd:dateTime`);
+  if (hasGeo)  props.push(`schema:locationCreated ${id}_geo`);
   if (bearing !== '') props.push(`exif:gpsImgDirection "${bearing}"^^xsd:decimal`);
   if (focal   !== '') props.push(`exif:focalLengthIn35mmFilm "${focal}"^^xsd:decimal`);
   if (tour)           props.push(`ph:capturedDuring ${tour}`);
@@ -2512,13 +2528,16 @@ function buildImageBlock(card) {
   const { ext: origExt, mime: origMime } = originalFormat(card);
   if (origExt !== 'jpg') props.push(`schema:encodingFormat "${origMime}"`);
   const body = props.map(p => `    ${p}`).join(' ;\n');
-  const derived =
+  let derived =
     `${id}_hash a nfo:FileHash ;\n` +
     `    nfo:hashAlgorithm "pHash" ;\n` +
-    `    nfo:hashValue "${card.phash}" .\n\n` +
-    `${id}_geo a schema:GeoCoordinates ;\n` +
-    `    schema:latitude "${lat}"^^xsd:decimal ;\n` +
-    `    schema:longitude "${lon}"^^xsd:decimal .`;
+    `    nfo:hashValue "${card.phash}" .`;
+  if (hasGeo) {
+    derived +=
+      `\n\n${id}_geo a schema:GeoCoordinates ;\n` +
+      `    schema:latitude "${lat}"^^xsd:decimal ;\n` +
+      `    schema:longitude "${lon}"^^xsd:decimal .`;
+  }
   return { id, ttl: `${id}\n${body} .\n\n${derived}` };
 }
 
@@ -2569,9 +2588,9 @@ function buildClipBlock(card) {
   // Vírgula → ponto antes de emitir xsd:decimal — ver buildImageBlock.
   const lat   = num($('[data-field="lat"]', elem).value);
   const lon   = num($('[data-field="lon"]', elem).value);
-  // Defesa em profundidade — ver buildImageBlock.
-  if (!dateXsd) throw new Error('data/hora inválida ou ausente');
-  if (lat === '' || lon === '') throw new Error('GPS (latitude/longitude) obrigatório');
+  // Data/GPS opcionais — ver buildImageBlock (sem GPS, o clipe não vira
+  // marcador/ghost-video no mapa, mas entra no catálogo e na galeria).
+  const hasGeo = lat !== '' && lon !== '';
   const tour    = $('[data-field="tour"]',    elem).value.trim();
   const license = $('[data-field="license"]', elem).value;
   const audioOnly = $('[data-field="audio-only"]', elem).checked;
@@ -2591,14 +2610,14 @@ function buildClipBlock(card) {
   // GeoCoordinates como IRI derivada (`<iri>_geo`) em vez de bnode — ver
   // buildImageBlock.
   const props = [
-    `a ph:MotionImage`,
-    `dcterms:date "${dateXsd}"^^xsd:dateTime`,
+    `a ph:MotionImage${hasGeo ? ', ph:GeoreferencedImage' : ''}`,
     `dcterms:license <${license}>`,
-    `schema:locationCreated ${iri}_geo`,
     `schema:duration "${isoDur}"^^xsd:duration`,
     `ph:audio "${audioFile}"`,
     `schema:thumbnail "${thumbFile}"`,
   ];
+  if (dateXsd) props.push(`dcterms:date "${dateXsd}"^^xsd:dateTime`);
+  if (hasGeo)  props.push(`schema:locationCreated ${iri}_geo`);
   const resolutions = ['"audio"'];
   if (!audioOnly) {
     props.push(`ph:video360p "${id}.360p.webm"`);
@@ -2611,11 +2630,12 @@ function buildClipBlock(card) {
   for (const p of providers) props.push(`pav:providedBy ${p}`);
   for (const l of lists)     props.push(`schema:isPartOf ${l}`);
   const body = props.map(p => `    ${p}`).join(' ;\n');
-  const derived =
-    `${iri}_geo a schema:GeoCoordinates ;\n` +
-    `    schema:latitude "${lat}"^^xsd:decimal ;\n` +
-    `    schema:longitude "${lon}"^^xsd:decimal .`;
-  return { iri, ttl: `${iri}\n${body} .\n\n${derived}` };
+  const derived = hasGeo
+    ? `\n\n${iri}_geo a schema:GeoCoordinates ;\n` +
+      `    schema:latitude "${lat}"^^xsd:decimal ;\n` +
+      `    schema:longitude "${lon}"^^xsd:decimal .`
+    : '';
+  return { iri, ttl: `${iri}\n${body} .${derived}` };
 }
 
 // TTL auto-suficiente para 1 clipe: prefixos + pessoas novas + bloco.
