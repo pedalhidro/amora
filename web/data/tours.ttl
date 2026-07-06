@@ -2044,6 +2044,22 @@ phd:tour_ph97 a ph:Tour ;
     ph:linkRoute phd:tour_ph97_route ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/ph97/announcement.jpg> .
 
+phd:tour_ph98 a ph:Tour ;
+    dcterms:date "2026-07-04T12:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """O município de São Paulo tem no mínimo 800 cursos d’água. Fazendo uma média, isso significa que, a cada mais ou menos 400 metros de qualquer ponto da cidade, há uma água natural correndo. Mas por que não conseguimos ver esse tanto de rio? Para refletir sobre isso e pensar a cidade que queremos hoje, é fundamental olhar para o passado: como nos relacionamos com os cursos hídricos de São Paulo ao longo do tempo?\r
+\r
+Nessa parceria entre Pedal Hidrográfico e Núcleo Educativo do AHM, te convidamos a conhecer de perto documentos históricos originais que dialogam com a hidrografia paulistana. Veremos, por exemplo, o projeto arquitetônico de sonhados “balneários de banho e natação” ao longo do rio Tietê e a representação cartográfica do rio Tamanduateí em seu curso original, repleto de lindos volteios naturais antes de ser forçosamente transformado em reta artificial e ter sua foz transferida de localidade, na década de 1840, culminando em mudanças determinantes na paisagem e na conexão das pessoas com estas águas.\r
+\r
+Em homenagem ao Tamanduateí, após a visita no AHM, faremos um Pedal Hidrográfico percorrendo o seu curso original. Sairemos da porta do AHM e seguiremos até a foz atual no Tietê. Dali, avançaremos em direção à sua antiga foz, ao lado do estádio do Canindé. Subiremos os antigos meandros, passando pela sua importante confluência com o Anhangabaú, seguindo pela Várzea do Carmo, Porto Geral, Ponto das Lavadeiras — sob a antiga Ponte do Carmo — e pela Ponte do Tabatinguera, provavelmente a mais antiga da cidade, sendo trecho do milenar Caminho do Peabiru. Seguimos então para a confluência com o Córrego do Lavapés, passando pelo Sobrado das Cinco Esquinas, construção histórica no Glicério, onde nos despedimos."""@pt ;
+    dcterms:title "Pedalar o Rio Tamanduateí do século XIX" ;
+    ph:countAttendee 52 ;
+    ph:countNewcomer 28 ;
+    ph:energyEstimate 143.0 ;
+    ph:inSeriesEdition phd:assoc_PH_98 ;
+    ph:linkInstagram "https://www.instagram.com/p/DaTMdj_Jjkg/"^^xsd:anyURI ;
+    ph:linkRoute phd:tour_ph98_route ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/ph98/announcement.jpg> .
+
 phd:SESC a schema:EventSeries ;
     dcterms:title "SESC" .
 
@@ -2466,6 +2482,10 @@ phd:assoc_PH_96 a ph:Association ;
 phd:assoc_PH_97 a ph:Association ;
     ph:inEventSeries phd:PH ;
     ph:sequenceInSeries 97 .
+
+phd:assoc_PH_98 a ph:Association ;
+    ph:inEventSeries phd:PH ;
+    ph:sequenceInSeries 98 .
 
 phd:assoc_SESC_1 a ph:Association ;
     ph:inEventSeries phd:SESC ;
@@ -2902,6 +2922,10 @@ phd:tour_ph96_route a ph:RouteReference ;
 phd:tour_ph97_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/55785987> .
+
+phd:tour_ph98_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/55771830> .
 
 phd:assoc_BP_4 a ph:Association ;
     ph:inEventSeries phd:BP ;
