@@ -464,10 +464,22 @@ body.modal-open { overflow: hidden; }
 }
 
 /* Galeria maximizada: o contêiner vira "janela cheia" preenchendo a tela. A
-   faixa de 26px (bolinhas + título) fica; o iframe cresce pra cobrir o resto. */
+   faixa de 26px (bolinhas + título) fica; o iframe cresce pra cobrir o resto.
+   Respeita a safe-area do iOS (relógio/notch em cima, indicador embaixo) —
+   senão as bolinhas e o título ficam ATRÁS do relógio no modo tela cheia
+   (não dava pra fechar/minimizar no iPhone com notch). */
 .upload-modal-content.maximized {
   width: 100vw; height: 100vh; max-height: none;
   border-radius: 0; border: 0;
+  padding-top: calc(26px + env(safe-area-inset-top, 0px));
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.upload-modal-content.maximized > .close-dot,
+.upload-modal-content.maximized > .maximize-dot {
+  top: calc(8px + env(safe-area-inset-top, 0px));
+}
+.upload-modal-content.maximized > header {
+  top: env(safe-area-inset-top, 0px);
 }
 /* Galeria e censo: o título precisa livrar as DUAS bolinhas (fechar + maximizar). */
 #imagens-modal .modal-content header,
