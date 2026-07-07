@@ -11,6 +11,3 @@ rdflib>=7.1,<8
 python-dotenv>=1,<2
 # Cloud Run / GCS path. Inerte se STORAGE_BACKEND=local (import lazy).
 google-cloud-storage>=2.18,<4
-# Renderizador do navegador e-ink (GET /eink/map.png — backend/eink.py).
-# Import lazy: sem o pacote, só esse endpoint responde 501.
-pillow>=10.1,<12

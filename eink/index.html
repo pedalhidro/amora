@@ -19,7 +19,7 @@
   select, input[type=text], input[type=number] { padding:6px 8px; border:1px solid #bbb; border-radius:6px; font:inherit; background:#fff; }
   .row { display:flex; gap:8px; } .row > label { flex:1; }
   .chk { flex-direction:row; align-items:center; gap:6px; font-weight:600; }
-  /* Moldura "dispositivo": bezel + sombra + parafusos fingidos. */
+  /* Moldura "dispositivo": bezel + sombra. */
   .device { background:var(--frame); border-radius:14px; padding:22px; box-shadow:0 6px 24px rgba(0,0,0,.25); position:relative; }
   .device img { display:block; background:#fff; image-rendering:pixelated; max-width:min(92vw, 820px); height:auto; transition:filter .12s; }
   .device.flash img { filter:invert(1); }   /* o "flash" de refresh do e-ink */
@@ -42,10 +42,10 @@
 <body>
 <header>
   <h1>Navegador e-ink 🚲</h1>
-  <p>Simulador do quadro que o backend renderiza em <code>/eink/map.png</code> pra
+  <p>Simulador do quadro que este servidor renderiza em <code>/map.png</code> pra
      displays e-ink de guidão (DIY). Ajuste, copie a URL e use no seu dispositivo —
      ou aponte o navegador de um Kindle velho pra esta página com <code>?kiosk=1</code>.
-     Guia completo de hardware e API: <a href="https://github.com/pedalhidro/amora/blob/main/docs/EINK_NAVIGATOR.md">docs/EINK_NAVIGATOR.md</a>.</p>
+     Guia completo de hardware e API: <a href="https://github.com/pedalhidro/amora/blob/eink-navigator/eink/README.md">eink/README.md</a>.</p>
 </header>
 <main>
   <form id="f" onsubmit="return false">
@@ -141,7 +141,7 @@ function syncMode() {
 $('#mode').addEventListener('change', () => { syncMode(); refresh(); });
 syncMode();
 
-// Rotas disponíveis (routes.json — mesmo arquivo que o mapa principal usa).
+// Rotas disponíveis (proxy do routes.json do amora — ver server.py).
 try {
   const data = await (await fetch('./routes.json')).json();
   const sel = $('#route');
@@ -165,7 +165,7 @@ function buildUrl() {
   else { p.set('lat', $('#lat').value); p.set('lng', $('#lng').value); p.set('z', $('#z').value); }
   if ($('#base').value !== 'osm') p.set('base', $('#base').value);
   if ($('#invert').checked) p.set('invert', '1');
-  return `./eink/map.png?${p}`;
+  return `./map.png?${p}`;
 }
 
 let timer = null;

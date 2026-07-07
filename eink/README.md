@@ -4,8 +4,25 @@ Um display e-ink no guidão mostrando o mapa do amora: rotas do coletivo,
 hidrografia, e as pessoas compartilhando **Localização ao vivo** — legível sob
 sol a pino, consumindo quase nada de bateria.
 
+**Projeto paralelo, deliberadamente FORA do amora**: este diretório é um
+servidorzinho standalone que fala com o amora só pelos endpoints públicos
+(`routes.json` + `GET /live-locations`), como qualquer outro cliente. Nada
+aqui toca o backend nem os catálogos. Roda num laptop, num Raspberry Pi, ou
+num Cloud Run próprio se um dia ficar sério.
+
 Este guia assume **zero experiência com eletrônica**. Spoiler: o caminho mais
 fácil não solda nem um fio.
+
+## Rodando o servidor
+
+```sh
+pip install -r eink/requirements.txt
+python eink/server.py                                # http://127.0.0.1:8300
+AMORA_URL=http://127.0.0.1:8000 python eink/server.py  # contra um amora local
+```
+
+Abra `http://127.0.0.1:8300/` — é o **simulador**: brinque com os modos,
+tamanhos de painel e copie a URL pronta pro seu dispositivo.
 
 ## A grande ideia (leia isto primeiro)
 
@@ -14,27 +31,27 @@ navegador de verdade) mas **ótimas em desenhar uma imagem pronta**. Então
 invertemos o problema:
 
 ```
-telefone da ciclista                 servidor amora                dispositivo e-ink
-┌──────────────────┐   Localização  ┌──────────────┐   GET /eink/  ┌─────────────┐
-│ amora (PWA/app)  │ ──── ao vivo ─▶│  renderiza o │ ◀─ map.png ── │ blita e     │
-│ = o GPS da bike  │                │  quadro 1-bit│ ── PNG/raw ──▶│ dorme 30 s  │
-└──────────────────┘                └──────────────┘               └─────────────┘
-         ▲                                                                ▲
-         └────────────── hotspot Wi-Fi do próprio telefone ───────────────┘
+telefone da ciclista              este servidor (eink/)           dispositivo e-ink
+┌──────────────────┐  Localização ┌──────────────────┐  GET /map  ┌─────────────┐
+│ amora (PWA/app)  │ ── ao vivo ─▶│ lê o amora público│◀─ .png ── │ blita e     │
+│ = o GPS da bike  │   (no amora) │ e renderiza 1-bit │── PNG/raw ▶│ dorme 30 s  │
+└──────────────────┘              └──────────────────┘            └─────────────┘
+         ▲                                                               ▲
+         └────────────── hotspot Wi-Fi do próprio telefone ──────────────┘
 ```
 
 - **O telefone é o GPS.** A ciclista liga o *Localização ao vivo* no amora
   (funciona com a tela apagada no app nativo). O dispositivo no guidão não
   precisa de chip GPS: ele pede o mapa com `?follow=<apelido>`.
-- **O servidor renderiza tudo** (`GET /eink/map.png`): tiles OSM ditherizados
-  pra 1-bit, rotas do acervo, POIs, quem está ao vivo, rastro, seta de rumo,
+- **O servidor renderiza tudo** (`GET /map.png`): tiles OSM ditherizados pra
+  1-bit, rotas do acervo, POIs, quem está ao vivo, rastro, seta de rumo,
   hora, escala. O dispositivo só faz um GET e desenha.
 - **O dispositivo é burro de propósito**: acorda, GET, blita, dorme. Cabe em
   40 linhas de código.
 
 ## A API (o que o dispositivo pede)
 
-`GET https://amora.pedalhidrografi.co/eink/map.png` com:
+`GET http://<servidor>:8300/map.png` com:
 
 | Parâmetro | O quê |
 |---|---|
@@ -51,9 +68,6 @@ Modos combinam: `?route=X&follow=Y` = traçado da rota X, centrado na pessoa Y.
 bit 1 = branco (o layout dos buffers Waveshare/GxEPD2). Dimensões nos headers
 HTTP `X-EPD-Width`/`X-EPD-Height`. Um quadro 400×300 = 15 000 bytes.
 
-**Simulador no navegador:** `https://amora.pedalhidrografi.co/eink.html` —
-brinque com os modos, copie a URL pronta.
-
 ## Hardware — do mais fácil pro mais capaz
 
 ### Nível 0 — "já tenho em casa": um Kindle velho (R$ 0)
@@ -62,9 +76,10 @@ Sério. Qualquer Kindle com o navegador experimental (ou tablet e-ink com
 browser) já é o dispositivo:
 
 1. Telefone: liga o hotspot + o *Localização ao vivo* no amora.
-2. Kindle: conecta no hotspot, abre o navegador em
-   `https://amora.pedalhidrografi.co/eink.html?kiosk=1&follow=SEUAPELIDO&w=600&h=800&interval=30`
-3. Pronto — a página vira só o quadro, atualizando a cada 30 s.
+2. Um laptop/Pi no mesmo hotspot rodando `python eink/server.py`.
+3. Kindle: conecta no hotspot, abre o navegador em
+   `http://<ip-do-laptop>:8300/?kiosk=1&follow=SEUAPELIDO&w=600&h=800&interval=30`
+4. Pronto — a página vira só o quadro, atualizando a cada 30 s.
 
 Prende no guidão com suporte de celular + saquinho ziploc se chover. Zero
 eletrônica, zero código. É o jeito certo de **testar se a ideia agrada** antes
@@ -84,11 +99,10 @@ vivo.** Mas faz uma coisa ótima:
 
 **Cartão de rota de energia zero.** Antes do pedal (ou em cada parada):
 
-1. No telefone, abra
-   `https://amora.pedalhidrografi.co/eink/map.png?route=<slug>&w=264&h=176`
+1. No telefone, abra `http://<servidor>:8300/map.png?route=<slug>&w=264&h=176`
    (o tamanho exato do painel) e salve a imagem na galeria.
 2. App da Waveshare → escolher imagem → encostar o telefone no painel.
-3. O traçado do dia fica no guidão, imune a chuva de bateria, o pedal inteiro.
+3. O traçado do dia fica no guidão, imune a chuva e bateria, o pedal inteiro.
 
 É genuinamente útil (overview + POIs sempre à vista) e usa o mesmo endpoint.
 Só não espere a bolinha andando no mapa.
@@ -123,18 +137,19 @@ endpoint** — nenhum parâmetro de tamanho necessário. Biblioteca GxEPD2.
 ## O sketch (ESP32 + GxEPD2, nível 3)
 
 Instale a IDE do Arduino + suporte a ESP32 + biblioteca GxEPD2. Ajuste
-`WIFI_*`, `FOLLOW` e a linha do display pro seu painel:
+`WIFI_*`, `SERVER`, `FOLLOW` e a linha do display pro seu painel:
 
 ```cpp
 // Navegador e-ink amora — ESP32 + Waveshare 4.2" (400x300) via GxEPD2.
-// Acorda, baixa o framebuffer cru do amora, blita, dorme 30 s. Só isso.
+// Acorda, baixa o framebuffer cru do servidor eink/, blita, dorme 30 s.
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <GxEPD2_BW.h>
 
 #define WIFI_SSID  "hotspot-do-telefone"
 #define WIFI_PASS  "senha"
-#define FOLLOW     "dandan"          // seu apelido no Localização ao vivo
+#define SERVER     "http://192.168.43.10:8300"   // laptop/Pi rodando eink/server.py
+#define FOLLOW     "dandan"                      // seu apelido no Localização ao vivo
 #define REFRESH_S  30
 
 // Waveshare 4.2" no pinout padrão do exemplo GxEPD2 p/ ESP32:
@@ -151,8 +166,7 @@ void setup() {
 void loop() {
   if (WiFi.status() == WL_CONNECTED) {
     HTTPClient http;
-    http.begin("https://amora.pedalhidrografi.co/eink/map.png"
-               "?follow=" FOLLOW "&w=400&h=300&fmt=raw");
+    http.begin(SERVER "/map.png?follow=" FOLLOW "&w=400&h=300&fmt=raw");
     if (http.GET() == 200 &&
         http.getStream().readBytes(fb, sizeof fb) == sizeof fb) {
       display.setFullWindow();
@@ -180,6 +194,9 @@ Notas:
 - **Hotspot**: deixe o hotspot do telefone ligado com nome/senha fixos; o
   ESP32 reconecta sozinho. (iPhone: manter a tela do hotspot aberta na
   primeira conexão.)
+- **Servidor no pedal**: pro dispositivo alcançar o servidor, ou (a) o
+  servidor roda num Pi Zero no bolso/mochila no mesmo hotspot, ou (b) um dia
+  hospeda-se o eink/ num Cloud Run próprio e o dispositivo fala HTTPS direto.
 - **Suporte**: braçadeira de guidão pra GoPro + case impresso, ou a boa e
   velha braçadeira de velcro. E-ink não esquenta e o vidro é fino — proteja
   de pancada.

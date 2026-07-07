@@ -8,11 +8,11 @@ ela liga o "Localização ao vivo" no amora (funciona com a tela apagada via
 shell nativo) e o dispositivo pede o mapa com `?follow=<apelido>` — zero
 hardware de GPS no guidão.
 
-Este módulo é PURO desenho: main.py coleta rotas (routes.json) + posições ao
+Este módulo é PURO desenho: server.py coleta rotas (routes.json) + posições ao
 vivo e chama render_map(). Nada aqui toca catálogo/estado — só uma cache
 in-process de tiles (read-only, com lock próprio).
 
-Ver docs/EINK_NAVIGATOR.md pro guia completo (hardware, API, sketch ESP32).
+Ver eink/README.md pro guia completo (hardware, API, sketch ESP32).
 """
 
 from __future__ import annotations
