@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Navegador e-ink · Pedal Hidrográfico</title>
+<meta name="robots" content="noindex">
+<style>
+  :root { --bg:#f2efe9; --ink:#222; --frame:#3a3a3a; --accent:#0a7ea4; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:14px/1.5 system-ui, sans-serif; background:var(--bg); color:var(--ink); }
+  header { padding:14px 18px 4px; }
+  header h1 { margin:0; font-size:19px; }
+  header p { margin:4px 0 0; color:#666; max-width:60em; }
+  header a { color:var(--accent); }
+  main { display:flex; flex-wrap:wrap; gap:20px; padding:14px 18px 40px; align-items:flex-start; }
+  form { display:flex; flex-direction:column; gap:10px; min-width:260px; max-width:340px; }
+  label { display:flex; flex-direction:column; gap:3px; font-weight:600; font-size:12.5px; }
+  select, input[type=text], input[type=number] { padding:6px 8px; border:1px solid #bbb; border-radius:6px; font:inherit; background:#fff; }
+  .row { display:flex; gap:8px; } .row > label { flex:1; }
+  .chk { flex-direction:row; align-items:center; gap:6px; font-weight:600; }
+  /* Moldura "dispositivo": bezel + sombra + parafusos fingidos. */
+  .device { background:var(--frame); border-radius:14px; padding:22px; box-shadow:0 6px 24px rgba(0,0,0,.25); position:relative; }
+  .device img { display:block; background:#fff; image-rendering:pixelated; max-width:min(92vw, 820px); height:auto; transition:filter .12s; }
+  .device.flash img { filter:invert(1); }   /* o "flash" de refresh do e-ink */
+  .device .brand { position:absolute; bottom:5px; left:0; right:0; text-align:center; color:#999; font-size:10px; letter-spacing:.2em; }
+  .urlbox { margin-top:10px; max-width:820px; }
+  .urlbox code { display:block; background:#fff; border:1px solid #ccc; border-radius:6px; padding:8px 10px; font-size:11.5px; word-break:break-all; user-select:all; }
+  .meta { color:#666; font-size:12px; margin-top:6px; }
+  button { padding:7px 14px; border:1px solid #999; border-radius:6px; background:#fff; font:inherit; cursor:pointer; }
+  button:hover { border-color: var(--accent); color: var(--accent); }
+  /* Modo quiosque (?kiosk=1): SÓ a imagem, tela cheia — pro navegador de um
+     Kindle/tablet e-ink virar o dispositivo. Fundo branco, zero cromo. */
+  body.kiosk { background:#fff; }
+  body.kiosk header, body.kiosk form, body.kiosk .urlbox { display:none; }
+  body.kiosk main { padding:0; }
+  body.kiosk .device { background:#fff; padding:0; border-radius:0; box-shadow:none; }
+  body.kiosk .device .brand { display:none; }
+  body.kiosk .device img { max-width:100vw; max-height:100vh; margin:auto; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Navegador e-ink 🚲</h1>
+  <p>Simulador do quadro que o backend renderiza em <code>/eink/map.png</code> pra
+     displays e-ink de guidão (DIY). Ajuste, copie a URL e use no seu dispositivo —
+     ou aponte o navegador de um Kindle velho pra esta página com <code>?kiosk=1</code>.
+     Guia completo de hardware e API: <a href="https://github.com/pedalhidro/amora/blob/main/docs/EINK_NAVIGATOR.md">docs/EINK_NAVIGATOR.md</a>.</p>
+</header>
+<main>
+  <form id="f" onsubmit="return false">
+    <label>Modo
+      <select id="mode">
+        <option value="route">Visão geral de uma rota</option>
+        <option value="follow">Seguir pessoa ao vivo</option>
+        <option value="coords">Coordenadas fixas</option>
+      </select>
+    </label>
+    <label id="l-route">Rota
+      <select id="route"></select>
+    </label>
+    <label id="l-follow" hidden>Apelido (Localização ao vivo)
+      <input type="text" id="follow" placeholder="ex.: dandan">
+    </label>
+    <div class="row" id="l-coords" hidden>
+      <label>Lat <input type="number" id="lat" step="0.0001" value="-23.5480"></label>
+      <label>Lng <input type="number" id="lng" step="0.0001" value="-46.6360"></label>
+      <label>Zoom <input type="number" id="z" min="3" max="19" value="15"></label>
+    </div>
+    <label>Painel (tamanho)
+      <select id="size">
+        <option value="400x300">4.2&quot; — 400×300 (Waveshare SPI)</option>
+        <option value="264x176">2.7&quot; NFC — 264×176 (cartão de rota)</option>
+        <option value="800x480">7.5&quot; — 800×480</option>
+        <option value="960x540">4.7&quot; — 960×540 (LilyGO T5)</option>
+        <option value="600x800">Kindle (browser) — 600×800</option>
+        <option value="250x122">2.13&quot; — 250×122 (crachá)</option>
+      </select>
+    </label>
+    <label>Base
+      <select id="base">
+        <option value="osm">Ruas (OpenStreetMap)</option>
+        <option value="hydro">Hidrografia (telhas)</option>
+        <option value="none">Só vetores (render instantâneo)</option>
+      </select>
+    </label>
+    <div class="row">
+      <label class="chk"><input type="checkbox" id="invert"> Inverter (preto↔branco)</label>
+    </div>
+    <label>Atualizar a cada
+      <select id="interval">
+        <option value="0">não atualizar</option>
+        <option value="10">10 s</option>
+        <option value="30" selected>30 s</option>
+        <option value="60">60 s</option>
+      </select>
+    </label>
+    <button id="refresh">↻ Atualizar agora</button>
+  </form>
+
+  <div>
+    <div class="device" id="device">
+      <img id="frame" alt="quadro e-ink" width="400" height="300">
+      <div class="brand">PEDAL HIDROGRÁFICO · E-INK</div>
+    </div>
+    <div class="urlbox">
+      <div class="meta">URL do quadro (é isto que o dispositivo pede; acrescente <code>&amp;fmt=raw</code> pro framebuffer cru do ESP32):</div>
+      <code id="url"></code>
+      <div class="meta" id="stats"></div>
+    </div>
+  </div>
+</main>
+<script type="module">
+const $ = (q) => document.querySelector(q);
+const qs = new URLSearchParams(location.search);
+const KIOSK = qs.get('kiosk') === '1';
+if (KIOSK) document.body.classList.add('kiosk');
+
+// Presets vindos da URL (?follow=, ?route=, ?w=&h=, ?base=, ?interval=) — pro
+// modo quiosque ser configurável só pela URL, sem tocar nos controles.
+if (qs.get('follow')) { $('#mode').value = 'follow'; $('#follow').value = qs.get('follow'); }
+else if (qs.get('route')) { $('#mode').value = 'route'; }
+if (qs.get('w') && qs.get('h')) {
+  const v = `${qs.get('w')}x${qs.get('h')}`;
+  if (![...$('#size').options].some(o => o.value === v)) {
+    const o = document.createElement('option'); o.value = v; o.textContent = v;
+    $('#size').appendChild(o);
+  }
+  $('#size').value = v;
+}
+if (qs.get('base')) $('#base').value = qs.get('base');
+if (qs.get('interval')) $('#interval').value = qs.get('interval');
+if (KIOSK && !qs.get('interval')) $('#interval').value = '30';
+
+function syncMode() {
+  const m = $('#mode').value;
+  $('#l-route').hidden = m !== 'route';
+  $('#l-follow').hidden = m !== 'follow';
+  $('#l-coords').hidden = m !== 'coords';
+}
+$('#mode').addEventListener('change', () => { syncMode(); refresh(); });
+syncMode();
+
+// Rotas disponíveis (routes.json — mesmo arquivo que o mapa principal usa).
+try {
+  const data = await (await fetch('./routes.json')).json();
+  const sel = $('#route');
+  for (const r of (data.routes || [])) {
+    if (!r.latlngs || !r.tourIri) continue;
+    const slug = r.tourIri.split('/').pop();
+    const o = document.createElement('option');
+    o.value = slug;
+    o.textContent = `${r.date || ''} · ${r.name || slug}`.slice(0, 70);
+    sel.appendChild(o);
+  }
+  if (qs.get('route')) sel.value = qs.get('route');
+} catch (_) { /* sem rotas — segue com follow/coords */ }
+
+function buildUrl() {
+  const [w, h] = $('#size').value.split('x');
+  const p = new URLSearchParams({ w, h });
+  const m = $('#mode').value;
+  if (m === 'route') p.set('route', $('#route').value);
+  else if (m === 'follow') p.set('follow', $('#follow').value.trim());
+  else { p.set('lat', $('#lat').value); p.set('lng', $('#lng').value); p.set('z', $('#z').value); }
+  if ($('#base').value !== 'osm') p.set('base', $('#base').value);
+  if ($('#invert').checked) p.set('invert', '1');
+  return `./eink/map.png?${p}`;
+}
+
+let timer = null;
+async function refresh() {
+  const url = buildUrl();
+  $('#url').textContent = new URL(url, location.href).href;
+  const [w, h] = $('#size').value.split('x');
+  const img = $('#frame');
+  img.width = +w; img.height = +h;
+  const dev = $('#device');
+  dev.classList.add('flash');                       // flashzinho de e-ink
+  const t0 = performance.now();
+  try {
+    const r = await fetch(url + `&_=${Date.now()}`);
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      $('#stats').textContent = `erro ${r.status}: ${err.error || ''}`;
+      return;
+    }
+    const blob = await r.blob();
+    const old = img.dataset.blobUrl;
+    img.src = img.dataset.blobUrl = URL.createObjectURL(blob);
+    if (old) setTimeout(() => URL.revokeObjectURL(old), 3000);
+    $('#stats').textContent =
+      `${(blob.size / 1024).toFixed(1)} KB · ${(performance.now() - t0).toFixed(0)} ms · ` +
+      `raw teria ${Math.ceil(+w / 8) * +h} bytes`;
+  } finally {
+    setTimeout(() => dev.classList.remove('flash'), 160);
+    clearTimeout(timer);
+    const s = +$('#interval').value;
+    if (s > 0) timer = setTimeout(refresh, s * 1000);
+  }
+}
+$('#refresh').addEventListener('click', refresh);
+for (const id of ['route', 'follow', 'size', 'base', 'invert', 'interval', 'lat', 'lng', 'z']) {
+  $('#' + id).addEventListener('change', refresh);
+}
+refresh();
+</script>
+</body>
+</html>
