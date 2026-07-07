@@ -192,8 +192,18 @@ def render_map(*, lat, lng, z, w, h, routes, peers,
         # vira ruído no e-ink; um ponto de gama derruba isso e mantém o traço.
         img_l = img_l.point(lambda v: min(255, int((v / 255) ** 0.32 * 255)))
 
-    img = img_l.convert("1")           # Floyd–Steinberg (default do Pillow)
+    if min(w, h) < 180:
+        # Painel minúsculo (2.9"/2.13"): dither vira sopa de ruído nessa
+        # densidade — limiar duro preserva só o traço (ruas/rotulagem escura).
+        img = img_l.point(lambda v: 255 if v > 140 else 0).convert("1")
+    else:
+        img = img_l.convert("1")       # Floyd–Steinberg (default do Pillow)
     draw = ImageDraw.Draw(img)
+
+    # Fator de escala dos elementos vetoriais: os tamanhos abaixo foram
+    # afinados pra 400×300; em painéis maiores (T5 960×540) um marcador de
+    # 13 px some, e em menores (2.9" 296×128) sobra. Escala pelo lado menor.
+    s = max(0.75, min(w, h) / 300.0)
 
     # ── Rotas (vetor puro, DEPOIS do dither → preto sólido) ──────────────
     def draw_polyline(latlngs, width, halo=True):
@@ -202,8 +212,9 @@ def render_map(*, lat, lng, z, w, h, routes, peers,
                if -50 <= x <= w + 50 and -50 <= y <= h + 50] or None
         if not pts or len(pts) < 2:
             return
+        width = max(1, round(width * s))
         if halo:
-            draw.line(pts, fill=1, width=width + 4, joint="curve")
+            draw.line(pts, fill=1, width=width + max(2, round(4 * s)), joint="curve")
         draw.line(pts, fill=0, width=width, joint="curve")
 
     # Com route= o quadro é DAQUELA rota: as outras somem (num overview de 1-bit
@@ -220,17 +231,17 @@ def render_map(*, lat, lng, z, w, h, routes, peers,
             draw_polyline(r["latlngs"], 2, halo=False)
     if focused:
         draw_polyline(focused["latlngs"], 5)
-        # POIs da rota focada: losango + rótulo pequeno.
-        f_small = _load_font(11)
+        # POIs da rota focada: losango.
+        d5 = 5 * s
         for poi in (focused.get("pois") or []):
             x, y = to_px(poi["lat"], poi["lng"])
             if not (0 <= x <= w and 0 <= y <= h):
                 continue
-            draw.polygon([(x, y - 5), (x + 5, y), (x, y + 5), (x - 5, y)],
+            draw.polygon([(x, y - d5), (x + d5, y), (x, y + d5), (x - d5, y)],
                          fill=1, outline=0)
 
     # ── Pessoas ao vivo ───────────────────────────────────────────────────
-    f_peer = _load_font(13)
+    f_peer = _load_font(max(9, round(13 * s)))
     followed = None
     for p in peers:
         if follow_id and (p.get("id") == follow_id
@@ -240,29 +251,41 @@ def render_map(*, lat, lng, z, w, h, routes, peers,
         x, y = to_px(p["lat"], p["lng"])
         if not (-10 <= x <= w + 10 and -10 <= y <= h + 10):
             continue
-        draw.ellipse([x - 8, y - 8, x + 8, y + 8], fill=1, outline=0, width=2)
+        r8 = 8 * s
+        draw.ellipse([x - r8, y - r8, x + r8, y + r8], fill=1, outline=0,
+                     width=max(2, round(2 * s)))
         initial = ((p.get("name") or "?")[:1] or "?").upper()
         draw.text((x, y - 1), initial, fill=0, font=f_peer, anchor="mm")
 
     # A pessoa seguida: rastro pontilhado + seta de rumo (por último, por cima).
     if followed:
         trail = followed.get("trail") or []
+        r_dot = 2.5 * s
         for pt in trail[-200::2]:      # pontilhado barato: 1 a cada 2 pontos
             x, y = to_px(pt[0], pt[1])
             if 0 <= x <= w and 0 <= y <= h:
-                draw.ellipse([x - 2.5, y - 2.5, x + 2.5, y + 2.5],
+                draw.ellipse([x - r_dot, y - r_dot, x + r_dot, y + r_dot],
                              fill=0, outline=1)
         x, y = to_px(followed["lat"], followed["lng"])
         hd = followed.get("heading", heading)
         if hd is not None and math.isfinite(float(hd)):
             a = math.radians(float(hd))
-            tip = (x + 13 * math.sin(a), y - 13 * math.cos(a))
-            left = (x + 9 * math.sin(a + 2.5), y - 9 * math.cos(a + 2.5))
-            right = (x + 9 * math.sin(a - 2.5), y - 9 * math.cos(a - 2.5))
-            draw.polygon([tip, left, (x, y), right], fill=0, outline=1)
+
+            def _tri(rt, rw):
+                tip = (x + rt * math.sin(a), y - rt * math.cos(a))
+                left = (x + rw * math.sin(a + 2.5), y - rw * math.cos(a + 2.5))
+                right = (x + rw * math.sin(a - 2.5), y - rw * math.cos(a - 2.5))
+                return [tip, left, (x, y), right]
+            # Halo: um triângulo branco MAIOR por baixo (outline com width
+            # comeria o preenchimento numa seta pequena), seta preta sólida
+            # por cima.
+            pad = 4 * s
+            draw.polygon(_tri(13 * s + pad, 9 * s + pad), fill=1)
+            draw.polygon(_tri(13 * s, 9 * s), fill=0)
         else:
-            draw.ellipse([x - 9, y - 9, x + 9, y + 9], fill=0)
-            draw.ellipse([x - 4, y - 4, x + 4, y + 4], fill=1)
+            r9, r4 = 9 * s, 4 * s
+            draw.ellipse([x - r9, y - r9, x + r9, y + r9], fill=0)
+            draw.ellipse([x - r4, y - r4, x + r4, y + r4], fill=1)
 
     # ── HUD: barra inferior com hora, escala e norte ──────────────────────
     hud_h = max(18, h // 18)
