@@ -1523,9 +1523,23 @@ function openLightbox(rec) {
     media.innerHTML = html;
   } else if (rec.largeUrl || rec.fullUrl || rec.thumbUrl) {
     const src = rec.largeUrl || rec.fullUrl || rec.thumbUrl;
-    let html = `<img src="${escapeHtml(src)}" alt="">`;
+    // Blur-up: o thumb já está no cache (veio da grade) — mostra ele NA HORA
+    // e troca pro large quando terminar de baixar, em vez de deixar a área em
+    // branco durante o download (perceptível no celular).
+    const placeholder = (rec.thumbUrl && src !== rec.thumbUrl) ? rec.thumbUrl : src;
+    let html = `<img src="${escapeHtml(placeholder)}" alt="">`;
     if (rec.kind === 'video' && rec.audioUrl) html += `<audio controls src="${escapeHtml(rec.audioUrl)}"></audio>`;
     media.innerHTML = html;
+    if (placeholder !== src) {
+      const full = new Image();
+      full.onload = () => {
+        const img = media.querySelector('img');
+        // Só troca se o lightbox ainda mostra ESTA mídia (evita corrida ao
+        // abrir outra foto antes do large da anterior chegar).
+        if (img && lbRecord === rec) img.src = src;
+      };
+      full.src = src;
+    }
   } else {
     media.innerHTML = '<div class="muted">sem prévia</div>';
   }
