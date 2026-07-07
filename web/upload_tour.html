@@ -249,13 +249,16 @@
       <label><input type="checkbox" id="t-had-rain"> Choveu?</label>
     </div>
     <small>Cada um vira <code>ph:hadBonde true</code> / <code>ph:hadRain true</code>. Marcação ausente = omitido (não negado).</small>
+    <label for="t-activities" style="margin-top:.8rem">Atividades gravadas</label>
+    <select multiple id="t-activities" placeholder="cole uma URL e Enter…"></select>
+    <small>Link da gravação GPS real de quem pedalou (RideWithGPS/Strava trip) — distinta da rota planejada acima. Cada uma vira <code>ph:linkActivity</code>; usado por scripts de backfill pra extrair métricas reais (partida/chegada/duração/energia medida).</small>
   </fieldset>
 
   <fieldset>
     <legend>Incidentes</legend>
-    <label for="t-incidents">Uma linha por incidente</label>
-    <textarea id="t-incidents" placeholder="Furo de pneu na Aclimação&#10;Algum desvio na rua Augusta por causa de obra"></textarea>
-    <small>Cada linha vira <code>ph:hadIncident "..."@pt</code> (multiplica triples).</small>
+    <label for="t-incidents">Incidentes</label>
+    <select multiple id="t-incidents" placeholder="digite e Enter…"></select>
+    <small>Cada entrada vira <code>ph:hadIncident "..."@pt</code>.</small>
   </fieldset>
 
   <div id="notices" role="status" aria-live="polite"></div>
@@ -544,6 +547,29 @@ const newcomersTs = moveCreateToBottom(new TomSelect($('#t-newcomers-list'), tsC
 
 const personPickers = [authorTs, providerTs2, attendeesTs, newcomersTs];
 
+// Campos de texto livre repetível (sem catálogo pra buscar contra — cada
+// entrada digitada já É o valor final): incidentes e URLs de atividade.
+// `create: true` deixa o TomSelect usar o próprio texto como value/label.
+function freeTagsConfig() {
+  return {
+    options: [], valueField: 'value', labelField: 'text',
+    persist: false, create: true, createOnBlur: true,
+    plugins: ['remove_button'],
+  };
+}
+const incidentsTs  = new TomSelect($('#t-incidents'),  freeTagsConfig());
+const activitiesTs = new TomSelect($('#t-activities'), freeTagsConfig());
+// Prefill (modo edição): a option pode não existir ainda (texto livre) —
+// cria antes de selecionar, senão addItem não acha o value.
+function setFreeTags(ts, values) {
+  ts.clear(true);
+  ts.clearOptions();
+  for (const v of values) {
+    ts.addOption({ value: v, text: v });
+    ts.addItem(v, true);
+  }
+}
+
 // Toggle de visibilidade dos campos de lista nominal — lê o setting do
 // localStorage (mesma chave usada pelo app principal: `phidro:settings`).
 function attendeeListEnabled() {
@@ -646,7 +672,8 @@ function buildRemoveList() {
   if ($('#t-measured-kj').value === '' && !measuredIsLegacy) rm.push('ph:measuredEnergy');
   if (!$('#t-had-bonde').checked)        rm.push('ph:hadBonde');
   if (!$('#t-had-rain').checked)         rm.push('ph:hadRain');
-  if (!$('#t-incidents').value.trim())   rm.push('ph:hadIncident');
+  if (!incidentsTs.getValue().length)    rm.push('ph:hadIncident');
+  if (!activitiesTs.getValue().length)   rm.push('ph:linkActivity');
   if (!authorTs.getValue().length)       rm.push('prov:wasAttributedTo');
   if (!providerTs2.getValue().length)    rm.push('pav:providedBy');
   if (!attendeesTs.getValue().length)    rm.push('schema:attendee');
@@ -673,8 +700,8 @@ function buildTtl() {
   const measured  = $('#t-measured-kj').value;
   const hadBonde  = $('#t-had-bonde').checked;
   const hadRain   = $('#t-had-rain').checked;
-  const incidents = $('#t-incidents').value.split('\n')
-    .map(l => l.trim()).filter(Boolean);
+  const incidents = incidentsTs.getValue();
+  const activities = activitiesTs.getValue();
   const authors   = authorTs.getValue();
   const providers = providerTs2.getValue();
   // Listas nominais (schema:attendee + ph:hasNewcomer). Coletadas mesmo
@@ -757,6 +784,9 @@ function buildTtl() {
   if (hadRain)  props.push('ph:hadRain true');
   for (const inc of incidents) {
     props.push(`ph:hadIncident "${turtleEscape(inc)}"@pt`);
+  }
+  for (const act of activities) {
+    props.push(`ph:linkActivity "${turtleEscape(act)}"^^xsd:anyURI`);
   }
   for (const p of authors)   props.push(`prov:wasAttributedTo ${p}`);
   for (const p of providers) props.push(`pav:providedBy ${p}`);
@@ -967,6 +997,7 @@ async function prefillFromId(tourId) {
   const attendeesList = [];
   const newcomersList = [];
   const incidents = [];
+  const activities = [];
   let title = '', date = '', narrative = '', instagram = '';
   let attendees = '', newcomers = '', energyKj = '';
   let departed = '', arrived = '', moving = '', measured = '';
@@ -994,6 +1025,7 @@ async function prefillFromId(tourId) {
     else if (p === PH_NS + 'hadBonde')   hadBonde = objLit(q) === 'true';
     else if (p === PH_NS + 'hadRain')    hadRain  = objLit(q) === 'true';
     else if (p === PH_NS + 'hadIncident') incidents.push(objLit(q));
+    else if (p === PH_NS + 'linkActivity') activities.push(objLit(q));
     else if (p === SCHEMA + 'organizer') {
       const iri = objIri(q); if (iri) organizers.push(shortIRI(iri));
     }
@@ -1069,7 +1101,8 @@ async function prefillFromId(tourId) {
   $('#t-measured-kj').value = measured;
   $('#t-had-bonde').checked = hadBonde;
   $('#t-had-rain').checked  = hadRain;
-  $('#t-incidents').value = incidents.join('\n');
+  setFreeTags(incidentsTs, incidents);
+  setFreeTags(activitiesTs, activities);
   $('#t-route-url').value = routeUrl;
 
   // Select e multi-selects.

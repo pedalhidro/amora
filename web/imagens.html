@@ -519,6 +519,7 @@
         <div id="lb-error" class="err" hidden></div>
       </div>
       <button id="lb-map" type="button" class="btn btn-primary">📍 Ver no mapa</button>
+      <button id="lb-share" type="button" class="btn">🔗 Compartilhar</button>
     </div>
   </div>
 </div>
@@ -1465,6 +1466,7 @@ function wireLightbox() {
     try { window.parent.postMessage({ type: 'phidro-gallery-show', iri: lbRecord.iri }, '*'); } catch (_) {}
     closeLightbox();
   });
+  $('#lb-share').addEventListener('click', shareLightboxLink);
   // Listas salvam sozinhas ao mudar (sem botão). setValue(...,true) na abertura
   // é silencioso, então só mudanças do usuário disparam o auto-save.
   lbTS.on('change', () => { if (lbRecord) scheduleLbSave(); });
@@ -1657,6 +1659,22 @@ function shareSelectedLink() {
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(link).then(
       () => toast(`✓ Link de ${recs.length} mídia${recs.length === 1 ? '' : 's'} copiado`),
+      () => prompt('Copie o link:', link));
+  } else {
+    prompt('Copie o link:', link);
+  }
+}
+// Link direto pra ESTA mídia (aberta no lightbox), formato ?pick=<hash> —
+// consistente com o botão de compartilhar do popup no mapa. Origem SEMPRE
+// fixa em amora.pedalhidrografi.co (não location.href): um link compartilhado
+// tem que funcionar pra quem recebe, mesmo testando em localhost.
+function shareLightboxLink() {
+  if (!lbRecord) return;
+  const hash = lbRecord.iri.slice(MED.length);
+  const link = `https://amora.pedalhidrografi.co/imagens.html?pick=${encodeURIComponent(hash)}`;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(link).then(
+      () => toast('✓ Link da mídia copiado'),
       () => prompt('Copie o link:', link));
   } else {
     prompt('Copie o link:', link);
@@ -2019,6 +2037,14 @@ function applyListParam() {
     $('.toolbar').hidden = false;
     // Visão padrão: agrupado por passeio, sem filtros (mostra TODAS as mídias).
     rebuildAndRun();
+    // Link de UMA mídia só (ex.: "🔍 Ver grande" no popup do mapa): abre o
+    // lightbox direto, sem exigir um clique a mais na grade filtrada. lbTS
+    // só existe depois de buildFacetControls(), por isso isto roda aqui e
+    // não dentro de applyPickParam().
+    if (pickSet && pickSet.size === 1) {
+      const rec = recordByIri.get([...pickSet][0]);
+      if (rec) openLightbox(rec);
+    }
   } catch (e) {
     console.error(e);
     $('#status').innerHTML = `<span class="err">Falha ao iniciar: ${escapeHtml(e.message)}</span>`;

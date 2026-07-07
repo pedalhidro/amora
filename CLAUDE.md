@@ -133,7 +133,7 @@ senão a página/documento humano. Esquema (prefixos usados nos TTLs e no códig
 | Pessoa | `pes:` | `…/pessoas/<slug8>` | `GET /pessoas/<slug>` (turtle \| pessoas.html) |
 | Passeio | `pas:` | `…/passeio/<slug8>` | `GET /passeio/<slug>` (turtle \| 303 `/?tour=<slug>`) |
 | Edição de série | (IRI full) | `…/passeio/<ES>/<seq>` (ex.: `…/passeio/BP/4`) | `GET /passeio/<es>/<seq>` (turtle \| 303 pro passeio) |
-| Série | `ser:` | `…/serie/<ES>` (PH/BT/BP/S/SESC) | (sem resolver dedicado ainda) |
+| Série | `ser:` | `…/serie/<ES>` (PH/BT/BP/S/SESC) | `GET /serie/<es>` (turtle=série+edições \| HTML gerada, edições mais recentes primeiro, linkando pro passeio) |
 | Mídia | `med:` | `…/midia/<hash16>` (opaco — foto OU vídeo) | `GET /midia/<hash>` (turtle \| 303 `/imagens.html?pick=`) |
 | Lista/álbum | `lst:` | `…/listas/<slug>` | `GET /listas/<slug>` (turtle \| 303 `/imagens.html`) |
 | Envio (ph:Upload) | `env:` | `…/envio/<ts>` | (sem resolver; provenance interna) |

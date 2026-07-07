@@ -244,6 +244,12 @@ ph:TourShape a sh:NodeShape ;
         sh:message "Ideal: declarar link do Instagram."@pt ;
     ] ;
     sh:property [
+        sh:path ph:linkActivity ;
+        sh:severity sh:Warning ;
+        sh:datatype xsd:anyURI ;
+        sh:message "Se declarada, cada atividade gravada (ph:linkActivity) deve ser uma URL."@pt ;
+    ] ;
+    sh:property [
         sh:path ph:countAttendee ;
         sh:severity sh:Warning ;
         sh:maxCount 1 ;

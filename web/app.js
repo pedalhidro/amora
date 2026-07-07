@@ -312,19 +312,34 @@ function showPhotoFallbackModal(innerHtml) {
   }
   modal.innerHTML =
     '<div class="modal-content photo-fallback-content">' +
-      '<button class="close photo-fallback-close" type="button" aria-label="Fechar">×</button>' +
       innerHtml +
     '</div>';
-  modal.querySelector('.photo-fallback-close').addEventListener('click', () => {
+  modal.querySelector('.photo-fallback-content').appendChild(makeCloseDot(() => {
     pauseMediaIn(modal);
     modal.hidden = true;
     restoreMapViewAfterPhoto();
     clearPhotoPreview();
-  });
+  }));
   modal.hidden = false;
   // Navegação também no modal promovido: arrastar ↔ + manter as setas visíveis.
   attachPhotoSwipe(modal.querySelector('.photo-fallback-content'));
   updatePhotoNavArrows();
+}
+// Fecha o preview de foto/vídeo QUALQUER que seja sua forma atual: popup real
+// do Leaflet OU o modal promovido (`photo-fallback-modal`, usado quando o
+// popup não cabe no viewport — ver promoteIfNeeded). `map.closePopup()`
+// sozinho não basta: se o popup já foi promovido, ele nem existe mais como
+// popup Leaflet, e o modal clonado ficava aberto por trás da ação (ex.: dava
+// pra abrir a galeria via "Ver grande" e o preview antigo continuava na tela).
+function closePhotoPreview() {
+  map.closePopup();
+  const modal = document.getElementById('photo-fallback-modal');
+  if (modal && !modal.hidden) {
+    pauseMediaIn(modal);
+    modal.hidden = true;
+    restoreMapViewAfterPhoto();
+  }
+  clearPhotoPreview();
 }
 function popupFitsViewport(el) {
   const rect = el.getBoundingClientRect();
@@ -1057,6 +1072,28 @@ document.addEventListener('click', (ev) => {
     if (typeof openUploadModal === 'function') openUploadModal();
     return;
   }
+  // Botão "🔍 Ver grande" no popup: fecha o popup e abre a MESMA mídia na
+  // galeria (que já é maximizável e mostra a foto/vídeo bem maior, com
+  // painel de metadados) — em vez de tentar caber o popup do Leaflet na
+  // tela inteira.
+  const vf = ev.target.closest?.('.photo-popup button.media-view-full[data-hash]');
+  if (vf) {
+    ev.preventDefault();
+    closePhotoPreview();
+    openImagensModalToMedia(vf.getAttribute('data-hash'));
+    return;
+  }
+  // Botão "🔗 Compartilhar" no popup: copia o link direto (abre a galeria já
+  // filtrada nesta mídia pra quem receber).
+  const sh = ev.target.closest?.('.photo-popup button.media-share[data-hash]');
+  if (sh) {
+    ev.preventDefault();
+    shareLink(
+      `https://amora.pedalhidrografi.co/imagens.html?pick=${encodeURIComponent(sh.getAttribute('data-hash'))}`,
+      'Link da mídia',
+    );
+    return;
+  }
   // Botão "Excluir" no popup: chama o backend e recarrega a camada.
   const del = ev.target.closest?.('.photo-popup button.photo-del[data-phash]');
   if (del) {
@@ -1072,7 +1109,7 @@ document.addEventListener('click', (ev) => {
           throw new Error(`HTTP ${r.status}${body ? ` — ${body.slice(0, 200)}` : ''}`);
         }
         showToast('Imagem excluída.');
-        map.closePopup();
+        closePhotoPreview();
         reloadPhotos();
       })
       .catch((err) => {
@@ -1096,7 +1133,7 @@ document.addEventListener('click', (ev) => {
           throw new Error(`HTTP ${r.status}${body ? ` — ${body.slice(0, 200)}` : ''}`);
         }
         showToast('Vídeo excluído.');
-        map.closePopup();
+        closePhotoPreview();
         // Recarrega o catálogo de clipes do zero pra refletir.
         clipsCatalog = null;
         loadClipsCatalog().then((clips) => makeClipMarkers(clips));
@@ -1772,6 +1809,14 @@ function renderClipPopupHtml(c) {
   const listsBtn = c.vhash
     ? `<button type="button" class="media-lists-edit" data-kind="video" data-hash="${escapeHtml(c.vhash)}">📁 Listas</button>`
     : '';
+  // Mesma bolinha verde de maximizar usada nos outros modais — fica no
+  // canto, ao lado do × do Leaflet, não dentro de .photo-actions.
+  const viewDot = c.vhash
+    ? `<button type="button" class="maximize-dot media-view-full" data-hash="${escapeHtml(c.vhash)}" title="Ver grande" aria-label="Ver grande"></button>`
+    : '';
+  const shareBtn = c.vhash
+    ? `<button type="button" class="media-share" data-hash="${escapeHtml(c.vhash)}">🔗 Compartilhar</button>`
+    : '';
   const listNames = (c.lists && c.lists.length)
     ? c.lists.map((l) => escapeHtml(listCatalog.get(l)?.name || l.split(/[/#]/).pop())).join(', ')
     : null;
@@ -1789,9 +1834,10 @@ function renderClipPopupHtml(c) {
   if (videoSrc) dlChips.push(`<a class="photo-dl" href="${videoSrc}" download="${escapeHtml(c.file)}">Vídeo 360p ↓</a>`);
   if (v720Src)  dlChips.push(`<a class="photo-dl" href="${v720Src}"  download="${escapeHtml(c.file720)}">Vídeo 720p ↓</a>`);
   if (audioSrc) dlChips.push(`<a class="photo-dl" href="${audioSrc}" download="${escapeHtml((c.audio || '').split('/').pop())}">Áudio ↓</a>`);
-  const actions = [...dlChips, listsBtn, delBtn].filter(Boolean).join('');
+  const actions = [shareBtn, ...dlChips, listsBtn, delBtn].filter(Boolean).join('');
   return (
     `<div class="photo-popup video-popup">` +
+      viewDot +
       playerHtml +
       `<dl class="photo-details">` +
         `<dt>Quando</dt><dd>${whenHuman}</dd>` +
@@ -2586,9 +2632,22 @@ function buildPhotoMarkers(photos) {
     const editBtn = (ph.phash && photoSource === 'server')
       ? `<button type="button" class="media-edit" data-kind="image" data-hash="${escapeHtml(ph.phash)}">✎ Editar</button>`
       : '';
-    const actions = [dlBtn, listsBtn, editBtn, delBtn].filter(Boolean).join('');
+    // "Ver grande": abre a MESMA foto na galeria (iframe já maximizável, com
+    // painel de metadados) — mais robusto que tentar caber um popup do
+    // Leaflet na tela inteira (a árvore de panes usa transform, o que
+    // quebraria um position:fixed ingênuo). Estilizado como a bolinha verde
+    // de maximizar dos outros modais (mesma classe .maximize-dot), ao lado
+    // do × do Leaflet — não faz parte de .photo-actions.
+    const viewDot = (ph.phash && photoSource === 'server')
+      ? `<button type="button" class="maximize-dot media-view-full" data-hash="${escapeHtml(ph.phash)}" title="Ver grande" aria-label="Ver grande"></button>`
+      : '';
+    const shareBtn = (ph.phash && photoSource === 'server')
+      ? `<button type="button" class="media-share" data-hash="${escapeHtml(ph.phash)}">🔗 Compartilhar</button>`
+      : '';
+    const actions = [shareBtn, dlBtn, listsBtn, editBtn, delBtn].filter(Boolean).join('');
     m.bindPopup(
       `<div class="photo-popup">` +
+        viewDot +
         `<img src="${escapeHtml(ph.file)}" loading="lazy" alt="${escapeHtml(ph.orig)}" />` +
         `<dl class="photo-details">${rows}</dl>` +
         (actions ? `<div class="photo-actions">${actions}</div>` : '') +
@@ -3172,8 +3231,10 @@ function renderRoutePhotos(entry) {
       img.alt = m._photo.orig || '';
       img.title = 'Ver no mapa';
       img.addEventListener('click', () => {
+        // Só abre a foto no mapa — SEM filtrar (era um efeito colateral
+        // surpreendente do clique; filtrar agora é explícito, via o botão
+        // "Filtrar imagens para esta rota" no cabeçalho do modal).
         closeRouteModal();
-        showPhotosForRide(entry.date, label);
         map.setView(m.getLatLng(), Math.max(map.getZoom(), 15));
         m.openPopup();
       });
@@ -3612,6 +3673,28 @@ function closeImagensModal() {
   if (imagensModal) imagensModal.hidden = true;
   imagensBtn?.setAttribute('aria-pressed', 'false');
 }
+// Abre a galeria já navegada + focada numa mídia específica (usado pelo
+// "🔍 Ver grande" do popup de foto/vídeo). Sempre reseta o src (diferente de
+// openImagensModal, que reusa a página se já estiver na galeria) — é uma
+// navegação deliberada pro item, não só "abrir o que já tava aberto".
+function openImagensModalToMedia(hash) {
+  if (!imagensModal || !hash) return;
+  closeOtherMobileDialogs('imagens');
+  imagensIframe.src = `${IMAGENS_URL}?pick=${encodeURIComponent(hash)}`;
+  imagensModal.hidden = false;
+  imagensBtn?.setAttribute('aria-pressed', 'true');
+}
+// Copia um link pro clipboard (fallback: prompt, pra quem bloqueia a
+// Clipboard API — ex.: contexto não-https ou permissão negada).
+function shareLink(url, label = 'Link') {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(url).then(
+      () => showToast(`✓ ${label} copiado`),
+      () => prompt('Copie o link:', url));
+  } else {
+    prompt('Copie o link:', url);
+  }
+}
 imagensBtn?.addEventListener('click', openImagensModal);
 imagensModal?.addEventListener('click', (e) => {
   if (e.target === imagensModal) closeImagensModal();
@@ -3696,6 +3779,59 @@ for (const content of document.querySelectorAll('.modal > .modal-content')) {
   content.appendChild(makeCloseDot(() => modal.click()));
 }
 
+// ─── Arrastar modal pela faixa de título (desktop com mouse) ────────────────
+// Só em desktop com um ponteiro de verdade — toque (mesmo em tela larga) fica
+// de fora, pra não brigar com scroll/tap. Mesma condição usada pelo CSS pro
+// véu (`.modal` em style.css) e pro pointer-events da faixa de título: sem véu
+// escuro E arrastável andam juntos — dá pra ver e mover o que está por baixo.
+const dragModeMQ = window.matchMedia('(min-width: 761px) and (hover: hover) and (pointer: fine)');
+function dragModeEnabled() { return dragModeMQ.matches; }
+
+// Clique-fora fecha os modais (cada um já tem seu próprio listener — ver
+// `Modal?.addEventListener('click', …)` espalhados no arquivo). Em modo de
+// arraste isso atrapalha: soltar o mouse um pouco fora do diálogo ao
+// reposicioná-lo não deveria fechar. Um único listener em fase de captura no
+// document, rodando ANTES dos listeners de cada modal (capture no document
+// sempre precede a fase AT_TARGET no próprio elemento), corta a propagação
+// pra cliques REAIS (`isTrusted`) na própria `.modal` (o véu, não o conteúdo).
+// `isTrusted` deixa passar o clique sintético que a bolinha vermelha dispara
+// (`modal.click()`), que é como ela fecha o modal.
+document.addEventListener('click', (e) => {
+  if (!e.isTrusted) return;
+  if (dragModeEnabled() && e.target?.classList?.contains('modal')) {
+    e.stopPropagation();
+  }
+}, true);
+
+function makeModalDraggable(modal) {
+  const content = modal.querySelector(':scope > .modal-content');
+  const header = content?.querySelector(':scope > header');
+  if (!content || !header) return;
+  let dx = 0, dy = 0, startX = 0, startY = 0, dragging = false;
+  header.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    if (content.classList.contains('maximized')) return;
+    if (!dragModeEnabled()) return;
+    if (e.target.closest('button, a, input, select, textarea')) return;
+    dragging = true;
+    startX = e.clientX - dx;
+    startY = e.clientY - dy;
+    e.preventDefault();
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    dx = e.clientX - startX;
+    dy = e.clientY - startY;
+    content.style.transform = `translate(${dx}px, ${dy}px)`;
+  });
+  window.addEventListener('mouseup', () => { dragging = false; });
+  // Reseta a posição toda vez que o modal fecha, pra sempre reabrir centrado.
+  new MutationObserver(() => {
+    if (modal.hidden) { dx = 0; dy = 0; content.style.transform = ''; }
+  }).observe(modal, { attributes: true, attributeFilter: ['hidden'] });
+}
+for (const modal of document.querySelectorAll('.modal')) makeModalDraggable(modal);
+
 // Bolinha verde de maximizar (estilo macOS) nos modais em iframe: alterna entre
 // janela e tela cheia (classe .maximized no .modal-content), persistido por
 // chave. Usada na galeria e no censo.
@@ -3723,6 +3859,7 @@ function addMaximizeDot(modalEl, key) {
 }
 addMaximizeDot(imagensModal, 'phidro:galleryMaximized');
 addMaximizeDot(censoModal, 'phidro:censoMaximized');
+addMaximizeDot(uploadModal, 'phidro:uploadModalMaximized');
 
 // Sidebar de Rotas: a bolinha fecha o painel (mesmo caminho do ☰/toggle). Como
 // só é clicável com a sidebar aberta, o toggle sempre fecha.
@@ -6123,6 +6260,7 @@ routeModal.addEventListener('click', (e) => {
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && !routeModal.hidden) closeRouteModal();
 });
+addMaximizeDot(routeModal, 'phidro:routeModalMaximized');
 
 // Extrai o slug do passeio (sufixo após `pas:` / IRI completa). Aceita também
 // as formas legadas phd:tour_ por segurança (dados/links pré-migração).
@@ -6137,10 +6275,10 @@ function _tourIdFromIri(iri) {
   return null;
 }
 
-// Constrói uma view legível do passeio: lê tours.ttl, resolve o IRI alvo e
-// seus blank nodes (route reference, energy values) e dependentes (associações
-// → série+edição), mapeia pessoas/séries pra nomes via declarações no próprio
-// arquivo e devolve HTML pronto pra render no modal.
+// Constrói uma view legível do passeio: lê tours.ttl + identities.ttl, resolve
+// o IRI alvo e seus blank nodes (route reference, energy values) e
+// dependentes (associações → série+edição), mapeia pessoas/séries pra nomes
+// via declarações nesses arquivos e devolve HTML pronto pra render no modal.
 async function _renderTourSummary(tourId) {
   const PH    = 'https://id.pedalhidrografi.co/terms#';
   const PHD   = 'https://pedalhidrografi.co/data/';
@@ -6149,7 +6287,6 @@ async function _renderTourSummary(tourId) {
   const DCT   = 'http://purl.org/dc/terms/';
   const RDFT  = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
   const PROV  = 'http://www.w3.org/ns/prov#';
-  const PAV   = 'http://purl.org/pav/';
   const QUDT  = 'http://qudt.org/schema/qudt/';
 
   let Parser;
@@ -6160,9 +6297,16 @@ async function _renderTourSummary(tourId) {
   }
   let text;
   try {
-    const res = await fetch('./data/tours.ttl', { cache: 'no-cache' });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    text = await res.text();
+    // Pessoas (schema:Person + nomes) vivem SÓ em identities.ttl desde o
+    // split dos catálogos — sem ela, autoras/quem-subiu/participantes caem
+    // no fallback de IRI crua (nameOf() nunca acha o label).
+    const [tRes, iRes] = await Promise.all([
+      fetch('./data/tours.ttl', { cache: 'no-cache' }),
+      fetch('./data/identities.ttl', { cache: 'no-cache' }),
+    ]);
+    if (!tRes.ok) throw new Error(`HTTP ${tRes.status}`);
+    const identitiesText = iRes.ok ? await iRes.text() : '';
+    text = (await tRes.text()) + '\n\n' + identitiesText;
   } catch (e) {
     return `<p class="muted">tours.ttl indisponível: ${escapeHtml(e.message)}.</p>`;
   }
@@ -6198,6 +6342,11 @@ async function _renderTourSummary(tourId) {
     if (labels.has(iri)) return labels.get(iri);
     // Fallback: parte após o último separador.
     return iri.replace(/^.*[#/]/, '');
+  }
+  // Nome de pessoa como link pro IRI (dereferenciável — 303 pra pessoas.html
+  // focada nela). Usado só pra campos com range garantido schema:Person.
+  function personLink(iri) {
+    return `<a href="${escapeHtml(iri)}" target="_blank" rel="noopener">${escapeHtml(nameOf(iri))}</a>`;
   }
 
   // Coleta valores agrupados por predicado.
@@ -6244,6 +6393,7 @@ async function _renderTourSummary(tourId) {
         code: evIri.replace(/^.*[#/]/, ''),
         title: nameOf(evIri),
         n: seq,
+        iri: evIri,
       });
     }
   }
@@ -6278,16 +6428,17 @@ async function _renderTourSummary(tourId) {
   const energyEst  = readEnergy(PH + 'energyEstimate', true);
   const energyMeas = readEnergy(PH + 'measuredEnergy', false);
 
-  // Pessoas (autoras + provedores + participantes + iniciantes).
-  // Os dois últimos são listados nominalmente APENAS quando o toggle de
-  // privacidade `attendees.list` está ligado em Ajustes. Os triples vivem
-  // no TTL independentemente — só a renderização é controlada.
-  const authors   = get(PROV + 'wasAttributedTo', 'iri').map(nameOf);
-  const providers = get(PAV  + 'providedBy',      'iri').map(nameOf);
+  // Pessoas (autoras + participantes + iniciantes). "Quem subiu" (provedores)
+  // não é exibido — pouco relevante pro resumo do passeio. Os dois últimos
+  // são listados nominalmente APENAS quando o toggle de privacidade
+  // `attendees.list` está ligado em Ajustes. Os triples vivem no TTL
+  // independentemente — só a renderização é controlada.
+  const authors   = get(PROV + 'wasAttributedTo', 'iri').map(personLink);
+  // organizer pode ser Pessoa OU Organização — sem link (não garante /pessoas/).
   const organizers= get(SCHEMA + 'organizer',     'iri').map(nameOf);
   const showAttendeeList = settings.attendees?.list === true;
-  const attendeeList = showAttendeeList ? get(SCHEMA + 'attendee', 'iri').map(nameOf) : [];
-  const newcomerList = showAttendeeList ? get(PH + 'hasNewcomer', 'iri').map(nameOf) : [];
+  const attendeeList = showAttendeeList ? get(SCHEMA + 'attendee', 'iri').map(personLink) : [];
+  const newcomerList = showAttendeeList ? get(PH + 'hasNewcomer', 'iri').map(personLink) : [];
 
   // Helpers de formatação.
   function fmtDate(s) {
@@ -6320,7 +6471,7 @@ async function _renderTourSummary(tourId) {
   if (date)  rows.push(row('Quando', escapeHtml(fmtDate(date))));
   if (seriesPairs.length) {
     rows.push(row('Série', seriesPairs.map(s =>
-      `<strong>${escapeHtml(s.code)}</strong> ${escapeHtml(s.n)}` +
+      `<a href="${escapeHtml(s.iri)}" target="_blank" rel="noopener"><strong>${escapeHtml(s.code)}</strong></a> ${escapeHtml(s.n)}` +
       (s.title && s.title !== s.code ? ` — ${escapeHtml(s.title)}` : '')
     ).join(' · ')));
   }
@@ -6333,10 +6484,11 @@ async function _renderTourSummary(tourId) {
   }
   if (instagram) rows.push(row('Instagram',
     `<a href="${escapeHtml(instagram)}" target="_blank" rel="noopener">${escapeHtml(instagram)}</a>`));
-  if (authors.length)   rows.push(row('Autoras',  authors.map(escapeHtml).join(', ')));
-  if (providers.length) rows.push(row('Quem subiu', providers.map(escapeHtml).join(', ')));
-  if (attendeeList.length) rows.push(row('Participantes', attendeeList.map(escapeHtml).join(', ')));
-  if (newcomerList.length) rows.push(row('Iniciantes',    newcomerList.map(escapeHtml).join(', ')));
+  // authors/attendeeList/newcomerList já vêm como HTML (personLink) — NÃO
+  // escapar de novo aqui (double-escape quebraria os links).
+  if (authors.length)   rows.push(row('Autoras',  authors.join(', ')));
+  if (attendeeList.length) rows.push(row('Participantes', attendeeList.join(', ')));
+  if (newcomerList.length) rows.push(row('Iniciantes',    newcomerList.join(', ')));
 
   // Métricas — só mostra se tiver pelo menos um valor.
   const metricsParts = [];
@@ -6393,9 +6545,9 @@ function openRouteModal(id) {
 
   routeModalTitle.textContent = buildLabel(entry);
 
+  // Série+número e data NÃO aparecem aqui — já estão no título do modal
+  // (buildLabel) e no campo "Série" do resumo do passeio (seriesPairs).
   const metaParts = [];
-  if (numberLabel) metaParts.push(`<strong>${escapeHtml(numberLabel)}</strong>`);
-  if (entry.date) metaParts.push(escapeHtml(entry.date));
   metaParts.push(
     `<a href="https://ridewithgps.com/routes/${entry.id}" target="_blank" rel="noopener">Abrir no RideWithGPS ↗</a>`,
   );
@@ -6407,12 +6559,24 @@ function openRouteModal(id) {
       `<button type="button" class="linkbtn highlight-route-btn">Destacar rota ★</button>`,
     );
   }
+  if (entry.date) {
+    metaParts.push(
+      `<button type="button" class="linkbtn filter-ride-photos-btn">Filtrar imagens para esta rota 🔍</button>`,
+    );
+  }
   if (tourId) {
+    metaParts.push(
+      `<button type="button" class="linkbtn share-tour-btn">🔗 Compartilhar</button>`,
+    );
     metaParts.push(
       `<button type="button" class="linkbtn edit-tour-btn">Editar passeio ✎</button>`,
     );
   }
   routeModalMeta.innerHTML = metaParts.join(' · ');
+  routeModalMeta.querySelector('.filter-ride-photos-btn')?.addEventListener('click', () => {
+    showPhotosForRide(entry.date, numberLabel || buildLabel(entry));
+    closeRouteModal();
+  });
   routeModalMeta.querySelector('.edit-route-btn')?.addEventListener('click', () => {
     closeRouteModal();
     editEntryInDrawingTool(entry);
@@ -6420,6 +6584,11 @@ function openRouteModal(id) {
   routeModalMeta.querySelector('.highlight-route-btn')?.addEventListener('click', () => {
     addRouteHighlight(id);
     closeRouteModal();
+  });
+  // Link canônico do passeio (mesmo formato do <link rel="canonical"> da
+  // SSR e do sitemap — abre direto no modal certo pra quem recebe).
+  routeModalMeta.querySelector('.share-tour-btn')?.addEventListener('click', () => {
+    shareLink(`https://amora.pedalhidrografi.co/?tour=${encodeURIComponent(tourId)}`, 'Link do passeio');
   });
   routeModalMeta.querySelector('.edit-tour-btn')?.addEventListener('click', () => {
     openTourModal(tourId);

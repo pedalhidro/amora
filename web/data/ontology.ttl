@@ -104,6 +104,13 @@ ph:linkRWGPS a owl:DatatypeProperty ;
     rdfs:subPropertyOf schema:url ;
     owl:deprecated true .
 
+ph:linkActivity a owl:DatatypeProperty ;
+    rdfs:label "atividade GPS gravada"@pt ;
+    rdfs:comment
+        "URL de uma atividade GPS gravada durante o passeio (ex.: RideWithGPS/Strava trip) — a gravação real de quem pedalou, distinta da rota planejada (ph:linkRoute). Repetível: cada gravação (de qualquer participante) entra como uma triple própria. Alimenta scripts de backfill que extraem métricas reais (ph:departedAt/ph:arrivedAt/ph:movingDuration/ph:measuredEnergy) do rastro GPS."@pt ;
+    rdfs:domain ph:Tour ;
+    rdfs:range xsd:anyURI .
+
 # Provedores de rota (instâncias reutilizáveis)
 
 ph:rwgps a schema:Organization ;

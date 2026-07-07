@@ -185,6 +185,49 @@
           <details class="help-changelog">
             <summary>Novidades (changelog)</summary>
             <dl>
+              <dt>06/07/2026 · v358</dt>
+              <dd>
+                <ul>
+                  <li>No desktop com mouse: modais não escurecem mais o fundo e dá pra arrastá-los clicando e segurando a faixa de título (exceto quando maximizado) — e, nesse modo, clicar fora do modal não fecha mais (só a bolinha vermelha ou Esc). Em touch e no celular continua como antes.</li>
+                  <li>Popup de foto/vídeo no mapa (incluindo quando vira modal por não caber na tela): botão de fechar virou uma bolinha vermelha (estilo macOS), e a foto passou pro lado direito do popup (o texto/ações ficam à esquerda, livres das bolinhas).</li>
+                  <li>Corrigido: ao clicar em "Ver grande" num popup de foto/vídeo que tinha virado modal (por não caber na tela), o preview antigo ficava aberto atrás da galeria — agora fecha corretamente.</li>
+                </ul>
+              </dd>
+              <dt>06/07/2026 · v357</dt>
+              <dd>
+                <ul>
+                  <li>Fotos e vídeos (no mapa e na galeria) e passeios (no modal da rota) ganharam um botão <strong>🔗 Compartilhar</strong> — copia um link direto pra aquela mídia/passeio.</li>
+                  <li>O popup de foto/vídeo no mapa ganhou <strong>🔍 Ver grande</strong>: abre a mesma mídia na galeria (que já pode ser maximizada), em vez de ficar no popup pequeno.</li>
+                </ul>
+              </dd>
+              <dt>06/07/2026 · v356</dt>
+              <dd>
+                <ul>
+                  <li>No cadastro/edição de passeio: novo campo <strong>Atividades gravadas</strong> — cole os links das gravações GPS reais (RideWithGPS/Strava) de quem pedalou, pra uso futuro em extração de métricas. Incidentes e atividades agora são adicionados como tags (uma entrada por vez, removível), como Autoras/Organização.</li>
+                </ul>
+              </dd>
+              <dt>06/07/2026 · v355</dt>
+              <dd>
+                <ul>
+                  <li>Modal da rota: removida a linha de série/número e data logo acima do anúncio (já apareciam no título e no campo "Série"), e o campo "Quem subiu" do resumo do passeio.</li>
+                </ul>
+              </dd>
+              <dt>06/07/2026 · v354</dt>
+              <dd>
+                <ul>
+                  <li>No resumo do passeio (modal da rota), "Autoras", "Quem subiu", "Participantes" e "Iniciantes" agora linkam pra página de cada pessoa.</li>
+                  <li>"Série" agora linka pra uma página nova, listando todas as edições daquela série (ex.: PH) com link pra cada passeio.</li>
+                </ul>
+              </dd>
+              <dt>06/07/2026 · v353</dt>
+              <dd>
+                <ul>
+                  <li>Corrige "Autoras" (e "Quem subiu"/participantes/iniciantes) aparecendo como código em vez do nome no resumo do passeio, dentro do modal da rota.</li>
+                  <li>Clicar numa miniatura no modal da rota não filtra mais o mapa silenciosamente — agora tem um botão explícito "Filtrar imagens para esta rota 🔍" ao lado de "Editar passeio".</li>
+                  <li>No modal da rota, a imagem do anúncio agora aparece antes da tira de miniaturas.</li>
+                  <li>O modal da rota e o de enviar/editar imagens ganharam o botão verde de maximizar (como a galeria).</li>
+                </ul>
+              </dd>
               <dt>06/07/2026 · v352</dt>
               <dd>
                 <ul>
@@ -1210,8 +1253,8 @@
         </header>
         <div class="route-modal-body">
           <div class="route-modal-meta" id="route-modal-meta"></div>
-          <div class="route-modal-photos" id="route-modal-photos"></div>
           <div class="route-modal-ig" id="route-modal-ig"></div>
+          <div class="route-modal-photos" id="route-modal-photos"></div>
         </div>
       </div>
     </div>

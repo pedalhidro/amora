@@ -390,6 +390,13 @@ body.header-hidden .leaflet-top {
   justify-content: center;
   z-index: 5000;
 }
+/* Desktop com mouse de verdade (não touch): o modal vira arrastável pela faixa
+   de título (ver makeModalDraggable/dragModeEnabled em app.js), então some o
+   véu escuro — senão fica estranho arrastar o diálogo sobre um fundo opaco que
+   não é o mapa. Em touch (mesmo com tela larga) e no mobile o véu continua. */
+@media (min-width: 761px) and (hover: hover) and (pointer: fine) {
+  .modal { background: transparent; }
+}
 .modal[hidden] { display: none; }
 /* Trava o scroll de fundo enquanto há um modal aberto (a classe é posta/tirada
    pelo controlador de acessibilidade dos modais em app.js). Junto com o
@@ -481,9 +488,34 @@ body.modal-open { overflow: hidden; }
 .upload-modal-content.maximized > header {
   top: env(safe-area-inset-top, 0px);
 }
-/* Galeria e censo: o título precisa livrar as DUAS bolinhas (fechar + maximizar). */
+/* Galeria, censo, upload e rota: o título precisa livrar as DUAS bolinhas
+   (fechar + maximizar). */
 #imagens-modal .modal-content header,
-#censo-modal .modal-content header { padding-left: 46px; }
+#censo-modal .modal-content header,
+#upload-modal .modal-content header,
+#route-modal .modal-content header { padding-left: 46px; }
+
+/* Modal de rota maximizado — mesmo tratamento das galerias (janela cheia +
+   safe-area), mas SEM iframe: o padding-top de 26px já vem de
+   `.modal-content > header + *:not(iframe)` (regra acima), então o extra do
+   notch entra como padding adicional no PRÓPRIO corpo (route-modal-body),
+   não no .modal-content (que aqui não tem padding-top próprio). Precisa vencer
+   `#route-modal .modal-content { max-height: 70vh }` do mobile — daí o ID. */
+#route-modal .modal-content.maximized {
+  width: 100vw; height: 100vh; max-height: none;
+  border-radius: 0; border: 0;
+}
+#route-modal .modal-content.maximized > .close-dot,
+#route-modal .modal-content.maximized > .maximize-dot {
+  top: calc(8px + env(safe-area-inset-top, 0px));
+}
+#route-modal .modal-content.maximized > header {
+  top: env(safe-area-inset-top, 0px);
+}
+#route-modal .modal-content.maximized > .route-modal-body {
+  padding-top: calc(26px + env(safe-area-inset-top, 0px));
+  padding-bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+}
 /* Reserva de espaço pra bolinha (macOS-like): o conteúdo cai logo abaixo dela.
    Modais sem iframe têm estrutura [<header oculto>][corpo] → empurra o corpo;
    modais com iframe reservam a faixa no próprio contêiner flex (.upload-…). */
@@ -523,6 +555,16 @@ body.modal-open { overflow: hidden; }
   border-bottom: none;
   z-index: 20;                 /* abaixo da bolinha (z 30), acima do corpo */
   pointer-events: none;        /* o título não intercepta cliques */
+}
+/* No desktop com mouse de verdade, a faixa de título vira alça de arraste —
+   ver makeModalDraggable/dragModeEnabled em app.js. Fica pointer-events:none
+   em touch (mesmo com tela larga) e no mobile (bottom-sheet fixo, sem "pra
+   onde" arrastar) e quando maximizado (tela cheia). */
+@media (min-width: 761px) and (hover: hover) and (pointer: fine) {
+  .modal-content:not(.maximized) > header {
+    pointer-events: auto;
+    cursor: move;
+  }
 }
 .modal-content header h2 {
   margin: 0;
@@ -978,11 +1020,9 @@ body.modal-open { overflow: hidden; }
 
 /* Photo/video fallback modal: bottom-sheet centralizado pra mobile, ou
    diálogo centrado em desktop. Reusa .modal/.modal-content (animação +
-   click-fora-fecha). Aciona quando o popup do Leaflet não caberia
-   confortavelmente na viewport — ver popupopen handler em app.js. */
-.photo-fallback-modal {
-  background: rgba(0, 0, 0, 0.55);
-}
+   click-fora-fecha, e o mesmo véu condicional — ver regra `.modal` acima).
+   Aciona quando o popup do Leaflet não caberia confortavelmente na viewport —
+   ver popupopen handler em app.js. */
 .photo-fallback-content {
   position: relative;
   width: min(92vw, 540px);
@@ -991,15 +1031,6 @@ body.modal-open { overflow: hidden; }
   overflow-y: auto;
   padding: 0;
   background: var(--panel);
-}
-/* X branco no canto superior esquerdo — herda visual de .modal-content
-   .close (declarado acima); só posicionamos aqui pra ele ficar sobre o
-   conteúdo em vez de no flow. */
-.photo-fallback-close {
-  position: absolute;
-  top: 4px;
-  left: 8px;
-  z-index: 2;
 }
 .photo-fallback-content .photo-popup {
   width: 100%;
@@ -2067,48 +2098,66 @@ body.trace-preview .tp-label { display: none !important; }
   max-height: 85vh;
   overflow: hidden;
 }
-/* Botão X no popup do Leaflet: mesmo visual do .modal-content .close usado
-   pelo fallback modal — X branco em fundo transparente no canto superior
-   esquerdo. Mantém UX consistente entre popup e modal. !important nos
-   campos de posicionamento pra anular os defaults do Leaflet. */
+/* Botão de fechar do popup do Leaflet: mesma bolinha vermelha (.close-dot) dos
+   modais — completa o par vermelho/verde com a .maximize-dot de "Ver grande".
+   O × nativo do Leaflet (texto dentro do <a>) é escondido via font-size:0; o
+   × branco no hover vem do ::after, igual ao .close-dot. !important nos
+   campos de posicionamento/forma pra anular os defaults do Leaflet. */
 .photo-popup-wrap .leaflet-popup-close-button {
+  box-sizing: border-box !important;
   position: absolute !important;
   top: 4px !important;
   left: 8px !important;
   right: auto !important;
-  width: auto !important;
-  height: auto !important;
+  width: 13px !important;
+  height: 13px !important;
   padding: 0 !important;
-  background: transparent !important;
-  color: var(--text) !important;
-  font: 22px/1 system-ui, sans-serif !important;
+  border-radius: 50% !important;
+  border: 0.5px solid rgba(0, 0, 0, 0.22);
+  background: #ff5f57 !important;
+  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.35);
+  font-size: 0 !important;   /* esconde o "×" nativo do Leaflet */
   text-decoration: none;
   z-index: 10;
 }
-.photo-popup-wrap .leaflet-popup-close-button:hover {
-  color: var(--text) !important;
-  opacity: 0.7;
+.photo-popup-wrap .leaflet-popup-close-button::after {
+  content: "\00d7"; position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700;
+  color: #fff; opacity: 0;
+  text-shadow: 0 0 1px rgba(0, 0, 0, 0.35);
 }
+.photo-popup-wrap .leaflet-popup-close-button:hover::after { opacity: 1; }
 .photo-popup {
   width: 440px;
   max-width: min(440px, 92vw);
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
   align-items: stretch;
+  position: relative;   /* âncora pra bolinha .maximize-dot ("Ver grande") */
+}
+/* "Ver grande": mesma bolinha verde de maximizar dos outros modais, ao lado
+   do × do Leaflet (que já foi reposicionado pro canto superior esquerdo,
+   ver .leaflet-popup-close-button acima) — completa o par vermelho/verde. */
+.photo-popup > .maximize-dot {
+  position: absolute;
+  top: 4px;
+  left: 32px;
+  z-index: 10;
 }
 .photo-popup > img {
-  grid-column: 1;
+  grid-column: 2;   /* foto à direita — deixa o canto sup. esq. (×/verde) sobre o painel de texto */
   grid-row: 1 / -1;
   display: block;
   width: 100%;
   height: 100%;
   max-height: 60vh;
   object-fit: cover;
-  border-radius: 6px 0 0 6px;
+  border-radius: 0 6px 6px 0;
   background: var(--surface);
   image-orientation: none;
 }
-.photo-popup > :not(img):not(video):not(audio) { grid-column: 2; min-width: 0; }
+.photo-popup > :not(img):not(video):not(audio) { grid-column: 1; min-width: 0; }
 /* Em larguras muito apertadas (modal estreito em celular), volta a uma coluna
    só pra texto não amassar. */
 @media (max-width: 420px) {
@@ -2138,6 +2187,13 @@ body.trace-preview .tp-label { display: none !important; }
   margin: 0;
   font-size: 11px;
   line-height: 1.4;
+}
+/* Popup de FOTO: o painel de texto agora fica à esquerda (foto foi pra
+   direita), bem embaixo das bolinhas de fechar/maximizar — reserva espaço
+   pra não colar no "QUANDO". Vídeo não precisa (o player vem primeiro; as
+   bolinhas ficam só no canto dele, não sobre texto). */
+.photo-popup:not(.video-popup) > .photo-details {
+  padding-top: 22px;
 }
 .photo-popup .photo-details dt {
   color: var(--muted);
@@ -2176,6 +2232,22 @@ body.trace-preview .tp-label { display: none !important; }
   border: 1px solid rgba(127,127,127,.3);
 }
 .photo-popup .photo-dl:hover { background: rgba(127,127,127,.25); }
+/* Fallback neutro pros botões de ação sem estilo próprio (Listas, Editar,
+   Ver grande, Compartilhar) — mesmo visual do .photo-dl, sem precisar
+   listar cada classe nova aqui. :not() exclui Excluir (que fica vermelho). */
+.photo-popup .photo-actions button:not(.photo-del):not(.video-del) {
+  font-family: inherit;
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: var(--surface-2, rgba(127,127,127,.15));
+  color: var(--text);
+  border: 1px solid rgba(127,127,127,.3);
+  cursor: pointer;
+}
+.photo-popup .photo-actions button:not(.photo-del):not(.video-del):hover {
+  background: rgba(127,127,127,.25);
+}
 /* Excluir: red-orange pra destacar a ação destrutiva (e bate com a borda
    dos markers de vídeo). Aplica tanto a `.photo-del` (imagem) quanto a
    `.video-del` (clipe). */

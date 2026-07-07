@@ -1544,6 +1544,125 @@ def tour_page(slug):
                                  headers={"Cache-Control": "no-cache"}))
 
 
+def _render_series_html(g, series_iri, es, editions):
+    """Página humana de uma série de eventos — lista as edições (mais recente
+    primeiro), cada uma linkando pro passeio que a realizou. Mesmo estilo
+    escuro de _render_terms_html; best-effort (nunca falha o request)."""
+    from rdflib import URIRef, Namespace
+    DCT = Namespace("http://purl.org/dc/terms/")
+    SCHEMA = Namespace(SCHEMA_NS)
+    PH = Namespace(PH_NS)
+    INSERIES = PH.inSeriesEdition
+    SEQ = PH.sequenceInSeries
+
+    def esc(s):
+        return (str(s).replace("&", "&amp;").replace("<", "&lt;")
+                .replace(">", "&gt;").replace('"', "&quot;"))
+
+    title = str(g.value(series_iri, DCT.title) or es)
+
+    rows = []
+    for ed in editions:
+        seq_lit = g.value(ed, SEQ)
+        try:
+            seq_n = int(seq_lit)
+        except (TypeError, ValueError):
+            seq_n = 0
+        seg = str(ed)[len(PAS_NS):]   # "<ES>/<n>" — segmento pro link da edição
+        realizer = next(iter(g.subjects(INSERIES, ed)), None)
+        tour_title = str(g.value(realizer, DCT.title)) if realizer is not None else None
+        tour_date = g.value(realizer, DCT.date) if realizer is not None else None
+        tour_slug = str(realizer)[len(PAS_NS):] if realizer is not None else None
+        rows.append((seq_n, seg, tour_title, tour_date, tour_slug))
+    rows.sort(key=lambda r: r[0], reverse=True)
+
+    def row_html(seq_n, seg, tour_title, tour_date, tour_slug):
+        label = tour_title or "(passeio sem título)"
+        date_s = str(tour_date)[:10] if tour_date else ""
+        link = f"/?tour={esc(tour_slug)}" if tour_slug else f"/passeio/{esc(seg)}"
+        return (
+            f'<div class="row"><span class="k"><a href="{esc(link)}">'
+            f'{esc(es)} {seq_n}</a></span>'
+            f'<span class="v">{esc(label)}{f" · {esc(date_s)}" if date_s else ""}</span></div>')
+
+    rows_html = "".join(row_html(*r) for r in rows) or '<p class="lede">Sem edições.</p>'
+
+    return f"""<!doctype html><html lang="pt"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{esc(title)} — série</title>
+<style>
+:root{{color-scheme:dark}}
+body{{margin:0;background:#12141a;color:#e6e8ee;font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;padding:0 1rem 4rem}}
+.wrap{{max-width:640px;margin:0 auto}}
+header{{padding:2rem 0 1rem;border-bottom:1px solid #2a2e39}}
+h1{{margin:0 0 .3rem;font-size:1.6rem}}
+code{{background:#1c2029;padding:.08em .35em;border-radius:4px;color:#cfe3ff;font-size:.92em}}
+a{{color:#7fb2ff;text-decoration:none}}
+a:hover{{text-decoration:underline}}
+p{{margin:.35rem 0 .5rem;color:#c2c6d2}}
+.lede{{color:#c2c6d2}}
+.row{{display:flex;gap:.8rem;padding:.55rem 0;border-bottom:1px solid #21252f;font-size:.92rem}}
+.k{{min-width:5.5rem;flex:0 0 auto;font-weight:600}}
+.v{{color:#d7dbe6}}
+.ttl-link{{margin-top:.8rem;font-size:.9rem}}
+footer{{margin-top:2rem;color:#7d8296;font-size:.82rem}}
+</style></head><body><div class="wrap">
+<header>
+<h1>{esc(title)}</h1>
+<p class="lede"><code>ser:{esc(es)}</code> · {len(rows)} edição{'ões' if len(rows) != 1 else ''}</p>
+<p class="ttl-link"><a href="/serie/{esc(es)}?format=ttl">↓ Turtle</a></p>
+</header>
+{rows_html}
+<footer>Pedal Hidrográfico · série de eventos, servida de tours.ttl.</footer>
+</div></body></html>"""
+
+
+@app.get("/serie/<es>")
+def series_page(es):
+    """Dereferência de uma série de eventos (schema:EventSeries). IRI:
+    https://id.pedalhidrografi.co/serie/<ES> (ex.: .../serie/PH). Conneg:
+    Accept: text/turtle (ou ?format=ttl) → a série + suas edições
+    (ph:SeriesEdition, via ph:inEventSeries inverso) + o passeio que realiza
+    cada uma; senão uma página HTML gerada listando as edições (mais recente
+    primeiro), cada uma linkando pro passeio realizador."""
+    from rdflib import URIRef
+    Graph = _load_validator()["Graph"]
+    tours_text = _load_dump_text("tours.ttl")
+    if not tours_text:
+        abort(404)
+    g = Graph().parse(data=tours_text, format="turtle")
+    series_iri = URIRef(SER_NS + es)
+    if (series_iri, None, None) not in g:
+        abort(404)
+    INEVENTSERIES = URIRef(PH_NS + "inEventSeries")
+    INSERIES = URIRef(PH_NS + "inSeriesEdition")
+    editions = list(g.subjects(INEVENTSERIES, series_iri))
+    if not _wants_turtle(request):
+        try:
+            html = _render_series_html(g, series_iri, es, editions)
+        except Exception as e:  # noqa: BLE001
+            print(f"[series] render falhou pra ser:{es}: {e}")
+            html = None
+        if html is not None:
+            return _conditional(Response(html, mimetype="text/html",
+                                         headers={"Cache-Control": "no-cache"}))
+    out = Graph()
+    for pfx, ns in (("pas", PAS_NS), ("ser", SER_NS), ("ph", PH_NS),
+                    ("dcterms", "http://purl.org/dc/terms/")):
+        out.bind(pfx, ns)
+    for t in g.triples((series_iri, None, None)):
+        out.add(t)
+    for ed in editions:
+        for t in g.triples((ed, None, None)):
+            out.add(t)
+        realizer = next(iter(g.subjects(INSERIES, ed)), None)
+        if realizer is not None:
+            out.add((realizer, INSERIES, ed))
+    return _conditional(Response(out.serialize(format="turtle"),
+                                 mimetype="text/turtle",
+                                 headers={"Cache-Control": "no-cache"}))
+
+
 @app.get("/passeio/<es>/<seq>")
 def edition_page(es, seq):
     """Dereferência de uma EDIÇÃO de série (ph:SeriesEdition). IRI:
