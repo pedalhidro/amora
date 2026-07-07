@@ -3749,6 +3749,10 @@ document.getElementById('subir-censo')?.addEventListener('click', () => {
   closeSubirModal();
   openCensoModal();
 });
+document.getElementById('subir-download-gpx')?.addEventListener('click', () => {
+  closeSubirModal();
+  downloadAllRoutesGpx();
+});
 document.getElementById('subir-share-loc')?.addEventListener('click', () => {
   closeSubirModal();
   onShareLocClick();
@@ -10862,6 +10866,267 @@ function buildGpx(latlngs, name, pois = [], extras = {}) {
 function cdata(s) {
   // CDATA cannot contain "]]>". JSON values shouldn't, but split defensively.
   return `<![CDATA[${String(s).replace(/]]>/g, ']]]]><![CDATA[>')}]]>`;
+}
+
+// ─── Baixar todas as rotas como GPX (ZIP) ────────────────────────────────────
+// Exporta cada rota cadastrada como .gpx. Os metadados vão nos campos PADRÃO do
+// GPX (name/cmt/desc/number/type/src/link), que o QGIS/OGR lê como colunas de
+// atributo SEM opção nenhuma, E num bloco <extensions> phidro:* (colunas extras
+// pra quem abre com GPX_USE_EXTENSIONS=YES). Além dos arquivos por rota, o ZIP
+// traz um `pedal-hidrografico-rotas.gpx` com TODAS juntas — ideal pro QGIS, que
+// o lê como uma única camada "tracks" (uma feição por rota).
+const GPX_README =
+  'Rotas do Pedal Hidrográfico — exportação GPX\n' +
+  'https://amora.pedalhidrografi.co/\n\n' +
+  'CONTEÚDO\n' +
+  '  pedal-hidrografico-rotas.gpx   Todas as rotas num arquivo só (melhor pro QGIS).\n' +
+  '  rotas/*.gpx                    Uma rota por arquivo (bom pra Garmin/Strava/apps).\n\n' +
+  'ABRINDO NO QGIS (rotas como vetores)\n' +
+  '  Arraste "pedal-hidrografico-rotas.gpx" pro QGIS. Ele vira várias camadas —\n' +
+  '  use "tracks" (as rotas como linhas) e "waypoints" (os POIs). Cada rota é uma\n' +
+  '  feição com atributos: name, cmt (narrativa), desc (resumo), number, type,\n' +
+  '  src e link (abre o passeio no site).\n' +
+  '  A coluna "desc" traz o resumo (data, número(s), distância, energia em kJ,\n' +
+  '  duração, participantes). Pra campos SEPARADOS (energyKj, distanceKm…), abra\n' +
+  '  com a opção GPX_USE_EXTENSIONS=YES (Fonte de dados › Opções abertas), que\n' +
+  '  expõe as tags <phidro:*> como colunas.\n';
+
+async function downloadAllRoutesGpx() {
+  const entries = [...routes.values()]
+    .map((r) => r.entry)
+    .filter((e) => e && Array.isArray(e.latlngs) && e.latlngs.length >= 2);
+  if (!entries.length) { showToast('Nenhuma rota com traçado pra exportar.'); return; }
+
+  showToast(`Preparando ${entries.length} rotas…`, 4000);
+  let JSZip;
+  try { JSZip = await ensureJSZip(); }
+  catch (e) { showToast(`JSZip indisponível: ${e.message}`); return; }
+
+  // Enriquecimento: metadados dos passeios (energia, narrativa, duração…),
+  // join por tourIri. Best-effort — sem tours.ttl, exporta só o que routes.json
+  // já traz (nome, data, números, distância, links, id RWGPS).
+  let meta = new Map();
+  try {
+    const [t, i] = await Promise.all([
+      fetch('./data/tours.ttl', { cache: 'no-cache' }).then((r) => (r.ok ? r.text() : '')),
+      fetch('./data/identities.ttl', { cache: 'no-cache' }).then((r) => (r.ok ? r.text() : '')),
+    ]);
+    meta = await collectTourMeta(`${t}\n\n${i}`);
+  } catch (_) { /* segue sem enriquecimento */ }
+
+  const zip = new JSZip();
+  const trkFrags = [];
+  const wptFrags = [];
+  const isoNow = new Date().toISOString();
+  for (const entry of entries) {
+    const built = buildRouteGpxParts(entry, meta.get(entry.tourIri) || {});
+    trkFrags.push(built.trk);
+    if (built.wpts) wptFrags.push(built.wpts);
+    zip.file(
+      `rotas/${routeGpxFilename(entry)}`,
+      wrapGpx(built.trk, built.wpts, built.name, built.desc, entry.tourIri, isoNow),
+    );
+  }
+  zip.file(
+    'pedal-hidrografico-rotas.gpx',
+    wrapGpx(trkFrags.join('\n'), wptFrags.join('\n'),
+      `Rotas do Pedal Hidrográfico (${entries.length})`,
+      `Exportado em ${isoNow.slice(0, 10)}`, null, isoNow),
+  );
+  zip.file('LEIA-ME.txt', GPX_README);
+
+  showToast('Compactando…', 4000);
+  const blob = await zip.generateAsync({ type: 'blob' });
+  downloadBlob(blob, `pedal-hidrografico-rotas-${isoNow.slice(0, 10)}.zip`);
+  showToast(`${entries.length} rotas baixadas.`);
+}
+
+// Envelope GPX 1.1 em volta de um ou mais <trk> + <wpt> já montados.
+function wrapGpx(trk, wpts, name, desc, link, isoNow) {
+  return (
+    '<?xml version="1.0" encoding="UTF-8"?>\n' +
+    '<gpx version="1.1" creator="Pedal Hidrográfico"\n' +
+    '     xmlns="http://www.topografix.com/GPX/1/1"\n' +
+    `     xmlns:phidro="${PHIDRO_NS}">\n` +
+    '  <metadata>\n' +
+    `    <name>${escapeXml(name)}</name>\n` +
+    (desc ? `    <desc>${escapeXml(desc)}</desc>\n` : '') +
+    (link ? `    <link href="${escapeXml(link)}"><text>Passeio no Pedal Hidrográfico</text></link>\n` : '') +
+    `    <time>${isoNow}</time>\n` +
+    '  </metadata>\n' +
+    (wpts ? `${wpts}\n` : '') +
+    `${trk}\n` +
+    '</gpx>\n'
+  );
+}
+
+// Monta o <trk> (+ <wpt> dos POIs) de uma rota, empacotando os metadados nos
+// campos padrão do GPX + num bloco <extensions>. Devolve as partes pra serem
+// usadas tanto no arquivo individual quanto no arquivo único (todas as rotas).
+function buildRouteGpxParts(entry, m) {
+  const name = buildLabel(entry);
+  const nums = entryNumbers(entry);
+  const numbersStr = nums.map((n) => `${n.source} ${n.value}`).join(' · ');
+  const distKm = routeDistanceKm(entry.latlngs);
+  const desc = packRouteDesc(entry, m, distKm, numbersStr);
+
+  const trkpts = entry.latlngs
+    .map(([lat, lon]) => `      <trkpt lat="${lat}" lon="${lon}"/>`)
+    .join('\n');
+
+  // <number> exige xsd:nonNegativeInteger — só emite se houver número inteiro
+  // puro (ex.: "98"; ignora "3-5" de colisão de edição, que fica só no cmt/ext).
+  const intNum = nums.map((n) => n.value).find((v) => /^\d+$/.test(v));
+
+  const ext = [];
+  const addExt = (tag, v) => {
+    if (v != null && v !== '') ext.push(`        <phidro:${tag}>${escapeXml(String(v))}</phidro:${tag}>`);
+  };
+  addExt('date', entry.date);
+  addExt('numbers', numbersStr);
+  addExt('distanceKm', distKm != null ? distKm.toFixed(2) : null);
+  addExt('energyKj', m.energyKj);
+  addExt('intensity', m.intensity);
+  addExt('measuredEnergyKj', m.measuredKj);
+  addExt('movingDuration', m.moving);
+  addExt('attendees', m.attendees);
+  addExt('newcomers', m.newcomers);
+  addExt('authors', (m.authors || []).join(', '));
+  addExt('tourIri', entry.tourIri);
+  addExt('rwgpsId', entry.id);
+  addExt('instagram', entry.igPost);
+
+  const links =
+    (entry.tourIri ? `    <link href="${escapeXml(entry.tourIri)}"><text>Passeio</text></link>\n` : '') +
+    (entry.igPost ? `    <link href="${escapeXml(entry.igPost)}"><text>Instagram</text></link>\n` : '');
+
+  const trk =
+    '  <trk>\n' +
+    `    <name>${escapeXml(name)}</name>\n` +
+    (m.description ? `    <cmt>${escapeXml(m.description)}</cmt>\n` : '') +
+    (desc ? `    <desc>${escapeXml(desc)}</desc>\n` : '') +
+    '    <src>Pedal Hidrográfico</src>\n' +
+    links +
+    (intNum ? `    <number>${intNum}</number>\n` : '') +
+    '    <type>cycling</type>\n' +
+    (ext.length ? `    <extensions>\n${ext.join('\n')}\n    </extensions>\n` : '') +
+    `    <trkseg>\n${trkpts}\n    </trkseg>\n` +
+    '  </trk>';
+
+  const wpts = (entry.pois || [])
+    .filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng))
+    .map((p) =>
+      `  <wpt lat="${p.lat}" lon="${p.lng}">\n` +
+      `    <name>${escapeXml(p.name || 'POI')}</name>\n` +
+      (p.sym ? `    <sym>${escapeXml(p.sym)}</sym>\n` : '') +
+      '    <type>POI</type>\n' +
+      `    <cmt>${escapeXml(name)}</cmt>\n` +
+      '  </wpt>')
+    .join('\n');
+
+  return { trk, wpts, name, desc };
+}
+
+// Resumo de uma linha (vira a coluna `desc` no QGIS) — só os campos presentes.
+function packRouteDesc(entry, m, distKm, numbersStr) {
+  const parts = [];
+  if (entry.date) parts.push(`Data: ${entry.date}`);
+  if (numbersStr) parts.push(`Nº: ${numbersStr}`);
+  if (distKm != null) parts.push(`Distância: ${distKm.toFixed(1)} km`);
+  if (m.energyKj) parts.push(`Energia: ${m.energyKj} kJ${m.intensity ? ` (${m.intensity})` : ''}`);
+  if (m.moving) parts.push(`Duração: ${fmtIsoDur(m.moving)}`);
+  if (m.attendees) parts.push(`Participantes: ${m.attendees}`);
+  if (entry.id) parts.push(`RWGPS: ${entry.id}`);
+  if (entry.tourIri) parts.push(`Passeio: ${entry.tourIri}`);
+  return parts.join(' | ');
+}
+
+// ISO 8601 duration compacta: "PT1H51M" → "1h51", "PT18M" → "18min".
+function fmtIsoDur(iso) {
+  const mt = /^PT(?:(\d+)H)?(?:(\d+)M)?/.exec(iso || '');
+  if (!mt) return iso || '';
+  const h = mt[1] ? +mt[1] : 0;
+  const mn = mt[2] ? +mt[2] : 0;
+  if (h && mn) return `${h}h${String(mn).padStart(2, '0')}`;
+  if (h) return `${h}h`;
+  if (mn) return `${mn}min`;
+  return iso || '';
+}
+
+function routeDistanceKm(latlngs) {
+  if (!Array.isArray(latlngs) || latlngs.length < 2) return null;
+  let m = 0;
+  for (let i = 1; i < latlngs.length; i++) {
+    m += haversine(latlngs[i - 1][0], latlngs[i - 1][1], latlngs[i][0], latlngs[i][1]);
+  }
+  return m / 1000;
+}
+
+// Nome de arquivo humano-amigável e único: "2026-07-04-PH98-<slug>.gpx".
+function routeGpxFilename(entry) {
+  const slug = (entry.tourIri || '').split('/').pop() || `rota-${entry.id}`;
+  const nums = entryNumbers(entry).map((n) => `${n.source}${n.value}`).join('-');
+  const base = [entry.date || '', nums, slug].filter(Boolean).join('-');
+  return `${base.replace(/[^\w.-]/g, '_')}.gpx`;
+}
+
+// Parseia tours.ttl (+ identities.ttl pros nomes) → Map tourIri → metadados.
+// Só passeios (pas:<slug>), pula edições de série (pas:<ES>/<seq>).
+async function collectTourMeta(text) {
+  const map = new Map();
+  let Parser;
+  try { Parser = await ensureN3(); } catch (_) { return map; }
+  const PH = 'https://id.pedalhidrografi.co/terms#';
+  const DCT = 'http://purl.org/dc/terms/';
+  const PROV = 'http://www.w3.org/ns/prov#';
+  const SCHEMA = 'https://schema.org/';
+  const PAS = 'https://id.pedalhidrografi.co/passeio/';
+  let quads;
+  try { quads = new Parser().parse(text); } catch (_) { return map; }
+  const subjBy = new Map();
+  const names = new Map();
+  for (const q of quads) {
+    const s = q.subject.value;
+    const p = q.predicate.value;
+    if (p === SCHEMA + 'name') names.set(s, q.object.value);
+    else if (p === SCHEMA + 'alternateName' && !names.has(s)) names.set(s, q.object.value);
+    if (!subjBy.has(s)) subjBy.set(s, []);
+    subjBy.get(s).push(q);
+  }
+  const intensityFor = (kj) => {
+    if (!Number.isFinite(kj)) return null;
+    if (kj < 150) return 'De boa';
+    if (kj < 300) return 'Ok';
+    if (kj < 500) return 'Endorfinado';
+    if (kj < 1000) return 'Frito';
+    return 'Insano';
+  };
+  for (const [s, qs] of subjBy) {
+    if (!s.startsWith(PAS) || s.slice(PAS.length).includes('/')) continue;  // pula edições
+    const lit = (pred) => {
+      for (const q of qs) {
+        if (q.predicate.value === pred && q.object.termType === 'Literal') return q.object.value;
+      }
+      return null;
+    };
+    const iris = (pred) => qs
+      .filter((q) => q.predicate.value === pred && q.object.termType === 'NamedNode')
+      .map((q) => q.object.value);
+    const energy = lit(PH + 'energyEstimate');
+    map.set(s, {
+      description: lit(DCT + 'description'),
+      energyKj: energy,
+      intensity: energy != null ? intensityFor(parseFloat(energy)) : null,
+      measuredKj: lit(PH + 'measuredEnergy'),
+      moving: lit(PH + 'movingDuration'),
+      departed: lit(PH + 'departedAt'),
+      arrived: lit(PH + 'arrivedAt'),
+      attendees: lit(PH + 'countAttendee'),
+      newcomers: lit(PH + 'countNewcomer'),
+      authors: iris(PROV + 'wasAttributedTo').map((iri) => names.get(iri) || iri.replace(/^.*[#/]/, '')),
+    });
+  }
+  return map;
 }
 
 // ─── Save GPX modal ──────────────────────────────────────────────────────────
