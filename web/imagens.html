@@ -228,6 +228,15 @@
   /* touch-action: pan-x pan-y => o navegador ainda rola com 1 dedo, mas cede o
      gesto de pinça (2 dedos) pra gente controlar o zoom das miniaturas. */
   .gallery { display: block; position: relative; touch-action: pan-x pan-y; }
+  /* Isola a View Transition (ver withViewTransition() no JS) só na galeria —
+     senão o crossfade "root" pega a página inteira (topbar, filtros…) junto. */
+  #gallery { view-transition-name: gallery; }
+  @media (prefers-reduced-motion: reduce) {
+    .tile { transition: none; }
+    ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) {
+      animation: none !important;
+    }
+  }
   /* Modo contínuo: overlay dos polígonos de grupo (não intercepta cliques). */
   .group-overlay { position: absolute; pointer-events: none; z-index: 3; }
   .group-chip {
@@ -263,6 +272,10 @@
   .tile {
     position: relative; aspect-ratio: 1 / 1; border-radius: 3px; overflow: hidden;
     background: var(--surface); cursor: pointer; border: 1px solid var(--border);
+    /* Zoom (+/−) muda --cols, o que muda a largura de cada tile via grid — a
+       altura segue sozinha (aspect-ratio). Em colagem, layoutJustified() põe
+       width/height inline; a transição também suaviza essa troca. */
+    transition: width 0.22s ease, height 0.22s ease;
   }
   .tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
   .tile:hover { border-color: var(--accent); }
@@ -933,6 +946,15 @@ function rebuildAndRun() {
   runAndRender(sparql, facets);
 }
 
+// Filtro/agrupamento reconstrói o #gallery inteiro (innerHTML) — sem isso, a
+// troca é um corte seco. View Transitions tira um "antes"/"depois" e faz um
+// crossfade+morph nativo; sem suporte (Safari/Firefox mais antigos), cai pro
+// render direto, sem quebrar nada.
+function withViewTransition(fn) {
+  if (document.startViewTransition) document.startViewTransition(fn);
+  else fn();
+}
+
 async function runAndRender(sparql, facets) {
   const seq = ++runSeq;
   setQueryStatus('carregando consulta…');   // Comunica é lazy (~1.6 MB) na 1ª vez
@@ -948,7 +970,7 @@ async function runAndRender(sparql, facets) {
   }
   if (seq !== runSeq) return;   // uma consulta mais nova já começou
   setQueryStatus('');
-  renderGroups(rows, facets);
+  withViewTransition(() => renderGroups(rows, facets));
 }
 
 function setQueryStatus(msg) { $('#query-status').textContent = msg; }
@@ -976,7 +998,7 @@ function groupLabel(key) {
 }
 
 let lastRows = null, lastFacets = null;   // cache p/ re-render sem re-consultar
-function rerender() { if (lastRows) renderGroups(lastRows, lastFacets); }
+function rerender() { if (lastRows) withViewTransition(() => renderGroups(lastRows, lastFacets)); }
 function renderGroups(rows, facets) {
   lastRows = rows; lastFacets = facets;
   const wds = facets.weekdays || [];
