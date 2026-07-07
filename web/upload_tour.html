@@ -1079,10 +1079,11 @@ async function prefillFromId(tourId) {
     else if (p === PH_NS + 'movingDuration') {
       // "PT2H35M0S" → "2:35:00" pra exibir; aceita H, M, S.
       const lit = objLit(q);
-      const m = lit.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/);
+      const m = lit.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?$/);
       if (m) {
-        const h = m[1] || '0', mn = m[2] || '0', s = m[3] || '0';
-        moving = `${h}:${mn.padStart(2,'0')}:${s.padStart(2,'0')}`;
+        const h = m[1] || '0', mn = m[2] || '0';
+        const s = Math.round(parseFloat(m[3] || '0'));
+        moving = `${h}:${mn.padStart(2,'0')}:${String(s).padStart(2,'0')}`;
       }
     }
   }

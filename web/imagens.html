@@ -762,6 +762,7 @@ const selected = new Set();          // IRIs de mídia selecionadas
 const pendingNewLists = new Map();   // listIri → nome (listas criadas na sessão, ainda não persistidas)
 let ftLists, ftAuthors, ftUploaders, ftTours, assignTS, lbTS;
 let lbRecord = null;                 // record aberto no lightbox
+let _lbSavePending = false;          // há um scheduleLbSave() pendente (debounce) a ser descartado/reforçado ao fechar
 
 // Reconstrói store + model + índice a partir dos dados atuais.
 async function loadAndBuild() {
@@ -1509,7 +1510,7 @@ function wireLightbox() {
   $('#lb-share').addEventListener('click', shareLightboxLink);
   // Listas salvam sozinhas ao mudar (sem botão). setValue(...,true) na abertura
   // é silencioso, então só mudanças do usuário disparam o auto-save.
-  lbTS.on('change', () => { if (lbRecord) scheduleLbSave(); });
+  lbTS.on('change', () => { if (lbRecord) { _lbSavePending = true; scheduleLbSave(); } });
 }
 const scheduleLbSave = debounce(saveLightboxLists, 500);
 function openLightbox(rec) {
@@ -1559,6 +1560,10 @@ let _lbDirty = false;   // houve save no lightbox → refaz galeria+mapa ao fech
 function closeLightbox() {
   $('#lightbox').hidden = true;
   $('#lb-media').innerHTML = '';   // para o vídeo/áudio ao fechar
+  // Flush: se há uma alteração de listas ainda esperando o debounce de 500ms,
+  // salva agora (com lbRecord ainda setado) em vez de deixar o timer disparar
+  // depois com lbRecord já nulo (saveLightboxLists() bailaria e a mudança se perderia).
+  if (_lbSavePending) { _lbSavePending = false; saveLightboxLists(); }
   lbRecord = null;
   if (_lbDirty) { _lbDirty = false; refresh(); }   // re-fetch + re-render + avisa o mapa
 }
@@ -1566,6 +1571,7 @@ function closeLightbox() {
 // /update-*. NÃO fecha o lightbox nem re-renderiza (isso fica pro closeLightbox,
 // pra não piscar a galeria a cada toggle); só atualiza o registro + os chips.
 async function saveLightboxLists() {
+  _lbSavePending = false;
   if (!lbRecord) return;
   const rec = lbRecord;
   const listIris = lbTS.getValue().slice();
@@ -1841,11 +1847,10 @@ async function applyAssign() {
 async function downloadSelected() {
   const recs = selectedRecords();
   if (!recs.length) return;
-  const btn = $('#sel-download');
-  btn.disabled = true; btn.textContent = 'Preparando…';
+  toast('Preparando…');
   let JSZip;
   try { JSZip = await ensureJSZip(); }
-  catch (e) { btn.disabled = false; btn.textContent = 'Baixar'; showError('JSZip indisponível: ' + e.message); return; }
+  catch (e) { showError('JSZip indisponível: ' + e.message); return; }
   const zip = new JSZip();
   let done = 0;
   for (const r of recs) {
@@ -1865,16 +1870,15 @@ async function downloadSelected() {
       } catch (_) { /* arquivo indisponível — pula */ }
     }
     done++;
-    btn.textContent = `Baixando ${done}/${recs.length}…`;
+    toast(`Baixando ${done}/${recs.length}…`);
   }
-  btn.textContent = 'Compactando…';
+  toast('Compactando…');
   const blob = await zip.generateAsync({ type: 'blob' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = `imagens_${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.zip`;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 10000);
-  btn.disabled = false; btn.textContent = 'Baixar';
 }
 
 // Excluir seleção → POST /delete-image|/delete-video.
@@ -1882,17 +1886,14 @@ async function deleteSelected() {
   const recs = selectedRecords();
   if (!recs.length) return;
   if (!confirm(`Excluir ${recs.length} mídia(s)? Isso remove arquivos e triples e não pode ser desfeito.`)) return;
-  const btn = $('#sel-delete');
-  btn.disabled = true;
   let done = 0, fail = 0;
   for (const r of recs) {
     const url = r.kind === 'image' ? `./delete-image/${r.phash}` : `./delete-video/${r.vhash}`;
     try { const resp = await fetch(url, { method: 'POST' }); if (!resp.ok) fail++; }
     catch (_) { fail++; }
     done++;
-    btn.textContent = `Excluindo ${done}/${recs.length}…`;
+    toast(`Excluindo ${done}/${recs.length}…`);
   }
-  btn.textContent = 'Excluir'; btn.disabled = false;
   selected.clear();
   await refresh();
   if (fail) showError(`${fail} exclusão(ões) falharam.`);

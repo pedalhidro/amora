@@ -232,7 +232,7 @@
         <th data-key="totalKj" data-num="true">kJ&nbsp;coletivo</th>
         <th data-key="collectiveH"       data-num="true">Tempo&nbsp;coletivo</th>
         <th data-key="collectiveMovingH" data-num="true">Tempo&nbsp;movimento&nbsp;coletivo</th>
-        <th data-key="intensity" data-num="false">Intensidade</th>
+        <th data-key="intensityRank" data-num="true">Intensidade</th>
         <th class="col-attendee-list" hidden data-key="attendeeNamesJoined" data-num="false">Participantes</th>
         <th class="col-newcomer-list" hidden data-key="newcomerNamesJoined" data-num="false">Iniciantes</th>
         <th>Editar</th>
@@ -295,6 +295,15 @@ function intensityFor(kj) {
   if (kj < 500)  return 'Endorfinado';
   if (kj < 1000) return 'Frito';
   return 'Insano';
+}
+
+// Ordem de severidade crescente das faixas de `intensityFor`, usada só pra
+// dar à coluna Intensidade uma chave de ordenação numérica (o rótulo em si
+// não ordena alfabeticamente na mesma ordem de severidade — ver attachSort).
+const INTENSITY_LEVELS = ['De boa', 'Ok', 'Endorfinado', 'Frito', 'Insano'];
+function intensityRankFor(label) {
+  const i = INTENSITY_LEVELS.indexOf(label);
+  return i === -1 ? null : i;
 }
 
 const SERIES_LABEL_OVERRIDE = { S: 'PH-S' };
@@ -371,6 +380,7 @@ async function loadTours() {
           // declarados, deixa null (não quero estimar como 1).
           const collectiveH = (elapsedH != null && attendees != null) ? elapsedH * attendees : null;
           const collectiveMovingH = (movingH != null && attendees != null) ? movingH * attendees : null;
+          const intensityLabel = intensityFor(kj) || '';
           tours.push({
             iri,
             date:      p.date || '',          // ordenável lexicograficamente (ISO 8601)
@@ -379,7 +389,8 @@ async function loadTours() {
             attendees, newcomers,
             energy:    kj,
             measured:  Number.isFinite(p.measured) ? p.measured : null,
-            intensity: intensityFor(kj) || '',
+            intensity:     intensityLabel,
+            intensityRank: intensityRankFor(intensityLabel),
             totalKj,
             elapsedH,
             movingH,
@@ -656,6 +667,11 @@ function escapeHtml(s) {
 function attachSort(tours) {
   const headers = document.querySelectorAll('#tours-table thead th');
   headers.forEach(th => {
+    // "Editar" não é uma coluna de dados (não tem data-key) — não é
+    // ordenável, então nem registra o click-sort (senão o comparador roda
+    // com key=undefined e ainda assim rouba o indicador visual .sorted/.desc
+    // da coluna que estava realmente ordenando).
+    if (!th.dataset.key) return;
     th.addEventListener('click', () => {
       const key = th.dataset.key;
       const isNum = th.dataset.num === 'true';

@@ -1871,8 +1871,15 @@ function makeClipMarkers(clips) {
       { maxWidth: 440, className: 'photo-popup-wrap', autoPan: false });
     // Durante a Animação, o clique no marker dispara o ghost-video player
     // (mesma UX antiga). Fora da Animação, abre o popup normal.
-    m.on('click', () => {
+    // bindPopup() acima já registrou seu próprio listener de 'click' que abre
+    // o popup automaticamente — como foi registrado primeiro, ele dispara
+    // ANTES deste handler. No ramo da Animação, fecha o popup que acabou de
+    // abrir (síncrono, antes de qualquer repaint — sem flash visível) pra não
+    // abrir o popup E tocar o clipe ao mesmo tempo.
+    m.on('click', (e) => {
       if (settings.spotlight?.enabled && !c.audioOnly) {
+        L.DomEvent.stopPropagation(e);
+        m.closePopup();
         playClipAt(i);
       } else {
         m.openPopup();
@@ -4935,6 +4942,11 @@ function liveIsNative() {
     && window.Capacitor.isNativePlatform());
 }
 let _liveNativeWatcher = null;
+// Guarda um pedido de "parar" que chegou enquanto addWatcher() ainda estava em
+// voo (janela em que _liveNativeWatcher segue null/undefined) — sem isto, o
+// watcher nativo ficava rodando mesmo depois do usuário desligar o
+// compartilhamento (ver startNativeBackgroundWatch/stopNativeBackgroundWatch).
+let _liveWatchStopRequested = false;
 // Liga o watcher de background do @capacitor-community/background-geolocation.
 // O plugin é registrado pelo lado nativo do shell; aqui o acessamos pelo
 // global injetado (window.Capacitor.Plugins) — sem import, então este mesmo
@@ -4943,6 +4955,7 @@ let _liveNativeWatcher = null;
 async function startNativeBackgroundWatch() {
   const BG = window.Capacitor?.Plugins?.BackgroundGeolocation;
   if (!BG || _liveNativeWatcher) return !!BG;
+  _liveWatchStopRequested = false; // descarta pedido de parada de um ciclo anterior
   try {
     _liveNativeWatcher = await BG.addWatcher({
       backgroundTitle: 'Pedal Hidrográfico',
@@ -4954,6 +4967,15 @@ async function startNativeBackgroundWatch() {
       if (error || !location) return;
       window.phidroLivePush(location);   // {latitude, longitude, accuracy, bearing}
     });
+    if (_liveWatchStopRequested) {
+      // Usuário desligou o compartilhamento enquanto o addWatcher estava em
+      // voo — stopNativeBackgroundWatch não tinha o id ainda pra chamar
+      // removeWatcher. Desliga agora que o id existe.
+      _liveWatchStopRequested = false;
+      try { await BG.removeWatcher({ id: _liveNativeWatcher }); } catch {}
+      _liveNativeWatcher = null;
+      return false;
+    }
     return true;
   } catch { _liveNativeWatcher = null; return false; }
 }
@@ -4961,6 +4983,10 @@ async function stopNativeBackgroundWatch() {
   const BG = window.Capacitor?.Plugins?.BackgroundGeolocation;
   if (BG && _liveNativeWatcher) {
     try { await BG.removeWatcher({ id: _liveNativeWatcher }); } catch {}
+  } else {
+    // BG existe mas o watcher ainda não foi atribuído (addWatcher em voo) —
+    // sinaliza pro startNativeBackgroundWatch desligar assim que resolver.
+    _liveWatchStopRequested = true;
   }
   _liveNativeWatcher = null;
 }
@@ -10286,7 +10312,11 @@ function paramsToJsonLd(p) {
       xsd:            'http://www.w3.org/2001/XMLSchema#',
       Quantity:       'qudt:Quantity',
       value:          { '@id': 'qudt:value',             '@type': 'xsd:double' },
-      unit:           { '@id': 'qudt:unit',              '@type': '@id' },
+      // Termo pro predicado qudt:unit — NÃO chamar de `unit` de novo: colidiria
+      // com o prefixo `unit:` acima (chaves de objeto duplicadas em JS ficam
+      // com a última — o prefixo sumiria do contexto emitido e todo valor
+      // `unit:*` (ex. `unit:W`) deixaria de resolver como IRI compacta).
+      qudtUnit:       { '@id': 'qudt:unit',              '@type': '@id' },
       quantityKind:   { '@id': 'qudt:hasQuantityKind',   '@type': '@id' },
     },
     '@type': 'CyclingSimulationParameters',
@@ -10297,7 +10327,7 @@ function paramsToJsonLd(p) {
     doc[prof.iri] = {
       '@type': 'Quantity',
       quantityKind: prof.kind,
-      unit: prof.unit,
+      qudtUnit: prof.unit,
       value: p[key],
     };
   }
@@ -10464,6 +10494,10 @@ function performSave(name) {
       // arquivo não tem limite de tamanho). Sem isto, reabrir o GPX perdia o
       // traçado exato e re-roteava do zero (lento/divergente no modo energia).
       path: t.pathFromPrev ? t.pathFromPrev.map((p) => [p[0], p[1]]) : null,
+      // deckFlag marca trechos de ponte/túnel (viarioGraphRoute) p/ o
+      // flattening de elevação — sem isto, reabrir o GPX perdia a marcação e
+      // o perfil voltava a mostrar o vale/fundo do DEM sob o tabuleiro.
+      deckFlag: t.pathFromPrev?.deckFlag ? [...t.pathFromPrev.deckFlag] : null,
     };
   });
   const ts = new Date();
@@ -10664,6 +10698,12 @@ async function buildShareUrl(name) {
 // válidos. NÃO mexe na URL/toast — quem chama cuida disso.
 async function applyShareState(state) {
   if (!state || !Array.isArray(state.wp) || state.wp.length === 0) return false;
+  // Valida ANTES de desmontar o traçado atual — sem isto, um estado
+  // compartilhado corrompido (todo lat/lng não-numérico) só falhava depois
+  // de já ter apagado a rota em edição do usuário à toa.
+  if (!state.wp.some((w) => Array.isArray(w) && Number.isFinite(w[0]) && Number.isFinite(w[1]))) {
+    return false;
+  }
 
   if (!drawingMode) enterDrawingMode();
   for (const t of trackpoints) map.removeLayer(t.marker);
@@ -11480,6 +11520,13 @@ async function loadGpxIntoEditor(gpxText) {
       tp.pathFromPrev = (wp.path && wp.path.length >= 2)
         ? wp.path.map((p) => [p[0], p[1]])
         : straightPath(trackpoints[i - 1].marker.getLatLng(), tp.marker.getLatLng());
+      // Restaura a marcação de ponte/túnel salva junto — sem ela,
+      // flattenDeckProfile() não teria como achatar o perfil sobre o
+      // tabuleiro depois do reload (ver snapshot()/restoreSnapshot() acima,
+      // que já preservam isso no undo/redo).
+      if (wp.deckFlag && wp.deckFlag.length === tp.pathFromPrev.length) {
+        tp.pathFromPrev.deckFlag = wp.deckFlag;
+      }
     }
     trackpoints.push(tp);
   }

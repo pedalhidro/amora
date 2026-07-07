@@ -83,6 +83,18 @@ guarded_pull() {
     echo "  ⚠ $gs_url não existe no bucket — skip"
     return 0
   fi
+  if [[ "$remote_md5" == "ERROR" ]]; then
+    # sync_guard_verdict só reconhece o sentinel "ERROR" na posição dst; aqui
+    # o remoto entra como src, então a checagem precisa ser feita à mão ANTES
+    # de chamar sync_guard_verdict — senão uma falha transiente do describe
+    # (ADC expirado, 5xx…) cairia no ramo "ok" (dst vazio ou == baseline),
+    # sobrescreveria o local com um cp que pode ter tido sucesso mesmo com o
+    # describe falho, e ainda gravaria "ERROR" como baseline no stash,
+    # envenenando os próximos pulls.
+    echo "  ✗ $name: falha ao consultar o bucket (erro transiente, não 404) — pull RECUSADO por segurança."
+    GUARD_CONFLICTS="$GUARD_CONFLICTS $name"
+    return 0
+  fi
   local_md5="$(sync_guard_local_md5 "$local_path")"
   verdict="$(sync_guard_verdict "$name" "$remote_md5" "$local_md5")"
   case "$verdict" in

@@ -642,13 +642,21 @@ def _derived_subjects(graph, root):
 
 
 def _purge_subject(graph, root):
-    """Apaga as triples de `root` e dos seus nós derivados `<root>_*`.
+    """Apaga as triples de `root` e dos seus nós derivados `<root>_*`, mais a
+    closure de 1 nível de objetos bnode (geo/hash legados, pré-migração pra
+    IRI derivada — ver _resource_slice_ttl, mesmo padrão). Não recursa além
+    de 1 nível: nós aninhados são sempre IRIs mintadas, não cadeias de bnode.
     Retorna nº de triples removidas."""
+    from rdflib import BNode
     removed = 0
     for subj in {root} | _derived_subjects(graph, root):
         for s, p, o in list(graph.triples((subj, None, None))):
             graph.remove((s, p, o))
             removed += 1
+            if isinstance(o, BNode):
+                for bs, bp, bo in list(graph.triples((o, None, None))):
+                    graph.remove((bs, bp, bo))
+                    removed += 1
     return removed
 
 
@@ -2353,9 +2361,16 @@ def _render_tour_index(tour_id):
     energy_line = None
     kj = g.value(t, PH.energyEstimate)
     if kj is not None:
-        intensity = _intensity_for(float(kj))
-        energy_line = (f"{float(kj):.0f} quilojaules"
-                       + (f" ({intensity})" if intensity else ""))
+        try:
+            kj_val = float(kj)
+        except (TypeError, ValueError):
+            # Forma legada (IRI de QuantityValue) ou lixo — não derruba o
+            # SSR do passeio inteiro por causa de um dado malformado.
+            kj_val = None
+        if kj_val is not None:
+            intensity = _intensity_for(kj_val)
+            energy_line = (f"{kj_val:.0f} quilojaules"
+                           + (f" ({intensity})" if intensity else ""))
     route_ref = g.value(t, PH.linkRoute)
     route_url = g.value(route_ref, SCHEMA.url) if route_ref else None
     ig_url = g.value(t, PH.linkInstagram)
@@ -3111,7 +3126,7 @@ def upload_tour():
             # `<https://schema.org/image>` passava no teste antigo de substring
             # `"schema:image" in ttl_text` e ganhava um image duplicado.
             from rdflib import Graph as _RdfGraph, URIRef as _URIRef
-            _tour_uri = _URIRef(PHD_NS + f"tour_{tour_id}")
+            _tour_uri = _URIRef(PAS_NS + tour_id)
             _img_preds = (_URIRef("https://schema.org/image"), _URIRef("http://schema.org/image"))
             try:
                 _g = _RdfGraph().parse(data=ttl_text, format="turtle")
@@ -3121,10 +3136,10 @@ def upload_tour():
             if not _has_image:
                 # IRI completa no subject: o TTL pode ser sintetizado pelo
                 # mode=patch (serialização rdflib), que não garante o
-                # prefixo phd: — a forma <...> é válida em qualquer doc.
+                # prefixo pas: — a forma <...> é válida em qualquer doc.
                 inject = (
                     f"\n# Imagem do anúncio (uploaded server-side)\n"
-                    f"<{PHD_NS}tour_{tour_id}> <https://schema.org/image> "
+                    f"<{PAS_NS}{tour_id}> <https://schema.org/image> "
                     f"<{announcement_url}> .\n"
                 )
                 ttl_text = ttl_text + inject

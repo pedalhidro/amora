@@ -1486,7 +1486,7 @@ function buildVideoCardElem(displayIdx, file) {
     <div class="card-section">
       <h4>Envio</h4>
       <div style="display:flex;gap:.4rem;align-items:center;flex-wrap:wrap">
-        <button type="button" class="card-send" disabled>📤 Enviar esta imagem</button>
+        <button type="button" class="card-send" disabled>📤 Enviar este vídeo</button>
         <small class="card-send-status">pendente</small>
       </div>
     </div>
@@ -2496,7 +2496,9 @@ function buildImageBlock(card) {
   const focal   = num($('[data-field="focal"]',   elem).value);
   // Data e GPS são OPCIONAIS: sem eles a mídia é aceita (SHACL só avisa), mas
   // não vira marcador no mapa. COM GPS, a mídia ganha o tipo extra
-  // ph:GeoreferencedImage (aí a coordenada é obrigatória por SHACL).
+  // ph:GeoreferencedImage (aí a coordenada é obrigatória por SHACL). Mas
+  // metade de um GPS é erro — ver o mesmo guard em saveMediaEdit.
+  if ((lat === '') !== (lon === '')) throw new Error('GPS incompleto: preencha lat E lon (ou nenhum)');
   const hasGeo = lat !== '' && lon !== '';
   const tour    = $('[data-field="tour"]',    elem).value.trim();
   const license = $('[data-field="license"]', elem).value;
@@ -2595,7 +2597,9 @@ function buildClipBlock(card) {
   const lat   = num($('[data-field="lat"]', elem).value);
   const lon   = num($('[data-field="lon"]', elem).value);
   // Data/GPS opcionais — ver buildImageBlock (sem GPS, o clipe não vira
-  // marcador/ghost-video no mapa, mas entra no catálogo e na galeria).
+  // marcador/ghost-video no mapa, mas entra no catálogo e na galeria). Mas
+  // metade de um GPS é erro — ver o mesmo guard em saveMediaEdit.
+  if ((lat === '') !== (lon === '')) throw new Error('GPS incompleto: preencha lat E lon (ou nenhum)');
   const hasGeo = lat !== '' && lon !== '';
   const tour    = $('[data-field="tour"]',    elem).value.trim();
   const license = $('[data-field="license"]', elem).value;
@@ -2745,7 +2749,10 @@ async function uploadImageCard(card) {
     setCardStatus(card, 'erro: imagem não pronta', 'err');
     return false;
   }
-  if (!$('#form').reportValidity()) return false;
+  // Valida só os campos DESTE card — reportValidity() no <form> inteiro
+  // reprovaria o envio se QUALQUER outro card tivesse um campo inválido.
+  const inputsValid = [...card.elem.querySelectorAll('input, select')].every((el) => el.reportValidity());
+  if (!inputsValid) return false;
   setCardSendEnabled(card, false);
   setCardStatus(card, 'preparando…', 'warn');
   let ttl, variants;
@@ -2794,7 +2801,10 @@ async function uploadVideoCard(card) {
     setCardStatus(card, 'erro: vídeo não pronto', 'err');
     return false;
   }
-  if (!$('#form').reportValidity()) return false;
+  // Valida só os campos DESTE card — reportValidity() no <form> inteiro
+  // reprovaria o envio se QUALQUER outro card tivesse um campo inválido.
+  const inputsValid = [...card.elem.querySelectorAll('input, select')].every((el) => el.reportValidity());
+  if (!inputsValid) return false;
   const elem = card.elem;
   const audioOnly = $('[data-field="audio-only"]', elem).checked;
   const tStart = parseFloat($('[data-field="trim-start"]', elem).value) || 0;

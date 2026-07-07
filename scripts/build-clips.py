@@ -4,13 +4,14 @@
 `web/data/images.ttl` (catálogo de mídia — não há mais clips.json).
 
 Cada ph:Video carrega:
-  - IRI determinístico `phd:video_<md5(stem)[:16]>` (idempotente)
+  - IRI determinístico `med:<md5(stem)[:16]>` (opaco — sem discriminador
+    video_/image_; o tipo vem só de rdf:type ph:MotionImage) (idempotente)
   - dcterms:date              (CreateDate do EXIF, fuso de SP)
   - schema:locationCreated    (GeoCoordinates lat/lng)
   - schema:duration           (xsd:duration PT…S)
   - ph:audio / ph:video360p / ph:video720p (paths sob web/clips/)
   - ph:availableResolution    ("audio", "360p", "720p")
-  - prov:wasAttributedTo / pav:providedBy → phd:pessoaDandan (default)
+  - prov:wasAttributedTo / pav:providedBy → pes:1fhkjnba (default, dandan)
   - dcterms:license <CC BY-SA 4.0>
 
 Requisitos: ffmpeg + exiftool no PATH.
@@ -60,14 +61,15 @@ AUDIO_SUFFIX    = ".m4a"
 THUMB_SUFFIX    = ".thumb.jpg"
 
 PH    = Namespace("https://id.pedalhidrografi.co/terms#")
-PHD   = Namespace("https://pedalhidrografi.co/data/")
+MED   = Namespace("https://id.pedalhidrografi.co/midia/")
+PES   = Namespace("https://id.pedalhidrografi.co/pessoas/")
 SCHEMA = Namespace("https://schema.org/")
 DCT   = Namespace("http://purl.org/dc/terms/")
 PROV  = Namespace("http://www.w3.org/ns/prov#")
 PAV   = Namespace("http://purl.org/pav/")
 
-DEFAULT_AUTHOR   = URIRef(PHD + "pessoaDandan")
-DEFAULT_PROVIDER = URIRef(PHD + "pessoaDandan")
+DEFAULT_AUTHOR   = URIRef(PES + "1fhkjnba")  # dandan
+DEFAULT_PROVIDER = URIRef(PES + "1fhkjnba")  # dandan
 DEFAULT_LICENSE  = URIRef("https://creativecommons.org/licenses/by-sa/4.0/")
 LOCAL_TZ = "-03:00"  # São Paulo, sem DST desde 2019
 
@@ -335,7 +337,7 @@ def upsert_clip(g: Graph, vhash: str, meta: dict, share_name: str,
                 thumb_name: str | None, tour_iri: str | None = None) -> None:
     """Idempotente: limpa triples antigos do mesmo IRI (e dos seus nós
     derivados `<vid_iri>_*`) e regrava. Igual ao /upload-video do backend."""
-    vid_iri = URIRef(PHD + f"video_{vhash}")
+    vid_iri = URIRef(MED + vhash)
     # Apaga o vídeo + nós derivados (<vid_iri>_geo). Antes percorria bnodes
     # alcançáveis; hoje os nós aninhados são IRIs derivadas (casadas por
     # prefixo `<vid_iri>_`).
@@ -400,7 +402,7 @@ def main() -> int:
     g = Graph()
     if IMAGES_TTL.exists() and IMAGES_TTL.stat().st_size > 0:
         g.parse(IMAGES_TTL, format="turtle")
-    g.bind("ph", PH); g.bind("phd", PHD)
+    g.bind("ph", PH); g.bind("med", MED); g.bind("pes", PES)
     g.bind("schema", SCHEMA); g.bind("dcterms", DCT)
     g.bind("prov", PROV); g.bind("pav", PAV)
 

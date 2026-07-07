@@ -13,7 +13,7 @@
 //                    stale data, not just a stale app shell.
 //   RUNTIME_CACHE — map tiles, OSRM, elevation, etc. stale-while-revalidate.
 
-const VERSION = 'phidro-v362';
+const VERSION = 'phidro-v363';
 const STATIC_CACHE = `${VERSION}-static`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 
@@ -108,8 +108,12 @@ self.addEventListener('fetch', (event) => {
   // novo aparece no próximo refresh sem o dance de dois-refreshes do
   // stale-while-revalidate. Inclui routes.json: o backend faz upsert
   // incremental nele a cada /upload-tour //delete-tour, então é tão "vivo"
-  // quanto os TTLs. `endsWith` (e não ===) pra funcionar também sob
-  // hosting com subpath (ex.: o mirror legado em /rotas_app/).
+  // quanto os TTLs. Inclui também /saved-routes e /saved-route/<id> (o
+  // fetch com cache:'no-store' do cliente só ignora o cache HTTP, não o
+  // Cache Storage do SW — sem essa entrada, salvar/excluir uma rota salva
+  // reaparecia/sumia só depois de dois refreshes). `endsWith`/`includes`
+  // (e não ===) pra funcionar também sob hosting com subpath (ex.: o
+  // mirror legado em /rotas_app/).
   if (url.origin === self.location.origin) {
     if (url.pathname.endsWith('/data/data_graphs.ttl')
         || url.pathname.endsWith('/data/uploads.ttl')
@@ -117,7 +121,8 @@ self.addEventListener('fetch', (event) => {
         || url.pathname.endsWith('/data/images.ttl')
         || url.pathname.endsWith('/data/identities.ttl')
         || url.pathname.endsWith('/data/lists.ttl')
-        || url.pathname.endsWith('/routes.json')) {
+        || url.pathname.endsWith('/routes.json')
+        || url.pathname.includes('/saved-route')) {
       event.respondWith(networkFirst(req, STATIC_CACHE));
     } else {
       event.respondWith(staleWhileRevalidate(req, STATIC_CACHE));
