@@ -2885,17 +2885,35 @@ function setUploadAllStatus(html) {
   $$('.upload-all-status').forEach((el) => { el.innerHTML = html; });
 }
 
+// Concorrência do "Enviar todas": até UPLOAD_CONCURRENCY cards em voo. O ganho
+// vem de sobrepor a transferência de rede (originais de vários MB) de um card
+// com o processamento (buildVariants) e a validação/gravação de outro — o
+// backend recebe os corpos em paralelo (transferência/blobs fora do lock; só a
+// validação SHACL e o RMW do catálogo é que serializam). 3 é um meio-termo:
+// satura o uplink sem estourar memória com vários createImageBitmap/transcodes
+// de vídeo simultâneos em celulares mais fracos.
+const UPLOAD_CONCURRENCY = 3;
 async function uploadAll() {
   const pending = cards.filter(c => !c.uploaded);
   if (!pending.length) { setUploadAllStatus('tudo enviado.'); return; }
   $$('.upload-all-btn').forEach((btn) => { btn.disabled = true; });
   await withWakeLock(async () => {
-    let ok = 0, fail = 0;
-    for (let i = 0; i < pending.length; i++) {
-      setUploadAllStatus(`enviando ${i + 1}/${pending.length}…`);
-      const success = await uploadCard(pending[i]);
-      if (success) ok++; else fail++;
+    let ok = 0, fail = 0, done = 0, next = 0;
+    setUploadAllStatus(`enviando 0/${pending.length}…`);
+    async function worker() {
+      while (next < pending.length) {
+        const card = pending[next++];
+        const success = await uploadCard(card);
+        done++;
+        if (success) ok++; else fail++;
+        setUploadAllStatus(`enviando ${done}/${pending.length}…`);
+      }
     }
+    const workers = Array.from(
+      { length: Math.min(UPLOAD_CONCURRENCY, pending.length) },
+      () => worker(),
+    );
+    await Promise.all(workers);
     setUploadAllStatus(
       `<span class="ok">${ok} enviada(s)</span>` +
       (fail ? ` · <span class="err">${fail} com erro</span>` : ''),

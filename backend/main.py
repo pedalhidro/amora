@@ -216,6 +216,13 @@ def _conditional(resp):
 # (Em Cloud Run multi-instância isto cobre só uma instância — ali ainda
 # faltaria precondição de generation no GCS; ver storage.py.)
 _state_lock = threading.RLock()
+# Lock DEDICADO à validação SHACL. pyshacl (via o parser SPARQL do rdflib/
+# pyparsing, disparado pelo sh:sparql das shapes) NÃO é thread-safe: duas
+# validações concorrentes corrompem o estado global do parser. Além disso é
+# CPU-bound (o GIL serializa de qualquer jeito). Então validação é serializada
+# à parte — mas SEM o _state_lock, pra não bloquear o RMW do catálogo (rápido)
+# atrás de uma validação lenta (~1,2 s). Ver upload_image.
+_validate_lock = threading.Lock()
 
 
 def serialized(fn):
@@ -436,11 +443,13 @@ def _load_validator():
 # que `sh:class ph:Tour` etc. enxerguem o universo todo (passeios,
 # pessoas, uploads anteriores).
 _catalog_cache = None
+_catalog_types_cache = None
 
 
 def _invalidate_catalog():
-    global _catalog_cache
+    global _catalog_cache, _catalog_types_cache
     _catalog_cache = None
+    _catalog_types_cache = None
 
 
 def _load_dump_text(fname):
@@ -489,6 +498,27 @@ def _load_catalog():
     return catalog
 
 
+def _load_catalog_types():
+    """Subconjunto do catálogo com SÓ as triples `rdf:type` — o suficiente pras
+    checagens `sh:class` das shapes (autor→schema:Person, lista→schema:Collection,
+    ph:capturedDuring→ph:Tour, …). Validar contra este subconjunto em vez do
+    catálogo inteiro encolhe o grafo de ~9500 p/ ~2100 triples (~25% menos tempo
+    de SHACL por upload) SEM mudar o veredito do sujeito em curso: as shapes só
+    consultam o catálogo por `sh:class`, e o único `sh:sparql` é escopado a
+    passeios/séries (focus nodes filtrados por `own_subjects`). Cacheado junto do
+    catálogo (invalidado no mesmo `_invalidate_catalog`)."""
+    global _catalog_types_cache
+    if _catalog_types_cache is not None:
+        return _catalog_types_cache
+    from rdflib import RDF
+    catalog = _load_catalog()
+    types = _load_validator()["Graph"]()
+    for triple in catalog.triples((None, RDF.type, None)):
+        types.add(triple)
+    _catalog_types_cache = types
+    return types
+
+
 def validate_image_ttl(ttl_text):
     """Verifica que o TTL contém exatamente 1 ph:Image e satisfaz as shapes.
     Retorna (ok, phash, errors). `errors` traz só violations (warnings passam)
@@ -531,12 +561,17 @@ def validate_image_ttl(ttl_text):
     # SHACL flagra cardinalidade > 1 em `dcterms:date` etc.
     # Exclui o próprio sujeito + seus nós derivados (hash, locationCreated).
     exclude = {img_uri} | _derived_subjects(catalog, img_uri)
+    # Universo de validação: data + ontology + SÓ as triples rdf:type do catálogo
+    # (não o catálogo inteiro) — o bastante pras checagens sh:class das shapes.
+    # A colisão cross-type e o `exclude` acima seguem calculados sobre o catálogo
+    # COMPLETO (comportamento de dedup/re-upload inalterado). Ver _load_catalog_types.
     merged = data + v["ont"]
-    for s, p, o in catalog:
+    for s, p, o in _load_catalog_types():
         if s not in exclude:
             merged.add((s, p, o))
-    conforms, results_graph, _txt = v["pyshacl"].validate(
-        merged, shacl_graph=v["shapes"], inference="rdfs", advanced=True)
+    with _validate_lock:   # pyshacl não é thread-safe (parser SPARQL) — ver _validate_lock
+        conforms, results_graph, _txt = v["pyshacl"].validate(
+            merged, shacl_graph=v["shapes"], inference="rdfs", advanced=True)
     if conforms:
         return True, phash, []
 
@@ -951,8 +986,9 @@ def validate_tour_ttl(ttl_text):
         if s not in exclude:
             merged.add((s, p, o))
 
-    conforms, results_graph, _txt = v["pyshacl"].validate(
-        merged, shacl_graph=v["shapes"], inference="rdfs", advanced=True)
+    with _validate_lock:   # pyshacl não é thread-safe (parser SPARQL) — ver _validate_lock
+        conforms, results_graph, _txt = v["pyshacl"].validate(
+            merged, shacl_graph=v["shapes"], inference="rdfs", advanced=True)
     if conforms:
         return True, tour_id, []
 
@@ -2495,10 +2531,26 @@ def web_files(p):
     abort(404)
 
 
+# NOTA: este handler NÃO usa @serialized (ao contrário de /upload-video e do
+# Tour CRUD). O _state_lock global serializaria TAMBÉM a transferência do corpo
+# (originais de vários MB) e as gravações de blob — fazendo um lote de N fotos
+# subir estritamente em série. Aqui o trabalho é dividido por lock:
+#  - transferência do corpo (Werkzeug faz o parse do multipart no 1º acesso a
+#    request.form/files) e gravação dos 3 blobs no store: FORA de qualquer lock
+#    (I/O — solta o GIL; sobrepõe entre requests concorrentes + com o cliente
+#    mandando vários em voo);
+#  - validação SHACL: sob _validate_lock (pyshacl não é thread-safe e é CPU-
+#    bound — serializada à parte, sem travar o RMW);
+#  - read-modify-write do catálogo: sob _state_lock (curto), com re-checagem
+#    TOCTOU da colisão cross-type. Mesmo espírito do fetch RWGPS do Tour CRUD.
+# Seguro porque validate_image_ttl só LÊ o snapshot cacheado (nunca o muta), as
+# keys de blob são content-addressed por phash (idempotentes) e o upsert lê
+# images.ttl fresco sob o lock.
 @app.post("/upload-image")
-@serialized
 def upload_image():
-    # `ttl` pode vir como campo de formulário ou como arquivo.
+    # `ttl` pode vir como campo de formulário ou como arquivo. (O acesso a
+    # request.form/files aqui dispara a transferência/parse do corpo inteiro —
+    # de propósito FORA dos locks, pra sobrepor entre uploads concorrentes.)
     ttl_text = request.form.get("ttl")
     if not ttl_text:
         f = request.files.get("ttl")
@@ -2507,6 +2559,9 @@ def upload_image():
     if not ttl_text:
         return jsonify(error="ttl ausente"), 400
 
+    # Validação FORA do _state_lock. O parse/merge (por-call, local) roda
+    # concorrente; só a chamada pyshacl.validate() lá dentro serializa sob
+    # _validate_lock (thread-safety) — compartilhado com vídeo/tour.
     try:
         ok, phash, errors = validate_image_ttl(ttl_text)
     except Exception as e:  # noqa: BLE001
@@ -2514,7 +2569,8 @@ def upload_image():
     if not ok:
         return jsonify(error="shacl", details=errors, phash=phash), 400
 
-    # Variantes — pelo menos uma é obrigatória.
+    # Variantes — pelo menos uma é obrigatória. Blobs gravados FORA do lock
+    # (keys content-addressed por phash — idempotente).
     written = []
     for variant in ("original", "large", "thumb"):
         f = request.files.get(variant)
@@ -2542,25 +2598,44 @@ def upload_image():
     if not written:
         return jsonify(error="nenhuma variante de imagem enviada"), 400
 
-    # Single-file mode: upsert no web/data/uploads.ttl, deduplicando por phash.
-    # O nome da activity ainda inclui timestamp pra ser único como IRI; o
-    # "ph:Upload" antigo da mesma imagem é removido pelo upsert. Git history
-    # do uploads.ttl preserva o histórico de quem-fez-o-quê-quando.
-    try:
-        upload_local = _upload_filename()[:-len(".ttl")]   # phd:upload_TIMESTAMP
-        audit_block  = _build_audit_ttl(upload_local, phash)
-        upsert_image_in_uploads(ttl_text, phash, audit_block)
-        _invalidate_catalog()
-    except Exception as e:  # noqa: BLE001
-        # Blobs já gravados sem triples = órfãos invisíveis. Limpa
-        # best-effort (re-upload regrava as mesmas keys de qualquer jeito).
+    def _cleanup_orphans():
+        # Blobs já gravados sem triples = órfãos invisíveis. Limpa best-effort
+        # (re-upload regrava as mesmas keys de qualquer jeito).
         try:
             STORE.delete_prefix(f"photos/{phash}/")
         except Exception as e2:  # noqa: BLE001
             print(f"[upload-image] aviso limpando órfãos de {phash}: {e2}")
+
+    # Single-file mode: upsert no images.ttl, deduplicando por phash. Só o RMW do
+    # catálogo é serializado (sob _state_lock); o timestamp da activity é gerado
+    # aqui dentro pra garantir IRI única entre uploads concorrentes.
+    from rdflib import RDF as _RDF, URIRef as _URIRef
+    _img_uri = _URIRef(MED_NS + phash)
+    _motion = _URIRef(PH_NS + "MotionImage")
+    collision = False
+    upload_local = None
+    try:
+        with _state_lock:
+            # Re-checagem TOCTOU: a colisão cross-type foi checada na validação
+            # FORA do lock — re-confere contra o catálogo ATUAL antes de gravar.
+            if (_img_uri, _RDF.type, _motion) in _load_catalog():
+                collision = True
+            else:
+                upload_local = _upload_filename()[:-len(".ttl")]   # phd:upload_TIMESTAMP
+                audit_block  = _build_audit_ttl(upload_local, phash)
+                upsert_image_in_uploads(ttl_text, phash, audit_block)
+                _invalidate_catalog()
+    except Exception as e:  # noqa: BLE001
+        _cleanup_orphans()
         return jsonify(
             error=f"persistência ttl: {e}", phash=phash, files=written,
         ), 500
+    if collision:
+        _cleanup_orphans()
+        return jsonify(
+            error=f"colisão: med:{phash} já existe como VÍDEO (ph:MotionImage) — "
+                  f"phash colidiu com um vhash.", phash=phash,
+        ), 409
     print(f"[upload-image] phash={phash} files={written} activity={upload_local}")
     return jsonify(phash=phash, files=written, activity=upload_local, ok=True)
 
@@ -2606,8 +2681,9 @@ def validate_video_ttl(ttl_text):
     for s, p, o in catalog:
         if s not in exclude:
             merged.add((s, p, o))
-    conforms, results_graph, _txt = v["pyshacl"].validate(
-        merged, shacl_graph=v["shapes"], inference="rdfs", advanced=True)
+    with _validate_lock:   # pyshacl não é thread-safe (parser SPARQL) — ver _validate_lock
+        conforms, results_graph, _txt = v["pyshacl"].validate(
+            merged, shacl_graph=v["shapes"], inference="rdfs", advanced=True)
     if conforms:
         return True, vhash, []
 
