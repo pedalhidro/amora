@@ -2010,6 +2010,16 @@ function wireToolbar() {
     else if (ratio < 0.77) { setZoom(galleryZoom + 1); pinchDist0 = touchDist(e.touches); }
   }, { passive: false });
   gallery.addEventListener('touchend', (e) => { if (e.touches.length < 2) pinchDist0 = 0; });
+  // O zoom anima width/height do tile por CSS (.tile transition, 220ms). O
+  // redraw imediato do setZoom (requestAnimationFrame) pega os tiles ainda a
+  // meio caminho da transição, então o polígono do modo Contínuo (SVG
+  // estático) fica desalinhado assim que a animação termina de assentar —
+  // redesenha de novo quando a transição realmente acaba.
+  gallery.addEventListener('transitionend', (e) => {
+    if (e.target.classList?.contains('tile') && (e.propertyName === 'width' || e.propertyName === 'height')) {
+      scheduleRelayout();
+    }
+  });
   window.addEventListener('resize', debounce(() => {
     if (galleryLayout === 'collage') layoutAllJustified();
     if (overlayGroups) drawGroupPolygons();
