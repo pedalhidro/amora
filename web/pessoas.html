@@ -415,6 +415,19 @@ function buildModel(quads) {
       .map(([p, subjects]) => ({ p, subjects: [...new Set(subjects)] }))
       .sort((a, b) => b.subjects.length - a.subjects.length);
     const apCount = groups.reduce((n, g) => n + g.subjects.length, 0);
+    // Mesmas aparições de `apCount`, quebradas por tipo do sujeito (passeio,
+    // foto, vídeo, ou outro) em vez de por predicado — mais legível que um
+    // total único no resumo da pessoa.
+    const catCounts = { tour: 0, image: 0, video: 0, other: 0 };
+    for (const g of groups) {
+      for (const subj of g.subjects) {
+        const t = typeOf.get(subj);
+        if (t === PH + 'Tour') catCounts.tour++;
+        else if (t === PH + 'StillImage') catCounts.image++;
+        else if (t === PH + 'MotionImage') catCounts.video++;
+        else catCounts.other++;
+      }
+    }
     // Nomes divergentes: a mesma pessoa com schema:alternateName diferente em
     // arquivos distintos (ex.: tours.ttl vs uploads.ttl). O rótulo exibido é
     // "último vence" (ordem do void:dataDump) — sinalizamos a divergência.
@@ -429,7 +442,7 @@ function buildModel(quads) {
       seeAlso: seeAlsoOf.get(iri) || [],
       defined: typedPersons.has(iri),
       altVals, divergent: altVals.length > 1,
-      forward: fwd, groups, apCount,
+      forward: fwd, groups, apCount, catCounts,
     };
   }).sort((a, b) => a.label.localeCompare(b.label, 'pt-BR', { sensitivity: 'base' }));
 }
@@ -595,7 +608,8 @@ function socialChipsHtml(p) {
 }
 
 function renderPerson(p) {
-  const counts = `${p.forward.length} fato(s) · ${p.apCount} aparição(ões)`;
+  const counts = `${p.forward.length} fato(s) · ${p.catCounts.tour} contrib. passeios · ` +
+    `${p.catCounts.image} imagens · ${p.catCounts.video} vídeos · ${p.catCounts.other} outros`;
   let badge = p.defined ? '' : ` <span class="badge-warn">sem definição RDF</span>`;
   if (p.divergent) {
     badge += ` <span class="badge-warn" title="${escapeHtml(p.altVals.join(' · '))}">⚠ nomes divergentes</span>`;

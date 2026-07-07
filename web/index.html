@@ -125,13 +125,12 @@
       <nav class="topbar-actions">
       <input type="file" id="photos-import-input" accept=".ttl,.zip,text/turtle,application/zip" hidden />
       <input type="file" id="edit-gpx-input" accept=".gpx,application/gpx+xml" hidden />
-      <button id="subir-btn" type="button" class="secondary-btn" title="Subir" aria-label="Subir">⬆ Subir</button>
-      <button id="trace-btn" type="button" class="secondary-btn" title="Traçar GPX" aria-label="Traçar GPX">🗺︎ Traçar</button>
-      <button id="imagens-btn" type="button" class="secondary-btn" title="Galeria de imagens e vídeos" aria-label="Galeria de imagens" aria-pressed="false">🖼 Imagens</button>
+      <button id="subir-btn" type="button" class="secondary-btn" title="Ações" aria-label="Ações">☰ ações</button>
+      <button id="trace-btn" type="button" class="secondary-btn" title="Traçar GPX" aria-label="Traçar GPX">🗺︎ traçar</button>
+      <button id="imagens-btn" type="button" class="secondary-btn" title="Galeria de imagens e vídeos" aria-label="Galeria de imagens" aria-pressed="false">🖼 imagens</button>
       <span class="topbar-break" aria-hidden="true"></span>
-      <button id="help-btn" type="button" class="secondary-btn" title="Ajuda — como usar" aria-label="Ajuda">?</button>
-      <button id="settings-btn" type="button" class="secondary-btn" title="Configurações" aria-label="Configurações">⚙ Ajustes</button>
-      <button id="layers-btn" type="button" class="secondary-btn" title="Mostrar/ocultar camadas" aria-label="Mostrar/ocultar camadas" aria-pressed="true">⧉ Camadas</button>
+      <button id="settings-btn" type="button" class="secondary-btn" title="Configurações" aria-label="Configurações">⚙ ajustes</button>
+      <button id="layers-btn" type="button" class="secondary-btn" title="Mostrar/ocultar camadas" aria-label="Mostrar/ocultar camadas" aria-pressed="true">⧉ camadas</button>
       </nav>
     </header>
 
@@ -185,12 +184,36 @@
           <details class="help-changelog">
             <summary>Novidades (changelog)</summary>
             <dl>
-              <dt>06/07/2026 · v358</dt>
+              <dt>07/07/2026 · v361</dt>
               <dd>
                 <ul>
-                  <li>No desktop com mouse: modais não escurecem mais o fundo e dá pra arrastá-los clicando e segurando a faixa de título (exceto quando maximizado) — e, nesse modo, clicar fora do modal não fecha mais (só a bolinha vermelha ou Esc). Em touch e no celular continua como antes.</li>
-                  <li>Popup de foto/vídeo no mapa (incluindo quando vira modal por não caber na tela): botão de fechar virou uma bolinha vermelha (estilo macOS), e a foto passou pro lado direito do popup (o texto/ações ficam à esquerda, livres das bolinhas).</li>
+                  <li>Corrigido: várias fotos apareciam giradas na galeria/mapa (metadado de orientação desatualizado em 43 fotos — corrigido nos arquivos já publicados, sem alterar a imagem em si).</li>
+                  <li>Autoras, quem subiu e o passeio agora são links clicáveis no popup de foto/vídeo do mapa e na galeria expandida; removida a linha de Energia da galeria expandida.</li>
+                  <li>Barra de navegação: <strong>⬆ ações</strong> virou <strong>☰ ações</strong>; o botão <strong>?</strong> saiu da barra e virou <strong>❓ Ajuda</strong> dentro do menu Ações.</li>
+                  <li>Pessoas: o resumo de cada uma agora detalha "contrib. passeios · imagens · vídeos · outros" em vez de um total único de aparições.</li>
+                  <li>Modal de "Subir passeio" também pode ser maximizado.</li>
+                  <li>Galeria de imagens abre maximizada por padrão no celular.</li>
+                  <li>Barra de edição de rota: removida a bolinha de fechar (redundante com o botão "cancelar"); no celular, o seletor de modo de roteamento agora ocupa o espaço livre da linha sem empurrar os outros botões pra uma 2ª linha.</li>
+                  <li>Corrigido: popup de foto/vídeo no mapa com o texto de detalhes colapsado numa coluna de ~1 caractere em telas estreitas (bug de grid CSS).</li>
+                </ul>
+              </dd>
+              <dt>06/07/2026 · v360</dt>
+              <dd>
+                <ul>
+                  <li>Barra de navegação: <strong>⬆ Subir</strong> virou <strong>⬆ ações</strong>, e todos os botões da barra ficaram em minúsculo. O botão "Imagens" não fica mais esmaecido quando a galeria está fechada.</li>
+                  <li>Novo atalho <strong>📍 Compartilhar localização</strong> no menu Ações.</li>
+                  <li>Galeria no celular: a barra de seleção ficou mais enxuta — só compartilhar e um menu <strong>☰</strong> (que reúne listas, baixar e excluir); "N selecionadas" saiu de lá (já aparece em cima).</li>
+                  <li>Fechar o preview de uma foto/vídeo não move mais o mapa de volta pra onde estava antes de abri-lo.</li>
+                  <li>Corrigido: a bolinha de fechar da barra de edição de rota ficava esticada (oval) no celular.</li>
+                  <li>Botão "Traçar" → "cancelar"/"editar" no editor de rota: removido o × do início do rótulo e tudo em minúsculo.</li>
+                </ul>
+              </dd>
+              <dt>06/07/2026 · v359</dt>
+              <dd>
+                <ul>
+                  <li>Popup de foto/vídeo no mapa (incluindo quando vira modal por não caber na tela): botão de fechar virou uma bolinha vermelha (estilo macOS) e a foto passou pro lado direito do popup (o texto/ações ficam à esquerda, livres das bolinhas) — inclusive no modal que aparece quando o popup não cabe na tela.</li>
                   <li>Corrigido: ao clicar em "Ver grande" num popup de foto/vídeo que tinha virado modal (por não caber na tela), o preview antigo ficava aberto atrás da galeria — agora fecha corretamente.</li>
+                  <li>Miniaturas da galeria mais nítidas em telas de alta resolução (desktop/retina).</li>
                 </ul>
               </dd>
               <dt>06/07/2026 · v357</dt>
@@ -1532,13 +1555,15 @@
     <div id="subir-modal" class="modal" hidden>
       <div class="modal-content subir-modal-content">
         <header>
-          <h2>⬆ Subir</h2>
+          <h2>☰ Ações</h2>
           <button class="close" id="subir-modal-close" type="button" aria-label="Fechar">&times;</button>
         </header>
         <div class="subir-modal-body">
           <button type="button" id="subir-upload-media" class="subir-action">📤 Enviar fotos/vídeos</button>
           <button type="button" id="subir-new-tour" class="subir-action">🚵 Cadastrar passeio</button>
           <button type="button" id="subir-censo" class="subir-action">📊 Censo hidrográfico</button>
+          <button type="button" id="subir-share-loc" class="subir-action">📍 Compartilhar localização</button>
+          <button type="button" id="subir-help" class="subir-action">❓ Ajuda</button>
         </div>
       </div>
     </div>

@@ -56,6 +56,7 @@
   .btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: #fff; }
   .btn-danger { background: var(--danger); color: #fff; border-color: var(--danger); }
   .btn-danger:hover { background: var(--danger-hover); border-color: var(--danger-hover); color: #fff; }
+  .icon-btn { display: inline-flex; align-items: center; justify-content: center; }
   .btn-ghost { background: transparent; }
   .btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
 
@@ -308,6 +309,10 @@
   .lb-media img, .lb-media video {
     max-width: 100%; max-height: 84vh; border-radius: 8px; display: block; background: #000;
   }
+  /* large.jpg de uploads pré-fix carrega Orientation no EXIF, mas os pixels já
+     vêm na orientação visual (canvas re-encode bakes it in) — ignorar evita
+     rotação dupla. Mesma lógica já aplicada nos thumbs/popups do mapa. */
+  .lb-media img { image-orientation: none; }
   .lb-media audio { width: 100%; margin-top: 8px; }
   .lb-panel {
     flex: 0 1 320px; background: var(--panel); border: 1px solid var(--border);
@@ -333,18 +338,16 @@
   .selbar {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 60;
     background: var(--panel); border-top: 1px solid var(--accent);
-    display: flex; align-items: center; gap: 10px; padding: 7px 12px;
+    display: flex; align-items: center; justify-content: center; padding: 7px 12px;
     box-shadow: 0 -2px 12px rgba(0,0,0,.4);
   }
-  .selbar-count { color: var(--text); font-weight: 600; font-size: 13px; white-space: nowrap; }
-  .selbar-actions { display: flex; gap: 6px; margin-left: auto; }
-  .selbar .btn { padding: 5px 9px; font-size: 12px; }
+  .selbar-actions { display: flex; gap: 18px; }
+  .selbar .btn { padding: 5px 9px; font-size: 16px; }
   @media (max-width: 760px) {
-    /* Compacto: só ícones grandes o suficiente pra tocar, texto encolhido. */
-    .selbar { gap: 6px; padding: 6px 8px; }
-    .selbar-count { font-size: 12px; }
-    .selbar-actions { gap: 4px; }
-    .selbar .btn { padding: 6px 8px; font-size: 12px; }
+    /* Compacto: só ícones grandes o suficiente pra tocar. */
+    .selbar { padding: 6px 8px; }
+    .selbar-actions { gap: 14px; }
+    .selbar .btn { padding: 6px 10px; font-size: 17px; }
   }
 
   /* ── Menu de contexto (botão direito) ─────────────────────────────────── */
@@ -527,13 +530,15 @@
 <!-- Barra de ação da seleção (aparece quando há fotos selecionadas). No celular
      faz o papel do menu de contexto do botão direito. -->
 <div id="selbar" class="selbar" hidden>
-  <span id="selbar-count" class="selbar-count">0 selecionadas</span>
   <div class="selbar-actions">
-    <button id="sel-share" type="button" class="btn" title="Compartilhar link">🔗 Link</button>
-    <button id="sel-lists" type="button" class="btn" title="Adicionar a listas">＋ Listas</button>
-    <button id="sel-unlist" type="button" class="btn" title="Remover de listas">－ Listas</button>
-    <button id="sel-download" type="button" class="btn" title="Baixar">⤓ Baixar</button>
-    <button id="sel-delete" type="button" class="btn btn-danger" title="Excluir">🗑 Excluir</button>
+    <button id="sel-share" type="button" class="btn icon-btn" title="Compartilhar link">
+      <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"></path>
+        <polyline points="16 6 12 2 8 6"></polyline>
+        <line x1="12" y1="2" x2="12" y2="15"></line>
+      </svg>
+    </button>
+    <button id="sel-menu" type="button" class="btn icon-btn" title="Mais ações" aria-haspopup="true" aria-expanded="false">☰</button>
   </div>
 </div>
 
@@ -543,6 +548,14 @@
 <!-- Menu de contexto (botão direito no desktop) sobre as imagens selecionadas -->
 <div id="ctx-menu" class="ctx-menu" hidden role="menu">
   <button type="button" role="menuitem" data-act="share">🔗 Compartilhar link</button>
+  <button type="button" role="menuitem" data-act="lists">＋ Adicionar a listas</button>
+  <button type="button" role="menuitem" data-act="unlist">－ Remover de listas</button>
+  <button type="button" role="menuitem" data-act="download">⤓ Baixar</button>
+  <button type="button" role="menuitem" data-act="delete" class="danger">🗑 Excluir</button>
+</div>
+
+<!-- Menu do ☰ na barra de seleção (celular) — todas as ações menos compartilhar -->
+<div id="selbar-menu" class="ctx-menu" hidden role="menu">
   <button type="button" role="menuitem" data-act="lists">＋ Adicionar a listas</button>
   <button type="button" role="menuitem" data-act="unlist">－ Remover de listas</button>
   <button type="button" role="menuitem" data-act="download">⤓ Baixar</button>
@@ -1274,8 +1287,14 @@ function drawGroupPolygons() {
 function tileHtml(rec, opts) {
   const sel = selected.has(rec.iri) ? ' selected' : '';
   const noImg = rec.thumbUrl ? '' : ' no-img';
+  // srcset com hint de densidade (não de largura — o large.jpg não tem
+  // dimensão fixa, varia por foto) pra telas retina/desktop não esticarem o
+  // thumb.jpg de 256px além da resolução real dele.
+  const srcset = (rec.largeUrl && rec.largeUrl !== rec.thumbUrl)
+    ? ` srcset="${escapeHtml(rec.thumbUrl)} 1x, ${escapeHtml(rec.largeUrl)} 2x"`
+    : '';
   const img = rec.thumbUrl
-    ? `<img loading="lazy" src="${escapeHtml(rec.thumbUrl)}" alt="" ` +
+    ? `<img loading="lazy" src="${escapeHtml(rec.thumbUrl)}"${srcset} alt="" ` +
       `onerror="this.style.display='none';this.parentElement.classList.add('no-img')">`
     : '';
   const badge = rec.kind === 'video' ? `<span class="badge">▶</span>` : '';
@@ -1442,9 +1461,8 @@ function updateSelUI() {
   const n = selected.size;
   const label = `${n} selecionada${n === 1 ? '' : 's'}`;
   $('#sel-count').textContent = label;
-  $('#selbar-count').textContent = label;
   const none = n === 0;
-  ['#sel-share', '#sel-lists', '#sel-unlist', '#sel-download', '#sel-delete'].forEach((s) => { $(s).disabled = none; });
+  ['#sel-share', '#sel-menu'].forEach((s) => { $(s).disabled = none; });
 }
 
 // ── Lightbox ─────────────────────────────────────────────────────────────────
@@ -1490,11 +1508,21 @@ function openLightbox(rec) {
   }
   // Metadados
   const rows = [];
+  const personLinks = (names, iris) => (names || []).map((name, i) => {
+    const iri = iris && iris[i];
+    return iri
+      ? `<a href="${escapeHtml(iri)}" target="_blank" rel="noopener">${escapeHtml(name)}</a>`
+      : escapeHtml(name);
+  }).join(', ');
   rows.push(['Data', escapeHtml(fmtDateTimePt(rec.datetime))]);
-  if (rec.tourLabel) rows.push(['Passeio', escapeHtml(rec.tourLabel)]);
-  if (rec.authors && rec.authors.length) rows.push(['Autoras', escapeHtml(rec.authors.join(', '))]);
-  if (rec.uploaders && rec.uploaders.length) rows.push(['Quem subiu', escapeHtml(rec.uploaders.join(', '))]);
-  if (rec.energyKj != null) rows.push(['Energia', `${Math.round(rec.energyKj).toLocaleString('pt-BR')} kJ`]);
+  if (rec.tourLabel) {
+    const tourHtml = rec.tourIri
+      ? `<a href="${escapeHtml(rec.tourIri)}" target="_blank" rel="noopener">${escapeHtml(rec.tourLabel)}</a>`
+      : escapeHtml(rec.tourLabel);
+    rows.push(['Passeio', tourHtml]);
+  }
+  if (rec.authors && rec.authors.length) rows.push(['Autoras', personLinks(rec.authors, rec.authorIris)]);
+  if (rec.uploaders && rec.uploaders.length) rows.push(['Quem subiu', personLinks(rec.uploaders, rec.uploaderIris)]);
   if (rec.duration != null) rows.push(['Duração', `${rec.duration.toFixed(1)} s`]);
   const chips = (rec.lists || []).map((l) => `<span class="chip">${escapeHtml(model.lists[l] || short(l))}</span>`).join('');
   let metaHtml = `<dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>`;
@@ -1574,10 +1602,39 @@ function selectedRecords() {
 }
 function wireSelbar() {
   $('#sel-share').addEventListener('click', shareSelectedLink);
-  $('#sel-lists').addEventListener('click', openAssignModal);
-  $('#sel-unlist').addEventListener('click', openUnassignModal);
-  $('#sel-download').addEventListener('click', downloadSelected);
-  $('#sel-delete').addEventListener('click', deleteSelected);
+  $('#sel-menu').addEventListener('click', (e) => {
+    e.stopPropagation();
+    showSelbarMenu();
+  });
+  $('#selbar-menu').addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-act]'); if (!btn) return;
+    hideSelbarMenu();
+    const act = btn.dataset.act;
+    if (act === 'lists') openAssignModal();
+    else if (act === 'unlist') openUnassignModal();
+    else if (act === 'download') downloadSelected();
+    else if (act === 'delete') deleteSelected();
+  });
+  document.addEventListener('pointerdown', (e) => {
+    if (!e.target.closest('#selbar-menu, #sel-menu')) hideSelbarMenu();
+  });
+  window.addEventListener('scroll', hideSelbarMenu, true);
+  window.addEventListener('resize', hideSelbarMenu);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideSelbarMenu(); });
+}
+function showSelbarMenu() {
+  const m = $('#selbar-menu');
+  const btn = $('#sel-menu');
+  m.hidden = false;
+  btn.setAttribute('aria-expanded', 'true');
+  const br = btn.getBoundingClientRect();
+  const w = m.offsetWidth, h = m.offsetHeight;
+  m.style.left = Math.min(br.left, window.innerWidth - w - 6) + 'px';
+  m.style.top = Math.max(6, br.top - h - 6) + 'px';   // acima do botão (barra fica embaixo)
+}
+function hideSelbarMenu() {
+  $('#selbar-menu').hidden = true;
+  $('#sel-menu').setAttribute('aria-expanded', 'false');
 }
 
 // ── Menu de contexto (botão direito) — mesmas 4 ações da barra de seleção ────

@@ -390,13 +390,6 @@ body.header-hidden .leaflet-top {
   justify-content: center;
   z-index: 5000;
 }
-/* Desktop com mouse de verdade (não touch): o modal vira arrastável pela faixa
-   de título (ver makeModalDraggable/dragModeEnabled em app.js), então some o
-   véu escuro — senão fica estranho arrastar o diálogo sobre um fundo opaco que
-   não é o mapa. Em touch (mesmo com tela larga) e no mobile o véu continua. */
-@media (min-width: 761px) and (hover: hover) and (pointer: fine) {
-  .modal { background: transparent; }
-}
 .modal[hidden] { display: none; }
 /* Trava o scroll de fundo enquanto há um modal aberto (a classe é posta/tirada
    pelo controlador de acessibilidade dos modais em app.js). Junto com o
@@ -488,11 +481,12 @@ body.modal-open { overflow: hidden; }
 .upload-modal-content.maximized > header {
   top: env(safe-area-inset-top, 0px);
 }
-/* Galeria, censo, upload e rota: o título precisa livrar as DUAS bolinhas
-   (fechar + maximizar). */
+/* Galeria, censo, upload, passeio e rota: o título precisa livrar as DUAS
+   bolinhas (fechar + maximizar). */
 #imagens-modal .modal-content header,
 #censo-modal .modal-content header,
 #upload-modal .modal-content header,
+#tour-modal .modal-content header,
 #route-modal .modal-content header { padding-left: 46px; }
 
 /* Modal de rota maximizado — mesmo tratamento das galerias (janela cheia +
@@ -555,16 +549,6 @@ body.modal-open { overflow: hidden; }
   border-bottom: none;
   z-index: 20;                 /* abaixo da bolinha (z 30), acima do corpo */
   pointer-events: none;        /* o título não intercepta cliques */
-}
-/* No desktop com mouse de verdade, a faixa de título vira alça de arraste —
-   ver makeModalDraggable/dragModeEnabled em app.js. Fica pointer-events:none
-   em touch (mesmo com tela larga) e no mobile (bottom-sheet fixo, sem "pra
-   onde" arrastar) e quando maximizado (tela cheia). */
-@media (min-width: 761px) and (hover: hover) and (pointer: fine) {
-  .modal-content:not(.maximized) > header {
-    pointer-events: auto;
-    cursor: move;
-  }
 }
 .modal-content header h2 {
   margin: 0;
@@ -910,7 +894,12 @@ body.modal-open { overflow: hidden; }
     padding: 6px;
     gap: 3px;
   }
-  body .trace-controls > *:not(.trace-metrics) { flex-shrink: 0; }
+  body .trace-controls > *:not(.trace-metrics):not(.trace-toggle) { flex-shrink: 0; }
+  /* Seletor de roteamento: único item que cresce, preenchendo o espaço que
+     sobra na 1ª linha (até o botão Ver) sem quebrar a linha — os outros itens
+     têm flex-shrink:0 (tamanho fixo), então o crescimento só consome espaço
+     ocioso, nunca empurra os outros. */
+  body .trace-controls .trace-toggle { flex: 1 1 0%; min-width: 0; }
   body .trace-controls .trace-break {
     display: block;
     flex-basis: 100%;
@@ -925,13 +914,14 @@ body.modal-open { overflow: hidden; }
     font-size: 11px;
   }
   .trace-controls .trace-toggle { padding: 0 2px; }
-  /* O seletor de roteamento é o item mais largo; limita a largura (o texto da
-     opção trunca com reticências) pra caber os botões — incl. Ver — numa linha
-     só, deixando a barra em 2 linhas no total (botões + métricas). */
+  /* Preenche a largura do próprio .trace-toggle (que agora cresce pra ocupar
+     o espaço ocioso da linha — ver regra acima); o texto da opção trunca com
+     reticências quando não cabe. */
   .trace-controls .trace-toggle select {
-    font-size: 11px;
+    font-size: 8px;
     padding: 2px 4px;
-    max-width: 104px;
+    width: 100%;
+    max-width: none;
     text-overflow: ellipsis;
   }
   .trace-toggle {
@@ -1019,10 +1009,9 @@ body.modal-open { overflow: hidden; }
 }
 
 /* Photo/video fallback modal: bottom-sheet centralizado pra mobile, ou
-   diálogo centrado em desktop. Reusa .modal/.modal-content (animação +
-   click-fora-fecha, e o mesmo véu condicional — ver regra `.modal` acima).
-   Aciona quando o popup do Leaflet não caberia confortavelmente na viewport —
-   ver popupopen handler em app.js. */
+   diálogo centrado em desktop. Reusa .modal/.modal-content (véu, animação,
+   click-fora-fecha). Aciona quando o popup do Leaflet não caberia
+   confortavelmente na viewport — ver popupopen handler em app.js. */
 .photo-fallback-content {
   position: relative;
   width: min(92vw, 540px);
@@ -1231,12 +1220,9 @@ body.modal-open { overflow: hidden; }
   background: rgba(255, 140, 46, 0.18);
   border-color: var(--accent);
 }
-.secondary-btn[aria-pressed="false"] {
-  opacity: 0.55;
-}
-.secondary-btn[aria-pressed="false"]:hover { opacity: 1; }
 /* Botões de toggle (Animação, Camadas, Rotas, Traçar GPX/Cancelar) acendem
-   em laranja quando estão ativos. */
+   em laranja quando estão ativos; "desligado" fica igual aos botões comuns
+   (sem opacidade reduzida). */
 .topbar-actions .secondary-btn[aria-pressed="true"] {
   background: rgba(255, 140, 46, 0.18);
   border-color: var(--accent);
@@ -1432,19 +1418,6 @@ body.drawing .draft-line:active { cursor: grabbing; }
   opacity: 0.4;
   cursor: not-allowed;
 }
-/* Bolinha de fechar (macOS) como 1º item da barra de traçado. Re-afirma o
-   visual da bolinha por cima das regras genéricas de `.trace-controls button`
-   (especificidade maior + fica depois no arquivo). É item inline do flex, então
-   fica "ao lado" dos botões (sem faixa reservada — a folga vem do gap). */
-.trace-controls > .close-dot {
-  width: 13px; height: 13px; padding: 0; margin-right: 2px;
-  border-radius: 50%; border: 0.5px solid rgba(0, 0, 0, 0.22);
-  background: #ff5f57;
-  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.35);
-}
-.trace-controls > .close-dot:hover:not(:disabled) {
-  background: #ff5f57; border-color: rgba(0, 0, 0, 0.22);
-}
 .trace-controls .trace-save {
   border-color: #3a6b3a;
   color: #b1ffb1;
@@ -1527,7 +1500,7 @@ body.trace-preview .tp-label { display: none !important; }
   border-radius: 4px;
   padding: 3px 6px;
   font: inherit;
-  font-size: 12px;
+  font-size: 8px;
 }
 
 .params-btn {
@@ -2097,6 +2070,9 @@ body.trace-preview .tp-label { display: none !important; }
   max-width: min(440px, 92vw);
   max-height: 85vh;
   overflow: hidden;
+  padding: 0;   /* senão o padding:1px padrão do Leaflet desalinha a bolinha
+                   verde (ancorada no .photo-popup, dentro do wrapper) 1px
+                   abaixo da vermelha (ancorada no wrapper) */
 }
 /* Botão de fechar do popup do Leaflet: mesma bolinha vermelha (.close-dot) dos
    modais — completa o par vermelho/verde com a .maximize-dot de "Ver grande".
@@ -2162,9 +2138,15 @@ body.trace-preview .tp-label { display: none !important; }
    só pra texto não amassar. */
 @media (max-width: 420px) {
   .photo-popup {
-    grid-template-columns: 1fr;
+    /* minmax(0, 1fr), não só 1fr: sem o mínimo 0 explícito, o <img> (elemento
+       substituído, largura intrínseca gigante) vira o "min-content" da
+       coluna e ESPREME a `dl` de detalhes pra quase 0px de largura. */
+    grid-template-columns: minmax(0, 1fr);
   }
   .photo-popup > img {
+    grid-column: 1;   /* senão herda grid-column:2 da regra larga e cria uma
+                         2ª coluna IMPLÍCITA do tamanho intrínseco da imagem,
+                         espremendo a coluna explícita (texto) pra 0px */
     grid-row: auto;
     border-radius: 6px 6px 0 0;
     max-height: 45vh;

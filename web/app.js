@@ -232,14 +232,8 @@ applyLayerOrder();
 // fica espremido contra as bordas, hit-area pequena pro fechar, e o
 // autoPan acaba escondendo o marker. O modal resolve isso.
 
-let savedMapViewForPhoto = null;
 function panMapAbovePhotoSheet(latlng, modal) {
   if (!latlng) return;
-  // Salva a view só na primeira chamada de uma sessão — chamadas seguintes
-  // (ex.: avançando entre clipes) já estão num estado deslocado.
-  if (!savedMapViewForPhoto) {
-    savedMapViewForPhoto = { center: map.getCenter(), zoom: map.getZoom() };
-  }
   const mapEl = map.getContainer();
   const mapRect = mapEl.getBoundingClientRect();
   const sheet = modal && !modal.hidden ? modal.querySelector('.modal-content') : null;
@@ -287,12 +281,6 @@ map.on('popupclose', (e) => {
   clearPhotoMarkerHighlight();
 });
 
-function restoreMapViewAfterPhoto() {
-  if (!savedMapViewForPhoto) return;
-  const { center, zoom } = savedMapViewForPhoto;
-  savedMapViewForPhoto = null;
-  map.flyTo(center, zoom, { duration: 0.3 });
-}
 function showPhotoFallbackModal(innerHtml) {
   let modal = document.getElementById('photo-fallback-modal');
   if (!modal) {
@@ -304,7 +292,6 @@ function showPhotoFallbackModal(innerHtml) {
       if (ev.target === modal) {
         pauseMediaIn(modal);
         modal.hidden = true;
-        restoreMapViewAfterPhoto();
         clearPhotoPreview();
       }
     });
@@ -317,7 +304,6 @@ function showPhotoFallbackModal(innerHtml) {
   modal.querySelector('.photo-fallback-content').appendChild(makeCloseDot(() => {
     pauseMediaIn(modal);
     modal.hidden = true;
-    restoreMapViewAfterPhoto();
     clearPhotoPreview();
   }));
   modal.hidden = false;
@@ -337,7 +323,6 @@ function closePhotoPreview() {
   if (modal && !modal.hidden) {
     pauseMediaIn(modal);
     modal.hidden = true;
-    restoreMapViewAfterPhoto();
   }
   clearPhotoPreview();
 }
@@ -364,14 +349,11 @@ map.on('popupopen', (e) => {
   photoPreviewMarker = srcMarker || null;
   updatePhotoNavArrows();
   attachPhotoSwipe(el);
-  // Se já tem um modal aberto (de outro marker), fecha — evita dois previews
-  // visíveis e o snap-back de map view ficar incoerente. Durante uma navegação
-  // NÃO restaura a view (senão voltaria pro ponto de origem a cada pulo).
+  // Se já tem um modal aberto (de outro marker), fecha — evita dois previews visíveis.
   const existingModal = document.getElementById('photo-fallback-modal');
   if (existingModal && !existingModal.hidden) {
     pauseMediaIn(existingModal);
     existingModal.hidden = true;
-    if (!_photoNavigating) restoreMapViewAfterPhoto();
   }
   const promoteIfNeeded = () => {
     if (!el.isConnected || el.style.visibility === 'hidden') return;
@@ -428,7 +410,6 @@ function navigatePhoto(forward) {
   if (!from || !from._photo) return;
   const target = findTimeNeighbor(from, forward);
   if (!target) return;
-  if (!savedMapViewForPhoto) savedMapViewForPhoto = { center: map.getCenter(), zoom: map.getZoom() };
   _photoNavigating = true;
   map.setView(target.getLatLng(), map.getZoom(), { animate: false });
   target.openPopup();          // dispara popupopen → seta photoPreviewMarker + promove se preciso
@@ -486,8 +467,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'ArrowRight') { e.preventDefault(); navigatePhoto(true); }
   else if (e.key === 'ArrowLeft') { e.preventDefault(); navigatePhoto(false); }
 });
-// Fechamento REAL do popup (não promoção pro modal nem navegação) limpa o
-// preview e restaura a view salva.
+// Fechamento REAL do popup (não promoção pro modal nem navegação) limpa o preview.
 map.on('popupclose', (e) => {
   const el = e.popup?.getElement?.();
   if (!el || !el.classList.contains('photo-popup-wrap')) return;
@@ -498,7 +478,6 @@ map.on('popupclose', (e) => {
     if (modal && !modal.hidden) return;                              // promovido pro modal
     if (document.querySelector('.leaflet-popup .photo-popup')) return; // outro popup abriu
     clearPhotoPreview();
-    restoreMapViewAfterPhoto();
   }, 0);
 });
 
@@ -2425,8 +2404,10 @@ function buildModelFromQuads(quads) {
       orig:      titles.get(s) || (phash ? `image_${phash}` : s),
       datetime,
       ride,
-      authors:   authorNames,
-      providers: providerNames,
+      authors:     authorNames,
+      authorIris:  authorIris,
+      providers:   providerNames,
+      providerIris: providerIris,
       lists:     [...(listsOf.get(s) || [])],
       license:   licenses.get(s) || null,
       upload,    // { startedAt } | null
@@ -2561,11 +2542,17 @@ function _photoDetailRows(ph) {
     (Number.isFinite(ph.alt) ? ` · ${Math.round(ph.alt)} m` : '') +
     (Number.isFinite(ph.bearing) ? ` · ${Math.round(ph.bearing)}° ${cardinal(ph.bearing)}` : '');
   rows.push(['Coordenadas', escapeHtml(coords)]);
+  const personLinks = (names, iris) => names.map((name, i) => {
+    const iri = iris[i];
+    return iri
+      ? `<a href="${escapeHtml(iri)}" target="_blank" rel="noopener">${escapeHtml(name)}</a>`
+      : escapeHtml(name);
+  }).join(', ');
   if (ph.authors && ph.authors.length) {
-    rows.push(['Autoria', escapeHtml(ph.authors.join(', '))]);
+    rows.push(['Autoria', personLinks(ph.authors, ph.authorIris || [])]);
   }
   if (ph.providers && ph.providers.length) {
-    rows.push(['Quem subiu', escapeHtml(ph.providers.join(', '))]);
+    rows.push(['Quem subiu', personLinks(ph.providers, ph.providerIris || [])]);
   }
   if (ph.lists && ph.lists.length) {
     const names = ph.lists.map((l) => escapeHtml(listCatalog.get(l)?.name || l.split(/[/#]/).pop()));
@@ -3755,6 +3742,15 @@ document.getElementById('subir-censo')?.addEventListener('click', () => {
   closeSubirModal();
   openCensoModal();
 });
+document.getElementById('subir-share-loc')?.addEventListener('click', () => {
+  closeSubirModal();
+  onShareLocClick();
+});
+document.getElementById('subir-help')?.addEventListener('click', () => {
+  closeSubirModal();
+  closeOtherMobileDialogs('help');
+  setHelpOpen(true);
+});
 
 // ─── Botão de fechar (bolinha vermelha estilo macOS) ─────────────────────────
 // Como os modais e painéis não têm mais barra de título, injeta uma bolinha
@@ -3779,63 +3775,10 @@ for (const content of document.querySelectorAll('.modal > .modal-content')) {
   content.appendChild(makeCloseDot(() => modal.click()));
 }
 
-// ─── Arrastar modal pela faixa de título (desktop com mouse) ────────────────
-// Só em desktop com um ponteiro de verdade — toque (mesmo em tela larga) fica
-// de fora, pra não brigar com scroll/tap. Mesma condição usada pelo CSS pro
-// véu (`.modal` em style.css) e pro pointer-events da faixa de título: sem véu
-// escuro E arrastável andam juntos — dá pra ver e mover o que está por baixo.
-const dragModeMQ = window.matchMedia('(min-width: 761px) and (hover: hover) and (pointer: fine)');
-function dragModeEnabled() { return dragModeMQ.matches; }
-
-// Clique-fora fecha os modais (cada um já tem seu próprio listener — ver
-// `Modal?.addEventListener('click', …)` espalhados no arquivo). Em modo de
-// arraste isso atrapalha: soltar o mouse um pouco fora do diálogo ao
-// reposicioná-lo não deveria fechar. Um único listener em fase de captura no
-// document, rodando ANTES dos listeners de cada modal (capture no document
-// sempre precede a fase AT_TARGET no próprio elemento), corta a propagação
-// pra cliques REAIS (`isTrusted`) na própria `.modal` (o véu, não o conteúdo).
-// `isTrusted` deixa passar o clique sintético que a bolinha vermelha dispara
-// (`modal.click()`), que é como ela fecha o modal.
-document.addEventListener('click', (e) => {
-  if (!e.isTrusted) return;
-  if (dragModeEnabled() && e.target?.classList?.contains('modal')) {
-    e.stopPropagation();
-  }
-}, true);
-
-function makeModalDraggable(modal) {
-  const content = modal.querySelector(':scope > .modal-content');
-  const header = content?.querySelector(':scope > header');
-  if (!content || !header) return;
-  let dx = 0, dy = 0, startX = 0, startY = 0, dragging = false;
-  header.addEventListener('mousedown', (e) => {
-    if (e.button !== 0) return;
-    if (content.classList.contains('maximized')) return;
-    if (!dragModeEnabled()) return;
-    if (e.target.closest('button, a, input, select, textarea')) return;
-    dragging = true;
-    startX = e.clientX - dx;
-    startY = e.clientY - dy;
-    e.preventDefault();
-  });
-  window.addEventListener('mousemove', (e) => {
-    if (!dragging) return;
-    dx = e.clientX - startX;
-    dy = e.clientY - startY;
-    content.style.transform = `translate(${dx}px, ${dy}px)`;
-  });
-  window.addEventListener('mouseup', () => { dragging = false; });
-  // Reseta a posição toda vez que o modal fecha, pra sempre reabrir centrado.
-  new MutationObserver(() => {
-    if (modal.hidden) { dx = 0; dy = 0; content.style.transform = ''; }
-  }).observe(modal, { attributes: true, attributeFilter: ['hidden'] });
-}
-for (const modal of document.querySelectorAll('.modal')) makeModalDraggable(modal);
-
 // Bolinha verde de maximizar (estilo macOS) nos modais em iframe: alterna entre
 // janela e tela cheia (classe .maximized no .modal-content), persistido por
 // chave. Usada na galeria e no censo.
-function addMaximizeDot(modalEl, key) {
+function addMaximizeDot(modalEl, key, defaultOn = false) {
   const content = modalEl?.querySelector('.modal-content');
   if (!content) return;
   const dot = document.createElement('button');
@@ -3853,26 +3796,26 @@ function addMaximizeDot(modalEl, key) {
     setMax(!content.classList.contains('maximized'), true);
   });
   content.appendChild(dot);
-  let saved = false;
-  try { saved = localStorage.getItem(key) === '1'; } catch (_) {}
+  // Sem preferência salva ainda, usa `defaultOn` (ex.: galeria já maximizada
+  // por padrão no celular); uma vez que a pessoa mexe na bolinha, a escolha
+  // dela persiste e passa a valer sempre.
+  let saved = defaultOn;
+  try {
+    const stored = localStorage.getItem(key);
+    if (stored !== null) saved = stored === '1';
+  } catch (_) {}
   setMax(saved, false);
 }
-addMaximizeDot(imagensModal, 'phidro:galleryMaximized');
+addMaximizeDot(imagensModal, 'phidro:galleryMaximized', window.matchMedia('(max-width: 760px)').matches);
 addMaximizeDot(censoModal, 'phidro:censoMaximized');
 addMaximizeDot(uploadModal, 'phidro:uploadModalMaximized');
+addMaximizeDot(tourModal, 'phidro:tourModalMaximized');
 
 // Sidebar de Rotas: a bolinha fecha o painel (mesmo caminho do ☰/toggle). Como
 // só é clicável com a sidebar aberta, o toggle sempre fecha.
 document.getElementById('sidebar')?.appendChild(
   makeCloseDot(() => toggleRoutesSidebar(), 'Fechar rotas'),
 );
-
-// Barra de edição de traçado: bolinha como 1º item (inline, ao lado dos
-// botões); fechar = cancelar a edição, igual ao "✕ Cancelar" do botão Traçar.
-{
-  const tc = document.getElementById('trace-controls');
-  if (tc) tc.insertBefore(makeCloseDot(() => exitDrawingMode(), 'Fechar edição'), tc.firstChild);
-}
 
 // ─── Modal de Configurações ───────────────────────────────────────────────
 const settingsBtn        = document.getElementById('settings-btn');
@@ -6867,7 +6810,7 @@ function enterDrawingMode() {
     document.body.classList.add('layers-hidden');
     if (layersBtn) layersBtn.setAttribute('aria-pressed', 'false');
   }
-  traceBtn.textContent = '✕🗺︎ Cancelar';
+  traceBtn.textContent = '🗺︎ cancelar';
   traceBtn.setAttribute('aria-label', 'Cancelar');
   traceBtn.setAttribute('title', 'Cancelar (Esc)');
   traceBtn.setAttribute('aria-pressed', 'true');
@@ -6909,7 +6852,7 @@ function enterPreviewMode() {
   }
   traceControls.hidden = true;
   // Cancelar → Editar; mantém aria-pressed='true' (laranja).
-  traceBtn.textContent = '✎🗺︎ Editar';
+  traceBtn.textContent = '✎🗺︎ editar';
   traceBtn.setAttribute('aria-label', 'Editar');
   traceBtn.setAttribute('title', 'Voltar a editar');
 }
@@ -6920,7 +6863,7 @@ function exitPreviewMode() {
   document.body.classList.remove('trace-preview');
   updateDraftPolyline();   // restaura a geometria exata (des-suaviza)
   traceControls.hidden = false;
-  traceBtn.textContent = '✕🗺︎ Cancelar';
+  traceBtn.textContent = '🗺︎ cancelar';
   traceBtn.setAttribute('aria-label', 'Cancelar');
   traceBtn.setAttribute('title', 'Cancelar (Esc)');
 }
@@ -6964,7 +6907,7 @@ function exitDrawingMode() {
     if (layersBtn) layersBtn.setAttribute('aria-pressed', 'true');
     layersWasVisible = false;
   }
-  traceBtn.textContent = '🗺︎ Traçar';
+  traceBtn.textContent = '🗺︎ traçar';
   traceBtn.setAttribute('aria-label', 'Traçar GPX');
   traceBtn.setAttribute('title', 'Traçar GPX');
   traceBtn.removeAttribute('aria-pressed');
