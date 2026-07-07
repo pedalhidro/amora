@@ -65,8 +65,14 @@
     <div class="row" id="l-coords" hidden>
       <label>Lat <input type="number" id="lat" step="0.0001" value="-23.5480"></label>
       <label>Lng <input type="number" id="lng" step="0.0001" value="-46.6360"></label>
-      <label>Zoom <input type="number" id="z" min="3" max="19" value="15"></label>
     </div>
+    <label>Zoom (vira o <code>z=</code> da URL; vazio = automático)
+      <div class="row" style="align-items:center">
+        <button type="button" id="zoom-out" title="Afasta">−</button>
+        <input type="number" id="z" min="3" max="19" placeholder="auto" style="flex:1">
+        <button type="button" id="zoom-in" title="Aproxima">+</button>
+      </div>
+    </label>
     <label>Painel (tamanho)
       <select id="size">
         <option value="400x300">4.2&quot; — 400×300 (Waveshare SPI)</option>
@@ -129,8 +135,20 @@ if (qs.get('w') && qs.get('h')) {
   $('#size').value = v;
 }
 if (qs.get('base')) $('#base').value = qs.get('base');
+if (qs.get('z')) $('#z').value = qs.get('z');
 if (qs.get('interval')) $('#interval').value = qs.get('interval');
 if (KIOSK && !qs.get('interval')) $('#interval').value = '30';
+
+// Passos de zoom (−/+). Partem do valor atual ou do default do modo vigente
+// (follow 16, coords 15, route ~13 de enquadramento típico).
+function stepZoom(d) {
+  const cur = +$('#z').value ||
+    ({ follow: 16, coords: 15, route: 13 })[$('#mode').value] || 15;
+  $('#z').value = Math.max(3, Math.min(19, cur + d));
+  refresh();
+}
+$('#zoom-in').addEventListener('click', () => stepZoom(+1));
+$('#zoom-out').addEventListener('click', () => stepZoom(-1));
 
 function syncMode() {
   const m = $('#mode').value;
@@ -162,7 +180,9 @@ function buildUrl() {
   const m = $('#mode').value;
   if (m === 'route') p.set('route', $('#route').value);
   else if (m === 'follow') p.set('follow', $('#follow').value.trim());
-  else { p.set('lat', $('#lat').value); p.set('lng', $('#lng').value); p.set('z', $('#z').value); }
+  else { p.set('lat', $('#lat').value); p.set('lng', $('#lng').value); }
+  // Zoom global: vazio = automático (follow → 16, route → enquadra, coords → 15).
+  if ($('#z').value) p.set('z', $('#z').value);
   if ($('#base').value !== 'osm') p.set('base', $('#base').value);
   if ($('#invert').checked) p.set('invert', '1');
   return `./map.png?${p}`;
