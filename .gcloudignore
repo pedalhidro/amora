@@ -35,6 +35,7 @@ backend/data/
 # Pastas não usadas no container
 research/
 scripts/
+eink/
 
 # Python lixo
 __pycache__/

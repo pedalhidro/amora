@@ -24,6 +24,7 @@ web/clips/
 # Backends alternativos / scripts não-relevantes pro container
 research/
 scripts/
+eink/
 
 # Python lixo
 __pycache__/
