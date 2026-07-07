@@ -107,6 +107,40 @@ vivo.** Mas faz uma coisa ótima:
 É genuinamente útil (overview + POIs sempre à vista) e usa o mesmo endpoint.
 Só não espere a bolinha andando no mapa.
 
+### Nível 1.5 — navegador ao vivo caseiro por MENOS DE US$ 20
+
+Dá, sim. A receita mais barata que ainda é "de verdade":
+
+- **ESP32-C3 SuperMini** (~US$ 2,50 no AliExpress) — Wi-Fi, USB-C, minúsculo.
+- **Painel e-paper 2.9" SPI, 296×128** (Waveshare/GoodDisplay, ~US$ 10) —
+  vem com o cabo de 8 vias de terminais fêmea.
+- Alimenta por um powerbank que você já tem (ou LiPo pequena, +US$ 3).
+
+Total: ~US$ 13–15 no carrinho (~US$ 18 / ~R$ 100 já com o imposto da Remessa
+Conforme). Roda o MESMO sketch do nível 3, só trocando a linha do display
+pela variante 2.9" do GxEPD2 e pedindo `w=296&h=128`. A única barreira noob:
+soldar os 8 pinos de header no SuperMini — ou pague ~US$ 1 a mais pela versão
+com pinos pré-soldados e vire encaixe puro.
+
+Alternativa de mesmo preço e ZERO eletrônica: um **Kindle usado surrado**
+(OLX/Enjoei, R$ 50–100 — botão quebrado não importa, só precisa do browser) →
+vira o Nível 0. É legitimamente a melhor opção custo/benefício pra começar.
+
+Caminho hacker (não-noob, mas divertido): **etiquetas de preço e-ink (ESL)**
+de liquidação (~US$ 2–4 cada!) + o projeto
+[OpenEPaperLink](https://openepaperlink.de/) com um ESP32-C6 de access
+point — várias telinhas baratas (cartão de rota numa, "quem vem aí" noutra).
+Exige gravar firmware nas etiquetas com jig de pogo-pins; guarde pra quando
+o vício apertar.
+
+**E 4G, pra ficar independente do telefone?** Honestamente: não por menos de
+US$ 20 (o módulo A7670/SIM7600 sozinho custa US$ 10–15, mais antena e plano) —
+e no modo `follow` seria redundante: o telefone TEM que estar junto de
+qualquer jeito, porque ele é o GPS (é ele que alimenta o Localização ao
+vivo). 4G no dispositivo só faz sentido pra um painel "onde está todo mundo"
+sem telefone nenhum — se um dia quiser isso, a família LilyGO T-A7670
+(~US$ 35) é o ponto de partida.
+
 ### Nível 2 — navegador ao vivo de verdade, sem solda (~US$ 45–60)
 
 **LilyGO T5 4.7" (ESP32-S3)** — a recomendação pra noobs que querem o
