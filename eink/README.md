@@ -61,6 +61,7 @@ telefone da ciclista              este servidor (eink/)           dispositivo e-
 | `w=&h=` | tamanho do painel em px (default 400×300) |
 | `fmt=png` \| `fmt=raw` | PNG (qualquer cliente) ou framebuffer cru (ESP32) |
 | `base=osm` \| `hydro` \| `none` | ruas / raster de hidrografia / só vetores |
+| `pan=dx,dy` | desloca o centro em px (direita/baixo +) — funciona em qualquer modo; `follow` + `pan=0,-90` = look-ahead (mais mapa à frente) |
 | `invert=1` | preto↔branco |
 
 Modos combinam: `?route=X&follow=Y` = traçado da rota X, centrado na pessoa Y.

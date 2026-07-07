@@ -73,6 +73,15 @@
         <button type="button" id="zoom-in" title="Aproxima">+</button>
       </div>
     </label>
+    <label>Mover o centro (vira o <code>pan=dx,dy</code> da URL, em px)
+      <div class="row" style="align-items:center">
+        <button type="button" id="pan-left" title="Esquerda">←</button>
+        <button type="button" id="pan-up" title="Cima">↑</button>
+        <button type="button" id="pan-down" title="Baixo">↓</button>
+        <button type="button" id="pan-right" title="Direita">→</button>
+        <button type="button" id="pan-reset" title="Recentraliza">⊙</button>
+      </div>
+    </label>
     <label>Painel (tamanho)
       <select id="size">
         <option value="400x300">4.2&quot; — 400×300 (Waveshare SPI)</option>
@@ -150,6 +159,26 @@ function stepZoom(d) {
 $('#zoom-in').addEventListener('click', () => stepZoom(+1));
 $('#zoom-out').addEventListener('click', () => stepZoom(-1));
 
+// Pan acumulado em px (passo = 1/3 do lado do painel por clique). Nota: no
+// zoom o passo em METROS muda (px são px daquele zoom) — comportamento
+// natural de "nudge". ⊙ recentraliza.
+let panX = 0, panY = 0;
+if (qs.get('pan')) {
+  const [dx, dy] = qs.get('pan').split(',');
+  panX = +dx || 0; panY = +dy || 0;
+}
+function stepPan(dx, dy) {
+  const [w, h] = $('#size').value.split('x');
+  panX += Math.round(dx * w / 3);
+  panY += Math.round(dy * h / 3);
+  refresh();
+}
+$('#pan-left').addEventListener('click', () => stepPan(-1, 0));
+$('#pan-right').addEventListener('click', () => stepPan(+1, 0));
+$('#pan-up').addEventListener('click', () => stepPan(0, -1));
+$('#pan-down').addEventListener('click', () => stepPan(0, +1));
+$('#pan-reset').addEventListener('click', () => { panX = panY = 0; refresh(); });
+
 function syncMode() {
   const m = $('#mode').value;
   $('#l-route').hidden = m !== 'route';
@@ -185,6 +214,7 @@ function buildUrl() {
   if ($('#z').value) p.set('z', $('#z').value);
   if ($('#base').value !== 'osm') p.set('base', $('#base').value);
   if ($('#invert').checked) p.set('invert', '1');
+  if (panX || panY) p.set('pan', `${panX},${panY}`);
   return `./map.png?${p}`;
 }
 

@@ -133,7 +133,8 @@ def _nice_scale(meters_max):
 
 def render_map(*, lat, lng, z, w, h, routes, peers,
                route_slug=None, follow_id=None,
-               base="osm", invert=False, heading=None):
+               base="osm", invert=False, heading=None,
+               pan_x=0, pan_y=0):
     """Renderiza o quadro 1-bit. Retorna PIL.Image mode '1'.
 
     routes: lista de entradas do routes.json ({tourIri, name, latlngs, pois}).
@@ -141,6 +142,9 @@ def render_map(*, lat, lng, z, w, h, routes, peers,
     base:   'osm' (ruas) | 'hydro' (o raster de hidrografia do telhas — que é
             um BASEMAP opaco, como no seletor de camadas do app, não um
             overlay) | 'none' (fundo branco, só vetores — render instantâneo).
+    pan_x/pan_y: desloca o viewport em PIXELS (direita/baixo positivos) DEPOIS
+            do centro resolvido — funciona em qualquer modo. Ex.: follow com
+            pan_y=-h*0.3 = "look-ahead" (mais mapa à frente do que atrás).
     """
     from PIL import Image, ImageDraw
 
@@ -148,9 +152,12 @@ def render_map(*, lat, lng, z, w, h, routes, peers,
     h = max(64, min(MAX_H, int(h)))
     z = max(MIN_Z, min(MAX_Z, int(z)))
 
-    # Canto superior-esquerdo do viewport em pixels globais.
+    # Canto superior-esquerdo do viewport em pixels globais (+ pan, limitado a
+    # ±2 viewports pra URL não conseguir pedir tile do outro lado do mundo).
     cx, cy = _merc_px(lat, lng, z)
-    ox, oy = cx - w / 2, cy - h / 2
+    pan_x = max(-2 * w, min(2 * w, int(pan_x or 0)))
+    pan_y = max(-2 * h, min(2 * h, int(pan_y or 0)))
+    ox, oy = cx - w / 2 + pan_x, cy - h / 2 + pan_y
 
     def to_px(la, ln):
         x, y = _merc_px(la, ln, z)

@@ -131,13 +131,25 @@ def map_png():
     base = request.args.get("base") or "osm"
     if base not in ("osm", "hydro", "none"):
         base = "osm"
+    # pan=dx,dy (px; direita/baixo positivos) — desloca o viewport DEPOIS do
+    # centro resolvido, então funciona com follow/route/coords. Malformado →
+    # ignorado. Ex.: follow + pan=0,-90 = "look-ahead" (mais mapa à frente).
+    pan_x = pan_y = 0
+    pan = request.args.get("pan")
+    if pan:
+        try:
+            dx, dy = pan.split(",", 1)
+            pan_x, pan_y = int(float(dx)), int(float(dy))
+        except (TypeError, ValueError):
+            pass
     img = render.render_map(
         lat=lat, lng=lng, z=int(z if z is not None else 15), w=w, h=h,
         routes=routes, peers=peers,
         route_slug=route_slug, follow_id=follow_id,
         base=base,
         invert=request.args.get("invert") == "1",
-        heading=fnum("heading"))
+        heading=fnum("heading"),
+        pan_x=pan_x, pan_y=pan_y)
     fmt = "raw" if request.args.get("fmt") == "raw" else "png"
     body, mime = render.image_to_response_bytes(img, fmt)
     return Response(body, mimetype=mime, headers={
