@@ -350,9 +350,12 @@ if (window.self !== window.top) $('h1')?.style.setProperty('display', 'none');
 // ===================== Dependências CDN ================================
 let exifr = null;
 try {
-  exifr = await import('https://cdn.jsdelivr.net/npm/exifr@7.1.3/dist/full.esm.mjs')
-    .then(m => m.default || m);
-} catch (_) { console.warn('exifr indisponível.'); }
+  // VENDORADO em web/lib/ (antes vinha do jsdelivr). Bloqueadores de anúncios /
+  // Enhanced Tracking Protection do Firefox e uso offline derrubavam o import do
+  // CDN em silêncio — sem exifr, o autofill de EXIF (GPS/data) simplesmente não
+  // acontecia. exifr 7.1.3 (dist/full.esm.mjs), pinado; lê JPEG e HEIC.
+  exifr = await import('./lib/exifr.esm.js').then(m => m.default || m);
+} catch (e) { console.warn('exifr indisponível:', e); }
 
 // Tom Select é UMD vendored em web/lib/ — sem CDN, sem dynamic ESM import
 // (que falha quando esm.sh está bloqueado).
@@ -1992,6 +1995,11 @@ async function createImageCard(file, defaults) {
   // imageOrientation: 'from-image' é MANDATÓRIO: garante que o bitmap nasce com
   // a EXIF Orientation aplicada; sem isso browsers que default-am 'none' devolvem
   // pixels crus e o canvas grava fotos verticais deitadas.
+  // originalFile: o arquivo CRU do disco, guardado ANTES do fallback HEIC→JPEG
+  // (que reencoda e joga fora todos os metadados). O EXIF (GPS/data) é lido
+  // daqui — exifr lê HEIC direto —, senão num navegador sem decode HEIC nativo
+  // (Firefox/Chrome) a foto do iPhone perdia GPS/data no reencode.
+  const originalFile = file;
   let bitmap, phash;
   try {
     bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
@@ -2132,11 +2140,21 @@ async function createImageCard(file, defaults) {
   setCardSendEnabled(card, true);
   setCardStatus(card, 'pronta para envio', '');
 
-  // EXIF
+  // EXIF — lê do ARQUIVO ORIGINAL (não do `file`, que pode ter virado JPEG
+  // reencodado e sem metadados no fallback HEIC).
   if (exifr) {
+    let data = null;
     try {
-      const data = await exifr.parse(file, { gps: true });
-      if (data) {
+      data = await exifr.parse(originalFile, { gps: true });
+    } catch (e) { console.warn('EXIF parse:', e); }
+    if (data) {
+      // GPS/bearing/focal primeiro e cada um isolado: uma falha na parte de
+      // data/auto-detecção não pode impedir o preenchimento das coordenadas.
+      try { if (data.latitude  != null) $('[data-field="lat"]', elem).value = data.latitude.toFixed(6); } catch (_) {}
+      try { if (data.longitude != null) $('[data-field="lon"]', elem).value = data.longitude.toFixed(6); } catch (_) {}
+      try { if (data.GPSImgDirection != null)         $('[data-field="bearing"]', elem).value = data.GPSImgDirection; } catch (_) {}
+      try { if (data.FocalLengthIn35mmFormat != null) $('[data-field="focal"]',   elem).value = data.FocalLengthIn35mmFormat; } catch (_) {}
+      try {
         if (data.DateTimeOriginal) {
           dateInput.value = dateToLocalInput(new Date(data.DateTimeOriginal));
           // OffsetTimeOriginal (ex: "+02:00"): fuso em que a câmera gravou —
@@ -2144,12 +2162,8 @@ async function createImageCard(file, defaults) {
           if (data.OffsetTimeOriginal) card.exifTzOffset = data.OffsetTimeOriginal;
           autoDetectTour(card);
         }
-        if (data.latitude  != null) $('[data-field="lat"]', elem).value     = data.latitude.toFixed(6);
-        if (data.longitude != null) $('[data-field="lon"]', elem).value     = data.longitude.toFixed(6);
-        if (data.GPSImgDirection != null)         $('[data-field="bearing"]', elem).value = data.GPSImgDirection;
-        if (data.FocalLengthIn35mmFormat != null) $('[data-field="focal"]',   elem).value = data.FocalLengthIn35mmFormat;
-      }
-    } catch (e) { console.warn('EXIF:', e); }
+      } catch (e) { console.warn('EXIF data/tour:', e); }
+    }
   }
   return { ok: true, card };
 }

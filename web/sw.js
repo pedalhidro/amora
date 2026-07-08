@@ -13,7 +13,7 @@
 //                    stale data, not just a stale app shell.
 //   RUNTIME_CACHE — map tiles, OSRM, elevation, etc. stale-while-revalidate.
 
-const VERSION = 'phidro-v367';
+const VERSION = 'phidro-v368';
 const STATIC_CACHE = `${VERSION}-static`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 
@@ -36,6 +36,7 @@ const STATIC_ASSETS = [
   './pessoas.html',
   './lib/utils.js',
   './lib/n3.min.js',
+  './lib/exifr.esm.js',   // autofill de EXIF no upload (vendorado; era jsdelivr)
   './lib/media-query.js',   // infra de consulta (Store N3 + Comunica lazy)
   './lib/energy-worker.js',
   './lib/graph-engine.js',   // importScripts()'d pelo energy-worker no boot
@@ -89,8 +90,8 @@ const RUNTIME_HOSTS = [
   /(^|\.)raster\.geosampa\.prefeitura\.sp\.gov\.br$/,
   /(^|\.)api\.open-meteo\.com$/,
   /(^|\.)routing\.openstreetmap\.de$/,
-  // jsdelivr fica só pelos lazy-loads do app.js (exifr/heic2any/jszip/
-  // geotiff); Leaflet & cia foram vendorados pra lib/ (unpkg saiu).
+  // jsdelivr fica só pelos lazy-loads do app.js (heic2any/jszip/geotiff);
+  // Leaflet, n3 e exifr foram vendorados pra lib/ (unpkg/CDN saiu).
   /(^|\.)cdn\.jsdelivr\.net$/,
 ];
 

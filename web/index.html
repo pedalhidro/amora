@@ -14,9 +14,10 @@
       Leaflet sets per-marker positions via the style attribute. Tile / WMS
       hosts are unrestricted (img-src https:) since the user can add custom
       XYZ/WMS layers at runtime. IG embed iframe is whitelisted explicitly.
-      cdn.jsdelivr.net continua no script-src só pelos lazy-loads do app.js
-      (exifr/heic2any/jszip/geotiff/sql.js/proj4); Leaflet & cia agora são
-      vendorados. 'wasm-unsafe-eval' libera só a compilação do WebAssembly do
+      cdn.jsdelivr.net continua no script-src pelos lazy-loads do app.js
+      (heic2any/jszip/geotiff/sql.js/proj4); Leaflet, n3 e exifr agora são
+      vendorados (exifr saiu do CDN porque bloqueadores/ETP do Firefox
+      derrubavam o autofill de EXIF). 'wasm-unsafe-eval' libera só a compilação do WebAssembly do
       sql.js (leitor do gpkg do viário) — não habilita eval() de JS.
     -->
     <meta http-equiv="Content-Security-Policy" content="
@@ -193,6 +194,12 @@
           <details class="help-changelog">
             <summary>Novidades (changelog)</summary>
             <dl>
+              <dt>08/07/2026 · v368</dt>
+              <dd>
+                <ul>
+                  <li>Corrigido: no envio de fotos, o preenchimento automático de GPS e data pelo EXIF não funcionava em alguns navegadores (Firefox com proteção contra rastreadores/bloqueador, ou offline) — a biblioteca de leitura de EXIF agora é local, não depende mais de CDN. Fotos de iPhone (HEIC) também têm o EXIF lido do arquivo original (antes a conversão jogava fora GPS/data).</li>
+                </ul>
+              </dd>
               <dt>07/07/2026 · v367</dt>
               <dd>
                 <ul>

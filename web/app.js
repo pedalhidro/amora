@@ -3296,7 +3296,6 @@ async function bulkDownloadPhotos(photos, variant, label, btn) {
 // via heic2any. Nada é salvo no servidor — recarregar a página limpa tudo.
 // As bibliotecas exifr/heic2any são carregadas sob demanda para não pesar
 // o carregamento normal da página.
-const EXIFR_URL = 'https://cdn.jsdelivr.net/npm/exifr@7/dist/full.umd.js';
 const HEIC2ANY_URL =
   'https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js';
 const JSZIP_URL =
@@ -3315,8 +3314,12 @@ function loadScript(src) {
     document.head.appendChild(s);
   });
 }
+// exifr VENDORADO em web/lib/ (era jsdelivr): bloqueadores/ETP do Firefox e uso
+// offline derrubavam o import do CDN, e com ele o "soltar foto no mapa" por GPS.
+let _exifrMod = null;
 async function ensureExifr() {
-  if (!window.exifr) await loadScript(EXIFR_URL);
+  if (!_exifrMod) _exifrMod = await import('./lib/exifr.esm.js').then((m) => m.default || m);
+  return _exifrMod;
 }
 async function ensureHeic2any() {
   if (!window.heic2any) await loadScript(HEIC2ANY_URL);
@@ -3342,8 +3345,9 @@ async function handlePhotoUpload(fileList) {
   const files = [...(fileList || [])];
   if (files.length === 0) return;
   showToast(`Processando ${files.length} imagem(ns)…`);
+  let exifrLib;
   try {
-    await ensureExifr();
+    exifrLib = await ensureExifr();
   } catch {
     showToast('Não foi possível carregar o leitor de EXIF.');
     return;
@@ -3361,7 +3365,7 @@ async function handlePhotoUpload(fileList) {
   let failed = 0;
   for (const f of files) {
     try {
-      const meta = await window.exifr.parse(f, {
+      const meta = await exifrLib.parse(f, {
         gps: true,
         exif: true,
         ifd0: true,
