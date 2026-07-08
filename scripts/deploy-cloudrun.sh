@@ -64,6 +64,7 @@ SYNC_STATE=0
 DEPLOY_CODE=1
 MIRROR_FLAG=""
 FORCE=0
+PUSH_CATALOGS=1
 for arg in "$@"; do
   case "$arg" in
     --dry-run)    DRY="echo DRY: "; echo "↻ DRY RUN — nenhuma mudança real será aplicada." ;;
@@ -71,6 +72,14 @@ for arg in "$@"; do
     --state-only) SYNC_STATE=1; DEPLOY_CODE=0 ;;
     --mirror)     MIRROR_FLAG="--delete-unmatched-destination-objects" ;;
     --force)      FORCE=1 ;;
+    # CI: pula o push guardado de tours.ttl/identities.ttl. A cópia do repo é
+    # tipicamente MAIS VELHA que o bucket vivo (mutado por Tour CRUD), então o
+    # guard daria `conflict` e o script sairia 3 (deploy vermelho à toa) — e
+    # forçar sobrescreveria o catálogo vivo (lost update). Como a leitura é
+    # bucket-first e o container traz uma cópia seed, não empurrar esses dois
+    # num deploy de código é correto e seguro. shapes.ttl/ontology.ttl
+    # (unidirecionais) continuam sincronizando.
+    --no-catalog-push) PUSH_CATALOGS=0 ;;
     -h|--help)    sed -n '2,46p' "$0"; exit 0 ;;
     *) echo "Unknown arg: $arg" >&2; exit 1 ;;
   esac
@@ -216,37 +225,42 @@ for f in shapes.ttl ontology.ttl; do
     echo "  ⚠ $REPO_ROOT/web/data/$f não existe localmente — skip"
   fi
 done
-for f in tours.ttl identities.ttl; do
-  if [[ -f "$REPO_ROOT/web/data/$f" ]]; then
-    guarded_push "$REPO_ROOT/web/data/$f" "gs://$BUCKET/data/$f"
-  else
-    echo "  ⚠ $REPO_ROOT/web/data/$f não existe localmente — skip"
-  fi
-done
+if [[ "$PUSH_CATALOGS" == 1 ]]; then
+  for f in tours.ttl identities.ttl; do
+    if [[ -f "$REPO_ROOT/web/data/$f" ]]; then
+      guarded_push "$REPO_ROOT/web/data/$f" "gs://$BUCKET/data/$f"
+    else
+      echo "  ⚠ $REPO_ROOT/web/data/$f não existe localmente — skip"
+    fi
+  done
+else
+  echo "  ↷ tours.ttl/identities.ttl: push pulado (--no-catalog-push; bucket é vigente)."
+fi
 
 # ── 3. Deploy ───────────────────────────────────────────────────────────
 if [[ "$DEPLOY_CODE" == 1 ]]; then
   # Credenciais RWGPS pro sync incremental de routes.json no /upload-tour.
   # O container NÃO leva o .env (segredo, fora do build context); injetamos
-  # como env vars do service, lendo do .env local. Sem elas o backend ainda
-  # funciona — só rotas privadas/unlisted falham o fetch (latlngs:null).
+  # como env vars do service. Sem elas o backend ainda funciona — só rotas
+  # privadas/unlisted falham o fetch (latlngs:null).
+  # Fonte: AMBIENTE primeiro (CI — GitHub Actions secrets), com fallback pro
+  # .env local (dev). O mesmo script serve os dois sem tocar o .env (que nunca
+  # entra no build context nem no runner).
   RUN_ENV_VARS="STORAGE_BACKEND=gcs,GCS_BUCKET=$BUCKET"
-  if [[ -f "$REPO_ROOT/.env" ]]; then
-    RWGPS_API_KEY="$(grep -E '^RWGPS_API_KEY=' "$REPO_ROOT/.env" | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'")"
-    RWGPS_AUTH_TOKEN="$(grep -E '^RWGPS_AUTH_TOKEN=' "$REPO_ROOT/.env" | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'")"
-    if [[ -n "$RWGPS_API_KEY" && -n "$RWGPS_AUTH_TOKEN" ]]; then
-      if [[ -n "$DRY" ]]; then
-        # Dry-run ecoa o comando inteiro — não vaza os tokens no terminal.
-        RUN_ENV_VARS="$RUN_ENV_VARS,RWGPS_API_KEY=***,RWGPS_AUTH_TOKEN=***"
-      else
-        RUN_ENV_VARS="$RUN_ENV_VARS,RWGPS_API_KEY=$RWGPS_API_KEY,RWGPS_AUTH_TOKEN=$RWGPS_AUTH_TOKEN"
-      fi
-      echo "→ Credenciais RWGPS do .env serão injetadas no service."
+  if [[ ( -z "${RWGPS_API_KEY:-}" || -z "${RWGPS_AUTH_TOKEN:-}" ) && -f "$REPO_ROOT/.env" ]]; then
+    RWGPS_API_KEY="${RWGPS_API_KEY:-$(grep -E '^RWGPS_API_KEY=' "$REPO_ROOT/.env" | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'")}"
+    RWGPS_AUTH_TOKEN="${RWGPS_AUTH_TOKEN:-$(grep -E '^RWGPS_AUTH_TOKEN=' "$REPO_ROOT/.env" | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'")}"
+  fi
+  if [[ -n "${RWGPS_API_KEY:-}" && -n "${RWGPS_AUTH_TOKEN:-}" ]]; then
+    if [[ -n "$DRY" ]]; then
+      # Dry-run ecoa o comando inteiro — não vaza os tokens no terminal.
+      RUN_ENV_VARS="$RUN_ENV_VARS,RWGPS_API_KEY=***,RWGPS_AUTH_TOKEN=***"
     else
-      echo "  ⚠ .env sem RWGPS_API_KEY/RWGPS_AUTH_TOKEN — sync de rotas privadas falhará."
+      RUN_ENV_VARS="$RUN_ENV_VARS,RWGPS_API_KEY=$RWGPS_API_KEY,RWGPS_AUTH_TOKEN=$RWGPS_AUTH_TOKEN"
     fi
+    echo "→ Credenciais RWGPS (ambiente/.env) serão injetadas no service."
   else
-    echo "  ⚠ $REPO_ROOT/.env não existe — sync de rotas privadas falhará."
+    echo "  ⚠ RWGPS_API_KEY/RWGPS_AUTH_TOKEN ausentes (ambiente e .env) — sync de rotas privadas falhará."
   fi
 
   echo "→ Deploy do service $SERVICE (build pelo Cloud Build a partir de $REPO_ROOT/Dockerfile)…"

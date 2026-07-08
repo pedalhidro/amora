@@ -1,0 +1,102 @@
+# Deploy automático pro Cloud Run a cada push na main.
+#
+# Reusa scripts/deploy-cloudrun.sh (mesmo caminho testado do deploy manual):
+# build pelo Cloud Build a partir do Dockerfile + sync de shapes/ontology pro
+# bucket. NÃO mexe em estado mutável (sem --state) — fotos/clips/catálogos
+# vivem no bucket e não são tocados por um deploy de código.
+#
+# Autenticação SEM CHAVE (Workload Identity Federation): o runner troca o token
+# OIDC do GitHub por um token curto do GCP. Nenhum segredo de longa duração no
+# repo (que é PÚBLICO). Fica INERTE (job "skipped") até você rodar o setup único
+# do README abaixo e definir as variáveis/segredos — aí passa a rodar sozinho.
+#
+# ── Setup único (rode LOCALMENTE, com gcloud+gh autenticados; ~2 min) ────────
+# PROJECT=pedal-hidrografico
+# NUM=$(gcloud projects describe $PROJECT --format='value(projectNumber)')
+# SA=gh-deploy@$PROJECT.iam.gserviceaccount.com
+# # 1) Service account de deploy + papéis (espelham o que o script faz)
+# gcloud iam service-accounts create gh-deploy --project=$PROJECT \
+#   --display-name="GitHub Actions deploy"
+# for R in run.admin cloudbuild.builds.editor storage.admin \
+#          artifactregistry.writer serviceusage.serviceUsageAdmin \
+#          iam.serviceAccountUser; do
+#   gcloud projects add-iam-policy-binding $PROJECT \
+#     --member="serviceAccount:$SA" --role="roles/$R" --condition=None
+# done
+# # deixar o SA "agir como" o SA de runtime do Cloud Run (compute default)
+# gcloud iam service-accounts add-iam-policy-binding \
+#   $NUM-compute@developer.gserviceaccount.com --project=$PROJECT \
+#   --member="serviceAccount:$SA" --role=roles/iam.serviceAccountUser
+# # 2) Pool + provider OIDC do GitHub, restrito A ESTE repo
+# gcloud iam workload-identity-pools create github --project=$PROJECT \
+#   --location=global --display-name="GitHub"
+# gcloud iam workload-identity-pools providers create-oidc github-oidc \
+#   --project=$PROJECT --location=global --workload-identity-pool=github \
+#   --display-name="GitHub OIDC" \
+#   --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository" \
+#   --attribute-condition="assertion.repository=='pedalhidro/amora'" \
+#   --issuer-uri="https://token.actions.githubusercontent.com"
+# POOL=$(gcloud iam workload-identity-pools describe github --project=$PROJECT \
+#   --location=global --format='value(name)')
+# gcloud iam service-accounts add-iam-policy-binding $SA --project=$PROJECT \
+#   --role=roles/iam.workloadIdentityUser \
+#   --member="principalSet://iam.googleapis.com/$POOL/attribute.repository/pedalhidro/amora"
+# PROVIDER=$(gcloud iam workload-identity-pools providers describe github-oidc \
+#   --project=$PROJECT --location=global --workload-identity-pool=github \
+#   --format='value(name)')
+# # 3) Variáveis + segredos no repo (ativa o workflow)
+# gh variable set GCP_WORKLOAD_IDENTITY_PROVIDER --repo pedalhidro/amora --body "$PROVIDER"
+# gh variable set GCP_DEPLOY_SA --repo pedalhidro/amora --body "$SA"
+# gh secret   set RWGPS_API_KEY    --repo pedalhidro/amora --body "<valor do .env>"
+# gh secret   set RWGPS_AUTH_TOKEN --repo pedalhidro/amora --body "<valor do .env>"
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: Deploy to Cloud Run
+
+on:
+  push:
+    branches: [main]
+    # Pushes que SÓ mexem nestes caminhos não redeployam (o container não os leva).
+    paths-ignore:
+      - 'eink/**'
+      - 'docs/**'
+      - 'research/**'
+      - '**.md'
+      - '.vscode/**'
+      - '.github/**'
+  workflow_dispatch: {}   # botão de deploy manual na aba Actions
+
+# Serializa deploys: um push novo espera o anterior terminar (não cancela um
+# deploy no meio — cancelar o Cloud Build deixaria a revisão pela metade).
+concurrency:
+  group: deploy-cloudrun-main
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # INERTE até o setup: sem a variável, o job aparece como "skipped".
+    if: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER != '' }}
+    permissions:
+      contents: read
+      id-token: write   # necessário pro OIDC do WIF
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SA }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy (build + Cloud Run)
+        env:
+          # Injetadas no service pelo deploy-cloudrun.sh (ambiente tem prioridade
+          # sobre o .env, que não existe no runner).
+          RWGPS_API_KEY: ${{ secrets.RWGPS_API_KEY }}
+          RWGPS_AUTH_TOKEN: ${{ secrets.RWGPS_AUTH_TOKEN }}
+        # --no-catalog-push: NÃO empurra tours.ttl/identities.ttl (dual-writer;
+        # o bucket é vigente). Deploy de código + sync de shapes/ontology só.
+        run: bash scripts/deploy-cloudrun.sh --no-catalog-push
