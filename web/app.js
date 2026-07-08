@@ -56,13 +56,15 @@ const SETTINGS_DEFAULTS = {
     baseLayer: 'osm',                   // 'osm' | 'satellite'
   },
   cameraTopo: {
-    // Câmera Topográfica: relevo renderizado do FABDEM no cliente
-    // (elevação em cmocean.phase × declividade blend-multiply), igual ao
-    // sampasimu. null = automático (percentis da extensão atual).
+    // Câmera Topográfica: relevo servido como tiles XYZ por
+    // cameratopo.pedalhidrografi.co (elevação em cmocean.phase × declividade
+    // blend-multiply), igual ao sampasimu. null = deixa o servidor resolver
+    // como `auto` (percentis de uma região de referência fixa).
     minElev: null,     // m (auto = p5)
     maxElev: null,     // m (auto = p80)
     maxSlope: null,    // m/m (auto = p80 da declividade)
     slopeGamma: 1.2,   // γ do realce de declividade
+    cycles: 1,         // quantas vezes a paleta se repete na faixa de elevação
     opacityPct: 85,
   },
   clipsGhost: {
@@ -9175,20 +9177,17 @@ async function sampleDemHandle(t, points /* [[lat,lng], …] */) {
 async function sampleSampaDemBatch(points) { return sampleDemHandle(await openSampaDem(), points); }
 async function sampleCustomDemBatch(points) { return sampleDemHandle(_customDem, points); }
 
-// ─── Câmera Topográfica: relevo do FABDEM renderizado no cliente ─────────────
+// ─── Câmera Topográfica: relevo servido como tiles XYZ ───────────────────────
 // Igual ao sampasimu: elevação na paleta cmocean.phase (cíclica, perceptual)
-// multiplicada por um realce de declividade (branco→preto, γ-corrigido). Lê o
-// mosaico DEM (FABDEM, ou DEM de SP se ligado) da viewport e desenha num
-// <canvas> que vira um L.imageOverlay no pane reordenável 'camera-topo'.
-// Re-renderiza a cada pan/zoom (debounce). Parâmetros (min/max elevação,
-// declividade máx., γ) no modal da engrenagem; null = automático (percentis).
-
-// Paleta cmocean.phase (17 âncoras RGB), copiada do sampasimu.
-const CMO_PHASE = [
-  [168,120,13],[190,104,40],[207,86,67],[219,64,102],[223,42,147],[213,41,196],
-  [192,65,229],[162,92,243],[125,115,240],[82,133,220],[44,144,188],[25,149,156],
-  [12,152,124],[36,154,82],[94,148,32],[139,134,13],[168,120,13],
-];
+// multiplicada por um realce de declividade (branco→preto, γ-corrigido). O
+// render agora roda no servidor (cameratopo.pedalhidrografi.co/{z}/{x}/{y}.png,
+// lendo os mesmos COGs do FABDEM/DEM-SP), então a camada é um L.tileLayer comum
+// no pane reordenável 'camera-topo' — sem re-render por pan/zoom no cliente.
+// Parâmetros (min/max elevação, declividade máx., γ, ciclos da paleta) viram
+// querystring do tile; campo em branco = `auto` (o servidor resolve por
+// percentis de uma região de referência). O botão "Estimar pela extensão
+// atual" ainda calcula percentis no cliente (buildCameraTopoFrame, abaixo) pra
+// preencher valores explícitos adaptados à viewport.
 
 // Declividade (m/m) por diferença central. Bordas replicam; vizinho nodata cai
 // na própria altura (zero gradiente em vez de salto fictício na borda do DEM).
@@ -9223,7 +9222,6 @@ function percentileFromSorted(sorted, p) {
 }
 
 const RELIEF_PERCENTILE_SAMPLES = 100_000;
-const RELIEF_MAX_CANVAS_PX = 4 * 1024 * 1024;   // teto do buffer; acima disso, downsample
 
 // Percentis (elev p5/p80, declividade p80) por amostragem reservatório — barato
 // e estável mesmo em mosaicos grandes. Usado pelo render (quando o parâmetro é
@@ -9253,88 +9251,50 @@ function reliefPercentiles(height, mask, slope, H, W) {
   };
 }
 
-// Renderiza o relevo num dataURL PNG. elevMin/elevMax/slopeMax/gamma explícitos.
-function renderReliefToDataURL(dem, slope, elevMin, elevMax, slopeMax, gamma) {
-  const { H, W, height, mask } = dem;
-  const N = H * W;
-  const elevSpan = elevMax - elevMin;
-  slopeMax = Math.max(1e-9, slopeMax);
-  const invGamma = 1 / Math.max(0.05, gamma || 1.2);
-
-  let stride = 1;
-  if (N > RELIEF_MAX_CANVAS_PX) stride = Math.ceil(Math.sqrt(N / RELIEF_MAX_CANVAS_PX));
-  const outW = Math.max(1, Math.floor(W / stride));
-  const outH = Math.max(1, Math.floor(H / stride));
-
-  const phaseN = CMO_PHASE.length - 1;
-  const canvas = document.createElement('canvas');
-  canvas.width = outW; canvas.height = outH;
-  const ctx = canvas.getContext('2d');
-  const imageData = ctx.createImageData(outW, outH);
-  const data = imageData.data;
-
-  for (let or = 0; or < outH; or++) {
-    const srcR = or * stride;
-    for (let oc = 0; oc < outW; oc++) {
-      const srcI = srcR * W + oc * stride;
-      const j = (or * outW + oc) * 4;
-      if (!mask[srcI]) { data[j + 3] = 0; continue; }   // transparente em nodata
-      let er, eg, eb;
-      if (elevSpan > 0) {
-        const t = Math.max(0, Math.min(1, (height[srcI] - elevMin) / elevSpan));
-        const f = t * phaseN, k = Math.floor(f), frac = f - k;
-        const a = CMO_PHASE[Math.min(k, phaseN)], b = CMO_PHASE[Math.min(k + 1, phaseN)];
-        er = a[0] + (b[0] - a[0]) * frac;
-        eg = a[1] + (b[1] - a[1]) * frac;
-        eb = a[2] + (b[2] - a[2]) * frac;
-      } else {
-        const a = CMO_PHASE[Math.floor(phaseN / 2)];
-        er = a[0]; eg = a[1]; eb = a[2];
-      }
-      // Declividade como multiplicador branco→preto γ-corrigido.
-      const sNorm = Math.min(1, slope[srcI] / slopeMax);
-      const slopeFactor = 1 - Math.pow(sNorm, invGamma);
-      data[j]     = Math.round(er * slopeFactor);
-      data[j + 1] = Math.round(eg * slopeFactor);
-      data[j + 2] = Math.round(eb * slopeFactor);
-      data[j + 3] = 255;
-    }
-  }
-  ctx.putImageData(imageData, 0, 0);
-  return canvas.toDataURL();
-}
-
-const CAMERA_TOPO_MIN_ZOOM = 12;   // abaixo disso o mosaico fica grande demais
-let cameraTopoActive = false;
-let cameraTopoOverlay = null;
+const CAMERA_TOPO_MIN_ZOOM = 12;   // abaixo disso o DEM (~30 m) vira downsample inútil
+const CAMERA_TOPO_MAX_NATIVE_ZOOM = 16;   // acima disso o Leaflet reamplia os tiles
+const CAMERATOPO_TILE_BASE = 'https://cameratopo.pedalhidrografi.co';
+let cameraTopoLayer = null;
 let cameraTopoOpacity = settings.cameraTopo.opacityPct / 100;
-let cameraTopoDebounce = null;
-let cameraTopoSeq = 0;
 
-function onCameraTopoMoveEnd() {
-  clearTimeout(cameraTopoDebounce);
-  cameraTopoDebounce = setTimeout(refreshCameraTopo, 600);
+// Monta a URL de tiles a partir dos parâmetros. Campo null → `auto` (o servidor
+// resolve por percentis de uma região de referência — uniforme em toda a grade,
+// sem costuras). slopeMax é em m/m (igual ao armazenado).
+function cameraTopoTileUrl() {
+  const c = settings.cameraTopo;
+  const qs = new URLSearchParams();
+  qs.set('elevMin',  c.minElev  != null ? String(c.minElev)  : 'auto');
+  qs.set('elevMax',  c.maxElev  != null ? String(c.maxElev)  : 'auto');
+  qs.set('slopeMax', c.maxSlope != null ? String(c.maxSlope) : 'auto');
+  qs.set('slopeGamma', String(c.slopeGamma ?? 1.2));
+  qs.set('cycles', String(c.cycles ?? 1));
+  return `${CAMERATOPO_TILE_BASE}/{z}/{x}/{y}.png?${qs.toString()}`;
 }
 
 function showCameraTopo() {
-  cameraTopoActive = true;
-  map.on('moveend', onCameraTopoMoveEnd);
-  if (map.getZoom() < CAMERA_TOPO_MIN_ZOOM) {
-    showToast(`Aproxime o mapa (zoom ≥ ${CAMERA_TOPO_MIN_ZOOM}) para a Câmera Topográfica`);
+  if (!cameraTopoLayer) {
+    cameraTopoLayer = L.tileLayer(cameraTopoTileUrl(), {
+      opacity: cameraTopoOpacity,
+      pane: LAYER_PANE('camera-topo'),
+      minZoom: CAMERA_TOPO_MIN_ZOOM,
+      maxNativeZoom: CAMERA_TOPO_MAX_NATIVE_ZOOM,
+      attribution: 'Câmera Topográfica · FABDEM',
+    });
   }
-  refreshCameraTopo();
+  cameraTopoLayer.addTo(map);
 }
 function hideCameraTopo() {
-  cameraTopoActive = false;
-  map.off('moveend', onCameraTopoMoveEnd);
-  clearTimeout(cameraTopoDebounce);
-  if (cameraTopoOverlay) { map.removeLayer(cameraTopoOverlay); cameraTopoOverlay = null; }
+  if (cameraTopoLayer) map.removeLayer(cameraTopoLayer);
 }
 function setCameraTopoOpacity(frac) {
   cameraTopoOpacity = frac;
   settings.cameraTopo.opacityPct = Math.round(frac * 100);
   saveSettings();
-  if (cameraTopoOverlay) cameraTopoOverlay.setOpacity(frac);
+  if (cameraTopoLayer) cameraTopoLayer.setOpacity(frac);
+}
+// Reconstrói a URL quando um parâmetro muda (o Leaflet recarrega os tiles).
+function refreshCameraTopo() {
+  if (cameraTopoLayer) cameraTopoLayer.setUrl(cameraTopoTileUrl());
 }
 
 // Monta o mosaico DEM da viewport, computa declividade e os parâmetros (auto =
@@ -9360,34 +9320,6 @@ async function buildCameraTopoFrame() {
     gamma:    cfg.slopeGamma || 1.2,
     pct,
   };
-}
-
-async function refreshCameraTopo() {
-  if (!cameraTopoActive) return;
-  if (map.getZoom() < CAMERA_TOPO_MIN_ZOOM) {
-    if (cameraTopoOverlay) { map.removeLayer(cameraTopoOverlay); cameraTopoOverlay = null; }
-    return;
-  }
-  const seq = ++cameraTopoSeq;
-  try {
-    const frame = await buildCameraTopoFrame();
-    if (seq !== cameraTopoSeq || !cameraTopoActive) return;
-    if (!frame) return;
-    const url = renderReliefToDataURL(
-      frame.dem, frame.slope, frame.elevMin, frame.elevMax, frame.slopeMax, frame.gamma,
-    );
-    if (seq !== cameraTopoSeq || !cameraTopoActive || !url) return;
-    const { bb } = frame;
-    const bounds = [[bb.south, bb.west], [bb.north, bb.east]];
-    if (cameraTopoOverlay) map.removeLayer(cameraTopoOverlay);
-    cameraTopoOverlay = L.imageOverlay(url, bounds, {
-      opacity: cameraTopoOpacity,
-      pane: LAYER_PANE('camera-topo'),
-      interactive: false,
-    }).addTo(map);
-  } catch (err) {
-    console.warn('[camera-topo] render falhou:', err.message);
-  }
 }
 
 // ─── Elevation (FABDEM por padrão; Open-Meteo como fallback) ─────────────────
@@ -10194,6 +10126,7 @@ const ctopoMinElev  = document.getElementById('ctopo-min-elev');
 const ctopoMaxElev  = document.getElementById('ctopo-max-elev');
 const ctopoMaxSlope = document.getElementById('ctopo-max-slope');   // em %
 const ctopoGamma    = document.getElementById('ctopo-gamma');
+const ctopoCycles   = document.getElementById('ctopo-cycles');
 
 function fillCameraTopoInputs() {
   const c = settings.cameraTopo;
@@ -10201,6 +10134,7 @@ function fillCameraTopoInputs() {
   ctopoMaxElev.value  = c.maxElev  != null ? c.maxElev : '';
   ctopoMaxSlope.value = c.maxSlope != null ? +(c.maxSlope * 100).toFixed(1) : '';
   ctopoGamma.value    = c.slopeGamma ?? 1.2;
+  ctopoCycles.value   = c.cycles ?? 1;
 }
 function openCameraTopoModal() {
   fillCameraTopoInputs();
@@ -10222,11 +10156,13 @@ function applyCameraTopoInputs() {
   c.maxSlope = sl != null ? sl / 100 : null;   // % → m/m
   const g = ctopoReadNum(ctopoGamma);
   c.slopeGamma = g != null && g > 0 ? g : 1.2;
+  const cyc = ctopoReadNum(ctopoCycles);
+  c.cycles = cyc != null && cyc >= 1 ? Math.min(16, Math.round(cyc)) : 1;
   saveSettings();
   refreshCameraTopo();
 }
 if (ctopoModal) {
-  for (const el of [ctopoMinElev, ctopoMaxElev, ctopoMaxSlope, ctopoGamma]) {
+  for (const el of [ctopoMinElev, ctopoMaxElev, ctopoMaxSlope, ctopoGamma, ctopoCycles]) {
     el.addEventListener('input', applyCameraTopoInputs);
   }
   document.getElementById('ctopo-close')?.addEventListener('click', closeCameraTopoModal);
@@ -10237,7 +10173,8 @@ if (ctopoModal) {
   document.getElementById('ctopo-reset')?.addEventListener('click', () => {
     const d = SETTINGS_DEFAULTS.cameraTopo;
     Object.assign(settings.cameraTopo, {
-      minElev: d.minElev, maxElev: d.maxElev, maxSlope: d.maxSlope, slopeGamma: d.slopeGamma,
+      minElev: d.minElev, maxElev: d.maxElev, maxSlope: d.maxSlope,
+      slopeGamma: d.slopeGamma, cycles: d.cycles,
     });
     saveSettings();
     fillCameraTopoInputs();

@@ -36,6 +36,7 @@ backend/data/
 research/
 scripts/
 eink/
+cameratopo/
 
 # Python lixo
 __pycache__/
