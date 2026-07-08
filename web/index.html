@@ -122,6 +122,7 @@
     <link rel="preconnect" href="https://b.tile.openstreetmap.org" />
     <link rel="preconnect" href="https://c.tile.openstreetmap.org" />
     <link rel="preconnect" href="https://telhas.pedalhidrografi.co" />
+    <link rel="preconnect" href="https://cameratopo.pedalhidrografi.co" />
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
     <link rel="stylesheet" href="lib/leaflet/leaflet.css" />
     <link rel="stylesheet" href="lib/locatecontrol/L.Control.Locate.min.css" />
@@ -194,6 +195,12 @@
           <details class="help-changelog">
             <summary>Novidades (changelog)</summary>
             <dl>
+              <dt>08/07/2026 · v369</dt>
+              <dd>
+                <ul>
+                  <li>A camada <strong>Câmera Topográfica</strong> agora é servida como tiles prontos por <code>cameratopo.pedalhidrografi.co</code> em vez de ser desenhada no navegador a cada movimento do mapa — abre mais rápido, mais leve no celular, e funciona em qualquer zoom. Novo parâmetro <strong>Ciclos da paleta</strong> na engrenagem da camada: repete a paleta de cores N vezes ao longo da faixa de elevação, criando faixas cíclicas tipo curvas de nível. Deixar um campo em branco agora usa o automático do servidor.</li>
+                </ul>
+              </dd>
               <dt>08/07/2026 · v368</dt>
               <dd>
                 <ul>
@@ -1306,7 +1313,7 @@
           <button class="close" id="ctopo-close" type="button" aria-label="Fechar">&times;</button>
         </header>
         <div class="params-body">
-          <p class="muted">Relevo do FABDEM: elevação na paleta cmocean.phase multiplicada pela declividade. Deixe um campo em branco para automático (percentis da extensão visível).</p>
+          <p class="muted">Relevo do FABDEM (tiles de <code>cameratopo.pedalhidrografi.co</code>): elevação na paleta cmocean.phase multiplicada pela declividade. Deixe um campo em branco para automático (o servidor resolve por percentis de uma região de referência). "Estimar pela extensão atual" preenche valores adaptados à área visível.</p>
           <label class="param-row" title="Elevação mapeada pro início da paleta (auto = p5)">
             <span class="param-label">Elevação mín. (auto = p5)</span>
             <span class="param-input"><input type="number" id="ctopo-min-elev" step="10" placeholder="auto"> m</span>
@@ -1322,6 +1329,10 @@
           <label class="param-row" title="γ do realce de declividade (1 = linear; &gt;1 suaviza)">
             <span class="param-label">γ da declividade</span>
             <span class="param-input"><input type="number" id="ctopo-gamma" step="0.1" min="0.1" max="5"></span>
+          </label>
+          <label class="param-row" title="Quantas vezes a paleta se repete ao longo da faixa de elevação (1 = uma passada; &gt;1 gera faixas cíclicas tipo curvas de nível)">
+            <span class="param-label">Ciclos da paleta</span>
+            <span class="param-input"><input type="number" id="ctopo-cycles" step="1" min="1" max="16"></span>
           </label>
           <div class="params-actions">
             <button type="button" id="ctopo-estimate">Estimar pela extensão atual</button>

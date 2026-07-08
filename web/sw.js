@@ -13,7 +13,7 @@
 //                    stale data, not just a stale app shell.
 //   RUNTIME_CACHE — map tiles, OSRM, elevation, etc. stale-while-revalidate.
 
-const VERSION = 'phidro-v368';
+const VERSION = 'phidro-v369';
 const STATIC_CACHE = `${VERSION}-static`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 
@@ -87,6 +87,7 @@ const RUNTIME_HOSTS = [
   /(^|\.)tile\.openstreetmap\.org$/,
   /(^|\.)server\.arcgisonline\.com$/,
   /(^|\.)telhas\.pedalhidrografi\.co$/,
+  /(^|\.)cameratopo\.pedalhidrografi\.co$/,
   /(^|\.)raster\.geosampa\.prefeitura\.sp\.gov\.br$/,
   /(^|\.)api\.open-meteo\.com$/,
   /(^|\.)routing\.openstreetmap\.de$/,
