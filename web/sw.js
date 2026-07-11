@@ -13,7 +13,7 @@
 //                    stale data, not just a stale app shell.
 //   RUNTIME_CACHE — map tiles, OSRM, elevation, etc. stale-while-revalidate.
 
-const VERSION = 'phidro-v370';
+const VERSION = 'phidro-v371';
 const STATIC_CACHE = `${VERSION}-static`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 
@@ -83,6 +83,9 @@ self.addEventListener('activate', (event) => {
 });
 
 // Hosts whose responses we want to keep cached for offline / fast revisits.
+// (photon.komoot.io — a busca de endereços — fica DE FORA de propósito: cada
+// query de typeahead é única, então cachear não compra nada; hosts fora da
+// lista passam direto pra rede, sem bloqueio.)
 const RUNTIME_HOSTS = [
   /(^|\.)tile\.openstreetmap\.org$/,
   /(^|\.)server\.arcgisonline\.com$/,
