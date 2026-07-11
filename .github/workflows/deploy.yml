@@ -1,4 +1,4 @@
-# Deploy automático pro Cloud Run a cada push na main.
+# Deploy automático pro Cloud Run a cada push na branch `deploy`.
 #
 # Reusa scripts/deploy-cloudrun.sh (mesmo caminho testado do deploy manual):
 # build pelo Cloud Build a partir do Dockerfile + sync de shapes/ontology pro
@@ -55,7 +55,7 @@ name: Deploy to Cloud Run
 
 on:
   push:
-    branches: [main]
+    branches: [deploy]
     # Pushes que SÓ mexem nestes caminhos não redeployam (o container não os leva).
     paths-ignore:
       - 'eink/**'
@@ -69,7 +69,7 @@ on:
 # Serializa deploys: um push novo espera o anterior terminar (não cancela um
 # deploy no meio — cancelar o Cloud Build deixaria a revisão pela metade).
 concurrency:
-  group: deploy-cloudrun-main
+  group: deploy-cloudrun
   cancel-in-progress: false
 
 jobs:
