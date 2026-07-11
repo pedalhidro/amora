@@ -6636,6 +6636,7 @@ const traceUndo = document.getElementById('trace-undo');
 const traceRedo = document.getElementById('trace-redo');
 const traceSave = document.getElementById('trace-save');
 const traceView = document.getElementById('trace-view');
+const traceReverse = document.getElementById('trace-reverse');
 const traceCount = document.getElementById('trace-count');   // ausente desde a remoção do label "# pontos"
 // Modo "Ver": dentro da edição, oculta os pontos e suaviza a linha pra
 // pré-visualizar o traçado limpo. O botão Cancelar vira "Editar".
@@ -6773,6 +6774,7 @@ traceBtn.addEventListener('click', () => {
 });
 traceSave.addEventListener('click', () => saveAndExit());
 traceView.addEventListener('click', () => enterPreviewMode());
+traceReverse.addEventListener('click', () => reverseTraceDirection());
 traceUndo.addEventListener('click', undo);
 traceRedo.addEventListener('click', redo);
 traceRoutingMode.addEventListener('change', () => {
@@ -6958,6 +6960,14 @@ async function onMapClickInDrawing(e) {
   // (its mousedown started on the line; the click can still fire on the map
   // container) so it doesn't append a stray point at the end.
   if (lineInsertActive) return;
+  // Idem pra escolha na busca de endereços: o clique no resultado remove o
+  // <li> ainda durante o dispatch, e o walk de _leaflet_disable_click do
+  // Leaflet (que sobe por parentNode a partir do target) morre no nó
+  // destacado antes de achar a flag do painel — o clique "vira" clique no
+  // mapa e caía aqui como ponto extra num lugar aleatório (meio do flyTo).
+  // Também engole o ghost click do toque e um duplo-clique no painel recém-
+  // encolhido. Ver geoSearchPickTs em pickGeoSearchResult.
+  if (Date.now() - geoSearchPickTs < 700) return;
   const tp = createTrackpoint(e.latlng);
   trackpoints.push(tp);
 
@@ -8908,6 +8918,7 @@ let geoSearchResults = [];
 let geoSearchLastQuery = '';   // query dos resultados exibidos (p/ Enter direto)
 let geoSearchActiveIdx = -1;   // item destacado via ↑/↓
 let geoSearchMarker = null;    // pino temporário do modo fora-do-editor
+let geoSearchPickTs = 0;       // guarda anti-clique-fantasma (ver onMapClickInDrawing)
 
 // Mesmo esquema do header-toggle: estaciona o botão na coluna top-left do
 // Leaflet e bloqueia a propagação de cliques/scroll do botão e do painel —
@@ -9058,6 +9069,11 @@ async function runGeoSearch() {
 }
 
 async function pickGeoSearchResult(item) {
+  // Carimbo ANTES de mexer no DOM: o handler de clique do container (Leaflet)
+  // roda logo depois deste, no mesmo dispatch — sem isto o clique no <li>
+  // recém-removido virava clique no mapa e adicionava um ponto extra num
+  // lugar aleatório (ver o guard em onMapClickInDrawing).
+  geoSearchPickTs = Date.now();
   const latlng = L.latLng(item.lat, item.lng);
   const targetZoom = Math.max(map.getZoom(), 15);
   if (drawingMode && !previewMode) {
@@ -9101,6 +9117,7 @@ function dropGeoSearchPin(item, latlng) {
   traceHere.type = 'button';
   traceHere.textContent = '🗺︎ Traçar a partir daqui';
   traceHere.addEventListener('click', async () => {
+    geoSearchPickTs = Date.now(); // o popup some sob o cursor — mesmo guard
     removeGeoSearchPin();
     // Entrar no editor zera o rascunho — o endereço vira o ponto de PARTIDA.
     if (!drawingMode) enterDrawingMode();
@@ -10652,6 +10669,41 @@ function redo() {
   restoreSnapshot(drawHistory[historyIndex]);
 }
 
+// Inverte o SENTIDO da rota: a ordem dos trackpoints vira ao contrário e cada
+// geometria de segmento em cache é revertida (com o deckFlag junto, ponto a
+// ponto). Instantâneo e offline — NÃO re-roteia: é a MESMA linha percorrida
+// ao contrário (num modo OSRM ela pode passar na contramão de uma via de mão
+// única; re-rotear é só trocar o modo de roteamento, que já re-roteia tudo).
+// As métricas/energia recalculam sozinhas pro novo sentido (redrawAndMetrics
+// lê a geometria montada na ordem de percurso).
+function reverseTraceDirection() {
+  if (trackpoints.length < 2 || previewMode) return;
+  pendingRouteSeq++; // invalida re-roteamentos OSRM em voo (indexam a ordem antiga)
+  const old = trackpoints;
+  const n = old.length;
+  const reversed = old.slice().reverse();
+  // Calcula todos os caminhos novos ANTES de atribuir — old/reversed
+  // compartilham os mesmos objetos trackpoint.
+  // old[i].pathFromPrev cobre old[i-1]→old[i]; o elemento na posição nova j
+  // é old[n-1-j], cujo anterior novo é old[n-j] — o caminho entre eles é o
+  // pathFromPrev de old[n-j], revertido.
+  const newPaths = reversed.map((tp, j) => {
+    if (j === 0) return null;
+    const src = old[n - j].pathFromPrev;
+    if (!src) {
+      return straightPath(reversed[j - 1].marker.getLatLng(), tp.marker.getLatLng());
+    }
+    const path = src.map((p) => [p[0], p[1]]).reverse();
+    if (src.deckFlag) path.deckFlag = [...src.deckFlag].reverse();
+    return path;
+  });
+  reversed.forEach((tp, j) => { tp.pathFromPrev = newPaths[j]; });
+  trackpoints = reversed;
+  redrawAndMetrics();
+  updateTraceControls();
+  pushHistory();
+}
+
 function restoreSnapshot(snap) {
   for (const t of trackpoints) map.removeLayer(t.marker);
   trackpoints = [];
@@ -10673,6 +10725,7 @@ function restoreSnapshot(snap) {
 function updateTraceControls() {
   traceUndo.disabled = historyIndex <= 0;
   traceRedo.disabled = historyIndex >= drawHistory.length - 1;
+  if (traceReverse) traceReverse.disabled = trackpoints.length < 2;
   if (traceCount) {
     const n = trackpoints.length;
     traceCount.textContent = `${n} ponto${n === 1 ? '' : 's'}`;

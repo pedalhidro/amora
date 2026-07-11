@@ -160,6 +160,7 @@
           </select>
         </label>
         <button type="button" id="params-btn" class="params-btn" title="Parâmetros da simulação" aria-label="Parâmetros">⚙</button>
+        <button type="button" id="trace-reverse" disabled title="Inverter o sentido da rota (chegada vira partida)" aria-label="Inverter sentido">⇄ <span class="tb-label">Inverter</span></button>
         <button type="button" id="trace-load" class="trace-load" title="Carregar rota — do servidor ou de um arquivo .gpx" aria-label="Carregar rota">📂 <span class="tb-label">Carregar</span></button>
         <button type="button" id="trace-save" class="trace-save" title="Salvar GPX" aria-label="Salvar GPX">⤓🗺︎ <span class="tb-label">Salvar</span></button>
         <button type="button" id="trace-view" class="trace-view" title="Ver — oculta os pontos e suaviza o traçado" aria-label="Ver">👁 <span class="tb-label">Ver</span></button>
@@ -204,6 +205,13 @@
           <details class="help-changelog">
             <summary>Novidades (changelog)</summary>
             <dl>
+              <dt>11/07/2026 · v372</dt>
+              <dd>
+                <ul>
+                  <li>Novo botão <strong>⇄ Inverter</strong> na barra do editor de traçado: inverte o sentido da rota (a chegada vira a partida) mantendo a mesma linha — distância, energia e tempos recalculam pro sentido novo na hora. Funciona com desfazer/refazer.</li>
+                  <li>Corrigido: escolher um endereço na busca 🔍 com o editor aberto adicionava um segundo ponto num lugar aleatório do mapa, além do ponto certo no endereço.</li>
+                </ul>
+              </dd>
               <dt>11/07/2026 · v371</dt>
               <dd>
                 <ul>
