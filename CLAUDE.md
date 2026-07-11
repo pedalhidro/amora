@@ -385,7 +385,13 @@ Key flows:
   traçado, `web/saved_routes.json`): `GET /saved-routes` (lista resumida,
   mais novas primeiro), `GET /saved-route/<id>` (estado completo, formato de
   compartilhamento), `POST /save-route` (upsert; body `{name, state, id?}`),
-  `POST /delete-route/<id>`. Localização ao vivo (efêmera, EM MEMÓRIA —
+  `POST /delete-route/<id>`. Cada rota salva tem um **link compartilhável**
+  `/?route=<id>` — resolvido no CLIENTE (`tryLoadSavedRouteFromQuery`, como o
+  `?tour=`: a Cloudflare tira a query no origin) via fetch de
+  `/saved-route/<id>`; espelha a semântica do `#st=` (tira o parâmetro da URL
+  após carregar e NÃO adota o id — salvar a partir do link cria rota nova).
+  O link vai pro clipboard ao salvar (☁ Servidor) e pelo botão 🔗 de cada
+  rota no modal 📂 Carregar. Localização ao vivo (efêmera, EM MEMÓRIA —
   NÃO toca os catálogos): `POST /live-location` (upsert da posição + rastro de
   um token pseudônimo; body JSON `{id, name?, lat, lng, accuracy?, heading?,
   ttl?}`; rastro thinned por tempo/distância, teto 500 pts/pessoa e 500
