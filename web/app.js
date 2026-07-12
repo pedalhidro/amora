@@ -6687,10 +6687,17 @@ const DEFAULT_PARAMS = {
   // é o modelo v2 derivado dos parâmetros físicos acima (mass/crr/cda/rho/kEff +
   // v_f da potência de plano) via readCost() — não há mais α/β/η.
   energySearchMarginPct: 100, // % de margem em torno da bbox dos endpoints
-  // Fonte do viário no "menor energia pelo viário": gpkg vetorial de SP
-  // (roteia no grafo, traçado suave) por padrão; desligado usa o Overpass
-  // (grid raster, depende do servidor do OSM). O gpkg cai pro Overpass
-  // sozinho se indisponível, independentemente deste toggle.
+  // Direções de movimento do Dijkstra em grade ("pelo terreno" e fallback
+  // raster do viário): 4/8/16/32/64/128. Conjuntos maiores (escada de Farey do
+  // simujaules: 16 = +movimentos de cavalo, etc.) reduzem a superestimativa de
+  // energia da grade-8 (~⅔ dela some em 16) ao custo de mais arestas por célula.
+  // Movimentos longos são integrados por perfil no worker (ver buildMoves).
+  nDirs: 16,
+  // Fonte do viário no "menor energia pelo viário": grafo PRÉ-COZIDO de SP
+  // (sampa-viario-graph.bin — elevações baked, sem DEM por rota) por padrão,
+  // com o gpkg vetorial como fallback; desligado usa o Overpass (grid raster,
+  // depende do servidor do OSM). Tudo cai pro Overpass sozinho se
+  // indisponível, independentemente deste toggle.
   useViarioGpkg: true,
   // "Menor energia pelo terreno": tratar lagos/represas e rios da camada de água
   // do gpkg como barreira intransponível (a rota não cruza água). Desligado =
@@ -7641,11 +7648,12 @@ function rasterizeRoads(osm, bb, H, W, A) {
 }
 
 // ─── Rede viária vetorial (gpkg de SP) ──────────────────────────────────────
-// Fonte primária do "Menor energia pelo viário": um GeoPackage do viário de
-// SP (LINESTRING, EPSG:31983) hospedado junto dos DEMs. Baixado UMA vez,
-// aberto via sql.js e reusado entre segmentos; cada rota consulta o R-tree
-// pela bbox e rasteriza só as linhas que caem nela. Substitui o Overpass
-// (que vira fallback). Parser de geometria portado do sampasimu — lida com
+// GeoPackage do viário de SP hospedado junto dos DEMs. No "Menor energia pelo
+// viário" virou FALLBACK do grafo pré-cozido (VIARIO_GRAPH_URL abaixo); segue
+// sendo a fonte PRIMÁRIA do modo terreno (camada `water` + corredores +
+// portais de ponte/túnel). Baixado UMA vez, aberto via sql.js e reusado entre
+// segmentos; cada rota consulta o R-tree pela bbox e rasteriza só as linhas
+// que caem nela. Parser de geometria portado do sampasimu — lida com
 // WKB ISO 3-D (1002/1005) e EWKB, o detalhe que faz gpkg do QGIS falhar.
 const VIARIO_GPKG_URL = 'https://telhas.pedalhidrografi.co/viario/sampa-viario.gpkg';
 const SQLJS_BASE = 'https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/';
@@ -7809,6 +7817,205 @@ async function ensureViarioDb() {
   })();
   _viarioDbPromise.catch(() => { _viarioDbPromise = null; });
   return _viarioDbPromise;
+}
+
+// ─── Grafo pré-cozido do viário (sampa-viario-graph.bin) ─────────────────────
+// Fonte PRIMÁRIA do "Menor energia pelo viário": o grafo já montado no bake
+// (scripts/build-viario.py --graph) com as elevações amostradas POR NÓ (DEM de
+// SP ~5 m onde cobre, FABDEM no resto) e tabuleiros de ponte/túnel achatados em
+// rampa. Zero DEM, zero sql.js, zero montagem de grafo por sessão: o download é
+// ~4× menor que o gpkg e a decodificação é um passe de typed arrays. O gpkg
+// (ensureViarioDb acima) segue em uso pro modo TERRENO (camada water/portais)
+// e como fallback do viário. Formato: ver o bloco "Grafo pré-cozido" no script.
+const VIARIO_GRAPH_URL = 'https://telhas.pedalhidrografi.co/viario/sampa-viario-graph.bin';
+
+// Custo v2 por aresta — IDÊNTICO ao v2Edge do worker (lib/energy-worker.js) e
+// ao v2_edge do backend Rust do simujaules; manter em sincronia. dist = metros
+// de solo, dh = desnível com sinal. Rolamento sempre; arrasto só fora das
+// subidas; recuperação na descida ε por grade. Compartilhado pelo grafo do
+// gpkg/Overpass (viarioGraphRoute) e pelo grafo pré-cozido (bakedViarioRoute).
+function v2EdgeCostFn(cost) {
+  return (dist, dh) => {
+    if (dh >= 0) {
+      const aero = (dh < cost.climbThr * dist) ? cost.aAero * dist : 0;
+      return cost.aRoll * dist + aero + cost.beta * dh;
+    }
+    const ndh = -dh;
+    let eps = cost.abRatio * dist / ndh;
+    if (eps > 1) eps = 1;
+    eps -= cost.epsOffset;
+    if (eps < 0) eps = 0;
+    const e = cost.aRoll * dist + cost.aAero * dist - eps * cost.beta * ndh;
+    return e < 0 ? 0 : e;
+  };
+}
+
+// Decodifica o binário PHVG (little-endian; seções alinhadas a 4 bytes) e
+// reconstrói o CSR num passe. Nós em µgrau (1e-6 — a MESMA quantização de
+// junção do viarioGraphRoute), elevação em decímetros, flags bit0 = interior
+// de tabuleiro, bit1 = aresta de cadeia pro nó i+1.
+function decodeViarioGraph(buf) {
+  const dv = new DataView(buf);
+  if (buf.byteLength < 24 || dv.getUint32(0, true) !== 0x47564850) // 'PHVG' LE
+    throw new Error('grafo: magic inválido');
+  const version = dv.getUint32(4, true);
+  if (version !== 1) throw new Error(`grafo: versão ${version} não suportada`);
+  const N = dv.getUint32(8, true);
+  const NESC = dv.getUint32(12, true);
+  const EX = dv.getUint32(16, true);
+  let off = 24;
+  const pad4 = () => { off = (off + 3) & ~3; };
+  const view = (Ctor, len) => { pad4(); const v = new Ctor(buf, off, len); off += len * Ctor.BYTES_PER_ELEMENT; return v; };
+  const dLat  = view(Int16Array, N);
+  const dLng  = view(Int16Array, N);
+  const elev  = view(Int16Array, N);   // dm
+  const flags = view(Uint8Array, N);
+  const chain = view(Uint16Array, N);  // dm
+  const escIdx = view(Uint32Array, NESC);
+  const escLat = view(Int32Array, NESC);
+  const escLng = view(Int32Array, NESC);
+  const exU = view(Uint32Array, EX);
+  const exV = view(Uint32Array, EX);
+  const exD = view(Uint16Array, EX);   // dm
+  if (off > buf.byteLength) throw new Error('grafo: arquivo truncado');
+
+  // Deltas → coordenadas absolutas (µgrau). Sentinela dLat=-32768 → escape.
+  const latU = new Int32Array(N), lngU = new Int32Array(N);
+  let pLat = 0, pLng = 0, e = 0;
+  for (let i = 0; i < N; i++) {
+    if (dLat[i] === -32768) {
+      if (e >= NESC || escIdx[e] !== i) throw new Error('grafo: escape fora de ordem');
+      pLat = escLat[e]; pLng = escLng[e]; e++;
+    } else {
+      pLat += dLat[i]; pLng += dLng[i];
+    }
+    latU[i] = pLat; lngU[i] = pLng;
+  }
+
+  // CSR: grau → prefix-sum → preenchimento (cadeia i↔i+1 + explícitas).
+  const indptr = new Uint32Array(N + 1);
+  for (let i = 0; i < N; i++) if ((flags[i] & 2) && i + 1 < N) { indptr[i + 1]++; indptr[i + 2]++; }
+  for (let k = 0; k < EX; k++) { indptr[exU[k] + 1]++; indptr[exV[k] + 1]++; }
+  for (let i = 0; i < N; i++) indptr[i + 1] += indptr[i];
+  const E2 = indptr[N];
+  const targets = new Uint32Array(E2);
+  const edist   = new Uint16Array(E2);  // dm
+  const cursor  = indptr.slice(0, N);
+  const put = (u, v, d) => { const c = cursor[u]++; targets[c] = v; edist[c] = d; };
+  for (let i = 0; i < N; i++) if ((flags[i] & 2) && i + 1 < N) { put(i, i + 1, chain[i]); put(i + 1, i, chain[i]); }
+  for (let k = 0; k < EX; k++) { put(exU[k], exV[k], exD[k]); put(exV[k], exU[k], exD[k]); }
+  return { N, latU, lngU, elev, flags, indptr, targets, edist };
+}
+
+let _viarioGraphPromise = null;
+async function ensureViarioGraph() {
+  if (_viarioGraphPromise) return _viarioGraphPromise;
+  _viarioGraphPromise = (async () => {
+    showToast('Baixando grafo do viário de SP (uma vez)…');
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), VIARIO_FETCH_TIMEOUT_MS);
+    let buf;
+    try {
+      const t0 = performance.now();
+      const res = await fetch(VIARIO_GRAPH_URL, { signal: ctrl.signal });
+      if (!res.ok) throw new Error(`grafo ${res.status}`);
+      buf = await res.arrayBuffer();
+      const g = decodeViarioGraph(buf);
+      console.info(`[viario] grafo pré-cozido: ${g.N} nós · ${g.indptr[g.N]} arestas dirigidas · ` +
+        `${(buf.byteLength / 1e6).toFixed(0)} MB em ${(performance.now() - t0).toFixed(0)} ms`);
+      return g;
+    } finally {
+      clearTimeout(timer);
+    }
+  })();
+  _viarioGraphPromise.catch(() => { _viarioGraphPromise = null; });
+  return _viarioGraphPromise;
+}
+
+// Buffers de trabalho do Dijkstra no grafo pré-cozido, reusados entre chamadas
+// (N ~5 M — realocar por rota seria ~70 MB de churn). Seguro mesmo com rotas
+// concorrentes (mapConcurrent): o miolo síncrono roda sem await no meio.
+let _bakedScratch = null;
+function bakedScratch(N) {
+  if (!_bakedScratch || _bakedScratch.dist.length !== N) {
+    _bakedScratch = {
+      allowed: new Uint8Array(N),
+      done:    new Uint8Array(N),
+      dist:    new Float32Array(N),
+      prev:    new Int32Array(N),
+    };
+  }
+  return _bakedScratch;
+}
+
+// Roteia origem→destino no grafo pré-cozido, restrito à bbox (paridade com o
+// grafo por-bbox do gpkg). Devolve a polilinha [lat,lng] com .deckFlag, ou
+// null se não há caminho. Sem DEM: as elevações já vêm baked por nó.
+async function bakedViarioRoute(fromLatLng, toLatLng, bb) {
+  const g = await ensureViarioGraph();
+  const t0 = performance.now();
+  const { N, latU, lngU, elev, flags, indptr, targets, edist } = g;
+  const s6 = Math.round(bb.south * 1e6), n6 = Math.round(bb.north * 1e6);
+  const w6 = Math.round(bb.west * 1e6),  e6 = Math.round(bb.east * 1e6);
+  const sc = bakedScratch(N);
+  const { allowed, done, dist, prev } = sc;
+  done.fill(0); dist.fill(Infinity);
+
+  // Passe único: marca os nós na bbox e acha o nó mais próximo de cada ponta
+  // (mesma métrica não escalada do nearest() do viarioGraphRoute).
+  const fLat = Math.round(fromLatLng.lat * 1e6), fLng = Math.round(fromLatLng.lng * 1e6);
+  const tLat = Math.round(toLatLng.lat * 1e6),   tLng = Math.round(toLatLng.lng * 1e6);
+  let s = -1, t = -1, sD = Infinity, tD = Infinity, nAllowed = 0;
+  for (let i = 0; i < N; i++) {
+    const la = latU[i], lg = lngU[i];
+    if (la < s6 || la > n6 || lg < w6 || lg > e6) { allowed[i] = 0; continue; }
+    allowed[i] = 1; nAllowed++;
+    let dl = la - fLat, dg = lg - fLng;
+    let d = dl * dl + dg * dg;
+    if (d < sD) { sD = d; s = i; }
+    dl = la - tLat; dg = lg - tLng;
+    d = dl * dl + dg * dg;
+    if (d < tD) { tD = d; t = i; }
+  }
+  if (s < 0 || t < 0) return null;
+
+  const edgeCost = v2EdgeCostFn(readCost(params));
+  const heap = new MinHeap();
+  dist[s] = 0;
+  heap.push(0, s);
+  while (heap.size) {
+    const u = heap.pop();
+    if (done[u]) continue;
+    done[u] = 1;
+    if (u === t) break;
+    const du = dist[u], hu = elev[u];
+    for (let k = indptr[u], end = indptr[u + 1]; k < end; k++) {
+      const v = targets[k];
+      if (done[v] || !allowed[v]) continue;
+      const w = edgeCost(edist[k] * 0.1, (elev[v] - hu) * 0.1);
+      const nd = du + w;
+      if (nd < dist[v]) { dist[v] = nd; prev[v] = u; heap.push(nd, v); }
+    }
+  }
+  if (!done[t]) {
+    console.info(`[viario] grafo pré-cozido: ${nAllowed} nós na bbox · sem caminho`);
+    return null;
+  }
+
+  const path = [];
+  const deckFlag = [];
+  for (let v = t; ; v = prev[v]) {
+    path.push([latU[v] / 1e6, lngU[v] / 1e6]);
+    deckFlag.push(!!(flags[v] & 1));
+    if (v === s) break;
+  }
+  path.reverse(); deckFlag.reverse();
+  path.unshift([fromLatLng.lat, fromLatLng.lng]); deckFlag.unshift(false);
+  path.push([toLatLng.lat, toLatLng.lng]); deckFlag.push(false);
+  path.deckFlag = deckFlag;
+  console.info(`[viario] grafo pré-cozido: ${nAllowed} nós na bbox · rota ${path.length} pts em ` +
+    `${(performance.now() - t0).toFixed(0)} ms`);
+  return path;
 }
 
 // ─── Rede viária custom (gpkg ou GeoJSON carregado de arquivo) ───────────────
@@ -8213,26 +8420,11 @@ function viarioGraphRoute(lines, meta, fromLatLng, toLatLng, dem, bb, A) {
   }
 
   const adj = [];                     // adj[u] = [v0, cost0, v1, cost1, …]
-  const cost = readCost(params);
   const M_DEG = 111320;
   const cellM = A * M_DEG;            // ~tamanho da célula do DEM em metros
-  // Custo v2 por aresta — IDÊNTICO ao v2Edge do worker (lib/energy-worker.js) e ao
-  // v2_edge do backend Rust do sampasimu; manter em sincronia. dist = metros de
-  // solo, dh = desnível com sinal. Rolamento sempre; arrasto só fora das subidas;
-  // recuperação na descida ε por grade.
-  const edgeCost = (dist, dh) => {
-    if (dh >= 0) {
-      const aero = (dh < cost.climbThr * dist) ? cost.aAero * dist : 0;
-      return cost.aRoll * dist + aero + cost.beta * dh;
-    }
-    const ndh = -dh;
-    let eps = cost.abRatio * dist / ndh;
-    if (eps > 1) eps = 1;
-    eps -= cost.epsOffset;
-    if (eps < 0) eps = 0;
-    const e = cost.aRoll * dist + cost.aAero * dist - eps * cost.beta * ndh;
-    return e < 0 ? 0 : e;
-  };
+  // Custo v2 por aresta — helper compartilhado com o grafo pré-cozido
+  // (v2EdgeCostFn, junto do decodeViarioGraph acima).
+  const edgeCost = v2EdgeCostFn(readCost(params));
 
   // Pontos do caminho que caem em tabuleiro (p/ achatar também o perfil do
   // display, depois — usando a elevação que o PRÓPRIO display amostrou nos
@@ -8393,6 +8585,22 @@ async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
     south: Math.floor(south / A) * A,
     north: Math.ceil (north / A) * A,
   };
+
+  // ROAD primário: grafo PRÉ-COZIDO do viário de SP — elevações já amostradas
+  // no bake, então resolve SEM baixar DEM nem gpkg (por isso roda antes do
+  // mosaico abaixo). Rede custom carregada tem prioridade e cai pro fluxo
+  // clássico; falha/sem caminho cai pro gpkg → Overpass, como sempre. O mesmo
+  // toggle useViarioGpkg governa grafo pré-cozido + gpkg (é a mesma fonte,
+  // só o empacotamento muda); desligado, pula direto pro Overpass.
+  if (mode === 'road' && !_customNetwork && params.useViarioGpkg !== false) {
+    try {
+      const path = await bakedViarioRoute(fromLatLng, toLatLng, bb);
+      if (path && path.length) return path;
+      console.info('[energy_road] grafo pré-cozido sem caminho — caindo pro gpkg/Overpass');
+    } catch (e) {
+      console.warn('[energy_road] grafo pré-cozido indisponível:', e.message);
+    }
+  }
 
   await ensureGeoTIFF();
   const tDem = performance.now();
@@ -8605,6 +8813,9 @@ async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
       seedR, seedC, goalR, goalC,
       mode: 'from',
       cost: readCost(params),
+      // Valida aqui (o worker degrada valores inválidos pra 8, não pro nosso
+      // default 16 — um params corrompido mudaria o traçado silenciosamente).
+      nDirs: [4, 8, 16, 32, 64, 128].includes(params.nDirs | 0) ? (params.nDirs | 0) : 16,
     };
     let res = await runEnergyWorker({ ...baseOpts, mask: dem.mask });
     // Rede de segurança: se mesmo com os corredores viários a água ainda selou
@@ -9923,6 +10134,19 @@ for (const [key, input] of Object.entries(PARAM_INPUTS)) {
     updateCostReadout();
   });
 }
+// Direções de movimento da grade: select próprio (fora do loop genérico de
+// PARAM_INPUTS) porque mudar a vizinhança muda a GEOMETRIA roteada — precisa
+// re-rotear o rascunho, como os toggles de viário/água.
+const paramNDirs = document.getElementById('param-n-dirs');
+paramNDirs.addEventListener('change', () => {
+  const v = parseInt(paramNDirs.value, 10);
+  if (![4, 8, 16, 32, 64, 128].includes(v)) return;
+  params.nDirs = v;
+  saveParams();
+  updateMetrics();
+  rerouteCurrentDraft();
+});
+
 for (const [key, input] of Object.entries(PARAM_CHECKBOXES)) {
   input.addEventListener('change', () => {
     params[key] = !!input.checked;
@@ -9956,6 +10180,7 @@ function fillParamInputs() {
   PARAM_INPUTS.kEff.value = (params.kEff * 100).toFixed(0);
   PARAM_INPUTS.deadbandM.value = params.deadbandM;
   PARAM_INPUTS.energySearchMarginPct.value = params.energySearchMarginPct;
+  paramNDirs.value = String([4, 8, 16, 32, 64, 128].includes(params.nDirs | 0) ? params.nDirs : 16);
   PARAM_INPUTS.carMass.value = params.carMass;
   PARAM_INPUTS.carCrr.value = params.carCrr;
   PARAM_INPUTS.carCda.value = params.carCda;

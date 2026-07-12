@@ -19,7 +19,11 @@ one optional hosted deploy target, not a dependency.
   echo, see the header comment in `energy-worker.js`; `graph-engine.js`
   backs the worker's graph-mode routing, fed by `scripts/build-viario.py`'s
   road-network GPKG, though amora's own "Menor energia pelo viário" mode
-  currently routes via the inline `viarioGraphRoute` in app.js instead),
+  routes in app.js instead: primary source is the PRE-BAKED binary graph
+  `sampa-viario-graph.bin` from `build-viario.py --graph` (per-node elevations
+  already sampled at bake time — no DEM/gpkg download per route; see
+  `bakedViarioRoute`/`decodeViarioGraph`), falling back to the inline
+  `viarioGraphRoute` over the gpkg, then Overpass),
   `tom-select.complete.min.js`,
   `tom-select.min.css`, `qrcode.js`, `leaflet/` (js+css+images),
   `locatecontrol/` — Leaflet & friends were vendored off unpkg/jsdelivr;
@@ -93,7 +97,14 @@ one optional hosted deploy target, not a dependency.
   `bridge`/`tunnel`/`layer` from OSM's `other_tags` hstore, filters to
   `highway IS NOT NULL`, optional `--water` layer via Geofabrik+osmium —
   feeding the browser's "Menor energia pelo viário" road-graph routing;
-  producer for the consumer described under `lib/graph-engine.js` above),
+  `--graph`/`--graph-only` additionally bakes `sampa-viario-graph.bin`, the
+  binary CSR graph with per-node elevations (SP DEM ~5 m where covered,
+  FABDEM elsewhere, via /vsicurl) and bridge/tunnel decks flattened — the
+  PRIMARY road-routing source the app downloads (~33 MB gzipped vs the
+  ~125 MB gpkg, which stays as fallback + water/portals source for terrain
+  mode); upload with `gcloud storage cp -Z ignore/sampa-viario-graph.bin
+  gs://telhas/viario/`; producer for the consumer described under
+  `lib/graph-engine.js` above),
   `gen-synthetic-rdf.py`, `mock_location.sh` (empurra posições de
   teste da localização ao vivo pro backend — random walk, 1 ponto/3 s; bate no
   remoto amora por padrão, `--local` p/ 127.0.0.1:8080; curl não precisa de
