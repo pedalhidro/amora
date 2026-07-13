@@ -48,6 +48,11 @@ Variáveis de ambiente:
   PHIDRO_WEB        pasta do app                (padrão: ../../web)
   PORT              porta HTTP                  (padrão: 8000)
   MAX_UPLOAD_BYTES  teto do multipart por req   (padrão: 256 MiB)
+  PUBLIC_BASE_URL   host público deste servidor (ex.: https://amora.example)
+                    — usado nas IRIs absolutas que entram no catálogo
+                    (schema:image do anúncio) quando o store não tem URL
+                    pública própria. Sem ele, cai no host da requisição, que
+                    num backend de dev grava `http://localhost:8080/…` no dado.
   STORAGE_EMULATOR_HOST   p/ rodar contra fake-gcs-server localmente
                           (https://github.com/fsouza/fake-gcs-server)
 """
@@ -86,6 +91,11 @@ WEB = Path(os.environ.get("PHIDRO_WEB") or _default_web_path()).resolve()
 DATA_DIR      = WEB / "data"
 SHAPES_PATH   = DATA_DIR / "shapes.ttl"
 ONTOLOGY_PATH = DATA_DIR / "ontology.ttl"
+
+# Host público deste servidor, sem barra final. Só entra em jogo quando o
+# store não expõe URL pública (modo local): é o que impede um backend de dev
+# de assar `http://localhost:8080/…` numa IRI do catálogo.
+PUBLIC_BASE_URL = (os.environ.get("PUBLIC_BASE_URL") or "").rstrip("/")
 
 # Store = estado mutável. Em modo local, raiz = PHIDRO_WEB (layout:
 # data/uploads.ttl, photos/<phash>/...); em modo gcs, raiz é o
@@ -1253,8 +1263,30 @@ def _sync_tour_route(tour_id):
                 _write_routes_payload(payload["routes"])
         return {"status": "removed" if removed else "absent"}
 
-    # Fetch da geometria FORA do lock (IO de rede, pode demorar).
-    entry = rwgps.build_route_entry(meta)
+    # A geometria já está em routes.json, pra ESTA mesma rota? Então não busca
+    # de novo. Traçado de rota é imutável na prática (o próprio código abaixo
+    # já apostava nisso ao preservar a geometria antiga quando o fetch falha),
+    # enquanto os METADADOS da entrada (título, data, numeração de série) sim
+    # mudam a cada patch — e são recalculados do catálogo, de graça.
+    #
+    # Sem esse curto-circuito, todo patch de qualquer predicado puxava um GPX
+    # inteiro do RideWithGPS. Passes em lote (audit-captura.py --sync: 87
+    # passeios) e o backfill de gravações (~40) viravam ~130 fetches inúteis,
+    # cada um seguido de um rewrite do routes.json de 2 MB — e como o bucket
+    # tem Object Versioning, cada rewrite deixa uma geração noncurrent parada
+    # por 90 dias. Pra forçar a rebusca da geometria: scripts/build-routes.py.
+    cached = None
+    with _state_lock:
+        _p = _load_routes_payload()
+        _old = next((r for r in _p["routes"] if r.get("tourIri") == tour_iri), None)
+        if _old and _old.get("id") == meta["id"] and _old.get("latlngs"):
+            cached = {"latlngs": _old["latlngs"], "pois": _old.get("pois") or []}
+
+    if cached is not None:
+        entry = {**meta, **cached}
+    else:
+        # Fetch da geometria FORA do lock (IO de rede, pode demorar).
+        entry = rwgps.build_route_entry(meta)
 
     with _state_lock:
         # Re-checa sob o lock: o tour ainda existe e ainda aponta pra MESMA
@@ -1275,6 +1307,12 @@ def _sync_tour_route(tour_id):
             entry["latlngs"] = old["latlngs"]
             entry["pois"] = old.get("pois") or []
             kept = True
+        # Entrada idêntica à que já está lá → não reescreve. routes.json tem
+        # ~2 MB e cada escrita cria uma geração noncurrent no bucket (Object
+        # Versioning), que fica ocupando espaço por 90 dias. Um patch que não
+        # mexe na rota não tem por que deixar rastro.
+        if old == entry:
+            return {"status": "unchanged", "rwgpsId": entry["id"]}
         payload["routes"] = [r for r in payload["routes"] if r.get("tourIri") != tour_iri]
         payload["routes"].append(entry)
         _write_routes_payload(payload["routes"])
@@ -3189,13 +3227,23 @@ def upload_tour():
                 return jsonify(
                     error=f"persistência announcement: {e}", tour_id=tour_id,
                 ), 500
-            # Fallback local: URL ABSOLUTA baseada em como o cliente chegou
-            # aqui (request.host_url). Um caminho relativo ("./tour_assets/…")
-            # injetado como IRI no TTL é resolvido pelo rdflib contra o CWD
-            # do processo na re-serialização → vira file:///… inutilizável.
-            announcement_url = STORE.public_url(key) or (
-                request.host_url.rstrip("/")
-                + f"/tour_assets/{tour_id}/announcement.{ext}")
+            # URL ABSOLUTA obrigatoriamente: um caminho relativo
+            # ("./tour_assets/…") injetado como IRI no TTL é resolvido pelo
+            # rdflib contra o CWD do processo na re-serialização → vira
+            # file:///… inutilizável.
+            #
+            # A ordem importa. `request.host_url` é o ÚLTIMO recurso porque ele
+            # grava no catálogo o host pelo qual ESTE cliente chegou — e um
+            # backend de desenvolvimento assa `http://localhost:8080/…` num
+            # dado que depois sobe pra produção pelo `deploy-cloudrun.sh
+            # --state` (foi o que aconteceu com o PH/96). Quem auto-hospeda
+            # deve setar PUBLIC_BASE_URL com o host público de verdade.
+            announcement_url = (
+                STORE.public_url(key)
+                or (PUBLIC_BASE_URL
+                    and f"{PUBLIC_BASE_URL}/tour_assets/{tour_id}/announcement.{ext}")
+                or (request.host_url.rstrip("/")
+                    + f"/tour_assets/{tour_id}/announcement.{ext}"))
             # Injeta schema:image se ainda não estiver no TTL (cliente pode
             # ter posto um URL externo; respeitamos a escolha do cliente).
             # Checagem via triple (não substring): um TTL usando a IRI completa

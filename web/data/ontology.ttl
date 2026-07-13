@@ -132,13 +132,6 @@ ph:countAttendee a owl:DatatypeProperty ;
     rdfs:domain ph:Tour ;
     rdfs:range xsd:nonNegativeInteger .
 
-ph:mediaCount a owl:DatatypeProperty ;
-    rdfs:label "mídias coletadas"@pt ;
-    rdfs:comment
-        "Quantidade de fotos/vídeos arquivados a partir do passeio."@pt ;
-    rdfs:domain ph:Tour ;
-    rdfs:range xsd:nonNegativeInteger .
-
 ph:countNewcomer a owl:DatatypeProperty ;
     rdfs:label "iniciantes"@pt ;
     rdfs:comment
@@ -222,6 +215,67 @@ ph:hadRain a owl:DatatypeProperty ;
         "true se choveu durante o passeio. Ausência do predicado = não informado (não é o mesmo que false)."@pt ;
     rdfs:domain ph:Tour ;
     rdfs:range xsd:boolean .
+
+# =====================================================================
+# Passe de coleta de mídia (ph:MediaSweep)
+# =====================================================================
+# Registra o ato de VARRER o grupo de WhatsApp depois do passeio e arquivar
+# o que as pessoas compartilharam na Biblioteca Hidrográfica (Drive). É a
+# única fonte de captura que o amora não enxerga sozinho: as fotos ficam
+# fora do catálogo, então sem este marcador não há como distinguir
+# "ninguém compartilhou nada" de "ninguém foi buscar".
+#
+# A EXISTÊNCIA do nó é o marcador: nó presente = o passe foi feito.
+# ph:collectedFileCount 0 = passe feito e ninguém compartilhou. Nó ausente
+# = passe NUNCA foi feito (não consta). Não há enum de status — o modelo
+# já distingue os três casos sem ele.
+
+ph:MediaSweep a owl:Class ;
+    rdfs:label "Passe de coleta de mídia"@pt ;
+    rdfs:comment
+        "Atividade de coletar a mídia que os participantes compartilharam fora do amora (hoje: o grupo de WhatsApp) e arquivá-la na Biblioteca Hidrográfica. Um passeio tem no máximo um passe (o mais recente); re-varrer atualiza a contagem e a data no lugar."@pt ;
+    rdfs:subClassOf prov:Activity .
+
+ph:mediaSweep a owl:ObjectProperty ;
+    rdfs:label "passe de coleta"@pt ;
+    rdfs:comment
+        "Liga o passeio ao seu passe de coleta de mídia. O nó é derivado do passeio (pas:<slug>_sweep), então a purga por aritmética de prefixo do backend o remove junto com o passeio."@pt ;
+    rdfs:domain ph:Tour ;
+    rdfs:range ph:MediaSweep .
+
+# ATENÇÃO: os predicados abaixo penduram no NÓ DO PASSE, não no passeio.
+# O domínio TEM que ser ph:MediaSweep — o validador roda com inference=rdfs,
+# e um rdfs:domain ph:Tour aqui tiparia o nó do passe como ph:Tour, jogando-o
+# na ph:TourShape (que exige título e data) e produzindo Violation.
+
+ph:collectedFileCount a owl:DatatypeProperty ;
+    rdfs:label "arquivos coletados"@pt ;
+    rdfs:comment
+        "Quantos arquivos o passe arquivou. Zero é significativo: o passe foi feito e ninguém compartilhou nada."@pt ;
+    rdfs:domain ph:MediaSweep ;
+    rdfs:range xsd:nonNegativeInteger .
+
+ph:archiveFolder a owl:DatatypeProperty ;
+    rdfs:label "pasta do acervo"@pt ;
+    rdfs:comment
+        "Nome da pasta do passeio na Biblioteca Hidrográfica (ex.: '2025-09-09 54 Água Preta, Tiburtino, 1 ano de PH'). Caminho relativo à raiz do acervo, não URL — o Drive não tem IRI estável e pública."@pt ;
+    rdfs:domain ph:MediaSweep ;
+    rdfs:range xsd:string .
+
+ph:sweepContributor a owl:DatatypeProperty ;
+    rdfs:label "quem compartilhou"@pt ;
+    rdfs:comment
+        "Slug (handle) de quem compartilhou ao menos um arquivo neste passe, extraído do prefixo do nome do arquivo arquivado. Repetível. Fica como LITERAL de propósito: o slug é o dado bruto, e a resolução para uma pessoa é um join via schema:alternateName em identities.ttl — que pode não existir ainda. Assim o passe nunca fica bloqueado esperando alguém ser cadastrado."@pt ;
+    rdfs:domain ph:MediaSweep ;
+    rdfs:range xsd:string .
+
+ph:mediaCount a owl:DatatypeProperty ;
+    rdfs:label "mídias coletadas"@pt ;
+    rdfs:comment
+        "OBSOLETO — substituído por ph:mediaSweep/ph:collectedFileCount, que carrega a mesma contagem COM procedência (quando o passe foi feito, por quem, de qual pasta). Resíduo do import da planilha histórica: contava os arquivos do acervo do Drive, mas nada o mantinha atualizado e a ausência era ambígua (não distinguia 'não coletei' de 'coletei e não veio nada'). Não escreva mais neste predicado."@pt ;
+    owl:deprecated true ;
+    rdfs:domain ph:Tour ;
+    rdfs:range xsd:nonNegativeInteger .
 
 # =====================================================================
 # Propriedades — Foto (ph:Image)

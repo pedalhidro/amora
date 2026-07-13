@@ -192,6 +192,56 @@
   .err { color: #ff6b6b; }
   .ok  { color: #5dd29c; }
 
+  /* ── Abas: Censo | Captura ───────────────────────────────────────────── */
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border);
+    margin: 0 0 16px; }
+  .tabs button {
+    background: none; border: none; border-bottom: 2px solid transparent;
+    color: var(--muted); font: inherit; font-weight: 600; font-size: 13px;
+    padding: 8px 14px; cursor: pointer; margin-bottom: -1px;
+  }
+  .tabs button:hover { color: var(--text); }
+  .tabs button[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); }
+  .tabs .pend { font-size: 10px; background: #8c1f1f; color: #ffeaea;
+    border-radius: 9px; padding: 1px 6px; margin-left: 6px; font-weight: 700; }
+
+  /* ── Painel de captura ───────────────────────────────────────────────── */
+  /* Cabeçalho de grupo (ANTES / DEPOIS / MÍDIA) acima das colunas de campo. */
+  #captura-table thead tr.groups th {
+    text-align: center; border-bottom: 1px solid var(--border);
+    color: var(--muted); font-size: 9px; letter-spacing: 0.08em; cursor: default;
+  }
+  #captura-table thead tr.groups th.g-antes  { color: #7fb2e5; }
+  #captura-table thead tr.groups th.g-depois { color: #d9a441; }
+  #captura-table thead tr.groups th.g-midia  { color: #7fd3a8; }
+  #captura-table thead tr.groups th.spacer { border-bottom-color: transparent; }
+  #captura-table th.f, #captura-table td.f { text-align: center; padding: 4px 3px; }
+  #captura-table th.f { writing-mode: initial; font-size: 9px; }
+
+  /* A célula é um alvo de clique: leva direto pra ferramenta que preenche
+     ESTE campo DESTE passeio. É a diferença entre "sei que falta" e "fui lá". */
+  .dot {
+    display: inline-block; width: 15px; height: 15px; line-height: 15px;
+    border-radius: 50%; font-size: 10px; text-align: center; text-decoration: none;
+    border: 1px solid transparent;
+  }
+  .dot.ok   { background: rgba(93, 210, 156, 0.16); color: #5dd29c; }
+  .dot.gap  { background: rgba(255, 107, 107, 0.13); color: #ff6b6b;
+    border-color: rgba(255, 107, 107, 0.35); }
+  a.dot.gap:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+  /* Passe de coleta: os três estados são visualmente distintos de propósito —
+     "feito e vazio" (∅) NÃO é a mesma coisa que "nunca feito" (?). */
+  .dot.sweep-none { background: rgba(255,107,107,.13); color: #ff6b6b;
+    border-color: rgba(255,107,107,.35); }
+  .dot.sweep-zero { background: rgba(151,163,177,.18); color: var(--muted); }
+  .sweep-n { color: #7fd3a8; font-variant-numeric: tabular-nums; font-size: 11px; }
+
+  .cap-toolbar { display: flex; align-items: center; gap: 14px; margin: 0 0 10px;
+    flex-wrap: wrap; }
+  .cap-toolbar label { color: var(--muted); font-size: 12px; cursor: pointer;
+    display: flex; align-items: center; gap: 5px; }
+  .cap-legend { color: var(--muted); font-size: 11px; margin-left: auto; }
+
   footer { margin-top: 20px; color: var(--muted); font-size: 11px; }
 </style>
 </head>
@@ -206,6 +256,13 @@
 </header>
 
 <div id="status" role="status" aria-live="polite">Carregando catálogo de passeios…</div>
+
+<div class="tabs" role="tablist" hidden>
+  <button role="tab" id="tab-censo"   aria-selected="true"  aria-controls="view-censo">Censo</button>
+  <button role="tab" id="tab-captura" aria-selected="false" aria-controls="view-captura">Captura<span id="tab-pend" class="pend" hidden></span></button>
+</div>
+
+<div id="view-censo">
 
 <div id="metrics" class="metrics" hidden></div>
 
@@ -241,6 +298,56 @@
     <tbody></tbody>
   </table>
 </div>
+
+</div><!-- /view-censo -->
+
+<div id="view-captura" hidden>
+  <div id="cap-metrics" class="metrics"></div>
+
+  <div class="cap-toolbar">
+    <label><input type="checkbox" id="cap-only-gaps"> só os incompletos</label>
+    <label><input type="checkbox" id="cap-recent"> só os 12 mais recentes</label>
+    <span class="cap-legend">
+      clique num <span class="dot gap">✗</span> pra ir direto na ferramenta que preenche o campo ·
+      passe de coleta: <span class="sweep-n">n</span> arquivos ·
+      <span class="dot sweep-zero">∅</span> feito, ninguém compartilhou ·
+      <span class="dot sweep-none">?</span> nunca feito
+    </span>
+  </div>
+
+  <div class="table-wrap">
+    <table id="captura-table">
+      <thead>
+        <tr class="groups">
+          <th class="spacer" colspan="3"></th>
+          <th class="g-antes"  colspan="4">ANTES — o chamado</th>
+          <th class="g-depois" colspan="8">DEPOIS — o censo</th>
+          <th class="g-midia"  colspan="2">MÍDIA</th>
+          <th class="spacer"></th>
+        </tr>
+        <tr>
+          <th>Data</th><th>Série</th><th>Título</th>
+          <th class="f" title="dcterms:description — a narrativa do chamado">narr</th>
+          <th class="f" title="schema:image — a arte do anúncio">arte</th>
+          <th class="f" title="ph:linkRoute — a rota planejada">rota</th>
+          <th class="f" title="ph:linkInstagram — o post do anúncio">insta</th>
+          <th class="f" title="ph:countAttendee — quantos vieram">part</th>
+          <th class="f" title="ph:countNewcomer — quantos estreando">inic</th>
+          <th class="f" title="ph:linkActivity — a URL da GRAVAÇÃO GPS. É ela que destrava os quatro campos seguintes.">gps</th>
+          <th class="f" title="ph:departedAt — hora real da saída">saída</th>
+          <th class="f" title="ph:arrivedAt — hora da chegada">cheg</th>
+          <th class="f" title="ph:movingDuration — tempo em movimento">mov</th>
+          <th class="f" title="ph:energyEstimate — energia estimada (kJ)">kJ est</th>
+          <th class="f" title="ph:measuredEnergy — energia medida (kJ)">kJ med</th>
+          <th class="f" title="Fotos e vídeos no amora (images.ttl) — o tier alto, geolocalizado">amora</th>
+          <th class="f" title="ph:MediaSweep — o passe de coleta no grupo do zap">passe</th>
+          <th>Editar</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</div><!-- /view-captura -->
 
 <script type="module">
 const $ = (q) => document.querySelector(q);
@@ -306,6 +413,10 @@ function intensityRankFor(label) {
   return i === -1 ? null : i;
 }
 
+// Uma IRI de arte apontando pra host local não é uma arte: não resolve pra
+// ninguém além de quem a subiu. O painel de captura trata como lacuna.
+const LOCALHOST = /^(https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0)|file:)/;
+
 const SERIES_LABEL_OVERRIDE = { S: 'PH-S' };
 const seriesLabel = (iri) => {
   const slug = (iri || '').split(/[/#]/).pop();
@@ -333,6 +444,12 @@ async function loadTours() {
     const types   = new Map();
     const props   = new Map();   // subj → { title, date, attendee, newcomer, energy, measured, assocs:Set, attendees:Set, newcomers:Set }
     const assocs  = new Map();   // bn   → { series, seq }
+    const sweeps  = new Map();   // pas:<slug>_sweep → { count, date, gente, pasta }
+    const sw = (subj) => {
+      let x = sweeps.get(subj);
+      if (!x) { x = { count: null, date: null, gente: 0, pasta: '' }; sweeps.set(subj, x); }
+      return x;
+    };
     const labels  = new Map();   // person/series IRI → schema:alternateName / schema:name / dcterms:title
     function s(subj) {
       let p = props.get(subj);
@@ -399,6 +516,35 @@ async function loadTours() {
             // Listas nominais — só usadas se o toggle estiver ON.
             attendeeNames: [...p.attendees].map(nameOf),
             newcomerNames: [...p.newcomers].map(nameOf),
+            // ── Captura ────────────────────────────────────────────────
+            // Presença (não valor) de cada campo dos dois funis. Uma arte
+            // apontando pra localhost NÃO conta como arte: a IRI não resolve
+            // pra ninguém fora da máquina de quem subiu (foi o caso do PH/96).
+            cap: {
+              descricao:    !!p.description,
+              arte:         !!p.image && !LOCALHOST.test(p.image),
+              rota:         !!p.linkRoute,
+              instagram:    !!p.linkInstagram,
+              participantes: attendees != null,
+              iniciantes:   newcomers != null,
+              gravacao:     !!p.linkActivity,
+              saida:        !!p.departedAt,
+              chegada:      !!p.arrivedAt,
+              movimento:    !!p.movingDuration,
+              energia_est:  kj != null,
+              energia_med:  Number.isFinite(p.measured),
+            },
+            arteLocal: !!p.image && LOCALHOST.test(p.image),
+            // Passe de coleta: `null` = nó ausente = NUNCA foi feito. Isso é
+            // diferente de `{arquivos: 0}` = fui buscar, ninguém compartilhou.
+            // `dcterms:date` do passe cai no mesmo `props` (o nó do passe é um
+            // sujeito como outro qualquer) — daí vir de props e não de sweeps.
+            sweep: p.sweep ? {
+              arquivos: sweeps.get(p.sweep)?.count ?? null,
+              data:     props.get(p.sweep)?.date ?? null,
+              gente:    sweeps.get(p.sweep)?.gente ?? 0,
+              pasta:    sweeps.get(p.sweep)?.pasta ?? '',
+            } : null,
           });
         }
         tours.sort((a, b) => b.date.localeCompare(a.date));
@@ -430,6 +576,18 @@ async function loadTours() {
       else if (pred === PH + 'departedAt')   s(sub).departedAt = obj;
       else if (pred === PH + 'arrivedAt')    s(sub).arrivedAt  = obj;
       else if (pred === PH + 'movingDuration') s(sub).movingDuration = obj;
+      // ── Campos do painel de captura ──────────────────────────────────
+      else if (pred === DCT + 'description')   s(sub).description   = obj;
+      else if (pred === SCHEMA + 'image')      s(sub).image         = obj;
+      else if (pred === PH + 'linkRoute')      s(sub).linkRoute     = obj;
+      else if (pred === PH + 'linkInstagram')  s(sub).linkInstagram = obj;
+      else if (pred === PH + 'linkActivity')   s(sub).linkActivity  = obj;
+      else if (pred === PH + 'mediaSweep')     s(sub).sweep         = obj;
+      // …e os predicados que penduram no nó do passe (pas:<slug>_sweep),
+      // que é um sujeito próprio, não o passeio.
+      else if (pred === PH + 'collectedFileCount') sw(sub).count = parseInt(obj, 10);
+      else if (pred === PH + 'archiveFolder')      sw(sub).pasta = obj;
+      else if (pred === PH + 'sweepContributor')   sw(sub).gente += 1;
       // Labels pra resolver IRIs de pessoas/séries quando renderizar.
       else if (pred === SCHEMA + 'name') labels.set(sub, obj);   // nome real vence
       else if (pred === SCHEMA + 'alternateName') {
@@ -664,6 +822,155 @@ function escapeHtml(s) {
 }
 
 // Sort por click no header. Re-renderiza tabela com a nova ordem.
+// ═══════════════════════════════════════════════════════════════════════
+// Painel de Captura
+// ═══════════════════════════════════════════════════════════════════════
+// Uma pergunta por linha: o que ainda falta capturar deste passeio?
+//
+// Cada lacuna é CLICÁVEL e leva direto à ferramenta que a preenche — porque
+// um painel que só informa vira mais um relatório que ninguém abre duas vezes.
+
+// Os campos, na ordem das colunas. `onde` decide pra onde a lacuna leva.
+const CAMPOS = [
+  { k: 'descricao',     onde: 'tour',     t: 'narrativa do chamado' },
+  { k: 'arte',          onde: 'tour',     t: 'arte do anúncio' },
+  { k: 'rota',          onde: 'tour',     t: 'rota planejada' },
+  { k: 'instagram',     onde: 'tour',     t: 'post do Instagram' },
+  { k: 'participantes', onde: 'tour',     t: 'quantos vieram' },
+  { k: 'iniciantes',    onde: 'tour',     t: 'quantos estreando' },
+  { k: 'gravacao',      onde: 'tour',     t: 'URL da gravação GPS — destrava os 4 campos seguintes' },
+  { k: 'saida',         onde: 'backfill', t: 'hora real da saída' },
+  { k: 'chegada',       onde: 'backfill', t: 'hora da chegada' },
+  { k: 'movimento',     onde: 'backfill', t: 'tempo em movimento' },
+  { k: 'energia_est',   onde: 'backfill', t: 'energia estimada (kJ)' },
+  { k: 'energia_med',   onde: 'backfill', t: 'energia medida (kJ)' },
+];
+
+const slugOf = (iri) => (iri || '').split('/').pop();
+
+function ferramenta(onde, tour) {
+  if (onde === 'backfill') return './backfill_tours.html';
+  return `./upload_tour.html?id=${encodeURIComponent(slugOf(tour.iri))}`;
+}
+
+function renderCaptura(tours) {
+  const soLacunas = $('#cap-only-gaps').checked;
+  const soRecentes = $('#cap-recent').checked;
+
+  let lista = tours;
+  if (soRecentes) lista = lista.slice(0, 12);
+  if (soLacunas) lista = lista.filter((t) => CAMPOS.some((c) => !t.cap[c.k]) || !t.sweep);
+
+  const tb = $('#captura-table tbody');
+  tb.innerHTML = '';
+  for (const t of lista) {
+    const tr = document.createElement('tr');
+    const cels = [
+      `<td>${escapeHtml((t.date || '').slice(0, 10))}</td>`,
+      `<td class="muted">${escapeHtml(t.code || '—')}</td>`,
+      `<td class="wrap">${escapeHtml(t.title)}</td>`,
+    ];
+    for (const c of CAMPOS) {
+      const ok = t.cap[c.k];
+      if (ok) {
+        cels.push(`<td class="f"><span class="dot ok" title="${escapeHtml(c.t)}: preenchido">✓</span></td>`);
+      } else {
+        // A arte quebrada (localhost) merece um aviso próprio: o campo EXISTE,
+        // mas aponta pra lugar nenhum. Confundir isso com "nunca preencheu"
+        // faria alguém procurar uma arte que já foi feita.
+        const extra = (c.k === 'arte' && t.arteLocal)
+          ? ' — a arte aponta pra um host local e não carrega pra ninguém'
+          : '';
+        cels.push(`<td class="f"><a class="dot gap" href="${ferramenta(c.onde, t)}"`
+          + ` title="falta: ${escapeHtml(c.t)}${escapeHtml(extra)} — clique pra preencher">✗</a></td>`);
+      }
+    }
+    // Mídia no amora — o tier alto.
+    const n = t.mediaPhotos + t.mediaVideos;
+    cels.push(n > 0
+      ? `<td class="f"><span class="sweep-n" title="${n} mídias no amora">${n}</span></td>`
+      : `<td class="f"><a class="dot gap" href="./upload_images.html"
+           title="nenhuma mídia no amora — clique pra enviar">✗</a></td>`);
+    // Passe de coleta — três estados bem distintos.
+    if (!t.sweep) {
+      cels.push(`<td class="f"><span class="dot sweep-none"
+        title="passe de coleta NUNCA foi feito — ninguém foi buscar as fotos no zap. Rode: python scripts/audit-captura.py --sync">?</span></td>`);
+    } else if (!t.sweep.arquivos) {
+      cels.push(`<td class="f"><span class="dot sweep-zero"
+        title="passe feito${t.sweep.data ? ' em ' + t.sweep.data.slice(0, 10) : ''} — e ninguém compartilhou nada">∅</span></td>`);
+    } else {
+      const ttl = `${t.sweep.arquivos} arquivos de ${t.sweep.gente} pessoas`
+        + (t.sweep.data ? `, coletados em ${t.sweep.data.slice(0, 10)}` : '')
+        + (t.sweep.pasta ? `\n${t.sweep.pasta}` : '');
+      cels.push(`<td class="f"><span class="sweep-n" title="${escapeHtml(ttl)}">${t.sweep.arquivos}</span></td>`);
+    }
+    cels.push(`<td><a class="edit-btn" href="./upload_tour.html?id=${encodeURIComponent(slugOf(t.iri))}">Editar</a></td>`);
+    tr.innerHTML = cels.join('');
+    tb.appendChild(tr);
+  }
+}
+
+function renderCapMetrics(tours) {
+  const n = tours.length;
+  const conta = (f) => tours.filter(f).length;
+  // A gravação GPS entra separada porque está em 0/109: incluí-la na conta de
+  // "completos" zeraria a métrica e ela deixaria de dizer qualquer coisa.
+  const semGps = CAMPOS.filter((c) => c.k !== 'gravacao');
+  const completos = conta((t) => semGps.every((c) => t.cap[c.k]));
+  const comGps    = conta((t) => t.cap.gravacao);
+  const semPasse  = conta((t) => !t.sweep);
+  const semNada   = conta((t) => !t.sweep && (t.mediaPhotos + t.mediaVideos) === 0);
+  const arquivos  = tours.reduce((s, t) => s + (t.sweep?.arquivos || 0), 0);
+
+  const cards = [
+    { v: `${completos}/${n}`, l: 'passeios completos',
+      h: 'os dois funis preenchidos (sem contar a gravação GPS)' },
+    { v: `${comGps}/${n}`, l: 'com gravação GPS',
+      h: 'ph:linkActivity — é ela que permite backfillar saída, chegada, movimento e energia medida' },
+    { v: String(semPasse), l: 'sem passe de coleta',
+      h: 'ninguém foi buscar as fotos no grupo do zap' },
+    { v: String(semNada), l: 'sem mídia nenhuma',
+      h: 'nem no amora, nem coletada no zap — a memória desses pedais não existe' },
+    { v: arquivos.toLocaleString('pt-BR'), l: 'arquivos coletados',
+      h: 'somados por todos os passes de coleta registrados' },
+  ];
+  $('#cap-metrics').innerHTML = cards.map((c) =>
+    `<div class="metric"><div class="v">${escapeHtml(c.v)}</div>`
+    + `<div class="l">${escapeHtml(c.l)}</div><div class="h">${escapeHtml(c.h)}</div></div>`).join('');
+
+  // Badge na aba: o BACKLOG ACIONÁVEL, e a gravação GPS fica DE FORA da conta.
+  // Ela falta em 109 de 109, então incluí-la faria o badge dizer "109" — que
+  // sinaliza tudo e portanto não sinaliza nada. A lacuna sistêmica já tem um
+  // card próprio gritando; o badge é pra quem quer saber quantos pedais ainda
+  // pedem uma visita, um a um.
+  const pend = conta((t) => semGps.some((c) => !t.cap[c.k]) || !t.sweep);
+  const b = $('#tab-pend');
+  if (pend) {
+    b.textContent = String(pend);
+    b.title = `${pend} passeios com alguma lacuna (fora a gravação GPS, que falta em todos)`;
+    b.hidden = false;
+  }
+}
+
+function attachCaptura(tours) {
+  const tabC = $('#tab-censo'), tabP = $('#tab-captura');
+  const vC = $('#view-censo'), vP = $('#view-captura');
+  const mostra = (captura) => {
+    tabC.setAttribute('aria-selected', String(!captura));
+    tabP.setAttribute('aria-selected', String(captura));
+    vC.hidden = captura; vP.hidden = !captura;
+    if (captura) renderCaptura(tours);
+  };
+  tabC.addEventListener('click', () => mostra(false));
+  tabP.addEventListener('click', () => mostra(true));
+  $('#cap-only-gaps').addEventListener('change', () => renderCaptura(tours));
+  $('#cap-recent').addEventListener('change', () => renderCaptura(tours));
+  renderCapMetrics(tours);
+  // Deep link: censo.html#captura abre já na aba certa (é pra lá que o ritual
+  // semanal aponta).
+  if (location.hash === '#captura') mostra(true);
+}
+
 function attachSort(tours) {
   const headers = document.querySelectorAll('#tours-table thead th');
   headers.forEach(th => {
@@ -716,9 +1023,11 @@ function attachSort(tours) {
       t.media = total > 0 ? total : null;
     }
     $('#status').remove();
+    document.querySelector('.tabs').hidden = false;
     renderMetrics(tours);
     renderTable(tours);
     attachSort(tours);
+    attachCaptura(tours);
     const toursUrl = new URL('./data/tours.ttl', location.href).href;   // origem real (localhost em dev, produção no ar)
     $('#meta-ts').textContent = `gerado em ${saoPauloIso()}, a partir de ${toursUrl}`;
   } catch (e) {
