@@ -13,11 +13,12 @@
 //                    stale data, not just a stale app shell.
 //   RUNTIME_CACHE — map tiles, OSRM, elevation, etc. stale-while-revalidate.
 
-// v372 e não v371: os dois lados do merge bumparam pra v370 de forma
-// independente (o grafo do viário aqui, o link de rotas salvas no origin),
-// então "v371" já era ambíguo. v372 fica acima dos dois e ninguém pega cache
-// velho.
-const VERSION = 'phidro-v372';
+// A numeração divergiu enquanto a branch `deploy` seguiu à frente da `main`:
+// v370 foi emitido duas vezes (grafo do viário aqui, link de rotas salvas no
+// origin) e v371/v372 saíram na `deploy` (busca de endereços, ⇄ inverter).
+// v373 fica acima de tudo que já circulou, que é o que importa: se a VERSION
+// não crescer, o service worker serve cache velho.
+const VERSION = 'phidro-v373';
 const STATIC_CACHE = `${VERSION}-static`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 
@@ -87,6 +88,9 @@ self.addEventListener('activate', (event) => {
 });
 
 // Hosts whose responses we want to keep cached for offline / fast revisits.
+// (photon.komoot.io — a busca de endereços — fica DE FORA de propósito: cada
+// query de typeahead é única, então cachear não compra nada; hosts fora da
+// lista passam direto pra rede, sem bloqueio.)
 const RUNTIME_HOSTS = [
   /(^|\.)tile\.openstreetmap\.org$/,
   /(^|\.)server\.arcgisonline\.com$/,

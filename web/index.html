@@ -160,11 +160,21 @@
           </select>
         </label>
         <button type="button" id="params-btn" class="params-btn" title="Parâmetros da simulação" aria-label="Parâmetros">⚙</button>
+        <button type="button" id="trace-reverse" disabled title="Inverter o sentido da rota (chegada vira partida)" aria-label="Inverter sentido">⇄ <span class="tb-label">Inverter</span></button>
         <button type="button" id="trace-load" class="trace-load" title="Carregar rota — do servidor ou de um arquivo .gpx" aria-label="Carregar rota">📂 <span class="tb-label">Carregar</span></button>
         <button type="button" id="trace-save" class="trace-save" title="Salvar GPX" aria-label="Salvar GPX">⤓🗺︎ <span class="tb-label">Salvar</span></button>
         <button type="button" id="trace-view" class="trace-view" title="Ver — oculta os pontos e suaviza o traçado" aria-label="Ver">👁 <span class="tb-label">Ver</span></button>
         <span class="trace-break" aria-hidden="true"></span>
         <span class="trace-metrics" id="trace-metrics" role="status" aria-live="polite">0,00 km · 0,0 kJ</span>
+      </div>
+      <!-- Busca de endereços (geocoding). O botão é estacionado via JS na
+           coluna de controles top-left do Leaflet, abaixo do zoom. -->
+      <button id="geo-search-btn" type="button" class="geo-search-btn leaflet-bar leaflet-control" title="Buscar endereço" aria-label="Buscar endereço" aria-pressed="false">🔍</button>
+      <div id="geo-search-panel" class="geo-search-panel" hidden>
+        <input type="search" id="geo-search-input" placeholder="Buscar endereço ou lugar…" autocomplete="off" enterkeyhint="search" aria-label="Buscar endereço" />
+        <ul id="geo-search-results" role="listbox" aria-label="Resultados da busca"></ul>
+        <p id="geo-search-status" class="geo-search-status" hidden></p>
+        <p class="geo-search-attrib">busca <a href="https://photon.komoot.io/" target="_blank" rel="noopener">Photon</a> · dados © colaboradores do <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a></p>
       </div>
     </main>
 
@@ -195,11 +205,24 @@
           <details class="help-changelog">
             <summary>Novidades (changelog)</summary>
             <dl>
-              <dt>13/07/2026 · v372</dt>
+              <dt>13/07/2026 · v373</dt>
               <dd>
                 <ul>
                   <li><strong>Painel de Captura</strong>, uma aba nova no Censo: uma linha por passeio, uma coluna por campo, e o que falta aparece em vermelho. Clicar numa lacuna leva direto pra ferramenta que a preenche. Mostra os três funis juntos — o chamado (narrativa, arte, rota, Instagram), o censo (comparecimento, saída, chegada, energia) e a mídia (o que subiu no amora e o que foi coletado no grupo do zap).</li>
                   <li><strong>Passe de coleta</strong>: o amora agora registra quando alguém foi buscar as fotos no grupo do WhatsApp, quantos arquivos vieram e quem compartilhou. Antes, um passeio sem foto era ambíguo — ninguém mandou nada, ou ninguém foi buscar? Agora dá pra saber a diferença.</li>
+                </ul>
+              </dd>
+              <dt>11/07/2026 · v372</dt>
+              <dd>
+                <ul>
+                  <li>Novo botão <strong>⇄ Inverter</strong> na barra do editor de traçado: inverte o sentido da rota (a chegada vira a partida) mantendo a mesma linha — distância, energia e tempos recalculam pro sentido novo na hora. Funciona com desfazer/refazer.</li>
+                  <li>Corrigido: escolher um endereço na busca 🔍 com o editor aberto adicionava um segundo ponto num lugar aleatório do mapa, além do ponto certo no endereço.</li>
+                </ul>
+              </dd>
+              <dt>11/07/2026 · v371</dt>
+              <dd>
+                <ul>
+                  <li>Novo botão <strong>🔍 busca de endereços</strong> no canto do mapa (abaixo do zoom): pesquise um endereço ou lugar pra voar até ele no mapa. Com o editor de traçado aberto, cada endereço escolhido vira o <strong>próximo ponto da rota</strong> — dá pra montar partida → paradas → chegada só buscando, sem marcar nada manualmente no mapa. Fora do editor, o resultado ganha um pino com a opção "Traçar a partir daqui".</li>
                 </ul>
               </dd>
               <dt>12/07/2026 · v370 (viário)</dt>

@@ -6636,6 +6636,7 @@ const traceUndo = document.getElementById('trace-undo');
 const traceRedo = document.getElementById('trace-redo');
 const traceSave = document.getElementById('trace-save');
 const traceView = document.getElementById('trace-view');
+const traceReverse = document.getElementById('trace-reverse');
 const traceCount = document.getElementById('trace-count');   // ausente desde a remoção do label "# pontos"
 // Modo "Ver": dentro da edição, oculta os pontos e suaviza a linha pra
 // pré-visualizar o traçado limpo. O botão Cancelar vira "Editar".
@@ -6780,6 +6781,7 @@ traceBtn.addEventListener('click', () => {
 });
 traceSave.addEventListener('click', () => saveAndExit());
 traceView.addEventListener('click', () => enterPreviewMode());
+traceReverse.addEventListener('click', () => reverseTraceDirection());
 traceUndo.addEventListener('click', undo);
 traceRedo.addEventListener('click', redo);
 traceRoutingMode.addEventListener('change', () => {
@@ -6965,6 +6967,14 @@ async function onMapClickInDrawing(e) {
   // (its mousedown started on the line; the click can still fire on the map
   // container) so it doesn't append a stray point at the end.
   if (lineInsertActive) return;
+  // Idem pra escolha na busca de endereços: o clique no resultado remove o
+  // <li> ainda durante o dispatch, e o walk de _leaflet_disable_click do
+  // Leaflet (que sobe por parentNode a partir do target) morre no nó
+  // destacado antes de achar a flag do painel — o clique "vira" clique no
+  // mapa e caía aqui como ponto extra num lugar aleatório (meio do flyTo).
+  // Também engole o ghost click do toque e um duplo-clique no painel recém-
+  // encolhido. Ver geoSearchPickTs em pickGeoSearchResult.
+  if (Date.now() - geoSearchPickTs < 700) return;
   const tp = createTrackpoint(e.latlng);
   trackpoints.push(tp);
 
@@ -9058,10 +9068,12 @@ function pointToSegmentDistance(p, a, b) {
   return Math.hypot(p.lng - cx, p.lat - cy);
 }
 
-async function insertWaypointAt(idx, latlng) {
+async function insertWaypointAt(idx, latlng, init = {}) {
   // Plain trackpoint by default — same as a click-to-add. The user can
-  // toggle the POI flag in the marker popup if they want.
-  const tp = createTrackpoint(latlng);
+  // toggle the POI flag in the marker popup if they want. `init` lets a
+  // caller pre-set name/POI (a busca de endereços rotula o ponto com o
+  // endereço escolhido).
+  const tp = createTrackpoint(latlng, init);
   trackpoints.splice(idx, 0, tp);
 
   // Wire pathFromPrev for the inserted waypoint, then rebuild the next one's
@@ -9092,6 +9104,287 @@ async function insertWaypointAt(idx, latlng) {
   }
   pushHistory();
 }
+
+// ─── Busca de endereços (geocoding) ──────────────────────────────────────────
+// Botão 🔍 na coluna de controles do Leaflet (abaixo do zoom) abre um painel
+// de busca com typeahead via Photon (komoot) — feito pra autocomplete, ao
+// contrário do Nominatim, cuja política de uso PROÍBE typeahead. Se o Photon
+// um dia sumir, o fallback é o Nominatim em modo buscar-ao-Enter
+// (nominatim.openstreetmap.org/search?format=jsonv2&accept-language=pt-BR).
+// Escolher um resultado:
+//   • com o editor de traçado aberto → vira o PRÓXIMO waypoint da rota, com o
+//     endereço como rótulo — dá pra montar partida → paradas → chegada só
+//     buscando endereços em sequência;
+//   • fora do editor → voa até o lugar e solta um pino temporário cujo popup
+//     oferece "Traçar a partir daqui" (entra no editor com o endereço como
+//     ponto de partida). O pino nunca vira trackpoint nem persiste.
+const geoSearchBtn = document.getElementById('geo-search-btn');
+const geoSearchPanel = document.getElementById('geo-search-panel');
+const geoSearchInput = document.getElementById('geo-search-input');
+const geoSearchList = document.getElementById('geo-search-results');
+const geoSearchStatus = document.getElementById('geo-search-status');
+let geoSearchTimer = null;
+let geoSearchAbort = null;     // AbortController da busca em voo (latest-wins)
+let geoSearchResults = [];
+let geoSearchLastQuery = '';   // query dos resultados exibidos (p/ Enter direto)
+let geoSearchActiveIdx = -1;   // item destacado via ↑/↓
+let geoSearchMarker = null;    // pino temporário do modo fora-do-editor
+let geoSearchPickTs = 0;       // guarda anti-clique-fantasma (ver onMapClickInDrawing)
+
+// Mesmo esquema do header-toggle: estaciona o botão na coluna top-left do
+// Leaflet e bloqueia a propagação de cliques/scroll do botão e do painel —
+// em modo de desenho, um clique que vazasse pro mapa viraria trackpoint.
+if (geoSearchBtn && geoSearchPanel) {
+  const topLeft = document.querySelector('.leaflet-top.leaflet-left');
+  if (topLeft) topLeft.appendChild(geoSearchBtn);
+  L.DomEvent.disableClickPropagation(geoSearchBtn);
+  L.DomEvent.disableScrollPropagation(geoSearchBtn);
+  L.DomEvent.disableClickPropagation(geoSearchPanel);
+  L.DomEvent.disableScrollPropagation(geoSearchPanel);
+}
+
+async function photonGeocode(query) {
+  geoSearchAbort?.abort();
+  const ctrl = new AbortController();
+  geoSearchAbort = ctrl;
+  const c = map.getCenter();
+  // lat/lon + location_bias_scale puxam o ranking pro que está na tela (São
+  // Paulo na prática) sem excluir o resto; sem `lang` — o Photon só tem
+  // en/de/fr e resultados BR já vêm em português por padrão.
+  const url = 'https://photon.komoot.io/api/?' + new URLSearchParams({
+    q: query,
+    limit: '6',
+    lat: c.lat.toFixed(5),
+    lon: c.lng.toFixed(5),
+    location_bias_scale: '0.4',
+    zoom: String(Math.min(16, Math.round(map.getZoom()))),
+  });
+  const resp = await fetch(url, { signal: ctrl.signal });
+  if (!resp.ok) throw new Error(`Photon HTTP ${resp.status}`);
+  const data = await resp.json();
+  const seen = new Set();
+  const items = [];
+  for (const f of data.features || []) {
+    const p = f.properties || {};
+    const [lng, lat] = f.geometry?.coordinates || [];
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+    const key = p.osm_id != null ? `${p.osm_type || ''}/${p.osm_id}` : `${lat},${lng}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const label = p.name || [p.street, p.housenumber].filter(Boolean).join(', ');
+    if (!label) continue;
+    const detail = [p.district, p.city, p.state].filter(Boolean).join(', ');
+    items.push({ label, detail, lat, lng });
+  }
+  return items;
+}
+
+// O painel é filho do container do mapa; ancora ele ao lado do botão na hora
+// de abrir (a posição do botão varia com a topbar oculta, safe-area etc.).
+function positionGeoSearchPanel() {
+  const mapRect = map.getContainer().getBoundingClientRect();
+  const btnRect = geoSearchBtn.getBoundingClientRect();
+  if (window.innerWidth <= 600) {
+    // Tela estreita: largura (quase) toda, abaixo do botão. width:auto
+    // libera o esticamento left+right (o CSS fixa 320px pro desktop).
+    geoSearchPanel.style.top = `${Math.round(btnRect.bottom - mapRect.top + 6)}px`;
+    geoSearchPanel.style.left = '8px';
+    geoSearchPanel.style.right = '8px';
+    geoSearchPanel.style.width = 'auto';
+  } else {
+    geoSearchPanel.style.top = `${Math.round(btnRect.top - mapRect.top)}px`;
+    geoSearchPanel.style.left = `${Math.round(btnRect.right - mapRect.left + 8)}px`;
+    geoSearchPanel.style.right = 'auto';
+    geoSearchPanel.style.width = '';
+  }
+}
+
+function setGeoSearchStatus(msg) {
+  geoSearchStatus.textContent = msg;
+  geoSearchStatus.hidden = !msg;
+}
+
+function openGeoSearch() {
+  positionGeoSearchPanel();
+  geoSearchPanel.hidden = false;
+  geoSearchBtn.setAttribute('aria-pressed', 'true');
+  geoSearchInput.focus();
+  geoSearchInput.select();
+}
+
+function closeGeoSearch() {
+  clearTimeout(geoSearchTimer);
+  geoSearchAbort?.abort();
+  geoSearchPanel.hidden = true;
+  geoSearchBtn.setAttribute('aria-pressed', 'false');
+  setGeoSearchStatus('');
+  renderGeoSearchResults([]);
+}
+
+function renderGeoSearchResults(items) {
+  geoSearchResults = items;
+  geoSearchActiveIdx = -1;
+  geoSearchInput.removeAttribute('aria-activedescendant');
+  geoSearchList.textContent = '';
+  items.forEach((item, i) => {
+    const li = document.createElement('li');
+    li.id = `geo-search-opt-${i}`;
+    li.setAttribute('role', 'option');
+    const label = document.createElement('span');
+    label.className = 'geo-search-label';
+    label.textContent = item.label;
+    li.appendChild(label);
+    if (item.detail) {
+      const detail = document.createElement('span');
+      detail.className = 'geo-search-detail';
+      detail.textContent = item.detail;
+      li.appendChild(detail);
+    }
+    li.addEventListener('click', () => pickGeoSearchResult(item));
+    geoSearchList.appendChild(li);
+  });
+}
+
+function setGeoSearchActive(idx) {
+  const rows = geoSearchList.children;
+  if (!rows.length) return;
+  geoSearchActiveIdx = ((idx % rows.length) + rows.length) % rows.length;
+  for (let i = 0; i < rows.length; i++) {
+    rows[i].classList.toggle('is-active', i === geoSearchActiveIdx);
+  }
+  const active = rows[geoSearchActiveIdx];
+  geoSearchInput.setAttribute('aria-activedescendant', active.id);
+  active.scrollIntoView({ block: 'nearest' });
+}
+
+async function runGeoSearch() {
+  const q = geoSearchInput.value.trim();
+  if (q.length < 3) {
+    geoSearchAbort?.abort();
+    renderGeoSearchResults([]);
+    setGeoSearchStatus('');
+    return;
+  }
+  setGeoSearchStatus('Buscando…');
+  try {
+    const items = await photonGeocode(q);
+    geoSearchLastQuery = q;
+    renderGeoSearchResults(items);
+    setGeoSearchStatus(items.length ? '' : 'Nenhum resultado — tente incluir bairro ou cidade');
+  } catch (err) {
+    if (err.name === 'AbortError') return; // superada por uma busca mais nova
+    console.warn('[geo-search]', err);
+    renderGeoSearchResults([]);
+    setGeoSearchStatus('Erro de rede na busca');
+  }
+}
+
+async function pickGeoSearchResult(item) {
+  // Carimbo ANTES de mexer no DOM: o handler de clique do container (Leaflet)
+  // roda logo depois deste, no mesmo dispatch — sem isto o clique no <li>
+  // recém-removido virava clique no mapa e adicionava um ponto extra num
+  // lugar aleatório (ver o guard em onMapClickInDrawing).
+  geoSearchPickTs = Date.now();
+  const latlng = L.latLng(item.lat, item.lng);
+  const targetZoom = Math.max(map.getZoom(), 15);
+  if (drawingMode && !previewMode) {
+    // Vira o próximo waypoint; o painel fica aberto pro loop buscar→adicionar
+    // de vários endereços em sequência (partida → paradas → chegada).
+    geoSearchInput.value = '';
+    renderGeoSearchResults([]);
+    setGeoSearchStatus('');
+    map.flyTo(latlng, targetZoom);
+    await insertWaypointAt(trackpoints.length, latlng, { name: item.label });
+    geoSearchInput.focus();
+  } else {
+    closeGeoSearch();
+    map.flyTo(latlng, targetZoom);
+    dropGeoSearchPin(item, latlng);
+  }
+}
+
+function removeGeoSearchPin() {
+  if (geoSearchMarker) {
+    map.removeLayer(geoSearchMarker);
+    geoSearchMarker = null;
+  }
+}
+
+function dropGeoSearchPin(item, latlng) {
+  removeGeoSearchPin();
+  const marker = L.marker(latlng);
+  const div = document.createElement('div');
+  div.className = 'geo-search-popup';
+  const title = document.createElement('strong');
+  title.textContent = item.label;
+  div.appendChild(title);
+  if (item.detail) {
+    const detail = document.createElement('span');
+    detail.className = 'geo-search-detail';
+    detail.textContent = item.detail;
+    div.appendChild(detail);
+  }
+  const traceHere = document.createElement('button');
+  traceHere.type = 'button';
+  traceHere.textContent = '🗺︎ Traçar a partir daqui';
+  traceHere.addEventListener('click', async () => {
+    geoSearchPickTs = Date.now(); // o popup some sob o cursor — mesmo guard
+    removeGeoSearchPin();
+    // Entrar no editor zera o rascunho — o endereço vira o ponto de PARTIDA.
+    if (!drawingMode) enterDrawingMode();
+    else if (previewMode) exitPreviewMode();
+    await insertWaypointAt(trackpoints.length, latlng, { name: item.label });
+  });
+  div.appendChild(traceHere);
+  const remove = document.createElement('button');
+  remove.type = 'button';
+  remove.textContent = '✕ Remover pino';
+  remove.addEventListener('click', () => removeGeoSearchPin());
+  div.appendChild(remove);
+  marker.bindPopup(div);
+  marker.addTo(map).openPopup();
+  // O flyTo em andamento fecha o popup quando a animação de zoom começa;
+  // reabre quando o mapa assenta (no-op se já estiver aberto).
+  map.once('moveend', () => {
+    if (geoSearchMarker === marker) marker.openPopup();
+  });
+  geoSearchMarker = marker;
+}
+
+geoSearchBtn?.addEventListener('click', () => {
+  if (geoSearchPanel.hidden) openGeoSearch();
+  else closeGeoSearch();
+});
+geoSearchInput?.addEventListener('input', () => {
+  clearTimeout(geoSearchTimer);
+  geoSearchTimer = setTimeout(runGeoSearch, 350);
+});
+geoSearchInput?.addEventListener('keydown', (e) => {
+  // Nada daqui deve vazar pro keydown global: Esc cancelaria o modo de
+  // desenho e Cmd+Z desfaria um waypoint em vez do texto digitado.
+  e.stopPropagation();
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    setGeoSearchActive(geoSearchActiveIdx + 1);
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    setGeoSearchActive(geoSearchActiveIdx - 1);
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    const q = geoSearchInput.value.trim();
+    if (geoSearchActiveIdx >= 0 && geoSearchResults[geoSearchActiveIdx]) {
+      pickGeoSearchResult(geoSearchResults[geoSearchActiveIdx]);
+    } else if (geoSearchResults.length && q === geoSearchLastQuery) {
+      pickGeoSearchResult(geoSearchResults[0]);
+    } else {
+      clearTimeout(geoSearchTimer);
+      runGeoSearch();
+    }
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    closeGeoSearch();
+  }
+});
 
 function totalDistanceMeters() {
   const latlngs = assembleLatLngs();
@@ -10601,6 +10894,41 @@ function redo() {
   restoreSnapshot(drawHistory[historyIndex]);
 }
 
+// Inverte o SENTIDO da rota: a ordem dos trackpoints vira ao contrário e cada
+// geometria de segmento em cache é revertida (com o deckFlag junto, ponto a
+// ponto). Instantâneo e offline — NÃO re-roteia: é a MESMA linha percorrida
+// ao contrário (num modo OSRM ela pode passar na contramão de uma via de mão
+// única; re-rotear é só trocar o modo de roteamento, que já re-roteia tudo).
+// As métricas/energia recalculam sozinhas pro novo sentido (redrawAndMetrics
+// lê a geometria montada na ordem de percurso).
+function reverseTraceDirection() {
+  if (trackpoints.length < 2 || previewMode) return;
+  pendingRouteSeq++; // invalida re-roteamentos OSRM em voo (indexam a ordem antiga)
+  const old = trackpoints;
+  const n = old.length;
+  const reversed = old.slice().reverse();
+  // Calcula todos os caminhos novos ANTES de atribuir — old/reversed
+  // compartilham os mesmos objetos trackpoint.
+  // old[i].pathFromPrev cobre old[i-1]→old[i]; o elemento na posição nova j
+  // é old[n-1-j], cujo anterior novo é old[n-j] — o caminho entre eles é o
+  // pathFromPrev de old[n-j], revertido.
+  const newPaths = reversed.map((tp, j) => {
+    if (j === 0) return null;
+    const src = old[n - j].pathFromPrev;
+    if (!src) {
+      return straightPath(reversed[j - 1].marker.getLatLng(), tp.marker.getLatLng());
+    }
+    const path = src.map((p) => [p[0], p[1]]).reverse();
+    if (src.deckFlag) path.deckFlag = [...src.deckFlag].reverse();
+    return path;
+  });
+  reversed.forEach((tp, j) => { tp.pathFromPrev = newPaths[j]; });
+  trackpoints = reversed;
+  redrawAndMetrics();
+  updateTraceControls();
+  pushHistory();
+}
+
 function restoreSnapshot(snap) {
   for (const t of trackpoints) map.removeLayer(t.marker);
   trackpoints = [];
@@ -10622,6 +10950,7 @@ function restoreSnapshot(snap) {
 function updateTraceControls() {
   traceUndo.disabled = historyIndex <= 0;
   traceRedo.disabled = historyIndex >= drawHistory.length - 1;
+  if (traceReverse) traceReverse.disabled = trackpoints.length < 2;
   if (traceCount) {
     const n = trackpoints.length;
     traceCount.textContent = `${n} ponto${n === 1 ? '' : 's'}`;

@@ -1461,6 +1461,93 @@ body.drawing .draft-line:active { cursor: grabbing; }
 /* Modo visualização ("Ver"): some com os pontos e rótulos do traçado. */
 body.trace-preview .trackpoint-marker,
 body.trace-preview .tp-label { display: none !important; }
+
+/* ── Busca de endereços (🔍 geocoding) ───────────────────────────────────── */
+/* O botão vive na coluna de controles top-left do Leaflet (irmão do
+   header-toggle e do zoom); o painel é filho do container do mapa e é
+   ancorado ao lado do botão via JS (positionGeoSearchPanel). */
+.geo-search-btn {
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #fff;
+  color: #333;
+  font-size: 15px;
+  cursor: pointer;
+  padding: 0;
+}
+.geo-search-btn:hover { background: #f4f4f4; }
+.geo-search-btn[aria-pressed='true'] { background: #d8ecff; }
+.geo-search-panel {
+  position: absolute;
+  z-index: 1100; /* acima dos panes e controles do mapa */
+  width: 320px;
+  max-width: calc(100vw - 16px);
+  padding: 6px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  box-shadow: var(--shadow);
+  font-size: 12px;
+}
+.geo-search-panel[hidden] { display: none; }
+.geo-search-panel input[type='search'] {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 5px 8px;
+  font-size: 13px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+#geo-search-results {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+#geo-search-results li {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+#geo-search-results li:hover,
+#geo-search-results li.is-active {
+  background: rgba(45, 169, 255, 0.18);
+}
+.geo-search-label { font-weight: 600; }
+.geo-search-detail { opacity: 0.7; font-size: 11px; }
+.geo-search-status { margin: 6px 2px 2px; opacity: 0.8; }
+.geo-search-attrib { margin: 6px 2px 0; font-size: 10px; opacity: 0.6; }
+.geo-search-attrib a { color: inherit; }
+/* Popup do pino temporário (resultado escolhido fora do editor). */
+.geo-search-popup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 230px;
+}
+.geo-search-popup button {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.geo-search-popup button:hover {
+  background: rgba(45, 169, 255, 0.18);
+  border-color: var(--accent);
+}
 /* O highlight do trace-btn em modo Cancelar vem do `aria-pressed="true"`
    genérico (laranja), junto dos outros toggles (Animação, Camadas, Rotas).
    Veja a regra `.topbar-actions .secondary-btn[aria-pressed="true"]`. */
