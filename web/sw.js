@@ -13,7 +13,11 @@
 //                    stale data, not just a stale app shell.
 //   RUNTIME_CACHE — map tiles, OSRM, elevation, etc. stale-while-revalidate.
 
-const VERSION = 'phidro-v371';
+// v372 e não v371: os dois lados do merge bumparam pra v370 de forma
+// independente (o grafo do viário aqui, o link de rotas salvas no origin),
+// então "v371" já era ambíguo. v372 fica acima dos dois e ninguém pega cache
+// velho.
+const VERSION = 'phidro-v372';
 const STATIC_CACHE = `${VERSION}-static`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 

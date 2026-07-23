@@ -5676,10 +5676,11 @@ boot()
     routesStatus.textContent = `Falha: ${err.message}`;
   })
   .finally(() => {
-    // After the page is ready, decode any #st=... shared route from the URL.
-    tryLoadFromShareHash().catch((err) =>
-      console.warn('[share] hash load failed:', err),
-    );
+    // After the page is ready, decode any #st=... shared route from the URL;
+    // sem hash, tenta o deep link de rota salva no servidor (?route=<id>).
+    tryLoadFromShareHash()
+      .then((loaded) => (loaded ? true : tryLoadSavedRouteFromQuery()))
+      .catch((err) => console.warn('[share] hash load failed:', err));
     tryOpenTourFromQuery();
   });
 
@@ -10967,6 +10968,37 @@ async function tryLoadFromShareHash() {
   }
 }
 
+// Deep link de rota salva no servidor: /?route=<id> busca /saved-route/<id>
+// e aplica o mesmo estado de compartilhamento (formato do snapshotForShare).
+// Resolvido no CLIENTE como o ?tour= — a Cloudflare tira a query string antes
+// de chegar no origin, então o backend não pode responder por ela; o fetch
+// path-based (/saved-route/…) sempre chega. Espelha a semântica do #st=:
+// depois de carregar, tira o parâmetro da URL (um reload não clobbera as
+// edições) e NÃO adota o id como currentSavedRouteId — quem recebeu o link e
+// salvar cria uma rota NOVA em vez de sobrescrever a compartilhada.
+async function tryLoadSavedRouteFromQuery() {
+  const params = new URLSearchParams(location.search);
+  const id = params.get('route');
+  if (!id) return false;
+  try {
+    const res = await fetch(`./saved-route/${encodeURIComponent(id)}`, { cache: 'no-store' });
+    if (!res.ok) {
+      throw new Error(res.status === 404 ? 'rota não encontrada no servidor' : `HTTP ${res.status}`);
+    }
+    const state = await res.json();
+    if (!(await applyShareState(state))) throw new Error('estado sem waypoints');
+    params.delete('route');
+    const qs = params.toString();
+    window.history.replaceState(null, '', location.pathname + (qs ? `?${qs}` : '') + location.hash);
+    showToast(`Rota compartilhada carregada · ${trackpoints.length} pontos`);
+    return true;
+  } catch (err) {
+    console.warn(`[route] deep link ?route=${id} falhou:`, err);
+    showToast(`Não deu pra carregar a rota do link: ${err.message}`);
+    return false;
+  }
+}
+
 function buildGpx(latlngs, name, pois = [], extras = {}) {
   const isoNow = new Date().toISOString();
   const wpts = pois
@@ -11599,6 +11631,25 @@ async function backendAvailable() {
 // Id da rota carregada/salva do servidor — re-salvar atualiza ela no lugar.
 let currentSavedRouteId = null;
 
+// Link compartilhável de uma rota salva — deep link resolvido pelo cliente
+// (tryLoadSavedRouteFromQuery). Curto e estável, ao contrário do #st= que
+// embute o estado inteiro na URL.
+function savedRouteShareUrl(id) {
+  return `${location.origin}${location.pathname}?route=${encodeURIComponent(id)}`;
+}
+
+async function copySavedRouteLink(id) {
+  const url = savedRouteShareUrl(id);
+  try {
+    if (!navigator.clipboard) throw new Error('sem clipboard');
+    await navigator.clipboard.writeText(url);
+    showToast('Link da rota copiado');
+  } catch {
+    // Fallback: prompt com a URL pré-selecionada pra copiar na mão.
+    window.prompt('Copie o link:', url);
+  }
+}
+
 const saveServerBtn = document.getElementById('save-server');
 saveServerBtn?.addEventListener('click', async () => {
   if (trackpoints.length < 2) {
@@ -11616,7 +11667,15 @@ saveServerBtn?.addEventListener('click', async () => {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
     currentSavedRouteId = data.id;
-    showToast(`Rota salva no servidor · ${name || 'sem nome'}`);
+    // Já deixa o link compartilhável no clipboard; se o navegador negar
+    // (gesto de usuário expirado depois do await), o toast degrada e o link
+    // continua disponível pelo 🔗 do modal Carregar.
+    try {
+      await navigator.clipboard.writeText(savedRouteShareUrl(data.id));
+      showToast(`Rota salva no servidor · link copiado`);
+    } catch {
+      showToast(`Rota salva no servidor · ${name || 'sem nome'}`);
+    }
   } catch (err) {
     alert(`Não foi possível salvar no servidor: ${err.message}\n(requer o backend same-origin)`);
   }
@@ -11663,12 +11722,18 @@ function renderSavedRoutes(routes) {
     loadBtn.type = 'button';
     loadBtn.textContent = 'Carregar';
     loadBtn.addEventListener('click', () => loadSavedRoute(r.id, r.name));
+    const linkBtn = document.createElement('button');
+    linkBtn.type = 'button';
+    linkBtn.textContent = '🔗';
+    linkBtn.title = 'Copiar link compartilhável';
+    linkBtn.setAttribute('aria-label', `Copiar link compartilhável de ${r.name || r.id}`);
+    linkBtn.addEventListener('click', () => copySavedRouteLink(r.id));
     const delBtn = document.createElement('button');
     delBtn.type = 'button';
     delBtn.className = 'danger';
     delBtn.textContent = 'Excluir';
     delBtn.addEventListener('click', () => deleteSavedRoute(r.id, r.name));
-    li.append(label, loadBtn, delBtn);
+    li.append(label, loadBtn, linkBtn, delBtn);
     savedRoutesList.appendChild(li);
   }
 }
