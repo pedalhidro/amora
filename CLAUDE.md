@@ -105,6 +105,23 @@ one optional hosted deploy target, not a dependency.
   mode); upload with `gcloud storage cp -Z ignore/sampa-viario-graph.bin
   gs://telhas/viario/`; producer for the consumer described under
   `lib/graph-engine.js` above),
+  `audit-captura.py` (**o motor da auditoria de captura** — cruza
+  `tours.ttl` + `images.ttl` + o acervo do Drive e diz, por passeio, o que
+  falta nos três funis; `--sync` grava os passes de coleta via
+  `POST /upload-tour mode=patch`, `--slug-map` emite
+  `scripts/whatsapp-slug-map.json` pra revisão humana. Lê o Drive em modo
+  SOMENTE-LEITURA e só metadados — os arquivos são stubs do Google Drive e
+  abrir um força download; ler os 8 mil puxaria ~13 GiB. Ver `docs/CAPTURA.md`),
+  `import-activities-censo.py` (importa `ph:linkActivity` da planilha do censo,
+  casando por URL da rota → data exata → data ±1; NUNCA por número de edição,
+  que colide),
+  `backfill-activities.py` (deriva saída/chegada/movimento/energia medida a
+  partir da gravação GPS — **atenção: a gravação inclui o trajeto de casa até
+  o ponto de encontro; a janela do passeio é um SUBCONJUNTO dela.** No PH/81 a
+  gravação inteira dá 927 kJ contra os 328 kJ reais do pedal),
+  `ingest-drive.py` (fase 1 da ingestão do acervo: só os originais com EXIF/GPS),
+  `migrate-captura-fixes.py` (reparos de catálogo: arte em host local, datatype
+  de `ph:sequenceInSeries`),
   `gen-synthetic-rdf.py`, `mock_location.sh` (empurra posições de
   teste da localização ao vivo pro backend — random walk, 1 ponto/3 s; bate no
   remoto amora por padrão, `--local` p/ 127.0.0.1:8080; curl não precisa de
@@ -113,8 +130,11 @@ one optional hosted deploy target, not a dependency.
   `build-routes.mjs` are legacy artefacts pending removal — see "Open
   loose ends".
 - `docs/` — design-reference notes not loaded at runtime. `DESIGN.md`
-  (RDF substrate / ontology design rationale) and `ICON_DESIGN.md` (PWA
-  icon decisions). Excluded from the Cloud Run container.
+  (RDF substrate / ontology design rationale), `ICON_DESIGN.md` (PWA
+  icon decisions) and `CAPTURA.md` (**captura de dados**: os três funis
+  — chamado / censo / mídia —, o passe de coleta `ph:MediaSweep`, o ritual
+  semanal e o plano da fase 2 da ingestão do acervo). Excluded from the
+  Cloud Run container.
 - `capacitor/` — native iOS/Android shell (Capacitor) that wraps the SAME
   web app. `capacitor.config.json` points `server.url` at
   `https://amora.pedalhidrografi.co` (loads the published site —
@@ -467,6 +487,33 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
 - **No backend auth.** Anyone who can reach the server can upload/delete —
   this is an intentional decision (trusted access assumed). Don't reintroduce
   a token; restrict at the edge if needed.
+- **Captura: a ausência do passe é um dado, não um vazio.** O `ph:MediaSweep`
+  (nó derivado `pas:<slug>_sweep`) registra o passe de coleta no grupo do zap —
+  quando foi feito, quantos arquivos vieram, quem compartilhou. Os três estados
+  são semanticamente distintos e não devem ser colapsados: **nó ausente** = o
+  passe nunca foi feito; **`ph:collectedFileCount 0`** = foi feito e ninguém
+  compartilhou; **`n`** = n arquivos. Os contribuintes ficam como LITERAL (o
+  slug cru do nome do arquivo), não como IRI de pessoa — assim o passe nunca
+  trava esperando alguém ser cadastrado; a resolução é um join via
+  `schema:alternateName`. `ph:mediaCount` é a versão velha disso, está
+  `owl:deprecated`, e **não se escreve mais nele**. Ver `docs/CAPTURA.md`.
+- **Predicados que penduram em nó aninhado têm `rdfs:domain` da CLASSE DO NÓ.**
+  O validador roda com `inference="rdfs"`: um `rdfs:domain ph:Tour` num
+  predicado do nó do passe tiparia `pas:<slug>_sweep` como `ph:Tour`, jogando-o
+  na `ph:TourShape` (que exige título e data) → Violation. Vale pra
+  `ph:MediaSweep`, `ph:RouteReference`, `ph:SeriesEdition`.
+- **Um patch que não mexe na rota não rebusca a geometria.** `_sync_tour_route`
+  reusa os `latlngs` já em `routes.json` quando o `ph:linkRoute` não mudou, e
+  não reescreve o arquivo se a entrada ficou idêntica. Sem isso, escritas em
+  lote (87 passes, 87 gravações) viravam centenas de fetches de GPX no RWGPS +
+  centenas de rewrites de um JSON de 2 MB — e, com Object Versioning, cada
+  rewrite deixa uma geração noncurrent parada por 90 dias. Pra forçar a
+  rebusca: `scripts/build-routes.py`.
+- **`PUBLIC_BASE_URL`**: sem ela, o backend grava no catálogo o host pelo qual
+  o cliente chegou (`request.host_url`) — e um backend de dev assa
+  `http://localhost:8080/…` num `schema:image` que depois sobe pra produção
+  (foi o que aconteceu com o PH/96). Quem auto-hospeda deve setá-la. As shapes
+  avisam e o painel de captura mostra a arte local como lacuna.
 - **Ontology:** reuse consolidated vocabularies (schema.org, PROV-O, QUDT,
   GeoSPARQL, Dublin Core); mint `ph:` terms only for what is specific to
   Pedal Hidrográfico.

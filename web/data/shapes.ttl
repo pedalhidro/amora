@@ -337,6 +337,45 @@ ph:TourShape a sh:NodeShape ;
         sh:class schema:Person ;
         sh:message "Cada iniciante nominal deve ser schema:Person."@pt ;
     ] ;
+    # Narrativa do chamado. Ficava FORA das shapes — por isso 32% dos
+    # passeios não têm nenhuma. É o texto do anúncio, não um detalhe.
+    sh:property [
+        sh:path dcterms:description ;
+        sh:severity sh:Warning ;
+        sh:minCount 1 ;
+        sh:or ( [ sh:datatype xsd:string ] [ sh:datatype rdf:langString ] ) ;
+        sh:message "Passeio deveria ter narrativa (dcterms:description)."@pt ;
+    ] ;
+    # Arte do anúncio. Também ficava FORA das shapes — foi por isso que uma
+    # IRI `http://localhost:8080/…`, assada por um backend de dev e depois
+    # publicada, passou sem ninguém notar (PH/96).
+    #
+    # O host local é sh:Warning, NÃO sh:Violation, de propósito: quem
+    # auto-hospeda o amora num laptop (STORAGE_BACKEND=local) tem localhost
+    # como host legítimo, e uma Violation impediria essa pessoa de cadastrar
+    # passeios com arte. Quem tranca a porta é o `audit-captura.py`, que
+    # trata a IRI local como lacuna, e o painel, que a mostra em vermelho.
+    sh:property [
+        sh:path schema:image ;
+        sh:severity sh:Warning ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:nodeKind sh:IRI ;
+        sh:message "Passeio deveria ter arte de anúncio (schema:image) como IRI."@pt ;
+    ] ;
+    sh:property [
+        sh:path schema:image ;
+        sh:severity sh:Warning ;
+        sh:not [ sh:pattern "^(https?://(localhost|127\\.0\\.0\\.1|0\\.0\\.0\\.0)|file:)" ] ;
+        sh:message "Arte do anúncio aponta pra um host local — essa IRI não resolve pra ninguém fora da sua máquina. Configure PUBLIC_BASE_URL no backend e reenvie a arte."@pt ;
+    ] ;
+    sh:property [
+        sh:path ph:mediaSweep ;
+        sh:severity sh:Warning ;
+        sh:maxCount 1 ;
+        sh:class ph:MediaSweep ;
+        sh:message "Passe de coleta deve apontar pra um ph:MediaSweep."@pt ;
+    ] ;
     # Constraint cross-tour: a mesma pessoa não pode ser iniciante em
     # dois passeios da mesma série. Avalia sobre o grafo mesclado
     # (validador já mescla catálogo + TTL recebido), então enxerga
@@ -378,6 +417,51 @@ ph:RouteReferenceShape a sh:NodeShape ;
         sh:message "Rota precisa de provedor (schema:provider — ex.: ph:rwgps, ph:strava)."@pt ;
     ] .
 
+# Passe de coleta de mídia — o nó pas:<slug>_sweep.
+# A EXISTÊNCIA do nó já é o marcador ("o passe foi feito"), então a data é
+# obrigatória: um passe sem data não informa nada que a mera presença do nó
+# já não informasse. A contagem pode ser 0 — significa "fui buscar e ninguém
+# tinha compartilhado nada", que é diferente de nó ausente ("não fui buscar").
+ph:MediaSweepShape a sh:NodeShape ;
+    sh:targetClass ph:MediaSweep ;
+    sh:property [
+        sh:path dcterms:date ;
+        sh:severity sh:Violation ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:dateTime ;
+        sh:message "Passe de coleta precisa da data em que foi feito."@pt ;
+    ] ;
+    sh:property [
+        sh:path ph:collectedFileCount ;
+        sh:severity sh:Violation ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:integer ;
+        sh:minInclusive 0 ;
+        sh:message "Passe de coleta precisa da contagem de arquivos (0 é válido e significativo)."@pt ;
+    ] ;
+    sh:property [
+        sh:path ph:archiveFolder ;
+        sh:severity sh:Warning ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:string ;
+        sh:message "Pasta do acervo deve ser o nome da pasta na Biblioteca Hidrográfica."@pt ;
+    ] ;
+    sh:property [
+        sh:path ph:sweepContributor ;
+        sh:severity sh:Warning ;
+        sh:datatype xsd:string ;
+        sh:message "Cada contribuinte do passe é o slug (handle) de quem compartilhou."@pt ;
+    ] ;
+    sh:property [
+        sh:path prov:wasAssociatedWith ;
+        sh:severity sh:Warning ;
+        sh:maxCount 1 ;
+        sh:class schema:Person ;
+        sh:message "Quem passou o zap deve ser schema:Person."@pt ;
+    ] .
+
 # Edição de série (ph:SeriesEdition) — o IRI …/passeio/<ES>/<n> é a chave natural
 # da edição. Cada edição é realizada por EXATAMENTE um passeio (via
 # ph:inSeriesEdition, caminho inverso): uma colisão de numeração (dois pedais
@@ -406,8 +490,15 @@ ph:SeriesEditionShape a sh:NodeShape ;
         sh:severity sh:Warning ;
         sh:minCount 1 ;
         sh:maxCount 1 ;
-        sh:datatype xsd:positiveInteger ;
-        sh:message "Edição precisa da posição na sequência (ph:sequenceInSeries)."@pt ;
+        # xsd:integer + minInclusive, NÃO xsd:positiveInteger: um inteiro solto
+        # em Turtle (`ph:sequenceInSeries 96`) é xsd:integer, e nenhum emissor
+        # do repo escreve o typed literal. A shape exigia positiveInteger e por
+        # isso reprovava TODAS as 114 edições do catálogo — uma constraint morta,
+        # avisando sempre, que só ensinava a ignorar os avisos. Mesmo idioma de
+        # ph:countAttendee/ph:countNewcomer.
+        sh:datatype xsd:integer ;
+        sh:minInclusive 1 ;
+        sh:message "Edição precisa da posição na sequência (ph:sequenceInSeries), inteiro ≥ 1."@pt ;
     ] .
 
 ph:GeoCoordinatesShape a sh:NodeShape ;

@@ -25,7 +25,7 @@ pas:05cr6685 a ph:Tour ;
     ph:linkRoute pas:05cr6685_route ;
     ph:measuredEnergy 262.0 ;
     ph:movingDuration "PT1H51M"^^xsd:duration ;
-    schema:image <http://localhost:8080/tour_assets/ph96/announcement.jpg> .
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/ph96/announcement.jpg> .
 
 pas:0vcw4tnh a ph:Tour ;
     dcterms:date "2025-09-02T20:00:00-03:00"^^xsd:dateTime ;
@@ -43,10 +43,12 @@ O Antonico nasce em Paraisópolis, passando sob a área do Estádio do Morumbi(s
     ph:departedAt "2025-09-02T20:28:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 276.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/53> ;
+    ph:linkActivity "https://www.strava.com/activities/15678489119"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DOGOOV5joSC/"^^xsd:anyURI ;
     ph:linkRoute pas:0vcw4tnh_route ;
     ph:measuredEnergy 300.0 ;
     ph:mediaCount 15 ;
+    ph:mediaSweep pas:0vcw4tnh_sweep ;
     ph:movingDuration "PT1H18M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/60/announcement.jpg> .
 
@@ -59,6 +61,7 @@ pas:0zx5nzpj a ph:Tour ;
     ph:countNewcomer 1 ;
     ph:departedAt "2026-03-04T20:46:00-03:00"^^xsd:dateTime ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/82> ;
+    ph:linkActivity "https://www.strava.com/activities/17608489037"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DVbP7QsDiYA/"^^xsd:anyURI ;
     ph:linkRoute pas:0zx5nzpj_route ;
     ph:measuredEnergy 347.4 ;
@@ -78,10 +81,12 @@ Passeamos por estes altos no meio do luar crescente pelo tempo e caminho que é 
     ph:departedAt "2025-08-19T20:28:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 373.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/51> ;
+    ph:linkActivity "https://www.strava.com/activities/15519701128"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DNgw3pBBoaV/?img_index=1"^^xsd:anyURI ;
     ph:linkRoute pas:10j3w60x_route ;
     ph:measuredEnergy 460.0 ;
     ph:mediaCount 76 ;
+    ph:mediaSweep pas:10j3w60x_sweep ;
     ph:movingDuration "PT1H50M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/57/announcement.jpg> .
 
@@ -98,9 +103,11 @@ pas:140b5xtt a ph:Tour ;
     ph:departedAt "2025-01-14T20:36:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 370.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/22> ;
+    ph:linkActivity "https://www.strava.com/activities/13358311839"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DEz0L0vud94/?img_index=1"^^xsd:anyURI ;
     ph:linkRoute pas:140b5xtt_route ;
     ph:mediaCount 41 ;
+    ph:mediaSweep pas:140b5xtt_sweep ;
     ph:movingDuration "PT2H"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/26/announcement.jpg> .
 
@@ -129,6 +136,7 @@ Por fim, margeando o córrego Boa Vista, sufocado pela Av. 23 de maio, cruzando 
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/94> ;
     ph:linkInstagram "https://www.instagram.com/p/DY7f96pDuCJ/?igsh=ZXlwYnVtczR6cWwy"^^xsd:anyURI ;
     ph:linkRoute pas:1b9zreed_route ;
+    ph:mediaSweep pas:1b9zreed_sweep ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/Ph94/announcement.jpg> .
 
 pas:1fp9pvd4 a ph:Tour ;
@@ -142,9 +150,11 @@ pas:1fp9pvd4 a ph:Tour ;
     ph:departedAt "2024-11-19T20:21:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 523.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/14> ;
+    ph:linkActivity "https://www.strava.com/activities/12941059108"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DChWox3ObhU/"^^xsd:anyURI ;
     ph:linkRoute pas:1fp9pvd4_route ;
     ph:mediaCount 42 ;
+    ph:mediaSweep pas:1fp9pvd4_sweep ;
     ph:movingDuration "PT1H52M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/14/announcement.jpg> .
 
@@ -163,10 +173,12 @@ Contornado este seco e alto meandro de terra, não demora para termos contato co
     ph:departedAt "2025-08-12T20:20:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 360.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/50> ;
+    ph:linkActivity "https://www.strava.com/activities/15440098422"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DNPJZ3JOtPZ/"^^xsd:anyURI ;
     ph:linkRoute pas:1g186aee_route ;
     ph:measuredEnergy 410.0 ;
     ph:mediaCount 65 ;
+    ph:mediaSweep pas:1g186aee_sweep ;
     ph:movingDuration "PT1H52M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/56/announcement.jpg> .
 
@@ -183,9 +195,11 @@ Sairemos na Praça Roosevelt - o fundão da nascente do Córrego Anhanguera, e d
     ph:departedAt "2025-01-28T20:20:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 340.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/24> ;
+    ph:linkActivity "https://www.strava.com/activities/13480213979"^^xsd:anyURI ;
     ph:linkRoute pas:1q3wkxmh_route ;
     ph:measuredEnergy 301.9 ;
     ph:mediaCount 7 ;
+    ph:mediaSweep pas:1q3wkxmh_sweep ;
     ph:movingDuration "PT1H40M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/29/announcement.jpg> .
 
@@ -196,6 +210,7 @@ pas:1wb9e39g a ph:Tour ;
     ph:countAttendee 15 ;
     ph:countNewcomer 5 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/83> ;
+    ph:linkActivity "https://www.strava.com/activities/17774423605"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DWB1tpeDqJO/"^^xsd:anyURI ;
     ph:linkRoute pas:1wb9e39g_route .
 
@@ -207,9 +222,11 @@ pas:2qv2h9ak a ph:Tour ;
     ph:energyEstimate 149.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/BP/3>,
         <https://id.pedalhidrografi.co/passeio/PH/76> ;
+    ph:linkActivity "https://www.strava.com/activities/17239828627"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DUJI_AnjrgP/"^^xsd:anyURI ;
     ph:linkRoute pas:2qv2h9ak_route ;
-    ph:mediaCount 53 .
+    ph:mediaCount 53 ;
+    ph:mediaSweep pas:2qv2h9ak_sweep .
 
 pas:32gatmca a ph:Tour ;
     dcterms:date "2026-04-21T00:00:00-03:00"^^xsd:dateTime ;
@@ -237,9 +254,11 @@ Começamos no metro Conceição, Linha Azul, no alto do Caaguaçu, com o Ipirang
     ph:departedAt "2025-02-11T20:10:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 291.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/26> ;
+    ph:linkActivity "https://www.strava.com/activities/13605202516"^^xsd:anyURI ;
     ph:linkRoute pas:3sk51hs2_route ;
     ph:measuredEnergy 259.8 ;
     ph:mediaCount 45 ;
+    ph:mediaSweep pas:3sk51hs2_sweep ;
     ph:movingDuration "PT1H30M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/31/announcement.jpg> .
 
@@ -258,10 +277,12 @@ No Passo da Vaca, transportamo-nos para o vale do Baixo Cabuçu sem sequer notar
     ph:departedAt "2025-05-27T20:35:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 317.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/38> ;
+    ph:linkActivity "https://www.strava.com/activities/14616955042"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DKKpRsjOxkw/"^^xsd:anyURI ;
     ph:linkRoute pas:4d184nra_route ;
     ph:measuredEnergy 264.4 ;
     ph:mediaCount 91 ;
+    ph:mediaSweep pas:4d184nra_sweep ;
     ph:movingDuration "PT1H48M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/43/announcement.jpg> .
 
@@ -280,10 +301,12 @@ Transladamos para o outro lado deste grande rio, fazendo breve passagem pela Gua
     ph:departedAt "2025-09-16T20:26:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 400.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/55> ;
+    ph:linkActivity "https://www.strava.com/activities/15838413153"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DOoaZqEjqKg/"^^xsd:anyURI ;
     ph:linkRoute pas:4hgp9tqv_route ;
     ph:measuredEnergy 430.0 ;
     ph:mediaCount 201 ;
+    ph:mediaSweep pas:4hgp9tqv_sweep ;
     ph:movingDuration "PT1H58M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/62/announcement.jpg> .
 
@@ -347,9 +370,11 @@ Convictos que somos estendeu-se a rota, mesclando-a com o roteiro do referido ri
     ph:countNewcomer 0 ;
     ph:energyEstimate 340.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/41> ;
+    ph:linkActivity "https://www.strava.com/activities/14838686871"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DLALcgZOaN7/"^^xsd:anyURI ;
     ph:linkRoute pas:5q98rxhp_route ;
     ph:mediaCount 77 ;
+    ph:mediaSweep pas:5q98rxhp_sweep ;
     ph:movingDuration "PT2H"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/47/announcement.jpg> .
 
@@ -363,9 +388,11 @@ pas:5vrpn785 a ph:Tour ;
     ph:departedAt "2024-09-09T20:11:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 142.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/1> ;
+    ph:linkActivity "https://www.strava.com/activities/12371333101"^^xsd:anyURI ;
     ph:linkRoute pas:5vrpn785_route ;
     ph:measuredEnergy 140.0 ;
     ph:mediaCount 2 ;
+    ph:mediaSweep pas:5vrpn785_sweep ;
     ph:movingDuration "PT1H"^^xsd:duration .
 
 pas:5z6w47dx a ph:Tour ;
@@ -378,9 +405,11 @@ pas:5z6w47dx a ph:Tour ;
     ph:departedAt "2024-10-22T20:54:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 271.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/7> ;
+    ph:linkActivity "https://www.strava.com/activities/12722429137"^^xsd:anyURI ;
     ph:linkRoute pas:5z6w47dx_route ;
     ph:measuredEnergy 183.1 ;
     ph:mediaCount 56 ;
+    ph:mediaSweep pas:5z6w47dx_sweep ;
     ph:movingDuration "PT2H"^^xsd:duration .
 
 pas:65ptagq2 a ph:Tour ;
@@ -396,10 +425,12 @@ Começamos descendo do Caaguaçu até o Rio Verde II pegando um atalho no Hospit
     ph:departedAt "2024-12-17T20:17:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 436.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/20> ;
+    ph:linkActivity "https://www.strava.com/activities/13139317867"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DDrYzskuaZy/"^^xsd:anyURI ;
     ph:linkRoute pas:65ptagq2_route ;
     ph:measuredEnergy 424.5 ;
     ph:mediaCount 114 ;
+    ph:mediaSweep pas:65ptagq2_sweep ;
     ph:movingDuration "PT2H15M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/24/announcement.jpg> .
 
@@ -412,6 +443,7 @@ pas:6myfn5e9 a ph:Tour ;
     ph:energyEstimate 150.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/6> ;
     ph:mediaCount 11 ;
+    ph:mediaSweep pas:6myfn5e9_sweep ;
     ph:movingDuration "PT1H"^^xsd:duration .
 
 pas:7d5ss8m1 a ph:Tour ;
@@ -433,10 +465,12 @@ Para finalizar, desceremos ao Anhangabaú, palco da celebração, neste 25 de no
     ph:departedAt "2025-11-25T20:27:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 267.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/66> ;
+    ph:linkActivity "https://www.strava.com/activities/16568405964"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DRfuROkgcc5/?img_index=1"^^xsd:anyURI ;
     ph:linkRoute pas:7d5ss8m1_route ;
     ph:measuredEnergy 215.0 ;
     ph:mediaCount 37 ;
+    ph:mediaSweep pas:7d5ss8m1_sweep ;
     ph:movingDuration "PT1H26M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/73/announcement.jpg> .
 
@@ -453,10 +487,12 @@ pas:7r767mt2 a ph:Tour ;
     ph:departedAt "2025-08-05T20:25:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 381.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/49> ;
+    ph:linkActivity "https://www.strava.com/activities/15359926735"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DM9AQl_uj-j/"^^xsd:anyURI ;
     ph:linkRoute pas:7r767mt2_route ;
     ph:measuredEnergy 420.0 ;
     ph:mediaCount 109 ;
+    ph:mediaSweep pas:7r767mt2_sweep ;
     ph:movingDuration "PT1H42M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/55/announcement.jpg> .
 
@@ -468,7 +504,8 @@ pas:7rnbkmfk a ph:Tour ;
     ph:countNewcomer 0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/80> ;
     ph:linkInstagram "https://www.instagram.com/p/DU6gCmNARaV/"^^xsd:anyURI ;
-    ph:mediaCount 7 .
+    ph:mediaCount 7 ;
+    ph:mediaSweep pas:7rnbkmfk_sweep .
 
 pas:81z8cp2q a ph:Tour ;
     dcterms:date "2026-01-28T20:00:00-03:00"^^xsd:dateTime ;
@@ -482,10 +519,12 @@ pas:81z8cp2q a ph:Tour ;
     ph:departedAt "2026-01-28T20:44:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 330.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/75> ;
+    ph:linkActivity "https://www.strava.com/activities/17212878506"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DUDeC9sjogH/"^^xsd:anyURI ;
     ph:linkRoute pas:81z8cp2q_route ;
     ph:measuredEnergy 239.9 ;
     ph:mediaCount 100 ;
+    ph:mediaSweep pas:81z8cp2q_sweep ;
     ph:movingDuration "PT2H4M"^^xsd:duration .
 
 pas:84cae3s4 a ph:Tour ;
@@ -510,9 +549,11 @@ Vamos pedalar pelo senhor Hélio. Vamos pedalar pelo Tiquatira. Vamos pedalar pe
     ph:departedAt "2025-04-08T20:51:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 294.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/31> ;
+    ph:linkActivity "https://www.strava.com/activities/14122827694"^^xsd:anyURI ;
     ph:linkRoute pas:84cae3s4_route ;
     ph:measuredEnergy 290.1 ;
     ph:mediaCount 67 ;
+    ph:mediaSweep pas:84cae3s4_sweep ;
     ph:movingDuration "PT1H36M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/36/announcement.jpg> .
 
@@ -531,10 +572,12 @@ Uma vez separados da planície e estando situados neste divisor de águas e solo
     ph:departedAt "2025-05-20T20:14:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 424.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/37> ;
+    ph:linkActivity "https://www.strava.com/activities/14546404625"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DJ4WBFBODqO/"^^xsd:anyURI ;
     ph:linkRoute pas:8xwbzhxh_route ;
     ph:measuredEnergy 421.0 ;
     ph:mediaCount 123 ;
+    ph:mediaSweep pas:8xwbzhxh_sweep ;
     ph:movingDuration "PT1H31M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/42/announcement.jpg> .
 
@@ -552,10 +595,12 @@ Se o vale ainda estivesse ativo, a nascente do Rio Tietê poderia ser considerad
     ph:departedAt "2025-11-30T09:31:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 918.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/67> ;
+    ph:linkActivity "https://www.strava.com/activities/16613940507"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DRnmMqYgSxz/"^^xsd:anyURI ;
     ph:linkRoute pas:9qyjjshm_route ;
     ph:measuredEnergy 856.0 ;
     ph:mediaCount 100 ;
+    ph:mediaSweep pas:9qyjjshm_sweep ;
     ph:movingDuration "PT3H18M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/74/announcement.jpg> .
 
@@ -615,10 +660,12 @@ Reaja com joinha pra dizer que vai! E com chuva pra dizer que vai mesmo com chuv
     ph:departedAt "2024-10-24T20:47:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 300.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/8> ;
+    ph:linkActivity "https://www.strava.com/activities/12738152353"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DBhH6IpPZO3/"^^xsd:anyURI ;
     ph:linkRoute pas:acjb6h8s_route ;
     ph:measuredEnergy 163.9 ;
     ph:mediaCount 45 ;
+    ph:mediaSweep pas:acjb6h8s_sweep ;
     ph:movingDuration "PT1H26M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/8/announcement.jpg> .
 
@@ -640,10 +687,12 @@ Ainda na cidade, cruzaremos a Rodovia dos Imigrantes por baixo - a segunda rodov
     ph:departedAt "2025-07-08T20:26:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 393.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/44> ;
+    ph:linkActivity "https://www.strava.com/activities/15052709921"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/pedalhidrografico/p/DL0tL4Yu7I7/"^^xsd:anyURI ;
     ph:linkRoute pas:aqvmvk5f_route ;
     ph:measuredEnergy 482.0 ;
     ph:mediaCount 77 ;
+    ph:mediaSweep pas:aqvmvk5f_sweep ;
     ph:movingDuration "PT1H55M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/50/announcement.jpg> .
 
@@ -656,7 +705,9 @@ pas:avenpksx a ph:Tour ;
     ph:departedAt "2026-02-01T09:38:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 298.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/SESC/1> ;
+    ph:linkActivity "https://www.strava.com/activities/17252852597"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DUBptxLEW6g/?img_index=1"^^xsd:anyURI ;
+    ph:mediaSweep pas:avenpksx_sweep ;
     ph:movingDuration "PT2H"^^xsd:duration .
 
 pas:b4rs49rh a ph:Tour ;
@@ -676,9 +727,11 @@ Devidamente hidratados, cruzamos um nano divisor de águas para acessar o braço
     ph:departedAt "2025-03-11T20:00:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 206.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/28> ;
+    ph:linkActivity "https://www.strava.com/activities/13857956230"^^xsd:anyURI ;
     ph:linkRoute pas:b4rs49rh_route ;
     ph:measuredEnergy 202.6 ;
     ph:mediaCount 83 ;
+    ph:mediaSweep pas:b4rs49rh_sweep ;
     ph:movingDuration "PT1H7M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/33/announcement.jpg> .
 
@@ -702,9 +755,11 @@ pas:bs81z5bx a ph:Tour ;
     ph:energyEstimate 204.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/BP/3-5>,
         <https://id.pedalhidrografi.co/passeio/PH/79> ;
+    ph:linkActivity "https://www.strava.com/activities/17443151616"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DUogixyDldM/?img_index=1"^^xsd:anyURI ;
     ph:linkRoute pas:bs81z5bx_route ;
-    ph:mediaCount 55 .
+    ph:mediaCount 55 ;
+    ph:mediaSweep pas:bs81z5bx_sweep .
 
 pas:c0spydxq a ph:Tour ;
     dcterms:date "2026-03-25T20:00:00-03:00"^^xsd:dateTime ;
@@ -737,9 +792,11 @@ pas:c0t00a05 a ph:Tour ;
     ph:departedAt "2024-10-08T20:16:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 245.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/5> ;
+    ph:linkActivity "https://www.strava.com/activities/12610694157"^^xsd:anyURI ;
     ph:linkRoute pas:c0t00a05_route ;
     ph:measuredEnergy 246.3 ;
     ph:mediaCount 63 ;
+    ph:mediaSweep pas:c0t00a05_sweep ;
     ph:movingDuration "PT1H30M"^^xsd:duration .
 
 pas:cwnbf0jz a ph:Tour ;
@@ -750,8 +807,10 @@ pas:cwnbf0jz a ph:Tour ;
     ph:countNewcomer 0 ;
     ph:energyEstimate 1200.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/S/5> ;
+    ph:linkActivity "https://www.strava.com/activities/15642221584"^^xsd:anyURI ;
     ph:measuredEnergy 1500.0 ;
     ph:mediaCount 321 ;
+    ph:mediaSweep pas:cwnbf0jz_sweep ;
     ph:movingDuration "PT4H8M"^^xsd:duration .
 
 pas:e12025y8 a ph:Tour ;
@@ -776,9 +835,11 @@ No caminho, cruzamos nomes que soam como versos: Itararé, Poesia, Charque Grand
     ph:departedAt "2025-04-22T20:20:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 351.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/34> ;
+    ph:linkActivity "https://www.strava.com/activities/14258680358"^^xsd:anyURI ;
     ph:linkRoute pas:e12025y8_route ;
     ph:measuredEnergy 349.1 ;
     ph:mediaCount 52 ;
+    ph:mediaSweep pas:e12025y8_sweep ;
     ph:movingDuration "PT1H48M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/39/announcement.jpg> .
 
@@ -802,10 +863,12 @@ As hills forming the canyons around Sausal Creek dissipate away, the time is nea
     ph:departedAt "2025-10-17T17:39:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 416.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/61> ;
+    ph:linkActivity "https://www.strava.com/activities/16176020618"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DPzHuRhAVjW/"^^xsd:anyURI ;
     ph:linkRoute pas:e3cxpdtn_route ;
     ph:measuredEnergy 707.0 ;
     ph:mediaCount 165 ;
+    ph:mediaSweep pas:e3cxpdtn_sweep ;
     ph:movingDuration "PT2H3M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/67/announcement.jpg> .
 
@@ -825,10 +888,12 @@ Já tendo percorrido metade do caminho, transpostamo-nos ao riacho da aldeia, af
     ph:departedAt "2025-06-24T20:52:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 349.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/42> ;
+    ph:linkActivity "https://www.strava.com/activities/14907288715"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DLSGeNfuQk6/"^^xsd:anyURI ;
     ph:linkRoute pas:erekmg3j_route ;
     ph:measuredEnergy 389.5 ;
     ph:mediaCount 81 ;
+    ph:mediaSweep pas:erekmg3j_sweep ;
     ph:movingDuration "PT1H52M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/48/announcement.jpg> .
 
@@ -840,8 +905,10 @@ pas:eyve1vph a ph:Tour ;
     ph:countNewcomer 1 ;
     ph:energyEstimate 650.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/S/3> ;
+    ph:linkActivity "https://www.strava.com/activities/13107838743"^^xsd:anyURI ;
     ph:linkRoute pas:eyve1vph_route ;
     ph:mediaCount 70 ;
+    ph:mediaSweep pas:eyve1vph_sweep ;
     ph:movingDuration "PT2H35M"^^xsd:duration .
 
 pas:fexen1sa a ph:Tour ;
@@ -857,10 +924,12 @@ Iniciaremos a partida da praça no Terminal Lapa, no qual acessamos a confluênc
     ph:departedAt "2024-12-10T20:33:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 330.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/19> ;
+    ph:linkActivity "https://www.strava.com/activities/13090380478"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DDXvWs7ByTI/"^^xsd:anyURI ;
     ph:linkRoute pas:fexen1sa_route ;
     ph:measuredEnergy 327.8 ;
     ph:mediaCount 58 ;
+    ph:mediaSweep pas:fexen1sa_sweep ;
     ph:movingDuration "PT1H20M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/22/announcement.jpg> .
 
@@ -879,10 +948,12 @@ Lá, testemunhamos um aterramento vultoso que soterra o riacho Clara. Continuamo
     ph:departedAt "2025-09-24T20:28:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 343.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/57> ;
+    ph:linkActivity "https://www.strava.com/activities/15916671235"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DO88VWtDtJj/"^^xsd:anyURI ;
     ph:linkRoute pas:ggn4hx6t_route ;
     ph:measuredEnergy 406.0 ;
     ph:mediaCount 179 ;
+    ph:mediaSweep pas:ggn4hx6t_sweep ;
     ph:movingDuration "PT1H44M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/64/announcement.jpg> .
 
@@ -895,7 +966,8 @@ pas:gw6hn4mk a ph:Tour ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/77> ;
     ph:linkInstagram "https://www.instagram.com/p/DUTydjOgXYq/"^^xsd:anyURI ;
     ph:linkRoute pas:gw6hn4mk_route ;
-    ph:mediaCount 29 .
+    ph:mediaCount 29 ;
+    ph:mediaSweep pas:gw6hn4mk_sweep .
 
 pas:gz6rv9a9 a ph:Tour ;
     dcterms:date "2026-05-13T20:00:00-03:00"^^xsd:dateTime ;
@@ -928,10 +1000,12 @@ A rota começa por estar junto com as águas do Guarapiranga até desembarcar de
     ph:departedAt "2024-11-23T08:13:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 789.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/15> ;
+    ph:linkActivity "https://www.strava.com/activities/12967661042"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DCpl4FQOqFc/"^^xsd:anyURI ;
     ph:linkRoute pas:hnj18jf3_route ;
     ph:measuredEnergy 651.8 ;
     ph:mediaCount 227 ;
+    ph:mediaSweep pas:hnj18jf3_sweep ;
     ph:movingDuration "PT3H15M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/17/announcement.jpg> .
 
@@ -953,10 +1027,12 @@ Mudamos o curso a fim de acessar o Rio Perus enquanto este está acima do planal
     ph:departedAt "2026-02-24T20:35:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 280.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/81> ;
+    ph:linkActivity "https://www.strava.com/activities/17513421068"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DVIEJtmjmCK/?img_index=1"^^xsd:anyURI ;
     ph:linkRoute pas:j62vy0kx_route ;
     ph:measuredEnergy 328.0 ;
     ph:mediaCount 104 ;
+    ph:mediaSweep pas:j62vy0kx_sweep ;
     ph:movingDuration "PT1H29M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/89/announcement.jpg> .
 
@@ -968,8 +1044,10 @@ pas:j9xwshxe a ph:Tour ;
     ph:countNewcomer 0 ;
     ph:energyEstimate 1700.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/12> ;
+    ph:linkActivity "https://www.strava.com/activities/12863105194"^^xsd:anyURI ;
     ph:linkRoute pas:j9xwshxe_route ;
     ph:mediaCount 222 ;
+    ph:mediaSweep pas:j9xwshxe_sweep ;
     ph:movingDuration "PT5H20M"^^xsd:duration .
 
 pas:jkjx9f82 a ph:Tour ;
@@ -980,7 +1058,9 @@ pas:jkjx9f82 a ph:Tour ;
     ph:countNewcomer 1 ;
     ph:energyEstimate 520.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/BP/1> ;
+    ph:linkActivity "https://www.strava.com/activities/12947693607"^^xsd:anyURI ;
     ph:mediaCount 2 ;
+    ph:mediaSweep pas:jkjx9f82_sweep ;
     ph:movingDuration "PT3H"^^xsd:duration .
 
 pas:jrnf8kvk a ph:Tour ;
@@ -996,9 +1076,11 @@ A rota terá inicio nas proximidades da colina histórica paulistana, nos quais 
     ph:departedAt "2025-01-21T20:24:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 441.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/23> ;
+    ph:linkActivity "https://www.strava.com/activities/13419610923"^^xsd:anyURI ;
     ph:linkRoute pas:jrnf8kvk_route ;
     ph:measuredEnergy 435.3 ;
     ph:mediaCount 48 ;
+    ph:mediaSweep pas:jrnf8kvk_sweep ;
     ph:movingDuration "PT2H6M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/28/announcement.jpg> .
 
@@ -1018,10 +1100,12 @@ Após isso, cada rio que se segue traz consigo uma nova grande crista, formando 
     ph:departedAt "2025-12-17T20:58:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 275.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/70> ;
+    ph:linkActivity "https://www.strava.com/activities/16773001621"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DSVgvNRAQu9/"^^xsd:anyURI ;
     ph:linkRoute pas:k7fgsn4t_route ;
     ph:measuredEnergy 303.0 ;
     ph:mediaCount 64 ;
+    ph:mediaSweep pas:k7fgsn4t_sweep ;
     ph:movingDuration "PT1H22M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/77/announcement.jpg> .
 
@@ -1033,8 +1117,10 @@ pas:kj5r72a5 a ph:Tour ;
     ph:countNewcomer 1 ;
     ph:energyEstimate 417.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/4> ;
+    ph:linkActivity "https://www.strava.com/activities/12553198540"^^xsd:anyURI ;
     ph:linkRoute pas:kj5r72a5_route ;
     ph:mediaCount 43 ;
+    ph:mediaSweep pas:kj5r72a5_sweep ;
     ph:movingDuration "PT1H30M"^^xsd:duration .
 
 pas:kqxvk5jj a ph:Tour ;
@@ -1052,9 +1138,11 @@ Lá no alto deste planalto, seguimos pelos Alpes do Jaraguá, que separa as águ
     ph:departedAt "2025-04-01T20:25:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 323.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/30> ;
+    ph:linkActivity "https://www.strava.com/activities/14054565189"^^xsd:anyURI ;
     ph:linkRoute pas:kqxvk5jj_route ;
     ph:measuredEnergy 322.5 ;
     ph:mediaCount 99 ;
+    ph:mediaSweep pas:kqxvk5jj_sweep ;
     ph:movingDuration "PT1H30M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/35/announcement.jpg> .
 
@@ -1073,10 +1161,12 @@ Pedal que segue o escoamento das águas na Zona Norte e acessa a Linha Verde do 
     ph:departedAt "2025-08-03T08:56:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 392.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/48> ;
+    ph:linkActivity "https://www.strava.com/activities/15335370363"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DM2jxeIOHJ6/"^^xsd:anyURI ;
     ph:linkRoute pas:mhn8hxv9_route ;
     ph:measuredEnergy 462.0 ;
     ph:mediaCount 70 ;
+    ph:mediaSweep pas:mhn8hxv9_sweep ;
     ph:movingDuration "PT2H"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/54/announcement.jpg> .
 
@@ -1090,7 +1180,9 @@ pas:mr1k3qth a ph:Tour ;
     ph:departedAt "2025-06-01T07:34:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 650.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/S/4> ;
+    ph:linkActivity "https://www.strava.com/activities/14666198000"^^xsd:anyURI ;
     ph:mediaCount 185 ;
+    ph:mediaSweep pas:mr1k3qth_sweep ;
     ph:movingDuration "PT2H20M"^^xsd:duration .
 
 pas:mw831nsm a ph:Tour ;
@@ -1108,10 +1200,12 @@ Subimos o Rio Oratório, enquanto testemunhamos o mosaico do estado e transiçõ
     ph:departedAt "2025-06-10T20:38:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 399.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/40> ;
+    ph:linkActivity "https://www.strava.com/activities/14761570137"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DKuhIZVONOA/"^^xsd:anyURI ;
     ph:linkRoute pas:mw831nsm_route ;
     ph:measuredEnergy 400.8 ;
     ph:mediaCount 110 ;
+    ph:mediaSweep pas:mw831nsm_sweep ;
     ph:movingDuration "PT2H6M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/46/announcement.jpg> .
 
@@ -1130,10 +1224,12 @@ No encontro desta semana, o Hidrográfico rememora a história da enchente de 19
     ph:departedAt "2025-07-22T20:24:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 280.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/46> ;
+    ph:linkActivity "https://www.strava.com/activities/15205460813"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DMY_UtgOaoz/"^^xsd:anyURI ;
     ph:linkRoute pas:mwdts221_route ;
     ph:measuredEnergy 220.0 ;
     ph:mediaCount 108 ;
+    ph:mediaSweep pas:mwdts221_sweep ;
     ph:movingDuration "PT1H16M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/52/announcement.jpg> .
 
@@ -1147,9 +1243,11 @@ pas:n3dxjrgb a ph:Tour ;
     ph:departedAt "2024-09-16T20:07:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 184.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/2> ;
+    ph:linkActivity "https://www.strava.com/activities/12429205174"^^xsd:anyURI ;
     ph:linkRoute pas:n3dxjrgb_route ;
     ph:measuredEnergy 73.0 ;
     ph:mediaCount 6 ;
+    ph:mediaSweep pas:n3dxjrgb_sweep ;
     ph:movingDuration "PT52M"^^xsd:duration .
 
 pas:ndchce80 a ph:Tour ;
@@ -1168,9 +1266,11 @@ Chegando à foz do Moinho Velho, o lado canhoto e ignorado do morro do Ipiranga,
     ph:departedAt "2025-04-15T20:25:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 314.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/33> ;
+    ph:linkActivity "https://www.strava.com/activities/14190280578"^^xsd:anyURI ;
     ph:linkRoute pas:ndchce80_route ;
     ph:measuredEnergy 314.6 ;
     ph:mediaCount 70 ;
+    ph:mediaSweep pas:ndchce80_sweep ;
     ph:movingDuration "PT1H55M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/38/announcement.jpg> .
 
@@ -1187,9 +1287,11 @@ Começamos no metrô, no qual rapidamente subimos parte do Pirajuçara até cheg
     ph:departedAt "2025-02-04T20:49:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 292.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/25> ;
+    ph:linkActivity "https://www.strava.com/activities/13543045449"^^xsd:anyURI ;
     ph:linkRoute pas:nmgja8t0_route ;
     ph:measuredEnergy 286.3 ;
     ph:mediaCount 132 ;
+    ph:mediaSweep pas:nmgja8t0_sweep ;
     ph:movingDuration "PT1H40M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/30/announcement.jpg> .
 
@@ -1240,10 +1342,12 @@ Após o fim da Av. Roberto Marinho, a paisagem se altera: saem de cena os prédi
     ph:departedAt "2025-06-03T20:26:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 280.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/39> ;
+    ph:linkActivity "https://www.strava.com/activities/14689988215"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DKag2XjuRJd/"^^xsd:anyURI ;
     ph:linkRoute pas:pbdgaaab_route ;
     ph:measuredEnergy 250.2 ;
     ph:mediaCount 125 ;
+    ph:mediaSweep pas:pbdgaaab_sweep ;
     ph:movingDuration "PT1H32M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/45/announcement.jpg> .
 
@@ -1264,8 +1368,10 @@ Dali, surfamos água abaixo pelas paisagens abertas e fechadas do córrego Busso
     ph:departedAt "2025-03-26T20:15:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 363.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/29> ;
+    ph:linkActivity "https://www.strava.com/activities/13988925441"^^xsd:anyURI ;
     ph:linkRoute pas:pf066hc5_route ;
     ph:mediaCount 75 ;
+    ph:mediaSweep pas:pf066hc5_sweep ;
     ph:movingDuration "PT1H46M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/34/announcement.jpg> .
 
@@ -1287,10 +1393,12 @@ Pedreira adentro, pedalamos um córrego até o ponto de sela entre bacias para d
     ph:departedAt "2025-12-23T20:20:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 378.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/71> ;
+    ph:linkActivity "https://www.strava.com/activities/16825679327"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DSk7MGcgTAP/"^^xsd:anyURI ;
     ph:linkRoute pas:phg8t492_route ;
     ph:measuredEnergy 309.0 ;
     ph:mediaCount 184 ;
+    ph:mediaSweep pas:phg8t492_sweep ;
     ph:movingDuration "PT2H16M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/78/announcement.jpg> .
 
@@ -1316,8 +1424,10 @@ pas:qgzyzyh7 a ph:Tour ;
     ph:countNewcomer 1 ;
     ph:energyEstimate 614.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/S/2> ;
+    ph:linkActivity "https://ridewithgps.com/trips/241423163"^^xsd:anyURI ;
     ph:linkRoute pas:qgzyzyh7_route ;
     ph:mediaCount 11 ;
+    ph:mediaSweep pas:qgzyzyh7_sweep ;
     ph:movingDuration "PT1H40M"^^xsd:duration .
 
 pas:qvzfkd5y a ph:Tour ;
@@ -1363,10 +1473,12 @@ Seguiremos pelo último braço do divisor que visitaremos no passeio e pegaremos
     ph:departedAt "2025-08-26T20:31:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 358.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/52> ;
+    ph:linkActivity "https://www.strava.com/activities/15599902076"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DNzHbJjWDhL/"^^xsd:anyURI ;
     ph:linkRoute pas:r0qfg6tv_route ;
     ph:measuredEnergy 430.0 ;
     ph:mediaCount 64 ;
+    ph:mediaSweep pas:r0qfg6tv_sweep ;
     ph:movingDuration "PT2H4M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/58/announcement.jpg> .
 
@@ -1387,10 +1499,12 @@ Lá no alto deste planalto, seguimos pelos Alpes do Jaraguá, que separa as águ
     ph:departedAt "2025-11-11T20:21:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 306.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/65> ;
+    ph:linkActivity "https://www.strava.com/activities/16431428223"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DQ5DpR3DkW4/"^^xsd:anyURI ;
     ph:linkRoute pas:rb651j6e_route ;
     ph:measuredEnergy 324.0 ;
     ph:mediaCount 135 ;
+    ph:mediaSweep pas:rb651j6e_sweep ;
     ph:movingDuration "PT1H21M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/72/announcement.jpg> .
 
@@ -1407,10 +1521,12 @@ Daí surfamos um pouco na crista até pegarmos o curso do córrego das corujas c
     ph:departedAt "2025-12-10T20:20:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 287.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/69> ;
+    ph:linkActivity "https://www.strava.com/activities/16716538608"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DSGJhd9geOh/"^^xsd:anyURI ;
     ph:linkRoute pas:rjvbv0at_route ;
     ph:measuredEnergy 215.0 ;
     ph:mediaCount 12 ;
+    ph:mediaSweep pas:rjvbv0at_sweep ;
     ph:movingDuration "PT1H26M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/76/announcement.jpg> .
 
@@ -1451,6 +1567,7 @@ Ao chegar no leito do Tietê que ainda existe, retornamos pela sua margem direit
     ph:departedAt "2025-05-06T20:19:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 316.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/35> ;
+    ph:linkActivity "https://www.strava.com/activities/14401268853"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DJSCz_SOyyS/"^^xsd:anyURI ;
     ph:linkRoute pas:s6dyja5b_route ;
     ph:measuredEnergy 318.6 ;
@@ -1467,8 +1584,10 @@ pas:sbb356df a ph:Tour ;
     ph:departedAt "2025-09-30T21:08:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 358.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/58> ;
+    ph:linkActivity "https://www.strava.com/activities/15994354843"^^xsd:anyURI ;
     ph:linkRoute pas:sbb356df_route ;
     ph:mediaCount 31 ;
+    ph:mediaSweep pas:sbb356df_sweep ;
     ph:movingDuration "PT1H20M"^^xsd:duration .
 
 pas:sgkjtbmj a ph:Tour ;
@@ -1496,9 +1615,11 @@ pas:sj0b0w3d a ph:Tour ;
     ph:energyEstimate 850.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/BT/1>,
         <https://id.pedalhidrografi.co/passeio/PH/10> ;
+    ph:linkActivity "https://www.strava.com/activities/12807998180"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DBweYi-vMXc/?img_index=1"^^xsd:anyURI ;
     ph:linkRoute pas:sj0b0w3d_route ;
     ph:mediaCount 467 ;
+    ph:mediaSweep pas:sj0b0w3d_sweep ;
     ph:movingDuration "PT3H30M"^^xsd:duration .
 
 pas:sw2w45w4 a ph:Tour ;
@@ -1512,9 +1633,11 @@ pas:sw2w45w4 a ph:Tour ;
     ph:energyEstimate 850.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/BP/2>,
         <https://id.pedalhidrografi.co/passeio/PH/17> ;
+    ph:linkActivity "https://www.strava.com/activities/13019339506"^^xsd:anyURI ;
     ph:linkRoute pas:sw2w45w4_route ;
     ph:measuredEnergy 601.1 ;
     ph:mediaCount 103 ;
+    ph:mediaSweep pas:sw2w45w4_sweep ;
     ph:movingDuration "PT5H36M"^^xsd:duration .
 
 pas:swpv8nrx a ph:Tour ;
@@ -1526,9 +1649,11 @@ pas:swpv8nrx a ph:Tour ;
     ph:countNewcomer 1 ;
     ph:energyEstimate 301.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/72> ;
+    ph:linkActivity "https://www.strava.com/activities/16974924803"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DTMEVNdDmcu/"^^xsd:anyURI ;
     ph:linkRoute pas:swpv8nrx_route ;
-    ph:mediaCount 9 .
+    ph:mediaCount 9 ;
+    ph:mediaSweep pas:swpv8nrx_sweep .
 
 pas:szvx0nej a ph:Tour ;
     dcterms:date "2024-11-22T00:00:00-03:00"^^xsd:dateTime ;
@@ -1538,8 +1663,10 @@ pas:szvx0nej a ph:Tour ;
     ph:countNewcomer 0 ;
     ph:energyEstimate 750.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/S/1> ;
+    ph:linkActivity "https://www.strava.com/activities/12958186755"^^xsd:anyURI ;
     ph:linkRoute pas:szvx0nej_route ;
     ph:mediaCount 16 ;
+    ph:mediaSweep pas:szvx0nej_sweep ;
     ph:movingDuration "PT3H6M"^^xsd:duration .
 
 pas:t0a8k010 a ph:Tour ;
@@ -1550,9 +1677,11 @@ pas:t0a8k010 a ph:Tour ;
     ph:countNewcomer 0 ;
     ph:departedAt "2026-01-21T19:47:00-03:00"^^xsd:dateTime ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/74> ;
+    ph:linkActivity "https://www.strava.com/activities/17134516397"^^xsd:anyURI ;
     ph:linkRoute pas:t0a8k010_route ;
     ph:measuredEnergy 96.1 ;
     ph:mediaCount 13 ;
+    ph:mediaSweep pas:t0a8k010_sweep ;
     ph:movingDuration "PT42M"^^xsd:duration .
 
 pas:t9bb4v7t a ph:Tour ;
@@ -1572,10 +1701,12 @@ A partir daí, não se pedala duas ou três quadras sem antes avistar uma ponte.
     ph:departedAt "2025-11-04T20:24:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 390.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/64> ;
+    ph:linkActivity "https://www.strava.com/activities/16359358168"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DQndVvpji_q/"^^xsd:anyURI ;
     ph:linkRoute pas:t9bb4v7t_route ;
     ph:measuredEnergy 586.0 ;
     ph:mediaCount 159 ;
+    ph:mediaSweep pas:t9bb4v7t_sweep ;
     ph:movingDuration "PT2H12M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/71/announcement.jpg> .
 
@@ -1594,10 +1725,12 @@ Todos os córregos por aqui são verdes no nome! Felizmente, o córrego irmão d
     ph:departedAt "2024-10-29T21:12:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 290.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/9> ;
+    ph:linkActivity "https://www.strava.com/activities/12778430969"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DBrLDD9u7ZE/"^^xsd:anyURI ;
     ph:linkRoute pas:tsrdc0hc_route ;
     ph:measuredEnergy 210.0 ;
     ph:mediaCount 94 ;
+    ph:mediaSweep pas:tsrdc0hc_sweep ;
     ph:movingDuration "PT1H20M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/9/announcement.jpg> .
 
@@ -1614,10 +1747,12 @@ De lá, cruza-se o braço da crista parapegar o último córrego ocidental do Ri
     ph:departedAt "2024-11-12T20:03:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 260.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/13> ;
+    ph:linkActivity "https://www.strava.com/activities/12888465226"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DCQKAoVuD7f/?img_index=1"^^xsd:anyURI ;
     ph:linkRoute pas:tw0thy4z_route ;
     ph:measuredEnergy 266.4 ;
     ph:mediaCount 79 ;
+    ph:mediaSweep pas:tw0thy4z_sweep ;
     ph:movingDuration "PT1H19M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/13/announcement.jpg> .
 
@@ -1631,6 +1766,7 @@ pas:v1nmg1q7 a ph:Tour ;
     ph:departedAt "2024-09-23T20:53:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 179.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/3> ;
+    ph:linkActivity "https://www.strava.com/activities/12491464227"^^xsd:anyURI ;
     ph:linkRoute pas:v1nmg1q7_route ;
     ph:measuredEnergy 157.7 ;
     ph:mediaCount 7 ;
@@ -1655,9 +1791,11 @@ Referências: Caio Prado Jr. "A cidade de São Paulo - Geografia e História" (1
     ph:departedAt "2025-10-07T20:17:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 387.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/59> ;
+    ph:linkActivity "https://www.strava.com/activities/16070021126"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DPhFHJSDthY/"^^xsd:anyURI ;
     ph:linkRoute pas:vz6tn6gr_route ;
     ph:mediaCount 12 ;
+    ph:mediaSweep pas:vz6tn6gr_sweep ;
     ph:movingDuration "PT1H30M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/66/announcement.jpg> .
 
@@ -1674,9 +1812,11 @@ Começamos na Barra Funda - no Instituto de Física Teórica, nas bordas dos ant
     ph:departedAt "2025-02-25T20:06:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 307.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/27> ;
+    ph:linkActivity "https://www.strava.com/activities/13729139008"^^xsd:anyURI ;
     ph:linkRoute pas:wadkznrs_route ;
     ph:measuredEnergy 309.0 ;
     ph:mediaCount 87 ;
+    ph:mediaSweep pas:wadkznrs_sweep ;
     ph:movingDuration "PT1H51M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/32/announcement.jpg> .
 
@@ -1698,9 +1838,11 @@ Este Pedal Hidrográfico é um convite à contemplação e a prova de que a natu
     ph:departedAt "2025-07-29T20:15:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 337.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/47> ;
+    ph:linkActivity "https://www.strava.com/activities/15282241846"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DMqJrLbu66G/"^^xsd:anyURI ;
     ph:linkRoute pas:wd0b91kh_route ;
     ph:mediaCount 123 ;
+    ph:mediaSweep pas:wd0b91kh_sweep ;
     ph:movingDuration "PT1H30M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/53/announcement.jpg> .
 
@@ -1714,10 +1856,12 @@ pas:wp83fvt6 a ph:Tour ;
     ph:departedAt "2026-01-14T20:48:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 359.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/73> ;
+    ph:linkActivity "https://www.strava.com/activities/17054364736"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DTd-l-TgQyf/"^^xsd:anyURI ;
     ph:linkRoute pas:wp83fvt6_route ;
     ph:measuredEnergy 313.9 ;
     ph:mediaCount 80 ;
+    ph:mediaSweep pas:wp83fvt6_sweep ;
     ph:movingDuration "PT1H54M"^^xsd:duration .
 
 pas:wqj9kj0k a ph:Tour ;
@@ -1744,9 +1888,11 @@ Também contaremos com a presença das equipes da 1ª Gincana Climática de Sant
     ph:energyEstimate 750.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/BT/3>,
         <https://id.pedalhidrografi.co/passeio/PH/32> ;
+    ph:linkActivity "https://www.strava.com/activities/14167917821"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DIHLiuKO-vH/"^^xsd:anyURI ;
     ph:linkRoute pas:wqj9kj0k_route ;
     ph:mediaCount 172 ;
+    ph:mediaSweep pas:wqj9kj0k_sweep ;
     ph:movingDuration "PT3H10M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/37/announcement.jpg> .
 
@@ -1770,10 +1916,12 @@ Descemos tudo até chegar no Parque Novo Mundo, várzea do Tietê, que cruzaremo
     ph:departedAt "2025-10-28T20:29:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 392.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/63> ;
+    ph:linkActivity "https://www.strava.com/activities/16288475465"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DQW54WjjobD/"^^xsd:anyURI ;
     ph:linkRoute pas:x0xe3tgk_route ;
     ph:measuredEnergy 428.0 ;
     ph:mediaCount 36 ;
+    ph:mediaSweep pas:x0xe3tgk_sweep ;
     ph:movingDuration "PT2H22M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/70/announcement.jpg> .
 
@@ -1788,9 +1936,11 @@ pas:x1csnktf a ph:Tour ;
     ph:departedAt "2025-01-07T20:16:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 271.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/21> ;
+    ph:linkActivity "https://www.strava.com/activities/13296154816"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DEgLpSQOj37/"^^xsd:anyURI ;
     ph:linkRoute pas:x1csnktf_route ;
     ph:mediaCount 28 ;
+    ph:mediaSweep pas:x1csnktf_sweep ;
     ph:movingDuration "PT2H"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/25/announcement.jpg> .
 
@@ -1814,10 +1964,12 @@ A descida do morro finalizará no Tatuapé, com um belo encontro de ciclistas no
     ph:departedAt "2025-12-03T20:26:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 297.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/68> ;
+    ph:linkActivity "https://www.strava.com/activities/16646323675"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DRzyPXPDuLA/"^^xsd:anyURI ;
     ph:linkRoute pas:x3q1p1qz_route ;
     ph:measuredEnergy 263.0 ;
     ph:mediaCount 23 ;
+    ph:mediaSweep pas:x3q1p1qz_sweep ;
     ph:movingDuration "PT1H28M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/75/announcement.jpg> .
 
@@ -1843,10 +1995,12 @@ A. N. Ab’Saber, Geomorfologia do sítio urbano de São Paulo. USP-FFCL, 1957."
     ph:energyEstimate 801.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/56>,
         <https://id.pedalhidrografi.co/passeio/S/6> ;
+    ph:linkActivity "https://www.strava.com/activities/15892922596"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DOzM8syATYo/"^^xsd:anyURI ;
     ph:linkRoute pas:x3sdp4j5_route ;
     ph:measuredEnergy 840.0 ;
     ph:mediaCount 466 ;
+    ph:mediaSweep pas:x3sdp4j5_sweep ;
     ph:movingDuration "PT3H44M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/63/announcement.jpg> .
 
@@ -1865,10 +2019,12 @@ pas:xm85cdrp a ph:Tour ;
     ph:departedAt "2025-09-09T20:36:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 183.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/54> ;
+    ph:linkActivity "https://www.strava.com/activities/15759615775"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DOTyz43DjpV/?img_index=1"^^xsd:anyURI ;
     ph:linkRoute pas:xm85cdrp_route ;
     ph:measuredEnergy 187.0 ;
     ph:mediaCount 213 ;
+    ph:mediaSweep pas:xm85cdrp_sweep ;
     ph:movingDuration "PT1H2M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/61/announcement.jpg> .
 
@@ -1882,9 +2038,11 @@ pas:xpxa6v8g a ph:Tour ;
     ph:departedAt "2024-11-26T20:36:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 260.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/16> ;
+    ph:linkActivity "https://www.strava.com/activities/12993978327"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DC1bTVfuL0A/"^^xsd:anyURI ;
     ph:linkRoute pas:xpxa6v8g_route ;
     ph:mediaCount 66 ;
+    ph:mediaSweep pas:xpxa6v8g_sweep ;
     ph:movingDuration "PT1H"^^xsd:duration .
 
 pas:xrzsy7gz a ph:Tour ;
@@ -1898,10 +2056,12 @@ pas:xrzsy7gz a ph:Tour ;
     ph:departedAt "2024-11-05T20:35:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 370.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/11> ;
+    ph:linkActivity "https://www.strava.com/activities/12833693865"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DB-P8zUOg67/"^^xsd:anyURI ;
     ph:linkRoute pas:xrzsy7gz_route ;
     ph:measuredEnergy 323.8 ;
     ph:mediaCount 50 ;
+    ph:mediaSweep pas:xrzsy7gz_sweep ;
     ph:movingDuration "PT1H43M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/11/announcement.jpg> .
 
@@ -1913,8 +2073,10 @@ pas:xzb05rn3 a ph:Tour ;
     ph:countNewcomer 4 ;
     ph:energyEstimate 600.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/BT/2> ;
+    ph:linkActivity "https://www.strava.com/activities/13399227086"^^xsd:anyURI ;
     ph:linkRoute pas:xzb05rn3_route ;
     ph:mediaCount 56 ;
+    ph:mediaSweep pas:xzb05rn3_sweep ;
     ph:movingDuration "PT2H50M"^^xsd:duration .
 
 pas:yaszq6sb a ph:Tour ;
@@ -1935,10 +2097,12 @@ Passamos ainda pelas nascentes dos córregos das Cubas e da Cocaia, que conta co
     ph:departedAt "2025-07-01T20:20:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 385.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/43> ;
+    ph:linkActivity "https://www.strava.com/activities/14979251155"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/pedalhidrografico/p/DLipKMHuCLY/"^^xsd:anyURI ;
     ph:linkRoute pas:yaszq6sb_route ;
     ph:measuredEnergy 421.0 ;
     ph:mediaCount 115 ;
+    ph:mediaSweep pas:yaszq6sb_sweep ;
     ph:movingDuration "PT1H44M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/49/announcement.jpg> .
 
@@ -1959,10 +2123,12 @@ A descida dos morros nos levará para o final do pedal, no metrô do Capão, na 
     ph:departedAt "2025-07-15T20:32:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 380.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/45> ;
+    ph:linkActivity "https://www.strava.com/activities/15128831942"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/pedalhidrografico/p/DMGodnSO1Qc/"^^xsd:anyURI ;
     ph:linkRoute pas:ydhm40gy_route ;
     ph:measuredEnergy 415.0 ;
     ph:mediaCount 64 ;
+    ph:mediaSweep pas:ydhm40gy_sweep ;
     ph:movingDuration "PT2H12M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/51/announcement.jpg> .
 
@@ -1979,10 +2145,12 @@ Ao chegar no divisor triplo de águas Iquiririm-Jaguaré-Pirajuçara. Lá, pegam
     ph:departedAt "2024-12-03T20:29:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 400.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/18> ;
+    ph:linkActivity "https://www.strava.com/activities/13042450707"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DDF8IjTuMaK/"^^xsd:anyURI ;
     ph:linkRoute pas:ys01exfm_route ;
     ph:measuredEnergy 378.8 ;
     ph:mediaCount 62 ;
+    ph:mediaSweep pas:ys01exfm_sweep ;
     ph:movingDuration "PT2H30M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/20/announcement.jpg> .
 
@@ -1999,9 +2167,11 @@ pas:z9fgwpkw a ph:Tour ;
     ph:departedAt "2025-10-21T20:21:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 340.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/60> ;
+    ph:linkActivity "https://www.strava.com/activities/16224182565"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DQFZDYmAaCC/"^^xsd:anyURI ;
     ph:linkRoute pas:z9fgwpkw_route ;
     ph:mediaCount 55 ;
+    ph:mediaSweep pas:z9fgwpkw_sweep ;
     ph:movingDuration "PT1H50M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/68/announcement.jpg> .
 
@@ -2029,9 +2199,11 @@ Aho!"""@pt ;
     ph:departedAt "2025-10-26T07:38:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 694.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/62> ;
+    ph:linkActivity "https://www.strava.com/activities/16267677209"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DQPNof-DnxY/?img_index=1"^^xsd:anyURI ;
     ph:linkRoute pas:zjnyyrv5_route ;
     ph:mediaCount 110 ;
+    ph:mediaSweep pas:zjnyyrv5_sweep ;
     ph:movingDuration "PT4H38M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/69/announcement.jpg> .
 
@@ -2057,9 +2229,11 @@ pas:zv43bb5y a ph:Tour ;
     ph:countAttendee 14 ;
     ph:countNewcomer 3 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/78> ;
+    ph:linkActivity "https://www.strava.com/activities/17371623151"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DUoNFoEgdlN/"^^xsd:anyURI ;
     ph:linkRoute pas:zv43bb5y_route ;
-    ph:mediaCount 81 .
+    ph:mediaCount 81 ;
+    ph:mediaSweep pas:zv43bb5y_sweep .
 
 pas:05cr6685_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
@@ -2069,6 +2243,16 @@ pas:0vcw4tnh_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/52165232> .
 
+pas:0vcw4tnh_sweep a ph:MediaSweep ;
+    dcterms:date "2025-10-29T09:56:03-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2025-09-02 53 Contornar Antonico" ;
+    ph:collectedFileCount 40 ;
+    ph:sweepContributor "alef",
+        "chiara",
+        "dandanlessa",
+        "olivialeoni" .
+
 pas:0zx5nzpj_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/53755124> .
@@ -2077,25 +2261,76 @@ pas:10j3w60x_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/52269074> .
 
+pas:10j3w60x_sweep a ph:MediaSweep ;
+    dcterms:date "2025-09-03T09:57:54-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2025-08-19 51 O Itaquera" ;
+    ph:collectedFileCount 76 ;
+    ph:sweepContributor "alef",
+        "dandanlessa" .
+
 pas:140b5xtt_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/48970565> .
+
+pas:140b5xtt_sweep a ph:MediaSweep ;
+    dcterms:date "2025-04-23T20:36:28-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2025-01-14 22 Contornar Pacaembu e Sumaré" ;
+    ph:collectedFileCount 40 ;
+    ph:sweepContributor "anajucano",
+        "analucas",
+        "carolyne",
+        "ericacabulosa",
+        "fabiotarantes",
+        "tieko_ca" .
 
 pas:1b9zreed_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/55298600> .
 
+pas:1b9zreed_sweep a ph:MediaSweep ;
+    dcterms:date "2026-06-05T12:07:45-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2026-06-02 94" ;
+    ph:collectedFileCount 16 ;
+    ph:sweepContributor "alef" .
+
 pas:1fp9pvd4_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/49272870> .
+
+pas:1fp9pvd4_sweep a ph:MediaSweep ;
+    dcterms:date "2024-11-23T22:07:49-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2024-11-19 14 Margens Destras do Baixo Jaguaré" ;
+    ph:collectedFileCount 41 ;
+    ph:sweepContributor "thiagonevesbike" .
 
 pas:1g186aee_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/52162083> .
 
+pas:1g186aee_sweep a ph:MediaSweep ;
+    dcterms:date "2025-09-03T09:52:02-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2025-08-12 50 Subir rio Uberaba e descer rio Cupuce com um desmorrodouro no meio" ;
+    ph:collectedFileCount 65 ;
+    ph:sweepContributor "brunotitton",
+        "dandanlessa",
+        "edvaldo",
+        "gabrielmeira" .
+
 pas:1q3wkxmh_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/49567136> .
+
+pas:1q3wkxmh_sweep a ph:MediaSweep ;
+    dcterms:date "2025-04-23T16:03:36-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2025-01-28 24 Contornar Anhangabaú" ;
+    ph:collectedFileCount 6 ;
+    ph:sweepContributor "dandanlessa" .
 
 pas:1wb9e39g_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
@@ -2105,6 +2340,16 @@ pas:2qv2h9ak_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/53853791> .
 
+pas:2qv2h9ak_sweep a ph:MediaSweep ;
+    dcterms:date "2026-02-25T12:01:43-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2026-01-31 76 Caaguaçu, Emboaçu, Ipiranga - Ed. Passarinheira" ;
+    ph:collectedFileCount 53 ;
+    ph:sweepContributor "anajucano",
+        "clavicula",
+        "yasminalv",
+        "zaia" .
+
 pas:32gatmca_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/54745946> .
@@ -2113,13 +2358,50 @@ pas:3sk51hs2_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/49671673> .
 
+pas:3sk51hs2_sweep a ph:MediaSweep ;
+    dcterms:date "2025-04-23T15:58:15-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2025-02-11 26 Cabeceiras do Ipiranga" ;
+    ph:collectedFileCount 44 ;
+    ph:sweepContributor "dandanlessa",
+        "pedpaula",
+        "pedrokozla" .
+
 pas:4d184nra_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/50957749> .
 
+pas:4d184nra_sweep a ph:MediaSweep ;
+    dcterms:date "2025-06-02T10:35:26-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2025-05-27 38 Alguns Passos do Centro-Norte" ;
+    ph:collectedFileCount 91 ;
+    ph:sweepContributor "adrnalef",
+        "bikesbornia",
+        "bomcbrn",
+        "brunotitton",
+        "dandanlessa",
+        "djunksss",
+        "fabiotarantes",
+        "franzhecher",
+        "giulianacucciolito" .
+
 pas:4hgp9tqv_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/52653389> .
+
+pas:4hgp9tqv_sweep a ph:MediaSweep ;
+    dcterms:date "2025-10-06T18:32:56-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2025-09-16 55 Ilhota da Guapira e Alto da Cangaíba" ;
+    ph:collectedFileCount 201 ;
+    ph:sweepContributor "brunotitton",
+        "dandanlessa",
+        "edvaldo",
+        "fabiotarantes",
+        "leonardo",
+        "matocando",
+        "samuelleal" .
 
 pas:4p6ev531_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
@@ -2137,41 +2419,172 @@ pas:5q98rxhp_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/51282559> .
 
+pas:5q98rxhp_sweep a ph:MediaSweep ;
+    dcterms:date "2025-06-23T16:29:05-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2025-06-17 41 Aguas Meridionais da Colina Historica" ;
+    ph:collectedFileCount 77 ;
+    ph:sweepContributor "adrnalef",
+        "bomcbrn",
+        "brunotitton",
+        "caiocosta",
+        "camila",
+        "franzhecher",
+        "giulianacucciolito",
+        "henrique",
+        "lucascampos",
+        "rogeritozito" .
+
 pas:5vrpn785_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/49272936> .
+
+pas:5vrpn785_sweep a ph:MediaSweep ;
+    dcterms:date "2025-04-23T21:35:30-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2024-09-09 1 Água Preta e Tiburtino" ;
+    ph:collectedFileCount 2 ;
+    ph:sweepContributor "anajucano",
+        "dandanlessa" .
 
 pas:5z6w47dx_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/49195396> .
 
+pas:5z6w47dx_sweep a ph:MediaSweep ;
+    dcterms:date "2025-04-23T12:51:53-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2024-10-22 7 Verde Anhanguera e Sapateiro" ;
+    ph:collectedFileCount 55 ;
+    ph:sweepContributor "anajucano",
+        "dandanlessa",
+        "gregorioguirado" .
+
 pas:65ptagq2_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/49267352> .
+
+pas:65ptagq2_sweep a ph:MediaSweep ;
+    dcterms:date "2025-04-23T20:46:59-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2024-12-17 20 Águas de Pinheiros" ;
+    ph:collectedFileCount 113 ;
+    ph:sweepContributor "anajucano",
+        "bs_math",
+        "dandanlessa",
+        "thiagonevesbike" .
+
+pas:6myfn5e9_sweep a ph:MediaSweep ;
+    dcterms:date "2025-04-23T12:48:16-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2024-10-15 6 Crista de Perdizes, Altos do Água Preta, Tiburtino e Mercedes" ;
+    ph:collectedFileCount 10 ;
+    ph:sweepContributor "fabiotarantes" .
 
 pas:7d5ss8m1_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/53386705> .
 
+pas:7d5ss8m1_sweep a ph:MediaSweep ;
+    dcterms:date "2025-11-30T21:02:06-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2025-11-25 66 Marcos antigas rotas" ;
+    ph:collectedFileCount 37 ;
+    ph:sweepContributor "dandanlessa",
+        "djunkss",
+        "fetiche",
+        "giocon",
+        "giucuci",
+        "gmardegan",
+        "josepelegrini" .
+
 pas:7r767mt2_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/52046213> .
+
+pas:7r767mt2_sweep a ph:MediaSweep ;
+    dcterms:date "2025-09-03T09:55:54-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2025-08-05 49 Pontos de Sela da Media Leste" ;
+    ph:collectedFileCount 109 ;
+    ph:sweepContributor "alef",
+        "amanza",
+        "coutinho",
+        "dandanlessa",
+        "pedrokozla" .
+
+pas:7rnbkmfk_sweep a ph:MediaSweep ;
+    dcterms:date "2026-02-25T12:20:09-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2026-02-18 80 Fluindo à Deriva" ;
+    ph:collectedFileCount 7 ;
+    ph:sweepContributor "josepelegrini",
+        "zito" .
 
 pas:81z8cp2q_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/53832056> .
 
+pas:81z8cp2q_sweep a ph:MediaSweep ;
+    dcterms:date "2026-02-25T11:45:09-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2026-01-28 75 Circundar Canindé pelas Águas do Moinho e Biquinha" ;
+    ph:collectedFileCount 100 ;
+    ph:sweepContributor "alemunhoz",
+        "dandanlessa",
+        "fabioarantes",
+        "giocon",
+        "gmardegan",
+        "josepelegrini",
+        "juliinvictus",
+        "leo",
+        "thiagoneves",
+        "tiagoruf" .
+
 pas:84cae3s4_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/50149484> .
+
+pas:84cae3s4_sweep a ph:MediaSweep ;
+    dcterms:date "2025-04-09T11:12:21-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2025-04-08 31 Tiquatira da Foz à Nascente" ;
+    ph:collectedFileCount 66 ;
+    ph:sweepContributor "adrn_alef",
+        "anajucano",
+        "dandanlessa",
+        "pedpaula" .
 
 pas:8xwbzhxh_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/50844953> .
 
+pas:8xwbzhxh_sweep a ph:MediaSweep ;
+    dcterms:date "2025-05-21T21:16:08-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2025-05-20 37 Sertoes de Pirituba 2 Braco Esquerdo do Verde e Alto do Morro Grande" ;
+    ph:collectedFileCount 123 ;
+    ph:sweepContributor "adrn_alef",
+        "dandanlessa",
+        "gabrieltunes",
+        "micaelrodrigues",
+        "pedrokozla",
+        "thiagonevesbike" .
+
 pas:9qyjjshm_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/53380438> .
+
+pas:9qyjjshm_sweep a ph:MediaSweep ;
+    dcterms:date "2025-12-24T11:27:28-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2025-11-30 67 Recosturando Tietê e Paraíba do Sul" ;
+    ph:collectedFileCount 100 ;
+    ph:sweepContributor "dandanlessa",
+        "franzhecher",
+        "gmardegan",
+        "lucascronopio",
+        "thiagonevesbike" .
 
 pas:9s8bhtjw_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
@@ -2191,7 +2604,7 @@ pas:9s8bhtjw_route a ph:RouteReference ;
 
 <https://id.pedalhidrografi.co/passeio/BP/3-5> a ph:SeriesEdition ;
     ph:inEventSeries ser:BP ;
-    ph:sequenceInSeries "4"^^xsd:positiveInteger .
+    ph:sequenceInSeries 4 .
 
 <https://id.pedalhidrografi.co/passeio/BP/4> a ph:SeriesEdition ;
     ph:inEventSeries ser:BP ;
@@ -2649,13 +3062,57 @@ pas:acjb6h8s_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/49195439> .
 
+pas:acjb6h8s_sweep a ph:MediaSweep ;
+    dcterms:date "2025-04-23T12:53:51-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2024-10-24 8 Itororó, Glicério e Cambuci-Aclimação" ;
+    ph:collectedFileCount 44 ;
+    ph:sweepContributor "dandanlessa",
+        "fabiotarantes" .
+
 pas:aqvmvk5f_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/51588263> .
 
+pas:aqvmvk5f_sweep a ph:MediaSweep ;
+    dcterms:date "2025-07-14T10:56:12-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2025-07-08 44 Foz dos Meninos à Foz do Zavuvus pelo Riacho do Taboão e o desmorrodouro do Caaguaçu" ;
+    ph:collectedFileCount 77 ;
+    ph:sweepContributor "adrnalef",
+        "dandanlessa",
+        "franzhecher",
+        "giuliana_cucciolito",
+        "gmardegan" .
+
+pas:avenpksx_sweep a ph:MediaSweep ;
+    dcterms:date "2026-02-25T12:07:24-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2026-02-01 SN" ;
+    ph:collectedFileCount 65 ;
+    ph:sweepContributor "alemunhoz",
+        "edvandojo",
+        "giocon",
+        "goretti",
+        "matocando",
+        "paulodom",
+        "pedrobicianjo",
+        "thiagonevesbike",
+        "yasminalv" .
+
 pas:b4rs49rh_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/49924264> .
+
+pas:b4rs49rh_sweep a ph:MediaSweep ;
+    dcterms:date "2025-04-23T15:52:22-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2025-03-11 28 Águas do Lavapés e Aclimação" ;
+    ph:collectedFileCount 82 ;
+    ph:sweepContributor "bs_math",
+        "dandanlessa",
+        "pedpaula",
+        "rolesdorenato" .
 
 pas:bkbpnjf2_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
@@ -2665,6 +3122,20 @@ pas:bs81z5bx_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/53954783> .
 
+pas:bs81z5bx_sweep a ph:MediaSweep ;
+    dcterms:date "2026-02-25T12:18:25-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2026-02-12 79 As águas da desilusão e o urutau modernista" ;
+    ph:collectedFileCount 55 ;
+    ph:sweepContributor "anajucano",
+        "clavicula",
+        "dandanlessa",
+        "estevam",
+        "gmard",
+        "mar",
+        "pedpaula",
+        "zaia" .
+
 pas:c0spydxq_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/54356024> .
@@ -2673,33 +3144,121 @@ pas:c0t00a05_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/49195389> .
 
+pas:c0t00a05_sweep a ph:MediaSweep ;
+    dcterms:date "2025-04-23T21:42:55-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2024-10-08 5 Santa Cecilia e Saracura" ;
+    ph:collectedFileCount 62 .
+
+pas:cwnbf0jz_sweep a ph:MediaSweep ;
+    dcterms:date "2025-09-03T10:17:00-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2025-08-30 SN Parque do Juqueri e DIB" ;
+    ph:collectedFileCount 321 ;
+    ph:sweepContributor "dandanlessa",
+        "fabioarantes",
+        "luanasoares",
+        "thiagonevesbike" .
+
 pas:e12025y8_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/50411729> .
+
+pas:e12025y8_sweep a ph:MediaSweep ;
+    dcterms:date "2025-04-23T12:12:19-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2025-04-22 34 Crista do Campo Limpo via Corveta-Camacuã" ;
+    ph:collectedFileCount 52 ;
+    ph:sweepContributor "amandagiglio",
+        "anaju",
+        "chiaralm",
+        "dandanlessa",
+        "gmardegan",
+        "marana",
+        "micaelrodrigues",
+        "pedpaula" .
 
 pas:e3cxpdtn_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/52981759> .
 
+pas:e3cxpdtn_sweep a ph:MediaSweep ;
+    dcterms:date "2025-10-22T18:19:07-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2025-10-17 61 Oakland" ;
+    ph:collectedFileCount 165 ;
+    ph:sweepContributor "dandanlessa",
+        "delaram",
+        "pedpaula" .
+
 pas:erekmg3j_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/51391185> .
+
+pas:erekmg3j_sweep a ph:MediaSweep ;
+    dcterms:date "2025-06-30T11:38:43-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2025-06-24 42 Carapicuiba duma nascente a foz" ;
+    ph:collectedFileCount 81 ;
+    ph:sweepContributor "bikesbornia",
+        "dandanlessa",
+        "giulianacucciolito",
+        "rogeritozito",
+        "sena03sp" .
 
 pas:eyve1vph_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/49195254> .
 
+pas:eyve1vph_sweep a ph:MediaSweep ;
+    dcterms:date "2025-04-23T21:26:22-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2024-12-13 SN Jaraguá Hidrográfico" ;
+    ph:collectedFileCount 69 ;
+    ph:sweepContributor "bs_math",
+        "dandanlessa",
+        "djunkss",
+        "lucascampos" .
+
 pas:fexen1sa_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/49225969> .
+
+pas:fexen1sa_sweep a ph:MediaSweep ;
+    dcterms:date "2025-04-23T20:51:13-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2024-12-10 19 Nascentes da Brasilândia" ;
+    ph:collectedFileCount 57 ;
+    ph:sweepContributor "dandanlessa",
+        "thiagonevesbike" .
 
 pas:ggn4hx6t_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/52776083> .
 
+pas:ggn4hx6t_sweep a ph:MediaSweep ;
+    dcterms:date "2025-10-06T18:50:07-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2025-09-23 57 Os Três Sopés e a Ilhota de São João" ;
+    ph:collectedFileCount 179 ;
+    ph:sweepContributor "dandanlessa",
+        "edvaldo",
+        "giovannaconsentini",
+        "lumicampos",
+        "rogeritozito" .
+
 pas:gw6hn4mk_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/53879757> .
+
+pas:gw6hn4mk_sweep a ph:MediaSweep ;
+    dcterms:date "2026-02-25T12:11:36-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2026-02-03 77 Entre-bacias do Jaguaré e Pirajussara: ponto de sela do Sapé" ;
+    ph:collectedFileCount 29 ;
+    ph:sweepContributor "estevam",
+        "giucuci",
+        "tiagoruf" .
 
 pas:gz6rv9a9_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
@@ -2709,53 +3268,213 @@ pas:hnj18jf3_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/49106874> .
 
+pas:hnj18jf3_sweep a ph:MediaSweep ;
+    dcterms:date "2025-04-23T21:03:58-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2024-11-23 15 Parelheiros" ;
+    ph:collectedFileCount 226 ;
+    ph:sweepContributor "bomcbrn",
+        "dandanlessa",
+        "luizandrade",
+        "thiagonevesbike",
+        "willboudakian" .
+
 pas:j62vy0kx_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/53947457> .
+
+pas:j62vy0kx_sweep a ph:MediaSweep ;
+    dcterms:date "2026-02-25T12:25:58-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2026-02-24 81 Planalto de Taipas" ;
+    ph:collectedFileCount 104 ;
+    ph:sweepContributor "alef",
+        "alemunhoz",
+        "dandanlessa",
+        "franzhecher",
+        "giucuci",
+        "josepelegrini",
+        "juperd",
+        "zaia",
+        "zito" .
 
 pas:j9xwshxe_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/49005652> .
 
+pas:j9xwshxe_sweep a ph:MediaSweep ;
+    dcterms:date "2025-04-23T21:18:16-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2024-11-09 12 Mirantes do Tiete" ;
+    ph:collectedFileCount 221 ;
+    ph:sweepContributor "amandaborges",
+        "brunoperandin",
+        "dandanlessa",
+        "djunkss" .
+
+pas:jkjx9f82_sweep a ph:MediaSweep ;
+    dcterms:date "2025-04-23T13:26:07-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2024-11-20 SN Represa do Guarapiranga" ;
+    ph:collectedFileCount 2 ;
+    ph:sweepContributor "anajucano",
+        "brunabom" .
+
 pas:jrnf8kvk_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/49510455> .
+
+pas:jrnf8kvk_sweep a ph:MediaSweep ;
+    dcterms:date "2025-04-23T20:29:43-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2025-01-21 23 Crista de Sapopema" ;
+    ph:collectedFileCount 47 ;
+    ph:sweepContributor "dandanlessa",
+        "jacmoura",
+        "pedrokozla" .
 
 pas:k7fgsn4t_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/53524909> .
 
+pas:k7fgsn4t_sweep a ph:MediaSweep ;
+    dcterms:date "2025-12-24T11:53:04-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2025-12-17 70 Cabeçeiras do Ipiranga ou Desmorrodouro do Caaguaçu" ;
+    ph:collectedFileCount 64 ;
+    ph:sweepContributor "dandanlessa",
+        "giocon",
+        "gmardegan",
+        "matocando" .
+
 pas:kj5r72a5_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/49195385> .
+
+pas:kj5r72a5_sweep a ph:MediaSweep ;
+    dcterms:date "2025-04-23T21:40:05-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2024-10-01 4 Coruja, Bellini e Parque Lapa" ;
+    ph:collectedFileCount 42 .
 
 pas:kqxvk5jj_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/50150417> .
 
+pas:kqxvk5jj_sweep a ph:MediaSweep ;
+    dcterms:date "2025-04-02T10:47:22-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2025-04-01 30 Subir Piritiba, Surfar Alpes do Jaraguá e Descer Perus" ;
+    ph:collectedFileCount 98 ;
+    ph:sweepContributor "anajucano",
+        "dandanlessa",
+        "fabiotarantes",
+        "pedpaula",
+        "thiagonevesbike" .
+
 pas:mhn8hxv9_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/50737426> .
+
+pas:mhn8hxv9_sweep a ph:MediaSweep ;
+    dcterms:date "2025-08-04T09:36:33-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2025-08-03 48 sopés catanreira" ;
+    ph:collectedFileCount 70 ;
+    ph:sweepContributor "brunotitton",
+        "dandanlessa",
+        "fabiotarantes",
+        "giucuci",
+        "pedpaula" .
+
+pas:mr1k3qth_sweep a ph:MediaSweep ;
+    dcterms:date "2025-06-02T10:41:31-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2025-06-01 SN Cânions da Brasilândia" ;
+    ph:collectedFileCount 185 ;
+    ph:sweepContributor "dandanlessa",
+        "djunksss",
+        "thiagonevesbike" .
 
 pas:mw831nsm_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/51051113> .
 
+pas:mw831nsm_sweep a ph:MediaSweep ;
+    dcterms:date "2025-06-11T13:24:24-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2025-06-10 40 Crista da Mooca e Médio-Alto Oratório" ;
+    ph:collectedFileCount 110 ;
+    ph:sweepContributor "adrn_alef",
+        "brunotitton",
+        "dandanlessa",
+        "fabiotarantes",
+        "giuliana_cucciolito" .
+
 pas:mwdts221_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/51812173> .
+
+pas:mwdts221_sweep a ph:MediaSweep ;
+    dcterms:date "2025-07-24T20:23:45-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2025-07-22 46 Contorno Central da Enchente de 1929 e pizza no brás" ;
+    ph:collectedFileCount 108 ;
+    ph:sweepContributor "alef",
+        "anaju",
+        "brunotitton",
+        "caroltieko",
+        "dandanlessa",
+        "gesibel",
+        "gisleine",
+        "giucuci",
+        "gmardegan",
+        "isisroggers",
+        "japortuga",
+        "pedpaula",
+        "pedroivo",
+        "titoborges" .
 
 pas:n3dxjrgb_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/49272970> .
 
+pas:n3dxjrgb_sweep a ph:MediaSweep ;
+    dcterms:date "2025-04-23T21:38:46-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2024-09-16 2 Coruja e Verde" ;
+    ph:collectedFileCount 6 .
+
 pas:ndchce80_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/50331319> .
 
+pas:ndchce80_sweep a ph:MediaSweep ;
+    dcterms:date "2025-04-16T15:01:04-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2025-04-15 33 Moinho Velho A Outra Margem do Ipiranga" ;
+    ph:collectedFileCount 69 ;
+    ph:sweepContributor "adrn_alef",
+        "arquitetofranz",
+        "dandanlessa",
+        "evandronuness",
+        "g_mardegan" .
+
 pas:nmgja8t0_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/49567174> .
+
+pas:nmgja8t0_sweep a ph:MediaSweep ;
+    dcterms:date "2025-04-23T16:02:23-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2025-02-04 25 Pirajuçara, Água Podre e Crista de Osasco" ;
+    ph:collectedFileCount 131 ;
+    ph:sweepContributor "anajucano",
+        "dandanlessa",
+        "fabiotarantes",
+        "mariaouantonia",
+        "marinasodre",
+        "rogeritozito" .
 
 pas:nqkvbx78_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
@@ -2769,13 +3488,52 @@ pas:pbdgaaab_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/50943723> .
 
+pas:pbdgaaab_sweep a ph:MediaSweep ;
+    dcterms:date "2025-06-04T11:42:22-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2025-06-03 39 Água Espraiada da Foz à Nascente" ;
+    ph:collectedFileCount 125 ;
+    ph:sweepContributor "bruno_titton",
+        "camila_gaglianone",
+        "dandanlessa",
+        "franz_hecher",
+        "giuliana_cucciolito",
+        "lu",
+        "pedro_kozla" .
+
 pas:pf066hc5_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/49999355> .
 
+pas:pf066hc5_sweep a ph:MediaSweep ;
+    dcterms:date "2025-03-27T11:08:21-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2025-03-25 29 Aguas Meridionais de Osasco" ;
+    ph:collectedFileCount 81 ;
+    ph:sweepContributor "alef",
+        "danlessa",
+        "giulianacucciolito",
+        "pedpaula",
+        "selecao 5",
+        "thiagonevesbike" .
+
 pas:phg8t492_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/53564416> .
+
+pas:phg8t492_sweep a ph:MediaSweep ;
+    dcterms:date "2025-12-24T11:56:24-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2025-12-23 71 Bonde Pedra e Cachoeira" ;
+    ph:collectedFileCount 184 ;
+    ph:sweepContributor "brunotitton",
+        "dandan",
+        "edvaldo",
+        "fetiche",
+        "gmardegan",
+        "juper",
+        "maymar",
+        "pedpaula" .
 
 pas:q5artzrc_route a ph:RouteReference ;
     schema:provider ph:strava ;
@@ -2785,6 +3543,15 @@ pas:qgzyzyh7_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/49272994> .
 
+pas:qgzyzyh7_sweep a ph:MediaSweep ;
+    dcterms:date "2025-04-23T21:25:07-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2024-12-06 SN Morumbi e Antonico" ;
+    ph:collectedFileCount 11 ;
+    ph:sweepContributor "dandanlessa",
+        "jose",
+        "lucascampos" .
+
 pas:qvzfkd5y_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/55184087> .
@@ -2793,13 +3560,43 @@ pas:r0qfg6tv_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/52165449> .
 
+pas:r0qfg6tv_sweep a ph:MediaSweep ;
+    dcterms:date "2025-09-03T09:59:34-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2025-08-26 52 Rampa do Sapateiro, Uberaba e Traição" ;
+    ph:collectedFileCount 64 ;
+    ph:sweepContributor "dandanlessa",
+        "leoazevedo" .
+
 pas:rb651j6e_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/50150417> .
 
+pas:rb651j6e_sweep a ph:MediaSweep ;
+    dcterms:date "2025-11-30T20:57:23-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2025-11-11 65 Pelos Alpes do Jaraguá ao Subir Rio Pirituba e descer Rio Perus" ;
+    ph:collectedFileCount 135 ;
+    ph:sweepContributor "alef",
+        "dandanlessa",
+        "djunkss",
+        "fabioarantes",
+        "leocmendes",
+        "lumi" .
+
 pas:rjvbv0at_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/54149967> .
+
+pas:rjvbv0at_sweep a ph:MediaSweep ;
+    dcterms:date "2025-12-24T11:49:14-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2025-12-10 69 Tiburtino e córrego das corujas" ;
+    ph:collectedFileCount 12 ;
+    ph:sweepContributor "alexandremunhoz",
+        "estevam",
+        "franzhecher",
+        "pedpaula" .
 
 pas:rnhfg16f_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
@@ -2813,6 +3610,16 @@ pas:sbb356df_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/52165449> .
 
+pas:sbb356df_sweep a ph:MediaSweep ;
+    dcterms:date "2025-10-22T15:47:31-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2025-09-30 58 Rampa do Sapateiro" ;
+    ph:collectedFileCount 31 ;
+    ph:sweepContributor "alef",
+        "fabioarantes",
+        "leocmendes",
+        "renanfanelli" .
+
 pas:sgkjtbmj_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/54435190> .
@@ -2821,33 +3628,113 @@ pas:sj0b0w3d_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/49195458> .
 
+pas:sj0b0w3d_sweep a ph:MediaSweep ;
+    dcterms:date "2025-04-23T13:06:03-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2024-11-02 10 ABC" ;
+    ph:collectedFileCount 468 ;
+    ph:sweepContributor "brunoperandin",
+        "dandanlessa",
+        "djunks",
+        "felipeareas",
+        "lucascampos",
+        "recon",
+        "sandronicodemo",
+        "thiagonevesbike" .
+
 pas:sw2w45w4_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/49272926> .
+
+pas:sw2w45w4_sweep a ph:MediaSweep ;
+    dcterms:date "2025-04-23T20:56:58-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2024-11-30 17 Paranapiacaba com Cachoeira" ;
+    ph:collectedFileCount 102 ;
+    ph:sweepContributor "ana",
+        "anajucano",
+        "bomcbrn",
+        "dandanlessa",
+        "lauraborelli",
+        "yancopelli" .
 
 pas:swpv8nrx_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/53660982> .
 
+pas:swpv8nrx_sweep a ph:MediaSweep ;
+    dcterms:date "2026-01-29T01:18:14-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2026-01-07 72 Selas, Divisas e Divisores" ;
+    ph:collectedFileCount 8 ;
+    ph:sweepContributor "edugoncalves",
+        "gmardegan" .
+
 pas:szvx0nej_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/49272881> .
+
+pas:szvx0nej_sweep a ph:MediaSweep ;
+    dcterms:date "2025-04-23T21:20:17-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2024-11-22 SN Crista de Osasco" ;
+    ph:collectedFileCount 29 ;
+    ph:sweepContributor "dandanlessa" .
 
 pas:t0a8k010_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/54149999> .
 
+pas:t0a8k010_sweep a ph:MediaSweep ;
+    dcterms:date "2026-01-29T01:25:08-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2026-01-21 74 Pontes do Itororó" ;
+    ph:collectedFileCount 12 ;
+    ph:sweepContributor "alef",
+        "dandanlessa",
+        "r",
+        "rogeritozito" .
+
 pas:t9bb4v7t_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/53205838> .
+
+pas:t9bb4v7t_sweep a ph:MediaSweep ;
+    dcterms:date "2025-11-10T18:01:29-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2025-11-04 64 Ponte Rasa" ;
+    ph:collectedFileCount 159 ;
+    ph:sweepContributor "alef",
+        "barbara",
+        "dandanlessa",
+        "giovanna_consentini",
+        "lumi" .
 
 pas:tsrdc0hc_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/49195401> .
 
+pas:tsrdc0hc_sweep a ph:MediaSweep ;
+    dcterms:date "2025-04-23T12:58:41-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2024-10-29 9 Sertões de Pirituba" ;
+    ph:collectedFileCount 97 ;
+    ph:sweepContributor "dandanlessa",
+        "fabiotarantes",
+        "recon" .
+
 pas:tw0thy4z_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/49029471> .
+
+pas:tw0thy4z_sweep a ph:MediaSweep ;
+    dcterms:date "2025-04-23T13:18:06-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2024-11-12 13 Margens Ocidentais do Baixo Ipiranga" ;
+    ph:collectedFileCount 78 ;
+    ph:sweepContributor "dandanlessa",
+        "jo_arruda",
+        "thiagonevesbike" .
 
 pas:v1nmg1q7_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
@@ -2857,73 +3744,285 @@ pas:vz6tn6gr_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/52939892> .
 
+pas:vz6tn6gr_sweep a ph:MediaSweep ;
+    dcterms:date "2025-10-22T15:52:51-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2025-10-07 59 Bico do Caaguaçu" ;
+    ph:collectedFileCount 12 ;
+    ph:sweepContributor "gmardegan",
+        "leocmendes" .
+
 pas:wadkznrs_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/49741245> .
+
+pas:wadkznrs_sweep a ph:MediaSweep ;
+    dcterms:date "2025-04-23T15:56:01-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2025-02-25 27 Sertões do Mandaqui" ;
+    ph:collectedFileCount 127 ;
+    ph:sweepContributor "adrn_alef",
+        "alef",
+        "dandanlessa",
+        "flavio uemori",
+        "fuyamamoto",
+        "giuliana",
+        "giulianacucciolito",
+        "lucascampos",
+        "lume campos" .
 
 pas:wd0b91kh_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/51937044> .
 
+pas:wd0b91kh_sweep a ph:MediaSweep ;
+    dcterms:date "2025-08-04T09:30:38-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2025-07-29 47 Jaguare, farol e pastel" ;
+    ph:collectedFileCount 233 ;
+    ph:sweepContributor "alangiulia",
+        "anajucano",
+        "brunotitton",
+        "elisavergilio",
+        "fabiotarantes",
+        "giucoci",
+        "gmardegan",
+        "jessicarampim",
+        "josepelegrini",
+        "luccas",
+        "pedpaula",
+        "pedrokozla",
+        "silvioduarte" .
+
 pas:wp83fvt6_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/53715166> .
+
+pas:wp83fvt6_sweep a ph:MediaSweep ;
+    dcterms:date "2026-01-29T01:22:55-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2026-01-14 73 Contornando Carandiru e Paciência" ;
+    ph:collectedFileCount 80 ;
+    ph:sweepContributor "alexandremunhoz",
+        "dandanlessa",
+        "estevam",
+        "giocon",
+        "giucuci",
+        "gmardegan",
+        "josepelegrini" .
 
 pas:wqj9kj0k_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/49100612> .
 
+pas:wqj9kj0k_sweep a ph:MediaSweep ;
+    dcterms:date "2025-04-14T12:14:34-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2025-04-13 32 Rios Indigenas de Santo André" ;
+    ph:collectedFileCount 171 ;
+    ph:sweepContributor "alef",
+        "brunoperandin",
+        "fabiotarantes",
+        "jessicalima",
+        "n",
+        "raquel",
+        "sandronicodemo",
+        "thiagonevesbike",
+        "wander" .
+
 pas:x0xe3tgk_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/53113256> .
+
+pas:x0xe3tgk_sweep a ph:MediaSweep ;
+    dcterms:date "2025-11-10T18:04:43-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2025-10-28 63 Arco das Cumeeiras" ;
+    ph:collectedFileCount 36 ;
+    ph:sweepContributor "dandanlessa",
+        "gmardegan" .
 
 pas:x1csnktf_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/49195396> .
 
+pas:x1csnktf_sweep a ph:MediaSweep ;
+    dcterms:date "2025-04-23T20:43:29-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2025-01-07 21 Verde, Anhanguera e Sapateiro" ;
+    ph:collectedFileCount 27 ;
+    ph:sweepContributor "adrn_alef",
+        "anajucano",
+        "fabiotarantes",
+        "fersmafra" .
+
 pas:x3q1p1qz_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/53428447> .
+
+pas:x3q1p1qz_sweep a ph:MediaSweep ;
+    dcterms:date "2025-12-24T11:42:28-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2025-12-03 68 Contornando Capão do Embira e Tatuapé" ;
+    ph:collectedFileCount 23 ;
+    ph:sweepContributor "carolcosta",
+        "dandanlessa",
+        "fabioarantes",
+        "fetiche",
+        "franzhecher",
+        "jessicarampim",
+        "josepelegrini",
+        "leo" .
 
 pas:x3sdp4j5_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/52515917> .
 
+pas:x3sdp4j5_sweep a ph:MediaSweep ;
+    dcterms:date "2025-10-06T18:40:46-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2025-09-21 56 O Trem e o Meteoro" ;
+    ph:collectedFileCount 466 ;
+    ph:sweepContributor "alef",
+        "b",
+        "brunotitton",
+        "dandanlessa",
+        "edvaldo",
+        "flavio",
+        "gabrielmardegan",
+        "jessicarampim",
+        "matocando",
+        "pedpaula",
+        "r" .
+
 pas:xm85cdrp_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/49272936> .
+
+pas:xm85cdrp_sweep a ph:MediaSweep ;
+    dcterms:date "2025-09-15T14:17:57-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2025-09-09 54 Água Preta, Tiburtino, 1 ano de PH" ;
+    ph:collectedFileCount 279 ;
+    ph:sweepContributor "Alef",
+        "allandefranca",
+        "dandanlessa",
+        "ed",
+        "elisavergilio",
+        "henriquejaportuga",
+        "isiroggers",
+        "jessicarampim",
+        "lu",
+        "pedpaula",
+        "rogeritozito" .
 
 pas:xpxa6v8g_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/51086192> .
 
+pas:xpxa6v8g_sweep a ph:MediaSweep ;
+    dcterms:date "2025-04-23T20:58:18-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2024-11-26 16 Água Preta e Tiburtino" ;
+    ph:collectedFileCount 65 ;
+    ph:sweepContributor "thiagonevesbike" .
+
 pas:xrzsy7gz_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/48970565> .
+
+pas:xrzsy7gz_sweep a ph:MediaSweep ;
+    dcterms:date "2025-04-23T13:10:44-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2024-11-05 11 Contornar Pacaembu e Sumaré" ;
+    ph:collectedFileCount 49 ;
+    ph:sweepContributor "dandanlessa" .
 
 pas:xzb05rn3_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/48691963> .
 
+pas:xzb05rn3_sweep a ph:MediaSweep ;
+    dcterms:date "2025-04-23T20:32:44-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2025-01-19 SN Foz do Tamanduateí até sua Nascente" ;
+    ph:collectedFileCount 55 ;
+    ph:sweepContributor "adrn_alef",
+        "dandanlessa",
+        "leoperandin",
+        "sandronicodemo" .
+
 pas:yaszq6sb_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/51486572> .
+
+pas:yaszq6sb_sweep a ph:MediaSweep ;
+    dcterms:date "2025-07-07T12:19:51-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2025-07-01 43 do Riacho do Divisor ao Baquirivu-guaçu pelos sopees da Serra do Bananal" ;
+    ph:collectedFileCount 115 ;
+    ph:sweepContributor "adrnalef",
+        "bomcbrn",
+        "dandanlessa",
+        "gabrielmardegan",
+        "giulianacucciolito",
+        "henriquejaportuga",
+        "rogeritozito",
+        "sena03sp" .
 
 pas:ydhm40gy_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/51701965> .
 
+pas:ydhm40gy_sweep a ph:MediaSweep ;
+    dcterms:date "2025-07-24T20:18:31-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2025-07-15 45 Pirajuçara da Foz à Nascente e Cabeçeiras do rio do Morro do S" ;
+    ph:collectedFileCount 64 ;
+    ph:sweepContributor "alef",
+        "dandanlessa",
+        "gabrielmeira",
+        "gmardegan",
+        "pedpaula" .
+
 pas:ys01exfm_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/49182910> .
+
+pas:ys01exfm_sweep a ph:MediaSweep ;
+    dcterms:date "2025-04-23T20:53:04-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2024-12-03 18 Contornar Iquirim e um pouco do Pirajuçara" ;
+    ph:collectedFileCount 61 ;
+    ph:sweepContributor "anajucano",
+        "bruno_consentino",
+        "chiara_lm",
+        "dandanlessa" .
 
 pas:z9fgwpkw_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/51282559> .
 
+pas:z9fgwpkw_sweep a ph:MediaSweep ;
+    dcterms:date "2025-10-22T18:22:38-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2025-10-21 60 Aguas Meridionais 2" ;
+    ph:collectedFileCount 55 ;
+    ph:sweepContributor "alef",
+        "isisroggers",
+        "leonardomendes",
+        "marcelegodoy",
+        "niviamonteiro" .
+
 pas:zjnyyrv5_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/53123125> .
+
+pas:zjnyyrv5_sweep a ph:MediaSweep ;
+    dcterms:date "2025-11-03T16:57:32-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2025-10-26 62 Cubatão" ;
+    ph:collectedFileCount 110 .
 
 pas:zspawe0m_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
@@ -2932,6 +4031,18 @@ pas:zspawe0m_route a ph:RouteReference ;
 pas:zv43bb5y_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/54150035> .
+
+pas:zv43bb5y_sweep a ph:MediaSweep ;
+    dcterms:date "2026-02-25T12:15:22-03:00"^^xsd:dateTime ;
+    prov:wasAssociatedWith pes:1fhkjnba ;
+    ph:archiveFolder "2026-02-11 78 Botar o nome aqui" ;
+    ph:collectedFileCount 81 ;
+    ph:sweepContributor "alef",
+        "alemunhoz",
+        "dandanlessa",
+        "giucuci",
+        "rosselinetavares",
+        "tiagoruf" .
 
 ser:SESC a schema:EventSeries ;
     dcterms:title "SESC" .

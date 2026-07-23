@@ -1,0 +1,887 @@
+{
+  "_leia": "Mapa slug do WhatsApp → pessoa. Os slugs vêm do prefixo dos arquivos arquivados na Biblioteca Hidrográfica. 'resolvidos' casaram sozinhos com identities.ttl (via schema:alternateName ou o Instagram em rdfs:seeAlso). 'pendentes' precisam de você: preencha 'pessoa' com a IRI https://id.pedalhidrografi.co/pessoas/<slug8> de quem já existe, ou deixe null pra pessoa que ainda não foi cadastrada. 'possiveis_duplicatas' são palpites de que dois slugs são a MESMA pessoa — confira, não confie.",
+  "resolvidos": {
+    "dandanlessa": {
+      "arquivos": 3063,
+      "pessoa": "https://id.pedalhidrografi.co/pessoas/1fhkjnba",
+      "nome": "Danilo Lessa Bernardineli"
+    },
+    "alef": {
+      "arquivos": 288,
+      "pessoa": "https://id.pedalhidrografi.co/pessoas/b2mfncg9",
+      "nome": "alef"
+    },
+    "pedpaula": {
+      "arquivos": 264,
+      "pessoa": "https://id.pedalhidrografi.co/pessoas/f3xm6khd",
+      "nome": "pedpaula"
+    },
+    "brunoperandin": {
+      "arquivos": 183,
+      "pessoa": "https://id.pedalhidrografi.co/pessoas/hc9v0sg7",
+      "nome": "brunoperandin"
+    },
+    "brunotitton": {
+      "arquivos": 72,
+      "pessoa": "https://id.pedalhidrografi.co/pessoas/xwap0dsp",
+      "nome": "brunotitton"
+    },
+    "giucuci": {
+      "arquivos": 69,
+      "pessoa": "https://id.pedalhidrografi.co/pessoas/2rp3wgpb",
+      "nome": "giucuci"
+    },
+    "Alef": {
+      "arquivos": 67,
+      "pessoa": "https://id.pedalhidrografi.co/pessoas/b2mfncg9",
+      "nome": "alef"
+    },
+    "dandan": {
+      "arquivos": 49,
+      "pessoa": "https://id.pedalhidrografi.co/pessoas/1fhkjnba",
+      "nome": "Danilo Lessa Bernardineli"
+    },
+    "micaelrodrigues": {
+      "arquivos": 31,
+      "pessoa": "https://id.pedalhidrografi.co/pessoas/15adbkwm",
+      "nome": "micaelrodrigues"
+    },
+    "delaram": {
+      "arquivos": 26,
+      "pessoa": "https://id.pedalhidrografi.co/pessoas/27er2byz",
+      "nome": "delaram"
+    },
+    "estevam": {
+      "arquivos": 20,
+      "pessoa": "https://id.pedalhidrografi.co/pessoas/5pkv6dd4",
+      "nome": "estevam"
+    },
+    "anaju": {
+      "arquivos": 19,
+      "pessoa": "https://id.pedalhidrografi.co/pessoas/wgb9b5fe",
+      "nome": "anaju"
+    },
+    "zito": {
+      "arquivos": 11,
+      "pessoa": "https://id.pedalhidrografi.co/pessoas/rany9bvq",
+      "nome": "zito"
+    },
+    "fetiche": {
+      "arquivos": 10,
+      "pessoa": "https://id.pedalhidrografi.co/pessoas/2p6f8wmh",
+      "nome": "fetiche"
+    },
+    "bruno_titton": {
+      "arquivos": 4,
+      "pessoa": "https://id.pedalhidrografi.co/pessoas/xwap0dsp",
+      "nome": "brunotitton"
+    },
+    "gabrieltunes": {
+      "arquivos": 3,
+      "pessoa": "https://id.pedalhidrografi.co/pessoas/h9jkvbct",
+      "nome": "gabrieltunes"
+    },
+    "thiagoneves": {
+      "arquivos": 2,
+      "pessoa": "https://id.pedalhidrografi.co/pessoas/6a95fm2k",
+      "nome": "thiagoneves"
+    },
+    "gmard": {
+      "arquivos": 2,
+      "pessoa": "https://id.pedalhidrografi.co/pessoas/mqpnpqdj",
+      "nome": "gmard"
+    },
+    "brunabom": {
+      "arquivos": 1,
+      "pessoa": "https://id.pedalhidrografi.co/pessoas/48v1pvkd",
+      "nome": "brunabom"
+    }
+  },
+  "pendentes": {
+    "thiagonevesbike": {
+      "arquivos": 601,
+      "pessoa": null,
+      "nome": ""
+    },
+    "edvaldo": {
+      "arquivos": 269,
+      "pessoa": null,
+      "nome": ""
+    },
+    "pedrokozla": {
+      "arquivos": 213,
+      "pessoa": null,
+      "nome": ""
+    },
+    "fabiotarantes": {
+      "arquivos": 205,
+      "pessoa": null,
+      "nome": ""
+    },
+    "rogeritozito": {
+      "arquivos": 142,
+      "pessoa": null,
+      "nome": ""
+    },
+    "fabioarantes": {
+      "arquivos": 100,
+      "pessoa": null,
+      "nome": ""
+    },
+    "anajucano": {
+      "arquivos": 99,
+      "pessoa": null,
+      "nome": ""
+    },
+    "matocando": {
+      "arquivos": 93,
+      "pessoa": null,
+      "nome": ""
+    },
+    "adrn_alef": {
+      "arquivos": 82,
+      "pessoa": null,
+      "nome": ""
+    },
+    "giocon": {
+      "arquivos": 78,
+      "pessoa": null,
+      "nome": ""
+    },
+    "djunkss": {
+      "arquivos": 73,
+      "pessoa": null,
+      "nome": ""
+    },
+    "lucascampos": {
+      "arquivos": 70,
+      "pessoa": null,
+      "nome": ""
+    },
+    "luanasoares": {
+      "arquivos": 68,
+      "pessoa": null,
+      "nome": ""
+    },
+    "jessicarampim": {
+      "arquivos": 60,
+      "pessoa": null,
+      "nome": ""
+    },
+    "bs_math": {
+      "arquivos": 59,
+      "pessoa": null,
+      "nome": ""
+    },
+    "bomcbrn": {
+      "arquivos": 50,
+      "pessoa": null,
+      "nome": ""
+    },
+    "sandronicodemo": {
+      "arquivos": 40,
+      "pessoa": null,
+      "nome": ""
+    },
+    "giuliana_cucciolito": {
+      "arquivos": 40,
+      "pessoa": null,
+      "nome": ""
+    },
+    "clavicula": {
+      "arquivos": 39,
+      "pessoa": null,
+      "nome": ""
+    },
+    "giulianacucciolito": {
+      "arquivos": 38,
+      "pessoa": null,
+      "nome": ""
+    },
+    "amandaborges": {
+      "arquivos": 37,
+      "pessoa": null,
+      "nome": ""
+    },
+    "luizandrade": {
+      "arquivos": 37,
+      "pessoa": null,
+      "nome": ""
+    },
+    "leocmendes": {
+      "arquivos": 36,
+      "pessoa": null,
+      "nome": ""
+    },
+    "gmardegan": {
+      "arquivos": 32,
+      "pessoa": null,
+      "nome": ""
+    },
+    "alemunhoz": {
+      "arquivos": 31,
+      "pessoa": null,
+      "nome": ""
+    },
+    "felipeareas": {
+      "arquivos": 30,
+      "pessoa": null,
+      "nome": ""
+    },
+    "wander": {
+      "arquivos": 30,
+      "pessoa": null,
+      "nome": ""
+    },
+    "gabrielmardegan": {
+      "arquivos": 29,
+      "pessoa": null,
+      "nome": ""
+    },
+    "adrnalef": {
+      "arquivos": 27,
+      "pessoa": null,
+      "nome": ""
+    },
+    "sena03sp": {
+      "arquivos": 27,
+      "pessoa": null,
+      "nome": ""
+    },
+    "ed": {
+      "arquivos": 27,
+      "pessoa": null,
+      "nome": ""
+    },
+    "lucascronopio": {
+      "arquivos": 27,
+      "pessoa": null,
+      "nome": ""
+    },
+    "franzhecher": {
+      "arquivos": 26,
+      "pessoa": null,
+      "nome": ""
+    },
+    "djunks": {
+      "arquivos": 24,
+      "pessoa": null,
+      "nome": ""
+    },
+    "danlessa": {
+      "arquivos": 23,
+      "pessoa": null,
+      "nome": ""
+    },
+    "djunksss": {
+      "arquivos": 23,
+      "pessoa": null,
+      "nome": ""
+    },
+    "leonardo": {
+      "arquivos": 20,
+      "pessoa": null,
+      "nome": ""
+    },
+    "pedro_kozla": {
+      "arquivos": 19,
+      "pessoa": null,
+      "nome": ""
+    },
+    "josepelegrini": {
+      "arquivos": 19,
+      "pessoa": null,
+      "nome": ""
+    },
+    "isiroggers": {
+      "arquivos": 19,
+      "pessoa": null,
+      "nome": ""
+    },
+    "rolesdorenato": {
+      "arquivos": 18,
+      "pessoa": null,
+      "nome": ""
+    },
+    "isisroggers": {
+      "arquivos": 18,
+      "pessoa": null,
+      "nome": ""
+    },
+    "lumicampos": {
+      "arquivos": 18,
+      "pessoa": null,
+      "nome": ""
+    },
+    "lu": {
+      "arquivos": 16,
+      "pessoa": null,
+      "nome": ""
+    },
+    "leoazevedo": {
+      "arquivos": 16,
+      "pessoa": null,
+      "nome": ""
+    },
+    "r": {
+      "arquivos": 16,
+      "pessoa": null,
+      "nome": ""
+    },
+    "zaia": {
+      "arquivos": 16,
+      "pessoa": null,
+      "nome": ""
+    },
+    "rosselinetavares": {
+      "arquivos": 16,
+      "pessoa": null,
+      "nome": ""
+    },
+    "jessicalima": {
+      "arquivos": 15,
+      "pessoa": null,
+      "nome": ""
+    },
+    "ana": {
+      "arquivos": 14,
+      "pessoa": null,
+      "nome": ""
+    },
+    "gabrielmeira": {
+      "arquivos": 14,
+      "pessoa": null,
+      "nome": ""
+    },
+    "lumi": {
+      "arquivos": 14,
+      "pessoa": null,
+      "nome": ""
+    },
+    "yasminalv": {
+      "arquivos": 14,
+      "pessoa": null,
+      "nome": ""
+    },
+    "jacmoura": {
+      "arquivos": 13,
+      "pessoa": null,
+      "nome": ""
+    },
+    "raquel": {
+      "arquivos": 13,
+      "pessoa": null,
+      "nome": ""
+    },
+    "chiaralm": {
+      "arquivos": 13,
+      "pessoa": null,
+      "nome": ""
+    },
+    "elisavergilio": {
+      "arquivos": 12,
+      "pessoa": null,
+      "nome": ""
+    },
+    "yancopelli": {
+      "arquivos": 11,
+      "pessoa": null,
+      "nome": ""
+    },
+    "analucas": {
+      "arquivos": 11,
+      "pessoa": null,
+      "nome": ""
+    },
+    "lume campos": {
+      "arquivos": 11,
+      "pessoa": null,
+      "nome": ""
+    },
+    "leo": {
+      "arquivos": 11,
+      "pessoa": null,
+      "nome": ""
+    },
+    "lauraborelli": {
+      "arquivos": 10,
+      "pessoa": null,
+      "nome": ""
+    },
+    "b": {
+      "arquivos": 10,
+      "pessoa": null,
+      "nome": ""
+    },
+    "renanfanelli": {
+      "arquivos": 10,
+      "pessoa": null,
+      "nome": ""
+    },
+    "fersmafra": {
+      "arquivos": 9,
+      "pessoa": null,
+      "nome": ""
+    },
+    "giuliana": {
+      "arquivos": 9,
+      "pessoa": null,
+      "nome": ""
+    },
+    "samuelleal": {
+      "arquivos": 9,
+      "pessoa": null,
+      "nome": ""
+    },
+    "barbara": {
+      "arquivos": 9,
+      "pessoa": null,
+      "nome": ""
+    },
+    "recon": {
+      "arquivos": 8,
+      "pessoa": null,
+      "nome": ""
+    },
+    "bruno_consentino": {
+      "arquivos": 8,
+      "pessoa": null,
+      "nome": ""
+    },
+    "flavio uemori": {
+      "arquivos": 8,
+      "pessoa": null,
+      "nome": ""
+    },
+    "fuyamamoto": {
+      "arquivos": 8,
+      "pessoa": null,
+      "nome": ""
+    },
+    "selecao 5": {
+      "arquivos": 8,
+      "pessoa": null,
+      "nome": ""
+    },
+    "n": {
+      "arquivos": 8,
+      "pessoa": null,
+      "nome": ""
+    },
+    "bikesbornia": {
+      "arquivos": 8,
+      "pessoa": null,
+      "nome": ""
+    },
+    "camila_gaglianone": {
+      "arquivos": 8,
+      "pessoa": null,
+      "nome": ""
+    },
+    "flavio": {
+      "arquivos": 8,
+      "pessoa": null,
+      "nome": ""
+    },
+    "giovannaconsentini": {
+      "arquivos": 8,
+      "pessoa": null,
+      "nome": ""
+    },
+    "leonardomendes": {
+      "arquivos": 8,
+      "pessoa": null,
+      "nome": ""
+    },
+    "tiagoruf": {
+      "arquivos": 8,
+      "pessoa": null,
+      "nome": ""
+    },
+    "chiara_lm": {
+      "arquivos": 7,
+      "pessoa": null,
+      "nome": ""
+    },
+    "mariaouantonia": {
+      "arquivos": 7,
+      "pessoa": null,
+      "nome": ""
+    },
+    "camila": {
+      "arquivos": 7,
+      "pessoa": null,
+      "nome": ""
+    },
+    "alangiulia": {
+      "arquivos": 7,
+      "pessoa": null,
+      "nome": ""
+    },
+    "niviamonteiro": {
+      "arquivos": 7,
+      "pessoa": null,
+      "nome": ""
+    },
+    "giovanna_consentini": {
+      "arquivos": 7,
+      "pessoa": null,
+      "nome": ""
+    },
+    "alexandremunhoz": {
+      "arquivos": 7,
+      "pessoa": null,
+      "nome": ""
+    },
+    "japortuga": {
+      "arquivos": 6,
+      "pessoa": null,
+      "nome": ""
+    },
+    "titoborges": {
+      "arquivos": 6,
+      "pessoa": null,
+      "nome": ""
+    },
+    "willboudakian": {
+      "arquivos": 5,
+      "pessoa": null,
+      "nome": ""
+    },
+    "pedroivo": {
+      "arquivos": 5,
+      "pessoa": null,
+      "nome": ""
+    },
+    "gisleine": {
+      "arquivos": 5,
+      "pessoa": null,
+      "nome": ""
+    },
+    "luccas": {
+      "arquivos": 5,
+      "pessoa": null,
+      "nome": ""
+    },
+    "chiara": {
+      "arquivos": 5,
+      "pessoa": null,
+      "nome": ""
+    },
+    "juliinvictus": {
+      "arquivos": 5,
+      "pessoa": null,
+      "nome": ""
+    },
+    "ericacabulosa": {
+      "arquivos": 4,
+      "pessoa": null,
+      "nome": ""
+    },
+    "marana": {
+      "arquivos": 4,
+      "pessoa": null,
+      "nome": ""
+    },
+    "edugoncalves": {
+      "arquivos": 4,
+      "pessoa": null,
+      "nome": ""
+    },
+    "edvandojo": {
+      "arquivos": 4,
+      "pessoa": null,
+      "nome": ""
+    },
+    "tieko_ca": {
+      "arquivos": 3,
+      "pessoa": null,
+      "nome": ""
+    },
+    "leoperandin": {
+      "arquivos": 3,
+      "pessoa": null,
+      "nome": ""
+    },
+    "g_mardegan": {
+      "arquivos": 3,
+      "pessoa": null,
+      "nome": ""
+    },
+    "rogerfiusa": {
+      "arquivos": 3,
+      "pessoa": null,
+      "nome": ""
+    },
+    "simonemamede": {
+      "arquivos": 3,
+      "pessoa": null,
+      "nome": ""
+    },
+    "henriquejaportuga": {
+      "arquivos": 3,
+      "pessoa": null,
+      "nome": ""
+    },
+    "caroltieko": {
+      "arquivos": 3,
+      "pessoa": null,
+      "nome": ""
+    },
+    "olivialeoni": {
+      "arquivos": 3,
+      "pessoa": null,
+      "nome": ""
+    },
+    "allandefranca": {
+      "arquivos": 3,
+      "pessoa": null,
+      "nome": ""
+    },
+    "jose": {
+      "arquivos": 2,
+      "pessoa": null,
+      "nome": ""
+    },
+    "carolyne": {
+      "arquivos": 2,
+      "pessoa": null,
+      "nome": ""
+    },
+    "evandronuness": {
+      "arquivos": 2,
+      "pessoa": null,
+      "nome": ""
+    },
+    "henrique": {
+      "arquivos": 2,
+      "pessoa": null,
+      "nome": ""
+    },
+    "amanza": {
+      "arquivos": 2,
+      "pessoa": null,
+      "nome": ""
+    },
+    "goretti": {
+      "arquivos": 2,
+      "pessoa": null,
+      "nome": ""
+    },
+    "mar": {
+      "arquivos": 2,
+      "pessoa": null,
+      "nome": ""
+    },
+    "juperd": {
+      "arquivos": 2,
+      "pessoa": null,
+      "nome": ""
+    },
+    "gregorioguirado": {
+      "arquivos": 1,
+      "pessoa": null,
+      "nome": ""
+    },
+    "jo_arruda": {
+      "arquivos": 1,
+      "pessoa": null,
+      "nome": ""
+    },
+    "marinasodre": {
+      "arquivos": 1,
+      "pessoa": null,
+      "nome": ""
+    },
+    "arquitetofranz": {
+      "arquivos": 1,
+      "pessoa": null,
+      "nome": ""
+    },
+    "amandagiglio": {
+      "arquivos": 1,
+      "pessoa": null,
+      "nome": ""
+    },
+    "franz_hecher": {
+      "arquivos": 1,
+      "pessoa": null,
+      "nome": ""
+    },
+    "caiocosta": {
+      "arquivos": 1,
+      "pessoa": null,
+      "nome": ""
+    },
+    "gesibel": {
+      "arquivos": 1,
+      "pessoa": null,
+      "nome": ""
+    },
+    "giucoci": {
+      "arquivos": 1,
+      "pessoa": null,
+      "nome": ""
+    },
+    "silvioduarte": {
+      "arquivos": 1,
+      "pessoa": null,
+      "nome": ""
+    },
+    "coutinho": {
+      "arquivos": 1,
+      "pessoa": null,
+      "nome": ""
+    },
+    "marcelegodoy": {
+      "arquivos": 1,
+      "pessoa": null,
+      "nome": ""
+    },
+    "carolcosta": {
+      "arquivos": 1,
+      "pessoa": null,
+      "nome": ""
+    },
+    "maymar": {
+      "arquivos": 1,
+      "pessoa": null,
+      "nome": ""
+    },
+    "juper": {
+      "arquivos": 1,
+      "pessoa": null,
+      "nome": ""
+    },
+    "paulodom": {
+      "arquivos": 1,
+      "pessoa": null,
+      "nome": ""
+    },
+    "pedrobicianjo": {
+      "arquivos": 1,
+      "pessoa": null,
+      "nome": ""
+    }
+  },
+  "possiveis_duplicatas": {
+    "dandanlessa": [
+      "dandan"
+    ],
+    "anajucano": [
+      "ana",
+      "anaju"
+    ],
+    "fabiotarantes": [
+      "fabioarantes"
+    ],
+    "thiagonevesbike": [
+      "thiagoneves"
+    ],
+    "djunks": [
+      "djunkss",
+      "djunksss"
+    ],
+    "djunkss": [
+      "djunksss"
+    ],
+    "ana": [
+      "analucas",
+      "anaju"
+    ],
+    "chiara_lm": [
+      "chiaralm",
+      "chiara"
+    ],
+    "jose": [
+      "josepelegrini"
+    ],
+    "adrn_alef": [
+      "adrnalef"
+    ],
+    "leoperandin": [
+      "leo"
+    ],
+    "pedrokozla": [
+      "pedro_kozla"
+    ],
+    "marinasodre": [
+      "mar"
+    ],
+    "mariaouantonia": [
+      "mar"
+    ],
+    "flavio uemori": [
+      "flavio"
+    ],
+    "alef": [
+      "Alef"
+    ],
+    "lume campos": [
+      "lumicampos"
+    ],
+    "giuliana": [
+      "giulianacucciolito",
+      "giuliana_cucciolito"
+    ],
+    "giulianacucciolito": [
+      "giuliana_cucciolito"
+    ],
+    "g_mardegan": [
+      "gmardegan",
+      "gmard"
+    ],
+    "chiaralm": [
+      "chiara"
+    ],
+    "marana": [
+      "mar"
+    ],
+    "gmardegan": [
+      "gmard"
+    ],
+    "franzhecher": [
+      "franz_hecher"
+    ],
+    "brunotitton": [
+      "bruno_titton"
+    ],
+    "camila_gaglianone": [
+      "camila"
+    ],
+    "henrique": [
+      "henriquejaportuga"
+    ],
+    "giucuci": [
+      "giucoci"
+    ],
+    "isisroggers": [
+      "isiroggers"
+    ],
+    "leoazevedo": [
+      "leo"
+    ],
+    "leonardo": [
+      "leonardomendes",
+      "leo"
+    ],
+    "lumicampos": [
+      "lumi"
+    ],
+    "giovannaconsentini": [
+      "giovanna_consentini"
+    ],
+    "leocmendes": [
+      "leo"
+    ],
+    "leonardomendes": [
+      "leo"
+    ],
+    "marcelegodoy": [
+      "mar"
+    ],
+    "juper": [
+      "juperd"
+    ]
+  }
+}
