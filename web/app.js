@@ -5477,6 +5477,23 @@ if (headerToggle && leafletTopLeft) {
   L.DomEvent.disableClickPropagation(headerToggle);
   L.DomEvent.disableScrollPropagation(headerToggle);
 }
+// O 🔍 da busca de endereços estaciona AQUI, junto com o ☰ — e não lá embaixo,
+// onde vive o resto da busca. Motivo: destino comum. Os dois moram na mesma
+// coluna do Leaflet, e enquanto o estacionamento ficava ~3600 linhas depois,
+// qualquer exceção no meio do arquivo deixava o ☰ estacionado e o 🔍 órfão no
+// fluxo do #map — cravado no canto (0,0), meio engolido pela borda superior do
+// Safari iOS com o header oculto (num iPhone real foi exatamente o que se viu;
+// o gatilho é dependente de estado local, então headless não reproduz). O
+// bloco da busca em si continua lá embaixo e NÃO re-estaciona.
+// (getElementById próprio: a const geoSearchBtn lá de baixo está em TDZ aqui.)
+{
+  const geoBtn = document.getElementById('geo-search-btn');
+  if (geoBtn && leafletTopLeft) {
+    leafletTopLeft.appendChild(geoBtn);
+    L.DomEvent.disableClickPropagation(geoBtn);
+    L.DomEvent.disableScrollPropagation(geoBtn);
+  }
+}
 function applyHeaderVisibility(hidden) {
   document.body.classList.toggle('header-hidden', hidden);
   if (headerToggle) {
@@ -9131,14 +9148,11 @@ let geoSearchActiveIdx = -1;   // item destacado via ↑/↓
 let geoSearchMarker = null;    // pino temporário do modo fora-do-editor
 let geoSearchPickTs = 0;       // guarda anti-clique-fantasma (ver onMapClickInDrawing)
 
-// Mesmo esquema do header-toggle: estaciona o botão na coluna top-left do
-// Leaflet e bloqueia a propagação de cliques/scroll do botão e do painel —
-// em modo de desenho, um clique que vazasse pro mapa viraria trackpoint.
-if (geoSearchBtn && geoSearchPanel) {
-  const topLeft = document.querySelector('.leaflet-top.leaflet-left');
-  if (topLeft) topLeft.appendChild(geoSearchBtn);
-  L.DomEvent.disableClickPropagation(geoSearchBtn);
-  L.DomEvent.disableScrollPropagation(geoSearchBtn);
+// O BOTÃO já foi estacionado na coluna top-left lá em cima, junto com o
+// header-toggle (ver o comentário de "destino comum" naquele bloco) — aqui só
+// resta blindar o PAINEL: em modo de desenho, um clique que vazasse pro mapa
+// viraria trackpoint.
+if (geoSearchPanel) {
   L.DomEvent.disableClickPropagation(geoSearchPanel);
   L.DomEvent.disableScrollPropagation(geoSearchPanel);
 }
