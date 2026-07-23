@@ -25,7 +25,7 @@ pas:05cr6685 a ph:Tour ;
     ph:linkRoute pas:05cr6685_route ;
     ph:measuredEnergy 262.0 ;
     ph:movingDuration "PT1H51M"^^xsd:duration ;
-    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/ph96/announcement.jpg> .
+    schema:image <http://localhost:8080/tour_assets/ph96/announcement.jpg> .
 
 pas:0vcw4tnh a ph:Tour ;
     dcterms:date "2025-09-02T20:00:00-03:00"^^xsd:dateTime ;
@@ -262,6 +262,25 @@ Começamos no metro Conceição, Linha Azul, no alto do Caaguaçu, com o Ipirang
     ph:movingDuration "PT1H30M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/31/announcement.jpg> .
 
+pas:3xe9ywa8 a ph:Tour ;
+    dcterms:date "2026-07-08T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """PEDAL HIDROGRÁFICO 99\r
+\r
+BAR NOVA MAGNATA - ESTAÇÃO BARRA FUNDA\r
+Este pedal tem 19,6km, altimetria de 231m e energia estimada em 309kJ\r
+\r
+\r
+De última hora, ânsia por descarregar stress no pedal se faz necessário por repetir uma clássica rota de subir-descer-subir-descer-subir entre rios, entre bacias, entre morros."""@pt ;
+    dcterms:title "Um repeteco pela ZN" ;
+    pav:providedBy pes:h3xxftbh ;
+    prov:wasAttributedTo pes:2p6f8wmh ;
+    ph:countAttendee 2 ;
+    ph:countNewcomer 1 ;
+    ph:energyEstimate 309.0 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/99> ;
+    ph:linkRoute pas:3xe9ywa8_route ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/3xe9ywa8/announcement.jpg> .
+
 pas:4d184nra a ph:Tour ;
     dcterms:date "2025-05-27T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:description """Neste pedal, cruzaremos os vales da Foz do Carandiru, Alto ao Baixo Mandaqui, Baixo Cabuçu, e Médio das Pedras. Para cada separação entre-vales, opta-se por atravessar o divisor de água por meio de seus pontos de sela, ou passos. Cada passo é também a menor elevação em que se é possível cruzar um morro sem que se faça um a grande volta até a confluência das águas, neste caso, as Várzeas do Tietê.
@@ -473,6 +492,20 @@ Para finalizar, desceremos ao Anhangabaú, palco da celebração, neste 25 de no
     ph:mediaSweep pas:7d5ss8m1_sweep ;
     ph:movingDuration "PT1H26M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/73/announcement.jpg> .
+
+pas:7epxmn2t a ph:Tour ;
+    dcterms:date "2026-07-22T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Quarta-feira, 22 de julho de 2026. Sai 20h do Estádio do Pacaembu, chega no metrô Sumaré.\r
+\r
+A rota tem 19,9 km e 140 m de subida, com uma energia de movimento estimada em 294 quilojoules, ou seja, um pedal ok.\r
+\r
+Por que a Rota dos Correios é uma das mais famosas entre os pedais da região central de São Paulo? A resposta é: porque é uma rota hidrográfica! E tal qual uma rota do Hidro, ela evita gastos energéticos desnecessários e contorna o famoso espigão-morro do Caaguaçu, desviando de todas as subidonas, para a felicidade dos fixeiros, e formando um cotovelo pelas terras baixas do Pinheiros e do Tietê. Hoje o convite é pra fazer Correios de um jeito diferente - de trás pra frente e se conectando com as 12 águas do percurso, tentando ver e ouvir os rios Pacaembu, Sumaré, Água Preta, Água Branca, Comendador Martinelli, Curtume, Tiburtino, Fortunato Ferraz, Leopoldina, Belini, Corujas e Verde."""@pt ;
+    dcterms:title "As águas da Rota dos Correios" ;
+    ph:energyEstimate 294.0 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/101> ;
+    ph:linkInstagram "https://www.instagram.com/pedalhidrografico/p/DbGUqGQhxZj/"^^xsd:anyURI ;
+    ph:linkRoute pas:7epxmn2t_route ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/7epxmn2t/announcement.jpg> .
 
 pas:7r767mt2 a ph:Tour ;
     dcterms:date "2025-08-05T20:00:00-03:00"^^xsd:dateTime ;
@@ -1306,12 +1339,12 @@ pas:nqkvbx78 a ph:Tour ;
 
 pas:paxn5xk2 a ph:Tour ;
     dcterms:date "2026-04-14T20:00:00-03:00"^^xsd:dateTime ;
-    dcterms:description """Paixão nacional, o futebol espalhou-se pelo Brasil como um dos mais notórios símbolos de uma volátil (e questionável) identidade nacional. Na cidade de São Paulo, a aparição e difusão do esporte esteve intimamente ligada com o uso dos terrenos das várzea dos rios: amplos espaços, secundarizados pelo desenvolvimento urbano da virada entre os séculos XIX e XX, mas que se mostraram de suma importância para a formação da identidade popular da cidade.
-
-Nesta semana, o Pedal Hidrográfico vai percorrer alguns dos pontos mais importantes deste cruzamento entre o Tietê e o futebol. Começando pelo terreno do antigo estádio do Parque Antártica, atual Allianz Parque, epicentro de identidade do Palmeiras, antigo Palestra Itália. Tais mudanças de nomes não são meras coincidências, pois revelam tensionamentos entre distintas concepções sobre o futebol, a vida e o mundo.
-
-Em sequência, encontraremos clubes que, apesar de serem menos conhecidos, marcaram a história do desenvolvimento de São Paulo e da várzea do Tietê: o Nacional Atlético Clube e o Anhanguera e o União dos Operários. Entre eles, as frestas da cidade nos presenteiam com o marco inicial do mais popular time de São Paulo e do país, bem como com o estádio da Portuguesa, um de seus clubes mais tradicionais.
-
+    dcterms:description """Paixão nacional, o futebol espalhou-se pelo Brasil como um dos mais notórios símbolos de uma volátil (e questionável) identidade nacional. Na cidade de São Paulo, a aparição e difusão do esporte esteve intimamente ligada com o uso dos terrenos das várzea dos rios: amplos espaços, secundarizados pelo desenvolvimento urbano da virada entre os séculos XIX e XX, mas que se mostraram de suma importância para a formação da identidade popular da cidade.\r
+\r
+Nesta semana, o Pedal Hidrográfico vai percorrer alguns dos pontos mais importantes deste cruzamento entre o Tietê e o futebol. Começando pelo terreno do antigo estádio do Parque Antártica, atual Allianz Parque, epicentro de identidade do Palmeiras, antigo Palestra Itália. Tais mudanças de nomes não são meras coincidências, pois revelam tensionamentos entre distintas concepções sobre o futebol, a vida e o mundo.\r
+\r
+Em sequência, encontraremos clubes que, apesar de serem menos conhecidos, marcaram a história do desenvolvimento de São Paulo e da várzea do Tietê: o Nacional Atlético Clube e o Anhanguera e o União dos Operários. Entre eles, as frestas da cidade nos presenteiam com o marco inicial do mais popular time de São Paulo e do país, bem como com o estádio da Portuguesa, um de seus clubes mais tradicionais.\r
+\r
 As curvas do Tietê nos levam para as origens operárias da expansão da cidade, tendo uma de suas possíveis fozes (reconhecemos que ela não é definitiva) em um largo terreno na várzea do Tietê, que abriga o mais antigo estádio do Sport Club Corinthians Paulista."""@pt ;
     dcterms:title "Várzea do Tietê e as origens do Futebol" ;
     prov:wasAttributedTo pes:b2mfncg9 ;
@@ -1324,7 +1357,8 @@ As curvas do Tietê nos levam para as origens operárias da expansão da cidade,
     ph:linkInstagram "https://www.instagram.com/p/DXDkpWnDmEO/?img_index=1"^^xsd:anyURI ;
     ph:linkRoute pas:paxn5xk2_route ;
     ph:measuredEnergy 221.0 ;
-    ph:movingDuration "PT1H28M"^^xsd:duration .
+    ph:movingDuration "PT1H28M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/paxn5xk2/announcement.jpg> .
 
 pas:pbdgaaab a ph:Tour ;
     dcterms:date "2025-06-03T20:00:00-03:00"^^xsd:dateTime ;
@@ -1401,6 +1435,25 @@ Pedreira adentro, pedalamos um córrego até o ponto de sela entre bacias para d
     ph:mediaSweep pas:phg8t492_sweep ;
     ph:movingDuration "PT2H16M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/78/announcement.jpg> .
+
+pas:pjzp5vy4 a ph:Tour ;
+    dcterms:date "2026-08-11T09:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Concentra às 9h, no CofeeRun na Ciclo Capivara (altura da saída da estação Cidade Universitária, foz do Pirajussara)\r
+\r
+emojions 🚲🧺 pra quem for colar!\r
+\r
+Para comemorar o nosso centésimo pedal, vamos fazer um singelo piquenique na Guarapiranga aproveitando a previsão de um belo dia de sol. Venham se deliciar nas curvas do pinheiros canalizado e na vastidão da represa nessa doce celebração com aquilo que mais move as nossas hidro-andanças: vocês! \r
+Tragam algo pra comer, se possível uma canga ou toalha e muita alegria. Viva a vida!\r
+\r
+\r
+Atenção! Vá com bicicleta revisada e use capacete. Leve água, protetor solar, algum lanchinho e câmara reserva."""@pt ;
+    dcterms:title "Um piquenique para 100 pedais!" ;
+    prov:wasAttributedTo pes:wgb9b5fe ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/100> ;
+    ph:linkInstagram "https://www.instagram.com/pedalhidrografico/p/DaoiebPDpyW/"^^xsd:anyURI ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/pjzp5vy4/announcement.jpg> ;
+    schema:organizer pes:wgb9b5fe,
+        <https://pedalhidrografi.co/data/org_alef> .
 
 pas:q5artzrc a ph:Tour ;
     dcterms:date "2025-05-14T20:00:00-03:00"^^xsd:dateTime ;
@@ -2367,6 +2420,10 @@ pas:3sk51hs2_sweep a ph:MediaSweep ;
         "pedpaula",
         "pedrokozla" .
 
+pas:3xe9ywa8_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/49741245> .
+
 pas:4d184nra_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/50957749> .
@@ -2498,6 +2555,10 @@ pas:7d5ss8m1_sweep a ph:MediaSweep ;
         "gmardegan",
         "josepelegrini" .
 
+pas:7epxmn2t_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/56268053> .
+
 pas:7r767mt2_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/52046213> .
@@ -2604,7 +2665,7 @@ pas:9s8bhtjw_route a ph:RouteReference ;
 
 <https://id.pedalhidrografi.co/passeio/BP/3-5> a ph:SeriesEdition ;
     ph:inEventSeries ser:BP ;
-    ph:sequenceInSeries 4 .
+    ph:sequenceInSeries "4"^^xsd:positiveInteger .
 
 <https://id.pedalhidrografi.co/passeio/BP/4> a ph:SeriesEdition ;
     ph:inEventSeries ser:BP ;
@@ -2637,6 +2698,14 @@ pas:9s8bhtjw_route a ph:RouteReference ;
 <https://id.pedalhidrografi.co/passeio/PH/10> a ph:SeriesEdition ;
     ph:inEventSeries ser:PH ;
     ph:sequenceInSeries 10 .
+
+<https://id.pedalhidrografi.co/passeio/PH/100> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 100 .
+
+<https://id.pedalhidrografi.co/passeio/PH/101> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 101 .
 
 <https://id.pedalhidrografi.co/passeio/PH/11> a ph:SeriesEdition ;
     ph:inEventSeries ser:PH ;
@@ -3021,6 +3090,10 @@ pas:9s8bhtjw_route a ph:RouteReference ;
 <https://id.pedalhidrografi.co/passeio/PH/98> a ph:SeriesEdition ;
     ph:inEventSeries ser:PH ;
     ph:sequenceInSeries 98 .
+
+<https://id.pedalhidrografi.co/passeio/PH/99> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 99 .
 
 <https://id.pedalhidrografi.co/passeio/S/1> a ph:SeriesEdition ;
     ph:inEventSeries ser:S ;
@@ -4046,6 +4119,9 @@ pas:zv43bb5y_sweep a ph:MediaSweep ;
 
 ser:SESC a schema:EventSeries ;
     dcterms:title "SESC" .
+
+<https://pedalhidrografi.co/data/org_alef> a schema:Organization ;
+    schema:name "alef" .
 
 ser:BT a schema:EventSeries ;
     dcterms:title "Bondes / Trips" .

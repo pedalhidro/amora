@@ -190,7 +190,17 @@ def main() -> None:
     import urllib.error
     import urllib.request
 
-    ok = 0
+    # O Python do sistema (macOS) não traz o bundle de CAs: sem isto, todo
+    # POST em https:// morre com CERTIFICATE_VERIFY_FAILED.
+    ctx = None
+    try:
+        import certifi
+        import ssl
+        ctx = ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        pass
+
+    ok, falhas = 0, []
     for t, (url, _) in casados.items():
         slug = str(t).rsplit("/", 1)[-1]
         ttl = TTL.format(slug=slug, url=url)
@@ -198,16 +208,21 @@ def main() -> None:
         req = urllib.request.Request(f"{a.servidor.rstrip('/')}/upload-tour",
                                      data=body, headers=headers, method="POST")
         try:
-            with urllib.request.urlopen(req, timeout=120) as r:
+            with urllib.request.urlopen(req, timeout=120, context=ctx) as r:
                 if r.status == 200:
                     ok += 1
                 else:
-                    print(f"  ✗ {slug}: HTTP {r.status}")
+                    falhas.append((slug, f"HTTP {r.status}"))
         except urllib.error.HTTPError as e:
-            print(f"  ✗ {slug}: HTTP {e.code}: {e.read().decode()[:160]}")
+            falhas.append((slug, f"HTTP {e.code}: {e.read().decode()[:160]}"))
         except Exception as e:  # noqa: BLE001
-            print(f"  ✗ {slug}: {e}")
-    print(f"\n✓ {ok}/{len(casados)} gravações importadas via {a.servidor}")
+            falhas.append((slug, str(e)))
+    print(f"\n{ok}/{len(casados)} gravações importadas via {a.servidor}")
+    if falhas:
+        print(f"✗ {len(falhas)} FALHARAM:")
+        for slug, motivo in falhas[:10]:
+            print(f"    {slug}  {motivo[:88]}")
+        sys.exit(1)
 
 
 def multipart(campos: dict[str, str]) -> tuple[bytes, dict]:
@@ -216,7 +231,9 @@ def multipart(campos: dict[str, str]) -> tuple[bytes, dict]:
               for k, v in campos.items()]
     partes.append(f"--{bnd}--\r\n")
     return "".join(partes).encode("utf-8"), {
-        "Content-Type": f"multipart/form-data; boundary={bnd}"}
+        "Content-Type": f"multipart/form-data; boundary={bnd}",
+        # A Cloudflare do amora responde 403 pro User-Agent padrão do urllib.
+        "User-Agent": "phidro-import-activities/1.0 (+https://github.com/pedalhidro/amora)"}
 
 
 if __name__ == "__main__":

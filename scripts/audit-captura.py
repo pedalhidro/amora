@@ -76,6 +76,7 @@ ACERVO_PADRAO = (
 )
 
 SERVIDOR_PADRAO = "https://amora.pedalhidrografi.co"
+USER_AGENT = "phidro-audit-captura/1.0 (+https://github.com/pedalhidro/amora)"
 
 TZ_SP = timezone(timedelta(hours=-3))
 
@@ -551,6 +552,21 @@ def ttl_do_passe(p: Passeio, quem: str) -> str:
     )
 
 
+def _contexto_ssl():
+    """Contexto TLS que funciona no Python do sistema (macOS).
+
+    O Python de sistema não vem com o bundle de CAs, então um POST em https://
+    morre com CERTIFICATE_VERIFY_FAILED. `certifi` resolve; sem ele, devolve
+    None (contexto padrão) em vez de explodir.
+    """
+    try:
+        import certifi
+        import ssl
+        return ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        return None
+
+
 def sincronizar(passeios, servidor: str, quem: str | None, dry: bool) -> None:
     import urllib.request
     import urllib.error
@@ -566,6 +582,8 @@ def sincronizar(passeios, servidor: str, quem: str | None, dry: bool) -> None:
     atualiza = [p for p in alvos if p.passe_feito]
     print(f"{len(novos)} passes novos, {len(atualiza)} com contagem desatualizada\n")
 
+    ctx = _contexto_ssl()
+    ok, falhas = 0, []
     for p in alvos:
         ttl = ttl_do_passe(p, quem)
         marca = "novo " if not p.passe_feito else f"{p.passe_count}→"
@@ -577,18 +595,34 @@ def sincronizar(passeios, servidor: str, quem: str | None, dry: bool) -> None:
         req = urllib.request.Request(f"{servidor}/upload-tour", data=body,
                                      headers=headers, method="POST")
         try:
-            with urllib.request.urlopen(req, timeout=120) as r:
-                if r.status != 200:
+            with urllib.request.urlopen(req, timeout=120, context=ctx) as r:
+                if r.status == 200:
+                    ok += 1
+                else:
+                    falhas.append((p, f"HTTP {r.status}"))
                     print(f"        ✗ HTTP {r.status}")
         except urllib.error.HTTPError as e:
-            print(f"        ✗ HTTP {e.code}: {e.read().decode()[:200]}")
+            msg = f"HTTP {e.code}: {e.read().decode()[:160]}"
+            falhas.append((p, msg))
+            print(f"        ✗ {msg}")
         except Exception as e:  # noqa: BLE001
+            falhas.append((p, str(e)))
             print(f"        ✗ {e}")
 
     if dry:
         print("\n(--dry-run: nada foi enviado)")
-    else:
-        print(f"\n✓ passes gravados via {servidor}/upload-tour (mode=patch)")
+        return
+
+    # Relatório honesto: um "✓" incondicional depois de N falhas é como não
+    # ter relatório nenhum.
+    print(f"\n{ok}/{len(alvos)} passes gravados via {servidor}/upload-tour (mode=patch)")
+    if falhas:
+        print(f"✗ {len(falhas)} FALHARAM:")
+        for p, motivo in falhas[:10]:
+            print(f"    {p.data.date()} {p.edicao:8} {motivo[:88]}")
+        if len(falhas) > 10:
+            print(f"    … e mais {len(falhas) - 10}")
+        sys.exit(1)
 
 
 def _multipart(campos: dict[str, str]) -> tuple[bytes, dict]:
@@ -598,7 +632,13 @@ def _multipart(campos: dict[str, str]) -> tuple[bytes, dict]:
         partes.append(f"--{bnd}\r\nContent-Disposition: form-data; name=\"{k}\"\r\n\r\n{v}\r\n")
     partes.append(f"--{bnd}--\r\n")
     body = "".join(partes).encode("utf-8")
-    return body, {"Content-Type": f"multipart/form-data; boundary={bnd}"}
+    return body, {
+        "Content-Type": f"multipart/form-data; boundary={bnd}",
+        # A Cloudflare que fronteia o amora responde 403 pro User-Agent padrão
+        # do urllib (`Python-urllib/3.x`). Um UA próprio passa — e ainda diz
+        # quem bateu na porta, o que é melhor pro log do que fingir ser curl.
+        "User-Agent": USER_AGENT,
+    }
 
 
 # ═════════════════════════════════════════════════════════════════════════
