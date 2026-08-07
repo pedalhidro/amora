@@ -3,6 +3,7 @@
 
 # Segredos — nunca no build context.
 .env
+amora-upload.keystore
 
 # Mutável: vive no STORE. Tudo em web/clips/ (transcodes do build-clips.py
 # inclusive) é redirecionado pelo backend pra gs://<bucket>/clips/, então
@@ -25,6 +26,11 @@ web/clips/
 research/
 scripts/
 eink/
+capacitor/
+ignore/
+features/
+docs/
+.sync-state/
 
 # Python lixo
 __pycache__/
@@ -42,3 +48,4 @@ venv/
 ICON_DESIGN.md
 CLAUDE.md
 README.md
+REVIEW_HANDOFF.md

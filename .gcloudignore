@@ -12,6 +12,7 @@
 # --source` sobe o .env (RWGPS_API_KEY/RWGPS_AUTH_TOKEN) pro bucket de
 # staging do Cloud Build, mesmo que não chegue à imagem final.
 .env
+amora-upload.keystore
 
 # Estado mutável — vive no STORE (GCS), nunca no container.
 # Container fica magrinho: /photos/<phash>/* e /clips/<*> são redirecionados
@@ -32,10 +33,19 @@ backend/data/
 .idea/
 .claude/
 
-# Pastas não usadas no container
+# Pastas não usadas no container. ATENÇÃO: com .gcloudignore presente o
+# gcloud IGNORA o .gitignore — tudo que só o .gitignore exclui (capacitor/
+# node_modules+ios+android, o cache de dados do build-viario.py em ignore/)
+# precisa estar listado AQUI também, senão sobe no build context (já foram
+# ~1.7 GB / 17 mil arquivos por deploy).
 research/
 scripts/
 eink/
+capacitor/
+ignore/
+features/
+docs/
+.sync-state/
 
 # Python lixo
 __pycache__/
@@ -55,3 +65,4 @@ Thumbs.db
 ICON_DESIGN.md
 CLAUDE.md
 README.md
+REVIEW_HANDOFF.md
