@@ -18,7 +18,7 @@
 // origin) e v371/v372 saíram na `deploy` (busca de endereços, ⇄ inverter).
 // v373 fica acima de tudo que já circulou, que é o que importa: se a VERSION
 // não crescer, o service worker serve cache velho.
-const VERSION = 'phidro-v374';
+const VERSION = 'phidro-v375';
 const STATIC_CACHE = `${VERSION}-static`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 
@@ -57,6 +57,7 @@ const STATIC_ASSETS = [
   './lib/leaflet/images/marker-shadow.png',
   './lib/locatecontrol/L.Control.Locate.min.js',
   './lib/locatecontrol/L.Control.Locate.min.css',
+  './lib/flatgeobuf-geojson.min.js',   // leitor FGB do viário/água (range requests)
 ];
 
 self.addEventListener('install', (event) => {
@@ -113,6 +114,13 @@ self.addEventListener('fetch', (event) => {
   // Localização ao vivo: NUNCA cachear. As posições mudam a cada segundo e
   // o GET sai com Cache-Control: no-store — deixa passar direto pra rede.
   if (url.pathname.includes('/live-location')) return;  // cobre /live-locations tb
+
+  // FlatGeobuf (viário/água): passa DIRETO pra rede, sem tocar o cache. O
+  // leitor busca fatias por Range (206) e o cache.match() IGNORA o header
+  // Range — um 200 completo cacheado seria servido como resposta a um range
+  // request, corrompendo o parse. (206 nunca é cacheado pelo guard de status
+  // abaixo, mas o perigo é o lado do match.)
+  if (url.pathname.endsWith('.fgb')) return;
 
   // Same-origin: estado mutável usa network-first — qualquer upload/sync
   // novo aparece no próximo refresh sem o dance de dois-refreshes do
