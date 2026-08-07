@@ -1,45 +1,66 @@
 #!/usr/bin/env python
-"""Enxuga o gpkg do viário de SP pra um arquivo leve, próprio pra baixar
-no navegador e rasterizar como máscara de rede ("Menor energia pelo viário").
+"""Constrói os FlatGeobuf (FGB) do viário da América do Sul a partir do
+extrato Geofabrik, próprios pra leitura por RANGE REQUEST no navegador
+("Menor energia pelo viário" / modo terreno).
 
-A fonte (`ignore/sampa-viario.gpkg`, ~152 MB) traz a tabela `viario`
-(LINESTRING, EPSG:31983 — SIRGAS 2000 / UTM 23S) com 440 k+ feições e um
-monte de colunas de atributo (osm_id, name, other_tags, waterway, railway…)
-que não servem pra rasterização. Este script:
+Antes este script enxugava um gpkg local de SP (~152 MB → ~125 MB) que o app
+baixava INTEIRO e consultava via sql.js. A migração pra FlatGeobuf muda tudo:
+o índice espacial (packed Hilbert R-tree) do FGB permite ao cliente buscar só
+os BYTES da bbox visível via HTTP Range — o tamanho do arquivo deixa de
+importar pro usuário, o que viabiliza cobrir a América do Sul inteira.
 
-  - mantém a geometria (`geom`) + 3 colunas finas extraídas do hstore
-    `other_tags` pro achatamento de tabuleiro no "Menor energia pelo viário":
-    `bridge` ('yes' p/ ponte/viaduto, i.e. bridge!=no), `tunnel` ('yes') e
-    `layer` (int). Sem elas o app teria que puxar pontes do Overpass por trecho;
-    com elas a flag vem do próprio gpkg (offline, rápido);
-  - filtra `highway IS NOT NULL` — mesma semântica do antigo Overpass
-    (`way["highway"]`): ruas pedaláveis, não rios/ferrovias;
-  - reconstrói o índice R-tree (SPATIAL_INDEX=YES, padrão do driver GPKG)
-    pra consulta por bbox continuar rápida no navegador;
-  - reprojeta pra EPSG:4326 (WGS84). Assim o app NÃO precisa do proj4 nem
-    reprojeta vértice a vértice na rasterização — era o gargalo que deixava
-    a rota lenta/travada. A bbox e os vértices já saem em lat/lng.
+Pipeline (fonte = south-america-latest.osm.pbf, ~4 GB, cacheado em ignore/):
 
-Alvo: ~30–50 MB. Depois de gerar, suba o arquivo pro mesmo host dos DEMs:
+  - `osmium tags-filter w/highway` pré-filtra o pbf (load-bearing: sem isso o
+    driver OSM do ogr2ogr varre o continente inteiro por camada);
+  - ogr2ogr → `south-america-viario.fgb` com geometria + 3 colunas finas
+    (`bridge`, `tunnel`, `layer`) promovidas a campo via um osmconf.ini
+    mínimo escrito pelo script (substitui o antigo instr/substr no hstore
+    `other_tags`). Valores CRUS do OSM — o cliente já trata
+    (`bridge && bridge !== 'no'`, `tunnel === 'yes'`, `parseInt(layer)`);
+  - `--water`: `osmium tags-filter` de água → dois FGBs (FGB é mono-camada):
+    `south-america-water-areas.fgb` (polígonos: natural=water /
+    landuse=reservoir / waterway=riverbank) e
+    `south-america-water-rivers.fgb` (linhas: waterway=river);
+  - EPSG:4326 nativo do pbf — nada de reprojeção; índice espacial é o
+    default do driver FlatGeobuf.
 
-    gcloud storage cp ignore/sampa-viario-slim.gpkg \\
-        gs://telhas/viario/sampa-viario.gpkg
+Depois de gerar, suba pro mesmo host dos DEMs. ATENÇÃO: **SEM -Z nos .fgb** —
+`Content-Encoding: gzip` no GCS quebra os range requests que o cliente usa
+(o transcoding decompressivo ignora Range):
 
-(servido em https://telhas.pedalhidrografi.co/viario/sampa-viario.gpkg —
-ver VIARIO_GPKG_URL em web/app.js).
+    gcloud storage cp --cache-control="public,max-age=86400" \\
+        ignore/south-america-viario.fgb \\
+        ignore/south-america-water-areas.fgb \\
+        ignore/south-america-water-rivers.fgb \\
+        gs://telhas/viario/
 
-Requisitos: ogr2ogr (GDAL) no PATH.
+(servidos em https://telhas.pedalhidrografi.co/viario/<nome>.fgb — ver
+VIARIO_FGB_URL / WATER_*_FGB_URL em web/app.js). Verificação pós-upload:
+
+    curl -sI -H 'Range: bytes=0-15' \\
+        https://telhas.pedalhidrografi.co/viario/south-america-viario.fgb
+    # esperar: 206 + Content-Range, sem Content-Encoding
+
+Requisitos: ogr2ogr (GDAL ≥ 3.1, driver FlatGeobuf) e osmium no PATH;
+`--graph` requer também os bindings Python do GDAL (`from osgeo import ogr` —
+brew install gdal / apt install python3-gdal).
 
 Roda:
-    python scripts/build-viario.py
-    python scripts/build-viario.py --in ignore/sampa-viario.gpkg --out ignore/sampa-viario-slim.gpkg
+    python scripts/build-viario.py                # só o viário
+    python scripts/build-viario.py --water        # viário + água
+    python scripts/build-viario.py --water --graph
+    # teste rápido com um extrato pequeno (mesmos nomes de saída!):
+    python scripts/build-viario.py --extract \\
+        https://download.geofabrik.de/south-america/ecuador-latest.osm.pbf
 
-Além do gpkg, `--graph` (ou `--graph-only`, se o gpkg de --out já existe)
+Além dos FGBs, `--graph` (ou `--graph-only`, se o FGB do viário já existe)
 cozinha o GRAFO BINÁRIO pré-pronto `ignore/sampa-viario-graph.bin` — nós com
 elevação já amostrada (DEM de SP + FABDEM via /vsicurl) e tabuleiros
-achatados — que é o que o "Menor energia pelo viário" baixa hoje em vez do
-gpkg inteiro (o gpkg segue servido pro modo terreno: camada water/portais).
-Ver o bloco "Grafo pré-cozido" abaixo. Sobe com:
+achatados — que é o que o "Menor energia pelo viário" baixa em vez de montar
+o grafo por sessão. O grafo segue RECORTADO à região de SP (GRAPH_BBOX — a
+cobertura dos DEMs manda; fora dela o roteamento cai pro FGB/Overpass).
+Ver o bloco "Grafo pré-cozido" abaixo. Sobe com (-Z ok: é baixado inteiro):
 
     gcloud storage cp -Z ignore/sampa-viario-graph.bin gs://telhas/viario/
 """
@@ -49,7 +70,6 @@ import gzip
 import math
 import os
 import shutil
-import sqlite3
 import struct
 import subprocess
 import sys
@@ -57,20 +77,49 @@ from array import array
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_IN = ROOT / "ignore" / "sampa-viario.gpkg"
-DEFAULT_OUT = ROOT / "ignore" / "sampa-viario-slim.gpkg"
+IGNORE = ROOT / "ignore"
 
-# Tabela/coluna esperadas na fonte (ver `gpkg_geometry_columns`).
-TABLE = "viario"
-GEOM = "geom"
+# Fonte: extrato Geofabrik da América do Sul (~4 GB). Cacheado em ignore/ e
+# MANTIDO por padrão (re-baixar dói) — `--drop-pbf` apaga ao final.
+GEOFABRIK_URL = "https://download.geofabrik.de/south-america-latest.osm.pbf"
 
-# Camada de água (`--water`): não está na fonte do viário (é um export só de
-# ruas), então puxa do OSM via um extrato Geofabrik + osmium. SP é interior (sem
-# litoral) → água = áreas (natural=water / waterway=riverbank / landuse=reservoir)
-# + rios (waterway=river). Vira a camada `water` no gpkg, lida pela máscara de
-# barreira do "Menor energia pelo terreno". O .pbf (~800 MB) é cacheado em ignore/.
-GEOFABRIK_URL = "https://download.geofabrik.de/south-america/brazil/sudeste-latest.osm.pbf"
-PBF = ROOT / "ignore" / "sudeste-latest.osm.pbf"
+OUT_VIARIO = IGNORE / "south-america-viario.fgb"
+OUT_WATER_AREAS = IGNORE / "south-america-water-areas.fgb"
+OUT_WATER_RIVERS = IGNORE / "south-america-water-rivers.fgb"
+
+# osmconf.ini mínimo pro driver OSM do GDAL: só a camada `lines` interessa e
+# só bridge/tunnel/layer viram campo (highway fica implícito no pré-filtro,
+# mas entra como campo pra permitir -where "highway IS NOT NULL" — proteção
+# contra um pbf não pré-filtrado). `other_tags=no` mantém o FGB fino.
+OSMCONF = """\
+closed_ways_are_polygons=aeroway,amenity,boundary,building,craft,geological,historic,landuse,leisure,military,natural,office,place,shop,sport,tourism,highway=platform,public_transport=platform
+
+[points]
+osm_id=no
+attributes=name
+other_tags=no
+
+[lines]
+osm_id=no
+attributes=highway,bridge,tunnel,layer,waterway
+other_tags=no
+
+[multipolygons]
+osm_id=no
+osm_way_id=no
+attributes=natural,landuse,waterway
+other_tags=no
+
+[multilinestrings]
+osm_id=no
+attributes=type
+other_tags=no
+
+[other_relations]
+osm_id=no
+attributes=type
+other_tags=no
+"""
 
 
 def _run(cmd: list[str]) -> None:
@@ -78,63 +127,75 @@ def _run(cmd: list[str]) -> None:
     subprocess.run([str(c) for c in cmd], check=True)
 
 
-def extent_4326(gpkg: Path, layer: str) -> tuple[float, float, float, float]:
-    """(W, S, E, N) da camada via ogrinfo. O gpkg já é 4326."""
-    out = subprocess.run(["ogrinfo", "-so", str(gpkg), layer],
-                         capture_output=True, text=True, check=True).stdout
-    for line in out.splitlines():
-        if line.strip().startswith("Extent:"):
-            nums = [float(x) for x in __import__("re").findall(r"-?\d+\.\d+", line)]
-            if len(nums) == 4:
-                return nums[0], nums[1], nums[2], nums[3]  # W, S, E, N
-    raise RuntimeError("não achei Extent na saída do ogrinfo")
+def download_pbf(url: str, dest: Path) -> None:
+    if dest.exists():
+        print(f"→ reusando {dest.name} ({dest.stat().st_size / 1e6:.0f} MB) — apague pra re-baixar")
+        return
+    print(f"→ baixando extrato Geofabrik → {dest.name}")
+    _run(["curl", "-fL", "--retry", "4", "-C", "-", "-o", dest, url])
 
 
-def build_water_layer(dst: Path, keep_pbf: bool) -> None:
-    """Adiciona a camada `water` (áreas + rios) ao gpkg, recortada à extensão do
-    viário, a partir de um extrato Geofabrik via osmium. Idempotente."""
-    for tool in ("osmium",):
-        if not shutil.which(tool):
-            raise RuntimeError(f"{tool} não está no PATH (brew install osmium-tool).")
-    w, s, e, n = extent_4326(dst, TABLE)
-    pad = 0.02
-    bbox = f"{w - pad},{s - pad},{e + pad},{n + pad}"  # left,bottom,right,top
-    ig = dst.parent
-    sp_pbf = ig / "water-sp.osm.pbf"
-    ar_pbf, ar_gj = ig / "water-area.osm.pbf", ig / "water_areas.geojson"
-    rv_pbf, rv_gj = ig / "water-river.osm.pbf", ig / "water_rivers.geojson"
+def build_viario_fgb(pbf: Path, out: Path) -> None:
+    """south-america-viario.fgb: linhas highway com bridge/tunnel/layer."""
+    hw_pbf = IGNORE / (pbf.stem + "-highways.osm.pbf")
+    conf = IGNORE / "osmconf-viario.ini"
+    conf.write_text(OSMCONF)
+    if hw_pbf.exists() and hw_pbf.stat().st_mtime >= pbf.stat().st_mtime:
+        print(f"→ reusando {hw_pbf.name} (apague pra re-filtrar)")
+    else:
+        _run(["osmium", "tags-filter", pbf, "w/highway", "-o", hw_pbf, "--overwrite"])
+    out.unlink(missing_ok=True)
+    # OSM_MAX_TMPFILE_SIZE (MB): cache de nós do driver OSM num tempfile só.
+    # TEMPORARY_DIR: o sort Hilbert do driver FGB escreve temporários grandes —
+    # aponta pra ignore/ (o /tmp do sandbox/laptop pode ser pequeno).
+    _run(["ogr2ogr", "-f", "FlatGeobuf", out, hw_pbf, "lines",
+          "-oo", f"CONFIG_FILE={conf}",
+          "-select", "bridge,tunnel,layer",
+          "-where", "highway IS NOT NULL",
+          "-nlt", "LINESTRING",
+          "-lco", f"TEMPORARY_DIR={IGNORE}",
+          "--config", "OSM_MAX_TMPFILE_SIZE", "4000"])
+    print(f"→ {out.name}: {out.stat().st_size / 1e6:.0f} MB")
 
-    if not PBF.exists():
-        print(f"→ baixando extrato Geofabrik (~800 MB) → {PBF.name}")
-        _run(["curl", "-fL", "--retry", "3", "-C", "-", "-o", PBF, GEOFABRIK_URL])
-    # Recorta à bbox do viário (rápido). Depois DOIS pipelines separados pra que o
-    # osmium NÃO emita o contorno do polígono também como linha (que duplicaria a
-    # área): áreas → só polígonos; rios → só linhas. (`--geometry-types`.)
-    _run(["osmium", "extract", "-b", bbox, PBF, "-o", sp_pbf, "--overwrite"])
-    _run(["osmium", "tags-filter", sp_pbf, "-o", ar_pbf, "--overwrite",
+
+def build_water_fgbs(pbf: Path) -> None:
+    """Água em DOIS FGBs (FGB é mono-camada; polígono e linha separados —
+    mesma razão dos dois pipelines osmium antigos: o contorno do polígono não
+    pode duplicar como linha). O app rasteriza: polígono→preenche, linha→barreira."""
+    ar_pbf = IGNORE / "water-area.osm.pbf"
+    rv_pbf = IGNORE / "water-river.osm.pbf"
+    _run(["osmium", "tags-filter", pbf, "-o", ar_pbf, "--overwrite",
           "nwr/natural=water", "nwr/landuse=reservoir", "nwr/waterway=riverbank"])
-    _run(["osmium", "export", ar_pbf, "-o", ar_gj, "--overwrite", "-f", "geojson", "--geometry-types=polygon"])
-    _run(["osmium", "tags-filter", sp_pbf, "-o", rv_pbf, "--overwrite", "w/waterway=river"])
-    _run(["osmium", "export", rv_pbf, "-o", rv_gj, "--overwrite", "-f", "geojson", "--geometry-types=linestring"])
-    # Camada `water` no gpkg: áreas (polígono) + rios (linha) numa camada
-    # GEOMETRY. O app rasteriza por tipo: polígono→preenche, linha→barreira.
-    _run(["ogr2ogr", "-f", "GPKG", "-update", "-nln", "water", "-nlt", "GEOMETRY",
-          "-t_srs", "EPSG:4326", "-lco", "SPATIAL_INDEX=YES", str(dst), str(ar_gj)])
-    _run(["ogr2ogr", "-f", "GPKG", "-update", "-append", "-nln", "water",
-          "-t_srs", "EPSG:4326", str(dst), str(rv_gj)])
-    for tmp in (sp_pbf, ar_pbf, ar_gj, rv_pbf, rv_gj):
+    _run(["osmium", "tags-filter", pbf, "-o", rv_pbf, "--overwrite", "w/waterway=river"])
+    conf = IGNORE / "osmconf-viario.ini"
+    conf.write_text(OSMCONF)
+    OUT_WATER_AREAS.unlink(missing_ok=True)
+    _run(["ogr2ogr", "-f", "FlatGeobuf", OUT_WATER_AREAS, ar_pbf, "multipolygons",
+          "-oo", f"CONFIG_FILE={conf}",
+          "-select", "natural",
+          "-nlt", "MULTIPOLYGON",
+          "-lco", f"TEMPORARY_DIR={IGNORE}",
+          "--config", "OSM_MAX_TMPFILE_SIZE", "4000"])
+    OUT_WATER_RIVERS.unlink(missing_ok=True)
+    _run(["ogr2ogr", "-f", "FlatGeobuf", OUT_WATER_RIVERS, rv_pbf, "lines",
+          "-oo", f"CONFIG_FILE={conf}",
+          "-select", "waterway",
+          "-nlt", "LINESTRING",
+          "-lco", f"TEMPORARY_DIR={IGNORE}",
+          "--config", "OSM_MAX_TMPFILE_SIZE", "4000"])
+    for tmp in (ar_pbf, rv_pbf):
         tmp.unlink(missing_ok=True)
-    if not keep_pbf:
-        PBF.unlink(missing_ok=True)  # libera ~800 MB; re-baixa no próximo --water
+    print(f"→ {OUT_WATER_AREAS.name}: {OUT_WATER_AREAS.stat().st_size / 1e6:.0f} MB · "
+          f"{OUT_WATER_RIVERS.name}: {OUT_WATER_RIVERS.stat().st_size / 1e6:.0f} MB")
 
 
 # ─── Grafo pré-cozido (--graph) ───────────────────────────────────────────────
-# Em vez de o navegador baixar o gpkg inteiro (~125 MB) + amostrar o DEM +
-# montar o grafo A CADA sessão, o bake produz `sampa-viario-graph.bin`: um
-# grafo binário compacto com as ELEVAÇÕES JÁ AMOSTRADAS por nó (DEM de SP ~5 m
-# onde cobre, FABDEM no resto — mesma prioridade do runtime) e os tabuleiros
-# (ponte/túnel) já achatados em rampa entre os apoios. O app decodifica com
-# typed arrays (zero parse pesado) e roteia direto — ver ensureViarioGraph /
+# Em vez de o navegador consultar o FGB + amostrar o DEM + montar o grafo A
+# CADA sessão, o bake produz `sampa-viario-graph.bin`: um grafo binário
+# compacto com as ELEVAÇÕES JÁ AMOSTRADAS por nó (DEM de SP ~5 m onde cobre,
+# FABDEM no resto — mesma prioridade do runtime) e os tabuleiros (ponte/túnel)
+# já achatados em rampa entre os apoios. O app decodifica com typed arrays
+# (zero parse pesado) e roteia direto — ver ensureViarioGraph /
 # bakedViarioRoute em web/app.js.
 #
 # Fidelidade com o viarioGraphRoute do app: mesma quantização de junção
@@ -164,8 +225,13 @@ ARCSEC = 1.0 / 3600.0            # célula do FABDEM (~30,9 m) — grade do bake
 M_DEG = 111320.0                 # mesma constante do app.js
 DENSIFY_M = ARCSEC * M_DEG       # ~30,92 m — casa com o cellM do runtime
 DECK_MAX_SEG_M = 600.0           # só pra caber em u16 dm; rampa é linear mesmo
-DEFAULT_GRAPH_OUT = ROOT / "ignore" / "sampa-viario-graph.bin"
-GRAPH_TMP = ROOT / "ignore" / "graph-tmp"
+DEFAULT_GRAPH_OUT = IGNORE / "sampa-viario-graph.bin"
+GRAPH_TMP = IGNORE / "graph-tmp"
+
+# Recorte do grafo: a extensão do antigo gpkg de SP (a cobertura DEM manda —
+# fora dela não há elevação boa pra assar). O FGB continental é filtrado a
+# esta bbox via SetSpatialFilterRect. Sobrepõe com --graph-bbox W,S,E,N.
+GRAPH_BBOX = (-47.419098, -24.041109, -45.807267, -23.088709)
 
 
 def fabdem_tile_name(lat: int, lon: int) -> str:
@@ -275,50 +341,6 @@ class DemSampler:
         return 0.0
 
 
-def _parse_gpkg_lines(blob: bytes) -> list[list[tuple[float, float]]] | None:
-    """GPKG StandardGeoPackageBinary → [[(lng,lat),…],…] ((Multi)LineString,
-    2-D/Z/M nas codificações ISO e EWKB — port do parseGpkgGeom do app.js)."""
-    if len(blob) < 8 or blob[:2] != b"GP":
-        return None
-    env = (blob[3] >> 1) & 7
-    off = 8 + [0, 32, 48, 48, 64, 0, 0, 0][env]
-
-    def wkb_line(off: int) -> tuple[list[tuple[float, float]] | None, int]:
-        le = blob[off] == 1
-        fmt = "<" if le else ">"
-        t = struct.unpack_from(fmt + "I", blob, off + 1)[0]
-        code = t & 0x0FFFFFFF
-        base, isodim = code % 1000, code // 1000
-        has_z = bool(t & 0x80000000) or isodim in (1, 3)
-        has_m = bool(t & 0x40000000) or isodim in (2, 3)
-        stride = 16 + (8 if has_z else 0) + (8 if has_m else 0)
-        if base != 2:
-            return None, base
-        n = struct.unpack_from(fmt + "I", blob, off + 5)[0]
-        p = off + 9
-        pts = [struct.unpack_from(fmt + "dd", blob, p + i * stride) for i in range(n)]
-        return pts, p + n * stride
-
-    le = blob[off] == 1
-    fmt = "<" if le else ">"
-    t = struct.unpack_from(fmt + "I", blob, off + 1)[0]
-    base = (t & 0x0FFFFFFF) % 1000
-    if base == 2:
-        pts, _ = wkb_line(off)
-        return [pts] if pts else None
-    if base == 5:  # MultiLineString — cada filho repete o header WKB
-        k = struct.unpack_from(fmt + "I", blob, off + 5)[0]
-        p = off + 9
-        out = []
-        for _ in range(k):
-            pts, p = wkb_line(p)
-            if pts is None:
-                return None
-            out.append(pts)
-        return out
-    return None
-
-
 def _seg_len_m(a: tuple[float, float], b: tuple[float, float]) -> float:
     """Mesma equiretangular do app.js (M_DEG e cos da latitude média)."""
     d_lat = (b[1] - a[1]) * M_DEG
@@ -326,18 +348,52 @@ def _seg_len_m(a: tuple[float, float], b: tuple[float, float]) -> float:
     return math.hypot(d_lat, d_lng)
 
 
-def bake_graph(gpkg: Path, out: Path) -> None:
-    db = sqlite3.connect(str(gpkg))
-    row = db.execute(
-        "SELECT min_x, min_y, max_x, max_y FROM gpkg_contents WHERE table_name = ?",
-        (TABLE,)).fetchone()
-    if not row:
-        raise RuntimeError(f"camada {TABLE!r} não está em gpkg_contents de {gpkg}")
+def _iter_fgb_lines(fgb: Path, bbox: tuple[float, float, float, float]):
+    """Itera (pts, bridge, tunnel) das linhas do FGB que tocam a bbox, via
+    bindings Python do GDAL (o índice espacial do FGB serve o filtro).
+    pts = [(lng, lat), …]. Substitui o antigo leitor sqlite3+WKB do gpkg."""
+    try:
+        from osgeo import ogr
+    except ImportError as e:
+        raise RuntimeError(
+            "bindings Python do GDAL ausentes (from osgeo import ogr) — "
+            "brew install gdal / apt install python3-gdal") from e
+    ogr.UseExceptions()
+    ds = ogr.Open(str(fgb))
+    if ds is None:
+        raise RuntimeError(f"não consegui abrir {fgb}")
+    lyr = ds.GetLayer(0)
+    w, s, e, n = bbox
+    lyr.SetSpatialFilterRect(w, s, e, n)
+    defn = lyr.GetLayerDefn()
+    i_bridge = defn.GetFieldIndex("bridge")
+    i_tunnel = defn.GetFieldIndex("tunnel")
+    for feat in lyr:
+        g = feat.GetGeometryRef()
+        if g is None:
+            continue
+        bridge = feat.GetField(i_bridge) if i_bridge >= 0 else None
+        tunnel = feat.GetField(i_tunnel) if i_tunnel >= 0 else None
+        t = g.GetGeometryType()
+        flat = ogr.GT_Flatten(t)
+        if flat == ogr.wkbLineString:
+            parts = [g]
+        elif flat == ogr.wkbMultiLineString:
+            parts = [g.GetGeometryRef(k) for k in range(g.GetGeometryCount())]
+        else:
+            continue
+        for part in parts:
+            pts = [(p[0], p[1]) for p in part.GetPoints()]
+            if len(pts) >= 2:
+                yield pts, bridge, tunnel
+
+
+def bake_graph(fgb: Path, out: Path, graph_bbox: tuple[float, float, float, float]) -> None:
     pad = 0.01
-    bbox = (math.floor((row[0] - pad) / ARCSEC) * ARCSEC,
-            math.floor((row[1] - pad) / ARCSEC) * ARCSEC,
-            math.ceil((row[2] + pad) / ARCSEC) * ARCSEC,
-            math.ceil((row[3] + pad) / ARCSEC) * ARCSEC)
+    bbox = (math.floor((graph_bbox[0] - pad) / ARCSEC) * ARCSEC,
+            math.floor((graph_bbox[1] - pad) / ARCSEC) * ARCSEC,
+            math.ceil((graph_bbox[2] + pad) / ARCSEC) * ARCSEC,
+            math.ceil((graph_bbox[3] + pad) / ARCSEC) * ARCSEC)
     print(f"→ bbox do grafo: {bbox}")
     dem = DemSampler(bbox)
     print(f"→ DEM {dem.W}×{dem.H} pronto")
@@ -372,60 +428,52 @@ def bake_graph(gpkg: Path, out: Path) -> None:
         else:
             ex_u.append(a); ex_v.append(b); ex_dm.append(dm)
 
-    cur = db.execute(f'SELECT "{GEOM}", bridge, tunnel FROM "{TABLE}"')
     n_feat = n_deck = 0
-    for geom_blob, bridge, tunnel in cur:
-        lines = _parse_gpkg_lines(geom_blob)
-        if not lines:
-            continue
+    for pts, bridge, tunnel in _iter_fgb_lines(fgb, graph_bbox):
         is_deck = bool(bridge and bridge != "no") or tunnel == "yes"
-        for pts in lines:
-            if len(pts) < 2:
-                continue
-            n_feat += 1
-            if is_deck:
-                n_deck += 1
-            # Rampa do tabuleiro: elevação linear (por comprimento de arco)
-            # entre os apoios NO SOLO — igual ao `flat` do viarioGraphRoute.
-            ramp = None
-            if is_deck:
-                h0 = dem.elev(pts[0][1], pts[0][0])
-                h1 = dem.elev(pts[-1][1], pts[-1][0])
-                arc = [0.0]
-                for i in range(1, len(pts)):
-                    arc.append(arc[-1] + _seg_len_m(pts[i - 1], pts[i]))
-                total = arc[-1]
-                ramp = [h0 + (h1 - h0) * (a / total) if total > 0 else h0 for a in arc]
-            prev_id = -1
-            for i, (lng, lat) in enumerate(pts):
-                interior = is_deck and 0 < i < len(pts) - 1
-                nid = get_node(lng, lat, ramp[i] if interior else None, interior)
-                if prev_id >= 0 and nid != prev_id:
-                    d = _seg_len_m(pts[i - 1], pts[i])
-                    step = DECK_MAX_SEG_M if is_deck else DENSIFY_M
-                    nsub = max(1, math.ceil(d / step))
-                    if nsub == 1:
-                        add_edge(prev_id, nid, d)
-                    else:
-                        # Densifica: os substeps do profile-sampling do runtime
-                        # viram nós de grau 2 (custo aditivo → total idêntico).
-                        # Num tabuleiro, os pontos intermediários seguem a rampa.
-                        la0, lg0 = pts[i - 1][1], pts[i - 1][0]
-                        la1, lg1 = lat, lng
-                        pid = prev_id
-                        for sct in range(1, nsub):
-                            tt = sct / nsub
-                            slat = la0 + (la1 - la0) * tt
-                            slng = lg0 + (lg1 - lg0) * tt
-                            selev = None
-                            if is_deck:
-                                selev = ramp[i - 1] + (ramp[i] - ramp[i - 1]) * tt
-                            sid = get_node(slng, slat, selev, is_deck)
-                            add_edge(pid, sid, d / nsub)
-                            pid = sid
-                        add_edge(pid, nid, d / nsub)
-                prev_id = nid
-    db.close()
+        n_feat += 1
+        if is_deck:
+            n_deck += 1
+        # Rampa do tabuleiro: elevação linear (por comprimento de arco)
+        # entre os apoios NO SOLO — igual ao `flat` do viarioGraphRoute.
+        ramp = None
+        if is_deck:
+            h0 = dem.elev(pts[0][1], pts[0][0])
+            h1 = dem.elev(pts[-1][1], pts[-1][0])
+            arc = [0.0]
+            for i in range(1, len(pts)):
+                arc.append(arc[-1] + _seg_len_m(pts[i - 1], pts[i]))
+            total = arc[-1]
+            ramp = [h0 + (h1 - h0) * (a / total) if total > 0 else h0 for a in arc]
+        prev_id = -1
+        for i, (lng, lat) in enumerate(pts):
+            interior = is_deck and 0 < i < len(pts) - 1
+            nid = get_node(lng, lat, ramp[i] if interior else None, interior)
+            if prev_id >= 0 and nid != prev_id:
+                d = _seg_len_m(pts[i - 1], pts[i])
+                step = DECK_MAX_SEG_M if is_deck else DENSIFY_M
+                nsub = max(1, math.ceil(d / step))
+                if nsub == 1:
+                    add_edge(prev_id, nid, d)
+                else:
+                    # Densifica: os substeps do profile-sampling do runtime
+                    # viram nós de grau 2 (custo aditivo → total idêntico).
+                    # Num tabuleiro, os pontos intermediários seguem a rampa.
+                    la0, lg0 = pts[i - 1][1], pts[i - 1][0]
+                    la1, lg1 = lat, lng
+                    pid = prev_id
+                    for sct in range(1, nsub):
+                        tt = sct / nsub
+                        slat = la0 + (la1 - la0) * tt
+                        slng = lg0 + (lg1 - lg0) * tt
+                        selev = None
+                        if is_deck:
+                            selev = ramp[i - 1] + (ramp[i] - ramp[i - 1]) * tt
+                        sid = get_node(slng, slat, selev, is_deck)
+                        add_edge(pid, sid, d / nsub)
+                        pid = sid
+                    add_edge(pid, nid, d / nsub)
+            prev_id = nid
 
     n = len(lat_us)
     n_chain = sum(1 for f in flags if f & 2)
@@ -466,91 +514,83 @@ def bake_graph(gpkg: Path, out: Path) -> None:
           f"(o -Z guarda gzip + Content-Encoding; ver VIARIO_GRAPH_URL em web/app.js)")
 
 
+def _print_upload_help() -> None:
+    print("\nsuba pro bucket (SEM -Z nos .fgb — gzip quebraria os range requests):\n"
+          "    gcloud storage cp --cache-control=\"public,max-age=86400\" \\\n"
+          f"        {OUT_VIARIO} \\\n"
+          f"        {OUT_WATER_AREAS} \\\n"
+          f"        {OUT_WATER_RIVERS} \\\n"
+          "        gs://telhas/viario/\n"
+          "e confira VIARIO_FGB_URL / WATER_*_FGB_URL em web/app.js.")
+
+
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Enxuga o gpkg do viário de SP.")
-    ap.add_argument("--in", dest="src", type=Path, default=DEFAULT_IN,
-                    help="gpkg de origem (default: ignore/sampa-viario.gpkg)")
-    ap.add_argument("--out", dest="dst", type=Path, default=DEFAULT_OUT,
-                    help="gpkg de saída (default: ignore/sampa-viario-slim.gpkg)")
+    ap = argparse.ArgumentParser(
+        description="Constrói os FGBs do viário/água da América do Sul (+ grafo de SP).")
+    ap.add_argument("--extract", metavar="URL", default=GEOFABRIK_URL,
+                    help="URL de extrato Geofabrik alternativo (teste rápido; "
+                         "MESMOS nomes de saída)")
+    ap.add_argument("--out", dest="dst", type=Path, default=OUT_VIARIO,
+                    help=f"FGB de saída do viário (default: {OUT_VIARIO.relative_to(ROOT)})")
     ap.add_argument("--water", action="store_true",
-                    help="também adiciona a camada `water` (baixa ~800 MB do Geofabrik via osmium)")
-    ap.add_argument("--keep-pbf", action="store_true",
-                    help="mantém o .pbf do Geofabrik em ignore/ (default: apaga após usar)")
+                    help="também gera os dois FGBs de água (áreas + rios)")
+    ap.add_argument("--drop-pbf", action="store_true",
+                    help="apaga o .pbf do Geofabrik ao final (default: mantém — é caro re-baixar)")
     ap.add_argument("--graph", action="store_true",
-                    help="depois do gpkg, também cozinha o grafo binário (sampa-viario-graph.bin)")
+                    help="depois dos FGBs, também cozinha o grafo binário (sampa-viario-graph.bin)")
     ap.add_argument("--graph-only", action="store_true",
-                    help="só cozinha o grafo a partir do gpkg de --out (que já deve existir)")
+                    help="só cozinha o grafo a partir do FGB de --out (que já deve existir)")
     ap.add_argument("--graph-out", type=Path, default=DEFAULT_GRAPH_OUT,
-                    help="saída do grafo binário (default: ignore/sampa-viario-graph.bin)")
+                    help=f"saída do grafo binário (default: {DEFAULT_GRAPH_OUT.relative_to(ROOT)})")
+    ap.add_argument("--graph-bbox", metavar="W,S,E,N",
+                    help="recorte do grafo (default: extensão SP do antigo gpkg)")
     args = ap.parse_args()
+
+    graph_bbox = GRAPH_BBOX
+    if args.graph_bbox:
+        parts = [float(x) for x in args.graph_bbox.split(",")]
+        if len(parts) != 4:
+            print("erro: --graph-bbox precisa de W,S,E,N", file=sys.stderr)
+            return 1
+        graph_bbox = (parts[0], parts[1], parts[2], parts[3])
 
     if not shutil.which("ogr2ogr"):
         print("erro: ogr2ogr (GDAL) não está no PATH "
               "(brew install gdal / apt install gdal-bin).", file=sys.stderr)
         return 1
+
     if args.graph_only:
         if not args.dst.exists():
-            print(f"erro: --graph-only precisa do gpkg já gerado em {args.dst}", file=sys.stderr)
+            print(f"erro: --graph-only precisa do FGB já gerado em {args.dst}", file=sys.stderr)
             return 1
         try:
-            bake_graph(args.dst, args.graph_out)
+            bake_graph(args.dst, args.graph_out, graph_bbox)
         except (subprocess.CalledProcessError, RuntimeError) as e:
             print(f"erro: bake do grafo falhou: {e}", file=sys.stderr)
             return 1
         return 0
-    if not args.src.exists():
-        print(f"erro: fonte não encontrada: {args.src}", file=sys.stderr)
+
+    if not shutil.which("osmium"):
+        print("erro: osmium não está no PATH (brew install osmium-tool / "
+              "apt install osmium-tool).", file=sys.stderr)
         return 1
-    if args.dst.exists():
-        args.dst.unlink()  # ogr2ogr não sobrescreve gpkg existente
 
-    # Geometria + bridge/tunnel/layer extraídos do hstore other_tags; só ruas;
-    # reprojetado pra WGS84; R-tree reconstruído pelo driver de saída.
-    # other_tags tem o formato `"chave"=>"valor",…` — extraímos os 3 campos com
-    # instr/substr (sem precisar de extensão). `"layer"=>"` tem 10 caracteres.
-    # NULLIF(...,0) protege contra hstore malformado sem aspas de fechamento:
-    # sem o guard, instr()=0 vira length=-1 e o SQLite conta pra trás,
-    # produzindo um "layer" bogus em vez de degradar pra NULL.
-    sql = f"""SELECT {GEOM},
-      CASE WHEN instr(other_tags,'"bridge"=>')>0 AND instr(other_tags,'"bridge"=>"no"')=0 THEN 'yes' END AS bridge,
-      CASE WHEN instr(other_tags,'"tunnel"=>"yes"')>0 THEN 'yes' END AS tunnel,
-      CASE WHEN instr(other_tags,'"layer"=>"')>0 THEN CAST(substr(
-        other_tags, instr(other_tags,'"layer"=>"')+10,
-        NULLIF(instr(substr(other_tags, instr(other_tags,'"layer"=>"')+10),'"'), 0)-1) AS INTEGER) END AS layer
-      FROM {TABLE} WHERE highway IS NOT NULL"""
-    cmd = [
-        "ogr2ogr", "-f", "GPKG", str(args.dst), str(args.src),
-        "-dialect", "SQLITE", "-sql", sql,
-        "-t_srs", "EPSG:4326",
-        "-nln", TABLE, "-nlt", "LINESTRING",
-        "-lco", "SPATIAL_INDEX=YES",
-    ]
-    print("$ " + " ".join(cmd))
+    IGNORE.mkdir(exist_ok=True)
+    pbf = IGNORE / Path(args.extract).name
     try:
-        subprocess.run(cmd, check=True)
-    except subprocess.CalledProcessError as e:
-        print(f"erro: ogr2ogr falhou (código {e.returncode}).", file=sys.stderr)
-        return e.returncode
+        download_pbf(args.extract, pbf)
+        build_viario_fgb(pbf, args.dst)
+        if args.water:
+            build_water_fgbs(pbf)
+        if args.graph:
+            bake_graph(args.dst, args.graph_out, graph_bbox)
+    except (subprocess.CalledProcessError, RuntimeError) as e:
+        print(f"erro: {e}", file=sys.stderr)
+        return 1
 
-    if args.water:
-        try:
-            build_water_layer(args.dst, args.keep_pbf)
-        except (subprocess.CalledProcessError, RuntimeError) as e:
-            print(f"erro: camada de água falhou: {e}", file=sys.stderr)
-            return 1
-
-    if args.graph:
-        try:
-            bake_graph(args.dst, args.graph_out)
-        except (subprocess.CalledProcessError, RuntimeError) as e:
-            print(f"erro: bake do grafo falhou: {e}", file=sys.stderr)
-            return 1
-
-    src_mb = args.src.stat().st_size / 1e6
-    dst_mb = args.dst.stat().st_size / 1e6
-    print(f"\nok: {args.src.name} ({src_mb:.0f} MB) → "
-          f"{args.dst.name} ({dst_mb:.0f} MB){' + camada water' if args.water else ''}")
-    print("suba pro bucket telhas/viario/ e confira VIARIO_GPKG_URL em web/app.js.")
+    if args.drop_pbf:
+        pbf.unlink(missing_ok=True)
+    _print_upload_help()
     return 0
 
 

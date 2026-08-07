@@ -18,12 +18,15 @@ one optional hosted deploy target, not a dependency.
   re-sync by copying both files and re-applying the `AMORA PATCH` reqId
   echo, see the header comment in `energy-worker.js`; `graph-engine.js`
   backs the worker's graph-mode routing, fed by `scripts/build-viario.py`'s
-  road-network GPKG, though amora's own "Menor energia pelo viário" mode
+  road network, though amora's own "Menor energia pelo viário" mode
   routes in app.js instead: primary source is the PRE-BAKED binary graph
   `sampa-viario-graph.bin` from `build-viario.py --graph` (per-node elevations
-  already sampled at bake time — no DEM/gpkg download per route; see
+  already sampled at bake time — no DEM/network download per route; see
   `bakedViarioRoute`/`decodeViarioGraph`), falling back to the inline
-  `viarioGraphRoute` over the gpkg, then Overpass),
+  `viarioGraphRoute` over the South-America FlatGeobuf (range-request
+  bbox reads via the vendored `flatgeobuf-geojson.min.js` —
+  `streamFgbFeatures`), then Overpass),
+  `flatgeobuf-geojson.min.js` (FGB reader, flatgeobuf 4.4.0),
   `tom-select.complete.min.js`,
   `tom-select.min.css`, `qrcode.js`, `leaflet/` (js+css+images),
   `locatecontrol/` — Leaflet & friends were vendored off unpkg/jsdelivr;
@@ -92,19 +95,30 @@ one optional hosted deploy target, not a dependency.
   clips are re-encoded), `migrate-bnodes-to-iris.py` (one-shot migration:
   converted the historical blank nodes in `tours.ttl`/`uploads.ttl` into the
   derived-IRI convention — idempotent, removable once it's clearly not needed
-  again), `build-viario.py` (data-prep, not runtime: slims a full SP road-
-  network GPKG down to a lightweight WGS84 GPKG via `ogr2ogr` — extracts
-  `bridge`/`tunnel`/`layer` from OSM's `other_tags` hstore, filters to
-  `highway IS NOT NULL`, optional `--water` layer via Geofabrik+osmium —
-  feeding the browser's "Menor energia pelo viário" road-graph routing;
-  `--graph`/`--graph-only` additionally bakes `sampa-viario-graph.bin`, the
-  binary CSR graph with per-node elevations (SP DEM ~5 m where covered,
-  FABDEM elsewhere, via /vsicurl) and bridge/tunnel decks flattened — the
-  PRIMARY road-routing source the app downloads (~33 MB gzipped vs the
-  ~125 MB gpkg, which stays as fallback + water/portals source for terrain
-  mode); upload with `gcloud storage cp -Z ignore/sampa-viario-graph.bin
-  gs://telhas/viario/`; producer for the consumer described under
-  `lib/graph-engine.js` above),
+  again), `build-viario.py` (data-prep, not runtime: builds the road-network
+  **FlatGeobuf** `south-america-viario.fgb` from Geofabrik's
+  `south-america-latest.osm.pbf` (~4 GB, cached in `ignore/`) via
+  `osmium tags-filter w/highway` + `ogr2ogr -f FlatGeobuf` with a
+  script-written minimal osmconf that promotes `bridge`/`tunnel`/`layer` to
+  real columns (raw OSM values — the client normalizes); `--water` emits two
+  more FGBs (`south-america-water-areas.fgb` polygons +
+  `south-america-water-rivers.fgb` river lines; FGB is single-layer) —
+  feeding the browser's "Menor energia pelo viário" fallback routing and
+  terrain-mode water/corridors/portals via **HTTP range requests** against
+  FGB's packed Hilbert R-tree (only the bbox's bytes are fetched — that's
+  what made continent-wide coverage viable vs the old full-download ~125 MB
+  SP-only gpkg); `--graph`/`--graph-only` additionally bakes
+  `sampa-viario-graph.bin`, the binary CSR graph with per-node elevations
+  (SP DEM ~5 m where covered, FABDEM elsewhere, via /vsicurl) and
+  bridge/tunnel decks flattened — the PRIMARY road-routing source the app
+  downloads (~33 MB gzipped), still clipped to the SP `GRAPH_BBOX` (DEM
+  coverage rules; read from the FGB via the GDAL Python bindings). Upload:
+  `gcloud storage cp --cache-control="public,max-age=86400" ignore/*.fgb
+  gs://telhas/viario/` — **never `-Z` on the .fgb**: `Content-Encoding:
+  gzip` breaks GCS range requests, which the client depends on; the graph
+  bin keeps `-Z` (`gcloud storage cp -Z ignore/sampa-viario-graph.bin
+  gs://telhas/viario/`, downloaded whole). Producer for the consumer
+  described under `lib/graph-engine.js` above),
   `audit-captura.py` (**o motor da auditoria de captura** — cruza
   `tours.ttl` + `images.ttl` + o acervo do Drive e diz, por passeio, o que
   falta nos três funis; `--sync` grava os passes de coleta via

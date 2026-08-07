@@ -6714,13 +6714,15 @@ const DEFAULT_PARAMS = {
   nDirs: 16,
   // Fonte do viário no "menor energia pelo viário": grafo PRÉ-COZIDO de SP
   // (sampa-viario-graph.bin — elevações baked, sem DEM por rota) por padrão,
-  // com o gpkg vetorial como fallback; desligado usa o Overpass (grid raster,
-  // depende do servidor do OSM). Tudo cai pro Overpass sozinho se
-  // indisponível, independentemente deste toggle.
+  // com o FGB da América do Sul (range requests) como fallback; desligado usa
+  // o Overpass (grid raster, depende do servidor do OSM). Tudo cai pro
+  // Overpass sozinho se indisponível, independentemente deste toggle.
+  // (Chave histórica "Gpkg" mantida — renomear órfanaria a preferência salva.)
   useViarioGpkg: true,
-  // "Menor energia pelo terreno": tratar lagos/represas e rios da camada de água
-  // do gpkg como barreira intransponível (a rota não cruza água). Desligado =
-  // água ignorada (e o gpkg nem é baixado se os portais também estiverem off).
+  // "Menor energia pelo terreno": tratar lagos/represas e rios dos FGBs de
+  // água como barreira intransponível (a rota não cruza água). Desligado =
+  // água ignorada (nem os FGBs são consultados se os portais também
+  // estiverem off).
   useWaterMask: true,
   // "Menor energia pelo terreno": atravessar lagos/rios barrados por cima de
   // pontes/túneis via portais (atalho no tabuleiro). Desligado = água é barreira
@@ -7617,7 +7619,7 @@ out skel qt;`;
 // Converte a resposta do Overpass ({nodes, ways}) no formato que
 // viarioGraphRoute consome — lines = polilinhas [[lng,lat],…]; meta[i].deck =
 // ponte/túnel (das tags do OSM). Assim o "Menor energia pelo viário" via
-// Overpass roteia no MESMO grafo vetorial do gpkg: o traçado segue a geometria
+// Overpass roteia no MESMO grafo vetorial do FGB: o traçado segue a geometria
 // real das vias, em vez do serrilhado de ~30 m do grid raster.
 function osmLinesForGraph(osm) {
   const lines = [], meta = [];
@@ -7675,17 +7677,62 @@ function rasterizeRoads(osm, bb, H, W, A) {
   return mask;
 }
 
-// ─── Rede viária vetorial (gpkg de SP) ──────────────────────────────────────
-// GeoPackage do viário de SP hospedado junto dos DEMs. No "Menor energia pelo
-// viário" virou FALLBACK do grafo pré-cozido (VIARIO_GRAPH_URL abaixo); segue
-// sendo a fonte PRIMÁRIA do modo terreno (camada `water` + corredores +
-// portais de ponte/túnel). Baixado UMA vez, aberto via sql.js e reusado entre
-// segmentos; cada rota consulta o R-tree pela bbox e rasteriza só as linhas
-// que caem nela. Parser de geometria portado do sampasimu — lida com
-// WKB ISO 3-D (1002/1005) e EWKB, o detalhe que faz gpkg do QGIS falhar.
-const VIARIO_GPKG_URL = 'https://telhas.pedalhidrografi.co/viario/sampa-viario.gpkg';
+// ─── Rede viária vetorial (FlatGeobuf da América do Sul) ────────────────────
+// FlatGeobuf do viário (OSM highway= com bridge/tunnel/layer) hospedado junto
+// dos DEMs — cobre a AMÉRICA DO SUL inteira. O índice espacial do FGB (packed
+// Hilbert R-tree) permite buscar SÓ OS BYTES da bbox via HTTP Range — nada de
+// baixar o arquivo inteiro (o antigo gpkg de SP, ~125 MB, era baixado inteiro
+// e consultado via sql.js). No "Menor energia pelo viário" é FALLBACK do grafo
+// pré-cozido (VIARIO_GRAPH_URL abaixo); segue sendo a fonte PRIMÁRIA do modo
+// terreno (água + corredores + portais de ponte/túnel). Gerado por
+// scripts/build-viario.py. sql.js/proj4 ficam SÓ pra rede custom em .gpkg.
+const VIARIO_FGB_URL       = 'https://telhas.pedalhidrografi.co/viario/south-america-viario.fgb';
+const WATER_AREAS_FGB_URL  = 'https://telhas.pedalhidrografi.co/viario/south-america-water-areas.fgb';
+const WATER_RIVERS_FGB_URL = 'https://telhas.pedalhidrografi.co/viario/south-america-water-rivers.fgb';
 const SQLJS_BASE = 'https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/';
 const PROJ4_URL  = 'https://cdn.jsdelivr.net/npm/proj4@2.9.0/dist/proj4.js';
+
+// flatgeobuf (vendorado em lib/): deserialize(url, rect) → async generator de
+// Features GeoJSON, buscando por range request; deserialize(Uint8Array) idem
+// pra arquivo local (rede custom .fgb).
+let _flatgeobufPromise = null;
+async function ensureFlatgeobuf() {
+  if (!_flatgeobufPromise) {
+    _flatgeobufPromise = (async () => {
+      if (!window.flatgeobuf) await loadScript('./lib/flatgeobuf-geojson.min.js');
+      return window.flatgeobuf;
+    })();
+    _flatgeobufPromise.catch(() => { _flatgeobufPromise = null; });
+  }
+  return _flatgeobufPromise;
+}
+
+// Cache LRU das consultas FGB por (url, bbox arredondada): o SW NÃO cacheia
+// respostas 206 (e é contornado pros .fgb — ver sw.js), então este cache é o
+// que absorve a consulta dupla da mesma bbox (modo terreno consulta viário e
+// água pro mesmo trecho; rotas re-traçadas idem).
+const _fgbCache = new Map();
+const FGB_CACHE_MAX = 10;
+async function streamFgbFeatures(url, bb) {
+  const key = `${url}|${bb.west.toFixed(4)},${bb.south.toFixed(4)},${bb.east.toFixed(4)},${bb.north.toFixed(4)}`;
+  if (_fgbCache.has(key)) {
+    const v = _fgbCache.get(key);
+    _fgbCache.delete(key); _fgbCache.set(key, v);   // refresca a posição LRU
+    return v;
+  }
+  const fgb = await ensureFlatgeobuf();
+  const rect = { minX: bb.west, minY: bb.south, maxX: bb.east, maxY: bb.north };
+  // O deserialize não aceita AbortSignal — o timeout corre por fora e rejeita
+  // a espera (as fetches órfãs morrem sozinhas quando o generator é solto).
+  const feats = [];
+  await Promise.race([
+    (async () => { for await (const f of fgb.deserialize(url, rect)) feats.push(f); })(),
+    new Promise((_, rej) => setTimeout(() => rej(new Error('timeout FGB')), VIARIO_FETCH_TIMEOUT_MS)),
+  ]);
+  _fgbCache.set(key, feats);
+  while (_fgbCache.size > FGB_CACHE_MAX) _fgbCache.delete(_fgbCache.keys().next().value);
+  return feats;
+}
 
 let _sqlJsPromise = null;
 async function ensureSqlJs() {
@@ -7769,33 +7816,29 @@ function parseWKB(view, off) {
   return null;
 }
 
-// Baixa + abre o gpkg do viário uma vez e cacheia o handle sql.js. Quando a
-// fonte é WGS84 (o build script reprojeta o gpkg de SP pra 4326) o caminho
-// comum NÃO carrega proj4 nem reprojeta vértice a vértice — os
-// transformadores `toWgs`/`fromWgs` viram identidade. Pra qualquer outro CRS
-// guardamos um transformador proj4 reusável (em vez de re-resolver as defs
-// por string a cada vértice, que era o gargalo). Em falha, limpa o cache
-// pra permitir nova tentativa. Timeout aborta downloads travados → fallback.
+// Timeout compartilhado das buscas de rede do viário (FGB, grafo pré-cozido).
 const VIARIO_FETCH_TIMEOUT_MS = 60000;
 
 // Abre um GeoPackage (bytes já em memória) num handle de viário reusável pelas
-// consultas — descobre a camada de linhas (e a de `water`, se houver), resolve
-// o CRS (reprojeção proj4 quando não é WGS84) e quais tags de tabuleiro existem.
-// Compartilhado entre o gpkg de SP (baixado) e um gpkg custom (carregado de
-// arquivo). O parser de geometria é o `parseGpkgGeom` acima.
+// consultas — descobre a camada de linhas, resolve o CRS (reprojeção proj4
+// quando não é WGS84) e quais tags de tabuleiro existem. Só usado pela REDE
+// CUSTOM em .gpkg (o viário remoto migrou pra FlatGeobuf); uma camada `water`
+// que exista num gpkg custom é ignorada. Quando a fonte é WGS84 o caminho
+// comum NÃO carrega proj4 nem reprojeta vértice a vértice — os transformadores
+// `toWgs`/`fromWgs` viram identidade. O parser de geometria é o
+// `parseGpkgGeom` acima.
 async function buildViarioSrc(SQL, bytes) {
   const db = new SQL.Database(bytes);
   try {
   const gc = db.exec('SELECT table_name, column_name, srs_id FROM gpkg_geometry_columns');
   if (!gc.length || !gc[0].values.length) throw new Error('gpkg sem gpkg_geometry_columns');
-  // O gpkg pode ter 2 camadas: `viario` (linhas) e `water` (polígonos+rios).
-  let vRow = null, wRow = null;
-  for (const r of gc[0].values) { if (r[0] === 'water') wRow = r; else if (!vRow) vRow = r; }
+  // Pode haver 2+ camadas (ex.: `water` num gpkg antigo) — fica a 1ª de linhas.
+  let vRow = null;
+  for (const r of gc[0].values) { if (r[0] !== 'water' && !vRow) vRow = r; }
   if (!vRow) vRow = gc[0].values[0];
   const tableName = vRow[0];
   const geomCol   = vRow[1] || 'geom';
   const srsId     = vRow[2];
-  const hasWater = !!wRow, waterTable = wRow ? wRow[0] : null, waterGeom = wRow ? (wRow[1] || 'geom') : null;
   const isSrcWgs = srsId === 4326 || srsId === 0 || srsId === -1;
   let toWgs = (xy) => xy;     // fonte → [lng,lat]   (vértices)
   let fromWgs = (xy) => xy;   // [lng,lat] → fonte   (cantos da bbox)
@@ -7818,50 +7861,29 @@ async function buildViarioSrc(SQL, bytes) {
     const allCols = ti.length ? ti[0].values.map((r) => r[1]) : [];
     tagCols = ['bridge', 'tunnel', 'layer', 'name', 'other_tags'].filter((c) => allCols.includes(c));
   } catch { /* sem tags = sem achatamento */ }
-  return { db, tableName, geomCol, isSrcWgs, toWgs, fromWgs, tagCols, hasWater, waterTable, waterGeom };
+  return { db, tableName, geomCol, isSrcWgs, toWgs, fromWgs, tagCols };
   } catch (e) {
     try { db.close(); } catch { /* já fechado */ }   // não vaza o handle WASM na falha
     throw e;
   }
 }
 
-let _viarioDbPromise = null;
-async function ensureViarioDb() {
-  if (_viarioDbPromise) return _viarioDbPromise;
-  _viarioDbPromise = (async () => {
-    const SQL = await ensureSqlJs();
-    showToast('Baixando viário de SP (uma vez)…');
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), VIARIO_FETCH_TIMEOUT_MS);
-    let buf;
-    try {
-      const res = await fetch(VIARIO_GPKG_URL, { signal: ctrl.signal });
-      if (!res.ok) throw new Error(`gpkg ${res.status}`);
-      buf = await res.arrayBuffer();
-    } finally {
-      clearTimeout(timer);
-    }
-    return buildViarioSrc(SQL, new Uint8Array(buf));
-  })();
-  _viarioDbPromise.catch(() => { _viarioDbPromise = null; });
-  return _viarioDbPromise;
-}
-
 // ─── Grafo pré-cozido do viário (sampa-viario-graph.bin) ─────────────────────
 // Fonte PRIMÁRIA do "Menor energia pelo viário": o grafo já montado no bake
 // (scripts/build-viario.py --graph) com as elevações amostradas POR NÓ (DEM de
 // SP ~5 m onde cobre, FABDEM no resto) e tabuleiros de ponte/túnel achatados em
-// rampa. Zero DEM, zero sql.js, zero montagem de grafo por sessão: o download é
-// ~4× menor que o gpkg e a decodificação é um passe de typed arrays. O gpkg
-// (ensureViarioDb acima) segue em uso pro modo TERRENO (camada water/portais)
-// e como fallback do viário. Formato: ver o bloco "Grafo pré-cozido" no script.
+// rampa. Zero DEM, zero montagem de grafo por sessão: a decodificação é um
+// passe de typed arrays. O FGB do viário (streamFgbFeatures acima) segue em
+// uso pro modo TERRENO (água/corredores/portais) e como fallback do viário
+// fora da cobertura do grafo (que é SÓ SP — o FGB cobre a América do Sul).
+// Formato: ver o bloco "Grafo pré-cozido" no script.
 const VIARIO_GRAPH_URL = 'https://telhas.pedalhidrografi.co/viario/sampa-viario-graph.bin';
 
 // Custo v2 por aresta — IDÊNTICO ao v2Edge do worker (lib/energy-worker.js) e
 // ao v2_edge do backend Rust do simujaules; manter em sincronia. dist = metros
 // de solo, dh = desnível com sinal. Rolamento sempre; arrasto só fora das
 // subidas; recuperação na descida ε por grade. Compartilhado pelo grafo do
-// gpkg/Overpass (viarioGraphRoute) e pelo grafo pré-cozido (bakedViarioRoute).
+// FGB/Overpass (viarioGraphRoute) e pelo grafo pré-cozido (bakedViarioRoute).
 function v2EdgeCostFn(cost) {
   return (dist, dh) => {
     if (dh >= 0) {
@@ -7977,7 +7999,7 @@ function bakedScratch(N) {
 }
 
 // Roteia origem→destino no grafo pré-cozido, restrito à bbox (paridade com o
-// grafo por-bbox do gpkg). Devolve a polilinha [lat,lng] com .deckFlag, ou
+// grafo por-bbox do FGB). Devolve a polilinha [lat,lng] com .deckFlag, ou
 // null se não há caminho. Sem DEM: as elevações já vêm baked por nó.
 async function bakedViarioRoute(fromLatLng, toLatLng, bb) {
   const g = await ensureViarioGraph();
@@ -8046,11 +8068,13 @@ async function bakedViarioRoute(fromLatLng, toLatLng, bb) {
   return path;
 }
 
-// ─── Rede viária custom (gpkg ou GeoJSON carregado de arquivo) ───────────────
-// Carregada em memória pelo modal "Fontes de dados"; tem PRIORIDADE sobre o gpkg
-// de SP e o Overpass no "Menor energia pelo viário". gpkg passa pelo MESMO
-// pipeline do viário de SP (buildViarioSrc + queryViarioLines); GeoJSON (sempre
-// WGS84, RFC 7946) é varrido direto pra [lng,lat]. Efêmera: some ao recarregar.
+// ─── Rede viária custom (fgb, gpkg ou GeoJSON carregado de arquivo) ──────────
+// Carregada em memória pelo modal "Fontes de dados"; tem PRIORIDADE sobre o
+// FGB da América do Sul e o Overpass no "Menor energia pelo viário". .fgb é
+// parseado inteiro (arquivo local não ganha nada com range) e vira o kind
+// geojson; .gpkg passa pelo pipeline sql.js (buildViarioSrc + queryGpkgLines);
+// GeoJSON (sempre WGS84, RFC 7946) é varrido direto pra [lng,lat]. Efêmera:
+// some ao recarregar.
 let _customNetwork = null;   // { kind:'gpkg', src, name } | { kind:'geojson', fc, name }
 async function setCustomNetwork(file) {
   const name = file.name || 'rede';
@@ -8058,7 +8082,14 @@ async function setCustomNetwork(file) {
   // Carrega o novo PRIMEIRO; só depois fecha o anterior — assim uma falha de
   // leitura preserva a rede atual em vez de deixar o usuário sem nenhuma.
   let next;
-  if (lower.endsWith('.geojson') || lower.endsWith('.json')) {
+  if (lower.endsWith('.fgb')) {
+    const fgb = await ensureFlatgeobuf();
+    const feats = [];
+    // deserialize(Uint8Array) também é um async generator (sem range).
+    for await (const f of fgb.deserialize(new Uint8Array(await file.arrayBuffer()))) feats.push(f);
+    if (!feats.length) throw new Error('FGB sem feições');
+    next = { kind: 'geojson', fc: { features: feats }, name };
+  } else if (lower.endsWith('.geojson') || lower.endsWith('.json')) {
     const fc = JSON.parse(await file.text());
     const feats = fc && (fc.type === 'FeatureCollection' ? fc.features
       : fc.type === 'Feature' ? [fc] : (Array.isArray(fc) ? fc : null));
@@ -8112,19 +8143,46 @@ function queryGeojsonLines(bb, fc) {
   return { lines, meta, hasTags };
 }
 
-// Despacha a consulta da rede custom (gpkg → pipeline do viário; geojson → varre).
+// Despacha a consulta da rede custom (gpkg → pipeline sql.js; geojson/fgb → varre).
 async function queryCustomNetworkLines(bb) {
   if (!_customNetwork) return { lines: [], meta: [], hasTags: false };
   if (_customNetwork.kind === 'geojson') return queryGeojsonLines(bb, _customNetwork.fc);
   return queryViarioLines(bb, _customNetwork.src);
 }
 
-// Consulta o viário do gpkg que cai na bbox e devolve as linhas em WGS84
-// (array de polilinhas [[lng,lat], …]). É a matéria-prima do roteamento
-// vetorial — a rota segue a geometria real das vias, sem o serrilhado do
-// grid raster.
+// Ganchos de depuração do stack do viário (o app é um module — sem isto nada
+// é alcançável do console). Ex.: __phidroViario.queryViarioLines({west,south,
+// east,north}) pra inspecionar o que o FGB devolve numa bbox.
+window.__phidroViario = {
+  queryViarioLines, queryWater, streamFgbFeatures,
+  setCustomNetwork, clearCustomNetwork, queryCustomNetworkLines,
+};
+
+// Consulta o viário que cai na bbox e devolve as linhas em WGS84 (array de
+// polilinhas [[lng,lat], …]). É a matéria-prima do roteamento vetorial — a
+// rota segue a geometria real das vias, sem o serrilhado do grid raster.
+// Sem `src`: o FGB remoto da América do Sul, por range request (só os bytes
+// da bbox). Com `src`: um .gpkg custom já aberto (pipeline sql.js abaixo).
 async function queryViarioLines(bb, src) {
-  const { db, tableName, geomCol, isSrcWgs, toWgs, fromWgs, tagCols } = src || await ensureViarioDb();
+  if (!src) {
+    const t0 = performance.now();
+    const feats = await streamFgbFeatures(VIARIO_FGB_URL, bb);
+    const out = queryGeojsonLines(bb, { features: feats });
+    // O produtor SEMPRE grava bridge/tunnel/layer no FGB — hasTags fixo em
+    // true pra nunca acionar o fallback de tags do Overpass (que só existia
+    // pra gpkg antigo sem colunas).
+    out.hasTags = true;
+    const decks = out.meta.reduce((n, m) => n + (m.deck ? 1 : 0), 0);
+    console.info(`[viario] FGB ${(performance.now() - t0).toFixed(0)} ms · ` +
+      `${feats.length} feições → ${out.lines.length} linhas na bbox (${decks} tabuleiros)`);
+    return out;
+  }
+  return queryGpkgLines(bb, src);
+}
+
+// Pipeline sql.js da rede custom em .gpkg (era o caminho do antigo gpkg de SP).
+async function queryGpkgLines(bb, src) {
+  const { db, tableName, geomCol, isSrcWgs, toWgs, fromWgs, tagCols } = src;
   const t0 = performance.now();
   // Geometria é a coluna 0; as tags (se houver) vêm depois, nesta ordem.
   const tagIdx = {}; (tagCols || []).forEach((c, i) => { tagIdx[c] = i + 1; });
@@ -8217,9 +8275,10 @@ async function queryViarioLines(bb, src) {
 }
 
 // Overpass: pontes/viadutos (bridge!=no) e túneis (tunnel=yes) de highway na
-// bbox, COM geometria. O gpkg do viário de SP é só geometria (sem tags), então
-// é o OSM que diz quais linhas são tabuleiros pra achatar. Pull pequeno (poucas
-// estruturas por segmento). Best-effort: falha → sem achatamento.
+// bbox, COM geometria. Só entra pra uma rede CUSTOM sem tags (o FGB remoto
+// sempre traz bridge/tunnel — hasTags fixo em true): é o OSM que diz quais
+// linhas são tabuleiros pra achatar. Pull pequeno (poucas estruturas por
+// segmento). Best-effort: falha → sem achatamento.
 async function fetchOsmDecksForBbox(bb) {
   const bbox = `${bb.south},${bb.west},${bb.north},${bb.east}`;
   const q = `[out:json][timeout:25];(` +
@@ -8246,8 +8305,8 @@ async function fetchOsmDecksForBbox(bb) {
   return decks;
 }
 
-// Marca quais linhas do gpkg são tabuleiros casando-as por PROXIMIDADE com as
-// pontes/túneis do OSM (o gpkg não tem tags). Como ambas seguem a mesma
+// Marca quais linhas da rede (custom sem tags) são tabuleiros casando-as por
+// PROXIMIDADE com as pontes/túneis do OSM. Como ambas seguem a mesma
 // estrutura física, ficam a poucos metros uma da outra. Uma linha vira deck se
 // a maioria (≥60%) dos seus vértices amostrados está a ≤ TOL de algum segmento
 // de ponte do OSM — conservador, pra NÃO achatar uma via de superfície que só
@@ -8255,7 +8314,7 @@ async function fetchOsmDecksForBbox(bb) {
 // tunnel/layer da estrutura casada. Devolve quantas linhas marcou.
 function markDecksByProximity(lines, meta, decks, bb) {
   if (!decks || !decks.length) return 0;
-  const TOL = 14, TOL2 = TOL * TOL;            // m — gpkg vs OSM ~uma faixa
+  const TOL = 14, TOL2 = TOL * TOL;            // m — rede vs OSM ~uma faixa
   const midLat = (bb.south + bb.north) / 2;
   const mPerLat = 111320, mPerLng = 111320 * Math.cos(midLat * Math.PI / 180);
   const segs = [];                              // [x0,y0,x1,y1,deck] em metros
@@ -8294,36 +8353,11 @@ function markDecksByProximity(lines, meta, decks, bb) {
   return marked;
 }
 
-// ── Água (camada `water` do gpkg) → máscara de barreira no "Menor energia pelo
+// ── Água (FGBs de áreas + rios) → máscara de barreira no "Menor energia pelo
 //    terreno" ──────────────────────────────────────────────────────────────
-// parseWKB (do viário) só lê linhas; a água tem polígonos (lagos/represas) +
-// linhas (rios). SP é interior (sem litoral) → basta preencher os polígonos
-// (even-odd, buracos = ilhas) e barrar os rios (supercover). Coords [lng,lat].
-function _readRing(view, off, le, stride) {
-  const n = view.getUint32(off, le); off += 4;
-  const ring = new Array(n);
-  for (let i = 0; i < n; i++) { ring[i] = [view.getFloat64(off, le), view.getFloat64(off + 8, le)]; off += stride; }
-  return [ring, off];
-}
-function parseGpkgWater(blob) {
-  if (!(blob instanceof Uint8Array) || blob.length < 8) return null;
-  if (blob[0] !== 0x47 || blob[1] !== 0x50) return null; // "GP"
-  const envBytes = [0, 32, 48, 48, 64, 0, 0, 0][(blob[3] >> 1) & 0x07] || 0;
-  let off = 8 + envBytes;
-  if (blob.length < off + 9) return null;
-  const view = new DataView(blob.buffer, blob.byteOffset, blob.byteLength);
-  const polys = [], lines = [];
-  try {
-    const le = view.getUint8(off) === 1; off += 1;
-    const t = view.getUint32(off, le); off += 4;
-    const { base, stride } = wkbTypeInfo(t);
-    if (base === 2) { lines.push(_readRing(view, off, le, stride)[0]); }
-    else if (base === 3) { const k = view.getUint32(off, le); off += 4; const rings = []; for (let j = 0; j < k; j++) { const [r, no] = _readRing(view, off, le, stride); rings.push(r); off = no; } polys.push(rings); }
-    else if (base === 5) { const k = view.getUint32(off, le); off += 4; for (let j = 0; j < k; j++) { const sl = view.getUint8(off) === 1; off += 1; const ss = wkbTypeInfo(view.getUint32(off, sl)).stride; off += 4; const [r, no] = _readRing(view, off, sl, ss); lines.push(r); off = no; } }
-    else if (base === 6) { const k = view.getUint32(off, le); off += 4; for (let j = 0; j < k; j++) { const sl = view.getUint8(off) === 1; off += 1; const ss = wkbTypeInfo(view.getUint32(off, sl)).stride; off += 4; const nr = view.getUint32(off, sl); off += 4; const rings = []; for (let m = 0; m < nr; m++) { const [r, no] = _readRing(view, off, sl, ss); rings.push(r); off = no; } polys.push(rings); } }
-  } catch { return null; }
-  return { polys, lines };
-}
+// A água vem em DOIS FGBs (FGB é mono-camada): polígonos (lagos/represas/
+// riverbank) e linhas (waterway=river). Preenche os polígonos (even-odd,
+// buracos = ilhas) e barra os rios (supercover). Coords [lng,lat].
 // Even-odd scanline fill (rings em coords de GRADE) → marca `out` (1 = barrado).
 function fillRingsEvenOdd(rings, out, W, H) {
   let yMin = Infinity, yMax = -Infinity;
@@ -8352,25 +8386,30 @@ function rasterSupercover(pts, out, W, H) {
     while ((ix !== ixe || iy !== iye) && g-- > 0) { if (tmx < tmy) { tmx += tdx; ix += sx; } else { tmy += tdy; iy += sy; } mark(ix, iy); }
   }
 }
-// Lê a camada `water` do gpkg que cai na bbox → { polys, lines } em [lng,lat]
-// (a camada é 4326). Filtra por sobreposição de bbox (vital sem R-tree).
+// Lê a água que cai na bbox → { polys, lines } em [lng,lat] (FGBs são 4326).
+// polys = anéis por polígono ([anel externo, buracos…]); lines = polilinhas.
+// Best-effort por arquivo: um dos dois falhando não derruba o outro; os dois
+// falhando → null (o chamador segue sem máscara, como antes).
 async function queryWater(bb) {
-  const h = await ensureViarioDb();
-  if (!h.hasWater) return null;
-  const { db, waterTable, waterGeom } = h;
-  let stmt;
-  try {
-    stmt = db.prepare(`SELECT t."${waterGeom}" FROM "${waterTable}" t WHERE t.fid IN (SELECT id FROM "rtree_${waterTable}_${waterGeom}" WHERE minx<=? AND maxx>=? AND miny<=? AND maxy>=?)`);
-    stmt.bind([bb.east, bb.west, bb.north, bb.south]);
-  } catch { stmt = db.prepare(`SELECT t."${waterGeom}" FROM "${waterTable}" t`); }
+  let failures = 0;
+  const grab = (url) => streamFgbFeatures(url, bb).catch((e) => {
+    failures++; console.warn('[water] FGB falhou:', url, e.message); return [];
+  });
+  const [areas, rivers] = await Promise.all([
+    grab(WATER_AREAS_FGB_URL), grab(WATER_RIVERS_FGB_URL),
+  ]);
+  if (failures === 2) return null;
   const polys = [], lines = [];
-  const inBB = (geom) => { let loX = Infinity, hiX = -Infinity, loY = Infinity, hiY = -Infinity; for (const ring of geom) for (const p of ring) { if (p[0] < loX) loX = p[0]; if (p[0] > hiX) hiX = p[0]; if (p[1] < loY) loY = p[1]; if (p[1] > hiY) hiY = p[1]; } return !(hiX < bb.west || loX > bb.east || hiY < bb.south || loY > bb.north); };
-  while (stmt.step()) {
-    const g = parseGpkgWater(stmt.get()[0]); if (!g) continue;
-    for (const rings of g.polys) if (inBB(rings)) polys.push(rings);
-    for (const ln of g.lines) if (inBB([ln])) lines.push(ln);
+  for (const f of areas) {
+    const g = f && f.geometry; if (!g) continue;
+    if (g.type === 'Polygon') polys.push(g.coordinates);
+    else if (g.type === 'MultiPolygon') for (const rings of g.coordinates) polys.push(rings);
   }
-  stmt.free();
+  for (const f of rivers) {
+    const g = f && f.geometry; if (!g) continue;
+    if (g.type === 'LineString') lines.push(g.coordinates);
+    else if (g.type === 'MultiLineString') for (const ln of g.coordinates) lines.push(ln);
+  }
   return { polys, lines };
 }
 
@@ -8585,7 +8624,7 @@ function viarioGraphRoute(lines, meta, fromLatLng, toLatLng, dem, bb, A) {
 }
 
 // `mode` = 'free' (qualquer célula do DEM) | 'road' (restringe ao viário:
-// gpkg de SP como fonte primária, Overpass como fallback)
+// grafo pré-cozido → FGB da América do Sul → Overpass)
 async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
   const distKm = fromLatLng.distanceTo(toLatLng) / 1000;
   if (distKm > ENERGY_MAX_SEGMENT_KM) {
@@ -8615,16 +8654,16 @@ async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
   };
 
   // ROAD primário: grafo PRÉ-COZIDO do viário de SP — elevações já amostradas
-  // no bake, então resolve SEM baixar DEM nem gpkg (por isso roda antes do
+  // no bake, então resolve SEM baixar DEM nem FGB (por isso roda antes do
   // mosaico abaixo). Rede custom carregada tem prioridade e cai pro fluxo
-  // clássico; falha/sem caminho cai pro gpkg → Overpass, como sempre. O mesmo
-  // toggle useViarioGpkg governa grafo pré-cozido + gpkg (é a mesma fonte,
+  // clássico; falha/sem caminho cai pro FGB → Overpass, como sempre. O mesmo
+  // toggle useViarioGpkg governa grafo pré-cozido + FGB (é a mesma fonte,
   // só o empacotamento muda); desligado, pula direto pro Overpass.
   if (mode === 'road' && !_customNetwork && params.useViarioGpkg !== false) {
     try {
       const path = await bakedViarioRoute(fromLatLng, toLatLng, bb);
       if (path && path.length) return path;
-      console.info('[energy_road] grafo pré-cozido sem caminho — caindo pro gpkg/Overpass');
+      console.info('[energy_road] grafo pré-cozido sem caminho — caindo pro FGB/Overpass');
     } catch (e) {
       console.warn('[energy_road] grafo pré-cozido indisponível:', e.message);
     }
@@ -8639,10 +8678,11 @@ async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
     return straightPath(fromLatLng, toLatLng);
   }
 
-  // ROAD com rede custom: se o usuário carregou um gpkg/GeoJSON de viário no
-  // modal "Fontes de dados", ele tem PRIORIDADE — mesma engine de grafo do
-  // gpkg de SP. Sucesso = retorno imediato; falha/sem caminho cai pro gpkg de
-  // SP / Overpass abaixo (a rede custom pode cobrir só parte do trecho).
+  // ROAD com rede custom: se o usuário carregou um fgb/gpkg/GeoJSON de viário
+  // no modal "Fontes de dados", ele tem PRIORIDADE — mesma engine de grafo do
+  // viário remoto. Sucesso = retorno imediato; falha/sem caminho cai pro FGB
+  // da América do Sul / Overpass abaixo (a rede custom pode cobrir só parte
+  // do trecho).
   if (mode === 'road' && _customNetwork) {
     try {
       const { lines, meta, hasTags } = await queryCustomNetworkLines(bb);
@@ -8657,32 +8697,32 @@ async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
         }
         const path = viarioGraphRoute(lines, meta, fromLatLng, toLatLng, dem, bb, A);
         if (path && path.length) return path;
-        console.info('[energy_road] rede custom sem caminho — caindo pro gpkg/Overpass');
+        console.info('[energy_road] rede custom sem caminho — caindo pro FGB/Overpass');
       }
     } catch (e) {
       console.warn('[energy_road] grafo da rede custom falhou:', e.message);
     }
   }
 
-  // ROAD primário: roteia SOBRE o grafo vetorial do gpkg — a rota segue a
-  // geometria real das vias (linhas suaves, sem serrilhado do grid). Sucesso
-  // = retorno imediato. Falha (gpkg indisponível / sem caminho) cai pro
-  // Overpass logo abaixo (que também roteia num grafo vetorial → traçado
+  // ROAD fallback do grafo: roteia SOBRE o grafo vetorial do FGB — a rota
+  // segue a geometria real das vias (linhas suaves, sem serrilhado do grid),
+  // e o FGB cobre a América do Sul inteira (fora de SP é a fonte de fato).
+  // Sucesso = retorno imediato. Falha (FGB indisponível / sem caminho) cai
+  // pro Overpass logo abaixo (que também roteia num grafo vetorial → traçado
   // igualmente alinhado às vias; o grid raster é só o último fallback).
-  // Toggle (Parâmetros): com o gpkg ligado, é a fonte primária; desligado,
-  // pula direto pro Overpass. O gpkg ainda cai pro Overpass sozinho se a
+  // Toggle (Parâmetros): com o FGB ligado, é a fonte primária; desligado,
+  // pula direto pro Overpass. O FGB ainda cai pro Overpass sozinho se a
   // consulta falhar / não achar caminho.
   if (mode === 'road' && params.useViarioGpkg !== false) {
     try {
       const { lines, meta, hasTags } = await queryViarioLines(bb);
-      // Quando o gpkg já traz bridge/tunnel (build-viario.py atual), as flags de
-      // tabuleiro vêm dele — nada de Overpass por trecho. Só num gpkg antigo (só
-      // geometria) caímos pro OSM: puxa pontes/túneis e casa por proximidade.
+      // O FGB sempre traz bridge/tunnel (hasTags=true) — as flags de tabuleiro
+      // vêm dele, nada de Overpass por trecho.
       if (!hasTags) {
         try {
           const decks = await fetchOsmDecksForBbox(bb);
           const marked = markDecksByProximity(lines, meta, decks, bb);
-          if (decks.length) console.info(`[energy_road] gpkg sem tags → OSM: ${decks.length} estruturas · ${marked} linha(s) achatada(s)`);
+          if (decks.length) console.info(`[energy_road] viário sem tags → OSM: ${decks.length} estruturas · ${marked} linha(s) achatada(s)`);
         } catch (e3) {
           console.warn('[energy_road] pontes do OSM indisponíveis:', e3.message);
         }
@@ -8690,13 +8730,13 @@ async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
       const path = viarioGraphRoute(lines, meta, fromLatLng, toLatLng, dem, bb, A);
       if (path && path.length) return path;
     } catch (e) {
-      console.warn('[energy_road] grafo gpkg falhou:', e.message);
+      console.warn('[energy_road] grafo do FGB falhou:', e.message);
     }
   }
 
-  // Overpass como rede viária — PRIMÁRIO com o gpkg desligado, FALLBACK quando o
-  // gpkg falha. Buscado UMA vez; duas tentativas do melhor pro pior:
-  //   1) grafo VETORIAL (mesma engine do gpkg) → traçado alinhado às vias reais
+  // Overpass como rede viária — PRIMÁRIO com o FGB desligado, FALLBACK quando o
+  // FGB falha. Buscado UMA vez; duas tentativas do melhor pro pior:
+  //   1) grafo VETORIAL (mesma engine do FGB) → traçado alinhado às vias reais
   //   2) grid RASTER (máscara + Dijkstra no DEM) → serrilhado de ~30 m, porém
   //      resiliente; só roda se o grafo não achar caminho.
   let osmRoads = null;
@@ -8708,7 +8748,7 @@ async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
       showToast(`Viário indisponível (${e2.message}) — caindo para menor energia livre.`);
     }
     // 1) Grafo vetorial do Overpass: roteia na geometria real das vias (idêntico
-    // ao gpkg, só muda a fonte). Pontes/túneis vêm das tags do OSM.
+    // ao FGB, só muda a fonte). Pontes/túneis vêm das tags do OSM.
     if (osmRoads && osmRoads.ways.length) {
       try {
         const { lines, meta } = osmLinesForGraph(osmRoads);
@@ -8754,12 +8794,12 @@ async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
   }
 
   // Máscara de barreira de ÁGUA (modos raster: terreno livre + fallback raster
-  // do viário): preenche lagos/represas e barra rios da camada `water` do gpkg,
-  // pra rota não atravessar água. Pontes/túneis viram PORTAIS (abaixo), pra
+  // do viário): preenche lagos/represas e barra rios dos FGBs de água, pra
+  // rota não atravessar água. Pontes/túneis viram PORTAIS (abaixo), pra
   // cruzar a água barrada no tabuleiro. Origem/destino nunca são barrados.
   let portals = null;
   const waterBlocked = [];   // células barradas pela água (p/ refazer sem elas)
-  // Viário (linhas do gpkg): usado pra (a) abrir CORREDORES passáveis na máscara
+  // Viário (linhas do FGB): usado pra (a) abrir CORREDORES passáveis na máscara
   // de água — estradas/pontes atravessam a água, como no sampasimu — e (b) os
   // portais de ponte/túnel. Buscado UMA vez e reusado pelos dois blocos abaixo.
   let viaLines = null, viaMeta = null;
@@ -8767,8 +8807,8 @@ async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
     try { const q = await queryViarioLines(bb); viaLines = q.lines; viaMeta = q.meta; }
     catch (e) { console.warn('[energy] viário (corredores/portais) falhou:', e.message); }
   }
-  // Toggle nos Parâmetros (useWaterMask): desligado → água ignorada (e o gpkg
-  // nem é baixado se os portais também estiverem off → zero tráfego no terreno).
+  // Toggle nos Parâmetros (useWaterMask): desligado → água ignorada (e os FGBs
+  // nem são consultados se os portais também estiverem off → zero tráfego).
   if (params.useWaterMask !== false) try {
     const water = await queryWater(bb);
     if (water && (water.polys.length || water.lines.length)) {
@@ -8782,18 +8822,18 @@ async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
       // isto, um destino sobre/à beira d'água fica ilhado.
       //
       // Duas fontes de corredor: (a) `networkMask` — a rede RASTER em uso no
-      // "pelo viário" via Overpass (gpkg desligado/indisponível); é ELA que o
+      // "pelo viário" via Overpass (FGB desligado/indisponível); é ELA que o
       // worker roteia, então é ELA que precisa atravessar a água, senão a ponte
       // do OSM fica barrada e a rota cai na reta. (b) `road` — as linhas
-      // VETORIAIS do gpkg (corredores do modo terreno; só existem com o gpkg
-      // carregado). Sem (a), o Overpass perdia todas as travessias d'água.
+      // VETORIAIS do FGB (corredores do modo terreno; só existem com o viário
+      // consultado). Sem (a), o Overpass perdia todas as travessias d'água.
       let road = null;
       if (viaLines) { road = new Uint8Array(dem.W * dem.H); for (const ln of viaLines) rasterSupercover(ln.map((p) => toG(p[0], p[1])), road, dem.W, dem.H); }
       let blocked = 0, corr = 0;
       for (let i = 0; i < block.length; i++) {
         if (!block[i] || !dem.mask[i]) continue;
         if (networkMask && networkMask[i]) { corr++; continue; }   // via raster (Overpass) cruza a água
-        if (road && road[i]) { corr++; continue; }                 // via vetorial (gpkg) cruza a água
+        if (road && road[i]) { corr++; continue; }                 // via vetorial (FGB) cruza a água
         dem.mask[i] = 0; waterBlocked.push(i); blocked++;
       }
       dem.mask[seedR * dem.W + seedC] = 1; dem.mask[goalR * dem.W + goalC] = 1;
@@ -8803,7 +8843,7 @@ async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
 
   // Portais de ponte/túnel (raster): atalho dirigido entre as duas células de
   // apoio no custo do tabuleiro plano — deixa a rota cruzar a água barrada por
-  // cima da ponte. Decks = linhas do viário com bridge/tunnel (gpkg já em cache
+  // cima da ponte. Decks = linhas do viário com bridge/tunnel (FGB já em cache
   // pela água); o worker calcula o custo a partir das alturas das pontas.
   // Toggle nos Parâmetros (usePortals): desligado → água vira barreira total.
   if (params.usePortals !== false && viaLines) try {
@@ -10510,7 +10550,7 @@ function fillParamInputs() {
 
 // ─── Modal "Fontes de dados" (DEM + rede viária) ─────────────────────────────
 // Aberto pelo botão na seção de elevação dos Parâmetros. Hospeda os 3 toggles de
-// fonte (FABDEM / DEM de SP / gpkg de SP — mesmos IDs, já ligados via
+// fonte (FABDEM / DEM de SP / FGB do viário — mesmos IDs, já ligados via
 // PARAM_CHECKBOXES) + carregar/limpar DEM custom e rede viária custom. Os
 // arquivos custom ficam só em memória (efêmeros) e têm prioridade sobre os
 // built-ins na amostragem de elevação e no roteamento por energia.
