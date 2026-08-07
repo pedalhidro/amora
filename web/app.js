@@ -192,6 +192,7 @@ const DEFAULT_LAYER_ORDER = [
   'sara1930',                  // SARA 1930 (histórico)
   'mapa1850',                  // Mapa de 1850 (histórico)
   'mtpi-pindorama', 'mtpi-parana', // MTPI (índice de posição topográfica multiescala)
+  'positron',                  // OSM claro (CARTO) em multiply — ACIMA dos rasters
   'custom-wms', 'custom-xyz',  // camadas custom do usuário
   'osm-cicloinfra',
   'osm-overpass',
@@ -523,6 +524,20 @@ const rmsampa = L.tileLayer('https://telhas.pedalhidrografi.co/rmsampa-v2/{z}/{x
   attribution: 'Topografia: Pedal Hidrográfico',
 }).addTo(map);
 
+// CARTO Positron (OSM claro minimalista, sem chave). O pane fica em
+// mix-blend-mode: multiply — branco é identidade, então por cima dos rasters
+// (Câmera Topográfica, topografia colorida, satélite) o traçado escuro de
+// ruas/rótulos fica "gravado" no relevo em vez de cobri-lo com o fundo claro.
+// Sozinha (sem raster embaixo), multiply contra o fundo do mapa ≈ camada
+// normal. {r} = tiles @2x em telas retina (o Leaflet resolve sozinho).
+const positron = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+  maxZoom: 19,
+  subdomains: 'abcd',
+  pane: LAYER_PANE('positron'),
+  attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+});
+map.getPane(LAYER_PANE('positron')).style.mixBlendMode = 'multiply';
+
 // Historical aerial photo mosaic of São Paulo (SARA Brasil, 1930), served
 // from GeoSampa's GeoServer. Leaflet's L.tileLayer.wms requests one tile at
 // a time. To browse other historical mosaics on the same workspace see:
@@ -611,6 +626,10 @@ const OVERLAY_LAYERS = [
   },
   { id: 'sara1930', label: 'SARA 1930',           layer: sara1930, defaultVisible: false, defaultPct: 85 },
   { id: 'mapa1850', label: 'Mapa 1850',           layer: mapa1850, defaultVisible: false, defaultPct: 85 },
+  // Positron em multiply: o pane tem mix-blend-mode, então ligada por cima de
+  // um raster ela "grava" ruas/rótulos nele (branco = identidade) em vez de
+  // cobri-lo. Ver a definição da camada pro racional.
+  { id: 'positron', label: 'Positron (OSM × relevo)', layer: positron, defaultVisible: false, defaultPct: 100 },
   { id: 'mtpi-pindorama', label: 'MTPI Pindorama 90m',       layer: mtpiPindorama, defaultVisible: false, defaultPct: 100 },
   { id: 'mtpi-parana',    label: 'MTPI Bacia do Paraná 30m', layer: mtpiParana,    defaultVisible: false, defaultPct: 100 },
   // Pseudo-layer for the loaded sidebar routes. Custom show/hide/setOpacity
