@@ -57,8 +57,9 @@ const SETTINGS_DEFAULTS = {
   },
   cameraTopo: {
     // Câmera Topográfica: relevo servido como tiles XYZ por
-    // cameratopo.pedalhidrografi.co (elevação em cmocean.phase × declividade
-    // blend-multiply), igual ao sampasimu. null = deixa o servidor resolver
+    // cameratopo.pedalhidrografi.co com a fonte Google Earth Engine (dem=ee —
+    // mesma composição elevação em cmocean.phase × declividade blend-multiply,
+    // renderizada pelo EE em qualquer zoom). null = deixa o servidor resolver
     // como `auto` (percentis de uma região de referência fixa).
     minElev: null,     // m (auto = p5)
     maxElev: null,     // m (auto = p80)
@@ -9739,14 +9740,18 @@ async function sampleCustomDemBatch(points) { return sampleDemHandle(_customDem,
 // ─── Câmera Topográfica: relevo servido como tiles XYZ ───────────────────────
 // Igual ao sampasimu: elevação na paleta cmocean.phase (cíclica, perceptual)
 // multiplicada por um realce de declividade (branco→preto, γ-corrigido). O
-// render agora roda no servidor (cameratopo.pedalhidrografi.co/{z}/{x}/{y}.png,
-// lendo os mesmos COGs do FABDEM/DEM-SP), então a camada é um L.tileLayer comum
-// no pane reordenável 'camera-topo' — sem re-render por pan/zoom no cliente.
-// Parâmetros (min/max elevação, declividade máx., γ, ciclos da paleta) viram
-// querystring do tile; campo em branco = `auto` (o servidor resolve por
-// percentis de uma região de referência). O botão "Estimar pela extensão
-// atual" ainda calcula percentis no cliente (buildCameraTopoFrame, abaixo) pra
-// preencher valores explícitos adaptados à viewport.
+// render roda no servidor (cameratopo.pedalhidrografi.co/{z}/{x}/{y}.png) com
+// a fonte `dem=ee`: a MESMA composição construída como expressão Google Earth
+// Engine sobre o FABDEM (mapid proxiado pelo cameratopo) — declividade nativa
+// em qualquer zoom, sem os limites do render local de COGs (que clampava a
+// camada a z12–16). A camada é um L.tileLayer comum no pane reordenável
+// 'camera-topo' — sem re-render por pan/zoom no cliente. Parâmetros (min/max
+// elevação, declividade máx., γ, ciclos da paleta) viram querystring do tile;
+// campo em branco = `auto` (o servidor resolve por percentis de uma região de
+// referência — mesmo com dem=ee, os percentis vêm do caminho local). O botão
+// "Estimar pela extensão atual" ainda calcula percentis no cliente
+// (buildCameraTopoFrame, abaixo) pra preencher valores explícitos adaptados à
+// viewport.
 
 // Declividade (m/m) por diferença central. Bordas replicam; vizinho nodata cai
 // na própria altura (zero gradiente em vez de salto fictício na borda do DEM).
@@ -9810,15 +9815,21 @@ function reliefPercentiles(height, mask, slope, H, W) {
   };
 }
 
-const CAMERA_TOPO_MIN_ZOOM = 12;   // abaixo disso o DEM (~30 m) vira downsample inútil
-const CAMERA_TOPO_MAX_NATIVE_ZOOM = 16;   // acima disso o Leaflet reamplia os tiles
+// Só pro botão "Estimar pela extensão atual": abaixo disso o mosaico DEM da
+// viewport (~30 m) fica grande/inútil demais pra estimar percentis no cliente.
+// A CAMADA em si não clampa mais — a fonte EE renderiza nativa em todo zoom.
+const CAMERA_TOPO_MIN_ZOOM = 12;
 const CAMERATOPO_TILE_BASE = 'https://cameratopo.pedalhidrografi.co';
+// Cache-buster espelhando o TILE_VERSION da UI do cameratopo — bumpar junto
+// quando o render de lá mudar, senão CDN/navegador seguram tiles velhos até 7d.
+const CAMERATOPO_TILE_VERSION = '4';
 let cameraTopoLayer = null;
 let cameraTopoOpacity = settings.cameraTopo.opacityPct / 100;
 
 // Monta a URL de tiles a partir dos parâmetros. Campo null → `auto` (o servidor
 // resolve por percentis de uma região de referência — uniforme em toda a grade,
-// sem costuras). slopeMax é em m/m (igual ao armazenado).
+// sem costuras). slopeMax é em m/m (igual ao armazenado). `ss` (superamostragem
+// do render local) não se aplica à fonte ee — omitido.
 function cameraTopoTileUrl() {
   const c = settings.cameraTopo;
   const qs = new URLSearchParams();
@@ -9827,6 +9838,8 @@ function cameraTopoTileUrl() {
   qs.set('slopeMax', c.maxSlope != null ? String(c.maxSlope) : 'auto');
   qs.set('slopeGamma', String(c.slopeGamma ?? 1.2));
   qs.set('cycles', String(c.cycles ?? 1));
+  qs.set('dem', 'ee');
+  qs.set('v', CAMERATOPO_TILE_VERSION);
   return `${CAMERATOPO_TILE_BASE}/{z}/{x}/{y}.png?${qs.toString()}`;
 }
 
@@ -9835,9 +9848,7 @@ function showCameraTopo() {
     cameraTopoLayer = L.tileLayer(cameraTopoTileUrl(), {
       opacity: cameraTopoOpacity,
       pane: LAYER_PANE('camera-topo'),
-      minZoom: CAMERA_TOPO_MIN_ZOOM,
-      maxNativeZoom: CAMERA_TOPO_MAX_NATIVE_ZOOM,
-      attribution: 'Câmera Topográfica · FABDEM',
+      attribution: 'Câmera Topográfica · FABDEM · Google Earth Engine',
     });
   }
   cameraTopoLayer.addTo(map);
