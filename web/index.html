@@ -206,6 +206,14 @@
           <details class="help-changelog">
             <summary>Novidades (changelog)</summary>
             <dl>
+              <dt>08/08/2026 · v378</dt>
+              <dd>
+                <ul>
+                  <li>O <strong>roteamento por energia</strong> agora segue a prática recomendada pelo estudo de roteamento discreto (bicycling-energy-model): o mosaico de elevação recebe um <strong>tratamento σ = 30&nbsp;m</strong> (suavização Gaussiana, inclusive no FABDEM) antes do cálculo — sem ele, o ruído do relevo fabrica micro-descidas íngremes que a recuperação de descida se recusa a creditar, e a energia sai superestimada. Junto das 16 direções de movimento, do custo de descida grade-local e dos portais de ponte/túnel — que já eram o padrão — isso fecha o pacote recomendado. O σ é configurável em Parâmetros.</li>
+                  <li>A <strong>estimativa de energia do editor de traçado</strong> agora segue a receita de planejamento dos artigos 1 e 2 do mesmo estudo: o perfil de elevação é <strong>reamostrado a passo fixo de 30&nbsp;m</strong> antes do cálculo (não superamostrar a fonte — vértices densos de OSRM/GPX sobre o FABDEM inflavam a subida acumulada; e o estimador de recuperação na descida foi calibrado exatamente a 30&nbsp;m), mantendo o deadband de 2&nbsp;m e o ε estimado do perfil. A comparação com o SUV usa o mesmo perfil.</li>
+                  <li>A barra de métricas ganhou a <strong>energia da rota</strong> ao lado da estimativa (ex.: <em>328 kJ · rota 342 kJ</em>): a soma dos custos de aresta que o roteador por energia de fato minimizou. Os dois números medem coisas diferentes de propósito — a estimativa re-precifica o traçado pela receita route-level; a rota é o objetivo do Dijkstra na fonte do roteamento. Aparece "≥" quando só parte dos segmentos foi roteada por energia; o valor sobrevive a desfazer/refazer e ao GPX salvo, e some ao inverter o sentido (o custo é assimétrico).</li>
+                </ul>
+              </dd>
               <dt>07/08/2026 · v377</dt>
               <dd>
                 <ul>
@@ -1240,7 +1248,7 @@
             <span class="param-label">Margem da busca</span>
             <span class="param-input"><input type="number" id="param-energy-margin" step="5" min="0" max="200"> %</span>
           </label>
-          <label class="param-row" title="Vizinhança do Dijkstra em grade (Menor energia pelo terreno e fallback raster do viário). Mais direções = traçado menos serrilhado e energia ótima menos superestimada (16 já elimina ~⅔ do excesso da grade-8), ao custo de mais tempo de cálculo.">
+          <label class="param-row" title="Vizinhança do Dijkstra em grade (Menor energia pelo terreno e fallback raster do viário). Mais direções = traçado menos serrilhado e energia ótima menos superestimada (16 já elimina ~⅔ do excesso da grade-8), ao custo de mais tempo de cálculo. Padrão 16 — recomendação do estudo de roteamento discreto (bicycling-energy-model); 8 é a escolha rápida e os ganhos além de 32 são marginais frente a ≥2× o tempo.">
             <span class="param-label">Direções de movimento (grade)</span>
             <span class="param-input"><select id="param-n-dirs">
               <option value="4">4</option>
@@ -1249,6 +1257,15 @@
               <option value="32">32</option>
               <option value="64">64</option>
               <option value="128">128</option>
+            </select></span>
+          </label>
+          <label class="param-row" title="Suavização Gaussiana (σ em metros) aplicada ao mosaico de elevação antes do roteamento por energia — terreno e viário. Perfis suavizados vivem em descidas rasas, que a recuperação grade-local credita perto do limite de coasting; sem o tratamento, o ruído do DEM fabrica micro-descidas íngremes e o custo explode. Padrão σ = 30 m — recomendação do estudo (vale também pro FABDEM). Não afeta o perfil de elevação exibido nem a Câmera Topográfica.">
+            <span class="param-label">Tratamento σ do mapa (roteamento)</span>
+            <span class="param-input"><select id="param-dem-smooth">
+              <option value="0">desligado</option>
+              <option value="10">σ = 10 m</option>
+              <option value="20">σ = 20 m</option>
+              <option value="30" selected>σ = 30 m</option>
             </select></span>
           </label>
           <label class="param-row" title="Ligado: no Menor energia pelo terreno, lagos/represas e rios (FlatGeobuf de água, buscado por trecho) viram barreira intransponível (a rota não cruza água). Desligado: a água é ignorada — e nem é consultada se Atravessar pontes/túneis também estiver desligado. Não afeta o Menor energia pelo viário.">

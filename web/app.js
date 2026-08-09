@@ -6731,7 +6731,19 @@ const DEFAULT_PARAMS = {
   // simujaules: 16 = +movimentos de cavalo, etc.) reduzem a superestimativa de
   // energia da grade-8 (~⅔ dela some em 16) ao custo de mais arestas por célula.
   // Movimentos longos são integrados por perfil no worker (ver buildMoves).
+  // Default 16 = a recomendação do bicycling-energy-model (Entry 74 / paper 3
+  // §3.2(d)): o ótimo de med|Δ%| no levantamento local (0,20 pp do ótimo
+  // n=32 do FABDEM); 8 é a escolha rápida e ganhos além de 32 são marginais.
   nDirs: 16,
+  // Tratamento σ do mapa (bicycling-energy-model, Entry 74): Gaussiana com
+  // σ em metros aplicada ao mosaico DEM ANTES do roteamento por energia
+  // (grade do terreno + grafo vetorial do viário que amostra o mosaico) —
+  // inclusive nas fontes grossas (FABDEM). Perfis tratados vivem na banda de
+  // descida rasa que o ε grade-local credita perto do limite de coasting;
+  // sem o tratamento, o ruído fabrica micro-descidas íngremes e o custo v2
+  // explode. 0 = desligado. NÃO afeta a Câmera Topográfica nem a amostragem
+  // de elevação do traçado (que segue com o deadband).
+  demSmoothSigmaM: 30,
   // Fonte do viário no "menor energia pelo viário": grafo PRÉ-COZIDO de SP
   // (sampa-viario-graph.bin — elevações baked, sem DEM por rota) por padrão,
   // com o FGB da América do Sul (range requests) como fallback; desligado usa
@@ -7597,6 +7609,74 @@ async function loadDemHandleMosaic(t, bb) {
 async function loadSampaDemMosaic(bb) { return loadDemHandleMosaic(await openSampaDem(), bb); }
 async function loadCustomDemMosaic(bb) { return loadDemHandleMosaic(_customDem, bb); }
 
+// Tratamento σ do mapa (Entry 74 do bicycling-energy-model): suavização
+// Gaussiana do mosaico DEM antes do roteamento por energia. CÓPIA MANTIDA À
+// MÃO do smoothHeightsInPlace do sampasimu (app.js; test-dem-smoothing.mjs
+// de lá trava a transformação — validada pelo harness da Entry 20): Gaussiana
+// sequencial por eixo, normalizada pela máscara, truncada em 3σ, σ_px por
+// eixo a partir do passo em metros, in place. Só o roteamento chama (ver
+// energyRoute) — a Câmera Topográfica lê o mosaico cru. Não trocar por um
+// blur genérico: as escolhas de σ do estudo só valem pra ESTA transformação.
+function smoothHeightsInPlace(height, mask, H, W, dxM, dyM, sigmaM) {
+  if (!(sigmaM > 0)) return;
+  const passes = [
+    { sigPx: sigmaM / dxM, horizontal: true },
+    { sigPx: sigmaM / dyM, horizontal: false },
+  ];
+  for (const p of passes) {
+    const R = Math.ceil(3 * p.sigPx);
+    if (!(R >= 1)) continue;
+    const w = new Float64Array(R + 1);
+    for (let k = 0; k <= R; k++) w[k] = Math.exp(-(k * k) / (2 * p.sigPx * p.sigPx));
+    if (p.horizontal) {
+      const buf = new Float64Array(W);
+      for (let r = 0; r < H; r++) {
+        const base = r * W;
+        for (let c = 0; c < W; c++) {
+          const idx = base + c;
+          if (!mask[idx]) continue;
+          let num = w[0] * height[idx], den = w[0];
+          for (let k = 1; k <= R; k++) {
+            const a = c - k, b = c + k;
+            if (a >= 0 && mask[base + a]) { num += w[k] * height[base + a]; den += w[k]; }
+            if (b < W && mask[base + b]) { num += w[k] * height[base + b]; den += w[k]; }
+          }
+          buf[c] = num / den;
+        }
+        for (let c = 0; c < W; c++) if (mask[base + c]) height[base + c] = buf[c];
+      }
+    } else {
+      // Vertical pass, row-major streaming: for output row r, accumulate the
+      // (2R+1) source rows r±k sequentially into num/den, then defer the
+      // write by R rows via a ring buffer (source rows must stay unmodified
+      // while they can still appear in a later output row's window).
+      const num = new Float64Array(W), den = new Float64Array(W);
+      const ring = []; // { row, vals: Float64Array }
+      const flushRow = (entry) => {
+        const base = entry.row * W;
+        for (let c = 0; c < W; c++) if (mask[base + c]) height[base + c] = entry.vals[c];
+      };
+      for (let r = 0; r < H; r++) {
+        num.fill(0); den.fill(0);
+        const k0 = Math.max(0, r - R), k1 = Math.min(H - 1, r + R);
+        for (let rr = k0; rr <= k1; rr++) {
+          const wk = w[Math.abs(rr - r)], base = rr * W;
+          for (let c = 0; c < W; c++) {
+            if (mask[base + c]) { num[c] += wk * height[base + c]; den[c] += wk; }
+          }
+        }
+        const vals = new Float64Array(W);
+        const base = r * W;
+        for (let c = 0; c < W; c++) vals[c] = mask[base + c] ? num[c] / den[c] : height[base + c];
+        ring.push({ row: r, vals });
+        // Flush rows whose window can no longer include any unwritten source row.
+        while (ring.length && ring[0].row <= r - R) flushRow(ring.shift());
+      }
+      while (ring.length) flushRow(ring.shift());
+    }
+  }
+}
+
 // Escolhe a fonte do mosaico: DEM custom (se carregado e a bbox cabe nele) →
 // DEM de SP (se ligado) → FABDEM. Cada fonte só vale onde cobre a bbox inteira.
 async function loadDemMosaic(bb) {
@@ -8083,6 +8163,8 @@ async function bakedViarioRoute(fromLatLng, toLatLng, bb) {
   path.unshift([fromLatLng.lat, fromLatLng.lng]); deckFlag.unshift(false);
   path.push([toLatLng.lat, toLatLng.lng]); deckFlag.push(false);
   path.deckFlag = deckFlag;
+  // Objetivo do roteador (J) — exibido na barra de métricas (ver energyRoute).
+  path.routedEnergyJ = dist[t];
   console.info(`[viario] grafo pré-cozido: ${nAllowed} nós na bbox · rota ${path.length} pts em ` +
     `${(performance.now() - t0).toFixed(0)} ms`);
   return path;
@@ -8638,6 +8720,8 @@ function viarioGraphRoute(lines, meta, fromLatLng, toLatLng, dem, bb, A) {
   // trackpoint). flattenDeckProfile() depois achata o perfil do display nesses
   // pontos usando a elevação amostrada nos apoios.
   path.deckFlag = deckFlag;
+  // Objetivo do roteador (J) — exibido na barra de métricas (ver energyRoute).
+  path.routedEnergyJ = distA[t];
   console.info(`[viario] grafo ${N} nós · rota ${path.length} pts em ` +
     `${(performance.now() - t0).toFixed(0)} ms`);
   return path;
@@ -8696,6 +8780,23 @@ async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
   if (!dem.W || !dem.H) {
     console.warn('[energy] DEM vazio — fallback pra reta');
     return straightPath(fromLatLng, toLatLng);
+  }
+
+  // Passo da célula em metros — usado já pelo tratamento σ e depois pelo worker.
+  const midLat = (bb.south + bb.north) / 2;
+  const EARTH_R = 6378137;
+  const dy = A * Math.PI / 180 * EARTH_R;
+  const dx = dy * Math.cos(midLat * Math.PI / 180);
+
+  // Tratamento σ do mapa (Entry 74): suaviza o mosaico ANTES de qualquer
+  // consumidor de roteamento — a grade do terreno E os grafos vetoriais do
+  // viário (FGB / rede custom / Overpass) amostram estas alturas. Inclui as
+  // fontes grossas (FABDEM) de propósito — ver DEFAULT_PARAMS.demSmoothSigmaM.
+  const sigmaM = Math.max(0, +(params.demSmoothSigmaM ?? DEFAULT_PARAMS.demSmoothSigmaM) || 0);
+  if (sigmaM > 0) {
+    const tSm = performance.now();
+    smoothHeightsInPlace(dem.height, dem.mask, dem.H, dem.W, dx, dy, sigmaM);
+    console.info(`[energy] tratamento σ=${sigmaM} m em ${(performance.now() - tSm).toFixed(0)} ms`);
   }
 
   // ROAD com rede custom: se o usuário carregou um fgb/gpkg/GeoJSON de viário
@@ -8791,11 +8892,6 @@ async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
       networkMask = rasterizeRoads(osmRoads, bb, dem.H, dem.W, A);
     }
   }
-
-  const midLat = (bb.south + bb.north) / 2;
-  const EARTH_R = 6378137;
-  const dy = A * Math.PI / 180 * EARTH_R;
-  const dx = dy * Math.cos(midLat * Math.PI / 180);
 
   const seedR = Math.max(0, Math.min(dem.H - 1, Math.round((bb.north - fromLatLng.lat) / A)));
   const seedC = Math.max(0, Math.min(dem.W - 1, Math.round((fromLatLng.lng - bb.west) / A)));
@@ -8920,11 +9016,16 @@ async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
       console.warn('[energy] sem caminho — fallback pra reta');
       return straightPath(fromLatLng, toLatLng);
     }
-    return Array.from(res.path, (i) => {
+    const out = Array.from(res.path, (i) => {
       const r = (i / dem.W) | 0;
       const c = i - r * dem.W;
       return [bb.north - (r + 0.5) * A, bb.west + (c + 0.5) * A];
     });
+    // Objetivo do roteador (J): a energia acumulada no destino que o Dijkstra
+    // minimizou — viaja no array do caminho (como o deckFlag) até a barra de
+    // métricas, que a exibe ao lado da estimativa route-level.
+    if (Number.isFinite(res.pathEnergy)) out.routedEnergyJ = res.pathEnergy;
+    return out;
   } catch (e) {
     console.warn('[energy] worker falhou:', e.message);
     return straightPath(fromLatLng, toLatLng);
@@ -10142,21 +10243,63 @@ function readCost(p) {
   };
 }
 
-// Walk the assembled path summing distance, time, and the v2 leg energy.
+// Perfil da receita de planejamento (bicycling-energy-model, paper 2 §3):
+// reamostra o traçado a passo FIXO de 30 m de arco, lendo a série de elevação
+// dos vértices (já com tabuleiros achatados pelo flattenDeckProfile) por
+// interpolação linear na quilometragem. Regra 3 da receita: NÃO superamostrar
+// a fonte — vértices densos (OSRM ~10 m, GPX, DEM-SP 5 m) sobre uma fonte
+// grossa fabricam relevo sub-célula e inflam h₊ (FABDEM @5 m: +4,3 pp de viés
+// vs +2,2 @30 m, Tabela 1 do paper) — e o ε₀ = 0,13 do estimador de descida
+// foi calibrado exatamente a 30 m de amostragem (paper 1 §4.4.2). A
+// quilometragem s é a do TRAÇADO real (arco), então distância/rolamento não
+// mudam com a reamostragem. h = NaN onde algum vértice-suporte ainda não tem
+// elevação (mesma semântica de "carregando" de antes).
+const PROFILE_STEP_M = 30;
+function buildRecipeProfile(latlngs) {
+  const n = latlngs.length;
+  const sV = new Float64Array(n);
+  const eV = new Float64Array(n);
+  const elevAt = (q) => {
+    const e = elevationCache.get(elevKey(q.lat, q.lng));
+    return Number.isFinite(e) ? e : NaN;
+  };
+  eV[0] = elevAt(latlngs[0]);
+  let S = 0;
+  for (let i = 1; i < n; i++) {
+    S += latlngs[i - 1].distanceTo(latlngs[i]);
+    sV[i] = S;
+    eV[i] = elevAt(latlngs[i]);
+  }
+  // Nós a cada 30 m + o endpoint (um resto < 1 m é absorvido no último nó,
+  // pra não criar um segmento-migalha no fim).
+  const s = [];
+  for (let x = 0; x < S; x += PROFILE_STEP_M) s.push(x);
+  if (!s.length || S - s[s.length - 1] >= 1) s.push(S); else s[s.length - 1] = S;
+  const h = new Float64Array(s.length);
+  let j = 0;
+  for (let k = 0; k < s.length; k++) {
+    while (j < n - 2 && sV[j + 1] < s[k]) j++;
+    const a = eV[j], b = eV[j + 1], span = sV[j + 1] - sV[j];
+    const f = span > 0 ? (s[k] - sV[j]) / span : 0;
+    h[k] = (Number.isFinite(a) && Number.isFinite(b)) ? a + (b - a) * f : NaN;
+  }
+  return { s, h, total: S };
+}
+
+// Walk the recipe profile summing distance, time, and the v2 leg energy.
 // TIME stays the per-segment equilibrium-speed simulation (on raw Δh); ENERGY is
 // the v2 closed form (bicycling-energy-model notas.md): rolling over all distance,
 // aero charged only OFF the climbs at the flat speed v_f, gravity m·g·Δh with a
-// per-grade descent recovery ε, all ÷ k_eff, on a 2 m-deadbanded profile.
+// per-grade descent recovery ε, all ÷ k_eff, on a 2 m-deadbanded profile —
+// paper 2's eq. (L1) with paper 1 eq. (5)'s drop-weighted ε_d, on the 30 m
+// resampled profile of buildRecipeProfile above.
 // Returns null if there's no path yet.
 function simulateRide(p) {
   const latlngs = assembleLatLngs();
   if (latlngs.length < 2) return null;
 
-  // Elevation profile aligned to latlngs (NaN where unknown), deadbanded for v2.
-  const elev = latlngs.map((q) => {
-    const e = elevationCache.get(elevKey(q.lat, q.lng));
-    return Number.isFinite(e) ? e : NaN;
-  });
+  const prof = buildRecipeProfile(latlngs);
+  const elev = Array.from(prof.h);            // NaN onde falta elevação
   const elevS = deadbandElev(elev, p.deadbandM ?? 2);
 
   // v2 cost coefficients (Joules; ÷1000 for kJ at display) — shared with the
@@ -10170,8 +10313,8 @@ function simulateRide(p) {
   let epsNum = 0, epsDen = 0;          // drop-weighted εcoast
   let wRollJ = 0, wAeroJ = 0, wClimbJ = 0;
 
-  for (let i = 1; i < latlngs.length; i++) {
-    const seg = latlngs[i - 1].distanceTo(latlngs[i]);
+  for (let i = 1; i < prof.s.length; i++) {
+    const seg = prof.s[i] - prof.s[i - 1];
     if (seg < 0.5) continue;
 
     // Raw Δh → the (unchanged) speed/time simulation.
@@ -10277,11 +10420,10 @@ function carEnergyJ(p) {
   const latlngs = assembleLatLngs();
   if (latlngs.length < 2) return { energyJ: 0, vAscent: 0, vFlat: 0, vDescent: 0 };
 
-  const elev = latlngs.map((q) => {
-    const e = elevationCache.get(elevKey(q.lat, q.lng));
-    return Number.isFinite(e) ? e : NaN;
-  });
-  const elevS = deadbandElev(elev, p.deadbandM ?? 2);
+  // Mesmo perfil reamostrado a 30 m da bike (buildRecipeProfile) — a
+  // comparação só é justa se os dois andam sobre a mesma elevação.
+  const prof = buildRecipeProfile(latlngs);
+  const elevS = deadbandElev(Array.from(prof.h), p.deadbandM ?? 2);
 
   const carP = { rho: p.rho, cda: p.carCda, mass: p.carMass, crr: p.carCrr };
   const alphaR = (p.carCrr * p.carMass * G) / p.carKEff;
@@ -10289,8 +10431,8 @@ function carEnergyJ(p) {
   const vFlatRef = solveSpeedAtGradient(p.carPowerFlat, 0, carP);
 
   let energyJ = 0;
-  for (let i = 1; i < latlngs.length; i++) {
-    const seg = latlngs[i - 1].distanceTo(latlngs[i]);
+  for (let i = 1; i < prof.s.length; i++) {
+    const seg = prof.s[i] - prof.s[i - 1];
     if (seg < 0.5) continue;
 
     const eAs = elevS[i - 1], eBs = elevS[i];
@@ -10372,6 +10514,25 @@ function updateMetrics() {
     bikeVsCarRatio = bikeMetabolicKJ > 0.01 ? carKJ / bikeMetabolicKJ : 0;
     carKEffPct = (params.carKEff * 100).toFixed(0);
   }
+  // Energia da ROTA (objetivo do roteador): soma dos routedEnergyJ por
+  // segmento — o custo v2 por aresta que o Dijkstra minimizou (grade
+  // σ30-tratada ou grafo do viário), capturado no roteamento. É um número
+  // DIFERENTE da estimativa acima (a receita route-level do paper 2 sobre o
+  // perfil reamostrado): fonte de elevação e discretização divergem de
+  // propósito. "≥" quando só parte dos segmentos foi roteada por energia
+  // (reta/OSRM/sentido invertido não têm objetivo).
+  let routedJ = 0, routedSegs = 0, totalSegs = 0;
+  for (let i = 1; i < trackpoints.length; i++) {
+    totalSegs++;
+    const pp = trackpoints[i].pathFromPrev;
+    if (pp && Number.isFinite(pp.routedEnergyJ)) { routedJ += pp.routedEnergyJ; routedSegs++; }
+  }
+  const routedKJ = routedJ / 1000;
+  const routedPartial = routedSegs > 0 && routedSegs < totalSegs;
+  const routedCompact = routedSegs > 0
+    ? ` · rota ${routedPartial ? '≥' : ''}${Math.round(routedKJ)} kJ`
+    : '';
+
   const movingTimeSec = sim.timeSec;
   const totalTimeSec = movingTimeSec / Math.max(0.01, params.efficiency);
   const haveAllElev = sim.elevMissing === 0;
@@ -10386,7 +10547,7 @@ function updateMetrics() {
     : '';
 
   traceMetrics.textContent =
-    `${fmtDistCompact(sim.distMeters)} · ${ascDesc} · ${fmtDurCompact(movingTimeSec)} mov · ${fmtDurCompact(totalTimeSec)} tot · ${Math.round(totalKJ)} kJ${carCompact}${elevHint}`;
+    `${fmtDistCompact(sim.distMeters)} · ${ascDesc} · ${fmtDurCompact(movingTimeSec)} mov · ${fmtDurCompact(totalTimeSec)} tot · ${Math.round(totalKJ)} kJ${routedCompact}${carCompact}${elevHint}`;
   traceMetrics.title =
     `Simulação por segmento.\n` +
     `  Distância:        ${fmt(km, 2)} km\n` +
@@ -10403,13 +10564,21 @@ function updateMetrics() {
     `  Plano  (${params.powerFlat} W):    ${formatHMS(sim.timeFlatSec)}\n` +
     `  Descida (${params.powerDescent} W): ${formatHMS(sim.timeDescentSec)}\n` +
     `\n` +
-    `Energia (modelo v2, pernas, kJ — perfil com deadband 2 m):\n` +
+    `Energia (modelo v2, pernas, kJ — perfil reamostrado a 30 m + deadband ${params.deadbandM ?? 2} m,\n` +
+    `a receita de planejamento do bicycling-energy-model, paper 2 §3):\n` +
     `  Rolamento (Crr=${params.crr}, m=${params.mass} kg, k_ef=${kEffPct}%):  ${fmt(wRollKJ)}\n` +
     `  Aero (CdA=${params.cda} m², ρ=${params.rho}, v_f=${fmt(vfKmh)} km/h, só fora das subidas): ${fmt(wAeroKJ)}\n` +
     `  Subida (m·g·Δh+ / k_ef, f+=${fPlusPct}%):                   ${fmt(wGravUpKJ)}\n` +
     `  Descida (−ε·m·g·Δh− / k_ef, ε=${epsPct}% estimado do perfil): ${fmt(wGravDownKJ)}\n` +
     `  ────────────────────────────────────\n` +
     `  Energia nas pernas:                                       ${fmt(totalKJ)} kJ\n` +
+    (routedSegs > 0
+      ? `\n` +
+        `Energia da rota (objetivo do roteador): ${routedPartial ? '≥' : ''}${fmt(routedKJ)} kJ` +
+        `${routedPartial ? ` — só ${routedSegs} de ${totalSegs} segmento(s) roteado(s) por energia` : ''}\n` +
+        `  Soma dos custos de aresta v2 que o Dijkstra minimizou (grade σ30-tratada /\n` +
+        `  grafo do viário). Difere da estimativa acima por fonte de elevação e\n` +
+        `  discretização — a estimativa re-precifica o traçado pela receita route-level.\n` : '') +
     `\n` +
     `Modelo v2 (bicycling-energy-model). Energia metabólica ≈ ${params.bikeMetabolicFactor}× isto (eficiência humana ~25%).` +
     (params.suvCompareEnabled
@@ -10524,6 +10693,17 @@ paramNDirs.addEventListener('change', () => {
   updateMetrics();
   rerouteCurrentDraft();
 });
+// Tratamento σ do mapa: select próprio pelo mesmo motivo do nDirs — mudar a
+// suavização do mosaico muda a geometria roteada, então re-roteia o rascunho.
+const paramDemSmooth = document.getElementById('param-dem-smooth');
+paramDemSmooth.addEventListener('change', () => {
+  const v = parseFloat(paramDemSmooth.value);
+  if (![0, 10, 20, 30].includes(v)) return;
+  params.demSmoothSigmaM = v;
+  saveParams();
+  updateMetrics();
+  rerouteCurrentDraft();
+});
 
 for (const [key, input] of Object.entries(PARAM_CHECKBOXES)) {
   input.addEventListener('change', () => {
@@ -10559,6 +10739,7 @@ function fillParamInputs() {
   PARAM_INPUTS.deadbandM.value = params.deadbandM;
   PARAM_INPUTS.energySearchMarginPct.value = params.energySearchMarginPct;
   paramNDirs.value = String([4, 8, 16, 32, 64, 128].includes(params.nDirs | 0) ? params.nDirs : 16);
+  paramDemSmooth.value = String([0, 10, 20, 30].includes(+params.demSmoothSigmaM) ? +params.demSmoothSigmaM : 30);
   PARAM_INPUTS.carMass.value = params.carMass;
   PARAM_INPUTS.carCrr.value = params.carCrr;
   PARAM_INPUTS.carCda.value = params.carCda;
@@ -10835,6 +11016,7 @@ const QUDT_PROFILE = {
   slopeFlatThreshold: { iri: 'slopeFlatThreshold',             kind: 'kind:DimensionlessRatio',   unit: 'unit:UNITLESS' },
   kEff:               { iri: 'transmissionEfficiency',         kind: 'kind:DimensionlessRatio',   unit: 'unit:UNITLESS' },
   deadbandM:          { iri: 'elevationDeadband',               kind: 'kind:Length',                unit: 'unit:M' },
+  demSmoothSigmaM:    { iri: 'demSmoothingSigma',               kind: 'kind:Length',                unit: 'unit:M' },
   energySearchMarginPct: { iri: 'energySearchMargin',           kind: 'kind:DimensionlessRatio',   unit: 'unit:PERCENT' },
   // Comparação com carro (SUV)
   carMass:            { iri: 'carTotalMass',                    kind: 'kind:Mass',                 unit: 'unit:KiloGM' },
@@ -10953,6 +11135,9 @@ function snapshot() {
     // deckFlag marca trechos de ponte/túnel (viarioGraphRoute) p/ o flattening
     // de elevação — precisa sobreviver ao undo/redo (não é reconstruído).
     deckFlag: t.pathFromPrev?.deckFlag ? [...t.pathFromPrev.deckFlag] : null,
+    // Objetivo do roteador do segmento (J) — idem: capturado no roteamento,
+    // não é reconstruível depois.
+    routedEnergyJ: Number.isFinite(t.pathFromPrev?.routedEnergyJ) ? t.pathFromPrev.routedEnergyJ : null,
     name: t.name || '',
     isPoi: !!t.isPoi,
     sym: t.sym || 'Flag, Blue',
@@ -11004,6 +11189,9 @@ function reverseTraceDirection() {
     }
     const path = src.map((p) => [p[0], p[1]]).reverse();
     if (src.deckFlag) path.deckFlag = [...src.deckFlag].reverse();
+    // routedEnergyJ NÃO é copiado de propósito: o custo v2 é assimétrico
+    // (subida ≠ descida), então o objetivo do sentido inverso é outro número
+    // que só um re-roteamento produziria.
     return path;
   });
   reversed.forEach((tp, j) => { tp.pathFromPrev = newPaths[j]; });
@@ -11025,6 +11213,7 @@ function restoreSnapshot(snap) {
     });
     tp.pathFromPrev = s.path ? s.path.map((p) => [p[0], p[1]]) : null;
     if (s.deckFlag && tp.pathFromPrev) tp.pathFromPrev.deckFlag = s.deckFlag;
+    if (Number.isFinite(s.routedEnergyJ) && tp.pathFromPrev) tp.pathFromPrev.routedEnergyJ = s.routedEnergyJ;
     trackpoints.push(tp);
   }
   redrawAndMetrics();
@@ -11082,6 +11271,9 @@ function performSave(name) {
       // flattening de elevação — sem isto, reabrir o GPX perdia a marcação e
       // o perfil voltava a mostrar o vale/fundo do DEM sob o tabuleiro.
       deckFlag: t.pathFromPrev?.deckFlag ? [...t.pathFromPrev.deckFlag] : null,
+      // Objetivo do roteador do segmento (J) — pra barra de métricas seguir
+      // mostrando a energia da rota depois de reabrir o GPX.
+      routedEnergyJ: Number.isFinite(t.pathFromPrev?.routedEnergyJ) ? t.pathFromPrev.routedEnergyJ : null,
     };
   });
   const ts = new Date();
@@ -12436,6 +12628,7 @@ async function loadGpxIntoEditor(gpxText) {
       if (wp.deckFlag && wp.deckFlag.length === tp.pathFromPrev.length) {
         tp.pathFromPrev.deckFlag = wp.deckFlag;
       }
+      if (Number.isFinite(wp.routedEnergyJ)) tp.pathFromPrev.routedEnergyJ = wp.routedEnergyJ;
     }
     trackpoints.push(tp);
   }
