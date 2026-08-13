@@ -3778,7 +3778,12 @@ document.getElementById('subir-censo')?.addEventListener('click', () => {
 document.getElementById('subir-memoria')?.addEventListener('click', () => {
   closeSubirModal();
   // Página própria (não modal): abre em aba nova pra não derrubar o mapa.
-  window.open('./memory.html', '_blank', 'noopener');
+  window.open('./memoria.html', '_blank', 'noopener');
+});
+document.getElementById('subir-custos')?.addEventListener('click', () => {
+  closeSubirModal();
+  // Página própria (não modal): abre em aba nova pra não derrubar o mapa.
+  window.open('./custos.html', '_blank', 'noopener');
 });
 document.getElementById('subir-download-gpx')?.addEventListener('click', () => {
   closeSubirModal();

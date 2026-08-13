@@ -207,6 +207,13 @@
           <details class="help-changelog">
             <summary>Novidades (changelog)</summary>
             <dl>
+              <dt>13/08/2026 · v382</dt>
+              <dd>
+                <ul>
+                  <li>Página nova: <a href="./custos.html"><strong>💸 Custos operacionais</strong></a> — quanto custa manter o amora, semana a semana desde o início do repositório: trabalho humano (heurística por commits/dia), assinatura de LLM e infraestrutura (GCP), com premissas ajustáveis, gráfico e tabela. Atalho novo no menu <strong>☰ Ações</strong>.</li>
+                  <li>A Memória Hidrográfica mudou de endereço: <code>memory.html</code> → <code>memoria.html</code> (o endereço antigo redireciona).</li>
+                </ul>
+              </dd>
               <dt>12/08/2026 · v381</dt>
               <dd>
                 <ul>
@@ -225,7 +232,7 @@
                   <li>No <strong>Censo Hidrográfico</strong>, a coluna <strong>Iniciantes</strong> agora mostra <strong>0</strong> quando o passeio teve participantes contados e ninguém estreou — antes o zero aparecia como "—", indistinguível de dado não coletado. O "—" fica reservado pra quando a contagem não foi feita.</li>
                   <li>O Censo ganhou o botão <strong>⬇ Exportar CSV</strong>: baixa todos os dados dos passeios (datas ISO, decimais com ponto, listas de nomes) num CSV pronto pra análise em planilha ou pandas.</li>
                   <li>A <strong>galeria</strong> agora mostra mídias <strong>sem data</strong> (ex.: fotos baixadas do zap, sem EXIF) — elas aparecem num grupo "Sem data" no fim, em vez de sumirem. Filtros de período continuam excluindo-as; a ideia é que entrem "cruas" e ganhem passeio, data e (futuramente) local aos poucos.</li>
-                  <li>Página nova: <a href="./memory.html"><strong>Memória Hidrográfica</strong></a> — a linha do tempo dos passeios, composta ao vivo dos grafos Turtle: pra cada pedal, a edição da série, o chamado, a arte do anúncio, rota, energia e a galeria das mídias daquele dia.</li>
+                  <li>Página nova: <a href="./memoria.html"><strong>Memória Hidrográfica</strong></a> — a linha do tempo dos passeios, composta ao vivo dos grafos Turtle: pra cada pedal, a edição da série, o chamado, a arte do anúncio, rota, energia e a galeria das mídias daquele dia.</li>
                   <li>O amora inteiro mudou pra um <strong>tema claro de alto contraste</strong>, com a fonte <strong>IBM Plex Mono</strong> em tudo (vendorada, funciona offline) — mapa, censo, galeria, memória, pessoas e formulários de envio. Além de mais legível ao sol, é <strong>amigável à impressão</strong>: Censo e Memória ganharam estilos de impressão dedicados (sem barras nem botões, só o conteúdo).</li>
                   <li>O censo ganhou dois campos novos por passeio: <strong>local de saída</strong> e <strong>local de chegada</strong> (texto livre, ex.: <em>Bar Nova Magnata — Metrô Barra Funda</em> → <em>CPTM Guaianases</em>). Editáveis no formulário do passeio e no backfill em massa; aparecem na Memória Hidrográfica.</li>
                 </ul>
@@ -1761,6 +1768,7 @@
           <button type="button" id="subir-new-tour" class="subir-action">🚵 Cadastrar passeio</button>
           <button type="button" id="subir-censo" class="subir-action">📊 Censo hidrográfico</button>
           <button type="button" id="subir-memoria" class="subir-action">🕰 Memória</button>
+          <button type="button" id="subir-custos" class="subir-action">💸 Custos</button>
           <button type="button" id="subir-download-gpx" class="subir-action">📥 Baixar rotas (GPX)</button>
           <button type="button" id="subir-share-loc" class="subir-action">📍 Compartilhar localização</button>
           <button type="button" id="subir-help" class="subir-action">❓ Ajuda</button>
