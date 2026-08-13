@@ -3775,6 +3775,11 @@ document.getElementById('subir-censo')?.addEventListener('click', () => {
   closeSubirModal();
   openCensoModal();
 });
+document.getElementById('subir-memoria')?.addEventListener('click', () => {
+  closeSubirModal();
+  // Página própria (não modal): abre em aba nova pra não derrubar o mapa.
+  window.open('./memory.html', '_blank', 'noopener');
+});
 document.getElementById('subir-download-gpx')?.addEventListener('click', () => {
   closeSubirModal();
   downloadAllRoutesGpx();
