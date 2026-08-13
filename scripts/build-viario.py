@@ -22,6 +22,14 @@ Pipeline (fonte = south-america-latest.osm.pbf, ~4 GB, cacheado em ignore/):
     `south-america-water-areas.fgb` (polígonos: natural=water /
     landuse=reservoir / waterway=riverbank) e
     `south-america-water-rivers.fgb` (linhas: waterway=river);
+  - `--layers`: os dois FGBs das CAMADAS DE MAPA (o que antes vinha do
+    Overpass ao vivo) + o GeoJSON da rede cicloviária do coletivo:
+    `south-america-hidro.fgb` (linhas: `waterway=*` + `natural=ridge`, com
+    `tunnel`/`name` — a camada "Morros e Águas"),
+    `south-america-cicloinfra.fgb` (linhas: ciclovias, caminhos compartilhados
+    e vias com ciclofaixa — a camada "Cicloinfra OSM") e
+    `ph-cycle-network.geojson` (as relations `cycle_network=BR:PedalHidrografico`,
+    minúsculo, baixado inteiro pelo cliente);
   - EPSG:4326 nativo do pbf — nada de reprojeção; índice espacial é o
     default do driver FlatGeobuf.
 
@@ -50,6 +58,8 @@ Roda:
     python scripts/build-viario.py                # só o viário
     python scripts/build-viario.py --water        # viário + água
     python scripts/build-viario.py --water --graph
+    # o que o job semanal roda (pula o viário, que é o build caro):
+    python scripts/build-viario.py --no-viario --water --layers
     # teste rápido com um extrato pequeno (mesmos nomes de saída!):
     python scripts/build-viario.py --extract \\
         https://download.geofabrik.de/south-america/ecuador-latest.osm.pbf
@@ -96,11 +106,34 @@ GEOFABRIK_URL = "https://download.geofabrik.de/south-america-latest.osm.pbf"
 OUT_VIARIO = IGNORE / "south-america-viario.fgb"
 OUT_WATER_AREAS = IGNORE / "south-america-water-areas.fgb"
 OUT_WATER_RIVERS = IGNORE / "south-america-water-rivers.fgb"
+# Camadas de mapa (--layers): o que a "Morros e Águas" e a "Cicloinfra OSM"
+# liam do Overpass ao vivo, agora assadas pro mesmo host dos outros FGBs.
+OUT_HIDRO = IGNORE / "south-america-hidro.fgb"
+OUT_CICLOINFRA = IGNORE / "south-america-cicloinfra.fgb"
+OUT_PH_NETWORK = IGNORE / "ph-cycle-network.geojson"
 
-# osmconf.ini mínimo pro driver OSM do GDAL: só a camada `lines` interessa e
-# só bridge/tunnel/layer viram campo (highway fica implícito no pré-filtro,
-# mas entra como campo pra permitir -where "highway IS NOT NULL" — proteção
-# contra um pbf não pré-filtrado). `other_tags=no` mantém o FGB fino.
+# Valores de `cycleway[:left|:right|:both]` que contam como ciclofaixa — os
+# MESMOS do regex que a consulta Overpass usava, agora como lista SQL (o
+# -where do OGR não tem regex portátil).
+CYCLEWAY_LANE_VALUES = ("lane", "track", "opposite_lane", "opposite_track",
+                        "shared_lane", "share_busway")
+
+# A rede cicloviária do coletivo no OSM: relations com esta tag. São poucas e
+# locais — viram um GeoJSON minúsculo (uma MultiLineString por relation, com
+# name/ref) que o cliente baixa INTEIRO, em vez de um FGB por range request.
+PH_CYCLE_NETWORK = "BR:PedalHidrografico"
+
+# osmconf.ini mínimo pro driver OSM do GDAL. `attributes=` é a UNIÃO do que
+# todas as saídas precisam (highway fica implícito no pré-filtro, mas entra
+# como campo pra permitir -where "highway IS NOT NULL" — proteção contra um
+# pbf não pré-filtrado). Listar demais NÃO engorda saída nenhuma: cada build
+# fixa o próprio schema com `-select`, e `other_tags=no` mantém os FGBs finos.
+#
+# ATENÇÃO ao `:` — o GDAL aceita a chave crua do OSM aqui (`cycleway:left`)
+# mas SANEIA o nome do campo pra `cycleway_left`. É esse nome saneado que vale
+# no `-select`, no `-where` e do lado do cliente (`props.cycleway_left` em
+# web/app.js); usar `cycleway:left` ali dá
+# `ERROR 1: "cycleway:left" not recognised as an available field`.
 OSMCONF = """\
 closed_ways_are_polygons=aeroway,amenity,boundary,building,craft,geological,historic,landuse,leisure,military,natural,office,place,shop,sport,tourism,highway=platform,public_transport=platform
 
@@ -111,7 +144,7 @@ other_tags=no
 
 [lines]
 osm_id=no
-attributes=highway,bridge,tunnel,layer,waterway
+attributes=highway,bridge,tunnel,layer,waterway,natural,name,bicycle,surface,cycleway,cycleway:left,cycleway:right,cycleway:both
 other_tags=no
 
 [multipolygons]
@@ -122,7 +155,7 @@ other_tags=no
 
 [multilinestrings]
 osm_id=no
-attributes=type
+attributes=type,name,ref,cycle_network
 other_tags=no
 
 [other_relations]
@@ -197,6 +230,141 @@ def build_water_fgbs(pbf: Path) -> None:
         tmp.unlink(missing_ok=True)
     print(f"→ {OUT_WATER_AREAS.name}: {OUT_WATER_AREAS.stat().st_size / 1e6:.0f} MB · "
           f"{OUT_WATER_RIVERS.name}: {OUT_WATER_RIVERS.stat().st_size / 1e6:.0f} MB")
+
+
+# ─── Camadas de mapa (--layers) ───────────────────────────────────────────────
+# "Morros e Águas" e "Cicloinfra OSM" liam o Overpass a cada pan/zoom: lento,
+# sujeito ao rate limit do servidor do OSM e sem funcionar offline. Agora saem
+# daqui, pros MESMOS range requests que o viário já usa — o cliente busca só os
+# bytes da bbox visível (ver web/app.js §"Camadas OSM por FlatGeobuf").
+
+
+def _write_osmconf() -> Path:
+    """Escreve (idempotente) o osmconf.ini compartilhado e devolve o caminho."""
+    conf = IGNORE / "osmconf-viario.ini"
+    conf.write_text(OSMCONF)
+    return conf
+
+
+def _write_hidro_osmconf() -> Path:
+    """osmconf só do hidro, com `natural` FORA de closed_ways_are_polygons.
+
+    `natural` está na lista compartilhada por causa do build de água, que lê
+    `natural=water` da camada multipolygons. Mas a lista é global por arquivo de
+    config: com ela, uma way FECHADA de `natural=ridge` (uma crista em laço) é
+    roteada pro multipolygons e some da camada `lines` — some, portanto, da
+    "Morros e Águas", que a consulta Overpass (`way["natural"="ridge"]`, sem
+    distinguir aberta de fechada) trazia. Tirar `natural` daqui devolve as
+    cristas fechadas pras linhas; `natural=water` fechado continua irrelevante
+    porque o -where do hidro só aceita waterway=* ou natural=ridge.
+    """
+    conf = IGNORE / "osmconf-hidro.ini"
+    head, _, rest = OSMCONF.partition("\n")
+    kept = ",".join(k for k in head.split("=", 1)[1].split(",") if k != "natural")
+    conf.write_text(f"closed_ways_are_polygons={kept}\n{rest}")
+    return conf
+
+
+def build_hidro_fgb(pbf: Path) -> None:
+    """south-america-hidro.fgb: linhas de água + cristas ("Morros e Águas").
+
+    Mesmo conjunto que a consulta Overpass trazia (`way["waterway"]` +
+    `way["natural"="ridge"]`), mais `tunnel` (o traço pontilhado dos trechos
+    canalizados) e `name` (o tooltip). Sem filtrar valor de `waterway`: a
+    camada desenha rio (verde, grosso) e todo o resto (ocre, fino), igual antes.
+    """
+    hi_pbf = IGNORE / (pbf.stem + "-hidro.osm.pbf")
+    _run(["osmium", "tags-filter", pbf, "-o", hi_pbf, "--overwrite",
+          "w/waterway", "w/natural=ridge"])
+    conf = _write_hidro_osmconf()
+    OUT_HIDRO.unlink(missing_ok=True)
+    # "natural" precisa de aspas — é palavra reservada de SQL (NATURAL JOIN).
+    _run(["ogr2ogr", "-f", "FlatGeobuf", OUT_HIDRO, hi_pbf, "lines",
+          "-oo", f"CONFIG_FILE={conf}",
+          "-select", "waterway,natural,tunnel,name",
+          "-where", "waterway IS NOT NULL OR \"natural\" = 'ridge'",
+          "-nlt", "LINESTRING",
+          "-lco", f"TEMPORARY_DIR={IGNORE}",
+          "--config", "OSM_MAX_TMPFILE_SIZE", "4000"])
+    hi_pbf.unlink(missing_ok=True)
+    print(f"→ {OUT_HIDRO.name}: {OUT_HIDRO.stat().st_size / 1e6:.0f} MB")
+
+
+def build_cicloinfra_fgb(pbf: Path) -> None:
+    """south-america-cicloinfra.fgb: ciclovias, caminhos compartilhados e vias
+    com ciclofaixa ("Cicloinfra OSM")."""
+    ci_pbf = IGNORE / (pbf.stem + "-cicloinfra.osm.pbf")
+    # `tags-filter` é UNIÃO de expressões e não casa valor por regex, então não
+    # dá pra exprimir "highway=* E cycleway~lane|track|…" nele. Pré-filtra um
+    # SUPERCONJUNTO barato (qualquer via com uma dessas chaves) e deixa o
+    # -where do OGR fechar a conta exata — que é o mesmo predicado da consulta
+    # Overpass antiga.
+    _run(["osmium", "tags-filter", pbf, "-o", ci_pbf, "--overwrite",
+          "w/highway=cycleway", "w/cycleway", "w/cycleway:left",
+          "w/cycleway:right", "w/cycleway:both", "w/bicycle"])
+    conf = _write_osmconf()
+    vals = ",".join(f"'{v}'" for v in CYCLEWAY_LANE_VALUES)
+    # Nomes SANEADOS pelo GDAL (`cycleway:left` → `cycleway_left`) — ver OSMCONF.
+    lane = " OR ".join(f"{c} IN ({vals})" for c in
+                       ("cycleway", "cycleway_left", "cycleway_right", "cycleway_both"))
+    where = ("highway = 'cycleway'"
+             " OR (highway = 'path' AND bicycle IN ('yes','designated'))"
+             f" OR (highway IS NOT NULL AND ({lane}))")
+    OUT_CICLOINFRA.unlink(missing_ok=True)
+    _run(["ogr2ogr", "-f", "FlatGeobuf", OUT_CICLOINFRA, ci_pbf, "lines",
+          "-oo", f"CONFIG_FILE={conf}",
+          "-select", "highway,bicycle,cycleway,cycleway_left,cycleway_right,"
+                     "cycleway_both,surface,name",
+          "-where", where,
+          "-nlt", "LINESTRING",
+          "-lco", f"TEMPORARY_DIR={IGNORE}",
+          "--config", "OSM_MAX_TMPFILE_SIZE", "4000"])
+    ci_pbf.unlink(missing_ok=True)
+    print(f"→ {OUT_CICLOINFRA.name}: {OUT_CICLOINFRA.stat().st_size / 1e6:.0f} MB")
+
+
+def build_ph_network_geojson(pbf: Path) -> None:
+    """ph-cycle-network.geojson: as relations da rede do coletivo.
+
+    Uma MultiLineString por relation (o driver OSM já costura os membros), com
+    `name`/`ref` pro tooltip. São poucas — o cliente baixa o arquivo inteiro.
+    Não é fatal se não houver nenhuma (extrato de teste, tag ainda não mapeada).
+    """
+    rel_pbf = IGNORE / (pbf.stem + "-phnet.osm.pbf")
+    _run(["osmium", "tags-filter", pbf, "-o", rel_pbf, "--overwrite",
+          f"r/cycle_network={PH_CYCLE_NETWORK}"])
+    conf = _write_osmconf()
+    OUT_PH_NETWORK.unlink(missing_ok=True)
+    try:
+        # Sem -where: o osmium já deixou só as relations certas, e um -where
+        # sobre um campo que não materializou abortaria o build à toa.
+        _run(["ogr2ogr", "-f", "GeoJSON", OUT_PH_NETWORK, rel_pbf,
+              "multilinestrings", "-oo", f"CONFIG_FILE={conf}",
+              "-select", "name,ref"])
+    except subprocess.CalledProcessError:
+        # O driver GeoJSON cria o arquivo ao ABRIR o dataset, então um ogr2ogr
+        # que falha deixa um .geojson de 0 byte pra trás. Sem este unlink ele
+        # passaria no `exists()` do main() e seria publicado por cima do bom.
+        print(f"  (ogr2ogr falhou em {OUT_PH_NETWORK.name} — descartado)")
+        OUT_PH_NETWORK.unlink(missing_ok=True)
+        rel_pbf.unlink(missing_ok=True)
+        return
+    rel_pbf.unlink(missing_ok=True)
+    n = OUT_PH_NETWORK.read_text().count('"type": "Feature"')
+    # ZERO relations NÃO é um sucesso silencioso. O driver OSM declara a camada
+    # `multilinestrings` a partir do osmconf mesmo sem nenhuma feição, então o
+    # ogr2ogr acima sai com 0 e grava um FeatureCollection vazio — o `except`
+    # não pega este caso. Publicar isso apagaria a rede do coletivo do mapa,
+    # num bucket SEM Object Versioning. Some com o arquivo: aí ele fica fora do
+    # `built` e o job não sobe nada.
+    if n == 0:
+        OUT_PH_NETWORK.unlink(missing_ok=True)
+        print(f"  AVISO: nenhuma relation cycle_network={PH_CYCLE_NETWORK} no "
+              f"extrato — {OUT_PH_NETWORK.name} NÃO gerado (nada a publicar). "
+              f"Se isso for inesperado, confira a tag no OSM antes de subir.")
+        return
+    print(f"→ {OUT_PH_NETWORK.name}: {n} relation(s), "
+          f"{OUT_PH_NETWORK.stat().st_size / 1e3:.0f} kB")
 
 
 # ─── Grafo pré-cozido (--graph) ───────────────────────────────────────────────
@@ -652,14 +820,21 @@ def bake_graph(fgb: Path | str, out: Path, graph_bbox: tuple[float, float, float
           f"(o -Z guarda gzip + Content-Encoding; ver VIARIO_GRAPH_URL em web/app.js)")
 
 
-def _print_upload_help() -> None:
-    print("\nsuba pro bucket (SEM -Z nos .fgb — gzip quebraria os range requests):\n"
-          "    gcloud storage cp --cache-control=\"public,max-age=86400\" \\\n"
-          f"        {OUT_VIARIO} \\\n"
-          f"        {OUT_WATER_AREAS} \\\n"
-          f"        {OUT_WATER_RIVERS} \\\n"
-          "        gs://telhas/viario/\n"
-          "e confira VIARIO_FGB_URL / WATER_*_FGB_URL em web/app.js.")
+def _print_upload_help(built: list[Path]) -> None:
+    fgbs = [p for p in built if p.suffix == ".fgb"]
+    others = [p for p in built if p.suffix != ".fgb"]
+    if fgbs:
+        print("\nsuba pro bucket (SEM -Z nos .fgb — gzip quebraria os range requests):\n"
+              "    gcloud storage cp --cache-control=\"public,max-age=86400\" \\\n"
+              + "".join(f"        {p} \\\n" for p in fgbs)
+              + "        gs://telhas/viario/")
+    if others:
+        # GeoJSON é baixado INTEIRO (não por Range) — aí o -Z vale a pena.
+        print("\ne o GeoJSON, esse sim com -Z (baixado inteiro, não por Range):\n"
+              "    gcloud storage cp -Z --cache-control=\"public,max-age=86400\" \\\n"
+              + "".join(f"        {p} \\\n" for p in others)
+              + "        gs://telhas/viario/")
+    print("\ne confira VIARIO_FGB_URL / WATER_*_FGB_URL / OSM_FGB_* em web/app.js.")
 
 
 def main() -> int:
@@ -672,6 +847,12 @@ def main() -> int:
                     help=f"FGB de saída do viário (default: {OUT_VIARIO.relative_to(ROOT)})")
     ap.add_argument("--water", action="store_true",
                     help="também gera os dois FGBs de água (áreas + rios)")
+    ap.add_argument("--layers", action="store_true",
+                    help="também gera as camadas de mapa: hidro + cicloinfra "
+                         "(FGB) e a rede do coletivo (GeoJSON)")
+    ap.add_argument("--no-viario", action="store_true",
+                    help="pula o FGB do viário (~4,5 GB, o build mais caro) — "
+                         "é o modo do job semanal, que só refaz água + camadas")
     ap.add_argument("--drop-pbf", action="store_true",
                     help="apaga o .pbf do Geofabrik ao final (default: mantém — é caro re-baixar)")
     ap.add_argument("--graph", action="store_true",
@@ -728,13 +909,29 @@ def main() -> int:
               "apt install osmium-tool).", file=sys.stderr)
         return 1
 
+    if args.no_viario and not (args.water or args.layers or args.graph):
+        print("erro: --no-viario sem --water/--layers/--graph não faria nada.",
+              file=sys.stderr)
+        return 1
+
     IGNORE.mkdir(exist_ok=True)
     pbf = IGNORE / Path(args.extract).name
+    built: list[Path] = []
     try:
         download_pbf(args.extract, pbf)
-        build_viario_fgb(pbf, args.dst)
+        if not args.no_viario:
+            build_viario_fgb(pbf, args.dst)
+            built.append(args.dst)
         if args.water:
             build_water_fgbs(pbf)
+            built += [OUT_WATER_AREAS, OUT_WATER_RIVERS]
+        if args.layers:
+            build_hidro_fgb(pbf)
+            build_cicloinfra_fgb(pbf)
+            build_ph_network_geojson(pbf)
+            built += [OUT_HIDRO, OUT_CICLOINFRA]
+            if OUT_PH_NETWORK.exists():
+                built.append(OUT_PH_NETWORK)
         if args.graph:
             bake_graph(args.graph_src or args.dst, args.graph_out, graph_bbox,
                        args.graph_sigma)
@@ -744,7 +941,7 @@ def main() -> int:
 
     if args.drop_pbf:
         pbf.unlink(missing_ok=True)
-    _print_upload_help()
+    _print_upload_help(built)
     return 0
 
 

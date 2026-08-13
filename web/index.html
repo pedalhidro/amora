@@ -207,6 +207,15 @@
           <details class="help-changelog">
             <summary>Novidades (changelog)</summary>
             <dl>
+              <dt>13/08/2026 · v384</dt>
+              <dd>
+                <ul>
+                  <li><strong>Morros e Águas</strong> e <strong>Cicloinfra OSM</strong> não dependem mais do <em>Overpass</em>. As duas camadas agora leem arquivos <strong>FlatGeobuf</strong> hospedados junto dos DEMs, buscando <strong>só os bytes da área visível</strong> por <em>range request</em> — o mesmo mecanismo que o viário já usava. Some o rate limit do servidor do OSM, somem os timeouts de 60 s, e as faixas já baixadas ficam no cache do navegador. Os arquivos são reassados <strong>toda semana</strong> a partir do extrato do OpenStreetMap.</li>
+                  <li>O <strong>limite de zoom</strong> das duas camadas saiu. Ele existia pra poupar o servidor do Overpass, e esse motivo acabou. No lugar entrou um limite por <strong>área da tela</strong> (que é o que realmente custa bytes e desenho, e depende do tamanho do monitor, não do nível de zoom): até ~1.200 km² desenha tudo; até ~8.000 km² desenha só o principal (rios, canais e cristas; ciclovias segregadas); acima disso pede pra aproximar. Na prática as camadas abrem <strong>dois a três níveis mais longe</strong> do que abriam antes.</li>
+                  <li><strong>O Overpass saiu do app inteiro.</strong> O <strong>Menor energia pelo viário</strong> também não o consulta mais: a rede vem só do FlatGeobuf do viário, que já traz <code>bridge</code>/<code>tunnel</code>/<code>layer</code> — o mesmo arquivo alimenta o grafo vetorial, o fallback em grade e a marcação de tabuleiros de uma rede custom sem tags.</li>
+                  <li><strong>Regressão honesta:</strong> as duas camadas e o roteamento pelo viário agora cobrem só a <strong>América do Sul</strong> (a extensão do extrato que o projeto já usava). Com o Overpass funcionavam em qualquer lugar do mundo. Fora dessa área as camadas ficam vazias e o “pelo viário” cai na energia livre.</li>
+                </ul>
+              </dd>
               <dt>13/08/2026 · v383</dt>
               <dd>
                 <ul>
@@ -1089,7 +1098,7 @@
             <li>SARA Brasil 1930: mosaico aerofotográfico do <a href="https://geosampa.prefeitura.sp.gov.br" target="_blank" rel="noopener">GeoSampa</a> (Prefeitura de São Paulo).</li>
             <li>Elevação: <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo</a> (FABDEM / Copernicus DEM).</li>
             <li>Roteamento ciclismo/a-pé: <a href="https://project-osrm.org" target="_blank" rel="noopener">OSRM</a> sobre OSM.</li>
-            <li>Infra cicloviária: <a href="https://overpass-api.de" target="_blank" rel="noopener">Overpass API</a> sobre OSM.</li>
+            <li>Hidrografia, cristas e infra cicloviária: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> (ODbL), via extrato da <a href="https://download.geofabrik.de" target="_blank" rel="noopener">Geofabrik</a> assado em FlatGeobuf.</li>
           </ul>
 
           <p class="help-credit">feito por Cláudio · pedido e dirigido pelos neogeógrafos hidrográficos</p>
@@ -1368,8 +1377,8 @@
           <h3 class="ds-h3">Rede viária (Menor energia pelo viário)</h3>
           <!-- id "…viario-gpkg" é histórico (era o gpkg de SP) — renomear
                órfanaria a preferência salva dos usuários. -->
-          <label class="param-row" title="Ligado: usa o grafo pré-cozido do viário de SP (elevações já amostradas no preparo, sem DEM por rota) e, como fallback, o FlatGeobuf da América do Sul (busca só os bytes da bbox, por range request). Desligado: usa o Overpass (OSM ao vivo, grid raster). Tudo cai pro Overpass sozinho se indisponível.">
-            <span class="param-label">Viário baixado (senão Overpass)</span>
+          <label class="param-row" title="Ligado: roteia no grafo vetorial — grafo pré-cozido do viário de SP (elevações já amostradas no preparo, sem DEM por rota) e, como fallback, o FlatGeobuf da América do Sul (busca só os bytes da bbox, por range request). Desligado: roteia na MESMA rede rasterizada numa grade de ~30 m (traçado serrilhado). Fora da América do Sul não há viário — o modo cai na menor energia livre.">
+            <span class="param-label">Viário vetorial (senão grade)</span>
             <span class="param-input"><input type="checkbox" id="param-use-viario-gpkg"></span>
           </label>
           <div class="ds-custom">
@@ -1382,7 +1391,7 @@
               <button type="button" id="custom-net-load">Carregar rede…</button>
               <button type="button" id="custom-net-clear" class="linkbtn" hidden>Limpar</button>
             </div>
-            <p class="muted ds-hint">FlatGeobuf (linhas), GeoPackage (camada LINESTRING) ou GeoJSON de linhas, em WGS84. Tem prioridade sobre o viário da América do Sul e o Overpass. Tags <code>bridge</code>/<code>tunnel</code>/<code>layer</code> (se houver) achatam o tabuleiro. Fica só em memória (some ao recarregar).</p>
+            <p class="muted ds-hint">FlatGeobuf (linhas), GeoPackage (camada LINESTRING) ou GeoJSON de linhas, em WGS84. Tem prioridade sobre o viário da América do Sul. Tags <code>bridge</code>/<code>tunnel</code>/<code>layer</code> (se houver) achatam o tabuleiro; sem elas, os tabuleiros são casados por proximidade com as pontes do viário. Fica só em memória (some ao recarregar).</p>
           </div>
         </div>
       </div>

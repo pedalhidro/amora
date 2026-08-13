@@ -1,0 +1,185 @@
+# Reassa semanalmente os FlatGeobuf que o app lê por range request.
+#
+# O que ele produz (todos da América do Sul, do extrato Geofabrik):
+#   south-america-hidro.fgb        camada "Morros e Águas" (waterway=* + natural=ridge)
+#   south-america-cicloinfra.fgb   camada "Cicloinfra OSM"
+#   ph-cycle-network.geojson       as relations cycle_network=BR:PedalHidrografico
+#   south-america-water-areas.fgb  barreira de água do modo terreno (polígonos)
+#   south-america-water-rivers.fgb barreira de água do modo terreno (linhas)
+#
+# NÃO reassa `south-america-viario.fgb` (~4,5 GB) nem o grafo pré-cozido: são o
+# build caro e a malha viária muda devagar. Ficam no `workflow_dispatch` abaixo,
+# sob demanda.
+#
+# POR QUE GitHub Actions e não Cloud Run/GCE: `pedalhidro/amora` é PÚBLICO, então
+# os minutos de runner são gratuitos e ilimitados — o build inteiro custa R$ 0.
+# O único custo recorrente é o armazenamento no bucket (~2-4 GB → ~US$ 0,10/mês).
+#
+# Autenticação SEM CHAVE: reusa exatamente o mesmo Workload Identity Federation
+# do deploy.yml (mesmas variáveis de repo GCP_WORKLOAD_IDENTITY_PROVIDER /
+# GCP_DEPLOY_SA). Se elas não existirem, o job aparece como "skipped" — não é
+# preciso setup novo além do que o deploy.yml já documenta.
+#
+# ATENÇÃO (o Actions desliga cron sozinho): o GitHub SUSPENDE workflows agendados
+# em repositório sem atividade por 60 dias. Se os arquivos pararem de atualizar,
+# é o primeiro lugar pra olhar — reative na aba Actions.
+#
+# ATENÇÃO (branch): `schedule:` só dispara a partir da branch PADRÃO, que aqui é
+# a `main`. O deploy do app vai pela branch `deploy` — se este arquivo ficar só
+# lá, o cron nunca roda e não há erro nenhum, só silêncio.
+#
+# ATENÇÃO (sem rede de segurança no bucket): `gs://telhas` está SEM Object
+# Versioning (diferente do `gs://phidro-state`), então sobrescrever um .fgb bom
+# com um ruim é irreversível. Por isso o passo "Conferir tamanhos" abaixo aborta
+# se um arquivo novo vier muito menor que o que já está publicado.
+
+name: Rebuild FlatGeobuf layers
+
+on:
+  schedule:
+    # Segunda-feira, 06:00 UTC = 03:00 em São Paulo. Semanal de propósito: a
+    # Geofabrik é um serviço voluntário e gratuito, e cada rodada puxa ~4 GB.
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+    inputs:
+      viario:
+        description: 'Reassar TAMBÉM o south-america-viario.fgb (~4,5 GB, build longo)'
+        type: boolean
+        default: false
+
+# Duas rodadas ao mesmo tempo brigariam pelo mesmo objeto no bucket.
+concurrency:
+  group: build-fgb
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # INERTE até o setup do WIF (ver deploy.yml): sem a variável, job "skipped".
+    if: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER != '' }}
+    timeout-minutes: 330   # abaixo do teto de 6 h do runner, com folga
+    permissions:
+      contents: read
+      id-token: write      # necessário pro OIDC do WIF
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ferramentas (osmium + GDAL)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq osmium-tool gdal-bin
+
+      # O runner tem ~20 GB livres em / e ~65 GB em /mnt. O build usa o pbf de
+      # ~4 GB, os FGBs e os temporários do sort Hilbert do driver FlatGeobuf —
+      # tudo dentro de `ignore/`, então basta apontá-la pro disco grande.
+      - name: Espaço em disco (ignore/ → /mnt)
+        run: |
+          sudo mkdir -p /mnt/ignore
+          sudo chown "$USER" /mnt/ignore
+          ln -s /mnt/ignore ignore
+          df -h / /mnt
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SA }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Assar os FGBs
+        run: |
+          set -euo pipefail
+          ARGS="--water --layers"
+          if [ "${{ inputs.viario }}" != "true" ]; then
+            ARGS="--no-viario $ARGS"
+          fi
+          echo "build-viario.py $ARGS"
+          python3 scripts/build-viario.py $ARGS
+          # `ls` tolerante: o ph-cycle-network.geojson não sai se ainda não
+          # houver relation mapeada com a tag, e isso não é erro.
+          ls -lh ignore/ || true
+          df -h /mnt
+
+      # O bucket não tem Object Versioning: um objeto sobrescrito não volta. Um
+      # ogr2ogr que falha aborta o passo anterior (set -e), mas um build que
+      # "termina bem" com dados truncados/vazios passaria batido e apagaria a
+      # camada boa. Compara com o que JÁ ESTÁ publicado — auto-calibrado, sem
+      # números mágicos que envelhecem.
+      - name: Conferir tamanhos contra o que já está publicado
+        run: |
+          set -euo pipefail
+          fail=0
+          for f in ignore/*.fgb; do
+            name=$(basename "$f")
+            new=$(stat -c%s "$f")
+            live=$(gcloud storage ls -l "gs://telhas/viario/$name" 2>/dev/null \
+                     | awk 'NR==1{print $1}' || true)
+            if ! [[ "${live:-}" =~ ^[0-9]+$ ]]; then
+              echo "→ $name: ainda não existe no bucket ($new B) — publicando"
+              continue
+            fi
+            pct=$(( new * 100 / live ))
+            echo "→ $name: novo $new B vs publicado $live B ($pct%)"
+            if [ "$pct" -lt 50 ]; then
+              echo "  ERRO: caiu pra menos da metade — build suspeito, não publico."
+              fail=1
+            fi
+          done
+          exit $fail
+
+      # SEM -Z nos .fgb: `Content-Encoding: gzip` faz o GCS decodificar na
+      # entrega e IGNORAR o header Range — o que quebra exatamente o mecanismo
+      # que o cliente usa pra ler só a bbox. O GeoJSON é baixado inteiro, então
+      # nele o -Z vale. (Um `gcloud storage cp` publica o objeto de forma
+      # atômica: leitor nenhum vê arquivo pela metade.)
+      - name: Publicar no bucket
+        run: |
+          set -euo pipefail
+          gcloud storage cp --cache-control="public,max-age=86400" \
+            ignore/south-america-*.fgb \
+            gs://telhas/viario/
+          # O build-viario.py APAGA este arquivo quando sai com zero relations
+          # (ou quando o ogr2ogr falha e deixa 0 byte), justamente pra que este
+          # `-f` não publique um FeatureCollection vazio por cima da rede boa —
+          # o bucket não tem versionamento pra desfazer.
+          if [ -s ignore/ph-cycle-network.geojson ]; then
+            gcloud storage cp -Z --cache-control="public,max-age=86400" \
+              ignore/ph-cycle-network.geojson \
+              gs://telhas/viario/
+          else
+            echo "ph-cycle-network.geojson ausente/vazio — mantendo o publicado."
+          fi
+
+      # Guarda contra a regressão mais fácil de cometer aqui: se algum objeto
+      # sair com Content-Encoding, os range requests param de funcionar e as
+      # camadas quebram silenciosamente no cliente.
+      - name: Conferir que os range requests continuam de pé
+        run: |
+          set -euo pipefail
+          fail=0
+          for f in south-america-hidro south-america-cicloinfra \
+                   south-america-water-areas south-america-water-rivers; do
+            url="https://telhas.pedalhidrografi.co/viario/$f.fgb"
+            hdr=$(curl -sI -H 'Range: bytes=0-15' "$url")
+            echo "→ $f: $(printf '%s' "$hdr" | head -1 | tr -d '\r')"
+            # O QUE REALMENTE IMPORTA é não haver Content-Encoding: é ele que
+            # faz o GCS decodificar na entrega e ignorar o Range.
+            if printf '%s' "$hdr" | grep -qi '^content-encoding:'; then
+              echo "  ERRO: Content-Encoding presente — range request quebrado"; fail=1
+            fi
+            # 206 é o ideal, mas NÃO dá pra exigir: a Cloudflare só cacheia até
+            # 512 MB, então os arquivos maiores saem como BYPASS e a PRIMEIRA
+            # requisição numa chave fria volta 200 com o corpo inteiro, mesmo
+            # com a origem suportando Range perfeitamente. Exigir 206 aqui
+            # reprovaria publicações corretas. Aceita 206, ou 200 desde que o
+            # servidor anuncie Accept-Ranges: bytes.
+            if printf '%s' "$hdr" | grep -qi '^HTTP/.* 206'; then
+              :
+            elif printf '%s' "$hdr" | grep -qi '^accept-ranges: *bytes'; then
+              echo "  ok: 200 + Accept-Ranges: bytes (chave fria/BYPASS na CDN)"
+            else
+              echo "  ERRO: nem 206 nem Accept-Ranges: bytes"; fail=1
+            fi
+          done
+          exit $fail

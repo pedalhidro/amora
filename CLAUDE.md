@@ -25,7 +25,9 @@ one optional hosted deploy target, not a dependency.
   `bakedViarioRoute`/`decodeViarioGraph`), falling back to the inline
   `viarioGraphRoute` over the South-America FlatGeobuf (range-request
   bbox reads via the vendored `flatgeobuf-geojson.min.js` —
-  `streamFgbFeatures`), then Overpass),
+  `streamFgbFeatures`), then that same FGB's lines rasterized into a
+  ~30 m grid mask (`rasterizeRoads`). **There is no Overpass anywhere
+  any more** — see "OSM layers come from FlatGeobuf" below),
   `flatgeobuf-geojson.min.js` (FGB reader, flatgeobuf 4.4.0),
   `tom-select.complete.min.js`,
   `tom-select.min.css`, `qrcode.js`, `leaflet/` (js+css+images),
@@ -108,7 +110,18 @@ one optional hosted deploy target, not a dependency.
   script-written minimal osmconf that promotes `bridge`/`tunnel`/`layer` to
   real columns (raw OSM values — the client normalizes); `--water` emits two
   more FGBs (`south-america-water-areas.fgb` polygons +
-  `south-america-water-rivers.fgb` river lines; FGB is single-layer) —
+  `south-america-water-rivers.fgb` river lines; FGB is single-layer);
+  **`--layers`** emits the two MAP-LAYER FGBs that replaced Overpass —
+  `south-america-hidro.fgb` (`waterway=*` + `natural=ridge` lines, with
+  `tunnel`/`name`) for "Morros e Águas" and `south-america-cicloinfra.fgb`
+  for "Cicloinfra OSM" — plus the tiny `ph-cycle-network.geojson`
+  (`cycle_network=BR:PedalHidrografico` relations, fetched whole);
+  **`--no-viario`** skips the expensive 4.5 GB viário build and is what the
+  weekly CI job runs. Two gotchas baked into the script: GDAL **sanitizes
+  `cycleway:left` → `cycleway_left`** (that's the name in `-select`, in
+  `-where`, and in `props.*` on the client), and `osmium tags-filter` is a
+  UNION with no value regex — so cicloinfra pre-filters a cheap superset and
+  the exact predicate lives in ogr2ogr's `-where`. All of it —
   feeding the browser's "Menor energia pelo viário" fallback routing and
   terrain-mode water/corridors/portals via **HTTP range requests** against
   FGB's packed Hilbert R-tree (only the bbox's bytes are fetched — that's
@@ -306,6 +319,38 @@ historical bnode data — git history holds the pre-IRI form.)
 
 Key flows:
 
+- **OSM layers come from FlatGeobuf — there is NO Overpass.** "Morros e
+  Águas" and "Cicloinfra OSM" used to live-query the Overpass API on every
+  pan/zoom. They now range-request `south-america-hidro.fgb` /
+  `south-america-cicloinfra.fgb` from the same host as the viário, through
+  one shared driver (`makeOsmFgbLayer` in `web/app.js`) whose only per-layer
+  parts are `styleFor(props, detail)` / `tipFor(props)`. Notes:
+  - **The layer id stays `osm-overpass`** even though Overpass is gone — it
+    is the localStorage key for that layer's visibility/opacity, and
+    renaming it would orphan every user's saved preference (same reasoning
+    as the historical `useViarioGpkg` key).
+  - **Gating is by bbox AREA, not zoom.** The old `zoom >= 13` rule existed
+    to spare a shared public server; that reason died with Overpass. What
+    still costs is bytes fetched + Leaflet render, and both scale with
+    viewport area (which depends on screen size, not zoom level). So:
+    `> OSM_FGB_MAX_BBOX_KM2` (8000) → don't query; `> OSM_FGB_FULL_BBOX_KM2`
+    (1200) → `DETAIL_MAIN`, where `styleFor` returns **null** for the
+    long tail (ditch/drain/stream, painted bike lanes) so only rivers,
+    canals, ridges and segregated cycleways draw. `OSM_FGB_MAX_FEATURES`
+    is the last-resort cap.
+  - These layers call `streamFgbFeatures(url, bb, **false**)` — the third
+    arg bypasses the shared 10-slot LRU, which they would otherwise fill
+    with whole viewports of features (they re-query on every pan and
+    re-render from scratch anyway; the *bytes* stay in the browser's HTTP
+    cache).
+  - Rebuilt **weekly** by `.github/workflows/build-fgb.yml` (free: the repo
+    is public). It reuses deploy.yml's keyless WIF and is inert until those
+    repo vars exist. It runs `--no-viario --water --layers`, so the 4.5 GB
+    viário FGB and the baked graph are NOT in the weekly path —
+    `workflow_dispatch` has a `viario` input for those.
+  - **Coverage regressed to South America** (the extract the pipeline
+    already used). Overpass worked worldwide. Outside SA the layers are
+    empty and "pelo viário" falls through to free-energy routing.
 - **Display.** `web/app.js` fetches `./data/data_graphs.ttl`, follows each
   `void:dataDump` IRI to load the constituent graphs (currently `tours.ttl`
   and `uploads.ttl`), parses them with the bundled N3.js

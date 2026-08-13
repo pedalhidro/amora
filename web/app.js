@@ -643,25 +643,28 @@ const OVERLAY_LAYERS = [
     hide: () => setRoutesGloballyVisible(false),
     setOpacity: (frac) => applyRoutesOpacity(frac * 100),
   },
-  // Live OSM hydrography + ridges via Overpass. Re-queries on pan/zoom.
+  // Hidrografia + cristas do OSM, do FGB por range request. Reconsulta no
+  // pan/zoom. O id continua 'osm-overpass' embora o Overpass tenha saído:
+  // é a CHAVE da visibilidade/opacidade persistidas em localStorage —
+  // renomear órfanaria a preferência de quem já usa a camada.
   {
     id: 'osm-overpass',
     label: 'Morros e Águas',
     defaultVisible: false,
     defaultPct: 100,
-    show: () => showOverpass(),
-    hide: () => hideOverpass(),
-    setOpacity: (frac) => setOverpassOpacity(frac),
+    show: () => hidroLayer.show(),
+    hide: () => hidroLayer.hide(),
+    setOpacity: (frac) => hidroLayer.setOpacity(frac),
   },
-  // Live OSM cycling infrastructure (cyclovias, ciclofaixas, paths).
+  // Cicloinfra do OSM (ciclovias, ciclofaixas, caminhos compartilhados).
   {
     id: 'osm-cicloinfra',
     label: 'Cicloinfra OSM',
     defaultVisible: false,
     defaultPct: 100,
-    show: () => showCycloinfra(),
-    hide: () => hideCycloinfra(),
-    setOpacity: (frac) => setCycloinfraOpacity(frac),
+    show: () => cicloinfraLayer.show(),
+    hide: () => cicloinfraLayer.hide(),
+    setOpacity: (frac) => cicloinfraLayer.setOpacity(frac),
   },
   // Fotos geotaggeadas (lidas do manifesto web/data/data_graphs.ttl, que
   // aponta pra uploads.ttl entre outros dumps). Pequenos círculos que abrem
@@ -755,183 +758,274 @@ const OVERLAY_LAYERS = [
   },
 ];
 
-// ─── Overpass (OSM live) overlay ─────────────────────────────────────────────
-// Live-queries the OSM Overpass API for waterways and ridges in the current
-// viewport. Re-runs on pan/zoom (debounced). Hover any feature to see its
-// name + type in a tooltip. Style mirrors the user's JOSM "Morros e Águas"
-// stylesheet:
-//   waterway=river                green  #A6C045 w5  (dashed if tunnel)
-//   waterway=stream/canal/etc     ochre  #DDB84F w3  (dashed if tunnel)
-//   natural=ridge                 orange #EF7A30 w3
-const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
-const OVERPASS_MIN_ZOOM = 13;
-const overpassLayers = [];
-let overpassActive = false;
-let overpassOpacity = 1;
-let overpassDebounce = null;
-let overpassFetchSeq = 0;
+// ─── Camadas OSM servidas por FlatGeobuf ─────────────────────────────────────
+// "Morros e Águas" e "Cicloinfra OSM" consultavam o Overpass a cada pan/zoom.
+// Agora saem dos mesmos FGBs hospedados junto do viário e dos DEMs: o índice
+// espacial (packed Hilbert R-tree) deixa o navegador buscar SÓ OS BYTES da
+// bbox visível por HTTP Range — sem servidor de consulta no caminho, então
+// sem rate limit do OSM, sem timeout de 60 s e com o disco do navegador
+// cacheando as faixas já baixadas.
+//
+// Assados por `scripts/build-viario.py --layers`, semanalmente pelo workflow
+// .github/workflows/build-fgb.yml. COBERTURA: AMÉRICA DO SUL — o mesmo extrato
+// Geofabrik que o resto do pipeline já usa. Fora dela as camadas ficam vazias
+// (com o Overpass funcionavam no mundo inteiro; ver o changelog da Ajuda).
+const HIDRO_FGB_URL      = 'https://telhas.pedalhidrografi.co/viario/south-america-hidro.fgb';
+const CICLOINFRA_FGB_URL = 'https://telhas.pedalhidrografi.co/viario/south-america-cicloinfra.fgb';
+const PH_NETWORK_URL     = 'https://telhas.pedalhidrografi.co/viario/ph-cycle-network.geojson';
 
-async function queryOverpass(b) {
-  // Three buckets:
-  //   - waterways within the viewport bbox
-  //   - natural=ridge within the viewport bbox
-  //   - relations tagged cycle_network=BR:PedalHidrografico (no bbox; the
-  //     network is small and local, easier to fetch them all and let the
-  //     viewport clip naturally on draw)
-  // The trailing `>;` recursion expands relations down to their member ways
-  // and nodes so we can render the actual cycle paths.
-  const q = `[out:json][timeout:60];
-(
-  way["waterway"](${b.south},${b.west},${b.north},${b.east});
-  way["natural"="ridge"](${b.south},${b.west},${b.north},${b.east});
-  relation["cycle_network"="BR:PedalHidrografico"];
-);
-out body;
->;
-out skel qt;`;
-  const res = await fetch(OVERPASS_URL, {
-    method: 'POST',
-    body: 'data=' + encodeURIComponent(q),
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-  });
-  if (!res.ok) throw new Error(`Overpass ${res.status}`);
-  return res.json();
+// O Overpass exigia zoom ≥ 13 porque cada consulta pesava num servidor
+// compartilhado — esse motivo MORREU com o FGB. O que sobra é custo do lado do
+// cliente, e ele não escala com o zoom: escala com a ÁREA DA BBOX (uma tela de
+// notebook em zoom 11 pede muito mais bytes que um celular no mesmo zoom).
+// Então o limite é por área, não por nível de zoom.
+//
+// Ordem de grandeza medida no extrato do Uruguai (28.577 linhas de água em
+// 176.000 km² → ~0,2 kB/km²); em área urbana bem mapeada dá pra contar com
+// 1–5 kB/km². Daí:
+//   até ~1.200 km²  (≈ zoom 12 num notebook)  → tudo
+//   até ~8.000 km²  (≈ zoom 10)               → só o principal (ver DETAIL_MAIN)
+//   acima disso                                → não consulta: seriam dezenas
+//                                                de MB pra desenhar um borrão
+const OSM_FGB_MAX_BBOX_KM2  = 8000;
+const OSM_FGB_FULL_BBOX_KM2 = 1200;
+// Teto de feições desenhadas por camada — a rede de proteção final, caso a
+// densidade local desminta a estimativa acima.
+const OSM_FGB_MAX_FEATURES = 20000;
+
+// Nível de detalhe derivado da área: em bbox grande desenha só o que ainda
+// significa alguma coisa naquela escala (rios e cristas; ciclovias
+// segregadas), em vez de recusar a camada ou travar a aba.
+const DETAIL_FULL = 'full';
+const DETAIL_MAIN = 'main';
+
+// Área aproximada da bbox em km² (equiretangular, com o cosseno da latitude
+// média — a mesma aproximação do resto do app).
+function bboxAreaKm2(bb) {
+  const midLat = (bb.south + bb.north) / 2;
+  const kmPerDeg = 111.32;
+  const h = (bb.north - bb.south) * kmPerDeg;
+  const w = (bb.east - bb.west) * kmPerDeg * Math.cos(midLat * Math.PI / 180);
+  return Math.abs(h * w);
 }
 
-function styleForOverpassWay(tags, isCycle) {
-  if (isCycle) {
-    // Pedal Hidrográfico cycle-network member ways: bright accent blue,
-    // thick, on top of everything else.
-    return { color: '#2da9ff', weight: 5, opacity: overpassOpacity };
+// A rede cicloviária do coletivo (relations cycle_network=BR:PedalHidrografico)
+// vem num GeoJSON minúsculo, baixado UMA vez e reusado — são poucas e locais,
+// não valem um range request por pan. Falha não derruba a camada: a hidrografia
+// desenha do mesmo jeito.
+let _phNetworkPromise = null;
+async function loadPhCycleNetwork() {
+  if (!_phNetworkPromise) {
+    _phNetworkPromise = fetch(PH_NETWORK_URL)
+      .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+      .then((fc) => fc.features || []);
+    // Erro não fica grudado: solta a promise pra próxima tentativa refazer.
+    _phNetworkPromise.catch(() => { _phNetworkPromise = null; });
   }
-  const tunnel = !!tags.tunnel;
-  if (tags.natural === 'ridge') {
-    return { color: '#EF7A30', weight: 3, opacity: overpassOpacity };
-  }
-  if (tags.waterway === 'river') {
-    return {
-      color: '#A6C045',
-      weight: 5,
-      opacity: overpassOpacity,
-      dashArray: tunnel ? '4 6' : null,
-    };
-  }
-  if (tags.waterway) {
-    return {
-      color: '#DDB84F',
-      weight: 3,
-      opacity: overpassOpacity,
-      dashArray: tunnel ? '4 4' : null,
-    };
-  }
-  return { color: '#888', weight: 2, opacity: overpassOpacity };
+  return _phNetworkPromise;
 }
 
-function clearOverpassLayers() {
-  for (const l of overpassLayers) map.removeLayer(l);
-  overpassLayers.length = 0;
-}
+// Driver compartilhado das duas camadas. Cada `source` sabe buscar suas feições
+// na bbox e como estilizar/rotular — é só isso que distingue Morros e Águas de
+// Cicloinfra. A ordem das sources é a ordem de desenho (a última fica por cima).
+function makeOsmFgbLayer({ id, label, sources }) {
+  const drawn = [];
+  let active = false, opacity = 1, debounce = null, seq = 0;
 
-function renderOverpass(data) {
-  clearOverpassLayers();
-  const nodes = new Map();
-  // First pass: index nodes and collect cycle-network relations + their
-  // member-way IDs so the second pass can style/label cycle ways distinctly.
-  const wayToCycleRelation = new Map(); // way id → relation element
-  for (const el of data.elements || []) {
-    if (el.type === 'node') {
-      nodes.set(el.id, [el.lat, el.lon]);
-    } else if (
-      el.type === 'relation' &&
-      el.tags &&
-      el.tags.cycle_network === 'BR:PedalHidrografico'
-    ) {
-      for (const member of el.members || []) {
-        if (member.type === 'way') wayToCycleRelation.set(member.ref, el);
+  function clear() {
+    for (const l of drawn) map.removeLayer(l);
+    drawn.length = 0;
+  }
+
+  function render(perSource, detail) {
+    clear();
+    const pane = LAYER_PANE(id);
+    let capped = false;
+    for (let s = 0; s < sources.length; s++) {
+      const { styleFor, tipFor, alwaysDraw } = sources[s];
+      // Teto batido: para de desenhar as fontes volumosas, mas SEGUE nas
+      // isentas (`continue`, não `break` — sair do laço aqui puliria a rede do
+      // coletivo, que é justamente a última source e a que não pode sumir).
+      if (capped && !alwaysDraw) continue;
+      for (const f of perSource[s] || []) {
+        const g = f && f.geometry; if (!g) continue;
+        const props = f.properties || {};
+        // styleFor devolve null pro que não vale a pena nesta escala.
+        const style = styleFor(props, detail);
+        if (!style) continue;
+        const parts = g.type === 'LineString' ? [g.coordinates]
+          : g.type === 'MultiLineString' ? g.coordinates : [];
+        for (const coords of parts) {
+          if (!Array.isArray(coords) || coords.length < 2) continue;
+          // `alwaysDraw` isenta as fontes minúsculas e importantes do teto — a
+          // rede do coletivo é a ÚLTIMA source (pra ficar por cima), então sem
+          // isto ela sumiria justo onde a hidrografia é densa o bastante pra
+          // estourar o limite.
+          if (!alwaysDraw && drawn.length >= OSM_FGB_MAX_FEATURES) { capped = true; break; }
+          // O FGB guarda [lng,lat]; o Leaflet quer [lat,lng].
+          const layer = L.polyline(coords.map((c) => [c[1], c[0]]),
+            { ...style, opacity, pane });
+          const tip = tipFor(props);
+          if (tip) layer.bindTooltip(tip, { sticky: true, className: 'osm-tip' });
+          layer.addTo(map);
+          drawn.push(layer);
+        }
+        if (capped && !alwaysDraw) break;
       }
     }
+    return capped;
   }
 
-  // Second pass: render every way.
-  for (const el of data.elements || []) {
-    if (el.type !== 'way') continue;
-    const latlngs = (el.nodes || []).map((id) => nodes.get(id)).filter(Boolean);
-    if (latlngs.length < 2) continue;
-    const tags = el.tags || {};
-    const cycleRel = wayToCycleRelation.get(el.id);
-    const isCycle = !!cycleRel;
-    const layer = L.polyline(latlngs, { ...styleForOverpassWay(tags, isCycle), pane: LAYER_PANE('osm-overpass') });
-
-    let html;
-    if (isCycle) {
-      const relName = cycleRel.tags?.name || 'Pedal Hidrográfico';
-      const ref = cycleRel.tags?.ref;
-      const parts = [`<strong>${escapeHtml(relName)}</strong>`];
-      if (ref) parts.push(`<em>ref ${escapeHtml(ref)}</em>`);
-      if (tags.name) parts.push(escapeHtml(tags.name));
-      html = parts.join(' · ');
-    } else {
-      const parts = [];
-      if (tags.name) parts.push(`<strong>${escapeHtml(tags.name)}</strong>`);
-      const kind = tags.waterway || tags.natural || '';
-      if (kind) parts.push(`<em>${escapeHtml(kind)}</em>`);
-      if (tags.tunnel) parts.push('(túnel)');
-      html = parts.join(' · ') || 'OSM';
+  async function refresh() {
+    if (!active) return;
+    const b = map.getBounds();
+    const bb = {
+      west: b.getWest(), south: b.getSouth(),
+      east: b.getEast(), north: b.getNorth(),
+    };
+    const areaKm2 = bboxAreaKm2(bb);
+    if (areaKm2 > OSM_FGB_MAX_BBOX_KM2) {
+      clear();
+      showToast(`Área grande demais para carregar ${label} — aproxime o mapa`);
+      return;
     }
-    layer.bindTooltip(html, { sticky: true, className: 'osm-tip' });
-    layer.addTo(map);
-    overpassLayers.push(layer);
+    const detail = areaKm2 > OSM_FGB_FULL_BBOX_KM2 ? DETAIL_MAIN : DETAIL_FULL;
+    const mySeq = ++seq;
+    showToast(`Buscando ${label}…`, 1500);
+    try {
+      // Uma source que falha vira lista vazia — a camada desenha o que veio.
+      // `failed` separa "não tem nada aqui" de "não consegui buscar": são
+      // conselhos opostos (aproximar vs tentar de novo), e sem isso um 404 no
+      // FGB aparecia pro usuário como área vazia.
+      let failed = 0;
+      const perSource = await Promise.all(sources.map((s) => s.load(bb).catch((e) => {
+        failed++;
+        console.warn(`[${id}] fonte indisponível:`, e.message);
+        return [];
+      })));
+      if (mySeq !== seq || !active) return;   // um pan mais novo já saiu na frente
+      const total = perSource.reduce((n, fs) => n + fs.length, 0);
+      if (!total) {
+        clear();
+        showToast(failed === sources.length
+          ? `${label}: fonte indisponível`
+          : `${label}: nada nesta área`, 1800);
+        return;
+      }
+      const capped = render(perSource, detail);
+      // `failed` PRECISA aparecer também no caminho de sucesso. A rede do
+      // coletivo não é filtrada por bbox e fica memoizada, então ela sozinha
+      // mantém `total > 0` mesmo com o FGB da hidrografia fora do ar — sem
+      // isto, o mapa mostrava só as linhas azuis sob um toast triunfante e o
+      // usuário concluía que a área não tem água mapeada.
+      const notes = [];
+      if (failed) notes.push('parte das fontes indisponível');
+      if (capped) notes.push('aproxime para ver o resto');
+      else if (detail === DETAIL_MAIN) notes.push('só o principal — aproxime para o resto');
+      showToast(`${label}: ${drawn.length} feições`
+        + (notes.length ? ` (${notes.join('; ')})` : ''), 1800);
+    } catch (err) {
+      if (mySeq !== seq) return;
+      console.warn(`[${id}] falhou:`, err);
+      showToast(`Falha em ${label}: ${err.message}`);
+    }
   }
-}
 
-async function refreshOverpass() {
-  if (!overpassActive) return;
-  if (map.getZoom() < OVERPASS_MIN_ZOOM) {
-    clearOverpassLayers();
-    showToast(`Aproxime o mapa (zoom ≥ ${OVERPASS_MIN_ZOOM}) para buscar OSM`);
-    return;
+  function onMoveEnd() {
+    clearTimeout(debounce);
+    debounce = setTimeout(refresh, 700);
   }
-  const b = map.getBounds();
-  const bbox = {
-    south: b.getSouth().toFixed(6),
-    west: b.getWest().toFixed(6),
-    north: b.getNorth().toFixed(6),
-    east: b.getEast().toFixed(6),
+
+  return {
+    show() { active = true; map.on('moveend', onMoveEnd); refresh(); },
+    hide() {
+      active = false;
+      map.off('moveend', onMoveEnd);
+      clearTimeout(debounce);
+      clear();
+    },
+    setOpacity(frac) {
+      opacity = frac;
+      for (const l of drawn) l.setStyle({ opacity: frac });
+    },
   };
-  const seq = ++overpassFetchSeq;
-  showToast('Buscando hidrografia OSM…', 1500);
-  try {
-    const data = await queryOverpass(bbox);
-    if (seq !== overpassFetchSeq || !overpassActive) return;
-    renderOverpass(data);
-    showToast(`OSM: ${overpassLayers.length} feições`, 1800);
-  } catch (err) {
-    if (seq !== overpassFetchSeq) return;
-    console.warn('Overpass failed:', err);
-    showToast(`Falha Overpass: ${err.message}`);
+}
+
+// Estilo da "Morros e Águas" — espelha a folha de estilo JOSM homônima:
+//   waterway=river                verde  #A6C045 w5  (tracejado se em túnel)
+//   waterway=stream/canal/vala/…  ocre   #DDB84F w3  (tracejado se em túnel)
+//   natural=ridge                 laranja #EF7A30 w3
+// Numa bbox grande (DETAIL_MAIN) só rio, canal e crista sobrevivem: vala,
+// dreno e córrego viram renda ilegível nessa escala e respondem pela maior
+// parte das feições (no extrato do Uruguai, 8.365 de 28.577 linhas eram
+// ditch/drain). Filtrar aqui é o que deixa a camada abrir sem trava.
+function hidroStyleFor(p, detail) {
+  // `tunnel=culvert` (córrego canalizado) e `tunnel=yes` tracejam; `no` não.
+  // Com o Overpass bastava a chave existir — `tunnel=no` tracejava à toa.
+  const tunnel = !!p.tunnel && p.tunnel !== 'no';
+  if (p.natural === 'ridge') return { color: '#EF7A30', weight: 3 };
+  if (p.waterway === 'river') {
+    return { color: '#A6C045', weight: 5, dashArray: tunnel ? '4 6' : null };
   }
+  const main = p.waterway === 'canal' || p.waterway === 'riverbank';
+  if (detail === DETAIL_MAIN && !main) return null;
+  if (p.waterway) {
+    return { color: '#DDB84F', weight: 3, dashArray: tunnel ? '4 4' : null };
+  }
+  return detail === DETAIL_MAIN ? null : { color: '#888', weight: 2 };
 }
 
-function onOverpassMoveEnd() {
-  clearTimeout(overpassDebounce);
-  overpassDebounce = setTimeout(refreshOverpass, 700);
+function hidroTipFor(p) {
+  const parts = [];
+  if (p.name) parts.push(`<strong>${escapeHtml(p.name)}</strong>`);
+  const kind = p.waterway || p.natural || '';
+  if (kind) parts.push(`<em>${escapeHtml(kind)}</em>`);
+  if (p.tunnel && p.tunnel !== 'no') parts.push('(túnel)');
+  return parts.join(' · ') || 'OSM';
 }
 
-function showOverpass() {
-  overpassActive = true;
-  map.on('moveend', onOverpassMoveEnd);
-  refreshOverpass();
+// Rede do coletivo: azul de destaque, grossa, por cima da hidrografia.
+function phNetworkTipFor(p) {
+  const parts = [`<strong>${escapeHtml(p.name || 'Pedal Hidrográfico')}</strong>`];
+  if (p.ref) parts.push(`<em>ref ${escapeHtml(p.ref)}</em>`);
+  return parts.join(' · ');
 }
-function hideOverpass() {
-  overpassActive = false;
-  map.off('moveend', onOverpassMoveEnd);
-  clearTimeout(overpassDebounce);
-  clearOverpassLayers();
-}
-function setOverpassOpacity(frac) {
-  overpassOpacity = frac;
-  for (const l of overpassLayers) l.setStyle({ opacity: frac });
-}
+
+const hidroLayer = makeOsmFgbLayer({
+  id: 'osm-overpass',            // id histórico — ver OVERLAY_LAYERS
+  label: 'hidrografia OSM',
+  sources: [
+    {
+      // `false` = fora do LRU do viário: a camada reconsulta a cada pan e
+      // encheria o cache (10 slots) com viewports inteiras de feições.
+      load: (bb) => streamFgbFeatures(HIDRO_FGB_URL, bb, false),
+      styleFor: hidroStyleFor,
+      tipFor: hidroTipFor,
+    },
+    {
+      // Sem bbox: são poucas relations e a viewport já recorta no desenho —
+      // mesmo comportamento da consulta Overpass antiga.
+      load: () => loadPhCycleNetwork(),
+      styleFor: () => ({ color: '#2da9ff', weight: 5 }),
+      tipFor: phNetworkTipFor,
+      alwaysDraw: true,   // são dezenas de linhas, e é a camada-assinatura
+    },
+  ],
+});
+
+// Estacionada aqui junto da irmã, e NÃO lá embaixo na seção de cicloinfra: o
+// painel de camadas pode restaurar a visibilidade persistida antes daquele
+// ponto do arquivo, e um `const` em TDZ viraria ReferenceError no boot.
+// As funções de estilo/rótulo seguem lá (declarações `function`, içadas).
+const cicloinfraLayer = makeOsmFgbLayer({
+  id: 'osm-cicloinfra',
+  label: 'cicloinfra OSM',
+  sources: [{
+    load: (bb) => streamFgbFeatures(CICLOINFRA_FGB_URL, bb, false),
+    styleFor: styleForCycloinfra,
+    tipFor: cicloinfraTipFor,
+  }],
+});
 
 // ─── Fotos geotaggeadas (manifesto → dumps em web/data/*.ttl) ─────────────
 // Cada foto com GPS vira um pequeno círculo no mapa; clicar abre um popup
@@ -957,7 +1051,7 @@ let photoMarkers   = [];
 let clipsMarkers   = [];
 let photosLoaded   = false;
 let photosLoading  = null;
-// Mesmo padrão de overpassFetchSeq/cycloinfraFetchSeq: cada carga captura o
+// Mesmo padrão do `seq` das camadas OSM por FGB: cada carga captura o
 // contador no início e abandona o resultado se outro reload começou depois —
 // senão uma carga lenta em voo sobrescreveria dados mais novos ao terminar.
 let photosFetchSeq = 0;
@@ -4358,157 +4452,53 @@ document.getElementById('settings-reset-btn')?.addEventListener('click', () => {
   showToast('Padrões restaurados.');
 });
 
-// ─── Cicloinfra (OSM cycling infrastructure) overlay ─────────────────────────
-// Live-queries Overpass for everything that's safe-ish for a bicycle:
-//   highway=cycleway                  dedicated bike path
-//   highway=path  +  bicycle=yes/designated   shared multi-use path
-//   highway=*      +  cycleway[:left|:right|:both]=lane/track/...
-//                                     a road that has a bike lane / track
-// All in the same accent-cyan, with weight + dash signaling type.
-const cycloinfraLayers = [];
-let cycloinfraActive = false;
-let cycloinfraOpacity = 1;
-let cycloinfraDebounce = null;
-let cycloinfraFetchSeq = 0;
-
-async function queryCycloinfra(b) {
-  const q = `[out:json][timeout:60];
-(
-  way["highway"="cycleway"](${b.south},${b.west},${b.north},${b.east});
-  way["highway"="path"]["bicycle"~"yes|designated"](${b.south},${b.west},${b.north},${b.east});
-  way["highway"]["cycleway"~"lane|track|opposite_lane|opposite_track|shared_lane|share_busway"](${b.south},${b.west},${b.north},${b.east});
-  way["highway"]["cycleway:left"~"lane|track|opposite_lane|opposite_track|shared_lane|share_busway"](${b.south},${b.west},${b.north},${b.east});
-  way["highway"]["cycleway:right"~"lane|track|opposite_lane|opposite_track|shared_lane|share_busway"](${b.south},${b.west},${b.north},${b.east});
-  way["highway"]["cycleway:both"~"lane|track|opposite_lane|opposite_track|shared_lane|share_busway"](${b.south},${b.west},${b.north},${b.east});
-);
-out body;
->;
-out skel qt;`;
-  const res = await fetch(OVERPASS_URL, {
-    method: 'POST',
-    body: 'data=' + encodeURIComponent(q),
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-  });
-  if (!res.ok) throw new Error(`Overpass ${res.status}`);
-  return res.json();
-}
-
-function classifyCycloinfra(tags) {
-  if (tags.highway === 'cycleway') return 'ciclovia';
-  if (tags.highway === 'path') return 'caminho compartilhado';
-  if (
-    tags.cycleway ||
-    tags['cycleway:left'] ||
-    tags['cycleway:right'] ||
-    tags['cycleway:both']
-  ) return 'ciclofaixa';
+// ─── Cicloinfra (OSM) — estilo e rótulo ──────────────────────────────────────
+// O que é "seguro-ish" pra bicicleta, conforme assado no FGB por
+// scripts/build-viario.py (mesmo predicado da consulta Overpass anterior):
+//   highway=cycleway                          ciclovia segregada
+//   highway=path + bicycle=yes/designated     caminho compartilhado
+//   highway=* + cycleway[:left|:right|:both]  via com ciclofaixa/faixa
+//               = lane/track/…
+// Tudo no mesmo ciano de destaque; espessura + tracejado sinalizam o tipo.
+// A camada em si (cicloinfraLayer) fica lá em cima, junto da Morros e Águas.
+//
+// ATENÇÃO aos nomes das colunas: o GDAL SANEIA `cycleway:left` pra
+// `cycleway_left` ao assar o FGB, então é assim que chegam aqui — nada de
+// `tags['cycleway:left']`, que era a forma do Overpass.
+function classifyCycloinfra(p) {
+  if (p.highway === 'cycleway') return 'ciclovia';
+  if (p.highway === 'path') return 'caminho compartilhado';
+  if (p.cycleway || p.cycleway_left || p.cycleway_right || p.cycleway_both) {
+    return 'ciclofaixa';
+  }
   return '';
 }
 
-function styleForCycloinfra(tags) {
-  const kind = classifyCycloinfra(tags);
-  // Ciclovia (segregated): solid + thick. Ciclofaixa (painted lane on road):
-  // dashed + thinner. Shared path: dotted.
-  if (kind === 'ciclovia') {
-    return { color: '#00BFA6', weight: 4, opacity: cycloinfraOpacity };
-  }
+function styleForCycloinfra(p, detail) {
+  const kind = classifyCycloinfra(p);
+  // Ciclovia (segregada): contínua + grossa. Ciclofaixa (pintada na via):
+  // tracejada + fina. Caminho compartilhado: pontilhado.
+  if (kind === 'ciclovia') return { color: '#00BFA6', weight: 4 };
+  // Numa bbox grande, só a malha segregada — ciclofaixa e caminho
+  // compartilhado são tracejados finos que somem visualmente nessa escala e
+  // respondem pelo grosso das feições.
+  if (detail === DETAIL_MAIN) return null;
   if (kind === 'caminho compartilhado') {
-    return {
-      color: '#00BFA6',
-      weight: 3,
-      opacity: cycloinfraOpacity,
-      dashArray: '2 5',
-    };
+    return { color: '#00BFA6', weight: 3, dashArray: '2 5' };
   }
   if (kind === 'ciclofaixa') {
-    return {
-      color: '#00BFA6',
-      weight: 3,
-      opacity: cycloinfraOpacity,
-      dashArray: '6 4',
-    };
+    return { color: '#00BFA6', weight: 3, dashArray: '6 4' };
   }
-  return { color: '#00BFA6', weight: 2, opacity: cycloinfraOpacity };
+  return { color: '#00BFA6', weight: 2 };
 }
 
-function clearCycloinfraLayers() {
-  for (const l of cycloinfraLayers) map.removeLayer(l);
-  cycloinfraLayers.length = 0;
-}
-
-function renderCycloinfra(data) {
-  clearCycloinfraLayers();
-  const nodes = new Map();
-  for (const el of data.elements || []) {
-    if (el.type === 'node') nodes.set(el.id, [el.lat, el.lon]);
-  }
-  for (const el of data.elements || []) {
-    if (el.type !== 'way') continue;
-    const latlngs = (el.nodes || []).map((id) => nodes.get(id)).filter(Boolean);
-    if (latlngs.length < 2) continue;
-    const tags = el.tags || {};
-    const layer = L.polyline(latlngs, { ...styleForCycloinfra(tags), pane: LAYER_PANE('osm-cicloinfra') });
-    const parts = [];
-    if (tags.name) parts.push(`<strong>${escapeHtml(tags.name)}</strong>`);
-    const kind = classifyCycloinfra(tags);
-    if (kind) parts.push(`<em>${kind}</em>`);
-    if (tags.surface) parts.push(`piso: ${escapeHtml(tags.surface)}`);
-    layer.bindTooltip(parts.join(' · ') || 'cicloinfra', {
-      sticky: true,
-      className: 'osm-tip',
-    });
-    layer.addTo(map);
-    cycloinfraLayers.push(layer);
-  }
-}
-
-async function refreshCycloinfra() {
-  if (!cycloinfraActive) return;
-  if (map.getZoom() < OVERPASS_MIN_ZOOM) {
-    clearCycloinfraLayers();
-    showToast(`Aproxime o mapa (zoom ≥ ${OVERPASS_MIN_ZOOM}) para buscar OSM`);
-    return;
-  }
-  const b = map.getBounds();
-  const bbox = {
-    south: b.getSouth().toFixed(6),
-    west: b.getWest().toFixed(6),
-    north: b.getNorth().toFixed(6),
-    east: b.getEast().toFixed(6),
-  };
-  const seq = ++cycloinfraFetchSeq;
-  showToast('Buscando cicloinfra OSM…', 1500);
-  try {
-    const data = await queryCycloinfra(bbox);
-    if (seq !== cycloinfraFetchSeq || !cycloinfraActive) return;
-    renderCycloinfra(data);
-    showToast(`Cicloinfra: ${cycloinfraLayers.length} vias`, 1800);
-  } catch (err) {
-    if (seq !== cycloinfraFetchSeq) return;
-    console.warn('Overpass cicloinfra failed:', err);
-    showToast(`Falha cicloinfra: ${err.message}`);
-  }
-}
-
-function onCycloinfraMoveEnd() {
-  clearTimeout(cycloinfraDebounce);
-  cycloinfraDebounce = setTimeout(refreshCycloinfra, 700);
-}
-
-function showCycloinfra() {
-  cycloinfraActive = true;
-  map.on('moveend', onCycloinfraMoveEnd);
-  refreshCycloinfra();
-}
-function hideCycloinfra() {
-  cycloinfraActive = false;
-  map.off('moveend', onCycloinfraMoveEnd);
-  clearTimeout(cycloinfraDebounce);
-  clearCycloinfraLayers();
-}
-function setCycloinfraOpacity(frac) {
-  cycloinfraOpacity = frac;
-  for (const l of cycloinfraLayers) l.setStyle({ opacity: frac });
+function cicloinfraTipFor(p) {
+  const parts = [];
+  if (p.name) parts.push(`<strong>${escapeHtml(p.name)}</strong>`);
+  const kind = classifyCycloinfra(p);
+  if (kind) parts.push(`<em>${kind}</em>`);
+  if (p.surface) parts.push(`piso: ${escapeHtml(p.surface)}`);
+  return parts.join(' · ') || 'cicloinfra';
 }
 
 // ─── Custom XYZ / WMS layers ─────────────────────────────────────────────────
@@ -6756,9 +6746,9 @@ const DEFAULT_PARAMS = {
   demSmoothSigmaM: 30,
   // Fonte do viário no "menor energia pelo viário": grafo PRÉ-COZIDO de SP
   // (sampa-viario-graph.bin — elevações baked, sem DEM por rota) por padrão,
-  // com o FGB da América do Sul (range requests) como fallback; desligado usa
-  // o Overpass (grid raster, depende do servidor do OSM). Tudo cai pro
-  // Overpass sozinho se indisponível, independentemente deste toggle.
+  // com o FGB da América do Sul (range requests) como fallback; desligado
+  // roteia no grid raster da MESMA rede (serrilhado de ~30 m, sem grafo).
+  // Fora da América do Sul não há viário nenhum — o modo cai na energia livre.
   // (Chave histórica "Gpkg" mantida — renomear órfanaria a preferência salva.)
   useViarioGpkg: true,
   // "Menor energia pelo terreno": tratar lagos/represas e rios dos FGBs de
@@ -7701,55 +7691,6 @@ async function loadDemMosaic(bb) {
   return loadFabdemMosaic(bb);
 }
 
-// Overpass: ways com highway=* na bbox. Devolve { nodes: Map<id, [lat,lng]>,
-// ways: [{ nodes: [id1, id2, …], tags: {…} }] }. As tags (`out body`) trazem
-// bridge/tunnel → vão pro grafo vetorial como tabuleiro (achatamento do perfil).
-async function fetchOsmRoadsForBbox(bb) {
-  const q = `[out:json][timeout:30];
-way["highway"](${bb.south},${bb.west},${bb.north},${bb.east});
-out body;
->;
-out skel qt;`;
-  const res = await fetch(OVERPASS_URL, {
-    method: 'POST',
-    body: 'data=' + encodeURIComponent(q),
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-  });
-  if (!res.ok) throw new Error(`Overpass ${res.status}`);
-  const data = await res.json();
-  const nodes = new Map();
-  const ways  = [];
-  for (const el of data.elements || []) {
-    if (el.type === 'node') nodes.set(el.id, [el.lat, el.lon]);
-    else if (el.type === 'way' && Array.isArray(el.nodes)) ways.push({ nodes: el.nodes, tags: el.tags || {} });
-  }
-  return { nodes, ways };
-}
-
-// Converte a resposta do Overpass ({nodes, ways}) no formato que
-// viarioGraphRoute consome — lines = polilinhas [[lng,lat],…]; meta[i].deck =
-// ponte/túnel (das tags do OSM). Assim o "Menor energia pelo viário" via
-// Overpass roteia no MESMO grafo vetorial do FGB: o traçado segue a geometria
-// real das vias, em vez do serrilhado de ~30 m do grid raster.
-function osmLinesForGraph(osm) {
-  const lines = [], meta = [];
-  for (const w of osm.ways) {
-    const line = [];
-    for (const id of w.nodes) {
-      const ll = osm.nodes.get(id);          // [lat, lon]
-      if (ll) line.push([ll[1], ll[0]]);     // → [lng, lat]
-    }
-    if (line.length < 2) continue;
-    const t = w.tags || {};
-    // No OSM a parte em ponte/túnel já vem como way própria, então a way inteira
-    // é tabuleiro — casa com o achatamento por-way do viarioGraphRoute.
-    const deck = (t.bridge && t.bridge !== 'no') || (t.tunnel && t.tunnel !== 'no');
-    lines.push(line);
-    meta.push({ deck: !!deck });
-  }
-  return { lines, meta };
-}
-
 // Bresenham: pinta (r0,c0)→(r1,c1) na máscara.
 function rasterizeLineToMask(mask, W, H, r0, c0, r1, c1) {
   let r = r0, c = c0;
@@ -7771,15 +7712,16 @@ function rasterizeLineToMask(mask, W, H, r0, c0, r1, c1) {
 // das vias. O carimbo 3×3 ao redor de seed/goal acontece DEPOIS, em
 // energyRoute(), pra garantir que a origem/destino estejam acessíveis
 // mesmo que o clique fique a 1 célula do nó OSM mais próximo.
-function rasterizeRoads(osm, bb, H, W, A) {
+// `lines` são as polilinhas [[lng,lat],…] do viário (queryViarioLines) — as
+// mesmas que alimentam o grafo vetorial. Antes vinham do Overpass no formato
+// {nodes, ways}; agora a rede é só uma, e este raster é o fallback dela.
+function rasterizeRoads(lines, bb, H, W, A) {
   const mask = new Uint8Array(W * H);
-  for (const w of osm.ways) {
+  for (const line of lines) {
     let prev = null;
-    for (const id of w.nodes) {
-      const ll = osm.nodes.get(id);
-      if (!ll) { prev = null; continue; }
-      const r = Math.round((bb.north - ll[0]) / A);
-      const c = Math.round((ll[1] - bb.west) / A);
+    for (const pt of line) {
+      const r = Math.round((bb.north - pt[1]) / A);
+      const c = Math.round((pt[0] - bb.west) / A);
       if (prev) rasterizeLineToMask(mask, W, H, prev[0], prev[1], r, c);
       prev = [r, c];
     }
@@ -7823,9 +7765,15 @@ async function ensureFlatgeobuf() {
 // água pro mesmo trecho; rotas re-traçadas idem).
 const _fgbCache = new Map();
 const FGB_CACHE_MAX = 10;
-async function streamFgbFeatures(url, bb) {
+// `useCache=false` pras CAMADAS DE MAPA (Morros e Águas / Cicloinfra): elas
+// reconsultam a cada pan, então cada viewport viraria uma entrada nova e as 10
+// vagas do LRU acabariam segurando 10 viewports inteiras de feições na memória
+// — dezenas de milhares de linhas cada. Elas redesenham do zero de qualquer
+// jeito, e os BYTES já ficam no cache HTTP do navegador (o SW deixa .fgb
+// passar direto justamente pra não estragar as respostas 206).
+async function streamFgbFeatures(url, bb, useCache = true) {
   const key = `${url}|${bb.west.toFixed(4)},${bb.south.toFixed(4)},${bb.east.toFixed(4)},${bb.north.toFixed(4)}`;
-  if (_fgbCache.has(key)) {
+  if (useCache && _fgbCache.has(key)) {
     const v = _fgbCache.get(key);
     _fgbCache.delete(key); _fgbCache.set(key, v);   // refresca a posição LRU
     return v;
@@ -7839,8 +7787,10 @@ async function streamFgbFeatures(url, bb) {
     (async () => { for await (const f of fgb.deserialize(url, rect)) feats.push(f); })(),
     new Promise((_, rej) => setTimeout(() => rej(new Error('timeout FGB')), VIARIO_FETCH_TIMEOUT_MS)),
   ]);
-  _fgbCache.set(key, feats);
-  while (_fgbCache.size > FGB_CACHE_MAX) _fgbCache.delete(_fgbCache.keys().next().value);
+  if (useCache) {
+    _fgbCache.set(key, feats);
+    while (_fgbCache.size > FGB_CACHE_MAX) _fgbCache.delete(_fgbCache.keys().next().value);
+  }
   return feats;
 }
 
@@ -7964,7 +7914,8 @@ async function buildViarioSrc(SQL, bytes) {
   // Tags de ponte/túnel/nível pro achatamento do tabuleiro no roteamento.
   // Esquemas variam: colunas dedicadas (bridge/tunnel/layer) OU um hstore
   // `other_tags` (export do osmium/QGIS). Lemos as que existirem; se nenhuma,
-  // o grafo roteia sem achatamento (e o Overpass vira a fonte das tags).
+  // o grafo roteia sem achatamento (e o FGB do viário vira a fonte das tags,
+  // por proximidade — ver fetchViarioDecksForBbox/markDecksByProximity).
   let tagCols = [];
   try {
     const ti = db.exec(`PRAGMA table_info("${tableName}")`);
@@ -7993,7 +7944,7 @@ const VIARIO_GRAPH_URL = 'https://telhas.pedalhidrografi.co/viario/sampa-viario-
 // ao v2_edge do backend Rust do simujaules; manter em sincronia. dist = metros
 // de solo, dh = desnível com sinal. Rolamento sempre; arrasto só fora das
 // subidas; recuperação na descida ε por grade. Compartilhado pelo grafo do
-// FGB/Overpass (viarioGraphRoute) e pelo grafo pré-cozido (bakedViarioRoute).
+// FGB (viarioGraphRoute) e pelo grafo pré-cozido (bakedViarioRoute).
 function v2EdgeCostFn(cost) {
   return (dist, dh) => {
     if (dh >= 0) {
@@ -8182,7 +8133,7 @@ async function bakedViarioRoute(fromLatLng, toLatLng, bb) {
 
 // ─── Rede viária custom (fgb, gpkg ou GeoJSON carregado de arquivo) ──────────
 // Carregada em memória pelo modal "Fontes de dados"; tem PRIORIDADE sobre o
-// FGB da América do Sul e o Overpass no "Menor energia pelo viário". .fgb é
+// FGB da América do Sul no "Menor energia pelo viário". .fgb é
 // parseado inteiro (arquivo local não ganha nada com range) e vira o kind
 // geojson; .gpkg passa pelo pipeline sql.js (buildViarioSrc + queryGpkgLines);
 // GeoJSON (sempre WGS84, RFC 7946) é varrido direto pra [lng,lat]. Efêmera:
@@ -8281,8 +8232,8 @@ async function queryViarioLines(bb, src) {
     const feats = await streamFgbFeatures(VIARIO_FGB_URL, bb);
     const out = queryGeojsonLines(bb, { features: feats });
     // O produtor SEMPRE grava bridge/tunnel/layer no FGB — hasTags fixo em
-    // true pra nunca acionar o fallback de tags do Overpass (que só existia
-    // pra gpkg antigo sem colunas).
+    // true pra nunca acionar o fallback de tags por proximidade (que só
+    // existia pra gpkg antigo sem colunas).
     out.hasTags = true;
     const decks = out.meta.reduce((n, m) => n + (m.deck ? 1 : 0), 0);
     console.info(`[viario] FGB ${(performance.now() - t0).toFixed(0)} ms · ` +
@@ -8381,38 +8332,28 @@ async function queryGpkgLines(bb, src) {
   console.info(`[viario] consulta ${(performance.now() - t0).toFixed(0)} ms · ` +
     `${scanned} varridas → ${lines.length} na bbox (${decks} tabuleiros) · rtree=${usedRtree} · ` +
     `crs=${isSrcWgs ? 'wgs84' : 'reprojetado'} · tags=${(tagCols || []).join('|') || 'nenhuma'}`);
-  // hasTags: o gpkg já traz ponte/túnel (não precisa do Overpass por trecho).
+  // hasTags: o gpkg já traz ponte/túnel (não precisa casar por proximidade).
   const hasTags = (tagCols || []).some((c) => c === 'bridge' || c === 'tunnel' || c === 'other_tags');
   return { lines, meta, hasTags };
 }
 
-// Overpass: pontes/viadutos (bridge!=no) e túneis (tunnel=yes) de highway na
-// bbox, COM geometria. Só entra pra uma rede CUSTOM sem tags (o FGB remoto
-// sempre traz bridge/tunnel — hasTags fixo em true): é o OSM que diz quais
+// Pontes/viadutos (bridge!=no) e túneis (tunnel=yes) do viário na bbox, COM
+// geometria. Só entra pra uma rede CUSTOM sem tags (o FGB remoto sempre traz
+// bridge/tunnel — hasTags fixo em true): é o viário que diz quais
 // linhas são tabuleiros pra achatar. Pull pequeno (poucas estruturas por
 // segmento). Best-effort: falha → sem achatamento.
-async function fetchOsmDecksForBbox(bb) {
-  const bbox = `${bb.south},${bb.west},${bb.north},${bb.east}`;
-  const q = `[out:json][timeout:25];(` +
-    `way["bridge"]["bridge"!="no"]["highway"](${bbox});` +
-    `way["tunnel"="yes"]["highway"](${bbox});` +
-    `);out geom;`;
-  const res = await fetch(OVERPASS_URL, {
-    method: 'POST', body: 'data=' + encodeURIComponent(q),
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-  });
-  if (!res.ok) throw new Error(`Overpass ${res.status}`);
-  const data = await res.json();
+// Pontes/túneis da bbox pra marcar tabuleiro numa rede CUSTOM que não traz as
+// tags. Antes era uma consulta Overpass própria; agora sai do MESMO FGB do
+// viário, que já carrega bridge/tunnel/layer — uma fonte a menos e uma
+// consulta a menos (o LRU do streamFgbFeatures ainda reaproveita a busca que
+// o roteamento já fez pra esta bbox).
+async function fetchViarioDecksForBbox(bb) {
+  const { lines, meta } = await queryViarioLines(bb);
   const decks = [];
-  for (const el of data.elements || []) {
-    if (el.type === 'way' && Array.isArray(el.geometry) && el.geometry.length >= 2) {
-      const tg = el.tags || {};
-      decks.push({
-        pts: el.geometry.map((g) => [g.lon, g.lat]), // [lng,lat]
-        tunnel: tg.tunnel === 'yes',
-        layer: parseInt(tg.layer, 10) || (tg.tunnel === 'yes' ? -1 : 1),
-      });
-    }
+  for (let i = 0; i < lines.length; i++) {
+    const m = meta[i];
+    if (!m || !m.deck) continue;
+    decks.push({ pts: lines[i], tunnel: !!m.tunnel, layer: m.layer });
   }
   return decks;
 }
@@ -8765,7 +8706,7 @@ function viarioGraphRoute(lines, meta, fromLatLng, toLatLng, dem, bb, A) {
 }
 
 // `mode` = 'free' (qualquer célula do DEM) | 'road' (restringe ao viário:
-// grafo pré-cozido → FGB da América do Sul → Overpass)
+// grafo pré-cozido → FGB da América do Sul → grid raster do mesmo FGB)
 async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
   const distKm = fromLatLng.distanceTo(toLatLng) / 1000;
   if (distKm > ENERGY_MAX_SEGMENT_KM) {
@@ -8810,14 +8751,14 @@ async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
   // ROAD primário: grafo PRÉ-COZIDO do viário de SP — elevações já amostradas
   // no bake, então resolve SEM baixar DEM nem FGB (por isso roda antes do
   // mosaico abaixo). Rede custom carregada tem prioridade e cai pro fluxo
-  // clássico; falha/sem caminho cai pro FGB → Overpass, como sempre. O mesmo
-  // toggle useViarioGpkg governa grafo pré-cozido + FGB (é a mesma fonte,
-  // só o empacotamento muda); desligado, pula direto pro Overpass.
+  // clássico; falha/sem caminho cai pro FGB, como sempre. O mesmo toggle
+  // useViarioGpkg governa grafo pré-cozido + FGB (é a mesma fonte, só o
+  // empacotamento muda); desligado, pula direto pro grid raster.
   if (mode === 'road' && !_customNetwork && params.useViarioGpkg !== false) {
     try {
       const path = await bakedViarioRoute(fromLatLng, toLatLng, bb);
       if (path && path.length) return path;
-      console.info('[energy_road] grafo pré-cozido sem caminho — caindo pro FGB/Overpass');
+      console.info('[energy_road] grafo pré-cozido sem caminho — caindo pro FGB');
     } catch (e) {
       console.warn('[energy_road] grafo pré-cozido indisponível:', e.message);
     }
@@ -8840,7 +8781,7 @@ async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
 
   // Tratamento σ do mapa (Entry 74): suaviza o mosaico ANTES de qualquer
   // consumidor de roteamento — a grade do terreno E os grafos vetoriais do
-  // viário (FGB / rede custom / Overpass) amostram estas alturas. Inclui as
+  // viário (FGB / rede custom) amostram estas alturas. Inclui as
   // fontes grossas (FABDEM) de propósito — ver DEFAULT_PARAMS.demSmoothSigmaM.
   const sigmaM = Math.max(0, +(params.demSmoothSigmaM ?? DEFAULT_PARAMS.demSmoothSigmaM) || 0);
   if (sigmaM > 0) {
@@ -8852,94 +8793,64 @@ async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
   // ROAD com rede custom: se o usuário carregou um fgb/gpkg/GeoJSON de viário
   // no modal "Fontes de dados", ele tem PRIORIDADE — mesma engine de grafo do
   // viário remoto. Sucesso = retorno imediato; falha/sem caminho cai pro FGB
-  // da América do Sul / Overpass abaixo (a rede custom pode cobrir só parte
-  // do trecho).
+  // da América do Sul abaixo (a rede custom pode cobrir só parte do trecho).
   if (mode === 'road' && _customNetwork) {
     try {
       const { lines, meta, hasTags } = await queryCustomNetworkLines(bb);
       if (lines.length) {
         if (!hasTags) {
           try {
-            const decks = await fetchOsmDecksForBbox(bb);
+            const decks = await fetchViarioDecksForBbox(bb);
             markDecksByProximity(lines, meta, decks, bb);
           } catch (e3) {
-            console.warn('[energy_road] pontes do OSM (rede custom) indisponíveis:', e3.message);
+            console.warn('[energy_road] pontes do viário (rede custom) indisponíveis:', e3.message);
           }
         }
         const path = viarioGraphRoute(lines, meta, fromLatLng, toLatLng, dem, bb, A);
         if (path && path.length) return path;
-        console.info('[energy_road] rede custom sem caminho — caindo pro FGB/Overpass');
+        console.info('[energy_road] rede custom sem caminho — caindo pro FGB');
       }
     } catch (e) {
       console.warn('[energy_road] grafo da rede custom falhou:', e.message);
     }
   }
 
-  // ROAD fallback do grafo: roteia SOBRE o grafo vetorial do FGB — a rota
-  // segue a geometria real das vias (linhas suaves, sem serrilhado do grid),
-  // e o FGB cobre a América do Sul inteira (fora de SP é a fonte de fato).
-  // Sucesso = retorno imediato. Falha (FGB indisponível / sem caminho) cai
-  // pro Overpass logo abaixo (que também roteia num grafo vetorial → traçado
-  // igualmente alinhado às vias; o grid raster é só o último fallback).
-  // Toggle (Parâmetros): com o FGB ligado, é a fonte primária; desligado,
-  // pula direto pro Overpass. O FGB ainda cai pro Overpass sozinho se a
-  // consulta falhar / não achar caminho.
-  if (mode === 'road' && params.useViarioGpkg !== false) {
-    try {
-      const { lines, meta, hasTags } = await queryViarioLines(bb);
-      // O FGB sempre traz bridge/tunnel (hasTags=true) — as flags de tabuleiro
-      // vêm dele, nada de Overpass por trecho.
-      if (!hasTags) {
-        try {
-          const decks = await fetchOsmDecksForBbox(bb);
-          const marked = markDecksByProximity(lines, meta, decks, bb);
-          if (decks.length) console.info(`[energy_road] viário sem tags → OSM: ${decks.length} estruturas · ${marked} linha(s) achatada(s)`);
-        } catch (e3) {
-          console.warn('[energy_road] pontes do OSM indisponíveis:', e3.message);
-        }
-      }
-      const path = viarioGraphRoute(lines, meta, fromLatLng, toLatLng, dem, bb, A);
-      if (path && path.length) return path;
-    } catch (e) {
-      console.warn('[energy_road] grafo do FGB falhou:', e.message);
-    }
-  }
-
-  // Overpass como rede viária — PRIMÁRIO com o FGB desligado, FALLBACK quando o
-  // FGB falha. Buscado UMA vez; duas tentativas do melhor pro pior:
-  //   1) grafo VETORIAL (mesma engine do FGB) → traçado alinhado às vias reais
-  //   2) grid RASTER (máscara + Dijkstra no DEM) → serrilhado de ~30 m, porém
+  // ROAD, fonte única: o FGB do viário da América do Sul. A rede é buscada UMA
+  // vez e serve às duas tentativas, do melhor pro pior:
+  //   1) grafo VETORIAL → a rota segue a geometria real das vias (linhas
+  //      suaves, sem o serrilhado de ~30 m do grid), com ponte/túnel achatados
+  //      a partir das colunas bridge/tunnel do próprio FGB;
+  //   2) grid RASTER (máscara + Dijkstra no DEM) → serrilhado, porém
   //      resiliente; só roda se o grafo não achar caminho.
-  let osmRoads = null;
+  // Não há mais terceira fonte: o Overpass saiu (era o plano B ao vivo, e com
+  // ele saiu a cobertura fora da América do Sul — lá o "pelo viário" agora cai
+  // direto na energia livre).
+  // Toggle (Parâmetros): ligado usa o grafo vetorial; desligado vai direto ao
+  // grid raster da MESMA rede.
+  let roadLines = null;
   if (mode === 'road') {
     try {
-      osmRoads = await fetchOsmRoadsForBbox(bb);
-    } catch (e2) {
-      console.warn('[energy_road] Overpass falhou:', e2.message);
-      showToast(`Viário indisponível (${e2.message}) — caindo para menor energia livre.`);
-    }
-    // 1) Grafo vetorial do Overpass: roteia na geometria real das vias (idêntico
-    // ao FGB, só muda a fonte). Pontes/túneis vêm das tags do OSM.
-    if (osmRoads && osmRoads.ways.length) {
-      try {
-        const { lines, meta } = osmLinesForGraph(osmRoads);
+      const { lines, meta } = await queryViarioLines(bb);
+      roadLines = lines;
+      if (params.useViarioGpkg !== false) {
         const path = viarioGraphRoute(lines, meta, fromLatLng, toLatLng, dem, bb, A);
         if (path && path.length) return path;
-        console.info('[energy_road] grafo Overpass sem caminho — tentando grid raster');
-      } catch (e) {
-        console.warn('[energy_road] grafo Overpass falhou:', e.message);
+        console.info('[energy_road] grafo do FGB sem caminho — tentando grid raster');
       }
+    } catch (e) {
+      console.warn('[energy_road] viário do FGB falhou:', e.message);
+      showToast(`Viário indisponível (${e.message}) — caindo para menor energia livre.`);
     }
   }
 
-  // 2) Rede viária no grid raster (Overpass) — fallback do grafo vetorial.
+  // Rede viária no grid raster — fallback do grafo vetorial, mesma rede.
   // Último caso: energia livre (networkMask = null).
   let networkMask = null;
-  if (mode === 'road' && osmRoads) {
-    if (!osmRoads.ways.length) {
+  if (mode === 'road' && roadLines) {
+    if (!roadLines.length) {
       showToast('Sem viário no bbox — caindo para menor energia livre.');
     } else {
-      networkMask = rasterizeRoads(osmRoads, bb, dem.H, dem.W, A);
+      networkMask = rasterizeRoads(roadLines, bb, dem.H, dem.W, A);
     }
   }
 
@@ -8988,17 +8899,18 @@ async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
       // isto, um destino sobre/à beira d'água fica ilhado.
       //
       // Duas fontes de corredor: (a) `networkMask` — a rede RASTER em uso no
-      // "pelo viário" via Overpass (FGB desligado/indisponível); é ELA que o
-      // worker roteia, então é ELA que precisa atravessar a água, senão a ponte
-      // do OSM fica barrada e a rota cai na reta. (b) `road` — as linhas
-      // VETORIAIS do FGB (corredores do modo terreno; só existem com o viário
-      // consultado). Sem (a), o Overpass perdia todas as travessias d'água.
+      // "pelo viário" quando o grafo vetorial não achou caminho (ou o toggle
+      // está desligado); é ELA que o worker roteia, então é ELA que precisa
+      // atravessar a água, senão a ponte fica barrada e a rota cai na reta.
+      // (b) `road` — as linhas VETORIAIS do FGB (corredores do modo terreno;
+      // só existem com o viário consultado). Sem (a), o fallback raster perdia
+      // todas as travessias d'água.
       let road = null;
       if (viaLines) { road = new Uint8Array(dem.W * dem.H); for (const ln of viaLines) rasterSupercover(ln.map((p) => toG(p[0], p[1])), road, dem.W, dem.H); }
       let blocked = 0, corr = 0;
       for (let i = 0; i < block.length; i++) {
         if (!block[i] || !dem.mask[i]) continue;
-        if (networkMask && networkMask[i]) { corr++; continue; }   // via raster (Overpass) cruza a água
+        if (networkMask && networkMask[i]) { corr++; continue; }   // via raster cruza a água
         if (road && road[i]) { corr++; continue; }                 // via vetorial (FGB) cruza a água
         dem.mask[i] = 0; waterBlocked.push(i); blocked++;
       }
@@ -12603,7 +12515,7 @@ async function loadGpxIntoEditor(gpxText) {
 
     // 'straight' preserva TODOS os pontos (geometria exata). Os modos roteados
     // reamostram p/ ~100 antes de recalcular o caminho — rotear centenas de
-    // pontos densos seria inviável (centenas de chamadas a DEM/Overpass).
+    // pontos densos seria inviável (centenas de chamadas a DEM/viário).
     const MAX = 100;
     let sampled = coords;
     if (chosenConnectMode !== 'straight' && coords.length > MAX) {
