@@ -60,6 +60,15 @@ elevação já amostrada (DEM de SP + FABDEM via /vsicurl) e tabuleiros
 achatados — que é o que o "Menor energia pelo viário" baixa em vez de montar
 o grafo por sessão. O grafo segue RECORTADO à região de SP (GRAPH_BBOX — a
 cobertura dos DEMs manda; fora dela o roteamento cai pro FGB/Overpass).
+
+As elevações levam o TRATAMENTO σ do mapa (`--graph-sigma`, default 30 m =
+o demSmoothSigmaM do app.js) sobre o mosaico fundido, ANTES de amostrar por
+nó — senão o grafo pré-cozido seria o único consumidor de roteamento lendo
+relevo cru, e o ruído sub-célula inflaria h₊ (medido num trecho plano de
+5,5 km: 110 kJ com elevação crua contra 79 kJ tratada, pra uma estimativa
+route-level de 66 kJ). `--graph-src` aceita um `/vsicurl/https://…`, então
+dá pra assar sem baixar os ~4,5 GB do FGB (o índice serve só a bbox).
+
 Ver o bloco "Grafo pré-cozido" abaixo. Sobe com (-Z ok: é baixado inteiro):
 
     gcloud storage cp -Z ignore/sampa-viario-graph.bin gs://telhas/viario/
@@ -73,6 +82,7 @@ import shutil
 import struct
 import subprocess
 import sys
+import time
 from array import array
 from pathlib import Path
 
@@ -226,6 +236,15 @@ M_DEG = 111320.0                 # mesma constante do app.js
 DENSIFY_M = ARCSEC * M_DEG       # ~30,92 m — casa com o cellM do runtime
 DECK_MAX_SEG_M = 600.0           # só pra caber em u16 dm; rampa é linear mesmo
 DEFAULT_GRAPH_OUT = IGNORE / "sampa-viario-graph.bin"
+EARTH_R = 6378137.0              # mesma constante do energyRoute (app.js)
+# Tratamento σ do mapa aplicado ao mosaico ANTES de amostrar as elevações por
+# nó — espelha o DEFAULT_PARAMS.demSmoothSigmaM do app.js (Entry 74). Manter
+# os dois em sincronia: é o mesmo relevo que o roteamento por energia lê.
+DEFAULT_GRAPH_SIGMA_M = 30.0
+# Guarda de sanidade entre as duas fontes de DEM ao fundir o mosaico do bake:
+# acima disto o valor do DEM de SP é considerado buraco/artefato e fica o
+# FABDEM. Ver o comentário em DemSampler.__init__.
+SRC_DISAGREE_MAX_M = 100.0
 GRAPH_TMP = IGNORE / "graph-tmp"
 
 # Recorte do grafo: a extensão do antigo gpkg de SP (a cobertura DEM manda —
@@ -283,12 +302,80 @@ def _warp_to_grid(src: str, dst: Path, bbox: tuple[float, float, float, float],
     _run(cmd)
 
 
+def _smooth_heights_in_place(height, mask, H: int, W: int,
+                             dx_m: float, dy_m: float, sigma_m: float):
+    """Tratamento σ do mapa (bicycling-energy-model, Entry 74) — PORTE FIEL do
+    smoothHeightsInPlace do app.js (que por sua vez é cópia à mão do sampasimu,
+    travada pelo test-dem-smoothing.mjs de lá).
+
+    Gaussiana SEPARÁVEL (horizontal e depois vertical), NORMALIZADA PELA
+    MÁSCARA (num/den só soma vizinhos válidos e dentro da grade), truncada em
+    3σ, com σ_px por eixo derivado do passo em metros. Escreve só onde a
+    máscara vale. NÃO trocar por um blur genérico: os σ do estudo só valem
+    pra ESTA transformação.
+
+    Sem isto, o grafo pré-cozido saía com elevação CRUA enquanto todo o resto
+    do roteamento por energia lia o mosaico tratado — o ruído sub-célula
+    fabricava micro-subidas e inflava h₊ (e portanto o custo v2).
+
+    Recebe/devolve um array 1-D (H·W) float32 do numpy.
+    """
+    try:
+        import numpy as np
+    except ImportError as e:                                  # pragma: no cover
+        raise RuntimeError("numpy ausente — necessário pro tratamento σ do bake "
+                           "(pip install numpy, ou use --graph-sigma 0)") from e
+    if not (sigma_m > 0):
+        return np.asarray(height, dtype=np.float32).ravel()
+
+    h = np.asarray(height, dtype=np.float64).reshape(H, W)
+    m = np.asarray(mask, dtype=bool).reshape(H, W)
+    mf = m.astype(np.float64)
+
+    for sig_px, horizontal in ((sigma_m / dx_m, True), (sigma_m / dy_m, False)):
+        R = math.ceil(3 * sig_px)
+        if R < 1:
+            continue
+        w = [math.exp(-(k * k) / (2 * sig_px * sig_px)) for k in range(R + 1)]
+        v = np.where(m, h, 0.0)
+        num = w[0] * v
+        den = w[0] * mf
+        for k in range(1, R + 1):
+            wk = w[k]
+            # `k >= W` (ou `>= H`): não existe vizinho a essa distância na
+            # linha/coluna — pular. Sem a guarda, `W - k` fica negativo e o
+            # slice devolve uma fatia deslocada em vez de vazia.
+            if horizontal:
+                if k >= W:
+                    continue
+                # vizinho em c+k contribui pra saída em c, e vice-versa.
+                num[:, :W - k] += wk * v[:, k:];  den[:, :W - k] += wk * mf[:, k:]
+                num[:, k:]     += wk * v[:, :W - k]; den[:, k:]  += wk * mf[:, :W - k]
+            else:
+                if k >= H:
+                    continue
+                num[:H - k, :] += wk * v[k:, :];  den[:H - k, :] += wk * mf[k:, :]
+                num[k:, :]     += wk * v[:H - k, :]; den[k:, :]  += wk * mf[:H - k, :]
+        safe = den > 0
+        h = np.where(m & safe, num / np.where(safe, den, 1.0), h)
+
+    return h.astype(np.float32).ravel()
+
+
 class DemSampler:
     """Elevação por lat/lng na grade do bake: DEM de SP (5 m, reamostrado) onde
     cobre, FABDEM no resto, 0.0 onde nenhum cobre (igual ao sampleElev do
-    runtime, que devolve 0 fora da máscara)."""
+    runtime, que devolve 0 fora da máscara).
 
-    def __init__(self, bbox: tuple[float, float, float, float]) -> None:
+    As duas fontes são FUNDIDAS num mosaico único (SP onde vale, FABDEM no
+    resto) e esse mosaico leva o TRATAMENTO σ do mapa antes de qualquer
+    amostragem — o mesmo que o runtime aplica em energyRoute. Antes as
+    elevações eram assadas cruas, e o grafo pré-cozido (fonte PRIMÁRIA do
+    "menor energia pelo viário" em SP) era o único consumidor de roteamento
+    lendo relevo não-tratado."""
+
+    def __init__(self, bbox: tuple[float, float, float, float],
+                 sigma_m: float = DEFAULT_GRAPH_SIGMA_M) -> None:
         GRAPH_TMP.mkdir(parents=True, exist_ok=True)
         w, s, e, n = bbox
         self.west, self.north = w, n
@@ -312,8 +399,55 @@ class DemSampler:
         _warp_to_grid(str(vrt), GRAPH_TMP / "fabdem-grid", bbox, nodata="-9999")
         _warp_to_grid("/vsicurl/" + SAMPA_DEM_URL, GRAPH_TMP / "sampa-grid", bbox, nodata=None)
 
-        self.fab = self._read_grid(GRAPH_TMP / "fabdem-grid")
-        self.sampa = self._read_grid(GRAPH_TMP / "sampa-grid")
+        # Funde as duas fontes num mosaico único (SP onde vale, FABDEM no
+        # resto) e aplica o tratamento σ — o runtime suaviza o mosaico, não
+        # cada fonte separada, então a fusão vem ANTES da suavização.
+        try:
+            import numpy as np
+        except ImportError as e:                              # pragma: no cover
+            raise RuntimeError("numpy ausente — necessário pro bake do grafo "
+                               "(pip install numpy)") from e
+        fab = np.asarray(self._read_grid(GRAPH_TMP / "fabdem-grid"), dtype=np.float32)
+        sampa = np.asarray(self._read_grid(GRAPH_TMP / "sampa-grid"), dtype=np.float32)
+        ok_s = (sampa != -9999.0) & np.isfinite(sampa)
+        ok_f = (fab != -9999.0) & np.isfinite(fab)
+        # O DEM municipal de SP tem BURACOS gravados como ~0 m em vez de
+        # nodata — ~91 mil células marcando nível do mar no meio da cidade,
+        # espalhadas pelo INTERIOR da extensão dele (não só na borda). O bake
+        # antigo amostrava esses 0 direto (o grafo em produção tem nó a 0,2 m
+        # em plena SP) e, com o tratamento σ, cada buraco desses passaria a
+        # contaminar a vizinhança inteira. Onde as duas fontes discordam
+        # MUITO, fica o FABDEM (global e consistente): a discordância real
+        # entre um DEM de 5 m e um de 30 m fica uma ordem de grandeza abaixo
+        # deste limiar (medido: 2,9% das células > 20 m, e quase todas elas
+        # > 400 m — ou seja, os dois regimes são bem separados).
+        bad_s = ok_s & ok_f & (np.abs(sampa - fab) > SRC_DISAGREE_MAX_M)
+        n_bad = int(bad_s.sum())
+        if n_bad:
+            print(f"→ DEM de SP: {n_bad} células descartadas por discordarem "
+                  f">{SRC_DISAGREE_MAX_M:g} m do FABDEM (buracos gravados como 0 m)")
+        ok_s = ok_s & ~bad_s
+        self.mask = (ok_s | ok_f)
+        self.h = np.where(ok_s, sampa, np.where(ok_f, fab, 0.0)).astype(np.float32)
+        del fab, sampa, ok_s, ok_f
+        cover = int(self.mask.sum())
+        print(f"→ mosaico fundido: {cover}/{self.W * self.H} células com cobertura "
+              f"({100.0 * cover / (self.W * self.H):.1f}%)")
+
+        # Passo da célula em metros na latitude média — MESMA fórmula do
+        # energyRoute (EARTH_R e cos da latitude média da bbox).
+        mid_lat = (s + n) / 2.0
+        dy = ARCSEC * math.pi / 180.0 * EARTH_R
+        dx = dy * math.cos(math.radians(mid_lat))
+        self.sigma_m = sigma_m
+        if sigma_m > 0:
+            t0 = time.time()
+            self.h = _smooth_heights_in_place(self.h, self.mask, self.H, self.W,
+                                              dx, dy, sigma_m)
+            print(f"→ tratamento σ={sigma_m:g} m aplicado ao mosaico "
+                  f"(dx={dx:.2f} m, dy={dy:.2f} m) em {time.time() - t0:.1f} s")
+        else:
+            print("→ tratamento σ DESLIGADO (--graph-sigma 0) — elevação crua")
 
     def _read_grid(self, base: Path) -> array:
         samples, lines = _parse_envi_hdr(base.with_suffix(".hdr"))
@@ -332,13 +466,7 @@ class DemSampler:
         if r < 0 or r >= self.H or c < 0 or c >= self.W:
             return 0.0
         i = r * self.W + c
-        v = self.sampa[i]
-        if v != -9999.0 and v == v:      # != nodata e != NaN
-            return v
-        v = self.fab[i]
-        if v != -9999.0 and v == v:
-            return v
-        return 0.0
+        return float(self.h[i]) if self.mask[i] else 0.0
 
 
 def _seg_len_m(a: tuple[float, float], b: tuple[float, float]) -> float:
@@ -359,6 +487,15 @@ def _iter_fgb_lines(fgb: Path, bbox: tuple[float, float, float, float]):
             "bindings Python do GDAL ausentes (from osgeo import ogr) — "
             "brew install gdal / apt install python3-gdal") from e
     ogr.UseExceptions()
+    if str(fgb).startswith("/vsi"):
+        # A Cloudflare que fronteia o bucket às vezes responde o HEAD de sonda
+        # do GDAL sem `Accept-Ranges`, e ele desiste com "Range downloading not
+        # supported by this server!" — mesmo com o GET ranged funcionando
+        # (206). Sem o HEAD, o driver vai direto no range e o índice do FGB
+        # baixa só a faixa da bbox.
+        from osgeo import gdal
+        gdal.SetConfigOption("CPL_VSIL_CURL_USE_HEAD", "NO")
+        gdal.SetConfigOption("GDAL_DISABLE_READDIR_ON_OPEN", "YES")
     ds = ogr.Open(str(fgb))
     if ds is None:
         raise RuntimeError(f"não consegui abrir {fgb}")
@@ -388,14 +525,15 @@ def _iter_fgb_lines(fgb: Path, bbox: tuple[float, float, float, float]):
                 yield pts, bridge, tunnel
 
 
-def bake_graph(fgb: Path, out: Path, graph_bbox: tuple[float, float, float, float]) -> None:
+def bake_graph(fgb: Path | str, out: Path, graph_bbox: tuple[float, float, float, float],
+               sigma_m: float = DEFAULT_GRAPH_SIGMA_M) -> None:
     pad = 0.01
     bbox = (math.floor((graph_bbox[0] - pad) / ARCSEC) * ARCSEC,
             math.floor((graph_bbox[1] - pad) / ARCSEC) * ARCSEC,
             math.ceil((graph_bbox[2] + pad) / ARCSEC) * ARCSEC,
             math.ceil((graph_bbox[3] + pad) / ARCSEC) * ARCSEC)
     print(f"→ bbox do grafo: {bbox}")
-    dem = DemSampler(bbox)
+    dem = DemSampler(bbox, sigma_m)
     print(f"→ DEM {dem.W}×{dem.H} pronto")
 
     # Nós — mesma identidade de junção do runtime: round(coord · 1e6).
@@ -544,6 +682,17 @@ def main() -> int:
                     help=f"saída do grafo binário (default: {DEFAULT_GRAPH_OUT.relative_to(ROOT)})")
     ap.add_argument("--graph-bbox", metavar="W,S,E,N",
                     help="recorte do grafo (default: extensão SP do antigo gpkg)")
+    ap.add_argument("--graph-src", metavar="SRC",
+                    help="fonte OGR do viário pro bake do grafo — aceita um "
+                         "caminho local OU um /vsicurl/https://… (o filtro "
+                         "espacial do FGB só baixa a faixa da bbox por range "
+                         "request, em vez dos ~4,5 GB). Default: --out")
+    ap.add_argument("--graph-sigma", type=float, default=DEFAULT_GRAPH_SIGMA_M,
+                    metavar="M",
+                    help=f"σ (m) do tratamento do mapa aplicado ao mosaico DEM "
+                         f"antes de amostrar as elevações por nó "
+                         f"(default: {DEFAULT_GRAPH_SIGMA_M:g}, igual ao "
+                         f"demSmoothSigmaM do app.js; 0 = cru)")
     args = ap.parse_args()
 
     graph_bbox = GRAPH_BBOX
@@ -560,11 +709,15 @@ def main() -> int:
         return 1
 
     if args.graph_only:
-        if not args.dst.exists():
-            print(f"erro: --graph-only precisa do FGB já gerado em {args.dst}", file=sys.stderr)
+        # `--graph-src` pode ser um /vsicurl/… (remoto): aí não há arquivo local
+        # pra checar — o OGR resolve, e o índice do FGB baixa só a bbox.
+        graph_src = args.graph_src or str(args.dst)
+        is_remote = graph_src.startswith(("/vsicurl/", "/vsi"))
+        if not is_remote and not Path(graph_src).exists():
+            print(f"erro: --graph-only precisa do FGB já gerado em {graph_src}", file=sys.stderr)
             return 1
         try:
-            bake_graph(args.dst, args.graph_out, graph_bbox)
+            bake_graph(graph_src, args.graph_out, graph_bbox, args.graph_sigma)
         except (subprocess.CalledProcessError, RuntimeError) as e:
             print(f"erro: bake do grafo falhou: {e}", file=sys.stderr)
             return 1
@@ -583,7 +736,8 @@ def main() -> int:
         if args.water:
             build_water_fgbs(pbf)
         if args.graph:
-            bake_graph(args.dst, args.graph_out, graph_bbox)
+            bake_graph(args.graph_src or args.dst, args.graph_out, graph_bbox,
+                       args.graph_sigma)
     except (subprocess.CalledProcessError, RuntimeError) as e:
         print(f"erro: {e}", file=sys.stderr)
         return 1

@@ -118,13 +118,38 @@ one optional hosted deploy target, not a dependency.
   (SP DEM ~5 m where covered, FABDEM elsewhere, via /vsicurl) and
   bridge/tunnel decks flattened — the PRIMARY road-routing source the app
   downloads (~33 MB gzipped), still clipped to the SP `GRAPH_BBOX` (DEM
-  coverage rules; read from the FGB via the GDAL Python bindings). Upload:
+  coverage rules; read from the FGB via the GDAL Python bindings).
+  **Elevations get the σ map treatment** (`--graph-sigma`, default 30 m =
+  app.js's `demSmoothSigmaM`) over the FUSED mosaic before per-node
+  sampling — the baked graph used to be the one routing consumer reading RAW
+  relief, and the sub-cell noise inflated h₊ (a flat 5.5 km stretch priced
+  110 kJ raw vs 79 kJ treated, against a 66 kJ route-level estimate). The
+  fuse also drops SP-DEM cells disagreeing with FABDEM by >100 m
+  (`SRC_DISAGREE_MAX_M`): that DEM records ~95k holes as *0 m*, and the old
+  bake sampled them straight (production had nodes at 0.2 m inside São
+  Paulo). `--graph-src` accepts a `/vsicurl/https://…`, so a re-bake needs
+  no 4.5 GB FGB download — the index serves just the bbox. Upload:
   `gcloud storage cp --cache-control="public,max-age=86400" ignore/*.fgb
   gs://telhas/viario/` — **never `-Z` on the .fgb**: `Content-Encoding:
   gzip` breaks GCS range requests, which the client depends on; the graph
   bin keeps `-Z` (`gcloud storage cp -Z ignore/sampa-viario-graph.bin
   gs://telhas/viario/`, downloaded whole). Producer for the consumer
   described under `lib/graph-engine.js` above),
+  `migrate-fabdem-r2.py` (migração one-shot do `fabdem/` de `gs://telhas`
+  pro R2 da Cloudflare SEM egress do GCS: re-baixa o upstream FABDEM V1-2
+  de Bristol em zips 10°×10° via aria2 segmentado (Bristol throttla
+  ~0,5 MB/s POR CONEXÃO; 16× escala quase linear) e re-aplica a conversão
+  que gerou o espelho — o `fabdem/` do GCS NÃO é o upstream verbatim, é
+  **COG** (LZW, blocos 512, overviews 1800/900/450, dos quais o zoom baixo
+  do cameratopo depende) — e sobe via rclone pro bucket `fabdem`. Contrato =
+  `ignore/fabdem-migration/manifest.tsv` (listagem do espelho); retomável
+  (pula o que já está no R2), blocos da América do Sul primeiro, guard de
+  disco (a máquina tinha ~14 GB livres — processa 1 zip por vez). `--verify`
+  fecha a paridade por NOME (tamanhos divergem por construção); tiles sem
+  upstream vão pra `missing-upstream.txt` (cobertos pelo `--egress-fallback`,
+  o plano B pago ~US$0,12/GB). Consumidores a repontar depois (Fase 3):
+  `web/app.js` `FABDEM_BASE_URL`, `scripts/build-viario.py` `FABDEM_BASE`,
+  `cameratopo/render.py`, `quilojaules/app.js`),
   `audit-captura.py` (**o motor da auditoria de captura** — cruza
   `tours.ttl` + `images.ttl` + o acervo do Drive e diz, por passeio, o que
   falta nos três funis; `--sync` grava os passes de coleta via

@@ -207,6 +207,13 @@
           <details class="help-changelog">
             <summary>Novidades (changelog)</summary>
             <dl>
+              <dt>13/08/2026 · v383</dt>
+              <dd>
+                <ul>
+                  <li><strong>Correção grande no “menor energia pelo viário”.</strong> A energia da rota vinha absurdamente inflada (num trecho plano de 5,5 km na zona leste: <strong>~650 kJ</strong> contra os <strong>~65 kJ</strong> da estimativa). Eram dois problemas: (a) as consultas do viário devolvem linhas inteiras que só <em>tocam</em> a área de busca, e os vértices de fora dela entravam no grafo com elevação <strong>0 m</strong> — um penhasco falso de ~730 m, e sair dele custava ~554 kJ; (b) a área de busca era inflada eixo a eixo pelo próprio tamanho, então um trecho quase leste-oeste virava uma fatia (15,5 km × 0,8 km) que picava o viário em ilhas desconexas e derrubava o roteamento pros fallbacks. Agora elevação desconhecida é descartada (nunca vira 0) e a folga da busca é isotrópica, dimensionada pelo maior eixo do trecho. No mesmo trecho a energia da rota caiu de ~650 kJ pra <strong>110 kJ</strong>.</li>
+                  <li>O <strong>grafo pré-cozido do viário de SP</strong> foi reassado com o mesmo <strong>tratamento σ=30 m</strong> que o resto do roteamento por energia já usava — ele era o único que lia relevo cru, e o ruído sub-célula inflava a subida acumulada. De quebra, o DEM municipal de SP tem ~95 mil células com buracos gravados como <em>0 m</em> (nível do mar no meio da cidade) que agora caem pro FABDEM. No trecho acima a energia da rota caiu de 110 kJ pra <strong>79 kJ</strong> (a estimativa é 66 kJ).</li>
+                </ul>
+              </dd>
               <dt>13/08/2026 · v382</dt>
               <dd>
                 <ul>

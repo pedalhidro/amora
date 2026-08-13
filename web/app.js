@@ -8578,14 +8578,20 @@ function viarioGraphRoute(lines, meta, fromLatLng, toLatLng, dem, bb, A) {
   const nodeLat = [], nodeLng = [], nodeElev = [];
   const KEY = 1e6;                    // ~0.1 m de quantização p/ junções
 
+  // NaN = elevação DESCONHECIDA (fora da bbox do mosaico, ou célula sem
+  // cobertura de DEM). NUNCA 0: as consultas do viário devolvem linhas
+  // INTEIRAS que só TOCAM a bbox, então os vértices de fora viravam nós a
+  // 0 m — um penhasco falso de ~730 m em SP, e sair dele custa β·730 ≈
+  // 554 kJ. Era isso que inflava o "objetivo do roteador" a ~10× a
+  // estimativa. Quem consome descarta o nó/aresta (ver `allowed` abaixo).
   function sampleElev(lat, lng) {
     const r = Math.round((bb.north - lat) / A);
     const c = Math.round((lng - bb.west) / A);
-    if (r < 0 || r >= H || c < 0 || c >= W) return 0;
+    if (r < 0 || r >= H || c < 0 || c >= W) return NaN;
     const i = r * W + c;
-    if (mask && !mask[i]) return 0;
+    if (mask && !mask[i]) return NaN;
     const h = height[i];
-    return Number.isFinite(h) ? h : 0;
+    return Number.isFinite(h) ? h : NaN;
   }
   function getNode(lng, lat) {
     const k = Math.round(lat * KEY) + ',' + Math.round(lng * KEY);
@@ -8619,9 +8625,12 @@ function viarioGraphRoute(lines, meta, fromLatLng, toLatLng, dem, bb, A) {
     // intermediário é achatado.
     const isDeck = !!(meta && meta[li] && meta[li].deck);
     let flat = null;
-    if (isDeck) {
-      const h0 = sampleElev(line[0][1], line[0][0]);
-      const h1 = sampleElev(line[line.length - 1][1], line[line.length - 1][0]);
+    const h0 = isDeck ? sampleElev(line[0][1], line[0][0]) : NaN;
+    const h1 = isDeck ? sampleElev(line[line.length - 1][1], line[line.length - 1][0]) : NaN;
+    // Sem os DOIS apoios com elevação conhecida não dá pra achatar o tabuleiro
+    // (a rampa sairia NaN) — segue pelo caminho normal, e as arestas com ponta
+    // desconhecida são descartadas logo abaixo.
+    if (isDeck && Number.isFinite(h0) && Number.isFinite(h1)) {
       const arc = new Array(line.length); arc[0] = 0;
       for (let i = 1; i < line.length; i++) {
         const dLat = (line[i][1] - line[i - 1][1]) * M_DEG;
@@ -8639,7 +8648,10 @@ function viarioGraphRoute(lines, meta, fromLatLng, toLatLng, dem, bb, A) {
       // Marca só o VÃO (interior) do tabuleiro; os apoios (i=0 e i=último) ficam
       // no solo e servem de âncora pro achatamento do perfil no display.
       if (isDeck && i > 0 && i < line.length - 1) deckNodes.add(u);
-      if (pu !== -1 && pu !== u) {
+      // Aresta só entre nós com elevação CONHECIDA — senão o custo v2 sairia
+      // NaN (ou, como antes, de um 0 m fabricado).
+      if (pu !== -1 && pu !== u &&
+          Number.isFinite(nodeElev[pu]) && Number.isFinite(nodeElev[u])) {
         const dLat = (nodeLat[u] - nodeLat[pu]) * M_DEG;
         const dLng = (nodeLng[u] - nodeLng[pu]) * M_DEG *
           Math.cos((nodeLat[u] + nodeLat[pu]) / 2 * Math.PI / 180);
@@ -8657,12 +8669,17 @@ function viarioGraphRoute(lines, meta, fromLatLng, toLatLng, dem, bb, A) {
           // barateando a subida-e-descida; o perfil captura o morro.
           const nsub = Math.max(1, Math.ceil(dist / cellM));
           const subD = dist / nsub;
-          const phs = [nodeElev[pu]];
+          const eU = nodeElev[pu], eV = nodeElev[u];
+          const phs = [eU];
           for (let sct = 1; sct <= nsub; sct++) {
             const tt = sct / nsub;
-            phs.push(sct === nsub ? nodeElev[u] : sampleElev(
+            let hs = sct === nsub ? eV : sampleElev(
               nodeLat[pu] + (nodeLat[u] - nodeLat[pu]) * tt,
-              nodeLng[pu] + (nodeLng[u] - nodeLng[pu]) * tt));
+              nodeLng[pu] + (nodeLng[u] - nodeLng[pu]) * tt);
+            // Buraco de cobertura NO MEIO do segmento: interpola entre as
+            // pontas (ambas conhecidas) em vez de deixar o custo virar NaN.
+            if (!Number.isFinite(hs)) hs = eU + (eV - eU) * tt;
+            phs.push(hs);
           }
           fwd = 0; for (let sct = 0; sct < nsub; sct++) fwd += edgeCost(subD, phs[sct + 1] - phs[sct]);
           bwd = 0; for (let sct = nsub; sct > 0; sct--) bwd += edgeCost(subD, phs[sct - 1] - phs[sct]);
@@ -8677,10 +8694,20 @@ function viarioGraphRoute(lines, meta, fromLatLng, toLatLng, dem, bb, A) {
   const N = nodeLat.length;
   if (!N) return null;
 
-  // Snap origem/destino no nó mais próximo (varredura linear — N pequeno).
+  // Nós ELEGÍVEIS = os com elevação conhecida (⇔ dentro da bbox e com
+  // cobertura de DEM). Mesma restrição que o grafo pré-cozido aplica com o seu
+  // `allowed`; sem ela o Dijkstra roteava por vértices de FORA da bbox, que
+  // vinham com elevação fabricada.
+  const allowed = new Uint8Array(N);
+  let nAllowed = 0;
+  for (let i = 0; i < N; i++) if (Number.isFinite(nodeElev[i])) { allowed[i] = 1; nAllowed++; }
+  if (!nAllowed) return null;
+
+  // Snap origem/destino no nó ELEGÍVEL mais próximo (varredura linear — N pequeno).
   function nearest(lat, lng) {
     let best = -1, bestD = Infinity;
     for (let i = 0; i < N; i++) {
+      if (!allowed[i]) continue;
       const dl = nodeLat[i] - lat, dg = nodeLng[i] - lng;
       const d = dl * dl + dg * dg;
       if (d < bestD) { bestD = d; best = i; }
@@ -8707,13 +8734,13 @@ function viarioGraphRoute(lines, meta, fromLatLng, toLatLng, dem, bb, A) {
     const du = distA[u];
     for (let k = 0; k < a.length; k += 2) {
       const v = a[k], w = a[k + 1];
-      if (done[v]) continue;
+      if (done[v] || !allowed[v]) continue;
       const nd = du + w;
       if (nd < distA[v]) { distA[v] = nd; prev[v] = u; heap.push(nd, v); }
     }
   }
   if (!done[t]) {
-    console.info(`[viario] grafo ${N} nós · sem caminho (origem/destino desconexos)`);
+    console.info(`[viario] grafo ${nAllowed}/${N} nós elegíveis · sem caminho (origem/destino desconexos)`);
     return null;
   }
 
@@ -8732,7 +8759,7 @@ function viarioGraphRoute(lines, meta, fromLatLng, toLatLng, dem, bb, A) {
   path.deckFlag = deckFlag;
   // Objetivo do roteador (J) — exibido na barra de métricas (ver energyRoute).
   path.routedEnergyJ = distA[t];
-  console.info(`[viario] grafo ${N} nós · rota ${path.length} pts em ` +
+  console.info(`[viario] grafo ${nAllowed}/${N} nós elegíveis · rota ${path.length} pts em ` +
     `${(performance.now() - t0).toFixed(0)} ms`);
   return path;
 }
@@ -8754,8 +8781,21 @@ async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
   let east  = Math.max(fromLatLng.lng, toLatLng.lng);
   let south = Math.min(fromLatLng.lat, toLatLng.lat);
   let north = Math.max(fromLatLng.lat, toLatLng.lat);
-  const padLng = Math.max((east  - west)  * margin, 1e-4);
-  const padLat = Math.max((north - south) * margin, 1e-4);
+  // Folga ISOTRÓPICA (em metros), dimensionada pelo MAIOR eixo do segmento.
+  // Inflar cada eixo pelo PRÓPRIO span dava um corredor degenerado quando o
+  // trecho é quase leste-oeste (ou norte-sul): com o span de latitude ~0 a
+  // bbox saía como uma fatia (medimos 15486 m × 773 m num trecho de 5 km),
+  // que corta o viário em ilhas desconexas — o grafo não achava caminho e o
+  // roteamento despencava pros fallbacks. PAD_MAX_M limita o custo do mosaico
+  // DEM nos segmentos longos (mesma função do clamp de `margin` acima).
+  const M_PER_DEG = 111320;
+  const cosLat = Math.max(0.05, Math.cos((south + north) / 2 * Math.PI / 180));
+  const spanLatM = (north - south) * M_PER_DEG;
+  const spanLngM = (east  - west)  * M_PER_DEG * cosLat;
+  const PAD_MAX_M = 5000;
+  const padM = Math.min(PAD_MAX_M, Math.max(Math.max(spanLatM, spanLngM) * margin, 25));
+  const padLat = padM / M_PER_DEG;
+  const padLng = padM / (M_PER_DEG * cosLat);
   west  -= padLng; east  += padLng;
   south -= padLat; north += padLat;
 
