@@ -1,18 +1,21 @@
 :root {
-  --bg: #0f1721;
-  --panel: #15202b;
-  --surface: #0c1722;        /* fundo de inputs/botões — mais escuro que --panel */
-  --text: #e7eef5;
-  --muted: #97a3b1;
-  --accent: #ff8c2e;
-  --accent-hover: #e07320;
-  --border: #243240;
+  --bg: #fafbfc;
+  --panel: #ffffff;
+  --surface: #eef1f4;        /* fundo de inputs/botões — mais escuro que --panel */
+  --text: #101820;
+  --muted: #4a5867;
+  --accent: #c2410c;
+  --accent-hover: #9a3412;
+  --border: #c6ced6;
   --route: #ff5b3a;
   --route-hover: #ffd03a;
-  --shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  --shadow: 0 4px 16px rgba(16, 24, 32, 0.14);
 }
 
 * { box-sizing: border-box; }
+
+/* Leaflet impõe a própria font-family; herda a do app (IBM Plex Mono). */
+.leaflet-container, .leaflet-popup-content, .leaflet-tooltip { font-family: inherit; }
 
 /* Foco de teclado visível em todo o app. Antes não havia regra de :focus, então
    a navegação por Tab ficava invisível sobre o tema escuro. :focus-visible só
@@ -27,7 +30,7 @@
 html, body {
   margin: 0;
   height: 100%;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
   color: var(--text);
   background: var(--bg);
 }
@@ -248,12 +251,12 @@ body.header-hidden .leaflet-top {
   border-radius: 6px;
   font-size: 13px;
 }
-.topnav a:hover { color: var(--text); background: rgba(255, 255, 255, 0.04); }
+.topnav a:hover { color: var(--text); background: rgba(0, 0, 0, 0.05); }
 .topnav a.active { color: var(--text); background: rgba(45, 169, 255, 0.16); }
 
 #publish-btn {
   background: var(--accent);
-  color: #04121f;
+  color: #fff;
   border: none;
   padding: 8px 14px;
   border-radius: 6px;
@@ -377,8 +380,8 @@ body.header-hidden .leaflet-top {
   font-size: 13px;
   padding: 8px 0;
 }
-.status.error { color: #ff6b6b; }
-.status.success { color: #5dd29c; }
+.status.error { color: #b3261e; }
+.status.success { color: #1a7f4b; }
 
 /* Modal */
 .modal {
@@ -607,7 +610,7 @@ body.modal-open { overflow: hidden; }
 
 #publish-submit {
   background: var(--accent);
-  color: #04121f;
+  color: #fff;
   border: none;
   padding: 9px 18px;
   border-radius: 6px;
@@ -633,7 +636,7 @@ body.modal-open { overflow: hidden; }
   gap: 8px;
   margin: 8px 0 10px;
   padding: 6px 8px;
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(0, 0, 0, 0.03);
   border: 1px solid var(--border);
   border-radius: 6px;
 }
@@ -715,7 +718,7 @@ body.modal-open { overflow: hidden; }
   background: var(--accent);
   border: 2px solid var(--panel);
   cursor: pointer;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 1px 3px rgba(16, 24, 32, 0.15);
 }
 .dual-range input[type="range"]::-moz-range-thumb {
   pointer-events: auto;
@@ -725,7 +728,7 @@ body.modal-open { overflow: hidden; }
   background: var(--accent);
   border: 2px solid var(--panel);
   cursor: pointer;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 1px 3px rgba(16, 24, 32, 0.15);
 }
 .dual-range input[type="range"]::-webkit-slider-runnable-track {
   background: transparent;
@@ -853,7 +856,7 @@ body.modal-open { overflow: hidden; }
     transform: translateY(100%);
     transition: transform 0.22s ease;
     z-index: 5500;
-    box-shadow: 0 -2px 18px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 -2px 18px rgba(16, 24, 32, 0.18);
     border-left: none;
     border-top: 1px solid var(--border);
     border-top-left-radius: 12px;
@@ -984,7 +987,7 @@ body.modal-open { overflow: hidden; }
     max-height: 40vh;
     border-radius: 12px 12px 0 0;
     border-bottom: none;
-    box-shadow: 0 -2px 18px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 -2px 18px rgba(16, 24, 32, 0.18);
   }
   /* Modais com conteúdo mais longo (leitura, foto+resumo do passeio,
      parâmetros, topo da câmera, rotas salvas) — permitem cobrir até 70vh pra
@@ -1151,7 +1154,7 @@ body.modal-open { overflow: hidden; }
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 8px 12px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.55);
+  box-shadow: 0 4px 16px rgba(16, 24, 32, 0.18);
   z-index: 6500;
   pointer-events: none;
   max-width: 280px;
@@ -1183,7 +1186,7 @@ body.modal-open { overflow: hidden; }
   border-radius: 8px;
   padding: 10px 16px;
   font-size: 13px;
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 4px 18px rgba(16, 24, 32, 0.18);
   z-index: 6000;
   opacity: 1;
   transition: opacity 0.3s;
@@ -1196,7 +1199,7 @@ body.modal-open { overflow: hidden; }
 /* ─── GPX drawing tool ───────────────────────────────────────────────────── */
 .primary-btn {
   background: var(--accent);
-  color: #04121f;
+  color: #fff;
   border: none;
   padding: 8px 14px;
   border-radius: 6px;
@@ -1254,7 +1257,7 @@ body.layers-hidden .layer-panel { display: none; }
   display: block;
 }
 .qr-body .muted {
-  color: #ffb1b1;
+  color: #b3261e;
   font-size: 11px;
   margin: 0;
   line-height: 1.4;
@@ -1269,7 +1272,7 @@ body.layers-hidden .layer-panel { display: none; }
   padding: 6px 8px;
   font: inherit;
   font-size: 11px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 .qr-actions {
   display: flex;
@@ -1364,7 +1367,7 @@ body.layers-hidden .layer-panel { display: none; }
   cursor: pointer;
 }
 .saved-route-item button:hover { color: var(--text); }
-.saved-route-item button.danger { color: #d65a3a; border-color: #d65a3a; }
+.saved-route-item button.danger { color: #b3431e; border-color: #b3431e; }
 
 /* Crosshair cursor on the map while drawing. */
 body.drawing .leaflet-grab,
@@ -1419,17 +1422,17 @@ body.drawing .draft-line:active { cursor: grabbing; }
   cursor: not-allowed;
 }
 .trace-controls .trace-save {
-  border-color: #3a6b3a;
-  color: #b1ffb1;
+  border-color: #2f7d43;
+  color: #1a7f4b;
 }
 .trace-controls .trace-save:hover {
-  background: rgba(90, 255, 90, 0.18);
-  border-color: #7bff7b;
+  background: rgba(26, 127, 75, 0.12);
+  border-color: #2f9e44;
 }
 /* "Ver" (modo visualização): tom azul, irmão do Salvar verde. */
 .trace-controls .trace-view {
   border-color: #2d6ea8;
-  color: #a9dcff;
+  color: #1d5c96;
 }
 .trace-controls .trace-view:hover {
   background: rgba(45, 169, 255, 0.18);
@@ -1758,7 +1761,7 @@ body.trace-preview .tp-label { display: none !important; }
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 24px 8px 6px;           /* faixa superior reservada pra bolinha */
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 1px 4px rgba(16, 24, 32, 0.15);
   font-size: 11px;
   min-width: 240px;
 }
@@ -1834,7 +1837,7 @@ body.trace-preview .tp-label { display: none !important; }
 /* Funil (filtro de imagens): laranja SÓ com o popover aberto; azul-ciano claro
    quando há um filtro customizado aplicado (≠ Padrão/Todas). */
 .layer-btns .layer-filter-toggle[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); }
-.layer-btns .layer-filter-toggle.is-custom { border-color: #8ce0ee; color: #8ce0ee; }
+.layer-btns .layer-filter-toggle.is-custom { border-color: #0e7490; color: #0e7490; }
 /* Linha "Rota destacada" só aparece quando há um destaque ativo. */
 .layer-row-hidden { display: none !important; }
 .layer-row label {
@@ -2018,7 +2021,7 @@ body.trace-preview .tp-label { display: none !important; }
   font-size: 11px;
   font-weight: 600;
   white-space: nowrap;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 1px 3px rgba(16, 24, 32, 0.16);
 }
 .tp-label::before { display: none; }   /* hide Leaflet's default arrow */
 
@@ -2056,7 +2059,7 @@ body.trace-preview .tp-label { display: none !important; }
 }
 .tp-popup-body .tp-delete {
   background: transparent;
-  color: #ff8a8a;
+  color: #b3261e;
   border: none;
   cursor: pointer;
   font-size: 12px;
@@ -2374,14 +2377,14 @@ body.trace-preview .tp-label { display: none !important; }
   font-size: 11px;
   font-weight: 700;
   color: var(--text);
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.07);
   border-radius: 4px;
   padding: 1px 5px;
 }
 .photo-popup .voice-chip {
   font-size: 10px;
   color: var(--muted);
-  border: 0.5px solid rgba(255, 255, 255, 0.22);
+  border: 0.5px solid rgba(0, 0, 0, 0.25);
   border-radius: 9px;
   padding: 1px 7px;
 }
@@ -2396,14 +2399,14 @@ body.trace-preview .tp-label { display: none !important; }
   margin-top: 4px;
   padding: 7px 10px;
   border: none;
-  border-top: 0.5px solid rgba(255, 255, 255, 0.14);
+  border-top: 0.5px solid rgba(0, 0, 0, 0.12);
   background: transparent;
-  color: #e24b4a;
+  color: #b3431e;
   font-size: 12px;
   cursor: pointer;
 }
 .photo-popup .photo-del-btn:hover {
-  background: rgba(226, 75, 74, 0.14);
+  background: rgba(179, 67, 30, 0.1);
 }
 
 /* Fotos do pedal — tira de miniaturas no modal da rota. */
@@ -2465,13 +2468,13 @@ body.trace-preview .tp-label { display: none !important; }
   color: var(--text, #fff);
   border-radius: 18px;
   font-size: 12px;
-  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 1px 6px rgba(16, 24, 32, 0.16);
 }
 #photo-filter-chip { bottom: 52px; }
 #upload-status-chip { bottom: 92px; }
 .map-chip button {
   border: none;
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(0, 0, 0, 0.08);
   color: inherit;
   height: 22px;
   padding: 0 10px;
@@ -2485,7 +2488,7 @@ body.trace-preview .tp-label { display: none !important; }
   padding: 0;
   border-radius: 50%;
 }
-.map-chip button:hover { background: rgba(255, 255, 255, 0.3); }
+.map-chip button:hover { background: rgba(0, 0, 0, 0.15); }
 
 /* Popover do filtro de mídias — overlay centralizado (o gatilho é o botão 🔽
    na camada "Imagens contribuídas" do painel; não há mais chip no mapa). */
@@ -2500,9 +2503,9 @@ body.trace-preview .tp-label { display: none !important; }
   overflow-y: auto;
   background: var(--panel, #1c1c1c);
   color: var(--text, #fff);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(0, 0, 0, 0.15);
   border-radius: 12px;
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 4px 18px rgba(16, 24, 32, 0.18);
   padding: 8px 10px 10px;
   font-size: 13px;
 }
@@ -2519,16 +2522,16 @@ body.trace-preview .tp-label { display: none !important; }
   padding: 4px 2px; cursor: pointer;
 }
 .media-filter-pop .mf-row input { flex: none; }
-.media-filter-pop .mf-todas { border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 6px; margin-bottom: 4px; }
+.media-filter-pop .mf-todas { border-bottom: 1px solid rgba(0, 0, 0, 0.1); padding-bottom: 6px; margin-bottom: 4px; }
 .media-filter-pop .mf-lists { display: flex; flex-direction: column; }
 .media-filter-pop .mf-empty { opacity: 0.7; padding: 6px 2px; font-size: 12px; }
 .media-filter-pop .mf-adv { margin-top: 6px; }
 .media-filter-pop .mf-adv summary { cursor: pointer; opacity: 0.85; }
 .media-filter-pop textarea {
   width: 100%; box-sizing: border-box; margin-top: 6px;
-  background: rgba(0,0,0,0.35); color: inherit;
-  border: 1px solid rgba(255,255,255,0.18); border-radius: 6px;
-  font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11px;
+  background: rgba(0, 0, 0, 0.05); color: inherit;
+  border: 1px solid rgba(0, 0, 0, 0.2); border-radius: 6px;
+  font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px;
   padding: 6px; resize: vertical;
 }
 .media-filter-pop .mf-adv-actions { margin-top: 6px; }
@@ -2552,12 +2555,12 @@ body.trace-preview .tp-label { display: none !important; }
 .media-lists-content .mle-empty { opacity: 0.7; padding: 6px 2px; }
 .media-lists-content .mle-new { display: flex; gap: 6px; margin: 6px 0; }
 .media-lists-content .mle-new input {
-  flex: 1; background: rgba(0,0,0,0.3); color: inherit;
-  border: 1px solid rgba(255,255,255,0.18); border-radius: 6px; padding: 6px 8px;
+  flex: 1; background: rgba(0, 0, 0, 0.05); color: inherit;
+  border: 1px solid rgba(0, 0, 0, 0.2); border-radius: 6px; padding: 6px 8px;
 }
 .media-lists-content .mle-btn, .media-lists-content .mle-save {
   border: none; border-radius: 6px; cursor: pointer; padding: 6px 12px; font-size: 13px;
-  background: rgba(255,255,255,0.15); color: inherit;
+  background: rgba(0, 0, 0, 0.08); color: inherit;
 }
 .media-lists-content .mle-save { background: var(--accent, #2da9ff); color: #fff; }
 .media-lists-content .mle-actions { margin-top: 4px; }
@@ -2585,7 +2588,7 @@ body.trace-preview .tp-label { display: none !important; }
 .layer-row.voice-row {
   margin-top: 4px;
   padding-top: 6px;
-  border-top: 0.5px solid rgba(255, 255, 255, 0.14);
+  border-top: 0.5px solid rgba(0, 0, 0, 0.12);
 }
 #voices-open-btn,
 #divergence-open-btn {
@@ -2625,7 +2628,7 @@ body.trace-preview .tp-label { display: none !important; }
   padding: 14px 16px 18px;
 }
 .settings-section {
-  background: rgba(255,255,255,0.02);
+  background: rgba(0, 0, 0, 0.02);
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 12px;
@@ -2771,7 +2774,7 @@ body.trace-preview .tp-label { display: none !important; }
 .voice-sig { font-size: 13px; cursor: default; }
 #voices-identity { margin: 10px 0 0; font-size: 11px; }
 #voices-identity code {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.06);
   padding: 1px 5px;
   border-radius: 4px;
   font-size: 11px;
@@ -2794,7 +2797,7 @@ body.trace-preview .tp-label { display: none !important; }
 }
 .photo-popup .div-head {
   font-weight: 700;
-  color: #e0a23a;
+  color: #9c6a10;
   margin-bottom: 4px;
 }
 .photo-popup .div-field { margin-bottom: 5px; }
@@ -2820,13 +2823,13 @@ body.trace-preview .tp-label { display: none !important; }
 .photo-popup .div-voice {
   font-size: 9px;
   color: var(--muted, #9aa);
-  border: 0.5px solid rgba(255, 255, 255, 0.22);
+  border: 0.5px solid rgba(0, 0, 0, 0.25);
   border-radius: 8px;
   padding: 0 5px;
 }
 .photo-popup .div-voice-model {
-  color: #e0a23a;
-  border-color: #e0a23a;
+  color: #9c6a10;
+  border-color: #9c6a10;
 }
 
 /* Painel de revisão de divergências (passo 4). */
@@ -2850,7 +2853,7 @@ body.trace-preview .tp-label { display: none !important; }
   color: var(--text);
   cursor: pointer;
 }
-.div-item:hover { background: rgba(255, 255, 255, 0.05); }
+.div-item:hover { background: rgba(0, 0, 0, 0.04); }
 .div-item img {
   width: 48px;
   height: 48px;
@@ -2869,8 +2872,8 @@ body.trace-preview .tp-label { display: none !important; }
 .div-chips { display: flex; flex-wrap: wrap; gap: 4px; }
 .div-chip {
   font-size: 10px;
-  color: #e0a23a;
-  border: 0.5px solid #e0a23a;
+  color: #9c6a10;
+  border: 0.5px solid #9c6a10;
   border-radius: 8px;
   padding: 0 6px;
 }
@@ -2935,7 +2938,7 @@ body.trace-preview .tp-label { display: none !important; }
   border: 2px solid #fff;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.55);
   color: #fff;
-  font: 700 13px/26px system-ui, sans-serif;
+  font: 700 13px/26px 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
   text-align: center;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
 }
@@ -2981,7 +2984,7 @@ body.trace-preview .tp-label { display: none !important; }
   border-radius: 6px;
   background: rgba(15, 23, 33, 0.82);
   color: #fff;
-  font: 600 10px/1.3 system-ui, sans-serif;
+  font: 600 10px/1.3 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2999,9 +3002,9 @@ body.trace-preview .tp-label { display: none !important; }
   border-bottom: 8px solid var(--live-color, #1e88e5);
 }
 
-/* Popup de ajustes por pessoa (clique no dot ao vivo) — tema escuro do app. */
-.live-ctrl-popup .leaflet-popup-content-wrapper { background: #0f1721; color: #fff; }
-.live-ctrl-popup .leaflet-popup-tip { background: #0f1721; }
+/* Popup de ajustes por pessoa (clique no dot ao vivo) — tema claro do app. */
+.live-ctrl-popup .leaflet-popup-content-wrapper { background: #fff; color: #101820; }
+.live-ctrl-popup .leaflet-popup-tip { background: #fff; }
 .live-ctrl-popup .leaflet-popup-content { margin: 10px 12px; }
 .live-ctrl { display: flex; flex-direction: column; gap: 7px; min-width: 156px; font-size: 12px; }
 .live-ctrl-name { font-weight: 700; }
@@ -3045,7 +3048,7 @@ body.trace-preview .tp-label { display: none !important; }
 .share-name-body .ttl-sep { color: var(--muted); font-size: 12px; }
 .share-name-body .settings-actions { display: flex; justify-content: flex-end; margin-top: 2px; }
 .share-name-body #share-name-confirm {
-  background: var(--accent); color: #04121f; border: none;
+  background: var(--accent); color: #fff; border: none;
   border-radius: 6px; padding: 7px 14px; font-weight: 600; cursor: pointer;
 }
 .share-name-body #share-name-confirm:hover { filter: brightness(1.08); }

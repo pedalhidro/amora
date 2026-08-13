@@ -5,15 +5,16 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>Cadastrar passeio — Pedal Hidrográfico</title>
+<link rel="stylesheet" href="./fonts/fonts.css">
 <style>
   /* Paleta espelhada do app (style.css) pra o formulário combinar com o modal. */
   :root {
-    --bg: #0f1721; --panel: #15202b; --surface: #0c1722;
-    --text: #e7eef5; --muted: #97a3b1;
-    --accent: #ff8c2e; --accent-hover: #e07320; --border: #243240;
-    --ok: #5fd97a; --warn: #e8c14a; --err: #ff8a8a;
+    --bg: #fafbfc; --panel: #ffffff; --surface: #eef1f4;
+    --text: #101820; --muted: #4a5867;
+    --accent: #c2410c; --accent-hover: #9a3412; --border: #c6ced6;
+    --ok: #1a7f4b; --warn: #9c6a10; --err: #b3261e;
   }
-  body { font-family: system-ui, sans-serif; max-width: 900px; margin: 1.5rem auto; padding: 0 1rem;
+  body { font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace; max-width: 900px; margin: 1.5rem auto; padding: 0 1rem;
     color: var(--text); background: var(--bg); }
   h1 { font-size: 1.4rem; margin: 0 0 .25rem; }
   p.lede { color: var(--muted); margin: 0 0 1rem; }
@@ -41,7 +42,7 @@
   button.linkish:hover { border-color: var(--accent); color: var(--accent); }
   button.danger  { background: transparent; border: 0; color: var(--err); font-size: 1.1rem; padding: 0 .4rem; line-height: 1; }
   button.danger-action {
-    background: rgba(230, 90, 90, 0.14); border: 1px solid rgba(230, 90, 90, 0.6); color: #ff8a8a;
+    background: rgba(230, 90, 90, 0.14); border: 1px solid rgba(230, 90, 90, 0.6); color: #b3261e;
     padding: .5rem 1rem; font-weight: 600;
   }
   button.danger-action:hover { background: rgba(230, 90, 90, 0.24); }
@@ -234,6 +235,20 @@
     </div>
     <div class="row">
       <div>
+        <label for="t-departure-loc">Local de saída</label>
+        <input type="text" id="t-departure-loc"
+               placeholder="ex.: Bar Nova Magnata — Metrô Barra Funda">
+        <small>Vira <code>ph:departureLocation</code>. Texto livre.</small>
+      </div>
+      <div>
+        <label for="t-arrival-loc">Local de chegada</label>
+        <input type="text" id="t-arrival-loc"
+               placeholder="ex.: CPTM Guaianases">
+        <small>Vira <code>ph:arrivalLocation</code>. Texto livre.</small>
+      </div>
+    </div>
+    <div class="row">
+      <div>
         <label for="t-moving-time">Tempo de movimento</label>
         <input type="text" id="t-moving-time" placeholder="HH:MM ou HH:MM:SS — ex.: 2:35">
         <small>Vira <code>ph:movingDuration "PT…"^^xsd:duration</code>.</small>
@@ -266,7 +281,9 @@
   <div class="actions">
     <button type="button" id="preview">Preview TTL</button>
     <button type="submit" id="send">Enviar →</button>
-    <!-- Aparece só em modo edição (carregado via ?id=…) -->
+    <!-- Aparecem só em modo edição (carregado via ?id=…) -->
+    <button type="button" id="upload-media" hidden
+       title="Abre o formulário de envio com este passeio pré-selecionado">📷 Enviar mídias deste passeio</button>
     <button type="button" id="delete-tour" class="danger-action" hidden>Apagar passeio ✕</button>
   </div>
 
@@ -668,6 +685,8 @@ function buildRemoveList() {
   if ($('#t-energy-kj').value === '' && !energyIsLegacy)     rm.push('ph:energyEstimate');
   if (!$('#t-departed').value.trim())    rm.push('ph:departedAt');
   if (!$('#t-arrived').value.trim())     rm.push('ph:arrivedAt');
+  if (!$('#t-departure-loc').value.trim()) rm.push('ph:departureLocation');
+  if (!$('#t-arrival-loc').value.trim())   rm.push('ph:arrivalLocation');
   if (!$('#t-moving-time').value.trim()) rm.push('ph:movingDuration');
   if ($('#t-measured-kj').value === '' && !measuredIsLegacy) rm.push('ph:measuredEnergy');
   if (!$('#t-had-bonde').checked)        rm.push('ph:hadBonde');
@@ -696,6 +715,8 @@ function buildTtl() {
   const energyKj  = $('#t-energy-kj').value;
   const departed  = fmtDateTime($('#t-departed').value);
   const arrived   = fmtDateTime($('#t-arrived').value);
+  const departureLoc = $('#t-departure-loc').value.trim();
+  const arrivalLoc   = $('#t-arrival-loc').value.trim();
   const movingDur = parseDuration($('#t-moving-time').value);
   const measured  = $('#t-measured-kj').value;
   const hadBonde  = $('#t-had-bonde').checked;
@@ -774,6 +795,8 @@ function buildTtl() {
   }
   if (departed)  props.push(`ph:departedAt "${departed}"^^xsd:dateTime`);
   if (arrived)   props.push(`ph:arrivedAt "${arrived}"^^xsd:dateTime`);
+  if (departureLoc) props.push(`ph:departureLocation "${turtleEscape(departureLoc)}"`);
+  if (arrivalLoc)   props.push(`ph:arrivalLocation "${turtleEscape(arrivalLoc)}"`);
   if (movingDur) props.push(`ph:movingDuration "${movingDur}"^^xsd:duration`);
   if (measured !== '') {
     const kj = parseFloat(String(measured).trim().replace(/,/g, '.'));
@@ -1001,6 +1024,7 @@ async function prefillFromId(tourId) {
   let title = '', date = '', narrative = '', instagram = '';
   let attendees = '', newcomers = '', energyKj = '';
   let departed = '', arrived = '', moving = '', measured = '';
+  let departureLoc = '', arrivalLoc = '';
   let hadBonde = false, hadRain = false;
   let routeUrl = '', routeProv = '';
   let announceUrl = '';
@@ -1022,6 +1046,8 @@ async function prefillFromId(tourId) {
     else if (p === PH_NS + 'countNewcomer') newcomers = objLit(q);
     else if (p === PH_NS + 'departedAt') departed = objLit(q).slice(0, 16);
     else if (p === PH_NS + 'arrivedAt')  arrived  = objLit(q).slice(0, 16);
+    else if (p === PH_NS + 'departureLocation') departureLoc = objLit(q);
+    else if (p === PH_NS + 'arrivalLocation')   arrivalLoc   = objLit(q);
     else if (p === PH_NS + 'hadBonde')   hadBonde = objLit(q) === 'true';
     else if (p === PH_NS + 'hadRain')    hadRain  = objLit(q) === 'true';
     else if (p === PH_NS + 'hadIncident') incidents.push(objLit(q));
@@ -1098,6 +1124,8 @@ async function prefillFromId(tourId) {
   $('#t-energy-kj').value = energyKj;
   $('#t-departed').value  = departed.replace('T', ' ');
   $('#t-arrived').value   = arrived.replace('T', ' ');
+  $('#t-departure-loc').value = departureLoc;
+  $('#t-arrival-loc').value   = arrivalLoc;
   $('#t-moving-time').value = moving;
   $('#t-measured-kj').value = measured;
   $('#t-had-bonde').checked = hadBonde;
@@ -1168,6 +1196,14 @@ async function prefillFromId(tourId) {
   document.title = `Editando ${tourId} — Pedal Hidrográfico`;
   $('h1').textContent = `Editar passeio (${tourId})`;
   $('#send').textContent = 'Atualizar ⟳';
+
+  // Envio de mídias já apontando pra este passeio (upload_images.html
+  // pré-seleciona o select via ?tour=<slug>).
+  const mediaBtn = $('#upload-media');
+  mediaBtn.addEventListener('click', () => {
+    location.href = `./upload_images.html?tour=${encodeURIComponent(tourId)}`;
+  });
+  mediaBtn.hidden = false;
 
   // Botão de delete só faz sentido em modo edição (precisa de um ID
   // existente). Mostra e registra o handler aqui.

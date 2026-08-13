@@ -247,7 +247,11 @@
     ];
     var W = [];
     W.push('{ ?m a ph:StillImage } UNION { ?m a ph:MotionImage }');
-    W.push('?m dcterms:date ?d .');
+    // Data é OPCIONAL: mídia sem EXIF (ex.: baixada do zap) entra sem
+    // dcterms:date e ainda assim deve aparecer na galeria — no grupo
+    // "sem-data", no fim (DESC(?d) põe ?d não-ligado por último). Facetas de
+    // data continuam excluindo essas (FILTER sobre ?d não-ligado = falso).
+    W.push('OPTIONAL { ?m dcterms:date ?d }');
 
     if (facets.lists && facets.lists.length) {
       W.push(valuesBlock('list', facets.lists));
@@ -288,11 +292,11 @@
       W.push('OPTIONAL { ?m ph:capturedDuring ?gt }');
       W.push('BIND(COALESCE(?gt, "sem-passeio") AS ?group)');
     } else if (g === 'year') {
-      W.push('BIND(STR(YEAR(?d)) AS ?group)');
+      W.push('BIND(COALESCE(STR(YEAR(?d)), "sem-data") AS ?group)');
     } else if (g === 'month') {
-      W.push('BIND(CONCAT(STR(YEAR(?d)), "-", IF(MONTH(?d) < 10, "0", ""), STR(MONTH(?d))) AS ?group)');
+      W.push('BIND(COALESCE(CONCAT(STR(YEAR(?d)), "-", IF(MONTH(?d) < 10, "0", ""), STR(MONTH(?d))), "sem-data") AS ?group)');
     } else if (g === 'day') {
-      W.push('BIND(SUBSTR(STR(?d), 1, 10) AS ?group)');
+      W.push('BIND(COALESCE(SUBSTR(STR(?d), 1, 10), "sem-data") AS ?group)');
     } else {
       W.push('BIND("" AS ?group)');
     }

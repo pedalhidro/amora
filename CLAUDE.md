@@ -86,7 +86,13 @@ one optional hosted deploy target, not a dependency.
   GCS object generations of a state file — the recovery UX on top of Object
   Versioning), `sync-guard.sh` (anti-clobber guard sourced by
   deploy/pull-cloudrun — see Conventions), `dev-cloudrun.sh` (run the Cloud
-  Run image locally — the `deploy-amora.sh` / `pull-amora.sh` /
+  Run image locally; by DEFAULT in `--hosted-data` mode — `STORAGE_BACKEND=gcs`
+  against the PRODUCTION `phidro-state` bucket via the machine's gcloud ADC,
+  with `PUBLIC_BASE_URL` pinned to production so tour edits don't bake
+  localhost URLs (the PH/96 gotcha) and a best-effort `POST /reload` to
+  production on exit (its in-memory caches don't see out-of-band bucket
+  writes); `--local-data` keeps state in the repo files, the old behavior —
+  the `deploy-amora.sh` / `pull-amora.sh` /
   `push-clips.sh` / `gcloud-ssh-rsync.sh` / `pi-deploy.sh` family for the
   old GCE VM and Raspberry Pi deploys was removed; amora is Cloud Run now),
   `remux-clips-audio.py` (one-shot migration: muxes audio back into

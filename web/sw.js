@@ -18,7 +18,7 @@
 // origin) e v371/v372 saíram na `deploy` (busca de endereços, ⇄ inverter).
 // v373 fica acima de tudo que já circulou, que é o que importa: se a VERSION
 // não crescer, o service worker serve cache velho.
-const VERSION = 'phidro-v378';
+const VERSION = 'phidro-v380';
 const STATIC_CACHE = `${VERSION}-static`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 
@@ -39,6 +39,11 @@ const STATIC_ASSETS = [
   './img/amora-icon.png',
   './imagens.html',
   './pessoas.html',
+  './fonts/fonts.css',
+  './fonts/ibm-plex-mono-400.woff2',
+  './fonts/ibm-plex-mono-400i.woff2',
+  './fonts/ibm-plex-mono-600.woff2',
+  './fonts/ibm-plex-mono-700.woff2',
   './lib/utils.js',
   './lib/n3.min.js',
   './lib/exifr.esm.js',   // autofill de EXIF no upload (vendorado; era jsdelivr)

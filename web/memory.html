@@ -1,0 +1,628 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Memória Hidrográfica — Pedal Hidrográfico</title>
+<meta name="description" content="A linha do tempo dos passeios do Pedal Hidrográfico: chamados, artes, energias e as fotos de cada pedal.">
+<!--
+  Memória Hidrográfica — linha do tempo dos passeios.
+
+  Cada entrada (TourMemory) compõe SOBRE OS GRAFOS TURTLE (fonte da
+  verdade: tours.ttl + images.ttl, resolvidos via data_graphs.ttl):
+
+    ┌──────────────────────┬──────────────────────┐
+    │ texto composto       │ arte do anúncio      │
+    ├──────────────────────┴──────────────────────┤
+    │ galeria (todas as mídias do passeio)        │
+    └─────────────────────────────────────────────┘
+
+  O texto compõe: edição da série, título, data, rota (ph:RouteReference →
+  schema:url), energia estimada/medida + faixa de intensidade, e a
+  narrativa do chamado (dcterms:description). Distância/subida da rota NÃO
+  entram: vivem no RWGPS/routes.json, fora dos grafos.
+-->
+<link rel="stylesheet" href="./fonts/fonts.css">
+<style>
+  :root {
+    --bg: #fafbfc;
+    --panel: #ffffff;
+    --surface: #eef1f4;
+    --text: #101820;
+    --muted: #4a5867;
+    --accent: #c2410c;
+    --accent-hover: #9a3412;
+    --border: #c6ced6;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text);
+    font: 13.5px/1.1 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace; }
+  body { padding: 16px; }
+  .page { max-width: 1080px; margin: 0 auto; }
+
+  header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+    margin: 4px 0 6px; }
+  header h1 { font-size: 20px; margin: 0; }
+  header .sub { color: var(--muted); font-size: 13px; }
+  header nav { margin-left: auto; }
+  header nav a, .toolbar button { color: var(--accent); text-decoration: none;
+    font-size: 13px; font-weight: 600; }
+  header nav a:hover { text-decoration: underline; }
+  .toolbar { display: flex; gap: 14px; align-items: center; margin: 0 0 18px; }
+  .toolbar button { background: none; border: 1px solid var(--border);
+    border-radius: 6px; padding: 5px 10px; font: inherit; font-size: 12px;
+    cursor: pointer; }
+  .toolbar button:hover { border-color: var(--accent); }
+  .toolbar .conta { color: var(--muted); font-size: 12px; }
+  #status { color: var(--muted); padding: 12px 0; }
+  .err { color: #b3261e; }
+
+  /* ── Linha do tempo ──────────────────────────────────────────────────── */
+  ol.linha { list-style: none; margin: 0; padding: 0 0 0 22px; position: relative; }
+  ol.linha::before { content: ''; position: absolute; left: 5px; top: 8px;
+    bottom: 8px; width: 2px; background: var(--border); }
+  li.ano { position: relative; margin: 18px 0 10px; font-size: 18px;
+    font-weight: 700; color: var(--accent); }
+  li.ano::before { content: ''; position: absolute; left: -22px; top: 7px;
+    width: 12px; height: 12px; border-radius: 50%; background: var(--accent); }
+  li.tm { position: relative; margin: 0 0 16px; background: var(--panel);
+    border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px; }
+  li.tm::before { content: ''; position: absolute; left: -21px; top: 20px;
+    width: 8px; height: 8px; border-radius: 50%; background: var(--muted);
+    border: 2px solid var(--bg); }
+  li.tm:target { border-color: var(--accent); }
+  .edit-btn { position: absolute; top: 12px; right: 14px; color: var(--accent);
+    background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
+    padding: 3px 9px; font-size: 12px; font-weight: 600; text-decoration: none;
+    z-index: 1; }
+  .edit-btn:hover { border-color: var(--accent); }
+
+  /* Grid do TourMemory — compacto: a galeria vai pra coluna que tem espaço
+     sobrando (medido em placeGalleries()); se não couber em nenhuma, ganha a
+     linha inteira embaixo (baseline):
+       | texto | arte |        .gal-left: galeria sob o texto (col 1)
+       | galeria (2 col) |     .gal-right: galeria sob a arte (col 2)     */
+  .tm-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 24px; }
+  .tm-grid .texto  { grid-column: 1; grid-row: 1; min-width: 0; }
+  .tm-grid .arte   { grid-column: 2; grid-row: 1; align-self: center; }
+  /* Baseline: galeria como filho direto da grade, linha inteira. Nos modos
+     compactos placeGalleries MOVE o <details> pra DENTRO de .texto ou .arte
+     — célula alta não depende do estado aberto/fechado, então o summary
+     "N mídias" nunca se mexe ao expandir/colapsar. */
+  .tm-grid > .galeria { grid-column: 1 / -1; grid-row: 2; }
+  .texto > details.galeria, .arte > details.galeria { margin-top: 10px; }
+  /* Overflow do split: o que não coube no vão da coluna segue na linha
+     inteira, logo abaixo (mesma grade visual de células). */
+  .tm-grid > .g-tiles-mais { grid-column: 1 / -1; }
+  .tm-grid .g-tiles-mais[hidden] { display: none; }
+  .tm-grid.sem-arte .texto { grid-column: 1 / -1; }
+  @media (max-width: 720px) {
+    .tm-grid { grid-template-columns: 1fr; }
+    .tm-grid .texto, .tm-grid .arte, .tm-grid .galeria {
+      grid-column: 1 !important; grid-row: auto !important; }
+  }
+
+  .texto .serie { margin: 0; color: var(--muted); font-size: 11px;
+    font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase; }
+  .texto h2 { margin: 1px 0 1px; font-size: 16px; line-height: 1.3; }
+  .texto h2 a { color: var(--text); text-decoration: none; }
+  .texto h2 a:hover { color: var(--accent); }
+  /* Seção de estatísticas (dados do Censo) — pares rótulo/valor compactos. */
+  dl.stats { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px;
+    font-size: 12px; margin: 0 0 2px; }
+  dl.stats dt { color: var(--muted); }
+  dl.stats dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+  /* Sub-rótulos (Planejado/Medido) e faixa em corpo menor: a linha
+     Quilojaules cabe inteira na coluna de valores. */
+  dl.stats .sub { font-size: 10.5px; color: var(--muted); }
+  dl.stats .intensidade { font-size: 9.5px; padding: 0 6px; vertical-align: 0.5px; }
+  dl.stats dd a { color: var(--accent); text-decoration: none; }
+  dl.stats dd a:hover { text-decoration: underline; }
+  /* Separador "— Dados/Narrativa —" entre as seções. */
+  .sep { display: flex; align-items: center; gap: 10px; color: var(--muted);
+    font-size: 10.5px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.08em; margin: 9px 0 6px; }
+  .sep::before, .sep::after { content: ''; flex: 1; height: 1px;
+    background: var(--border); }
+  .texto .desc p { margin: 0 0 7px; white-space: pre-line; }
+  .texto .desc a { color: var(--accent); text-decoration: none; word-break: break-all; }
+
+  .intensidade { display: inline-block; padding: 1px 8px; border-radius: 10px;
+    font-size: 11px; font-weight: 600; vertical-align: 1px; }
+  .intensidade[data-c="De boa"]      { background: #d3f2e0; color: #14532d; }
+  .intensidade[data-c="Ok"]          { background: #e6f4cf; color: #3f6212; }
+  .intensidade[data-c="Endorfinado"] { background: #fdeec7; color: #8a5a06; }
+  .intensidade[data-c="Frito"]       { background: #ffe1d4; color: #9a3412; }
+  .intensidade[data-c="Insano"]      { background: #fbd5d5; color: #8c1f1f; }
+
+  .arte img { width: auto; max-width: 100%; max-height: 82vh; height: auto;
+    margin: 0 auto; border-radius: 8px;
+    border: 1px solid var(--border); display: block; }
+
+  /* Galeria em 3 estados, ciclados pelo clique no summary:
+     padrao (só a lista Padrão) → all (todas) → closed → padrao … */
+  details.galeria { margin-top: 8px; }
+  details.galeria summary { cursor: pointer; color: var(--muted); font-size: 12px;
+    user-select: none; }
+  details.galeria summary:hover { color: var(--accent); }
+  details.galeria[open] summary { margin-bottom: 6px; }
+  .tm-grid[data-gal="padrao"] .g-tiles a[data-extra] { display: none; }
+  .tm-grid[data-gal="closed"] > .g-tiles-mais { display: none; }
+  /* Células pequenas, quantas couberem na largura toda. */
+  .g-tiles { display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 5px; }
+  .g-tiles a { position: relative; display: block; aspect-ratio: 1;
+    border-radius: 6px; overflow: hidden; background: var(--surface);
+    border: 1px solid var(--border); }
+  .g-tiles img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .g-tiles .badge { position: absolute; right: 5px; bottom: 4px; font-size: 11px;
+    color: #fff; text-shadow: 0 0 4px rgba(0,0,0,.9); }
+
+  footer { margin: 26px 0 8px; color: var(--muted); font-size: 11px; }
+
+  /* ── Impressão: só o conteúdo, sem cromo ─────────────────────────────── */
+  @media print {
+    :root { --bg: #fff; --panel: #fff; --muted: #333; --border: #999; }
+    body { padding: 0; }
+    header nav, .toolbar, .edit-btn, footer { display: none !important; }
+    ol.linha { padding-left: 0; }
+    ol.linha::before, li.ano::before, li.tm::before { display: none; }
+    li.tm { border: none; border-top: 2px solid #000; border-radius: 0;
+      padding: 12px 0; margin: 0 0 14px; }
+    .texto h2 a { color: #000; }
+    .texto .links a, .texto .desc a { color: #000; text-decoration: underline; }
+    .arte img, .g-tiles a { break-inside: avoid; }
+    .intensidade { border: 1px solid #333; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+<header>
+  <h1>Memória Hidrográfica</h1>
+  <span class="sub">Pedal Hidrográfico — a linha do tempo dos passeios</span>
+  <nav>
+    <a href="./index.html">← Mapa</a>
+    <a href="./imagens.html">Imagens</a>
+    <a href="./censo.html">Censo</a>
+  </nav>
+</header>
+
+<div class="toolbar" hidden>
+  <button id="ordem" type="button" title="Inverter a ordem da linha do tempo">↑ mais antigos primeiro</button>
+  <span id="conta" class="conta"></span>
+</div>
+
+<div id="status" role="status" aria-live="polite">Carregando os grafos…</div>
+<ol class="linha" id="linha" hidden></ol>
+
+<footer>Composto ao vivo a partir dos grafos Turtle (tours.ttl + images.ttl) —
+a mesma fonte da verdade do mapa, da galeria e do censo.</footer>
+
+</div>
+
+<script src="./lib/n3.min.js"></script>
+<script src="./lib/media-query.js"></script>
+<script>
+'use strict';
+const $ = (q) => document.querySelector(q);
+const MQ = window.PhidroMediaQuery;
+const NS = MQ.NS;
+
+// Nome de exibição das séries no singular ("Pedal Hidrográfico 64"), como
+// nos chamados. Fallback: o dcterms:title da série no grafo.
+const SERIES_NOME = {
+  PH: 'Pedal Hidrográfico',
+  S: 'Pedal Hidrográfico Suado',
+  BP: 'Bicipassarinhada',
+  BT: 'Bonde / Trip',
+  SESC: 'SESC',
+};
+
+// Mesmas faixas do censo.html — intensidade é derivada do kJ, não gravada.
+function intensityFor(kj) {
+  if (!Number.isFinite(kj)) return null;
+  if (kj < 150)  return 'De boa';
+  if (kj < 300)  return 'Ok';
+  if (kj < 500)  return 'Endorfinado';
+  if (kj < 1000) return 'Frito';
+  return 'Insano';
+}
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"]/g, (c) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+// Linkifica URLs em texto JÁ escapado (a narrativa costuma citar rotas etc.).
+function linkify(escaped) {
+  return escaped.replace(/https?:\/\/[^\s<]+/g, (u) =>
+    `<a href="${u}" target="_blank" rel="noopener">${u}</a>`);
+}
+
+// ── Carga dos grafos: manifesto VoID primeiro, fallback nos dumps ─────────
+const VOID = 'http://rdfs.org/ns/void#';
+async function loadQuads() {
+  let urls;
+  try {
+    const manifestUrl = new URL('./data/data_graphs.ttl', location.href).href;
+    const res = await fetch(manifestUrl, { cache: 'no-cache' });
+    if (!res.ok) throw new Error(`data_graphs.ttl HTTP ${res.status}`);
+    const mQuads = new N3.Parser().parse(await res.text());
+    urls = mQuads.filter((q) => q.predicate.value === VOID + 'dataDump')
+      .map((q) => new URL(q.object.value, manifestUrl).href);
+    if (!urls.length) throw new Error('manifesto sem void:dataDump');
+  } catch (e) {
+    console.warn('[memória] manifesto indisponível, usando fallback:', e.message);
+    urls = ['./data/tours.ttl', './data/images.ttl']
+      .map((u) => new URL(u, location.href).href);
+  }
+  const parts = [];
+  for (const u of urls) {
+    try {
+      const r = await fetch(u, { cache: 'no-cache' });
+      if (r.ok) parts.push(await r.text());
+    } catch (err) { console.warn(`[memória] ${u}: ${err.message}`); }
+  }
+  return new N3.Parser().parse(parts.join('\n\n'));
+}
+
+// ── Passeios: os campos que o TourMemory compõe ───────────────────────────
+function buildTours(store) {
+  const DF = N3.DataFactory;
+  const nn = (iri) => DF.namedNode(iri);
+  const objs = (s, p) => store.getObjects(nn(s), nn(p), null).map((t) => t.value);
+  const obj1 = (s, p) => { const a = objs(s, p); return a.length ? a[0] : null; };
+
+  const seriesTitle = {};
+  store.getQuads(null, nn(NS.rdf + 'type'), nn(NS.schema + 'EventSeries'), null)
+    .forEach((q) => {
+      seriesTitle[q.subject.value] = obj1(q.subject.value, NS.dcterms + 'title');
+    });
+
+  const tours = [];
+  store.getQuads(null, nn(NS.rdf + 'type'), nn(NS.ph + 'Tour'), null).forEach((q) => {
+    const iri = q.subject.value;
+    // Edições: "Pedal Hidrográfico 64" (& outras séries, se o passeio contar
+    // pra mais de uma) — ordenadas pra estabilidade.
+    const edicoes = objs(iri, NS.ph + 'inSeriesEdition').map((ed) => {
+      const sIri = obj1(ed, NS.ph + 'inEventSeries');
+      const seq = obj1(ed, NS.ph + 'sequenceInSeries');
+      if (!sIri || seq == null) return null;
+      const code = sIri.split('/').pop();
+      const nome = SERIES_NOME[code] || seriesTitle[sIri] || code;
+      return `${nome} ${seq}`;
+    }).filter(Boolean).sort();
+    const routeRef = obj1(iri, NS.ph + 'linkRoute');
+    // Contagens do censo: 0 iniciantes é valor real ("ninguém estreou")
+    // quando participantes foram contados; os dois zerados juntos =
+    // formulário não preenchido (mesma regra do censo.html).
+    const attRaw = parseInt(obj1(iri, NS.ph + 'countAttendee'), 10);
+    const attendees = Number.isFinite(attRaw) && attRaw > 0 ? attRaw : null;
+    const newRaw = parseInt(obj1(iri, NS.ph + 'countNewcomer'), 10);
+    const newcomers = Number.isFinite(newRaw) && (newRaw > 0 || attendees != null) ? newRaw : null;
+    tours.push({
+      iri,
+      slug: iri.split('/').pop(),
+      date: obj1(iri, NS.dcterms + 'date') || '',
+      title: obj1(iri, NS.dcterms + 'title') || iri.split('/').pop(),
+      description: obj1(iri, NS.dcterms + 'description'),
+      edicoes,
+      routeUrl: routeRef ? obj1(routeRef, NS.schema + 'url') : null,
+      instagram: obj1(iri, NS.ph + 'linkInstagram'),
+      energy: parseFloat(obj1(iri, NS.ph + 'energyEstimate')),
+      measured: parseFloat(obj1(iri, NS.ph + 'measuredEnergy')),
+      announcement: obj1(iri, NS.schema + 'image'),
+      attendees, newcomers,
+      departedAt: obj1(iri, NS.ph + 'departedAt'),
+      arrivedAt: obj1(iri, NS.ph + 'arrivedAt'),
+      movingDuration: obj1(iri, NS.ph + 'movingDuration'),
+      departureLocation: obj1(iri, NS.ph + 'departureLocation'),
+      arrivalLocation: obj1(iri, NS.ph + 'arrivalLocation'),
+      activities: objs(iri, NS.ph + 'linkActivity'),
+      incidents: objs(iri, NS.ph + 'hadIncident'),
+      hadBonde: obj1(iri, NS.ph + 'hadBonde') === 'true',
+      hadRain: obj1(iri, NS.ph + 'hadRain') === 'true',
+    });
+  });
+  return tours;
+}
+
+// ── Galeria: rótulo do summary por estado ─────────────────────────────────
+function galLabel(state, nP, n) {
+  const s = n > 1 ? 's' : '';
+  if (state === 'padrao') return `${nP} de ${n} mídia${s} deste passeio · Padrão`;
+  if (state === 'all')    return `${n} mídia${s} deste passeio · todas`;
+  return `${n} mídia${s} deste passeio`;
+}
+
+// ── Composição de cada TourMemory ─────────────────────────────────────────
+function fmtQuando(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d)) return iso.slice(0, 10);
+  const data = d.toLocaleDateString('pt-BR',
+    { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  const hm = /T(\d{2}):(\d{2})/.exec(iso);
+  const hora = hm && (hm[1] !== '00' || hm[2] !== '00') ? ` · ${hm[1]}h${hm[2]}` : '';
+  return data + hora;
+}
+function fmtKj(n) { return Math.round(n).toLocaleString('pt-BR'); }
+function fmtH1(h) {
+  return `${h.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} h`;
+}
+// "PT3H18M" / horas decimais → "3h18".
+function fmtDurH(hours) {
+  const min = Math.round(hours * 60);
+  return `${Math.floor(min / 60)}h${String(min % 60).padStart(2, '0')}`;
+}
+function isoDurToH(iso) {
+  const m = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/.exec(iso || '');
+  if (!m) return null;
+  return (+(m[1] || 0)) + (+(m[2] || 0)) / 60 + (+(m[3] || 0)) / 3600;
+}
+const horaDe = (iso) => { const m = /T(\d{2}):(\d{2})/.exec(iso || ''); return m ? `${m[1]}h${m[2]}` : null; };
+
+// Seção de estatísticas: os dados do Censo Hidrográfico deste passeio,
+// compostos em UMA linha por assunto, só com o que os grafos têm.
+function statsHtml(t) {
+  const rows = [];
+  const add = (k, v) => { if (v != null && v !== '') rows.push(`<dt>${k}</dt><dd>${v}</dd>`); };
+  const shortUrl = (u) => String(u).replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '');
+  const link = (u) => `<a href="${escapeHtml(u)}" target="_blank" rel="noopener">${escapeHtml(shortUrl(u))}</a>`;
+
+  if (t.date) add('Partida', escapeHtml(fmtQuando(t.date)));
+  // Trajeto: locais de saída e chegada numa linha só.
+  if (t.departureLocation || t.arrivalLocation) {
+    const a = t.departureLocation && escapeHtml(t.departureLocation);
+    const b = t.arrivalLocation && escapeHtml(t.arrivalLocation);
+    add('Trajeto', a && b ? `${a} → ${b}` : (a ? `saída: ${a}` : `chegada: ${b}`));
+  }
+  if (t.routeUrl) add('Rota', link(t.routeUrl));
+  if (t.instagram) add('Instagram', link(t.instagram));
+  if (t.activities.length) {
+    add('Gravações', t.activities.map(link).join(' · '));
+  }
+  if (t.attendees != null) {
+    const inic = t.newcomers != null
+      ? ` (${t.newcomers} iniciante${t.newcomers === 1 ? '' : 's'})` : '';
+    add('Participantes', `${t.attendees}${inic}`);
+  }
+  // Quilojaules numa linha só — sub-rótulos e a faixa em corpo menor pra
+  // caber na coluna de valores sem quebrar.
+  const kj = [];
+  if (Number.isFinite(t.energy)) {
+    const faixa = intensityFor(t.energy);
+    kj.push(`<span class="sub">Planejado:</span> ${fmtKj(t.energy)} kJ${faixa
+      ? ` (<span class="intensidade" data-c="${faixa}">${faixa}</span>)` : ''}`);
+  }
+  if (Number.isFinite(t.measured)) {
+    let delta = '';
+    if (Number.isFinite(t.energy) && t.energy > 0) {
+      const pct = Math.round(((t.measured - t.energy) / t.energy) * 100);
+      delta = ` (${pct >= 0 ? '+' : '−'}${Math.abs(pct)}%)`;
+    }
+    kj.push(`<span class="sub">Medido:</span> ${fmtKj(t.measured)} kJ${delta}`);
+  }
+  if (kj.length) add('Quilojaules', kj.join('. '));
+  // Duração: horários, total e movimento numa linha.
+  let elapsedH = null;
+  if (t.departedAt && t.arrivedAt) {
+    const d = Date.parse(t.departedAt), a = Date.parse(t.arrivedAt);
+    if (Number.isFinite(d) && Number.isFinite(a) && a > d) elapsedH = (a - d) / 3_600_000;
+  }
+  const movingH = isoDurToH(t.movingDuration);
+  const dur = [];
+  if (elapsedH != null) dur.push(`${horaDe(t.departedAt)} → ${horaDe(t.arrivedAt)}`, `${fmtDurH(elapsedH)} total`);
+  if (movingH != null) dur.push(`${fmtDurH(movingH)} mov.`);
+  if (dur.length) add('Duração', dur.join(' · '));
+  // Coletivo: kJ × pessoas e pessoa-hora.
+  const col = [];
+  if (t.attendees != null && Number.isFinite(t.energy)) col.push(`${fmtKj(t.attendees * t.energy)} kJ`);
+  if (t.attendees != null && elapsedH != null) {
+    col.push(fmtH1(elapsedH * t.attendees) + (movingH != null ? ` (${fmtH1(movingH * t.attendees)} mov.)` : ''));
+  }
+  if (col.length) add('Coletivo', col.join(' · '));
+  if (t.incidents.length) {
+    add('Incidentes', t.incidents.map((i) => escapeHtml(i)).join(' · '));
+  }
+  // Marcadores booleanos (ausência = não informado, não "não").
+  const cond = [];
+  if (t.hadBonde) cond.push('🚋 teve bonde');
+  if (t.hadRain) cond.push('🌧 choveu');
+  if (cond.length) add('Condições', cond.join(' · '));
+  return rows.length ? `<dl class="stats">${rows.join('')}</dl>` : '';
+}
+
+function tourMemoryHtml(t, medias) {
+  const serie = t.edicoes.length
+    ? `<p class="serie">${escapeHtml(t.edicoes.join(' & '))}</p>` : '';
+  const stats = statsHtml(t);
+  const dados = stats ? `<div class="sep">Dados</div>${stats}` : '';
+  const desc = t.description
+    ? `<div class="sep">Narrativa</div>` +
+      `<div class="desc">${t.description.split(/\r?\n\s*\r?\n/)
+        .map((p) => `<p>${linkify(escapeHtml(p.trim()))}</p>`).join('')}</div>`
+    : '';
+  const arte = t.announcement
+    ? `<div class="arte"><img loading="lazy" src="${escapeHtml(t.announcement)}" alt="Arte do anúncio"></div>`
+    : '';
+  // Lista Padrão primeiro; as demais só aparecem no estado "todas" e são
+  // marcadas com data-extra (o CSS as esconde no estado padrão).
+  const isPadrao = (m) => (m.lists || []).includes(MQ.PADRAO_IRI);
+  const nP = medias.filter(isPadrao).length;
+  const ordered = nP > 0
+    ? [...medias.filter(isPadrao), ...medias.filter((m) => !isPadrao(m))]
+    : medias;
+  const tiles = ordered.map((m) => {
+    const hash = m.iri.slice(NS.med.length);
+    const img = m.thumbUrl
+      ? `<img loading="lazy" src="${escapeHtml(m.thumbUrl)}" alt="">` : '';
+    const badge = m.kind === 'video' ? '<span class="badge">▶</span>' : '';
+    const extra = (nP > 0 && !isPadrao(m)) ? ' data-extra="1"' : '';
+    return `<a href="./imagens.html?pick=${encodeURIComponent(hash)}" title="Ver na galeria"${extra}>${img}${badge}</a>`;
+  }).join('');
+  // Sem mídia na Padrão, o default é NÃO mostrar nada (fechada) — o clique
+  // abre "todas". Com Padrão, abre já filtrada nela.
+  const galState = nP > 0 ? 'padrao' : 'closed';
+  const galeria = medias.length
+    ? `<details class="galeria"${galState !== 'closed' ? ' open' : ''}><summary>${galLabel(galState, nP, medias.length)}</summary>` +
+      `<div class="g-tiles">${tiles}</div></details>` +
+      `<div class="g-tiles g-tiles-mais"></div>`
+    : '';
+  const editar = `<a class="edit-btn" href="./upload_tour.html?id=${encodeURIComponent(t.slug)}"` +
+    ` title="Editar este passeio em upload_tour.html">Editar</a>`;
+  return (
+    `<li class="tm" id="${escapeHtml(t.slug)}">${editar}` +
+      `<div class="tm-grid${arte ? '' : ' sem-arte'}" data-gal="${galState}" data-np="${nP}" data-n="${medias.length}">` +
+        `<div class="texto">${serie}` +
+          `<h2><a href="./?tour=${encodeURIComponent(t.slug)}" title="Abrir no mapa">${escapeHtml(t.title)}</a></h2>` +
+          `${dados}${desc}` +
+        `</div>${arte}${galeria}` +
+      `</div>` +
+    `</li>`
+  );
+}
+
+// ── Render da linha do tempo ──────────────────────────────────────────────
+let tours = [], mediasByTour = new Map(), novasPrimeiro = true;
+
+function render() {
+  const ord = [...tours].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+  if (novasPrimeiro) ord.reverse();
+  const html = [];
+  let anoAtual = null;
+  for (const t of ord) {
+    const ano = (t.date || '').slice(0, 4) || 'sem data';
+    if (ano !== anoAtual) { anoAtual = ano; html.push(`<li class="ano">${escapeHtml(ano)}</li>`); }
+    // Mídias em ordem de captura dentro do passeio.
+    const medias = (mediasByTour.get(t.iri) || [])
+      .sort((a, b) => String(a.datetime || '').localeCompare(String(b.datetime || '')));
+    html.push(tourMemoryHtml(t, medias));
+  }
+  $('#linha').innerHTML = html.join('');
+  $('#linha').hidden = false;
+  $('#ordem').textContent = novasPrimeiro ? '↑ mais antigos primeiro' : '↓ mais recentes primeiro';
+  placeGalleries();
+  // A altura da arte só se resolve quando a imagem carrega (lazy) — re-mede.
+  for (const img of document.querySelectorAll('.arte img')) {
+    if (!img.complete) img.addEventListener('load', schedulePlace, { once: true });
+  }
+  // Clique no summary CICLA os estados (padrao → all → closed → …) em vez
+  // do toggle nativo do <details>. Estados sem sentido são pulados: sem
+  // mídia na Padrão não há estado "padrao"; Padrão == todas não há "all".
+  for (const det of document.querySelectorAll('details.galeria')) {
+    det.querySelector('summary').addEventListener('click', (e) => {
+      e.preventDefault();
+      const grid = det.closest('.tm-grid');
+      const nP = +grid.dataset.np, n = +grid.dataset.n;
+      const order = [];
+      if (nP > 0) order.push('padrao');
+      if (nP < n) order.push('all');
+      order.push('closed');
+      const next = order[(order.indexOf(grid.dataset.gal) + 1) % order.length];
+      grid.dataset.gal = next;
+      det.open = next !== 'closed';
+      det.querySelector('summary').textContent = galLabel(next, nP, n);
+    });
+  }
+}
+
+// ── Compactação: em qual coluna a galeria cabe? ──────────────────────────
+// Estima a altura da galeria ABERTA (pra decisão não pular ao expandir) e
+// coloca-a sob o texto ou sob a arte quando o vão da outra coluna comporta;
+// senão fica na linha inteira. Re-roda em resize e quando as artes carregam.
+let _placeRaf = 0, _placeForce = false;
+function schedulePlace(force) {
+  if (force === true) _placeForce = true;
+  cancelAnimationFrame(_placeRaf);
+  _placeRaf = requestAnimationFrame(() => { placeGalleries(_placeForce); _placeForce = false; });
+}
+window.addEventListener('resize', () => schedulePlace(true));
+function placeGalleries(force) {
+  const mobile = window.matchMedia('(max-width: 720px)').matches;
+  const GAP = 5, MIN_TILE = 88, SUMMARY_H = 24, ROWGAP = 6;
+  for (const grid of document.querySelectorAll('.tm-grid')) {
+    const det = grid.querySelector('details.galeria');
+    if (!det) continue;
+    // Colocação é PEGAJOSA: decidida uma vez (com a arte já carregada), não
+    // muda mais — senão o summary "N mídias" teleporta enquanto o usuário
+    // abre/fecha a galeria (loads tardios re-rodavam a medição). Só um
+    // resize de janela (force) re-decide tudo.
+    if (!force && grid.dataset.placed) continue;
+    const main = det.querySelector('.g-tiles');
+    const mais = grid.querySelector('.g-tiles-mais');
+    // Reset (idempotente): tiles de volta pro container principal e o
+    // <details> de volta como filho direto da grade (linha inteira).
+    if (mais) while (mais.firstChild) main.appendChild(mais.firstChild);
+    if (det.parentElement !== grid) grid.insertBefore(det, mais || null);
+    if (mobile) continue;                              // 1 coluna: nada a compactar
+    const arte = grid.querySelector('.arte');
+    if (!arte) { grid.dataset.placed = '1'; continue; } // sem arte, texto já é full
+    // Sem a altura real da arte a decisão seria chute — deixa pra quando o
+    // load dela re-agendar (só aí a colocação congela).
+    const arteImg = arte.querySelector('img');
+    if (arteImg && !arteImg.complete) continue;
+    grid.dataset.placed = '1';
+    const texto = grid.querySelector('.texto');
+    const th = texto.offsetHeight, ah = arte.offsetHeight;
+    const half = texto.offsetWidth;                    // ≈ largura de uma coluna
+    const tiles = [...main.children];
+    // A conta de "caber" usa o estado INICIAL (as tiles da Padrão; extras já
+    // moram na linha inteira e só aparecem no estado "todas").
+    const defTiles = tiles.filter((t) => !t.dataset.extra);
+    const extras = tiles.filter((t) => t.dataset.extra);
+    if (mais) for (const t of extras) mais.appendChild(t);
+    const n = defTiles.length;
+    const cols = Math.max(1, Math.floor((half + GAP) / (MIN_TILE + GAP)));
+    const tile = (half - (cols - 1) * GAP) / cols;
+    const rowH = tile + GAP;
+    const galH = Math.ceil(n / cols) * rowH + SUMMARY_H;
+    // Cabe inteira numa coluna? Vai morar DENTRO dela.
+    if (th + galH <= ah) { texto.appendChild(det); continue; }
+    if (ah + galH <= th) { arte.appendChild(det); continue; }
+    // Não cabe: preenche o vão da coluna mais curta com as primeiras linhas
+    // de tiles e manda o resto pra linha inteira (nada de espaço morto).
+    if (!mais) continue;
+    const gap = Math.abs(th - ah) - SUMMARY_H - ROWGAP;
+    const rowsFit = Math.floor(gap / rowH);
+    if (rowsFit < 1) continue;                         // vão raso → linha inteira
+    const k = Math.min(n, rowsFit * cols);
+    (th > ah ? arte : texto).appendChild(det);
+    // O excedente da Padrão entra ANTES dos extras na linha inteira.
+    const anchor = mais.firstChild;
+    for (const t of defTiles.slice(k)) mais.insertBefore(t, anchor);
+  }
+}
+
+(async () => {
+  try {
+    const store = MQ.makeStore(await loadQuads());
+    const model = MQ.buildMediaRecords(store);
+    tours = buildTours(store);
+    for (const r of model.records) {
+      if (!r.tourIri) continue;
+      if (!mediasByTour.has(r.tourIri)) mediasByTour.set(r.tourIri, []);
+      mediasByTour.get(r.tourIri).push(r);
+    }
+    if (!tours.length) {
+      $('#status').innerHTML = '<span class="err">Nenhum passeio nos grafos.</span>';
+      return;
+    }
+    $('#status').remove();
+    $('.toolbar').hidden = false;
+    $('#conta').textContent = `${tours.length} passeios`;
+    $('#ordem').addEventListener('click', () => { novasPrimeiro = !novasPrimeiro; render(); });
+    render();
+    // Deep link #<slug> só funciona depois do render.
+    if (location.hash.length > 1) {
+      document.getElementById(decodeURIComponent(location.hash.slice(1)))
+        ?.scrollIntoView({ block: 'start' });
+    }
+  } catch (e) {
+    $('#status').innerHTML = `<span class="err">Falha ao carregar: ${escapeHtml(e.message)}</span>`;
+  }
+})();
+</script>
+</body>
+</html>

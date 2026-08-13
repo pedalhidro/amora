@@ -9,20 +9,21 @@
 <meta name="robots" content="noindex">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Pessoas — Pedal Hidrográfico</title>
+<link rel="stylesheet" href="./fonts/fonts.css">
 <style>
   :root {
-    --bg: #0f1721;
-    --panel: #15202b;
-    --surface: #0c1722;
-    --text: #e7eef5;
-    --muted: #97a3b1;
-    --accent: #ff8c2e;
-    --accent-hover: #e07320;
-    --border: #243240;
+    --bg: #fafbfc;
+    --panel: #ffffff;
+    --surface: #eef1f4;
+    --text: #101820;
+    --muted: #4a5867;
+    --accent: #c2410c;
+    --accent-hover: #9a3412;
+    --border: #c6ced6;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; background: var(--bg); color: var(--text);
-    font: 14px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    font: 14px/1.5 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace; }
   body { padding: 16px; max-width: 980px; margin: 0 auto; }
 
   header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
@@ -34,8 +35,8 @@
   header a:hover { color: var(--accent-hover); }
 
   #status { color: var(--muted); padding: 12px 0; }
-  .err { color: #ff6b6b; }
-  .ok  { color: #5dd29c; }
+  .err { color: #b3261e; }
+  .ok  { color: #1a7f4b; }
 
   .summary-line { color: var(--muted); font-size: 12px; margin: 6px 0 14px; }
 
@@ -64,11 +65,11 @@
   details.person[open] > summary::before { content: "▾"; }
   details.person[open] > summary { border-bottom: 1px solid var(--border); }
   .pname { font-weight: 700; font-size: 15px; }
-  .pslug { color: var(--muted); font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .pslug { color: var(--muted); font-size: 12px; font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace; }
   .pcounts { color: var(--muted); font-size: 12px; margin-left: auto; }
   .badge-warn {
     font-size: 10px; font-weight: 600; text-transform: uppercase;
-    letter-spacing: 0.03em; color: #ffbf6b;
+    letter-spacing: 0.03em; color: #9a3412;
     background: rgba(255, 140, 46, 0.14); border: 1px solid rgba(255, 140, 46, 0.4);
     border-radius: 10px; padding: 1px 7px;
   }
@@ -113,7 +114,7 @@
     vertical-align: top; }
   table.facts-table tr:last-child td { border-bottom: none; }
   td.pred { color: var(--muted); white-space: nowrap; width: 1%;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+    font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
   td.val { word-break: break-word; }
   td.val a { color: var(--accent); text-decoration: none; }
   td.val a:hover { text-decoration: underline; }
@@ -138,10 +139,10 @@
     text-decoration: none; }
   .thumbs .tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
   /* Passeios em destaque amarelo — distingue-os das fotos/vídeos na galeria. */
-  .thumbs .tile.tour { border: 2px solid #ffd24a; }
+  .thumbs .tile.tour { border: 2px solid #c9a227; }
   .tile.tour.txt-tile { background: rgba(255, 210, 74, 0.12); }
-  .tile.tour.txt-tile .series { color: #ffd24a; }
-  a.tile.tour.txt-tile:hover { border-color: #ffe08a; color: #ffe08a; }
+  .tile.tour.txt-tile .series { color: #7a6410; }
+  a.tile.tour.txt-tile:hover { border-color: #9c8020; color: #9c8020; }
   /* Tile de texto (passeio sem arte de divulgação): mostra série ou título. */
   .tile.txt-tile { display: flex; align-items: center; justify-content: center;
     text-align: center; padding: 3px; color: var(--text); line-height: 1.15; }
@@ -151,11 +152,11 @@
     display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical;
     overflow: hidden; }
   /* Tile de mídia faltante (thumb 404): bloco vermelho com a CURIE curta. */
-  .tile.err { border-color: #ff6b6b; background: rgba(255, 107, 107, 0.14); }
-  .tile.err .err-code { font-size: 8px; font-weight: 700; color: #ff6b6b;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  .tile.err { border-color: #b3261e; background: rgba(179, 38, 30, 0.08); }
+  .tile.err .err-code { font-size: 8px; font-weight: 700; color: #b3261e;
+    font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
     word-break: break-all; line-height: 1.1; }
-  a.tile.err:hover { border-color: #ff9a9a; }
+  a.tile.err:hover { border-color: #8c1f1f; }
   .chip { display: inline-block; padding: 2px 8px; border-radius: 10px;
     background: var(--surface); border: 1px solid var(--border);
     font-size: 12px; color: var(--muted); margin: 2px 4px 2px 0; }

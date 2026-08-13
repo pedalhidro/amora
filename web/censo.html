@@ -5,20 +5,21 @@
 <meta name="robots" content="noindex">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Censo Hidrográfico — Pedal Hidrográfico</title>
+<link rel="stylesheet" href="./fonts/fonts.css">
 <style>
   :root {
-    --bg: #0f1721;
-    --panel: #15202b;
-    --surface: #0c1722;
-    --text: #e7eef5;
-    --muted: #97a3b1;
-    --accent: #ff8c2e;
-    --accent-hover: #e07320;
-    --border: #243240;
+    --bg: #fafbfc;
+    --panel: #ffffff;
+    --surface: #eef1f4;
+    --text: #101820;
+    --muted: #4a5867;
+    --accent: #c2410c;
+    --accent-hover: #9a3412;
+    --border: #c6ced6;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; background: var(--bg); color: var(--text);
-    font: 14px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    font: 14px/1.5 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace; }
   /* Sem cap de largura: tabela é muito ampla (kJ × 2, tempo × 2, listas
      nominais quando ON…) e cabe melhor edge-to-edge. */
   body { padding: 16px; max-width: none; margin: 0; }
@@ -114,7 +115,7 @@
      resto fica numérico/curto e fica em uma linha só. */
   tbody td.wrap { white-space: normal; min-width: 0; }
   tbody tr:last-child td { border-bottom: none; }
-  tbody tr:hover { background: rgba(255, 255, 255, 0.025); }
+  tbody tr:hover { background: rgba(0, 0, 0, 0.03); }
   tbody td.num { text-align: right; font-variant-numeric: tabular-nums; }
   tbody td.muted { color: var(--muted); }
   tbody td a { color: inherit; text-decoration: none; border-bottom: 1px dotted var(--muted); }
@@ -149,7 +150,7 @@
     position: sticky;
     right: 0;
     background: var(--panel);
-    box-shadow: -4px 0 6px -4px rgba(0, 0, 0, 0.5);
+    box-shadow: -4px 0 6px -4px rgba(16, 24, 32, 0.2);
   }
   #tours-table thead th:last-child { background: var(--surface); }
 
@@ -180,17 +181,18 @@
     border: 1px solid var(--accent);
   }
   .btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+  button.btn-primary { font-family: inherit; cursor: pointer; }
   .intensity { display: inline-block; padding: 1px 7px; border-radius: 10px;
     font-size: 10px; font-weight: 600; }
-  .intensity[data-c="De boa"]      { background: #2c6e4a; color: #e7f7ee; }
-  .intensity[data-c="Ok"]          { background: #466e2c; color: #f0f7e7; }
-  .intensity[data-c="Endorfinado"] { background: #b8801e; color: #fff8e1; }
-  .intensity[data-c="Frito"]       { background: #b3431e; color: #fff0ea; }
-  .intensity[data-c="Insano"]      { background: #8c1f1f; color: #ffeaea; }
+  .intensity[data-c="De boa"]      { background: #d3f2e0; color: #14532d; }
+  .intensity[data-c="Ok"]          { background: #e6f4cf; color: #3f6212; }
+  .intensity[data-c="Endorfinado"] { background: #fdeec7; color: #8a5a06; }
+  .intensity[data-c="Frito"]       { background: #ffe1d4; color: #9a3412; }
+  .intensity[data-c="Insano"]      { background: #fbd5d5; color: #8c1f1f; }
 
   #status { color: var(--muted); padding: 12px 0; }
-  .err { color: #ff6b6b; }
-  .ok  { color: #5dd29c; }
+  .err { color: #b3261e; }
+  .ok  { color: #1a7f4b; }
 
   /* ── Abas: Censo | Captura ───────────────────────────────────────────── */
   .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border);
@@ -211,9 +213,9 @@
     text-align: center; border-bottom: 1px solid var(--border);
     color: var(--muted); font-size: 9px; letter-spacing: 0.08em; cursor: default;
   }
-  #captura-table thead tr.groups th.g-antes  { color: #7fb2e5; }
-  #captura-table thead tr.groups th.g-depois { color: #d9a441; }
-  #captura-table thead tr.groups th.g-midia  { color: #7fd3a8; }
+  #captura-table thead tr.groups th.g-antes  { color: #2b6ea8; }
+  #captura-table thead tr.groups th.g-depois { color: #9c6a10; }
+  #captura-table thead tr.groups th.g-midia  { color: #1a7f4b; }
   #captura-table thead tr.groups th.spacer { border-bottom-color: transparent; }
   #captura-table th.f, #captura-table td.f { text-align: center; padding: 4px 3px; }
   #captura-table th.f { writing-mode: initial; font-size: 9px; }
@@ -225,16 +227,16 @@
     border-radius: 50%; font-size: 10px; text-align: center; text-decoration: none;
     border: 1px solid transparent;
   }
-  .dot.ok   { background: rgba(93, 210, 156, 0.16); color: #5dd29c; }
-  .dot.gap  { background: rgba(255, 107, 107, 0.13); color: #ff6b6b;
+  .dot.ok   { background: rgba(26, 127, 75, 0.12); color: #1a7f4b; }
+  .dot.gap  { background: rgba(179, 38, 30, 0.09); color: #b3261e;
     border-color: rgba(255, 107, 107, 0.35); }
   a.dot.gap:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
   /* Passe de coleta: os três estados são visualmente distintos de propósito —
      "feito e vazio" (∅) NÃO é a mesma coisa que "nunca feito" (?). */
-  .dot.sweep-none { background: rgba(255,107,107,.13); color: #ff6b6b;
+  .dot.sweep-none { background: rgba(179, 38, 30, .09); color: #b3261e;
     border-color: rgba(255,107,107,.35); }
   .dot.sweep-zero { background: rgba(151,163,177,.18); color: var(--muted); }
-  .sweep-n { color: #7fd3a8; font-variant-numeric: tabular-nums; font-size: 11px; }
+  .sweep-n { color: #1a7f4b; font-variant-numeric: tabular-nums; font-size: 11px; }
 
   .cap-toolbar { display: flex; align-items: center; gap: 14px; margin: 0 0 10px;
     flex-wrap: wrap; }
@@ -243,6 +245,17 @@
   .cap-legend { color: var(--muted); font-size: 11px; margin-left: auto; }
 
   footer { margin-top: 20px; color: var(--muted); font-size: 11px; }
+
+  /* ── Impressão: métricas + tabela, sem cromo interativo ──────────────── */
+  @media print {
+    :root { --bg: #fff; --panel: #fff; --muted: #333; --border: #999; }
+    body { padding: 0; }
+    header nav, .tabs, .table-toolbar, .cap-toolbar, .edit-btn, footer,
+    #tours-table th:last-child, #tours-table td:last-child { display: none !important; }
+    thead th { position: static; box-shadow: none; }
+    .metric, tbody tr { break-inside: avoid; }
+    .intensity { border: 1px solid #333; }
+  }
 </style>
 </head>
 <body>
@@ -271,6 +284,8 @@
      title="Ver e editar as pessoas do acervo">👥 Pessoas</a>
   <a class="btn-primary" href="./upload_tour.html"
      title="Cadastrar um novo passeio em tours.ttl">＋ Cadastrar passeio</a>
+  <button id="export-csv" class="btn-primary" type="button"
+     title="Baixar todos os dados dos passeios em CSV (separador vírgula, decimais com ponto — pronto pra análise de dados)">⬇ Exportar CSV</button>
   <span id="meta-ts" class="meta-ts"></span>
 </div>
 
@@ -471,7 +486,11 @@ async function loadTours() {
             return x && Number.isInteger(x.seq) ? `${seriesLabel(x.series)} ${x.seq}` : null;
           }).filter(Boolean).sort().join(' & ');
           const attendees = Number.isFinite(p.attendee) ? p.attendee : null;
-          const newcomers = Number.isFinite(p.newcomer) ? p.newcomer : null;
+          // Iniciantes 0 é valor real ("ninguém estreou") quando o passeio tem
+          // participantes contados; sem contagem de participantes, o 0 é só o
+          // default do formulário não preenchido — aí vira lacuna (null).
+          const rawNewcomers = Number.isFinite(p.newcomer) ? p.newcomer : null;
+          const newcomers = (rawNewcomers === 0 && !(attendees > 0)) ? null : rawNewcomers;
           const kj = Number.isFinite(p.energy) ? p.energy : null;
           const totalKj = (attendees != null && kj != null) ? attendees * kj : null;
           // Duração total do passeio: arrivedAt − departedAt. Em horas.
@@ -638,6 +657,9 @@ async function loadMediaCounts() {
 // Em tours.ttl, 0 quase sempre significa "não medido" — não há motivo
 // pra registrar um passeio com 0 participantes. Tratamos 0 como
 // missing (ao mesmo tempo que null/undefined). Sumas ignoram esses.
+// Exceção: Iniciantes, onde 0 é valor real — resolvido na ingestão
+// (vira null só quando participantes também não foi contado) e
+// renderizado via numCell0.
 const isMissing = (n) => n == null || !Number.isFinite(n) || n === 0;
 
 // Timestamp ISO 8601 em horário de São Paulo (-03; sem horário de verão desde
@@ -674,6 +696,12 @@ function numCell(n, fmt) {
   if (isMissing(n)) return `<td class="num missing">—</td>`;
   return `<td class="num">${fmt(n)}</td>`;
 }
+// Variante pra campos onde 0 é valor, não lacuna (Iniciantes): só a
+// ausência de fato (null/NaN) vira '—'.
+function numCell0(n) {
+  if (n == null || !Number.isFinite(n)) return `<td class="num missing">—</td>`;
+  return `<td class="num">${n.toLocaleString('pt-BR')}</td>`;
+}
 
 // Constantes pra equivalências energéticas.
 const GASOLINE_KJ_PER_L = 34_200;   // ~34,2 MJ/L (combustão completa, valor típico)
@@ -696,7 +724,7 @@ function renderMetrics(tours) {
       totalAttendees += t.attendees;
       toursWithAttendees++;
     }
-    if (!isMissing(t.newcomers)) totalNewcomers += t.newcomers;
+    if (t.newcomers != null) totalNewcomers += t.newcomers;
     if (!isMissing(t.energy))    toursWithEnergy++;
     if (!isMissing(t.totalKj)) {
       totalKj += t.totalKj;
@@ -797,7 +825,7 @@ function renderTable(tours) {
         `<td>${escapeHtml(t.code) || '<span class="missing">—</span>'}</td>` +
         `<td class="wrap">${escapeHtml(t.title)}</td>` +
         numCell(t.attendees,         fmtInt) +
-        numCell(t.newcomers,         fmtInt) +
+        numCell0(t.newcomers) +
         mediaCell +
         numCell(t.energy,            fmtKJ) +
         numCell(t.measured,          fmtKJ) +
@@ -1005,6 +1033,62 @@ function attachSort(tours) {
   });
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// Exportar CSV
+// ═══════════════════════════════════════════════════════════════════════
+// Dump analítico da tabela inteira: separador vírgula, decimais com ponto,
+// datas ISO 8601, célula vazia = dado ausente (não zero). Pensado pra
+// pandas/planilha, não pra leitura humana — os formatos pt-BR ficam na tela.
+
+function csvCell(v) {
+  if (v == null) return '';
+  const s = String(v);
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function toCsv(tours) {
+  const round = (n, d) => (n == null ? null : Number(n.toFixed(d)));
+  const cols = [
+    ['slug',                (t) => slugOf(t.iri)],
+    ['iri',                 (t) => t.iri],
+    ['date',                (t) => t.date || null],
+    ['series',              (t) => t.code || null],
+    ['title',               (t) => t.title],
+    ['attendees',           (t) => t.attendees],
+    ['newcomers',           (t) => t.newcomers],
+    ['media_photos',        (t) => t.mediaPhotos],
+    ['media_videos',        (t) => t.mediaVideos],
+    ['energy_est_kj',       (t) => t.energy],
+    ['energy_measured_kj',  (t) => t.measured],
+    ['collective_kj',       (t) => round(t.totalKj, 1)],
+    ['elapsed_h',           (t) => round(t.elapsedH, 3)],
+    ['moving_h',            (t) => round(t.movingH, 3)],
+    ['collective_h',        (t) => round(t.collectiveH, 2)],
+    ['collective_moving_h', (t) => round(t.collectiveMovingH, 2)],
+    ['intensity',           (t) => t.intensity || null],
+    ['attendee_names',      (t) => (t.attendeeNames || []).join('; ') || null],
+    ['newcomer_names',      (t) => (t.newcomerNames || []).join('; ') || null],
+  ];
+  const lines = [cols.map(([h]) => h).join(',')];
+  for (const t of tours) lines.push(cols.map(([, f]) => csvCell(f(t))).join(','));
+  return lines.join('\r\n') + '\r\n';
+}
+
+function attachExport(tours) {
+  $('#export-csv').addEventListener('click', () => {
+    // Sempre em ordem cronológica (mais antigo primeiro), independente da
+    // ordenação visual da tabela no momento do clique.
+    const sorted = [...tours].sort((a, b) => a.date.localeCompare(b.date));
+    // BOM UTF-8: faz o Excel detectar a codificação; pandas ignora com utf-8-sig.
+    const blob = new Blob(['\ufeff' + toCsv(sorted)], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `censo-hidrografico-${saoPauloIso().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+}
+
 (async () => {
   try {
     const [tours, mediaCounts] = await Promise.all([loadTours(), loadMediaCounts()]);
@@ -1027,6 +1111,7 @@ function attachSort(tours) {
     renderMetrics(tours);
     renderTable(tours);
     attachSort(tours);
+    attachExport(tours);
     attachCaptura(tours);
     const toursUrl = new URL('./data/tours.ttl', location.href).href;   // origem real (localhost em dev, produção no ar)
     $('#meta-ts').textContent = `gerado em ${saoPauloIso()}, a partir de ${toursUrl}`;

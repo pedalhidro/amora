@@ -5,8 +5,9 @@
 <meta name="robots" content="noindex">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Backfill de passeios — Pedal Hidrográfico</title>
+<link rel="stylesheet" href="./fonts/fonts.css">
 <style>
-  body { font-family: system-ui, sans-serif; max-width: 1100px; margin: 1.5rem auto; padding: 0 1rem; color: #222; }
+  body { font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace; max-width: 1100px; margin: 1.5rem auto; padding: 0 1rem; color: #222; }
   h1 { font-size: 1.4rem; margin: 0 0 .25rem; }
   p.lede { color: #666; margin: 0 0 1rem; font-size: .9rem; }
   code { background: #eee; padding: 0 .25rem; border-radius: 2px; font-size: .9em; }
@@ -102,6 +103,8 @@ const FIELD_PREDS = {
   desc:     [DCT + 'description'],
   departed: [PH_NS + 'departedAt'],
   arrived:  [PH_NS + 'arrivedAt'],
+  depLoc:   [PH_NS + 'departureLocation'],
+  arrLoc:   [PH_NS + 'arrivalLocation'],
   moving:   [PH_NS + 'movingDuration'],
   estimate: [PH_NS + 'energyEstimate'],
   measured: [PH_NS + 'measuredEnergy'],
@@ -188,6 +191,7 @@ function extractTour(own, subjBy) {
 const FIELD_CURIES = {
   desc: 'dcterms:description', departed: 'ph:departedAt',
   arrived: 'ph:arrivedAt', moving: 'ph:movingDuration',
+  depLoc: 'ph:departureLocation', arrLoc: 'ph:arrivalLocation',
   estimate: 'ph:energyEstimate', measured: 'ph:measuredEnergy',
 };
 
@@ -221,6 +225,10 @@ function buildTourPatch(id, tour, cur) {
     newProps.push(`ph:departedAt "${fmtDateTime(v)}"^^xsd:dateTime`));
   handle('arrived', v =>
     newProps.push(`ph:arrivedAt "${fmtDateTime(v)}"^^xsd:dateTime`));
+  handle('depLoc', v =>
+    newProps.push(`ph:departureLocation "${turtleEscape(v)}"`));
+  handle('arrLoc', v =>
+    newProps.push(`ph:arrivalLocation "${turtleEscape(v)}"`));
   handle('moving', v => {
     const d = parseDuration(v);
     if (!d) throw new Error(`tempo de movimento inválido: "${v}" — use HH:MM ou HH:MM:SS`);
@@ -358,6 +366,8 @@ function renderCard(t) {
   grid.appendChild(fieldEl(t, 'departed', 'Partiu em', {
     placeholder: 'AAAA-MM-DD HH:MM', after: schedBtn }));
   grid.appendChild(fieldEl(t, 'arrived', 'Chegou em', { placeholder: 'AAAA-MM-DD HH:MM' }));
+  grid.appendChild(fieldEl(t, 'depLoc', 'Local de saída', { placeholder: 'ex.: Bar Nova Magnata — Metrô Barra Funda' }));
+  grid.appendChild(fieldEl(t, 'arrLoc', 'Local de chegada', { placeholder: 'ex.: CPTM Guaianases' }));
   grid.appendChild(fieldEl(t, 'moving', 'Tempo de movimento', { placeholder: 'HH:MM' }));
   grid.appendChild(fieldEl(t, 'estimate', 'Energia estimada (kJ)', { type: 'number' }));
   grid.appendChild(fieldEl(t, 'measured', 'Energia medida (kJ)', { type: 'number' }));

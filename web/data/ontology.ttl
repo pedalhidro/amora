@@ -188,6 +188,20 @@ ph:arrivedAt a owl:DatatypeProperty ;
     rdfs:domain ph:Tour ;
     rdfs:range xsd:dateTime .
 
+ph:departureLocation a owl:DatatypeProperty ;
+    rdfs:label "local de saída"@pt ;
+    rdfs:comment
+        "Nome do local de partida do passeio, em texto livre (ex.: 'Bar Nova Magnata — Metrô Barra Funda')."@pt ;
+    rdfs:domain ph:Tour ;
+    rdfs:range xsd:string .
+
+ph:arrivalLocation a owl:DatatypeProperty ;
+    rdfs:label "local de chegada"@pt ;
+    rdfs:comment
+        "Nome do local onde o passeio termina, em texto livre (ex.: 'CPTM Guaianases')."@pt ;
+    rdfs:domain ph:Tour ;
+    rdfs:range xsd:string .
+
 ph:movingDuration a owl:DatatypeProperty ;
     rdfs:label "tempo em movimento"@pt ;
     rdfs:comment

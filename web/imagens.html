@@ -5,17 +5,18 @@
 <meta name="robots" content="noindex">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Imagens — Pedal Hidrográfico</title>
+<link rel="stylesheet" href="./fonts/fonts.css">
 <style>
   /* Tema herdado do censo.html (mesma paleta escura) para casar visualmente. */
   :root {
-    --bg: #0f1721;
-    --panel: #15202b;
-    --surface: #0c1722;
-    --text: #e7eef5;
-    --muted: #97a3b1;
-    --accent: #ff8c2e;
-    --accent-hover: #e07320;
-    --border: #243240;
+    --bg: #fafbfc;
+    --panel: #ffffff;
+    --surface: #eef1f4;
+    --text: #101820;
+    --muted: #4a5867;
+    --accent: #c2410c;
+    --accent-hover: #9a3412;
+    --border: #c6ced6;
     --danger: #b3431e;
     --danger-hover: #922f0f;
   }
@@ -25,7 +26,7 @@
      mesmo marcados hidden. Toda a visibilidade desses blocos é via `.hidden`. */
   [hidden] { display: none !important; }
   html, body { margin: 0; background: var(--bg); color: var(--text);
-    font: 14px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    font: 14px/1.5 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace; }
   body { padding: 12px; margin: 0; }
   /* A barra de ação inferior (e o espaço p/ ela) só existe no toque; no desktop
      as ações vêm do menu de contexto (botão direito). */
@@ -39,8 +40,8 @@
   header a:hover { color: var(--accent-hover); }
 
   #status { color: var(--muted); padding: 10px 0; }
-  .err { color: #ff6b6b; }
-  .ok  { color: #5dd29c; }
+  .err { color: #b3261e; }
+  .ok  { color: #1a7f4b; }
   .muted { color: var(--muted); }
 
   /* ── Botões genéricos ─────────────────────────────────────────────────── */
@@ -65,7 +66,7 @@
     position: sticky; top: 0; z-index: 20;
     background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
     padding: 10px 12px; margin-bottom: 12px;
-    box-shadow: 0 2px 8px rgba(0,0,0,.35);
+    box-shadow: 0 2px 8px rgba(16, 24, 32, .15);
   }
   .tb-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .tb-row + .tb-row { margin-top: 8px; }
@@ -162,7 +163,7 @@
   .ts-wrapper.multi .ts-control .item {
     background: var(--accent); color: #fff; border-radius: 4px;
   }
-  .ts-wrapper.multi .ts-control .item .remove { border-left-color: rgba(255,255,255,.35); }
+  .ts-wrapper.multi .ts-control .item .remove { border-left-color: rgba(0, 0, 0, .2); }
   /* Valores (chips) das facetas de seleção menores — cabem mais por linha. */
   .facet .ts-control .item { font-size: 10px; padding: 0 5px; line-height: 1.5; }
   /* O tom-select.min.css é carregado DEPOIS deste <style> (link abaixo), então
@@ -192,7 +193,7 @@
   #adv-sparql {
     width: 100%; min-height: 120px; margin-top: 8px; resize: vertical;
     background: var(--surface); color: var(--text); border: 1px solid var(--border);
-    border-radius: 6px; padding: 8px; font: 11px/1.5 ui-monospace, 'SF Mono', Menlo, monospace;
+    border-radius: 6px; padding: 8px; font: 11px/1.5 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
   }
   .adv-actions { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
   .query-status { color: var(--muted); font-size: 12px; }
@@ -343,7 +344,7 @@
   .lb-lists .facet { margin-bottom: 8px; }
   .lb-lists-hint { font-style: normal; color: var(--muted); font-weight: 400; text-transform: none; }
   .lb-lists-status { font-size: 12px; color: var(--muted); min-height: 16px; display: block; }
-  .lb-lists-status.ok { color: #5dd29c; }
+  .lb-lists-status.ok { color: #1a7f4b; }
   .lb-panel .btn { width: 100%; margin-top: 8px; }
   #lb-error { margin-top: 8px; font-size: 12px; }
 
@@ -352,7 +353,7 @@
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 60;
     background: var(--panel); border-top: 1px solid var(--accent);
     display: flex; align-items: center; justify-content: center; padding: 7px 12px;
-    box-shadow: 0 -2px 12px rgba(0,0,0,.4);
+    box-shadow: 0 -2px 12px rgba(16, 24, 32, .16);
   }
   .selbar-actions { display: flex; gap: 18px; }
   .selbar .btn { padding: 5px 9px; font-size: 16px; }
@@ -367,21 +368,21 @@
   .ctx-menu {
     position: fixed; z-index: 130; min-width: 190px; padding: 5px;
     background: var(--panel); border: 1px solid var(--border); border-radius: 9px;
-    box-shadow: 0 6px 24px rgba(0,0,0,.45); display: flex; flex-direction: column; gap: 1px;
+    box-shadow: 0 6px 24px rgba(16, 24, 32, .18); display: flex; flex-direction: column; gap: 1px;
   }
   .ctx-menu button {
     display: block; width: 100%; text-align: left; background: transparent; border: none;
     color: var(--text); font-size: 13px; padding: 8px 10px; border-radius: 6px; cursor: pointer;
   }
   .ctx-menu button:hover { background: var(--surface); }
-  .ctx-menu button.danger { color: #ff8080; }
-  .ctx-menu button.danger:hover { background: rgba(255,80,80,.14); }
+  .ctx-menu button.danger { color: #b3261e; }
+  .ctx-menu button.danger:hover { background: rgba(179, 38, 30, .1); }
 
   /* ── Aviso passageiro (toast) ─────────────────────────────────────────── */
   .toast {
     position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 140;
     background: var(--panel); border: 1px solid var(--accent); border-radius: 8px;
-    padding: 8px 14px; font-size: 13px; box-shadow: 0 4px 16px rgba(0,0,0,.45); max-width: 90vw;
+    padding: 8px 14px; font-size: 13px; box-shadow: 0 4px 16px rgba(16, 24, 32, .18); max-width: 90vw;
   }
 
   /* ── Modal genérico (adicionar a listas) ──────────────────────────────── */
@@ -982,12 +983,13 @@ function clearError() { const el = $('#adv-error'); el.textContent = ''; el.hidd
 function groupOrderStr(key) {
   // String comparável para ordenar grupos (desc). Vazios vão pro fim.
   if (key.startsWith(TOUR_PREFIX)) return (model.tours[key] && model.tours[key].date) || '';
-  if (key === 'sem-passeio' || key === '') return '';
+  if (key === 'sem-passeio' || key === 'sem-data' || key === '') return '';
   return key;
 }
 function groupLabel(key) {
   if (key.startsWith(TOUR_PREFIX)) return model.tourLabel(key);
   if (key === 'sem-passeio') return 'Sem passeio';
+  if (key === 'sem-data') return 'Sem data';
   if (key === '') return 'Todas';
   if (/^\d{4}$/.test(key)) return key;
   if (/^\d{4}-\d{2}$/.test(key)) { const [y, m] = key.split('-'); return `${MESES[+m - 1] || m} de ${y}`; }
@@ -1092,7 +1094,7 @@ function renderGroups(rows, facets) {
 // forma curta; sem data/passeio → "—".
 function timelineLabel(g) {
   const k = g.key;
-  if (k === 'sem-passeio' || k === '') return '—';
+  if (k === 'sem-passeio' || k === 'sem-data' || k === '') return '—';
   if (k.startsWith(TOUR_PREFIX)) {
     const t = model.tours[k];
     return (t && t.code) || (t && t.date) || g.label;

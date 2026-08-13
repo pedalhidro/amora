@@ -5,16 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>Subir imagens — Pedal Hidrográfico</title>
+<link rel="stylesheet" href="./fonts/fonts.css">
 <style>
   /* Paleta espelhada do app (style.css) pra o formulário combinar com o modal. */
   :root {
-    --bg: #0f1721; --panel: #15202b; --surface: #0c1722;
-    --text: #e7eef5; --muted: #97a3b1;
-    --accent: #ff8c2e; --accent-hover: #e07320; --border: #243240;
+    --bg: #fafbfc; --panel: #ffffff; --surface: #eef1f4;
+    --text: #101820; --muted: #4a5867;
+    --accent: #c2410c; --accent-hover: #9a3412; --border: #c6ced6;
     /* estados (verde/amarelo/vermelho) em versões que leem bem no escuro */
-    --ok: #5fd97a; --warn: #e8c14a; --err: #ff8a8a;
+    --ok: #1a7f4b; --warn: #9c6a10; --err: #b3261e;
   }
-  body { font-family: system-ui, sans-serif; max-width: 1400px; margin: 1.5rem auto; padding: 0 1rem;
+  body { font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace; max-width: 1400px; margin: 1.5rem auto; padding: 0 1rem;
     color: var(--text); background: var(--bg); transition: background .2s; }
   h1 { font-size: 1.4rem; margin: 0 0 .25rem; }
   p.lede { color: var(--muted); margin: 0 0 1rem; }
@@ -112,7 +113,7 @@
     position: absolute; top: 50%; transform: translateY(-50%); z-index: 5;
     width: 34px; height: 46px; border: 1px solid var(--border); border-radius: 6px;
     background: rgba(21, 32, 43, .92); color: var(--text); font-size: 1.4rem; line-height: 1;
-    cursor: pointer; box-shadow: 0 1px 4px rgba(0,0,0,.4); padding: 0;
+    cursor: pointer; box-shadow: 0 1px 4px rgba(16, 24, 32, .16); padding: 0;
   }
   .cards-nav:hover { background: var(--panel); border-color: var(--accent); color: var(--accent); }
   .cards-nav[disabled] { opacity: .3; cursor: default; }
@@ -141,7 +142,7 @@
   #cards:empty { display: none; margin: 0; }   /* sem faixa vazia quando não há cards */
   #cards::-webkit-scrollbar { height: 9px; }
   #cards::-webkit-scrollbar-thumb { background: var(--border); border-radius: 5px; }
-  #cards::-webkit-scrollbar-thumb:hover { background: #35485a; }
+  #cards::-webkit-scrollbar-thumb:hover { background: #aeb9c4; }
   .card {
     flex: 0 0 min(360px, 82vw);
     scroll-snap-align: start;
@@ -162,7 +163,7 @@
   .card.card-error    { background: rgba(230, 90, 90, 0.15);  border-color: rgba(230, 90, 90, 0.55); }
   /* Quando TODAS as imagens foram enviadas com sucesso, o fundo do modal
      inteiro (o corpo desta página no iframe) fica levemente azulado. */
-  body.all-uploaded { background: #0d2436; }
+  body.all-uploaded { background: #e2f5e9; }
   body { transition: background .2s; }
   .card-header { display: flex; gap: .5rem; align-items: center; }
   .card-thumb {
@@ -176,7 +177,7 @@
     border: 0; background: transparent; cursor: pointer;
     font-size: 1.2rem; color: var(--err); padding: 0 .25rem; line-height: 1;
   }
-  .card-remove:hover { color: #ff5555; }
+  .card-remove:hover { color: #b3261e; }
   .card-section { border-top: 1px dashed var(--border); padding-top: .4rem; margin-top: .25rem; }
   .card-section h4 {
     font-size: .7rem; color: var(--muted); font-weight: 600;
@@ -220,12 +221,12 @@
   .trim-steppers { display: flex; gap: .15rem; }
   .trim-step-btn {
     background: var(--surface); border: 1px solid var(--border); border-radius: 3px; color: var(--text);
-    padding: 0 .3rem; cursor: pointer; font-family: ui-monospace, monospace; font-size: .75rem;
+    padding: 0 .3rem; cursor: pointer; font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .75rem;
   }
   .trim-step-btn:hover { background: var(--panel); border-color: var(--accent); }
   .trim-times {
     display: flex; justify-content: space-between; gap: .4rem;
-    font-family: ui-monospace, monospace; font-size: .7rem; color: var(--muted);
+    font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .7rem; color: var(--muted);
     margin-top: .25rem;
   }
   .trim-times .warn { color: var(--err); }
@@ -245,7 +246,7 @@
       <div>
         <label style="font-weight:600;margin-top:0">Padrões da Atribuição</label>
 
-        <label for="d-tour">Passeio <small style="display:inline;color:#888">(sobrescreve auto-detecção)</small></label>
+        <label for="d-tour">Passeio <small style="display:inline;color:#555">(sobrescreve auto-detecção)</small></label>
         <select id="d-tour"><option value="">— deixar para auto-detecção —</option></select>
 
         <label for="d-author">Autoras</label>
@@ -254,7 +255,7 @@
         <label for="d-provider">Quem subiu</label>
         <select multiple id="d-provider" placeholder="busca ou digita…"></select>
 
-        <label for="d-list">Listas (álbuns) <small style="display:inline;color:#888">(opcional; deixe vazio p/ nenhuma)</small></label>
+        <label for="d-list">Listas (álbuns) <small style="display:inline;color:#555">(opcional; deixe vazio p/ nenhuma)</small></label>
         <select multiple id="d-list" placeholder="busca ou cria uma lista…"></select>
 
         <label for="d-license">Licença</label>
@@ -332,7 +333,7 @@
     <small style="color:#666">Clique no mapa pra posicionar — ou arraste o marcador.</small>
     <div id="map-picker-mapbox" style="flex:1;border:1px solid #ccc;border-radius:4px;"></div>
     <div style="display:flex;gap:.5rem;align-items:center;justify-content:flex-end;">
-      <span id="map-picker-coords" style="font-family:monospace;font-size:.85rem;color:#444;margin-right:auto;"></span>
+      <span id="map-picker-coords" style="font-family:'IBM Plex Mono',monospace;font-size:.85rem;color:#444;margin-right:auto;"></span>
       <button type="button" id="map-picker-cancel">Cancelar</button>
       <button type="button" id="map-picker-confirm">Usar essa posição</button>
     </div>
@@ -866,6 +867,11 @@ populateTourSelect($('#d-tour'));
   for (const opt of sel.options) {
     if (opt.value === want) { sel.value = want; return; }
   }
+  // Forma curta: só o slug (ex.: ?tour=t9bb4v7t, vindo do botão "enviar
+  // mídias" do upload_tour.html) — casa com o IRI completo do select.
+  for (const opt of sel.options) {
+    if (opt.value.endsWith(`/passeio/${want}>`)) { sel.value = opt.value; return; }
+  }
 })();
 
 // ===================== Mint pessoa nova ================================
@@ -999,7 +1005,7 @@ defaultsTs.list     = initListSelect($('#d-list'));
 const EDIT_IRI = new URLSearchParams(location.search).get('edit');
 if (EDIT_IRI) {
   startEditMode(EDIT_IRI).catch((e) => {
-    $('#cards').innerHTML = `<p style="color:#e66">Não consegui abrir a edição: ${escapeHtml(e.message)}</p>`;
+    $('#cards').innerHTML = `<p style="color:#b3261e">Não consegui abrir a edição: ${escapeHtml(e.message)}</p>`;
   });
 }
 
@@ -1119,9 +1125,9 @@ async function startEditMode(iri) {
     status.textContent = 'Salvando…';
     try {
       await saveMediaEdit(f, card, authorTs, providerTs, listTs, orig);
-      status.innerHTML = '<span style="color:#6c6">Salvo! Feche esta janela pra atualizar o mapa.</span>';
+      status.innerHTML = '<span style="color:#1a7f4b">Salvo! Feche esta janela pra atualizar o mapa.</span>';
     } catch (e) {
-      status.innerHTML = `<span style="color:#e66">Erro: ${escapeHtml(e.message)}</span>`;
+      status.innerHTML = `<span style="color:#b3261e">Erro: ${escapeHtml(e.message)}</span>`;
     }
   });
 }
@@ -1385,8 +1391,8 @@ function buildCardElem(displayIdx, file, thumbBlob) {
     </div>
   `;
   $('.card-meta strong', elem).textContent = `${displayIdx}. ${file.name}`;
-  // Miniatura vem do thumbBlob (256px) já gerado em createImageCard, não do
-  // arquivo full-res — evita decodificar a foto inteira só pra pintar ~56px.
+  // Miniatura vem do thumbBlob (256px) já gerado em preprocessImageFile, não
+  // do arquivo full-res — evita decodificar a foto inteira só pra pintar ~56px.
   const thumbImg = $('.card-thumb', elem);
   const thumbUrl = URL.createObjectURL(thumbBlob);
   thumbImg.addEventListener('load', () => URL.revokeObjectURL(thumbUrl), { once: true });
@@ -1978,14 +1984,40 @@ async function extractAudio(blob, startSec, endSec, onProgress) {
 }
 
 
-async function createCard(file, defaults) {
-  if (isVideoFile(file)) return createVideoCard(file, defaults);
-  return createImageCard(file, defaults);
+// ===================== Pré-processamento paralelo ======================
+// O trabalho pesado por arquivo (decode full-res, pHash, miniatura, EXIF)
+// é independente entre arquivos — só a ACEITAÇÃO (dedup + card) precisa ser
+// sequencial, porque a dedup tem que ver os cards recém-aceitos do lote.
+// Então o lote roda como pipeline: um pool limitado pré-processa em
+// paralelo e o consumidor (handler de #files) aceita na ordem da seleção.
+// O tamanho do pool é também o TETO de bitmaps full-res vivos ao mesmo
+// tempo (~46 MB cada em fotos de 12 MP — reter todos abertos era o que
+// estourava a aba em lotes de 90+).
+function makeLimiter(max) {
+  let active = 0;
+  const waiting = [];
+  const release = () => {
+    const next = waiting.shift();
+    if (next) next(); else active--;
+  };
+  return async (fn) => {
+    if (active < max) active++;
+    else await new Promise(res => waiting.push(res));
+    try { return await fn(); } finally { release(); }
+  };
 }
+const PREPROCESS_POOL = Math.min(4, navigator.hardwareConcurrency || 2);
+// heic2any decodifica full-res dentro do heap wasm; mais que 2 conversões
+// simultâneas só inflam a memória (este caminho existe só em Chrome/Firefox
+// desktop — Safari decodifica HEIC nativo e nem passa por aqui).
+const heicLimit = makeLimiter(2);
 
-async function createImageCard(file, defaults) {
-  // 1) Decodifica e computa pHash ANTES de criar DOM/TS, para rejeitar
-  //    duplicatas barato. Tentamos createImageBitmap direto em TODOS os
+// Pré-processa UMA imagem: decode → pHash → (miniatura ∥ EXIF). Roda em
+// paralelo com outros arquivos, então NÃO toca DOM/estado compartilhado nem
+// emite notify() — falhas voltam como { ok:false, reason, notice } e o
+// consumidor sequencial emite os avisos na ordem da seleção.
+async function preprocessImageFile(file) {
+  // Tentamos createImageBitmap direto em TODOS os
   //    arquivos primeiro: o Safari (iOS/macOS) decodifica HEIC nativamente e os
   //    arquivos entregues pelo seletor de Fotos já chegam como JPEG. Só se esse
   //    decode nativo falhar E o arquivo for HEIC caímos no heic2any (caminho
@@ -2000,44 +2032,64 @@ async function createImageCard(file, defaults) {
   // daqui — exifr lê HEIC direto —, senão num navegador sem decode HEIC nativo
   // (Firefox/Chrome) a foto do iPhone perdia GPS/data no reencode.
   const originalFile = file;
-  let bitmap, phash;
+  const fail = (reason, notice) => ({ ok: false, reason, notice });
+  let bitmap;
   try {
     bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
   } catch (nativeErr) {
     // Só HEIC tem fallback; qualquer outro erro de decode é fatal.
     if (!isHeicFile(file)) {
-      notify(`<strong>${escapeHtml(file.name)}</strong>: não consegui ler (${escapeHtml(nativeErr.message)}).`, 'err');
-      return { ok: false, reason: 'decode-error' };
+      return fail('decode-error', `<strong>${escapeHtml(file.name)}</strong>: não consegui ler (${escapeHtml(nativeErr.message)}).`);
     }
     if (!heic2any) {
-      notify(`<strong>${escapeHtml(file.name)}</strong>: HEIC requer heic2any (CDN indisponível).`, 'err');
-      return { ok: false, reason: 'heic-unavailable' };
+      return fail('heic-unavailable', `<strong>${escapeHtml(file.name)}</strong>: HEIC requer heic2any (CDN indisponível).`);
     }
     // Fallback HEIC→JPEG: reassinala `file` p/ o resto do pipeline tratar como
     // JPEG (perde o original cru, mas é o único jeito nesses browsers).
     try {
-      const out = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.92 });
+      const out = await heicLimit(() => heic2any({ blob: file, toType: 'image/jpeg', quality: 0.92 }));
       const blob = Array.isArray(out) ? out[0] : out;
       const newName = file.name.replace(/\.(heic|heif)$/i, '.jpg');
       file = new File([blob], newName, { type: 'image/jpeg' });
     } catch (e) {
-      notify(`<strong>${escapeHtml(file.name)}</strong>: conversão HEIC falhou (${escapeHtml(e.message)}).`, 'err');
-      return { ok: false, reason: 'heic-convert-failed' };
+      return fail('heic-convert-failed', `<strong>${escapeHtml(file.name)}</strong>: conversão HEIC falhou (${escapeHtml(e.message)}).`);
     }
     try {
       bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
     } catch (e) {
-      notify(`<strong>${escapeHtml(file.name)}</strong>: não consegui ler (${escapeHtml(e.message)}).`, 'err');
-      return { ok: false, reason: 'decode-error' };
+      return fail('decode-error', `<strong>${escapeHtml(file.name)}</strong>: não consegui ler (${escapeHtml(e.message)}).`);
     }
   }
   try {
-    phash = computePHash(bitmap);
+    const phash = computePHash(bitmap);
+    // Miniatura (256px) e EXIF em paralelo — o EXIF lê o ARQUIVO ORIGINAL e
+    // não depende do bitmap. O bitmap full-res fecha no finally: não retemos
+    // o decodificado (é redecodificado sob demanda em buildVariants no envio).
+    const [thumbBlob, exif] = await Promise.all([
+      makeThumbnail(bitmap),
+      (async () => {
+        if (!exifr) return null;
+        try { return await exifr.parse(originalFile, { gps: true }); }
+        catch (e) { console.warn('EXIF parse:', e); return null; }
+      })(),
+    ]);
+    return { ok: true, file, phash, thumbBlob, exif };
   } catch (e) {
+    return fail('decode-error', `<strong>${escapeHtml(file.name)}</strong>: não consegui ler (${escapeHtml(e.message)}).`);
+  } finally {
     try { bitmap.close?.(); } catch (_) {}
-    notify(`<strong>${escapeHtml(file.name)}</strong>: não consegui ler (${escapeHtml(e.message)}).`, 'err');
-    return { ok: false, reason: 'decode-error' };
   }
+}
+
+// Aceitação SEQUENCIAL de uma imagem pré-processada: dedup + criação do
+// card. Fica fora do pool porque a dedup precisa ver os cards já aceitos
+// deste mesmo lote (e a ordem dos avisos deve seguir a da seleção).
+function acceptImageCard(pre, defaults) {
+  if (!pre.ok) {
+    if (pre.notice) notify(pre.notice, 'err');
+    return { ok: false, reason: pre.reason };
+  }
+  const { file, phash, thumbBlob, exif } = pre;
 
   // 2a) Rejeita se for similar (pHash) a algum card já criado neste lote.
   for (const existing of cards) {
@@ -2049,7 +2101,6 @@ async function createImageCard(file, defaults) {
         `<em>${escapeHtml(existing.file.name)}</em> (distância ${dist} ≤ ${PHASH_DUP_THRESHOLD}).`,
         'warn'
       );
-      try { bitmap.close?.(); } catch (_) {}
       return { ok: false, reason: 'duplicate' };
     }
   }
@@ -2062,17 +2113,9 @@ async function createImageCard(file, defaults) {
         `(<code>image_${srv}</code>, distância pHash ${dist} ≤ ${PHASH_DUP_THRESHOLD}).`,
         'warn'
       );
-      try { bitmap.close?.(); } catch (_) {}
       return { ok: false, reason: 'duplicate' };
     }
   }
-
-  // 3) Aceita: gera a miniatura (256px) ainda com o bitmap aberto e fecha
-  //    o bitmap logo em seguida — não retemos o full-res decodificado no
-  //    card (cada bitmap fica ~46 MB; um lote de 90+ fotos estourava a aba).
-  //    O bitmap é redecodificado sob demanda em buildVariants na hora do envio.
-  const thumbBlob = await makeThumbnail(bitmap);
-  try { bitmap.close(); } catch (_) {}
 
   cardCounter += 1;
   const elem = buildCardElem(cardCounter, file, thumbBlob);
@@ -2140,13 +2183,10 @@ async function createImageCard(file, defaults) {
   setCardSendEnabled(card, true);
   setCardStatus(card, 'pronta para envio', '');
 
-  // EXIF — lê do ARQUIVO ORIGINAL (não do `file`, que pode ter virado JPEG
-  // reencodado e sem metadados no fallback HEIC).
-  if (exifr) {
-    let data = null;
-    try {
-      data = await exifr.parse(originalFile, { gps: true });
-    } catch (e) { console.warn('EXIF parse:', e); }
+  // EXIF — já parseado no pré-processamento (do ARQUIVO ORIGINAL, em
+  // paralelo com a miniatura); aqui só preenche os campos do card.
+  {
+    const data = exif;
     if (data) {
       // GPS/bearing/focal primeiro e cada um isolado: uma falha na parte de
       // data/auto-detecção não pode impedir o preenchimento das coordenadas.
@@ -2421,15 +2461,23 @@ $('#files').addEventListener('change', async (e) => {
     const tally = { ok: 0, duplicate: 0, 'decode-error': 0, 'vhash-failed': 0,
                     'heic-unavailable': 0, 'heic-convert-failed': 0 };
     const processBatch = async () => {
-      for (let i = 0; i < files.length; i++) {   // sequencial: dedup precisa ver os recém-aceitos
+      // Pipeline: o pool pré-processa as imagens em PARALELO (decode/pHash/
+      // miniatura/EXIF — o gargalo do lote) e este consumidor ACEITA na
+      // ordem da seleção — sequencial porque a dedup precisa ver os
+      // recém-aceitos. Vídeos ficam fora do pool (o pipeline deles seeka
+      // <video> escondidos, sensível a concorrência) e são processados
+      // inteiros aqui na fase sequencial, como antes.
+      const limit = makeLimiter(PREPROCESS_POOL);
+      const pre = files.map(f => (isVideoFile(f) ? null : limit(() => preprocessImageFile(f))));
+      for (let i = 0; i < files.length; i++) {
         const f = files[i];
         $('#filesStatus').textContent = `processando ${i + 1}/${files.length} — ${f.name}…`;
-        const r = await createCard(f, defaults);
+        const r = pre[i] ? acceptImageCard(await pre[i], defaults) : await createVideoCard(f, defaults);
         const key = r?.ok ? 'ok' : (r?.reason || 'decode-error');
         tally[key] = (tally[key] || 0) + 1;
         // Cede o event loop entre arquivos — deixa o navegador pintar o
-        // progresso e rodar GC (o bitmap full-res do arquivo anterior já
-        // foi fechado em createImageCard, mas precisa de um tick pra coletar).
+        // progresso e rodar GC (os bitmaps full-res fecham dentro do
+        // pré-processamento; pro card só sobrevive a miniatura).
         await new Promise(res => setTimeout(res));
       }
     };
