@@ -11,3 +11,7 @@ rdflib>=7.1,<8
 python-dotenv>=1,<2
 # Cloud Run / GCS path. Inerte se STORAGE_BACKEND=local (import lazy).
 google-cloud-storage>=2.18,<4
+# Renderiza a imagem OG (preview de WhatsApp/redes) das rotas salvas —
+# /route/<slug>/og.png. Import lazy e best-effort: sem Pillow o endpoint
+# devolve 404 e o card do link degrada pra texto.
+Pillow>=10,<12

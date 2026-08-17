@@ -103,10 +103,13 @@
           "creator": { "@id": "https://pedalhidrografi.co/#org" },
           "inLanguage": "pt-BR",
           "isAccessibleForFree": true,
+          "license": "https://creativecommons.org/licenses/by-sa/4.0/",
           "distribution": [
             { "@type": "DataDownload", "name": "Manifesto VoID", "encodingFormat": "text/turtle", "contentUrl": "https://amora.pedalhidrografi.co/data/data_graphs.ttl" },
             { "@type": "DataDownload", "name": "Passeios", "encodingFormat": "text/turtle", "contentUrl": "https://amora.pedalhidrografi.co/data/tours.ttl" },
-            { "@type": "DataDownload", "name": "Fotos e vídeos", "encodingFormat": "text/turtle", "contentUrl": "https://amora.pedalhidrografi.co/data/uploads.ttl" }
+            { "@type": "DataDownload", "name": "Fotos e vídeos", "encodingFormat": "text/turtle", "contentUrl": "https://amora.pedalhidrografi.co/data/images.ttl" },
+            { "@type": "DataDownload", "name": "Pessoas", "encodingFormat": "text/turtle", "contentUrl": "https://amora.pedalhidrografi.co/data/identities.ttl" },
+            { "@type": "DataDownload", "name": "Listas e álbuns", "encodingFormat": "text/turtle", "contentUrl": "https://amora.pedalhidrografi.co/data/lists.ttl" }
           ]
         }
       ]
@@ -208,6 +211,12 @@
           <details class="help-changelog">
             <summary>Novidades (changelog)</summary>
             <dl>
+              <dt>17/08/2026 · v389</dt>
+              <dd>
+                <ul>
+                  <li><strong>Compartilhar uma rota no WhatsApp mostra o traçado.</strong> O link <code>/route/&lt;nome&gt;</code> agora entrega aos crawlers de preview (WhatsApp, Telegram, redes) um card com o nome da rota, km/subida na descrição e uma <strong>imagem do traçado renderizada no servidor</strong> — com o logo do amora no canto superior direito. Pra quem clica, nada muda: a rota abre direto no editor.</li>
+                </ul>
+              </dd>
               <dt>17/08/2026 · v388</dt>
               <dd>
                 <ul>

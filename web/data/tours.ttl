@@ -25,7 +25,7 @@ pas:05cr6685 a ph:Tour ;
     ph:linkRoute pas:05cr6685_route ;
     ph:measuredEnergy 262.0 ;
     ph:movingDuration "PT1H51M"^^xsd:duration ;
-    schema:image <http://localhost:8080/tour_assets/ph96/announcement.jpg> .
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/05cr6685/announcement.png> .
 
 pas:0vcw4tnh a ph:Tour ;
     dcterms:date "2025-09-02T20:00:00-03:00"^^xsd:dateTime ;
@@ -54,17 +54,21 @@ O Antonico nasce em Paraisópolis, passando sob a área do Estádio do Morumbi(s
 
 pas:0zx5nzpj a ph:Tour ;
     dcterms:date "2026-03-04T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Para deleite dos amantes de subidas, temos mais uma rota que percorre os divisores de águas, as fronteiras entre bacias hidrográficas, as cristas e cumeeiras que limitam dois córregos: Aricanduva e Gamelinho... Mas vamos até onde os morros vão se juntando, antes mesmo de chegar ao cume chamado O Itaquera.\r
+\r
+Após descer a crista, sempre pelos pontos mais altos e divisores de afluentes, cruzamos o Córrego Aricanduva e acessamos a foz do Riacho dos Machados. Subiremos todo o curso desta água, que em sua maior parte é aberta e visível aos olhos mais atentos. Chegar à sua nascente será chegar à Crista de Sapopemba, que também delimita a Bacia do Córrego do Aricanduva."""@pt ;
     dcterms:title "Colina da Matilde e Riacho dos Machados" ;
     prov:wasAttributedTo pes:2p6f8wmh ;
     ph:arrivedAt "2026-03-04T23:03:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 7 ;
     ph:countNewcomer 1 ;
     ph:departedAt "2026-03-04T20:46:00-03:00"^^xsd:dateTime ;
+    ph:energyEstimate 352.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/82> ;
     ph:linkActivity "https://www.strava.com/activities/17608489037"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DVbP7QsDiYA/"^^xsd:anyURI ;
     ph:linkRoute pas:0zx5nzpj_route ;
-    ph:measuredEnergy 347.4 ;
+    ph:measuredEnergy 347.0 ;
     ph:movingDuration "PT1H44M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/90/announcement.jpg> .
 
@@ -205,20 +209,40 @@ Sairemos na Praça Roosevelt - o fundão da nascente do Córrego Anhanguera, e d
 
 pas:1wb9e39g a ph:Tour ;
     dcterms:date "2026-03-18T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Um passeio por prédios históricos, alguns em ruínas, pela região do córrego Cassandoca, passando pelos bairros do Brás, Mooca, Belém e Pari.\r
+\r
+A rota tem 20 km com apenas 112 m de subida bem distribuídos, o que a torna uma rota bem suave, passando pelos seguintes pontos de interesse:\r
+Edifício "Caveirão"\r
+Trilhos do bonde na Rua General Carneiro\r
+Parque Dom Pedro\r
+Palácio das Indústrias (passa ao lado)\r
+Casa das Retortas Gasómetro\r
+Museu da Imigração (passa ao lado)\r
+Fábrica da Antártica\r
+Estádio Conde Rodolfo Crespi\r
+Cotonifício Rodolfo Crespi\r
+Vila Maria Zélia\r
+Portal do Presídio Tiradentes\r
+\r
+Material Complementar: https://drive.google.com/file/d/1l_9_BI7GijPmMcdtt2IE8rbg9B0awI3j/view?usp=sharing"""@pt ;
     dcterms:title "Histórico pelo entorno do Cassandoca" ;
-    prov:wasAttributedTo pes:g4k9zgev ;
+    prov:wasAttributedTo pes:g4k9zgev,
+        pes:h9jkvbct ;
     ph:countAttendee 15 ;
     ph:countNewcomer 5 ;
+    ph:energyEstimate 125.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/83> ;
     ph:linkActivity "https://www.strava.com/activities/17774423605"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DWB1tpeDqJO/"^^xsd:anyURI ;
-    ph:linkRoute pas:1wb9e39g_route .
+    ph:linkRoute pas:1wb9e39g_route ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/1wb9e39g/announcement.jpg> .
 
 pas:2qv2h9ak a ph:Tour ;
     dcterms:date "2026-01-31T00:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Caaguaçu Emboaçu e Riacho do Ipiranga" ;
     prov:wasAttributedTo pes:wgb9b5fe ;
     ph:countAttendee 12 ;
+    ph:countNewcomer 3 ;
     ph:energyEstimate 149.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/BP/3>,
         <https://id.pedalhidrografi.co/passeio/PH/76> ;
@@ -228,18 +252,46 @@ pas:2qv2h9ak a ph:Tour ;
     ph:mediaCount 53 ;
     ph:mediaSweep pas:2qv2h9ak_sweep .
 
+pas:2we8tga5 a ph:Tour ;
+    dcterms:date "2026-08-11T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Para uma rota urbana saindo da CPTM Lapa, passando por Freguesia/Cachoeirinha/Horto/Peruche e terminando no Tietê, 210 m de ganho em 19 km é uma quantidade razoável de subida, mas não é uma rota extremamente montanhosa. \r
+\r
+A rota foi criada de um acaso.\r
+Foi aquela vontade de sair da mesmice. O caminho mais óbvio seria seguir pela planície do Tietê, tranquilo e sem muita invenção. Só que bateu aquela vontade louca de fazer diferente.\r
+Então o ciclista resolveu voltar para Pirituba, sua casa, pulando todas as bacias pelo caminho. 😂\r
+Resultado: um pedal de sobe e desce gostoso, cheio de pequenas subidas, descidas e mudanças de cenário.\r
+Às vezes, o melhor caminho é justamente aquele que a gente inventa no meio do caminho. 🚲💨"""@pt ;
+    dcterms:title "Rota Winterfell - Norte" ;
+    prov:wasAttributedTo pes:6a95fm2k ;
+    ph:arrivalLocation "Metro Santana" ;
+    ph:arrivedAt "2026-08-11T23:00:00-03:00"^^xsd:dateTime ;
+    ph:countAttendee 12 ;
+    ph:countNewcomer 1 ;
+    ph:departedAt "2026-08-11T20:29:00-03:00"^^xsd:dateTime ;
+    ph:departureLocation "CPTM Lapa Rubi" ;
+    ph:energyEstimate 338.0 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/105> ;
+    ph:linkActivity "https://ridewithgps.com/trips/404643144"^^xsd:anyURI,
+        "https://www.strava.com/activities/19704939411"^^xsd:anyURI,
+        "https://www.strava.com/activities/19705216561"^^xsd:anyURI ;
+    ph:linkInstagram "https://www.instagram.com/p/Db1xhHsME_p/"^^xsd:anyURI ;
+    ph:linkRoute pas:2we8tga5_route ;
+    ph:measuredEnergy 319.0 ;
+    ph:movingDuration "PT1H50M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/2we8tga5/announcement.jpg> .
+
 pas:32gatmca a ph:Tour ;
     dcterms:date "2026-04-21T00:00:00-03:00"^^xsd:dateTime ;
     dcterms:description "Nós e o outono paulistano convidamos para uma rota diurna endorfinada, num dia ensolarado de clima ameno, para mergulhar pelas águas da Cantareira. A saída será às 9:00h no metrô Tucuruvi, seguindo pela Avenida Nova Cantareira, sentido bairro, onde cruzaremos, pela primeira vez no dia, o Rio Tremembé. Seguiremos sentido Cantareira, ladeando o Córrego Engorda Sapo, até chegarmos ao Lago do Cassununga. Retornaremos pela Sezefredo Fagundes, até nos aproximarmos novamente ao Rio Tremembé. Acompanharemos suas águas até nos aproximarmos do Córrego Tucuruvi, que nos guiará até o ponto final desta rota."@pt ;
     dcterms:title "Da Cantareira ao Tremembé" ;
-    prov:wasAttributedTo pes:1fhkjnba,
-        pes:ctzxjtxg ;
+    prov:wasAttributedTo pes:ctzxjtxg ;
     ph:countAttendee 4 ;
     ph:countNewcomer 0 ;
     ph:energyEstimate 385.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/88> ;
     ph:linkInstagram "https://www.instagram.com/p/DXYDQDKjjhH/"^^xsd:anyURI ;
-    ph:linkRoute pas:32gatmca_route .
+    ph:linkRoute pas:32gatmca_route ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/32gatmca/announcement.jpg> .
 
 pas:3sk51hs2 a ph:Tour ;
     dcterms:date "2025-02-11T20:00:00-03:00"^^xsd:dateTime ;
@@ -346,12 +398,17 @@ Nessa parceria entre Pedal Hidrográfico e Núcleo Educativo do AHM, te convidam
 \r
 Em homenagem ao Tamanduateí, após a visita no AHM, faremos um Pedal Hidrográfico percorrendo o seu curso original. Sairemos da porta do AHM e seguiremos até a foz atual no Tietê. Dali, avançaremos em direção à sua antiga foz, ao lado do estádio do Canindé. Subiremos os antigos meandros, passando pela sua importante confluência com o Anhangabaú, seguindo pela Várzea do Carmo, Porto Geral, Ponto das Lavadeiras — sob a antiga Ponte do Carmo — e pela Ponte do Tabatinguera, provavelmente a mais antiga da cidade, sendo trecho do milenar Caminho do Peabiru. Seguimos então para a confluência com o Córrego do Lavapés, passando pelo Sobrado das Cinco Esquinas, construção histórica no Glicério, onde nos despedimos."""@pt ;
     dcterms:title "Pedalar o Rio Tamanduateí do século XIX" ;
+    ph:arrivedAt "2026-07-04T16:35:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 52 ;
     ph:countNewcomer 28 ;
+    ph:departedAt "2026-07-04T12:58:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 143.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/98> ;
+    ph:linkActivity "https://ridewithgps.com/trips/396429447"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DaTMdj_Jjkg/"^^xsd:anyURI ;
     ph:linkRoute pas:5jnr6mhz_route ;
+    ph:measuredEnergy 210.0 ;
+    ph:movingDuration "PT1H31M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/ph98/announcement.jpg> .
 
 pas:5nwqa4hm a ph:Tour ;
@@ -426,10 +483,11 @@ pas:5z6w47dx a ph:Tour ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/7> ;
     ph:linkActivity "https://www.strava.com/activities/12722429137"^^xsd:anyURI ;
     ph:linkRoute pas:5z6w47dx_route ;
-    ph:measuredEnergy 183.1 ;
+    ph:measuredEnergy 183.0 ;
     ph:mediaCount 56 ;
     ph:mediaSweep pas:5z6w47dx_sweep ;
-    ph:movingDuration "PT2H"^^xsd:duration .
+    ph:movingDuration "PT2H"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/5z6w47dx/announcement.png> .
 
 pas:65ptagq2 a ph:Tour ;
     dcterms:date "2024-12-17T20:00:00-03:00"^^xsd:dateTime ;
@@ -452,6 +510,33 @@ Começamos descendo do Caaguaçu até o Rio Verde II pegando um atalho no Hospit
     ph:mediaSweep pas:65ptagq2_sweep ;
     ph:movingDuration "PT2H15M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/24/announcement.jpg> .
+
+pas:6h40haq7 a ph:Tour ;
+    dcterms:date "2026-07-29T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description "Lua cheia em seu auge, crescida em Capricórnio. Este é o astral que alumiará o Hidrográfico desta quarta-feira. A lua rege os fluidos e, por isso, começamos nas águas da Ressaca (córrego Jabaquara) em um pedal que percorrerá a Zona Sul, passando pela Água Espraiada, Cordeiro, pelo nosso querido ribeirão do Zavuvus, indo para o Córrego das Pedreiras e Olaria até desaguar no grande Jurubatuba, cujas águas, vindas do Mar Paulista da Billings, continuam seu caminho pelo conhecido Rio Pinheiros."@pt ;
+    dcterms:title "Rios da sul e mar paulista" ;
+    pav:providedBy pes:h3xxftbh ;
+    prov:wasAttributedTo pes:h3xxftbh ;
+    ph:arrivedAt "2026-07-29T23:40:00-03:00"^^xsd:dateTime ;
+    ph:countAttendee 9 ;
+    ph:countNewcomer 0 ;
+    ph:departedAt "2026-07-29T20:30:00-03:00"^^xsd:dateTime ;
+    ph:energyEstimate 248.0 ;
+    ph:hadBonde true ;
+    ph:hadIncident "Estevam quebrou a corrente da bike na saída do Sítio da Ressaca"@pt,
+        "Fetiche caiu pois enroscou o cadarço no pedal"@pt,
+        "Giu teve o pneu furado no meio da rota"@pt ;
+    ph:hadRain true ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/102> ;
+    ph:linkActivity "https://strava.app.link/zvyYyylCc5b"^^xsd:anyURI ;
+    ph:linkInstagram "https://www.instagram.com/pedalhidrografico/p/DbWmEzBuAdS/"^^xsd:anyURI ;
+    ph:linkRoute pas:6h40haq7_route ;
+    ph:movingDuration "PT2H55M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/6h40haq7/announcement.png> ;
+    schema:organizer pes:2dbsxchh,
+        pes:h3xxftbh,
+        pes:mqpnpqdj,
+        pes:wgb9b5fe .
 
 pas:6myfn5e9 a ph:Tour ;
     dcterms:date "2024-10-15T20:00:00-03:00"^^xsd:dateTime ;
@@ -495,16 +580,19 @@ Para finalizar, desceremos ao Anhangabaú, palco da celebração, neste 25 de no
 
 pas:7epxmn2t a ph:Tour ;
     dcterms:date "2026-07-22T20:00:00-03:00"^^xsd:dateTime ;
-    dcterms:description """Quarta-feira, 22 de julho de 2026. Sai 20h do Estádio do Pacaembu, chega no metrô Sumaré.\r
-\r
-A rota tem 19,9 km e 140 m de subida, com uma energia de movimento estimada em 294 quilojoules, ou seja, um pedal ok.\r
-\r
-Por que a Rota dos Correios é uma das mais famosas entre os pedais da região central de São Paulo? A resposta é: porque é uma rota hidrográfica! E tal qual uma rota do Hidro, ela evita gastos energéticos desnecessários e contorna o famoso espigão-morro do Caaguaçu, desviando de todas as subidonas, para a felicidade dos fixeiros, e formando um cotovelo pelas terras baixas do Pinheiros e do Tietê. Hoje o convite é pra fazer Correios de um jeito diferente - de trás pra frente e se conectando com as 12 águas do percurso, tentando ver e ouvir os rios Pacaembu, Sumaré, Água Preta, Água Branca, Comendador Martinelli, Curtume, Tiburtino, Fortunato Ferraz, Leopoldina, Belini, Corujas e Verde."""@pt ;
+    dcterms:description "Por que a Rota dos Correios é uma das mais famosas entre os pedais da região central de São Paulo? A resposta é: porque é uma rota hidrográfica! E tal qual uma rota do Hidro, ela evita gastos energéticos desnecessários e contorna o famoso espigão-morro do Caaguaçu, desviando de todas as subidonas, para a felicidade dos fixeiros, e formando um cotovelo pelas terras baixas do Pinheiros e do Tietê. Hoje o convite é pra fazer Correios de um jeito diferente - de trás pra frente e se conectando com as 12 águas do percurso, tentando ver e ouvir os rios Pacaembu, Sumaré, Água Preta, Água Branca, Comendador Martinelli, Curtume, Tiburtino, Fortunato Ferraz, Leopoldina, Belini, Corujas e Verde."@pt ;
     dcterms:title "As águas da Rota dos Correios" ;
+    prov:wasAttributedTo pes:w1pqp0pc ;
+    ph:arrivedAt "2026-07-22T23:30:00-03:00"^^xsd:dateTime ;
+    ph:countAttendee 36 ;
+    ph:countNewcomer 9 ;
+    ph:departedAt "2026-07-22T20:00:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 294.0 ;
+    ph:hadBonde true ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/101> ;
     ph:linkInstagram "https://www.instagram.com/pedalhidrografico/p/DbGUqGQhxZj/"^^xsd:anyURI ;
     ph:linkRoute pas:7epxmn2t_route ;
+    ph:movingDuration "PT3H"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/7epxmn2t/announcement.jpg> .
 
 pas:7r767mt2 a ph:Tour ;
@@ -639,24 +727,64 @@ Se o vale ainda estivesse ativo, a nascente do Rio Tietê poderia ser considerad
 
 pas:9s8bhtjw a ph:Tour ;
     dcterms:date "2026-03-22T00:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Esse é um pedal curto pra gente chegar e ficar. A ideia é descer junto até o Bixiga e passar um tempo na horta, conhecer o território, trocar com quem faz acontecer e participar do mutirão.\r
+\r
+No caminho, passamos pela nascente do Saracura-Mirim, pelo encontro dos córregos Saracura, Bixiga e Itororó, até chegar num território onde o rio insiste em existir e onde a luta pela sua descanalização está vencendo. Ao lado do Teatro Oficina, esse espaço foi palco de mais de 40 anos de mobilização até se tornar público e destinado a usos culturais e ambientais.\r
+\r
+Agora o projeto muda de chave. O Rio Bixiga passa a ser o centro de tudo. A ideia é abrir o rio, deixar a água correr livre e ver a vida crescer junto, com árvores, plantas, pomares e uma paisagem que acompanha o ritmo das chuvas.\r
+\r
+Na chegada, fazemos uma imersão na horta, participando do mutirão de domingo e conhecendo mais da história viva do lugar. Se quiser, leva uma fruta pra gente compartilhar. Pra saber mais sobre esse território, sua luta e seus futuros, encosta com a gente"""@pt ;
     dcterms:title "Horta do Parque do Rio Bixiga" ;
     prov:wasAttributedTo pes:wv6xxjbv ;
-    ph:countAttendee 0 ;
-    ph:countNewcomer 0 ;
+    ph:countAttendee 10 ;
+    ph:countNewcomer 3 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/84> ;
     ph:linkInstagram "https://www.instagram.com/p/DWIIvKyDq1i/"^^xsd:anyURI ;
-    ph:linkRoute pas:9s8bhtjw_route .
+    ph:linkRoute pas:9s8bhtjw_route ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/9s8bhtjw/announcement.png> .
+
+<https://id.pedalhidrografi.co/passeio/S/103> a ph:SeriesEdition ;
+    ph:inEventSeries ser:S ;
+    ph:sequenceInSeries 103 .
 
 pas:a5w1920c a ph:Tour ;
     dcterms:date "2026-04-11T00:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description "O verão passou, a lua minguou e chega ao fim a temporada das aves migratórias por aqui, como os suiriris e os andorinhões-do-temporal, que desde setembro pintam de outro tom a paisagem sonora da cidade. Com sorte, conseguiremos dar tchau para alguns indivíduos atrasadinhos que fecham o bonde. Nosso pedal se concentra no alto do Caaguaçu, na Praça dos Arcos, e às 6h30 começamos a descida até a planície do Rio Pinheiros. Entraremos na ciclocapivara via Erika Sallum em direção à ponte da cidade universitária. Dali, pegamos o contrafluxo do Pirajussara, damos um oi pro rio e encontramos o bando do #VemPassarinhar no Instituto Butantan, onde haverá empréstimo de binóculos, folheto de aves da região, guiança do ornitólogo @_santos.matheus_ (@museubiologico_oficial) e café comunitário ao final - leve comidinhas! 🚨 Levar tranca!"@pt ;
     dcterms:title "Dar tchau pra quem migra" ;
     prov:wasAttributedTo pes:wgb9b5fe ;
-    ph:countAttendee 0 ;
-    ph:countNewcomer 0 ;
     ph:energyEstimate 104.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/BP/4> ;
     ph:linkInstagram "https://www.instagram.com/p/DW9UkzAEQs85hloy_Q4a05uhVxS8efAVUUOr4c0/"^^xsd:anyURI ;
-    ph:linkRoute pas:a5w1920c_route .
+    ph:linkRoute pas:a5w1920c_route ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/a5w1920c/announcement.png> .
+
+pas:a70egng2 a ph:Tour ;
+    dcterms:date "2026-08-16T07:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """DOMINGO - seguiremos o fluxo da maior linha de ônibus de São Paulo, por uma rota que corta bairros tradicionais, serpenteando por um mar de rios, córregos e morros!\r
+\r
+A linha 477P-10, que liga o Ipiranga ao Rio Pequeno, faz parte do cenário da capital paulista desde os anos 1970 e percorre quase 40km em cada sentido, de leste a oeste da cidade. 🤯\r
+\r
+Nossa rota terá início às 7h, no metrô Sacomã (acesso Rua Greenfeld), e terminará na estação Villa-Lobos Jaguaré, pedal endorfinado para iniciar o domingão!\r
+\r
+... hidrográfica, não apenas no seu nome, a linha 477P inicia seu trajeto no Cursino e segue até o Rio Pequeno. No pedal, seguiremos do Riacho do Moinho Velho até Ribeirão do Jaguaré. No finalzinho da rota, vamos prolongar até o encontro com o Rio Pinheiros, onde nos despediremos com uma pausa para um lanchinho no Parque Villa-Lobos... 🎡"""@pt ;
+    dcterms:title "Ipiranga > Rio Pequeno" ;
+    prov:wasAttributedTo pes:nks88zqy ;
+    ph:arrivalLocation "Parque Villa Lobos" ;
+    ph:arrivedAt "2026-08-16T13:30:00-03:00"^^xsd:dateTime ;
+    ph:countAttendee 8 ;
+    ph:countNewcomer 0 ;
+    ph:departedAt "2026-08-16T07:43:00-03:00"^^xsd:dateTime ;
+    ph:departureLocation "Metro Sacomã" ;
+    ph:energyEstimate 510.0 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/106> ;
+    ph:linkActivity "https://www.strava.com/activities/19767722364"^^xsd:anyURI,
+        "https://www.strava.com/activities/19768503450"^^xsd:anyURI,
+        "https://www.strava.com/activities/19768787676"^^xsd:anyURI,
+        "https://www.strava.com/activities/19768909998"^^xsd:anyURI ;
+    ph:linkInstagram "https://www.instagram.com/pedalhidrografico/p/DcCKcBZmZMP/"^^xsd:anyURI ;
+    ph:linkRoute pas:a70egng2_route ;
+    ph:movingDuration "PT2H45M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/a70egng2/announcement.jpg> .
 
 pas:a9spchfk a ph:Tour ;
     dcterms:date "2026-05-09T20:00:00-03:00"^^xsd:dateTime ;
@@ -804,16 +932,19 @@ Neste pedal, partimos oportunamente de onde nasce esta oriental serra, n’onde 
 \r
 A bifurcação se apresenta: deveríamos seguir ao alto pelo esporão que se bifurca da Serra das Guaianazes? Ou ao baixo mergulhando no riacho de nome desconhecido? Inevitavelmente, nos encontraremos no alto dum pântano no meio da noite: no Pantanal de Itaquá, expressão máxima da singularidade geomorfológica deste sítio urbano, onde banhados e colinas preenchem o horizonte e o vertical, num mosaico de eras contemporâneas e geológicas."""@pt ;
     dcterms:title "A Voçoroca e o Pântano" ;
+    ph:arrivalLocation "CPTM Itaquaquecetuba" ;
     ph:arrivedAt "2025-03-26T00:00:00-03:00"^^xsd:dateTime ;
     ph:countAttendee 1 ;
     ph:countNewcomer 0 ;
     ph:departedAt "2026-03-25T20:11:00-03:00"^^xsd:dateTime ;
+    ph:departureLocation "CPTM Gianetti" ;
     ph:energyEstimate 372.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/85> ;
     ph:linkInstagram "https://www.instagram.com/p/DWSt3WbDg-X/"^^xsd:anyURI ;
     ph:linkRoute pas:c0spydxq_route ;
-    ph:measuredEnergy 408.1 ;
-    ph:movingDuration "PT1H17M"^^xsd:duration .
+    ph:measuredEnergy 408.0 ;
+    ph:movingDuration "PT1H17M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/c0spydxq/announcement.jpg> .
 
 pas:c0t00a05 a ph:Tour ;
     dcterms:date "2024-10-08T20:00:00-03:00"^^xsd:dateTime ;
@@ -1266,6 +1397,24 @@ No encontro desta semana, o Hidrográfico rememora a história da enchente de 19
     ph:movingDuration "PT1H16M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/52/announcement.jpg> .
 
+pas:n0neatnb a ph:Tour ;
+    dcterms:date "2026-08-04T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description "Um passeio de bici pelas várzeas dos rios Tamanduateí e Tietê à procura de um ponto de cela entre os vales dos córregos do Capão do Imbira e da Mooca."@pt ;
+    dcterms:title "À procura do ponto de sela perdido." ;
+    ph:arrivalLocation "CPTM Tamanduateí" ;
+    ph:arrivedAt "2026-08-04T22:46:00-03:00"^^xsd:dateTime ;
+    ph:countAttendee 14 ;
+    ph:countNewcomer 1 ;
+    ph:departedAt "2026-08-04T20:25:00-03:00"^^xsd:dateTime ;
+    ph:departureLocation "Praça Roosevelt" ;
+    ph:energyEstimate 304.0 ;
+    ph:hadIncident "Uma quebra (Corrente caiu e ficou presa)"@pt ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/104> ;
+    ph:linkInstagram "https://www.instagram.com/p/DboinBsBk92/"^^xsd:anyURI ;
+    ph:movingDuration "PT2H"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/n0neatnb/announcement.png> ;
+    schema:organizer pes:w1pqp0pc .
+
 pas:n3dxjrgb a ph:Tour ;
     dcterms:date "2024-09-16T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:title "Coruja e Verde" ;
@@ -1282,6 +1431,33 @@ pas:n3dxjrgb a ph:Tour ;
     ph:mediaCount 6 ;
     ph:mediaSweep pas:n3dxjrgb_sweep ;
     ph:movingDuration "PT52M"^^xsd:duration .
+
+pas:ndcg94h0 a ph:Tour ;
+    dcterms:date "2026-08-01T07:30:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Um passeio de bicicleta e outros modais como trem, barco e balsa, passando por rios e represas, vales e montanhas, por avenidas movimentadas e trilhas de terra, da paisagem mais urbana à paisagem mais rural até a incrível Cratera de Colônia. E tudo isso sem sair da cidade de São Paulo. \r
+\r
+🚲🚊⛴️🛸\r
+\r
+Atenção! Vá com bicicleta revisada e use capacete. Leve água, protetor solar, algum lanchinho e câmara reserva."""@pt ;
+    dcterms:title "Duas rodas, trilhos e trilhas, barco, balsa e uma ilha até a Cratéra de Colônia" ;
+    pav:providedBy pes:es9ttrt8 ;
+    prov:wasAttributedTo pes:w1pqp0pc ;
+    ph:arrivedAt "2026-08-01T16:15:00-03:00"^^xsd:dateTime ;
+    ph:countAttendee 14 ;
+    ph:countNewcomer 3 ;
+    ph:departedAt "2026-08-01T08:25:00-03:00"^^xsd:dateTime ;
+    ph:energyEstimate 900.0 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/103>,
+        <https://id.pedalhidrografi.co/passeio/S/7> ;
+    ph:linkActivity "https://www.strava.com/activities/19560314736"^^xsd:anyURI,
+        "https://www.strava.com/activities/19560341762"^^xsd:anyURI,
+        "https://www.strava.com/activities/19560365241"^^xsd:anyURI,
+        "https://www.strava.com/activities/19561064539"^^xsd:anyURI ;
+    ph:linkInstagram "https://www.instagram.com/p/DbcWbZJjpy8/"^^xsd:anyURI ;
+    ph:linkRoute pas:ndcg94h0_route ;
+    ph:movingDuration "PT4H"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/ndcg94h0/announcement.jpg> ;
+    schema:organizer pes:w1pqp0pc .
 
 pas:ndchce80 a ph:Tour ;
     dcterms:date "2025-04-15T20:00:00-03:00"^^xsd:dateTime ;
@@ -1437,7 +1613,7 @@ Pedreira adentro, pedalamos um córrego até o ponto de sela entre bacias para d
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/78/announcement.jpg> .
 
 pas:pjzp5vy4 a ph:Tour ;
-    dcterms:date "2026-08-11T09:00:00-03:00"^^xsd:dateTime ;
+    dcterms:date "2026-07-11T09:00:00-03:00"^^xsd:dateTime ;
     dcterms:description """Concentra às 9h, no CofeeRun na Ciclo Capivara (altura da saída da estação Cidade Universitária, foz do Pirajussara)\r
 \r
 emojions 🚲🧺 pra quem for colar!\r
@@ -1451,6 +1627,7 @@ Atenção! Vá com bicicleta revisada e use capacete. Leve água, protetor solar
     prov:wasAttributedTo pes:wgb9b5fe ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/100> ;
     ph:linkInstagram "https://www.instagram.com/pedalhidrografico/p/DaoiebPDpyW/"^^xsd:anyURI ;
+    ph:linkRoute pas:pjzp5vy4_route ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/pjzp5vy4/announcement.jpg> ;
     schema:organizer pes:wgb9b5fe,
         <https://pedalhidrografi.co/data/org_alef> .
@@ -1645,6 +1822,9 @@ pas:sbb356df a ph:Tour ;
 
 pas:sgkjtbmj a ph:Tour ;
     dcterms:date "2026-03-31T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Elas fecham o verão, e o Pedal Hidrográfico fechará este mês de queiras-e-não-queiras com uma rota temática que se propõe a contar algumas estórias sussurradas em conversas ribeiras. Foi um mês em que atendemos nosso Fetiche pelos divisores de águas, a nossa "festa da cumeeira" (JOBIM, 1972). Esta derradeira rota de março, porém, ao invés de seguir o caminho dos espigões, traça um perfil de sobe-e-desce ladeiras através de quatro vales RELEVantes: Pinheiros, Ipiranga, Moinho Velho e Tamanduateí, seguindo, não propositalmente, uma seta oeste-leste.\r
+\r
+A ideia é costurar algumas camadas históricas locais-nacionais com a hidrografia da cidade, a partir de alguns marcos: a Figueira das Lágrimas, córrego das Éguas, Parque do Povo, e a planície da Vila Carioca. Consolidada a intuição dos relevos como reveladores de memórias, a rota de hoje evoca as águas como testemunhas e contadoras de causos de toda a espiral de tempos próximos, remotos, lendários e recônditos."""@pt ;
     dcterms:title "Águas de Março: povo, éguas, lágrimas, alagados" ;
     prov:wasAttributedTo pes:1fhkjnba,
         pes:mqpnpqdj ;
@@ -1656,8 +1836,9 @@ pas:sgkjtbmj a ph:Tour ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/86> ;
     ph:linkInstagram "https://www.instagram.com/p/DWj9C_-Dxdq/?img_index=1"^^xsd:anyURI ;
     ph:linkRoute pas:sgkjtbmj_route ;
-    ph:measuredEnergy 376.1 ;
-    ph:movingDuration "PT1H58M"^^xsd:duration .
+    ph:measuredEnergy 376.0 ;
+    ph:movingDuration "PT1H58M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/sgkjtbmj/announcement.png> .
 
 pas:sj0b0w3d a ph:Tour ;
     dcterms:date "2024-11-02T00:00:00-03:00"^^xsd:dateTime ;
@@ -1673,7 +1854,8 @@ pas:sj0b0w3d a ph:Tour ;
     ph:linkRoute pas:sj0b0w3d_route ;
     ph:mediaCount 467 ;
     ph:mediaSweep pas:sj0b0w3d_sweep ;
-    ph:movingDuration "PT3H30M"^^xsd:duration .
+    ph:movingDuration "PT3H30M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/sj0b0w3d/announcement.jpg> .
 
 pas:sw2w45w4 a ph:Tour ;
     dcterms:date "2024-11-30T00:00:00-03:00"^^xsd:dateTime ;
@@ -1919,25 +2101,26 @@ pas:wp83fvt6 a ph:Tour ;
 
 pas:wqj9kj0k a ph:Tour ;
     dcterms:date "2025-04-13T08:00:00-03:00"^^xsd:dateTime ;
-    dcterms:description """Neste pedal percorreremos os caminhos das seguintes águas: Apiaí, Guarará, Itrapoã, Tamanduateí, Guaixaya, Cemitério, Itororó, Araçatuba, Taióca e Carapetuba.
-
-Serão 46 kms e 437 metros de subidas acumuladas, com previsão de 3 a 4 horas de atividade e encerramento no mesmo local de início, Estação Santo André da CPTM.
-
-A energia de movimento estimada é de 715 quilojaules por pessoa, o que posiciona esse rolê como “fritasso” nos parâmetros da CHIP - Classificação Hidrográfica Interplanetária de Pedais.
-
-Traduzindo: pode ser um pedal desafiador para iniciantes, mas tranquilo para experientes.
-
-De qualquer forma, incentivamos que todos participem!
-
-Será um passeio democrático, aberto a todos, sem necessidade de inscrição prévia. É só chegar com sua bike revisada, água e lanchos.
-
-Reforçando: bike revisada(!), água e lanchos.
-
+    dcterms:description """Neste pedal percorreremos os caminhos das seguintes águas: Apiaí, Guarará, Itrapoã, Tamanduateí, Guaixaya, Cemitério, Itororó, Araçatuba, Taióca e Carapetuba.\r
+\r
+Serão 46 kms e 437 metros de subidas acumuladas, com previsão de 3 a 4 horas de atividade e encerramento no mesmo local de início, Estação Santo André da CPTM.\r
+\r
+A energia de movimento estimada é de 715 quilojaules por pessoa, o que posiciona esse rolê como “fritasso” nos parâmetros da CHIP - Classificação Hidrográfica Interplanetária de Pedais.\r
+\r
+Traduzindo: pode ser um pedal desafiador para iniciantes, mas tranquilo para experientes.\r
+\r
+De qualquer forma, incentivamos que todos participem!\r
+\r
+Será um passeio democrático, aberto a todos, sem necessidade de inscrição prévia. É só chegar com sua bike revisada, água e lanchos.\r
+\r
+Reforçando: bike revisada(!), água e lanchos.\r
+\r
 Também contaremos com a presença das equipes da 1ª Gincana Climática de Santo André ( @gincanaclimatica ), que registrarão a atividade para produção de conteúdo sobre mobilidade ativa, resiliência urbana e ancestralidade."""@pt ;
     dcterms:title "Rios Indígenas de Santo André" ;
     prov:wasAttributedTo pes:1fhkjnba,
         pes:hc9v0sg7 ;
     ph:countAttendee 28 ;
+    ph:countNewcomer 17 ;
     ph:energyEstimate 750.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/BT/3>,
         <https://id.pedalhidrografi.co/passeio/PH/32> ;
@@ -2056,6 +2239,22 @@ A. N. Ab’Saber, Geomorfologia do sítio urbano de São Paulo. USP-FFCL, 1957."
     ph:mediaSweep pas:x3sdp4j5_sweep ;
     ph:movingDuration "PT3H44M"^^xsd:duration ;
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/63/announcement.jpg> .
+
+pas:x8mkn0ys a ph:Tour ;
+    dcterms:date "2026-08-18T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """As amplas e pantanosas várzeas de altitude do Tietê marcam a originalidade do sítio urbano de São Paulo. Não há nenhuma outra ocorrência de metrópole no mundo que detém feições similares ao se fazer o recorte na altitude e na população, já diagnosticava Caio Prado na década de 40 e ainda verídico na contemporaneidade.\r
+\r
+Consecutivamente apropriada pelo voraz organismo urbano, primeiro travadora do progresso para fornecedora de argila e areia aos empreendimentos e no estágio atual meio por onde circulam-se motoristas a altíssimas velocidades, iremos seguir rio Tietê acima por estradas que revelam esta importante e principal articuladora da cidade.\r
+\r
+Partindo das colinas do Tatuapé, mergulhamos em Aricanduva com vistas de passar pelo estreito da Penha-Tiquatira, ponto no qual o vale afunila. Apertados e passados na foz do Guapira, daremos um jeito de passar para a margem direita do Tietê, onde iniciamos o segmento lúdico da estrada parque, o qual se estende até a foz do Itaquera.\r
+\r
+Voltamos para a margem esquerda do Tietê com vistas a pegar o trem na CPTM Itaim, com o translado feito pela Jardim Helena / Pantanal."""@pt ;
+    dcterms:title "Médio Tietê acima" ;
+    ph:energyEstimate 331.0 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/107> ;
+    ph:linkInstagram "https://www.instagram.com/p/DcHvFcNlN3l/"^^xsd:anyURI ;
+    ph:linkRoute pas:x8mkn0ys_route ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/x8mkn0ys/announcement.png> .
 
 pas:xm85cdrp a ph:Tour ;
     dcterms:date "2025-09-09T20:00:00-03:00"^^xsd:dateTime ;
@@ -2262,6 +2461,15 @@ Aho!"""@pt ;
 
 pas:zspawe0m a ph:Tour ;
     dcterms:date "2026-04-28T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Hoje teremos um pedal de desce-sobe-desce-sobe-desce porque pularemos alguns pontos de sela desde Caaguaçu até Tamanduateí, desde o São Paulo até o ABC.\r
+\r
+Começando pelo Caaguaçu, desceremos um pequeno afluente do Riacho do Ipiranga para, já em suas águas, pedalarmos contra-corrente para então cruzar um ponto de sela até chegarmos no Córrego Moinho Velho.\r
+\r
+Após cruzarmos estas águas, subimos novamente outro afluente do Moinho Velho para cruzarmos outro ponto de sela e chegarmos no Córrego Jaboticabal, importante afluente do Ribeirão dos Meninos (que é um importante afluente do Rio Tamanduateí). Aqui vale a pesquisa sobre o Anel Hidroviário proposto pela FAU-USP, pois este ribeirão faz parte deste megaprojeto: http://metropolefluvial.fau.usp.br/\r
+\r
+A região do Córrego Jaboticabal é inundado de fábricas e pátios, o que dificulda o acesso às suas águas. Buscaremos pedalar o mais próximo possível até sua foz, para cruzar o Ribeirão dos Meninos (e, com isso, cruzar a divisa São Paulo e São Caetano do Sul) para subir a Crista do ABC (o divisor das bacias hidrográficas entre Tamanduateí e Meninos).\r
+\r
+Surfando a crista, chegaremos na divisa de municípios entre São Caetano do Sul e Santo André desceremos o Córrego Utinga que delimita esta divisa. Pedalaremos até sua foz, que desagua no Tamanduateí próximo à estação de trem de mesmo nome."""@pt ;
     dcterms:title "Pontos de Sela dos afluentes de Tamanduateí" ;
     prov:wasAttributedTo pes:h9jkvbct ;
     ph:arrivedAt "2026-04-28T23:16:00-03:00"^^xsd:dateTime ;
@@ -2270,10 +2478,12 @@ pas:zspawe0m a ph:Tour ;
     ph:departedAt "2026-04-28T20:15:00-03:00"^^xsd:dateTime ;
     ph:energyEstimate 356.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/89> ;
+    ph:linkActivity "https://ridewithgps.com/trips/380034050"^^xsd:anyURI ;
     ph:linkInstagram "https://www.instagram.com/p/DXrwudMjrZL/"^^xsd:anyURI ;
     ph:linkRoute pas:zspawe0m_route ;
-    ph:measuredEnergy 378.8 ;
-    ph:movingDuration "PT2H7M"^^xsd:duration .
+    ph:measuredEnergy 378.0 ;
+    ph:movingDuration "PT2H7M"^^xsd:duration ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/zspawe0m/announcement.png> .
 
 pas:zv43bb5y a ph:Tour ;
     dcterms:date "2026-02-11T00:00:00-03:00"^^xsd:dateTime ;
@@ -2403,6 +2613,10 @@ pas:2qv2h9ak_sweep a ph:MediaSweep ;
         "yasminalv",
         "zaia" .
 
+pas:2we8tga5_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/56584854> .
+
 pas:32gatmca_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/54745946> .
@@ -2530,6 +2744,10 @@ pas:65ptagq2_sweep a ph:MediaSweep ;
         "bs_math",
         "dandanlessa",
         "thiagonevesbike" .
+
+pas:6h40haq7_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/56357266> .
 
 pas:6myfn5e9_sweep a ph:MediaSweep ;
     dcterms:date "2025-04-23T12:48:16-03:00"^^xsd:dateTime ;
@@ -2706,6 +2924,30 @@ pas:9s8bhtjw_route a ph:RouteReference ;
 <https://id.pedalhidrografi.co/passeio/PH/101> a ph:SeriesEdition ;
     ph:inEventSeries ser:PH ;
     ph:sequenceInSeries 101 .
+
+<https://id.pedalhidrografi.co/passeio/PH/102> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 102 .
+
+<https://id.pedalhidrografi.co/passeio/PH/103> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 103 .
+
+<https://id.pedalhidrografi.co/passeio/PH/104> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 104 .
+
+<https://id.pedalhidrografi.co/passeio/PH/105> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 105 .
+
+<https://id.pedalhidrografi.co/passeio/PH/106> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 106 .
+
+<https://id.pedalhidrografi.co/passeio/PH/107> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 107 .
 
 <https://id.pedalhidrografi.co/passeio/PH/11> a ph:SeriesEdition ;
     ph:inEventSeries ser:PH ;
@@ -3119,6 +3361,10 @@ pas:9s8bhtjw_route a ph:RouteReference ;
     ph:inEventSeries ser:S ;
     ph:sequenceInSeries 6 .
 
+<https://id.pedalhidrografi.co/passeio/S/7> a ph:SeriesEdition ;
+    ph:inEventSeries ser:S ;
+    ph:sequenceInSeries 7 .
+
 <https://id.pedalhidrografi.co/passeio/SESC/1> a ph:SeriesEdition ;
     ph:inEventSeries ser:SESC ;
     ph:sequenceInSeries 1 .
@@ -3126,6 +3372,10 @@ pas:9s8bhtjw_route a ph:RouteReference ;
 pas:a5w1920c_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/54435190> .
+
+pas:a70egng2_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/56666751> .
 
 pas:a9spchfk_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
@@ -3518,6 +3768,10 @@ pas:n3dxjrgb_sweep a ph:MediaSweep ;
     ph:archiveFolder "2024-09-16 2 Coruja e Verde" ;
     ph:collectedFileCount 6 .
 
+pas:ndcg94h0_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/56435862> .
+
 pas:ndchce80_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/50331319> .
@@ -3607,6 +3861,10 @@ pas:phg8t492_sweep a ph:MediaSweep ;
         "juper",
         "maymar",
         "pedpaula" .
+
+pas:pjzp5vy4_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/56409865> .
 
 pas:q5artzrc_route a ph:RouteReference ;
     schema:provider ph:strava ;
@@ -3968,6 +4226,10 @@ pas:x3sdp4j5_sweep a ph:MediaSweep ;
         "pedpaula",
         "r" .
 
+pas:x8mkn0ys_route a ph:RouteReference ;
+    schema:provider ph:amora ;
+    schema:url <https://amora.pedalhidrografi.co/route/ciclovento> .
+
 pas:xm85cdrp_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/49272936> .
@@ -4126,12 +4388,15 @@ ser:SESC a schema:EventSeries ;
 ser:BT a schema:EventSeries ;
     dcterms:title "Bondes / Trips" .
 
-ser:S a schema:EventSeries ;
-    dcterms:title "Pedais Hidrográficos Suados" .
-
 ser:BP a schema:EventSeries ;
     dcterms:title "Bicipassarinhadas" .
+
+ser:S a schema:EventSeries ;
+    dcterms:title "Pedais Hidrográficos Suados" .
 
 ser:PH a schema:EventSeries ;
     dcterms:title "Pedais Hidrográficos Regulares" .
 
+
+# Licença do dump (dataset-level; itens de mídia têm schema:license próprio).
+<https://amora.pedalhidrografi.co/data/tours.ttl> <http://purl.org/dc/terms/license> <https://creativecommons.org/licenses/by-sa/4.0/> .

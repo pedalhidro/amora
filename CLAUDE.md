@@ -516,11 +516,17 @@ Key flows:
   body `{name, state, id?}`; o NOME é obrigatório e ÚNICO — vira o slug do
   link; colisão com outra rota → 409), `POST /delete-route/<id>`. Cada rota
   salva tem um **link compartilhável POR NOME** `/route/<slug>` —
-  `GET /route/<slug>` responde 303 pra `/#rt=<slug>` (FRAGMENTO, como o
-  `#st=`: nunca é comido pelo strip de query da Cloudflare nem pelo cache do
-  SW) e o cliente resolve (`tryLoadSavedRouteFromHash` → fetch de
+  `GET /route/<slug>` serve uma página mínima com as OG tags da rota
+  (og:image = `/route/<slug>/og.png`, o traçado renderizado com Pillow no
+  visual das miniaturas + logo no canto — é o card de WhatsApp/redes; cache
+  em memória por id+updated, max-age 1 h) e redireciona o humano na hora
+  (script + meta-refresh) pra `/#rt=<slug>` (FRAGMENTO, como o `#st=`:
+  nunca é comido pelo strip de query da Cloudflare nem pelo cache do SW —
+  e o SW trata `/route/<slug>` como network-first pra rename não servir
+  redirect velho); o cliente resolve (`tryLoadSavedRouteFromHash` → fetch de
   `/saved-route/<slug>`); depois de carregar tira o `#rt=` da URL e ADOTA
   id/nome (re-salvar atualiza a MESMA rota; cópia = salvar com outro nome).
+  Slug inexistente segue no 303 antigo (o app abre com o toast de erro).
   O suporte antigo a `/?route=<id>` foi REMOVIDO. No modal Salvar, **☁ Salvar
   no servidor**, **Copiar link** e **QR** salvam no servidor (link/QR também
   compartilham; sem backend degradam pro `#st=`); colisão de nome com OUTRA

@@ -56,9 +56,15 @@ pes:d8nwxkn1 a schema:Person ;
     schema:alternateName "lume" ;
     schema:mainEntityOfPage <https://amora.pedalhidrografi.co/pessoas/d8nwxkn1> .
 
+pes:es9ttrt8 a schema:Person ;
+    schema:alternateName "Amanda" .
+
 pes:f3xm6khd a schema:Person ;
     schema:alternateName "pedpaula" ;
     schema:mainEntityOfPage <https://amora.pedalhidrografi.co/pessoas/f3xm6khd> .
+
+pes:f3xqm2xq a schema:Person ;
+    schema:alternateName "yancopelli" .
 
 pes:g4k9zgev a schema:Person ;
     schema:alternateName "alex" ;
@@ -88,6 +94,9 @@ pes:mqpnpqdj a schema:Person ;
     schema:alternateName "gmard" ;
     schema:mainEntityOfPage <https://amora.pedalhidrografi.co/pessoas/mqpnpqdj> .
 
+pes:nks88zqy a schema:Person ;
+    schema:alternateName "franzhecher" .
+
 pes:rany9bvq a schema:Person ;
     schema:alternateName "zito" ;
     schema:mainEntityOfPage <https://amora.pedalhidrografi.co/pessoas/rany9bvq> .
@@ -95,6 +104,9 @@ pes:rany9bvq a schema:Person ;
 pes:tabw8qd5 a schema:Person ;
     schema:alternateName "ericalatina" ;
     schema:mainEntityOfPage <https://amora.pedalhidrografi.co/pessoas/tabw8qd5> .
+
+pes:w1pqp0pc a schema:Person ;
+    schema:alternateName "Alexandre Munhoz" .
 
 pes:wgb9b5fe a schema:Person ;
     schema:alternateName "anaju" ;
@@ -108,3 +120,6 @@ pes:xwap0dsp a schema:Person ;
     schema:alternateName "brunotitton" ;
     schema:mainEntityOfPage <https://amora.pedalhidrografi.co/pessoas/xwap0dsp> .
 
+
+# Licença do dump (dataset-level; itens de mídia têm schema:license próprio).
+<https://amora.pedalhidrografi.co/data/identities.ttl> <http://purl.org/dc/terms/license> <https://creativecommons.org/licenses/by-sa/4.0/> .

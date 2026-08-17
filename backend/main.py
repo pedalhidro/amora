@@ -672,6 +672,7 @@ DATA_GRAPHS_SHIM = """\
 
 <> a void:Dataset ;
     dcterms:title "Pedal Hidrográfico — grafos de dados"@pt ;
+    dcterms:license <https://creativecommons.org/licenses/by-sa/4.0/> ;
     void:dataDump <tours.ttl>, <images.ttl>, <identities.ttl>, <lists.ttl> .
 """
 
@@ -2105,14 +2106,137 @@ def get_saved_route(ref):
 def route_deep_link(slug):
     """Link compartilhável de uma rota salva, POR NOME: /route/<slug>.
 
-    303 pro app com o slug no FRAGMENTO (/#rt=<slug>) — fragmento nunca chega
-    na Cloudflare nem no service worker (mesma razão do #st=), então o deep
-    link sobrevive ao strip de query do worker e ao cache do SW. O app resolve
-    o #rt= no cliente via GET /saved-route/<slug>."""
+    Serve uma página mínima com as OG tags da ROTA (título = nome, descrição
+    = km/subida, og:image = /route/<slug>/og.png — o traçado renderizado com
+    o logo) e redireciona o humano NA HORA pra /#rt=<slug> (script +
+    meta-refresh; fragmento nunca chega na Cloudflare nem no service worker,
+    mesma razão do #st=). Crawlers de preview (WhatsApp/FB/Telegram) não
+    executam JS: leem as tags e montam o card. Slug desconhecido degrada pro
+    303 antigo — o app abre e mostra o toast de "rota não encontrada"."""
+    import html as _html
     slug = (slug or "").strip().lower()
     if not re.fullmatch(r"[a-z0-9][a-z0-9\-]{0,80}", slug):
         abort(404)
-    return redirect(f"/#rt={slug}", code=303)
+    rid, r = _find_saved_route(slug)
+    if not isinstance(r, dict) or not isinstance(r.get("state"), dict):
+        return redirect(f"/#rt={slug}", code=303)
+    name = r.get("name") or slug
+    _, dist = _route_preview_and_dist(r.get("state") or {})
+    bits = []
+    if dist:
+        bits.append(f"{dist / 1000:.1f} km".replace(".", ","))
+    asc = (r.get("stats") or {}).get("ascentM") if isinstance(r.get("stats"), dict) else None
+    if isinstance(asc, (int, float)) and math.isfinite(asc):
+        bits.append(f"↑{round(asc)} m")
+    desc = (" · ".join(bits) + " — " if bits else "") + \
+        "rota traçada no amora, o mapa do Pedal Hidrográfico"
+    target = f"/#rt={slug}"
+    page_url = f"{SITE_URL}route/{slug}"
+    og_img = f"{page_url}/og.png"
+    esc = _html.escape
+    page = f"""<!doctype html>
+<html lang="pt-BR"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{esc(name)} · amora</title>
+<link rel="canonical" href="{esc(page_url)}">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="amora · Pedal Hidrográfico">
+<meta property="og:title" content="{esc(name)}">
+<meta property="og:description" content="{esc(desc)}">
+<meta property="og:url" content="{esc(page_url)}">
+<meta property="og:image" content="{esc(og_img)}">
+<meta property="og:image:width" content="{_ROUTE_OG_W}">
+<meta property="og:image:height" content="{_ROUTE_OG_H}">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="description" content="{esc(desc)}">
+<meta http-equiv="refresh" content="0;url={esc(target)}">
+</head><body>
+<p>Abrindo a rota <strong>{esc(name)}</strong> no amora…
+<a href="{esc(target)}">clique aqui se não abrir sozinho</a>.</p>
+<script>location.replace({json.dumps(target)});</script>
+</body></html>"""
+    return Response(page, mimetype="text/html",
+                    headers={"Cache-Control": "no-cache"})
+
+
+# ── Imagem OG da rota (preview de link em WhatsApp/redes) ────────────────
+# O traçado renderizado server-side (Pillow) no visual das miniaturas do
+# modal Carregar — fundo claro, casing branco, pontos de início/fim — com o
+# logo do amora no canto superior direito. 1200×630 (proporção padrão de
+# og:image), renderizado a 2× e reduzido com LANCZOS (anti-aliasing).
+_ROUTE_OG_W, _ROUTE_OG_H = 1200, 630
+_route_og_cache = {}            # (rid, updated) → bytes PNG
+_ROUTE_OG_CACHE_MAX = 32
+
+
+def _render_route_og(entry):
+    import io
+    import rwgps
+    from PIL import Image, ImageDraw
+    latlngs = rwgps.amora_route_geometry(entry["state"])["latlngs"]
+    ss = 2
+    w, h, pad = _ROUTE_OG_W * ss, _ROUTE_OG_H * ss, 90 * ss
+    min_lat = min(p[0] for p in latlngs)
+    max_lat = max(p[0] for p in latlngs)
+    min_lng = min(p[1] for p in latlngs)
+    max_lng = max(p[1] for p in latlngs)
+    kx = math.cos(math.radians((min_lat + max_lat) / 2))
+    span_x = max((max_lng - min_lng) * kx, 1e-6)
+    span_y = max(max_lat - min_lat, 1e-6)
+    s = min((w - 2 * pad) / span_x, (h - 2 * pad) / span_y)
+    ox = (w - span_x * s) / 2
+    oy = (h - span_y * s) / 2
+    pts = [(ox + (lo - min_lng) * kx * s, oy + (max_lat - la) * s)
+           for la, lo in latlngs]
+
+    img = Image.new("RGB", (w, h), (238, 241, 244))     # --surface do app
+    d = ImageDraw.Draw(img)
+    d.line(pts, fill=(255, 255, 255), width=17 * ss, joint="curve")   # casing
+    d.line(pts, fill=(255, 91, 58), width=9 * ss, joint="curve")      # --route
+
+    def dot(p, rgb, radius):
+        rim = radius + 3 * ss
+        d.ellipse([p[0] - rim, p[1] - rim, p[0] + rim, p[1] + rim],
+                  fill=(255, 255, 255))
+        d.ellipse([p[0] - radius, p[1] - radius, p[0] + radius, p[1] + radius],
+                  fill=rgb)
+    dot(pts[0], (46, 139, 87), 12 * ss)      # início (verde)
+    dot(pts[-1], (179, 67, 30), 10 * ss)     # fim (laranja-escuro)
+
+    logo = Image.open(WEB / "img" / "amora-icon.png").convert("RGBA")
+    lw = 120 * ss
+    logo = logo.resize((lw, lw), Image.LANCZOS)
+    img.paste(logo, (w - lw - 36 * ss, 36 * ss), logo)
+
+    img = img.resize((_ROUTE_OG_W, _ROUTE_OG_H), Image.LANCZOS)
+    buf = io.BytesIO()
+    img.save(buf, "PNG", optimize=True)
+    return buf.getvalue()
+
+
+@app.get("/route/<slug>/og.png")
+def route_og_png(slug):
+    """Imagem do card de compartilhamento da rota. Cache em memória por
+    (id, updated) — re-salvar a rota muda a chave e re-renderiza; a borda
+    (Cloudflare) pode cachear por 1 h (max-age)."""
+    slug = (slug or "").strip().lower()
+    rid, r = _find_saved_route(slug)
+    if not isinstance(r, dict) or not isinstance(r.get("state"), dict):
+        abort(404)
+    key = (rid, r.get("updated") or "")
+    png = _route_og_cache.get(key)
+    if png is None:
+        try:
+            png = _render_route_og(r)
+        except Exception as e:  # noqa: BLE001 — sem Pillow/estado degenerado
+            print(f"[route-og] render falhou pra {slug}: {e}")
+            abort(404)
+        _route_og_cache[key] = png
+        while len(_route_og_cache) > _ROUTE_OG_CACHE_MAX:
+            _route_og_cache.pop(next(iter(_route_og_cache)))
+    return Response(png, mimetype="image/png",
+                    headers={"Cache-Control": "public, max-age=3600"})
 
 
 @app.post("/save-route")

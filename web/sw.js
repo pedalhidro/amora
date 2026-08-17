@@ -18,7 +18,7 @@
 // origin) e v371/v372 saíram na `deploy` (busca de endereços, ⇄ inverter).
 // v373 fica acima de tudo que já circulou, que é o que importa: se a VERSION
 // não crescer, o service worker serve cache velho.
-const VERSION = 'phidro-v388';
+const VERSION = 'phidro-v389';
 const STATIC_CACHE = `${VERSION}-static`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 
@@ -145,7 +145,11 @@ self.addEventListener('fetch', (event) => {
         || url.pathname.endsWith('/data/identities.ttl')
         || url.pathname.endsWith('/data/lists.ttl')
         || url.pathname.endsWith('/routes.json')
-        || url.pathname.includes('/saved-route')) {
+        || url.pathname.includes('/saved-route')
+        // Página de compartilhamento /route/<slug> (não pega o og.png, que
+        // termina em .png): o redirect embutido aponta pro slug — servir uma
+        // cópia velha depois de renomear a rota mandaria pro slug morto.
+        || /\/route\/[a-z0-9][a-z0-9-]*$/.test(url.pathname)) {
       event.respondWith(networkFirst(req, STATIC_CACHE));
     } else {
       event.respondWith(staleWhileRevalidate(req, STATIC_CACHE));
