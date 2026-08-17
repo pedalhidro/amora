@@ -521,9 +521,15 @@ Key flows:
   SW) e o cliente resolve (`tryLoadSavedRouteFromHash` → fetch de
   `/saved-route/<slug>`); depois de carregar tira o `#rt=` da URL e ADOTA
   id/nome (re-salvar atualiza a MESMA rota; cópia = salvar com outro nome).
-  O suporte antigo a `/?route=<id>` foi REMOVIDO. No modal Salvar, **Copiar
-  link**/**QR** salvam no servidor e compartilham esse link (sem backend
-  degradam pro `#st=`); o 🔗 de cada rota no modal 📂 Carregar copia o mesmo.
+  O suporte antigo a `/?route=<id>` foi REMOVIDO. No modal Salvar, **☁ Salvar
+  no servidor**, **Copiar link** e **QR** salvam no servidor (link/QR também
+  compartilham; sem backend degradam pro `#st=`); colisão de nome com OUTRA
+  rota → 409 com id/name da existente e o cliente pergunta se é pra
+  atualizá-la (re-salva adotando o id). **⤓ Exportar GPX** é o download. O
+  modal 📂 Carregar lista as rotas em GRADE de cards (miniatura SVG do
+  traçado via `preview`/`distMeters`/`stats` que o `GET /saved-routes` agora
+  devolve — a subida vem de `stats.ascentM`, gravada pelo editor no save
+  porque o estado salvo não tem elevação); o 🔗 de cada card copia o link.
   O rascunho do traçado persiste em localStorage (`phidro:traceDraft:v1`,
   gravação debounced a cada mutação): Cancelar/Esc só fecham o editor e o
   próximo Traçar restaura; o descarte real é o 🗑 da barra de edição. Localização ao vivo (efêmera, EM MEMÓRIA —

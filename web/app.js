@@ -12343,24 +12343,46 @@ async function copySavedRouteLink(slug) {
 }
 
 // Salva/atualiza a rota atual no servidor. Devolve {id, slug} em caso de
-// sucesso; null quando o usuário precisa agir (sem nome, ou 409 de nome já
-// usado — já alertados aqui); LANÇA em erro de rede/servidor, pra quem chama
-// decidir o fallback (#st=). Nome é a identidade pública da rota: o servidor
-// recusa colisão com OUTRA rota (o mesmo id pode re-salvar/renomear à
-// vontade).
+// sucesso; null quando o usuário precisa agir (sem nome, ou recusou
+// sobrescrever a homônima); LANÇA em erro de rede/servidor, pra quem chama
+// decidir o fallback (#st=). Nome é a identidade pública da rota: colisão
+// com OUTRA rota devolve 409 com o id dela, e aqui perguntamos se o usuário
+// quer ATUALIZÁ-LA (re-salva adotando esse id — o link continua o mesmo) ou
+// voltar e trocar o nome.
 async function saveRouteToServer() {
   const name = saveNameInput.value.trim();
   if (!name) {
-    alert('Dê um nome à rota antes de gerar o link — é ele que vira o endereço.');
+    alert('Dê um nome à rota antes de salvar — é ele que vira o endereço.');
     return null;
   }
   const state = snapshotForShare(name);
-  const res = await fetch('./save-route', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, state, id: currentSavedRouteId || undefined }),
-  });
-  const data = await res.json().catch(() => ({}));
+  // Stats do editor pro card do modal Carregar. O estado salvo não carrega
+  // elevação, então a subida acumulada só existe se for gravada AGORA — e só
+  // quando o perfil está completo (senão gravaria um ↑ subcontado).
+  let stats;
+  try {
+    const sim = simulateRide(params);
+    if (sim && sim.elevMissing === 0) {
+      stats = { ascentM: sim.ascentM, descentM: sim.descentM };
+    }
+  } catch { /* segue sem stats */ }
+  const post = async (id) => {
+    const res = await fetch('./save-route', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, state, stats, id: id || undefined }),
+    });
+    return { res, data: await res.json().catch(() => ({})) };
+  };
+  let { res, data } = await post(currentSavedRouteId);
+  if (res.status === 409 && data.id) {
+    const ok = confirm(
+      `Já existe uma rota chamada "${data.name || name}" no servidor.\n` +
+      'Substituir o traçado dela pelo atual? (o link /route/… continua o mesmo)',
+    );
+    if (!ok) return null;
+    ({ res, data } = await post(data.id));   // re-salva EM CIMA da existente
+  }
   if (res.status === 409) {
     alert(data.error || 'Já existe uma rota com esse nome — escolha outro.');
     return null;
@@ -12371,6 +12393,22 @@ async function saveRouteToServer() {
   scheduleTraceDraftSave();   // o rascunho passa a apontar pra rota salva
   return data;
 }
+
+// "☁ Salvar no servidor" — salva/atualiza sem copiar link nem abrir QR.
+const saveServerBtn = document.getElementById('save-server');
+saveServerBtn?.addEventListener('click', async () => {
+  if (trackpoints.length < 2) {
+    alert('Adicione pelo menos 2 pontos antes de salvar.');
+    return;
+  }
+  try {
+    const saved = await saveRouteToServer();
+    if (!saved) return;
+    showToast(`Rota salva no servidor · /route/${saved.slug}`);
+  } catch (err) {
+    alert(`Não foi possível salvar no servidor: ${err.message}\n(requer o backend same-origin)`);
+  }
+});
 
 const savedRoutesModal = document.getElementById('saved-routes-modal');
 const savedRoutesClose = document.getElementById('saved-routes-close');
@@ -12397,20 +12435,81 @@ async function openSavedRoutesModal() {
 }
 function closeSavedRoutesModal() { savedRoutesModal.hidden = true; }
 
+// Miniatura SVG do traçado (polyline `preview` da listagem) — projeção
+// equiretangular com correção de longitude por cos(lat média), centrada na
+// viewBox. Pontos verde/laranja marcam início/fim.
+function routePreviewSvg(pts) {
+  if (!Array.isArray(pts) || pts.length < 2) {
+    return '<div class="saved-route-thumb-empty">sem traçado</div>';
+  }
+  const W = 100, H = 64, PAD = 7;
+  let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
+  for (const [la, lo] of pts) {
+    if (la < minLat) minLat = la;
+    if (la > maxLat) maxLat = la;
+    if (lo < minLng) minLng = lo;
+    if (lo > maxLng) maxLng = lo;
+  }
+  const kx = Math.cos(((minLat + maxLat) / 2) * Math.PI / 180);
+  const spanX = Math.max((maxLng - minLng) * kx, 1e-6);
+  const spanY = Math.max(maxLat - minLat, 1e-6);
+  const s = Math.min((W - 2 * PAD) / spanX, (H - 2 * PAD) / spanY);
+  const ox = (W - spanX * s) / 2;
+  const oy = (H - spanY * s) / 2;
+  const xy = ([la, lo]) => [
+    (ox + (lo - minLng) * kx * s).toFixed(1),
+    (oy + (maxLat - la) * s).toFixed(1),
+  ];
+  const coords = pts.map((p) => xy(p).join(',')).join(' ');
+  const [x0, y0] = xy(pts[0]);
+  const [x1, y1] = xy(pts[pts.length - 1]);
+  return (
+    `<svg viewBox="0 0 ${W} ${H}" aria-hidden="true">` +
+    `<polyline class="thumb-line" points="${coords}"/>` +
+    `<circle class="thumb-start" cx="${x0}" cy="${y0}" r="3"/>` +
+    `<circle class="thumb-end" cx="${x1}" cy="${y1}" r="3"/>` +
+    `</svg>`
+  );
+}
+
 function renderSavedRoutes(routes) {
   savedRoutesList.innerHTML = '';
   if (!routes.length) { savedRoutesEmpty.hidden = false; return; }
   savedRoutesEmpty.hidden = true;
   for (const r of routes) {
     const li = document.createElement('li');
-    li.className = 'saved-route-item';
-    const created = r.created ? String(r.created).slice(0, 10) : '';
-    const label = document.createElement('span');
-    label.className = 'saved-route-label';
-    label.textContent =
-      `${r.name || '(sem nome)'} · ${r.points || 0} pts${created ? ' · ' + created : ''}`;
+    li.className = 'saved-route-card';
+
+    // Miniatura clicável = Carregar (a ação primária do card).
+    const thumb = document.createElement('button');
+    thumb.type = 'button';
+    thumb.className = 'saved-route-thumb';
+    thumb.title = 'Carregar esta rota no editor';
+    thumb.setAttribute('aria-label', `Carregar ${r.name || r.id}`);
+    thumb.innerHTML = routePreviewSvg(r.preview);
+    thumb.addEventListener('click', () => loadSavedRoute(r.id, r.name));
+
+    const nameEl = document.createElement('div');
+    nameEl.className = 'saved-route-name';
+    nameEl.textContent = r.name || '(sem nome)';
+    nameEl.title = r.name || '';
+
+    // km · ↑subida (se o editor gravou) · última modificação.
+    const bits = [];
+    if (Number.isFinite(r.distMeters)) bits.push(fmtDistCompact(r.distMeters));
+    const asc = r.stats?.ascentM;
+    if (Number.isFinite(asc)) bits.push(`↑${Math.round(asc)} m`);
+    const mod = r.updated || r.created;
+    if (mod) bits.push(String(mod).slice(0, 10));
+    const statsEl = document.createElement('div');
+    statsEl.className = 'saved-route-stats';
+    statsEl.textContent = bits.join(' · ') || `${r.points || 0} pts`;
+
+    const actions = document.createElement('div');
+    actions.className = 'saved-route-actions';
     const loadBtn = document.createElement('button');
     loadBtn.type = 'button';
+    loadBtn.className = 'saved-route-load';
     loadBtn.textContent = 'Carregar';
     loadBtn.addEventListener('click', () => loadSavedRoute(r.id, r.name));
     const linkBtn = document.createElement('button');
@@ -12429,9 +12528,13 @@ function renderSavedRoutes(routes) {
     const delBtn = document.createElement('button');
     delBtn.type = 'button';
     delBtn.className = 'danger';
-    delBtn.textContent = 'Excluir';
+    delBtn.textContent = '🗑';
+    delBtn.title = 'Excluir do servidor';
+    delBtn.setAttribute('aria-label', `Excluir ${r.name || r.id} do servidor`);
     delBtn.addEventListener('click', () => deleteSavedRoute(r.id, r.name));
-    li.append(label, loadBtn, linkBtn, delBtn);
+    actions.append(loadBtn, linkBtn, delBtn);
+
+    li.append(thumb, nameEl, statsEl, actions);
     savedRoutesList.appendChild(li);
   }
 }

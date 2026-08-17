@@ -1338,36 +1338,77 @@ body.layers-hidden .layer-panel { display: none; }
 #saved-routes-local { width: 100%; justify-content: center; }
 .saved-routes-server-head { margin-top: 12px !important; font-weight: 600; }
 
-/* Lista de rotas salvas no servidor. */
-.saved-routes-list { list-style: none; margin: 0; padding: 0; max-height: 50vh; overflow-y: auto; }
-.saved-route-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 0;
-  border-bottom: 1px solid var(--border);
+/* Rotas salvas no servidor — grade de cards com miniatura do traçado,
+   stats (km, subida, última modificação) e ações. */
+.saved-routes-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 50vh;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
 }
-.saved-route-item:last-child { border-bottom: none; }
-.saved-route-label {
-  flex: 1;
+.saved-routes-list > li.muted { grid-column: 1 / -1; }   /* "Carregando…" ocupa a linha */
+.saved-route-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   min-width: 0;
+}
+.saved-route-thumb {
+  display: block;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  padding: 0;
+  cursor: pointer;
+}
+.saved-route-thumb svg { display: block; width: 100%; height: auto; }
+.saved-route-thumb .thumb-line {
+  fill: none;
+  stroke: var(--route);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.saved-route-thumb .thumb-start { fill: #2e8b57; }
+.saved-route-thumb .thumb-end   { fill: #b3431e; }
+.saved-route-thumb-empty {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 100 / 64;
+  color: var(--muted);
+  font-size: 11px;
+}
+.saved-route-name {
+  font-size: 13px;
+  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
 }
-.saved-route-item button {
+.saved-route-stats { font-size: 11px; color: var(--muted); }
+.saved-route-actions { display: flex; gap: 6px; margin-top: auto; }
+.saved-route-actions button {
   background: transparent;
   color: var(--muted);
   border: 1px solid var(--border);
   border-radius: 5px;
-  padding: 5px 10px;
+  padding: 5px 8px;
   font: inherit;
   font-size: 12px;
   cursor: pointer;
 }
-.saved-route-item button:hover { color: var(--text); }
-.saved-route-item button.danger { color: #b3431e; border-color: #b3431e; }
+.saved-route-actions button:hover { color: var(--text); }
+.saved-route-actions button:disabled { opacity: 0.45; cursor: default; }
+.saved-route-actions button.danger { color: #b3431e; border-color: #b3431e; }
+.saved-route-actions .saved-route-load { flex: 1; }
 
 /* Crosshair cursor on the map while drawing. */
 body.drawing .leaflet-grab,

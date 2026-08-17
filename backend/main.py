@@ -2007,22 +2007,57 @@ def _entry_slug(entry):
     return entry.get("slug") or _route_slug(entry.get("name"))
 
 
+_PREVIEW_MAX_PTS = 80   # pontos por miniatura no modal Carregar
+
+
+def _route_preview_and_dist(state):
+    """(preview, distMeters) da geometria de uma rota salva — preview é a
+    polyline decodificada (wp + sg) reamostrada a ≤_PREVIEW_MAX_PTS e
+    arredondada a 4 casas (~11 m, suficiente pra miniatura); distMeters é o
+    haversine sobre a geometria CHEIA. Computado na listagem (barato pro
+    catálogo pequeno; nada é persistido por um GET). (None, None) se o
+    estado não decodifica."""
+    import rwgps
+    try:
+        latlngs = rwgps.amora_route_geometry(state)["latlngs"]
+    except Exception:  # noqa: BLE001
+        return None, None
+    dist = 0.0
+    for i in range(1, len(latlngs)):
+        a, b = latlngs[i - 1], latlngs[i]
+        dist += rwgps.haversine_meters(a[0], a[1], b[0], b[1])
+    pts = latlngs
+    if len(pts) > _PREVIEW_MAX_PTS:
+        stride = (len(pts) - 1) / (_PREVIEW_MAX_PTS - 1)
+        pts = [pts[round(i * stride)] for i in range(_PREVIEW_MAX_PTS)]
+    return [[round(la, 4), round(lo, 4)] for la, lo in pts], round(dist)
+
+
 @app.get("/saved-routes")
 def list_saved_routes():
-    """Lista resumida das rotas salvas (sem geometria) — mais novas primeiro."""
+    """Lista das rotas salvas — mais novas primeiro. Cada item leva, além dos
+    metadados, o que o modal Carregar mostra nos cards: `preview` (polyline
+    reamostrada pra miniatura), `distMeters` (da geometria) e `stats`
+    (subida acumulada etc., gravada pelo editor no save — o estado salvo não
+    tem elevação, então o servidor não tem como derivá-la)."""
     cat = _read_saved_routes()
     items = []
     for rid, r in cat.get("routes", {}).items():
         if not isinstance(r, dict):
             continue
+        preview, dist = _route_preview_and_dist(r.get("state") or {})
         items.append({
             "id": rid,
             "name": r.get("name") or "",
             "slug": _entry_slug(r),
             "created": r.get("created"),
+            "updated": r.get("updated"),
             "points": r.get("points"),
+            "stats": r.get("stats") if isinstance(r.get("stats"), dict) else None,
+            "preview": preview,
+            "distMeters": dist,
         })
-    items.sort(key=lambda x: x.get("created") or "", reverse=True)
+    items.sort(key=lambda x: x.get("updated") or x.get("created") or "", reverse=True)
     text = json.dumps({"routes": items}, ensure_ascii=False)
     return _conditional(Response(text, mimetype="application/json",
                                  headers={"Cache-Control": "no-cache"}))
@@ -2088,7 +2123,8 @@ def save_route():
     (wp + sg + rm + n). Passar `id` (de uma rota existente) sobrescreve
     in-place; sem id, gera um. O NOME é obrigatório e único (case/acento-
     insensível, via slug): é ele que vira o link /route/<slug> — colisão com
-    outra rota devolve 409 e o cliente pede outro nome."""
+    outra rota devolve 409 com o id/name da existente, e o cliente pergunta
+    se o usuário quer atualizá-la (re-salva com esse id) ou trocar o nome."""
     data = request.get_json(silent=True) or {}
     state = data.get("state")
     if (not isinstance(state, dict) or not isinstance(state.get("wp"), list)
@@ -2112,16 +2148,28 @@ def save_route():
         if other_id == rid or not isinstance(other, dict):
             continue
         if _entry_slug(other) == slug:
+            # id/name da rota existente vão junto: o cliente pergunta se o
+            # usuário quer ATUALIZÁ-LA (re-salva com esse id) ou renomear.
             return jsonify(
-                error=f'já existe uma rota chamada "{other.get("name") or slug}" — escolha outro nome',
-                slug=slug), 409
+                error=f'já existe uma rota chamada "{other.get("name") or slug}"',
+                slug=slug, id=other_id, name=other.get("name") or slug), 409
     existing = routes.get(rid)
     now = datetime.now(timezone.utc).isoformat()
+    # Stats do editor (subida acumulada etc.) — só números finitos entram.
+    # O estado salvo não carrega elevação, então isto é a única fonte de ↑.
+    stats_in = data.get("stats")
+    stats = None
+    if isinstance(stats_in, dict):
+        stats = {k: round(float(v), 1) for k, v in stats_in.items()
+                 if k in ("ascentM", "descentM") and isinstance(v, (int, float))
+                 and math.isfinite(v)}
+        stats = stats or None
     routes[rid] = {
         "name": name,
         "slug": slug,
         "state": state,
         "points": len(state["wp"]),
+        "stats": stats,
         "created": (existing or {}).get("created") if isinstance(existing, dict) else None,
         "updated": now,
     }

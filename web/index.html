@@ -208,6 +208,13 @@
           <details class="help-changelog">
             <summary>Novidades (changelog)</summary>
             <dl>
+              <dt>16/08/2026 · v387</dt>
+              <dd>
+                <ul>
+                  <li><strong>Modal Salvar reorganizado:</strong> o botão de baixar o arquivo agora se chama <strong>⤓ Exportar GPX</strong>, e voltou um botão <strong>☁ Salvar no servidor</strong> explícito (Copiar link/QR continuam salvando também). Se já existir outra rota com o mesmo nome, o app <strong>pergunta se é pra atualizá-la</strong> (mantendo o mesmo link <code>/route/…</code>) em vez de só recusar.</li>
+                  <li><strong>Modal Carregar em grade:</strong> as rotas do servidor agora aparecem em cards de duas colunas com <strong>miniatura do traçado</strong> (clicável pra carregar), distância, subida acumulada (quando o editor gravou) e data da última modificação.</li>
+                </ul>
+              </dd>
               <dt>16/08/2026 · v386</dt>
               <dd>
                 <ul>
@@ -1090,7 +1097,7 @@
             <li><strong>Traçar GPX</strong> abre o modo de edição: clique no mapa para adicionar pontos, arraste-os para mover.</li>
             <li>O seletor à direita escolhe como conectar pontos consecutivos: <em>Reta</em> (linha entre pontos, menor distância), <em>OSM ciclismo / a pé</em> (rota via OpenStreetMap) ou <em>Menor energia</em> (terreno ou viário).</li>
             <li><strong>Undo / Redo</strong> (também ⌘/Ctrl+Z e ⌘/Ctrl+Shift+Z), <strong>Cancelar</strong> (Esc) — fecha o editor <em>sem perder o traçado</em>: ele fica guardado no navegador e volta no próximo Traçar. Pra descartar de verdade, use o <strong>🗑</strong> da barra.</li>
-            <li><strong>Salvar</strong> pede um nome e baixa o <code>.gpx</code>, que inclui os parâmetros de simulação, a lista de waypoints e o modo de roteamento de cada trecho como extensões — invisíveis para Garmin/Strava/RWGPS, mas usados ao reabrir aqui. <strong>Copiar link</strong>/<strong>QR</strong> salvam a rota no servidor e compartilham o link por nome (<code>/route/&lt;nome&gt;</code>).</li>
+            <li><strong>Salvar</strong> pede um nome — que vira o endereço da rota no servidor. <strong>Exportar GPX</strong> baixa o <code>.gpx</code>, que inclui os parâmetros de simulação, a lista de waypoints e o modo de roteamento de cada trecho como extensões — invisíveis para Garmin/Strava/RWGPS, mas usados ao reabrir aqui. <strong>☁ Salvar no servidor</strong> grava/atualiza a rota; <strong>Copiar link</strong>/<strong>QR</strong> também salvam e compartilham o link por nome (<code>/route/&lt;nome&gt;</code>).</li>
           </ul>
 
           <h3>POIs / cues</h3>
@@ -1157,12 +1164,13 @@
             <span>Nome da rota</span>
             <input type="text" id="save-name" maxlength="120" />
           </label>
-          <p class="muted">O arquivo será salvo como <code id="save-filename-preview">tracado.gpx</code>. <strong>Copiar link</strong>/<strong>QR</strong> salvam a rota no servidor com esse nome — que vira o endereço dela (<code>/route/…</code>) e por isso precisa ser inédito.</p>
+          <p class="muted">O nome vira o endereço da rota no servidor (<code>/route/…</code>) — <strong>Salvar no servidor</strong>, <strong>Copiar link</strong> e <strong>QR</strong> salvam com esse nome (se já existir uma rota homônima, perguntamos se é pra atualizá-la). <strong>Exportar GPX</strong> baixa <code id="save-filename-preview">tracado.gpx</code>.</p>
           <div class="save-actions">
             <button type="button" id="save-cancel">Cancelar</button>
             <button type="button" id="save-copy-link" title="Salvar no servidor e copiar o link por nome">Copiar link</button>
             <button type="button" id="save-qr" title="Salvar no servidor e mostrar o QR do link">QR</button>
-            <button type="button" id="save-confirm" class="primary-btn" title="Salvar GPX" aria-label="Salvar GPX">⤓🗺︎ Salvar</button>
+            <button type="button" id="save-server" title="Salvar/atualizar a rota no servidor com esse nome">☁ Salvar no servidor</button>
+            <button type="button" id="save-confirm" class="primary-btn" title="Baixar o arquivo .gpx" aria-label="Exportar GPX">⤓🗺︎ Exportar GPX</button>
           </div>
         </div>
       </div>
