@@ -12437,12 +12437,16 @@ function closeSavedRoutesModal() { savedRoutesModal.hidden = true; }
 
 // Miniatura SVG do traçado (polyline `preview` da listagem) — projeção
 // equiretangular com correção de longitude por cos(lat média), centrada na
-// viewBox. Pontos verde/laranja marcam início/fim.
-function routePreviewSvg(pts) {
-  if (!Array.isArray(pts) || pts.length < 2) {
-    return '<div class="saved-route-thumb-empty">sem traçado</div>';
-  }
-  const W = 100, H = 64, PAD = 7;
+// viewBox. Pontos verde/laranja marcam início/fim. O fundo é a "Morros e
+// Águas" (águas + cristas do FGB de hidrografia), preenchido DEPOIS,
+// assíncrono, por fillThumbHidro — o card aparece na hora com o traçado e
+// as águas pingam quando as range requests voltam.
+const THUMB_W = 100, THUMB_H = 64, THUMB_PAD = 7;
+
+// Projeção da miniatura + bbox GEO da viewBox INTEIRA (não só da rota) —
+// é essa bbox que a consulta de hidrografia usa, pra água preencher o
+// thumbnail até as bordas.
+function thumbProjection(pts) {
   let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
   for (const [la, lo] of pts) {
     if (la < minLat) minLat = la;
@@ -12453,18 +12457,33 @@ function routePreviewSvg(pts) {
   const kx = Math.cos(((minLat + maxLat) / 2) * Math.PI / 180);
   const spanX = Math.max((maxLng - minLng) * kx, 1e-6);
   const spanY = Math.max(maxLat - minLat, 1e-6);
-  const s = Math.min((W - 2 * PAD) / spanX, (H - 2 * PAD) / spanY);
-  const ox = (W - spanX * s) / 2;
-  const oy = (H - spanY * s) / 2;
-  const xy = ([la, lo]) => [
+  const s = Math.min((THUMB_W - 2 * THUMB_PAD) / spanX, (THUMB_H - 2 * THUMB_PAD) / spanY);
+  const ox = (THUMB_W - spanX * s) / 2;
+  const oy = (THUMB_H - spanY * s) / 2;
+  const xy = (la, lo) => [
     (ox + (lo - minLng) * kx * s).toFixed(1),
     (oy + (maxLat - la) * s).toFixed(1),
   ];
-  const coords = pts.map((p) => xy(p).join(',')).join(' ');
-  const [x0, y0] = xy(pts[0]);
-  const [x1, y1] = xy(pts[pts.length - 1]);
+  return {
+    xy,
+    bb: {   // inversa da projeção nos 4 cantos da viewBox
+      west:  minLng - ox / (kx * s),
+      east:  minLng + (THUMB_W - ox) / (kx * s),
+      north: maxLat + oy / s,
+      south: maxLat - (THUMB_H - oy) / s,
+    },
+  };
+}
+
+function routePreviewSvg(pts, proj) {
+  if (!proj) return '<div class="saved-route-thumb-empty">sem traçado</div>';
+  const coords = pts.map(([la, lo]) => proj.xy(la, lo).join(',')).join(' ');
+  const [x0, y0] = proj.xy(pts[0][0], pts[0][1]);
+  const [x1, y1] = proj.xy(pts[pts.length - 1][0], pts[pts.length - 1][1]);
   return (
-    `<svg viewBox="0 0 ${W} ${H}" aria-hidden="true">` +
+    `<svg viewBox="0 0 ${THUMB_W} ${THUMB_H}" aria-hidden="true">` +
+    `<g class="thumb-hidro"></g>` +
+    `<polyline class="thumb-casing" points="${coords}"/>` +
     `<polyline class="thumb-line" points="${coords}"/>` +
     `<circle class="thumb-start" cx="${x0}" cy="${y0}" r="3"/>` +
     `<circle class="thumb-end" cx="${x1}" cy="${y1}" r="3"/>` +
@@ -12472,10 +12491,66 @@ function routePreviewSvg(pts) {
   );
 }
 
+// Fundo "Morros e Águas" de uma miniatura: consulta o FGB de hidrografia (e
+// a rede do coletivo) na bbox da viewBox e desenha as linhas no <g> de fundo,
+// com o MESMO estilo da camada do mapa (hidroStyleFor) em traço fino. Cache
+// por rota (id+updated) — reabrir o modal na sessão não re-consulta.
+const _thumbHidroCache = new Map();
+const THUMB_HIDRO_MAIN_KM2 = 150;   // acima disso, só rio/canal/crista (legibilidade)
+const THUMB_HIDRO_MAX_LINES = 400;  // teto de <polyline> por miniatura
+const THUMB_STROKE_SCALE = 0.33;    // pesos da camada (px de mapa) → unidades da viewBox
+
+async function fillThumbHidro(svgEl, proj, cacheKey) {
+  const g = svgEl?.querySelector('.thumb-hidro');
+  if (!g) return;
+  if (_thumbHidroCache.has(cacheKey)) {
+    g.innerHTML = _thumbHidroCache.get(cacheKey);
+    return;
+  }
+  const bb = proj.bb;
+  const areaKm2 = bboxAreaKm2(bb);
+  if (areaKm2 > OSM_FGB_MAX_BBOX_KM2) return;   // rota continental — sem fundo
+  const detail = areaKm2 > THUMB_HIDRO_MAIN_KM2 ? DETAIL_MAIN : DETAIL_FULL;
+  // Fora do LRU do viário pela mesma razão da camada (encheria os 10 slots).
+  // `null` = fetch FALHOU (timeout/offline) — diferente de lista vazia
+  // ("não há água aqui"): falha desenha o que deu e NÃO entra no cache da
+  // sessão, senão um timeout envenenaria a miniatura até recarregar a página.
+  const [hidro, network] = await Promise.all([
+    streamFgbFeatures(HIDRO_FGB_URL, bb, false).catch(() => null),
+    loadPhCycleNetwork().catch(() => []),
+  ]);
+  const lines = [];
+  const pushFeature = (f, style) => {
+    if (!style) return;
+    const geom = f.geometry || {};
+    const parts = geom.type === 'LineString' ? [geom.coordinates]
+      : geom.type === 'MultiLineString' ? geom.coordinates : [];
+    for (const coords of parts) {
+      if (!Array.isArray(coords) || coords.length < 2) continue;
+      if (lines.length >= THUMB_HIDRO_MAX_LINES) return;
+      // FGB guarda [lng,lat].
+      const points = coords.map(([lo, la]) => proj.xy(la, lo).join(',')).join(' ');
+      const w = (style.weight || 2) * THUMB_STROKE_SCALE;
+      const dash = style.dashArray
+        ? ` stroke-dasharray="${style.dashArray.split(/\s+/).map((n) => n * THUMB_STROKE_SCALE * 2).join(' ')}"`
+        : '';
+      lines.push(`<polyline points="${points}" stroke="${style.color}" stroke-width="${w.toFixed(2)}"${dash}/>`);
+    }
+  };
+  for (const f of hidro || []) pushFeature(f, hidroStyleFor(f.properties || {}, detail));
+  for (const f of network) pushFeature(f, { color: '#2da9ff', weight: 5 });
+  const html = lines.join('');
+  if (hidro !== null) _thumbHidroCache.set(cacheKey, html);
+  // O modal pode ter sido fechado/re-renderizado durante o fetch — só pinta
+  // se o <g> ainda está no documento.
+  if (g.isConnected) g.innerHTML = html;
+}
+
 function renderSavedRoutes(routes) {
   savedRoutesList.innerHTML = '';
   if (!routes.length) { savedRoutesEmpty.hidden = false; return; }
   savedRoutesEmpty.hidden = true;
+  const hidroFills = [];   // (svg, proj, key) — preenchidos em lote no final
   for (const r of routes) {
     const li = document.createElement('li');
     li.className = 'saved-route-card';
@@ -12486,7 +12561,12 @@ function renderSavedRoutes(routes) {
     thumb.className = 'saved-route-thumb';
     thumb.title = 'Carregar esta rota no editor';
     thumb.setAttribute('aria-label', `Carregar ${r.name || r.id}`);
-    thumb.innerHTML = routePreviewSvg(r.preview);
+    const proj = Array.isArray(r.preview) && r.preview.length >= 2
+      ? thumbProjection(r.preview) : null;
+    thumb.innerHTML = routePreviewSvg(r.preview, proj);
+    if (proj) {
+      hidroFills.push([thumb.querySelector('svg'), proj, `${r.id}:${r.updated || r.created || ''}`]);
+    }
     thumb.addEventListener('click', () => loadSavedRoute(r.id, r.name));
 
     const nameEl = document.createElement('div');
@@ -12537,6 +12617,11 @@ function renderSavedRoutes(routes) {
     li.append(thumb, nameEl, statsEl, actions);
     savedRoutesList.appendChild(li);
   }
+  // Fundos "Morros e Águas" em lote, 3 por vez — best-effort (offline/timeout
+  // deixam o card só com o traçado, que já está na tela).
+  mapConcurrent(hidroFills, 3, ([svg, proj, key]) =>
+    fillThumbHidro(svg, proj, key).catch((e) => console.warn('[thumb-hidro]', e.message)),
+  );
 }
 
 async function loadSavedRoute(id, name) {

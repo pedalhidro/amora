@@ -1370,6 +1370,22 @@ body.layers-hidden .layer-panel { display: none; }
   cursor: pointer;
 }
 .saved-route-thumb svg { display: block; width: 100%; height: auto; }
+/* Fundo "Morros e Águas": linhas do FGB de hidrografia, cores inline vindas
+   de hidroStyleFor (mesma folha de estilo da camada do mapa). */
+.saved-route-thumb .thumb-hidro polyline {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.9;
+}
+.saved-route-thumb .thumb-casing {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 4.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.9;
+}
 .saved-route-thumb .thumb-line {
   fill: none;
   stroke: var(--route);
@@ -1377,8 +1393,8 @@ body.layers-hidden .layer-panel { display: none; }
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-.saved-route-thumb .thumb-start { fill: #2e8b57; }
-.saved-route-thumb .thumb-end   { fill: #b3431e; }
+.saved-route-thumb .thumb-start { fill: #2e8b57; stroke: #fff; stroke-width: 1; }
+.saved-route-thumb .thumb-end   { fill: #b3431e; stroke: #fff; stroke-width: 1; }
 .saved-route-thumb-empty {
   display: grid;
   place-items: center;
