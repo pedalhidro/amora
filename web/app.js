@@ -2458,14 +2458,18 @@ function buildModelFromQuads(quads) {
     return parts.join(' & ');
   };
 
-  // Extrai o ID numérico do RideWithGPS da URL referenciada por ph:linkRoute.
+  // Extrai o id da rota da URL referenciada por ph:linkRoute — o numérico do
+  // RideWithGPS ou o slug de uma rota salva do amora (/route/<slug>). É o
+  // mesmo id que o backend usa nas entradas de routes.json.
   const tourRouteId = (tourIri) => {
     const bn = tourRouteRef.get(tourIri);
     if (!bn) return null;
     const url = subjectUrl.get(bn);
     if (!url) return null;
     const m = /ridewithgps\.com\/routes\/(\d+)/i.exec(url);
-    return m ? m[1] : null;
+    if (m) return m[1];
+    const a = /\/route\/([a-z0-9][a-z0-9-]*)\/?$/i.exec(url);
+    return a ? a[1].toLowerCase() : null;
   };
 
   tourCatalog = new Map();
@@ -6566,8 +6570,12 @@ function openRouteModal(id) {
   // Série+número e data NÃO aparecem aqui — já estão no título do modal
   // (buildLabel) e no campo "Série" do resumo do passeio (seriesPairs).
   const metaParts = [];
+  // Provider "amora" = rota salva do próprio editor (/route/<slug>, abre o
+  // app com a rota carregada); ausente/rwgps = RideWithGPS (legado incluso).
   metaParts.push(
-    `<a href="https://ridewithgps.com/routes/${entry.id}" target="_blank" rel="noopener">Abrir no RideWithGPS ↗</a>`,
+    entry.provider === 'amora'
+      ? `<a href="./route/${encodeURIComponent(entry.id)}" target="_blank" rel="noopener">Abrir rota salva no editor ↗</a>`
+      : `<a href="https://ridewithgps.com/routes/${entry.id}" target="_blank" rel="noopener">Abrir no RideWithGPS ↗</a>`,
   );
   if (Array.isArray(entry.latlngs) && entry.latlngs.length >= 2) {
     metaParts.push(
@@ -11869,7 +11877,7 @@ function buildRouteGpxParts(entry, m) {
   addExt('newcomers', m.newcomers);
   addExt('authors', (m.authors || []).join(', '));
   addExt('tourIri', entry.tourIri);
-  addExt('rwgpsId', entry.id);
+  addExt(entry.provider === 'amora' ? 'amoraRoute' : 'rwgpsId', entry.id);
   addExt('instagram', entry.igPost);
 
   const links =

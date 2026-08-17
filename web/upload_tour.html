@@ -164,7 +164,7 @@
     <div class="row">
       <div>
         <label for="t-route-url">URL da rota</label>
-        <input type="url" id="t-route-url" placeholder="https://ridewithgps.com/routes/...">
+        <input type="url" id="t-route-url" placeholder="https://ridewithgps.com/routes/… ou …/route/<nome> (rota salva)">
       </div>
       <div>
         <label for="t-route-provider">Provedor</label>
@@ -421,6 +421,9 @@ $('#t-route-url').addEventListener('input', (e) => {
   let detected = null;
   if (u.includes('ridewithgps.com')) detected = 'ph:rwgps';
   else if (u.includes('strava.com')) detected = 'ph:strava';
+  // Rota salva do próprio amora: /route/<slug> (link por nome). O backend
+  // sincroniza a geometria direto do saved_routes.json — sem rede.
+  else if (/\/route\/[a-z0-9][a-z0-9-]*\/?$/i.test(u)) detected = 'ph:amora';
   if (detected && providerTs.options[detected]) {
     providerTs.setValue(detected, /*silent*/ true);
   }
@@ -437,6 +440,7 @@ const newSeries       = new Map(); // iri → code
 
 providerOptions.push({ value: 'ph:rwgps',  text: 'RideWithGPS' });
 providerOptions.push({ value: 'ph:strava', text: 'Strava' });
+providerOptions.push({ value: 'ph:amora',  text: 'Amora (rota salva)' });
 
 async function loadCatalog() {
   let Parser;
@@ -925,12 +929,13 @@ $('#form').addEventListener('submit', async (ev) => {
       notice(`✓ Salvo: <code>pas:${escapeHtml(json.tour_id)}</code>${aurl}. Catálogo recarregado.`, 'ok');
       // Status da sincronização da rota (routes.json) — best-effort no backend.
       const r = json.route || {};
+      const provLabel = r.provider === 'amora' ? 'da rota salva do Amora' : 'do RideWithGPS';
       if (r.status === 'ok') {
-        notice(`✓ Rota sincronizada: ${escapeHtml(r.points)} pontos do RideWithGPS (${escapeHtml(r.rwgpsId)}).`, 'ok');
+        notice(`✓ Rota sincronizada: ${escapeHtml(r.points)} pontos ${provLabel} (${escapeHtml(r.rwgpsId)}).`, 'ok');
       } else if (r.status === 'removed') {
         notice('Rota removida do routes.json (passeio sem linkRoute).', 'ok');
       } else if (r.status === 'fetch_failed' && r.kept) {
-        notice(`Passeio salvo. O RideWithGPS falhou (${escapeHtml(r.error || 'erro')}), `
+        notice(`Passeio salvo. A busca ${provLabel} falhou (${escapeHtml(r.error || 'erro')}), `
           + 'mas a geometria anterior da rota foi preservada no mapa.', 'warn');
       } else if (r.status === 'fetch_failed') {
         notice(`Passeio salvo, mas a geometria da rota falhou (${escapeHtml(r.error || 'erro')}). `

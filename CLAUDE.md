@@ -458,15 +458,22 @@ Key flows:
   `routes.json` incrementally**: if the tour (read from the PERSISTED
   `tours.ttl`, not the posted fragment — the entry's series numbering
   resolves `phd:assoc_*` subjects that live outside the fragment) has a
-  `ph:linkRoute` pointing at a RideWithGPS route, it fetches the geometry
-  and upserts that tour's entry (keyed by `tourIri`); if the link is
-  absent (new/edited tour with no route) or the tour is deleted, it
-  removes the entry. The RWGPS
+  `ph:linkRoute` pointing at a RideWithGPS route **ou numa rota salva do
+  próprio amora** (`…/route/<slug>`, provider `ph:amora` — o segundo provedor
+  suportado), it fetches the geometry and upserts that tour's entry (keyed by
+  `tourIri`, with a `provider` field: `"rwgps"`/`"amora"`, ausente = rwgps
+  legado); if the link is absent (new/edited tour with no route) or the tour
+  is deleted, it removes the entry. The RWGPS
   fetch runs **outside** the global state lock (only the JSON read-modify-
   write is serialized) and is best-effort — a fetch failure never fails the
   tour save (the entry is kept with `latlngs:null` + `error`, same convention
-  as `build-routes.py`). The shared fetch/parse/entry-building logic lives in
-  `backend/rwgps.py`, imported by both the backend and
+  as `build-routes.py`). Rotas amora não têm fetch de rede: a geometria é
+  decodificada do `saved_routes.json` (wp + polyline5 `sg`; POIs dos wp com
+  `isPoi`) — e como esse traçado é MUTÁVEL (re-salvar no editor muda), o
+  curto-circuito de cache de geometria não vale pra elas e o `/save-route`
+  re-sincroniza (best-effort, local) os tours que referenciam o slug
+  (`_resync_amora_route_tours`). The shared fetch/parse/entry-building logic
+  lives in `backend/rwgps.py`, imported by both the backend and
   `scripts/build-routes.py` (single source of truth). The backend reads
   `RWGPS_API_KEY` / `RWGPS_AUTH_TOKEN` from its environment (best-effort
   `.env` load) — required for private/unlisted routes; public routes work

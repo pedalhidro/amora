@@ -92,6 +92,32 @@ def extract_rwgps_id(url: str) -> str | None:
     return m.group(1) if m else None
 
 
+def route_slug(name: str) -> str:
+    """Slug do link /route/<slug> — derivado do NOME da rota salva:
+    minúsculas, sem acento, [a-z0-9] ligados por '-'. Fonte única — o backend
+    (save/lookup) e o build-routes.py usam esta mesma função."""
+    import unicodedata
+    s = unicodedata.normalize("NFD", str(name or ""))
+    s = "".join(c for c in s if not unicodedata.combining(c)).lower()
+    s = re.sub(r"[^a-z0-9]+", "-", s).strip("-")
+    return s[:60].strip("-")
+
+
+def extract_amora_slug(url: str) -> str | None:
+    """Slug de um link de rota salva do próprio amora (/route/<slug>).
+
+    Host restrito a pedalhidrografi.co (e localhost pra dev) — `/route/`
+    singular não colide com o `/routes/<id>` do RWGPS/Strava, mas a âncora de
+    host evita capturar URLs de terceiros por coincidência de path."""
+    if not url:
+        return None
+    m = re.search(
+        r"^https?://(?:[a-z0-9-]+\.)*(?:pedalhidrografi\.co|localhost|127\.0\.0\.1)"
+        r"(?::\d+)?/route/([a-z0-9][a-z0-9\-]*)/?$",
+        url.strip(), re.IGNORECASE)
+    return m.group(1).lower() if m else None
+
+
 def series_slug(iri: str) -> str:
     """`https://pedalhidrografi.co/data/PH` → `PH`."""
     return iri.rsplit("/", 1)[-1].rsplit("#", 1)[-1]
@@ -145,7 +171,9 @@ def tour_entry_from_graph(g, tour) -> dict | None:
     """Monta a entrada de metadados de UM `ph:Tour` (sem `latlngs`/`pois`).
 
     Retorna `None` se o tour não tiver `ph:linkRoute` apontando pra uma URL
-    do RideWithGPS — esses passeios ficam fora do routes.json.
+    reconhecida — RideWithGPS (`provider: "rwgps"`, id numérico) ou uma rota
+    salva do próprio amora (`provider: "amora"`, id = slug de /route/<slug>).
+    Passeios sem rota reconhecida ficam fora do routes.json.
 
     `g` é um `rdflib.Graph`; `tour` é o `rdflib.URIRef` do passeio. rdflib é
     importado aqui (lazy) pra que `import rwgps` permaneça leve quando só o
@@ -157,15 +185,19 @@ def tour_entry_from_graph(g, tour) -> dict | None:
     PH     = Namespace("https://id.pedalhidrografi.co/terms#")
     SCHEMA = Namespace("https://schema.org/")
 
-    # Rota (RWGPS) — sem ela, o passeio fica fora do routes.json.
-    rwgps_url = None
+    # Rota (RWGPS ou amora) — sem ela, o passeio fica fora do routes.json.
+    route_url = None
     for ref in g.objects(tour, PH.linkRoute):
         for url in g.objects(ref, SCHEMA.url):
-            rwgps_url = str(url)
+            route_url = str(url)
             break
-        if rwgps_url:
+        if route_url:
             break
-    rid = extract_rwgps_id(rwgps_url)
+    provider, rid = "rwgps", extract_rwgps_id(route_url)
+    if not rid:
+        slug = extract_amora_slug(route_url)
+        if slug:
+            provider, rid = "amora", slug
     if not rid:
         return None
 
@@ -196,14 +228,15 @@ def tour_entry_from_graph(g, tour) -> dict | None:
 
     nums = order_numbers(assocs)
     return {
-        "id":      rid,
-        "tourIri": str(tour),
-        "date":    date_disp,
-        "dateMs":  date_ms,
-        "name":    title,
-        "igPost":  ig,
-        "number":  nums[0] if nums else {"source": "", "value": ""},
-        "numbers": nums,
+        "id":       rid,
+        "provider": provider,
+        "tourIri":  str(tour),
+        "date":     date_disp,
+        "dateMs":   date_ms,
+        "name":     title,
+        "igPost":   ig,
+        "number":   nums[0] if nums else {"source": "", "value": ""},
+        "numbers":  nums,
     }
 
 
@@ -401,16 +434,103 @@ def downsample_and_round(points):
     return [[round(la * f) / f, round(lo * f) / f] for la, lo in out]
 
 
-def build_route_entry(meta: dict) -> dict:
-    """Dado o dict de metadados de `tour_entry_from_graph`, busca a geometria
-    no RideWithGPS e devolve a entrada completa de routes.json.
+# ─── Rota salva do amora (formato de compartilhamento) → geometria ───────────
+def decode_polyline5(s: str) -> list[list[float]] | None:
+    """Polyline5 (Google/OSRM, mesmo codec do encodePolyline do app.js) →
+    [[lat, lng], …]. Retorna None em string corrompida — o segmento degrada
+    pra reta, espelhando o decodePolylineSafe do cliente."""
+    if not isinstance(s, str) or len(s) < 2:
+        return None
+    pts, i, lat, lng = [], 0, 0, 0
+    while i < len(s):
+        for axis in (0, 1):
+            shift = result = 0
+            while True:
+                if i >= len(s):
+                    return None
+                b = ord(s[i]) - 63
+                i += 1
+                if b < 0:
+                    return None
+                result |= (b & 0x1F) << shift
+                shift += 5
+                if b < 0x20:
+                    break
+            delta = ~(result >> 1) if result & 1 else result >> 1
+            if axis == 0:
+                lat += delta
+            else:
+                lng += delta
+        pts.append([lat / 1e5, lng / 1e5])
+    if len(pts) < 2:
+        return None
+    for la, lo in pts:
+        if not (math.isfinite(la) and math.isfinite(lo)
+                and abs(la) <= 90 and abs(lo) <= 180):
+            return None
+    return pts
 
-    Em caso de falha de fetch, devolve a entrada com `latlngs: null`, `pois: []`
-    e um campo `error` — mesma convenção do build-routes.py, pra que o app
-    ainda exiba os metadados do passeio.
+
+def amora_route_geometry(state: dict) -> dict:
+    """Estado de uma rota salva do amora ({wp, sg, rm, n} — snapshotForShare)
+    → {latlngs, pois} no formato de routes.json.
+
+    `wp[k]` = [lat, lng, nome?, isPoi?, sym?]; `sg[k]` = polyline5 do caminho
+    que CHEGA em wp[k+1] (ausente em rotas 'reta'/v1 → liga em linha reta,
+    como o próprio editor faz)."""
+    wps = [w for w in (state.get("wp") or [])
+           if isinstance(w, list) and len(w) >= 2
+           and isinstance(w[0], (int, float)) and isinstance(w[1], (int, float))
+           and math.isfinite(w[0]) and math.isfinite(w[1])]
+    if len(wps) < 2:
+        raise RuntimeError("rota salva sem waypoints suficientes")
+    segs = state.get("sg") if isinstance(state.get("sg"), list) else None
+    latlngs = [[float(wps[0][0]), float(wps[0][1])]]
+    for i in range(1, len(wps)):
+        path = decode_polyline5(segs[i - 1]) if segs and i - 1 < len(segs) else None
+        if not path:
+            path = [[float(wps[i - 1][0]), float(wps[i - 1][1])],
+                    [float(wps[i][0]), float(wps[i][1])]]
+        latlngs.extend(path[1:])   # path inclui os dois extremos; evita emenda dupla
+    pois = []
+    for w in wps:
+        if len(w) >= 4 and w[3]:   # isPoi
+            sym = str(w[4]) if len(w) >= 5 and w[4] else "Flag, Blue"
+            pois.append({
+                "lat":  round(float(w[0]), COORD_PRECISION),
+                "lng":  round(float(w[1]), COORD_PRECISION),
+                "name": str(w[2] or "") if len(w) >= 3 else "",
+                # `sym` já é o vocabulário Garmin do editor — o cliente
+                # (rwgpsToGarminSym) o usa como está; `type` fica vazio.
+                "sym":  sym,
+                "type": "",
+            })
+    return {"latlngs": latlngs, "pois": pois}
+
+
+def build_route_entry(meta: dict, amora_state: dict | None = None) -> dict:
+    """Dado o dict de metadados de `tour_entry_from_graph`, busca a geometria
+    e devolve a entrada completa de routes.json.
+
+    • provider "rwgps": fetch no RideWithGPS (rede).
+    • provider "amora": decodifica `amora_state` — o estado da rota salva
+      (share format), que o CALLER carrega do seu saved_routes.json (backend
+      via STORE, build-routes.py do arquivo local). `None` = rota não
+      encontrada (apagada/renomeada) → entrada com erro.
+
+    Em caso de falha, devolve a entrada com `latlngs: null`, `pois: []` e um
+    campo `error` — mesma convenção do build-routes.py, pra que o app ainda
+    exiba os metadados do passeio.
     """
     try:
-        data = fetch_route_data(meta["id"])
+        if meta.get("provider") == "amora":
+            if not isinstance(amora_state, dict):
+                raise RuntimeError(
+                    f'rota salva "{meta["id"]}" não encontrada no servidor '
+                    "(apagada ou renomeada?)")
+            data = amora_route_geometry(amora_state)
+        else:
+            data = fetch_route_data(meta["id"])
         return {
             **meta,
             "latlngs": downsample_and_round(data["latlngs"]),

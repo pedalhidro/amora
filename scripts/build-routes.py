@@ -51,18 +51,48 @@ load_dotenv(REPO_ROOT / ".env")
 # por upload/delete de tour). Adicionamos o dir ao path pra importar.
 sys.path.insert(0, str(REPO_ROOT / "backend"))
 from rwgps import (  # noqa: E402
+    amora_route_geometry,
     downsample_and_round,
     fetch_route_data,
     has_credentials,
+    route_slug,
     tour_entry_from_graph,
 )
 
 # ─── Config ───────────────────────────────────────────────────────────────────
 TOURS_TTL    = REPO_ROOT / "web" / "data" / "tours.ttl"
+SAVED_ROUTES = REPO_ROOT / "web" / "saved_routes.json"
 OUTPUT_PATH  = REPO_ROOT / "web" / "routes.json"
 CONCURRENCY  = 4     # paralelismo de fetches no RWGPS
 
 PH = Namespace("https://id.pedalhidrografi.co/terms#")
+
+
+# ─── Rotas salvas do amora (provider "amora") ────────────────────────────────
+# Geometria local: web/saved_routes.json (mesmo formato do backend). Rode
+# `scripts/pull-cloudrun.sh` antes se as rotas salvas vivem no bucket — este
+# arquivo NÃO entra no sync guardado (ver CLAUDE.md).
+def load_saved_routes() -> dict:
+    if not SAVED_ROUTES.exists():
+        return {}
+    try:
+        obj = json.loads(SAVED_ROUTES.read_text(encoding="utf-8"))
+        return obj.get("routes") if isinstance(obj, dict) and isinstance(obj.get("routes"), dict) else {}
+    except ValueError:
+        return {}
+
+
+def find_saved_state(saved: dict, ref: str) -> dict | None:
+    """`ref` = id hex ou slug do nome (mesma resolução do backend; empate de
+    slug legado → a atualizada mais recentemente)."""
+    r = saved.get(ref)
+    if not isinstance(r, dict):
+        matches = [v for v in saved.values() if isinstance(v, dict)
+                   and (v.get("slug") or route_slug(v.get("name"))) == ref]
+        r = max(matches, key=lambda v: v.get("updated") or v.get("created") or "") \
+            if matches else None
+    state = r.get("state") if isinstance(r, dict) else None
+    return state if isinstance(state, dict) else None
 
 
 # ─── Leitura do tours.ttl ─────────────────────────────────────────────────────
@@ -98,20 +128,34 @@ def main() -> int:
         raise RuntimeError(f"tours.ttl não encontrado em {TOURS_TTL}")
     print(f'Reading {TOURS_TTL.relative_to(REPO_ROOT)}…')
     entries = parse_tours(TOURS_TTL)
-    print(f"  {len(entries)} passeio(s) com linkRoute do RideWithGPS")
+    print(f"  {len(entries)} passeio(s) com linkRoute reconhecido (RWGPS ou rota salva)")
     if not entries:
         raise RuntimeError("nenhum passeio com `ph:linkRoute` encontrado")
 
-    # Fetch each unique RWGPS id once; passeios diferentes podem compartilhar
-    # uma rota (aniversários, rerides). Cada entry permanece como evento próprio.
-    unique_ids = sorted({e["id"] for e in entries})
-    print(f"Fetching {len(unique_ids)} GPX único(s) (concurrency={CONCURRENCY})…")
-    counter = {"done": 0}
-    total_ids = len(unique_ids)
+    saved = load_saved_routes()
 
-    def fetch_worker(rid: str):
+    # Fetch each unique route once (keyed por provider+id); passeios diferentes
+    # podem compartilhar uma rota (aniversários, rerides). Cada entry permanece
+    # como evento próprio.
+    def entry_key(e):
+        return (e.get("provider") or "rwgps", e["id"])
+    unique_keys = sorted({entry_key(e) for e in entries})
+    print(f"Fetching {len(unique_keys)} rota(s) única(s) (concurrency={CONCURRENCY})…")
+    counter = {"done": 0}
+    total_ids = len(unique_keys)
+
+    def fetch_worker(key: tuple[str, str]):
+        prov, rid = key
         try:
-            data = fetch_route_data(rid)
+            if prov == "amora":
+                state = find_saved_state(saved, rid)
+                if state is None:
+                    raise RuntimeError(
+                        f'rota salva "{rid}" não está em web/saved_routes.json '
+                        "(rode scripts/pull-cloudrun.sh antes?)")
+                data = amora_route_geometry(state)
+            else:
+                data = fetch_route_data(rid)
             pts_tag = f'{len(data["latlngs"])}pts' if data["latlngs"] else "FAIL"
             poi_tag = f', {len(data["pois"])} POIs' if data["pois"] else ""
             tag = f"ok ({pts_tag}{poi_tag})"
@@ -119,17 +163,17 @@ def main() -> int:
         except Exception as e:
             data, err, tag = None, str(e), f"FAIL ({e})"
         counter["done"] += 1
-        print(f"  [{counter['done']}/{total_ids}] {rid} — {tag}", flush=True)
-        return rid, data, err
+        print(f"  [{counter['done']}/{total_ids}] {prov}:{rid} — {tag}", flush=True)
+        return key, data, err
 
-    fetched: dict[str, tuple[dict | None, str | None]] = {}
+    fetched: dict[tuple[str, str], tuple[dict | None, str | None]] = {}
     with ThreadPoolExecutor(max_workers=CONCURRENCY) as pool:
-        for rid, data, err in pool.map(fetch_worker, unique_ids):
-            fetched[rid] = (data, err)
+        for key, data, err in pool.map(fetch_worker, unique_keys):
+            fetched[key] = (data, err)
 
     results = []
     for entry in entries:
-        data, err = fetched[entry["id"]]
+        data, err = fetched[entry_key(entry)]
         if data:
             results.append({
                 **entry,

@@ -77,7 +77,7 @@ ph:video720p a owl:DatatypeProperty ;
 ph:RouteReference a owl:Class ;
     rdfs:label "Referência a rota externa"@pt ;
     rdfs:comment
-        "Ligação para uma rota publicada em um serviço externo (RideWithGPS, Strava, etc.). Carrega URL e provedor."@pt .
+        "Ligação para uma rota publicada em um serviço (RideWithGPS, Strava, ou uma rota salva do próprio Amora em /route/<slug>). Carrega URL e provedor."@pt .
 
 ph:SeriesEdition a owl:Class ;
     rdfs:label "Edição de série"@pt ;
@@ -120,6 +120,12 @@ ph:rwgps a schema:Organization ;
 ph:strava a schema:Organization ;
     schema:name "Strava" ;
     schema:url <https://www.strava.com> .
+
+# O próprio amora como provedor: rotas salvas no editor de traçado,
+# compartilhadas por nome em https://amora.pedalhidrografi.co/route/<slug>.
+ph:amora a schema:Organization ;
+    schema:name "Amora (Pedal Hidrográfico)" ;
+    schema:url <https://amora.pedalhidrografi.co> .
 
 ph:linkInstagram a owl:DatatypeProperty ;
     rdfs:label "post no Instagram"@pt ;

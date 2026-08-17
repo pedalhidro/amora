@@ -63,7 +63,6 @@ import os
 import re
 import threading
 import time
-import unicodedata
 import uuid
 from pathlib import Path
 
@@ -1198,8 +1197,9 @@ def _write_routes_payload(routes):
 
 
 def _current_tour_route_id(tour_id):
-    """Lê o tours.ttl VIGENTE e devolve o id RWGPS do tour — ou None se o
-    tour não existe ou não tem `ph:linkRoute`. Usado pra re-checar, sob o
+    """Lê o tours.ttl VIGENTE e devolve o id da rota do tour (id RWGPS ou
+    slug de rota salva do amora) — ou None se o tour não existe ou não tem
+    `ph:linkRoute` reconhecido. Usado pra re-checar, sob o
     lock, que o estado não mudou durante o fetch de geometria fora do lock
     (TOCTOU: um delete-tour ou re-edit concorrente durante os até ~120 s de
     IO de rede não pode ser ressuscitado/sobrescrito por um upsert cego)."""
@@ -1222,6 +1222,11 @@ def _sync_tour_route(tour_id):
     • Se o tour (no tours.ttl persistido) tem `ph:linkRoute` → RideWithGPS:
       busca a geometria (fora do lock) e faz upsert da entrada (keyed por
       tourIri).
+    • `ph:linkRoute` → rota salva do próprio amora (/route/<slug>): a
+      geometria vem do saved_routes.json local (sem rede) — e, ao contrário
+      do RWGPS, é MUTÁVEL (re-salvar a rota no editor muda o traçado), então
+      o curto-circuito de cache de geometria não se aplica: recalcula sempre
+      (barato) e o guard `old == entry` evita reescritas sem mudança.
     • Senão (sem linkRoute): remove qualquer entrada existente daquele tour.
 
     Lê o CATÁLOGO persistido, não o TTL postado: a entrada precisa resolver
@@ -1278,14 +1283,20 @@ def _sync_tour_route(tour_id):
     # tem Object Versioning, cada rewrite deixa uma geração noncurrent parada
     # por 90 dias. Pra forçar a rebusca da geometria: scripts/build-routes.py.
     cached = None
-    with _state_lock:
-        _p = _load_routes_payload()
-        _old = next((r for r in _p["routes"] if r.get("tourIri") == tour_iri), None)
-        if _old and _old.get("id") == meta["id"] and _old.get("latlngs"):
-            cached = {"latlngs": _old["latlngs"], "pois": _old.get("pois") or []}
+    if meta.get("provider") != "amora":   # geometria amora é mutável — sem cache
+        with _state_lock:
+            _p = _load_routes_payload()
+            _old = next((r for r in _p["routes"] if r.get("tourIri") == tour_iri), None)
+            if _old and _old.get("id") == meta["id"] and _old.get("latlngs"):
+                cached = {"latlngs": _old["latlngs"], "pois": _old.get("pois") or []}
 
     if cached is not None:
         entry = {**meta, **cached}
+    elif meta.get("provider") == "amora":
+        # Geometria local: estado da rota salva (share format) do catálogo.
+        _rid, saved = _find_saved_route(meta["id"])
+        state = saved.get("state") if isinstance(saved, dict) else None
+        entry = rwgps.build_route_entry(meta, amora_state=state)
     else:
         # Fetch da geometria FORA do lock (IO de rede, pode demorar).
         entry = rwgps.build_route_entry(meta)
@@ -1319,12 +1330,15 @@ def _sync_tour_route(tour_id):
         payload["routes"].append(entry)
         _write_routes_payload(payload["routes"])
 
+    prov = entry.get("provider") or "rwgps"
     if kept:
-        return {"status": "fetch_failed", "rwgpsId": entry["id"],
+        return {"status": "fetch_failed", "rwgpsId": entry["id"], "provider": prov,
                 "error": entry.get("error"), "kept": True}
     if entry.get("latlngs"):
-        return {"status": "ok", "rwgpsId": entry["id"], "points": len(entry["latlngs"])}
-    return {"status": "fetch_failed", "rwgpsId": entry["id"], "error": entry.get("error")}
+        return {"status": "ok", "rwgpsId": entry["id"], "provider": prov,
+                "points": len(entry["latlngs"])}
+    return {"status": "fetch_failed", "rwgpsId": entry["id"], "provider": prov,
+            "error": entry.get("error")}
 
 
 def _remove_tour_route(tour_id):
@@ -1339,6 +1353,43 @@ def _remove_tour_route(tour_id):
         if removed:
             _write_routes_payload(payload["routes"])
     return removed
+
+
+def _resync_amora_route_tours(slug):
+    """Re-sincroniza as entradas de routes.json dos tours cujo `ph:linkRoute`
+    aponta pra rota salva `slug` do próprio amora. Chamado (best-effort) pelo
+    /save-route: ao contrário do RWGPS, o traçado de uma rota salva MUDA
+    quando alguém re-salva no editor — sem isto, o mapa mostraria a geometria
+    velha até o próximo edit do passeio. Sem IO de rede (geometria local);
+    devolve o nº de tours re-sincronizados."""
+    import rwgps
+    from rdflib import Graph as _RdfGraph
+    text = _load_dump_text("tours.ttl")
+    if not text:
+        return 0
+    try:
+        g = _RdfGraph().parse(data=text, format="turtle")
+    except Exception:  # noqa: BLE001
+        return 0
+    from rdflib import Namespace
+    PH_ = Namespace(PH_NS)
+    SCHEMA_ = Namespace("https://schema.org/")
+    n = 0
+    for ref in set(g.objects(None, PH_.linkRoute)):
+        for url in g.objects(ref, SCHEMA_.url):
+            if rwgps.extract_amora_slug(str(url)) != slug:
+                continue
+            for tour in g.subjects(PH_.linkRoute, ref):
+                tour_iri = str(tour)
+                if not tour_iri.startswith(PAS_NS):
+                    continue
+                try:
+                    r = _sync_tour_route(tour_iri[len(PAS_NS):])
+                    if r.get("status") in ("ok", "unchanged"):
+                        n += 1
+                except Exception as e:  # noqa: BLE001
+                    print(f"[save-route] resync do tour {tour_iri} falhou: {e}")
+    return n
 
 
 # ── Rotas ────────────────────────────────────────────────────────────────
@@ -1943,12 +1994,11 @@ def _write_saved_routes(catalog):
 
 def _route_slug(name):
     """Slug do link /route/<slug> — derivado do NOME da rota (a identidade
-    humana dela): minúsculas, sem acento, [a-z0-9] ligados por '-'. Mesmo
-    algoritmo do filenameFromName do app.js, pra link e arquivo baterem."""
-    s = unicodedata.normalize("NFD", str(name or ""))
-    s = "".join(c for c in s if not unicodedata.combining(c)).lower()
-    s = re.sub(r"[^a-z0-9]+", "-", s).strip("-")
-    return s[:60].strip("-")
+    humana dela). Implementação única em `rwgps.route_slug` (compartilhada
+    com build-routes.py); mesmo algoritmo do filenameFromName do app.js,
+    pra link e arquivo baterem."""
+    import rwgps
+    return rwgps.route_slug(name)
 
 
 def _entry_slug(entry):
@@ -1978,6 +2028,25 @@ def list_saved_routes():
                                  headers={"Cache-Control": "no-cache"}))
 
 
+def _find_saved_route(ref):
+    """Resolve `ref` (id hex OU slug do nome) → (rid, entrada) do catálogo de
+    rotas salvas, ou (None, None). Empate de slug (nomes duplicados legados,
+    de antes da unicidade) → vence a atualizada mais recentemente."""
+    ref = (ref or "").strip()
+    if not ref:
+        return None, None
+    routes = _read_saved_routes().get("routes", {})
+    r = routes.get(ref)
+    if isinstance(r, dict):
+        return ref, r
+    matches = [(k, v) for k, v in routes.items()
+               if isinstance(v, dict) and _entry_slug(v) == ref]
+    if not matches:
+        return None, None
+    return max(matches, key=lambda kv: kv[1].get("updated")
+               or kv[1].get("created") or "")
+
+
 @app.get("/saved-route/<ref>")
 def get_saved_route(ref):
     """Estado completo (formato de compartilhamento) de uma rota salva.
@@ -1986,18 +2055,7 @@ def get_saved_route(ref):
     resolve). A resposta leva `id`/`slug` junto do estado — o cliente adota o
     id pra um re-salvar atualizar a MESMA rota (applyShareState ignora chaves
     desconhecidas)."""
-    ref = (ref or "").strip()
-    routes = _read_saved_routes().get("routes", {})
-    rid, r = ref, routes.get(ref)
-    if not isinstance(r, dict):
-        # Busca por slug; empate (nomes duplicados legados, de antes da
-        # unicidade) → vence a atualizada mais recentemente.
-        matches = [(k, v) for k, v in routes.items()
-                   if isinstance(v, dict) and _entry_slug(v) == ref]
-        if not matches:
-            abort(404)
-        rid, r = max(matches, key=lambda kv: kv[1].get("updated")
-                     or kv[1].get("created") or "")
+    rid, r = _find_saved_route(ref)
     if not isinstance(r, dict) or not isinstance(r.get("state"), dict):
         abort(404)
     payload = dict(r["state"])
@@ -2074,7 +2132,15 @@ def save_route():
     except Exception as e:  # noqa: BLE001
         return jsonify(error=f"persistência: {e}"), 500
     print(f"[save-route] id={rid} slug={slug} pts={routes[rid]['points']} name={name!r}")
-    return jsonify(id=rid, slug=slug)
+    # Passeios que usam esta rota salva como ph:linkRoute (provider amora)
+    # ganham a geometria nova em routes.json na hora. Best-effort e local
+    # (sem rede); estamos sob o @serialized (_state_lock é RLock).
+    synced = 0
+    try:
+        synced = _resync_amora_route_tours(slug)
+    except Exception as e:  # noqa: BLE001
+        print(f"[save-route] resync de tours falhou: {e}")
+    return jsonify(id=rid, slug=slug, syncedTours=synced)
 
 
 @app.post("/delete-route/<rid>")
