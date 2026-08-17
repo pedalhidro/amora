@@ -2125,9 +2125,14 @@ def route_deep_link(slug):
     bits = []
     if dist:
         bits.append(f"{dist / 1000:.1f} km".replace(".", ","))
-    asc = (r.get("stats") or {}).get("ascentM") if isinstance(r.get("stats"), dict) else None
+    st = r.get("stats") if isinstance(r.get("stats"), dict) else {}
+    asc = (st or {}).get("ascentM")
     if isinstance(asc, (int, float)) and math.isfinite(asc):
         bits.append(f"↑{round(asc)} m")
+    # Quilojaules + faixa de intensidade do censo (De boa…Insano).
+    kj = (st or {}).get("energyKj")
+    if isinstance(kj, (int, float)) and math.isfinite(kj):
+        bits.append(f"{round(kj)} kJ ({_intensity_for(float(kj))[0]})")
     desc = (" · ".join(bits) + " — " if bits else "") + \
         "rota traçada no amora, o mapa do Pedal Hidrográfico"
     target = f"/#rt={slug}"
@@ -2161,13 +2166,153 @@ def route_deep_link(slug):
 
 
 # ── Imagem OG da rota (preview de link em WhatsApp/redes) ────────────────
-# O traçado renderizado server-side (Pillow) no visual das miniaturas do
-# modal Carregar — fundo claro, casing branco, pontos de início/fim — com o
-# logo do amora no canto superior direito. 1200×630 (proporção padrão de
-# og:image), renderizado a 2× e reduzido com LANCZOS (anti-aliasing).
+# O traçado renderizado server-side (Pillow) sobre a "Morros e Águas" (águas
+# e cristas do MESMO FGB de hidrografia que a camada do mapa, lidas por range
+# request com bbox via o pacote flatgeobuf) — com o logo do amora no canto
+# superior direito e o badge de energia (kJ + faixa de intensidade do censo)
+# no inferior direito. 1200×630 (proporção padrão de og:image), renderizado a
+# 2× e reduzido com LANCZOS (anti-aliasing).
+#
+# O card é PRÉ-RENDERIZADO no /save-route (fora do lock, ainda no request —
+# a CPU do Cloud Run só é garantida durante requests) e persistido no store
+# (route_og/<id>.png), então o crawler do WhatsApp recebe na hora e o card
+# sobrevive a restart de instância; o render on-the-fly fica de fallback pra
+# rotas salvas antes do pré-render existir.
 _ROUTE_OG_W, _ROUTE_OG_H = 1200, 630
+_ROUTE_OG_KEY = "route_og/{rid}.png"
 _route_og_cache = {}            # (rid, updated) → bytes PNG
 _ROUTE_OG_CACHE_MAX = 32
+
+# FGB/GeoJSON via storage.googleapis.com, NÃO telhas.pedalhidrografi.co: a
+# Cloudflare 403a user-agents não-browser (urllib), e do Cloud Run o GCS
+# direto é mais perto de qualquer jeito. Mesmos arquivos.
+_OG_HIDRO_FGB = "https://storage.googleapis.com/telhas/viario/south-america-hidro.fgb"
+_OG_PH_NETWORK = "https://storage.googleapis.com/telhas/viario/ph-cycle-network.geojson"
+_OG_HIDRO_MAIN_KM2 = 150        # acima disso, só rio/canal/crista (como as miniaturas)
+_OG_HIDRO_MAX_FEATURES = 2500
+_OG_HIDRO_TIMEOUT_S = 12
+
+# Faixas de intensidade do censo (fonte canônica: intensityFor em
+# censo.html) + as cores da pill de lá: (teto exclusivo kJ, rótulo, bg, fg).
+_INTENSITY_BANDS = [
+    (150,  "De boa",      (211, 242, 224), (20, 83, 45)),
+    (300,  "Ok",          (230, 244, 207), (63, 98, 18)),
+    (500,  "Endorfinado", (253, 238, 199), (138, 90, 6)),
+    (1000, "Frito",       (255, 225, 212), (154, 52, 18)),
+    (None, "Insano",      (251, 213, 213), (140, 31, 31)),
+]
+
+
+def _intensity_for(kj):
+    for cap, label, bg, fg in _INTENSITY_BANDS:
+        if cap is None or kj < cap:
+            return label, bg, fg
+
+
+_og_ttf_bytes = None
+
+
+def _og_font(size):
+    """IBM Plex Mono do próprio repo (web/fonts/, woff2) convertida pra TTF
+    em memória via fontTools — Pillow não lê woff2. Conversão uma vez por
+    processo; ImageFont por tamanho."""
+    global _og_ttf_bytes
+    import io
+    from PIL import ImageFont
+    if _og_ttf_bytes is None:
+        from fontTools.ttLib import TTFont
+        f = TTFont(str(WEB / "fonts" / "ibm-plex-mono-600.woff2"))
+        f.flavor = None
+        buf = io.BytesIO()
+        f.save(buf)
+        _og_ttf_bytes = buf.getvalue()
+    return ImageFont.truetype(io.BytesIO(_og_ttf_bytes), size)
+
+
+_og_network_cache = None
+
+
+def _og_ph_network():
+    """Rede cicloviária do coletivo (GeoJSON minúsculo) — baixada uma vez por
+    processo. Falha não cacheia (tenta de novo no próximo render)."""
+    global _og_network_cache
+    if _og_network_cache is None:
+        try:
+            import urllib.request
+            with urllib.request.urlopen(_OG_PH_NETWORK, timeout=8) as resp:
+                _og_network_cache = json.loads(resp.read()).get("features") or []
+        except Exception as e:  # noqa: BLE001
+            print(f"[route-og] rede do coletivo indisponível: {e}")
+            return []
+    return _og_network_cache
+
+
+def _fetch_og_hidro(bb):
+    """Feições da Morros e Águas pra bbox do card, numa thread com timeout —
+    o /save-route não pode pendurar num range request lento. None = falhou/
+    estourou o tempo (o card sai sem águas; melhor card sem fundo que save
+    travado)."""
+    out = {}
+
+    def work():
+        try:
+            import flatgeobuf
+            fc = flatgeobuf.load_http(
+                _OG_HIDRO_FGB,
+                bbox=(bb["west"], bb["south"], bb["east"], bb["north"]))
+            out["feats"] = fc["features"] if isinstance(fc, dict) else list(fc)
+        except Exception as e:  # noqa: BLE001
+            print(f"[route-og] hidro FGB indisponível: {e}")
+    t = threading.Thread(target=work, daemon=True)
+    t.start()
+    t.join(_OG_HIDRO_TIMEOUT_S)
+    return out.get("feats")
+
+
+def _bbox_area_km2(bb):
+    """Área aproximada da bbox em km² — espelho do bboxAreaKm2 do app.js."""
+    mid = math.radians((bb["south"] + bb["north"]) / 2)
+    height = (bb["north"] - bb["south"]) * 111.32
+    width = (bb["east"] - bb["west"]) * 111.32 * math.cos(mid)
+    return abs(height * width)
+
+
+def _og_hidro_style(p, main_only):
+    """Espelho do hidroStyleFor do app.js (folha JOSM "Morros e Águas"):
+    rio verde w5, demais águas ocre w3, crista laranja w3; tracejado quando
+    em túnel/canalizado. main_only (bbox grande) filtra a renda ilegível."""
+    tunnel = bool(p.get("tunnel")) and p.get("tunnel") != "no"
+    if p.get("natural") == "ridge":
+        return (239, 122, 48), 3, False
+    ww = p.get("waterway")
+    if ww == "river":
+        return (166, 192, 69), 5, tunnel
+    if main_only and ww not in ("canal", "riverbank"):
+        return None
+    if ww:
+        return (221, 184, 79), 3, tunnel
+    return None if main_only else ((136, 136, 136), 2, False)
+
+
+def _draw_dashed(d, pts, fill, width, dash, gap):
+    """Polyline tracejada — Pillow não tem dash nativo: caminha os segmentos
+    acumulando distância e alterna a caneta a cada dash/gap px."""
+    on, rem = True, dash
+    for (x1, y1), (x2, y2) in zip(pts, pts[1:]):
+        seg = math.hypot(x2 - x1, y2 - y1)
+        pos = 0.0
+        while pos < seg:
+            step = min(rem, seg - pos)
+            t0, t1 = pos / seg, (pos + step) / seg
+            if on:
+                d.line([(x1 + (x2 - x1) * t0, y1 + (y2 - y1) * t0),
+                        (x1 + (x2 - x1) * t1, y1 + (y2 - y1) * t1)],
+                       fill=fill, width=width)
+            pos += step
+            rem -= step
+            if rem <= 0:
+                on = not on
+                rem = dash if on else gap
 
 
 def _render_route_og(entry):
@@ -2187,11 +2332,51 @@ def _render_route_og(entry):
     s = min((w - 2 * pad) / span_x, (h - 2 * pad) / span_y)
     ox = (w - span_x * s) / 2
     oy = (h - span_y * s) / 2
-    pts = [(ox + (lo - min_lng) * kx * s, oy + (max_lat - la) * s)
-           for la, lo in latlngs]
+
+    def to_px(la, lo):
+        return (ox + (lo - min_lng) * kx * s, oy + (max_lat - la) * s)
+    pts = [to_px(la, lo) for la, lo in latlngs]
 
     img = Image.new("RGB", (w, h), (238, 241, 244))     # --surface do app
     d = ImageDraw.Draw(img)
+
+    # ── Basemap Morros e Águas: bbox GEO da viewBox INTEIRA (inversa da
+    # projeção nos cantos), pra água preencher o card até as bordas.
+    bb = {
+        "west":  min_lng - ox / (kx * s),
+        "east":  min_lng + (w - ox) / (kx * s),
+        "north": max_lat + oy / s,
+        "south": max_lat - (h - oy) / s,
+    }
+    main_only = _bbox_area_km2(bb) > _OG_HIDRO_MAIN_KM2
+    hidro = _fetch_og_hidro(bb) or []
+    network = [(f, ((45, 169, 255), 5, False)) for f in _og_ph_network()]
+    drawn = 0
+    for feat, forced_style in [(f, None) for f in hidro] + network:
+        if drawn >= _OG_HIDRO_MAX_FEATURES:
+            break
+        style = forced_style or _og_hidro_style(feat.get("properties") or {}, main_only)
+        if not style:
+            continue
+        rgb, weight, dashed = style
+        geom = feat.get("geometry") or {}
+        parts = [geom.get("coordinates")] if geom.get("type") == "LineString" \
+            else geom.get("coordinates") if geom.get("type") == "MultiLineString" else []
+        for coords in parts or []:
+            if not isinstance(coords, list) or len(coords) < 2:
+                continue
+            ppts = [to_px(c[1], c[0]) for c in coords]   # FGB/GeoJSON: [lng,lat]
+            # Fora do canvas inteiro (rede do coletivo cobre a cidade toda) → pula.
+            if (max(p[0] for p in ppts) < 0 or min(p[0] for p in ppts) > w
+                    or max(p[1] for p in ppts) < 0 or min(p[1] for p in ppts) > h):
+                continue
+            if dashed:
+                _draw_dashed(d, ppts, rgb, weight * ss, 8 * ss, 10 * ss)
+            else:
+                d.line(ppts, fill=rgb, width=weight * ss, joint="curve")
+            drawn += 1
+
+    # ── Traçado por cima (casing branco, como as miniaturas).
     d.line(pts, fill=(255, 255, 255), width=17 * ss, joint="curve")   # casing
     d.line(pts, fill=(255, 91, 58), width=9 * ss, joint="curve")      # --route
 
@@ -2204,21 +2389,80 @@ def _render_route_og(entry):
     dot(pts[0], (46, 139, 87), 12 * ss)      # início (verde)
     dot(pts[-1], (179, 67, 30), 10 * ss)     # fim (laranja-escuro)
 
+    # ── Badge de energia (quilojaules + faixa do censo), canto inferior
+    # direito — pill com as cores da coluna Intensidade do censo. Só quando o
+    # editor gravou stats.energyKj no save (o estado salvo não tem elevação).
+    st = entry.get("stats") if isinstance(entry.get("stats"), dict) else None
+    kj = st.get("energyKj") if st else None
+    if isinstance(kj, (int, float)) and math.isfinite(kj):
+        try:
+            label, bg_rgb, fg_rgb = _intensity_for(float(kj))
+            text = f"{round(kj)} kJ · {label}"
+            font = _og_font(24 * ss)
+            tb = d.textbbox((0, 0), text, font=font)
+            tw, th = tb[2] - tb[0], tb[3] - tb[1]
+            px_, py_ = 18 * ss, 11 * ss
+            x1, y1 = w - 36 * ss, h - 36 * ss
+            x0, y0 = x1 - tw - 2 * px_, y1 - th - 2 * py_
+            d.rounded_rectangle([x0, y0, x1, y1], radius=(th + 2 * py_) // 2,
+                                fill=bg_rgb, outline=(255, 255, 255), width=2 * ss)
+            d.text((x0 + px_ - tb[0], y0 + py_ - tb[1]), text, font=font, fill=fg_rgb)
+        except Exception as e:  # noqa: BLE001 — sem fontTools/brotli, card sai sem badge
+            print(f"[route-og] badge de energia falhou: {e}")
+
     logo = Image.open(WEB / "img" / "amora-icon.png").convert("RGBA")
     lw = 120 * ss
     logo = logo.resize((lw, lw), Image.LANCZOS)
     img.paste(logo, (w - lw - 36 * ss, 36 * ss), logo)
 
     img = img.resize((_ROUTE_OG_W, _ROUTE_OG_H), Image.LANCZOS)
+    # PNG-8 (paleta adaptativa): a arte é de cores chapadas, quantiza sem
+    # perda visível e corta o peso ~3× — o WhatsApp rejeita og:image grande.
+    img = img.quantize(colors=256, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE)
     buf = io.BytesIO()
     img.save(buf, "PNG", optimize=True)
     return buf.getvalue()
 
 
+def _og_cache_put(key, png):
+    _route_og_cache[key] = png
+    while len(_route_og_cache) > _ROUTE_OG_CACHE_MAX:
+        _route_og_cache.pop(next(iter(_route_og_cache)))
+
+
+def _refresh_route_og(rid, r=None):
+    """(Re)renderiza e PERSISTE o card OG da rota `rid` no store. Chamado no
+    fim do /save-route e, lazy, no primeiro GET de uma rota salva antes do
+    pré-render existir. Falha → apaga o blob antigo (melhor card nenhum do
+    que o card de um traçado que já mudou) e devolve None."""
+    if r is None:
+        _, r = _find_saved_route(rid)
+    if not isinstance(r, dict) or not isinstance(r.get("state"), dict):
+        return None
+    key = _ROUTE_OG_KEY.format(rid=rid)
+    try:
+        png = _render_route_og(r)
+    except Exception as e:  # noqa: BLE001 — sem Pillow/estado degenerado
+        print(f"[route-og] render falhou pra {rid}: {e}")
+        try:
+            STORE.delete(key)
+        except Exception:  # noqa: BLE001
+            pass
+        _route_og_cache.pop((rid, r.get("updated") or ""), None)
+        return None
+    try:
+        STORE.write_bytes(key, png, content_type="image/png")
+    except Exception as e:  # noqa: BLE001
+        print(f"[route-og] persistência falhou pra {rid}: {e}")
+    _og_cache_put((rid, r.get("updated") or ""), png)
+    return png
+
+
 @app.get("/route/<slug>/og.png")
 def route_og_png(slug):
-    """Imagem do card de compartilhamento da rota. Cache em memória por
-    (id, updated) — re-salvar a rota muda a chave e re-renderiza; a borda
+    """Imagem do card de compartilhamento da rota. Ordem: cache em memória
+    (id+updated) → blob pré-renderizado pelo /save-route → render lazy (rota
+    salva antes do pré-render existir), que também persiste. A borda
     (Cloudflare) pode cachear por 1 h (max-age)."""
     slug = (slug or "").strip().lower()
     rid, r = _find_saved_route(slug)
@@ -2228,27 +2472,35 @@ def route_og_png(slug):
     png = _route_og_cache.get(key)
     if png is None:
         try:
-            png = _render_route_og(r)
-        except Exception as e:  # noqa: BLE001 — sem Pillow/estado degenerado
-            print(f"[route-og] render falhou pra {slug}: {e}")
-            abort(404)
-        _route_og_cache[key] = png
-        while len(_route_og_cache) > _ROUTE_OG_CACHE_MAX:
-            _route_og_cache.pop(next(iter(_route_og_cache)))
+            png = STORE.read_bytes(_ROUTE_OG_KEY.format(rid=rid))
+        except Exception:  # noqa: BLE001
+            png = None
+        if png is not None:
+            _og_cache_put(key, png)
+    if png is None:
+        png = _refresh_route_og(rid, r)
+    if png is None:
+        abort(404)
     return Response(png, mimetype="image/png",
                     headers={"Cache-Control": "public, max-age=3600"})
 
 
 @app.post("/save-route")
-@serialized
 def save_route():
-    """Upsert de uma rota salva. Body JSON: {name, state, id?}. Devolve
-    {id, slug}. `state` é o objeto de snapshotForShare() do editor
-    (wp + sg + rm + n). Passar `id` (de uma rota existente) sobrescreve
-    in-place; sem id, gera um. O NOME é obrigatório e único (case/acento-
-    insensível, via slug): é ele que vira o link /route/<slug> — colisão com
-    outra rota devolve 409 com o id/name da existente, e o cliente pergunta
-    se o usuário quer atualizá-la (re-salva com esse id) ou trocar o nome."""
+    """Upsert de uma rota salva. Body JSON: {name, state, stats?, id?}.
+    Devolve {id, slug}. `state` é o objeto de snapshotForShare() do editor
+    (wp + sg + rm + n); `stats` (ascentM/descentM/energyKj) vem do editor —
+    o estado salvo não tem elevação, então é a única fonte de ↑ e kJ. Passar
+    `id` (de uma rota existente) sobrescreve in-place; sem id, gera um. O
+    NOME é obrigatório e único (case/acento-insensível, via slug): é ele que
+    vira o link /route/<slug> — colisão com outra rota devolve 409 com o
+    id/name da existente, e o cliente pergunta se o usuário quer atualizá-la
+    (re-salva com esse id) ou trocar o nome.
+
+    SEM @serialized de propósito: só o miolo read-modify-write roda sob o
+    _state_lock. O resync dos tours (trava por conta própria) e o PRÉ-RENDER
+    do card OG (FGB + Pillow — segundos) rodam DEPOIS, fora do lock mas ainda
+    no request (a CPU do Cloud Run só é garantida durante requests)."""
     data = request.get_json(silent=True) or {}
     state = data.get("state")
     if (not isinstance(state, dict) or not isinstance(state.get("wp"), list)
@@ -2263,55 +2515,61 @@ def save_route():
     rid = str(data.get("id") or "").strip() or uuid.uuid4().hex[:12]
     if not (1 <= len(rid) <= 32) or not all(c in "0123456789abcdef" for c in rid):
         return jsonify(error="id inválido (esperado hex)"), 400
-    try:
-        cat = _read_saved_routes(strict=True)
-    except (ValueError, TypeError) as e:
-        return jsonify(error=f"saved_routes.json corrompido, recusando salvar: {e}"), 500
-    routes = cat.setdefault("routes", {})
-    for other_id, other in routes.items():
-        if other_id == rid or not isinstance(other, dict):
-            continue
-        if _entry_slug(other) == slug:
-            # id/name da rota existente vão junto: o cliente pergunta se o
-            # usuário quer ATUALIZÁ-LA (re-salva com esse id) ou renomear.
-            return jsonify(
-                error=f'já existe uma rota chamada "{other.get("name") or slug}"',
-                slug=slug, id=other_id, name=other.get("name") or slug), 409
-    existing = routes.get(rid)
-    now = datetime.now(timezone.utc).isoformat()
-    # Stats do editor (subida acumulada etc.) — só números finitos entram.
-    # O estado salvo não carrega elevação, então isto é a única fonte de ↑.
-    stats_in = data.get("stats")
-    stats = None
-    if isinstance(stats_in, dict):
-        stats = {k: round(float(v), 1) for k, v in stats_in.items()
-                 if k in ("ascentM", "descentM") and isinstance(v, (int, float))
-                 and math.isfinite(v)}
-        stats = stats or None
-    routes[rid] = {
-        "name": name,
-        "slug": slug,
-        "state": state,
-        "points": len(state["wp"]),
-        "stats": stats,
-        "created": (existing or {}).get("created") if isinstance(existing, dict) else None,
-        "updated": now,
-    }
-    if not routes[rid]["created"]:
-        routes[rid]["created"] = now
-    try:
-        _write_saved_routes(cat)
-    except Exception as e:  # noqa: BLE001
-        return jsonify(error=f"persistência: {e}"), 500
+    with _state_lock:
+        try:
+            cat = _read_saved_routes(strict=True)
+        except (ValueError, TypeError) as e:
+            return jsonify(error=f"saved_routes.json corrompido, recusando salvar: {e}"), 500
+        routes = cat.setdefault("routes", {})
+        for other_id, other in routes.items():
+            if other_id == rid or not isinstance(other, dict):
+                continue
+            if _entry_slug(other) == slug:
+                # id/name da rota existente vão junto: o cliente pergunta se o
+                # usuário quer ATUALIZÁ-LA (re-salva com esse id) ou renomear.
+                return jsonify(
+                    error=f'já existe uma rota chamada "{other.get("name") or slug}"',
+                    slug=slug, id=other_id, name=other.get("name") or slug), 409
+        existing = routes.get(rid)
+        now = datetime.now(timezone.utc).isoformat()
+        # Stats do editor — só números finitos entram. energyKj alimenta o
+        # badge do card OG e a faixa de intensidade (De boa…Insano).
+        stats_in = data.get("stats")
+        stats = None
+        if isinstance(stats_in, dict):
+            stats = {k: round(float(v), 1) for k, v in stats_in.items()
+                     if k in ("ascentM", "descentM", "energyKj")
+                     and isinstance(v, (int, float)) and math.isfinite(v)}
+            stats = stats or None
+        routes[rid] = {
+            "name": name,
+            "slug": slug,
+            "state": state,
+            "points": len(state["wp"]),
+            "stats": stats,
+            "created": (existing or {}).get("created") if isinstance(existing, dict) else None,
+            "updated": now,
+        }
+        if not routes[rid]["created"]:
+            routes[rid]["created"] = now
+        try:
+            _write_saved_routes(cat)
+        except Exception as e:  # noqa: BLE001
+            return jsonify(error=f"persistência: {e}"), 500
     print(f"[save-route] id={rid} slug={slug} pts={routes[rid]['points']} name={name!r}")
     # Passeios que usam esta rota salva como ph:linkRoute (provider amora)
     # ganham a geometria nova em routes.json na hora. Best-effort e local
-    # (sem rede); estamos sob o @serialized (_state_lock é RLock).
+    # (sem rede); _sync_tour_route trava o que precisa por conta própria.
     synced = 0
     try:
         synced = _resync_amora_route_tours(slug)
     except Exception as e:  # noqa: BLE001
         print(f"[save-route] resync de tours falhou: {e}")
+    # Pré-render do card OG (WhatsApp/redes) — fora do lock, best-effort.
+    try:
+        _refresh_route_og(rid, routes[rid])
+    except Exception as e:  # noqa: BLE001
+        print(f"[save-route] pré-render do card OG falhou: {e}")
     return jsonify(id=rid, slug=slug, syncedTours=synced)
 
 
@@ -2330,6 +2588,11 @@ def delete_route(rid):
         _write_saved_routes(cat)
     except Exception as e:  # noqa: BLE001
         return jsonify(error=f"persistência: {e}"), 500
+    # Card OG pré-renderizado sai junto (best-effort).
+    try:
+        STORE.delete(_ROUTE_OG_KEY.format(rid=rid))
+    except Exception:  # noqa: BLE001
+        pass
     print(f"[delete-route] id={rid}")
     return jsonify(id=rid, deleted=True)
 

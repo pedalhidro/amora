@@ -12356,14 +12356,16 @@ async function saveRouteToServer() {
     return null;
   }
   const state = snapshotForShare(name);
-  // Stats do editor pro card do modal Carregar. O estado salvo não carrega
-  // elevação, então a subida acumulada só existe se for gravada AGORA — e só
-  // quando o perfil está completo (senão gravaria um ↑ subcontado).
+  // Stats do editor pro card do modal Carregar e pro card OG de
+  // compartilhamento (badge de kJ + faixa de intensidade). O estado salvo
+  // não carrega elevação, então subida e energia só existem se gravadas
+  // AGORA — e só quando o perfil está completo (senão gravaria valores
+  // subcontados).
   let stats;
   try {
     const sim = simulateRide(params);
     if (sim && sim.elevMissing === 0) {
-      stats = { ascentM: sim.ascentM, descentM: sim.descentM };
+      stats = { ascentM: sim.ascentM, descentM: sim.descentM, energyKj: sim.eLegJ / 1000 };
     }
   } catch { /* segue sem stats */ }
   const post = async (id) => {
@@ -12434,6 +12436,16 @@ async function openSavedRoutesModal() {
   }
 }
 function closeSavedRoutesModal() { savedRoutesModal.hidden = true; }
+
+// Faixas fixas de intensidade por kJ — espelho do intensityFor do censo.html
+// (fonte canônica; o backend repete as mesmas faixas no badge do card OG).
+function intensityForKj(kj) {
+  if (kj < 150) return 'De boa';
+  if (kj < 300) return 'Ok';
+  if (kj < 500) return 'Endorfinado';
+  if (kj < 1000) return 'Frito';
+  return 'Insano';
+}
 
 // Miniatura SVG do traçado (polyline `preview` da listagem) — projeção
 // equiretangular com correção de longitude por cos(lat média), centrada na
@@ -12584,6 +12596,11 @@ function renderSavedRoutes(routes) {
     const statsEl = document.createElement('div');
     statsEl.className = 'saved-route-stats';
     statsEl.textContent = bits.join(' · ') || `${r.points || 0} pts`;
+    // Tooltip: quilojaules + faixa de intensidade (quando o save gravou).
+    const kj = r.stats?.energyKj;
+    if (Number.isFinite(kj)) {
+      statsEl.title = `${Math.round(kj)} kJ · ${intensityForKj(kj)}`;
+    }
 
     const actions = document.createElement('div');
     actions.className = 'saved-route-actions';

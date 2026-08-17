@@ -40,6 +40,9 @@ class StateStore:
     def read_text(self, key: str) -> str | None:
         raise NotImplementedError
 
+    def read_bytes(self, key: str) -> bytes | None:
+        raise NotImplementedError
+
     def write_text(self, key: str, text: str, content_type: str = "text/turtle") -> None:
         raise NotImplementedError
 
@@ -101,6 +104,12 @@ class LocalStateStore(StateStore):
         if not (p.exists() and p.is_file() and p.stat().st_size > 0):
             return None
         return p.read_text(encoding="utf-8")
+
+    def read_bytes(self, key):
+        p = self._p(key)
+        if not (p.exists() and p.is_file() and p.stat().st_size > 0):
+            return None
+        return p.read_bytes()
 
     def write_text(self, key, text, content_type="text/turtle"):
         p = self._p(key)
@@ -190,6 +199,13 @@ class GCSStateStore(StateStore):
         if blob is None:
             return None
         return blob.download_as_text()
+
+    def read_bytes(self, key):
+        # Mesma gotcha do read_text: get_blob() ancora a generation.
+        blob = self._bucket.get_blob(key)
+        if blob is None:
+            return None
+        return blob.download_as_bytes()
 
     def write_text(self, key, text, content_type="text/turtle; charset=utf-8"):
         blob = self._bucket.blob(key)

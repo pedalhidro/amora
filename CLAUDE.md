@@ -517,9 +517,17 @@ Key flows:
   link; colisão com outra rota → 409), `POST /delete-route/<id>`. Cada rota
   salva tem um **link compartilhável POR NOME** `/route/<slug>` —
   `GET /route/<slug>` serve uma página mínima com as OG tags da rota
-  (og:image = `/route/<slug>/og.png`, o traçado renderizado com Pillow no
-  visual das miniaturas + logo no canto — é o card de WhatsApp/redes; cache
-  em memória por id+updated, max-age 1 h) e redireciona o humano na hora
+  (og:image = `/route/<slug>/og.png` — o card de WhatsApp/redes: traçado
+  renderizado com Pillow sobre a **Morros e Águas** (o MESMO FGB de
+  hidrografia da camada, lido server-side por range request via o pacote
+  `flatgeobuf` em storage.googleapis.com — a Cloudflare 403a UAs não-browser)
+  + logo no canto superior direito + **badge de kJ/intensidade** (faixas do
+  censo, fonte woff2 do repo convertida via fontTools) no inferior direito.
+  O card é **PRÉ-RENDERIZADO no /save-route** (fora do lock — save_route não
+  usa @serialized de propósito, só o miolo read-modify-write trava) e
+  persistido em `route_og/<id>.png` no store; o GET cai em memória → blob →
+  render lazy (rotas pré-feature); delete-route apaga o blob; max-age 1 h)
+  e redireciona o humano na hora
   (script + meta-refresh) pra `/#rt=<slug>` (FRAGMENTO, como o `#st=`:
   nunca é comido pelo strip de query da Cloudflare nem pelo cache do SW —
   e o SW trata `/route/<slug>` como network-first pra rename não servir

@@ -15,3 +15,13 @@ google-cloud-storage>=2.18,<4
 # /route/<slug>/og.png. Import lazy e best-effort: sem Pillow o endpoint
 # devolve 404 e o card do link degrada pra texto.
 Pillow>=10,<12
+# Basemap "Morros e Águas" do card OG: lê o FGB de hidrografia por range
+# requests com bbox (mesmo arquivo que o cliente usa, via
+# storage.googleapis.com — a Cloudflare 403a user-agents não-browser).
+# Best-effort: sem o pacote, o card sai sem águas de fundo.
+flatgeobuf>=0.2,<1
+# Texto do badge de energia no card (kJ + faixa de intensidade): converte a
+# IBM Plex Mono woff2 do repo (web/fonts/) pra TTF em memória — Pillow não
+# lê woff2. brotli é a descompressão do woff2.
+fonttools>=4.53,<5
+brotli>=1,<2
