@@ -162,6 +162,7 @@
           </select>
         </label>
         <button type="button" id="params-btn" class="params-btn" title="Parâmetros da simulação" aria-label="Parâmetros">⚙</button>
+        <button type="button" id="trace-trash" disabled title="Descartar o traçado (apaga o rascunho guardado)" aria-label="Descartar o traçado">🗑</button>
         <button type="button" id="trace-reverse" disabled title="Inverter o sentido da rota (chegada vira partida)" aria-label="Inverter sentido">⇄ <span class="tb-label">Inverter</span></button>
         <button type="button" id="trace-load" class="trace-load" title="Carregar rota — do servidor ou de um arquivo .gpx" aria-label="Carregar rota">📂 <span class="tb-label">Carregar</span></button>
         <button type="button" id="trace-save" class="trace-save" title="Salvar GPX" aria-label="Salvar GPX">⤓🗺︎ <span class="tb-label">Salvar</span></button>
@@ -207,6 +208,15 @@
           <details class="help-changelog">
             <summary>Novidades (changelog)</summary>
             <dl>
+              <dt>16/08/2026 · v385</dt>
+              <dd>
+                <ul>
+                  <li><strong>Rotas salvas ganharam link por nome:</strong> <code>/route/&lt;nome&gt;</code> (ex.: <code>…/route/ciclovento</code>) no lugar do antigo <code>?route=&lt;id&gt;</code>, que deixou de existir. No modal Salvar, <strong>Copiar link</strong> e <strong>QR</strong> agora salvam a rota no servidor e compartilham esse link (o botão ☁ Servidor separado saiu); por isso o <strong>nome de uma rota é único</strong> — salvar com um nome já usado por outra rota pede outro nome. Sem servidor alcançável, os dois botões degradam pro link antigo com o estado embutido (<code>#st=</code>).</li>
+                  <li><strong>O traçado em edição não se perde mais:</strong> ele é guardado no navegador a cada mudança — dá pra fechar a aba (ou o navegador) e ele volta no próximo <strong>Traçar</strong>. O <strong>Cancelar</strong>/Esc só fecham o editor; pra jogar a rota fora de verdade entrou o botão <strong>🗑</strong> na barra de edição (ao lado do Inverter).</li>
+                  <li><strong>GPX reaberto preserva o roteamento:</strong> além da geometria exata por trecho (que já voltava), o arquivo agora grava o <em>modo de roteamento</em> que produziu cada segmento.</li>
+                  <li>Na barra de métricas, a energia do SUV aparece em <strong>MJ</strong> e a comparação virou <strong>“(N× mais energia)”</strong>, sem casas decimais.</li>
+                </ul>
+              </dd>
               <dt>13/08/2026 · v384</dt>
               <dd>
                 <ul>
@@ -1073,8 +1083,8 @@
           <ul>
             <li><strong>Traçar GPX</strong> abre o modo de edição: clique no mapa para adicionar pontos, arraste-os para mover.</li>
             <li>O seletor à direita escolhe como conectar pontos consecutivos: <em>Reta</em> (linha entre pontos, menor distância), <em>OSM ciclismo / a pé</em> (rota via OpenStreetMap) ou <em>Menor energia</em> (terreno ou viário).</li>
-            <li><strong>Undo / Redo</strong> (também ⌘/Ctrl+Z e ⌘/Ctrl+Shift+Z), <strong>Cancelar</strong> (Esc).</li>
-            <li><strong>Salvar GPX</strong> pede um nome e baixa o arquivo. O <code>.gpx</code> inclui os parâmetros de simulação e a lista de waypoints como extensões — invisíveis para Garmin/Strava/RWGPS, mas usados ao reabrir aqui.</li>
+            <li><strong>Undo / Redo</strong> (também ⌘/Ctrl+Z e ⌘/Ctrl+Shift+Z), <strong>Cancelar</strong> (Esc) — fecha o editor <em>sem perder o traçado</em>: ele fica guardado no navegador e volta no próximo Traçar. Pra descartar de verdade, use o <strong>🗑</strong> da barra.</li>
+            <li><strong>Salvar</strong> pede um nome e baixa o <code>.gpx</code>, que inclui os parâmetros de simulação, a lista de waypoints e o modo de roteamento de cada trecho como extensões — invisíveis para Garmin/Strava/RWGPS, mas usados ao reabrir aqui. <strong>Copiar link</strong>/<strong>QR</strong> salvam a rota no servidor e compartilham o link por nome (<code>/route/&lt;nome&gt;</code>).</li>
           </ul>
 
           <h3>POIs / cues</h3>
@@ -1129,11 +1139,11 @@
       </div>
     </div>
 
-    <!-- Save GPX: ask the user for a route name -->
+    <!-- Salvar rota: nome (que vira o link), GPX, link/QR do servidor -->
     <div id="save-modal" class="modal" hidden>
       <div class="modal-content save-modal-content">
         <header>
-          <h2>Salvar GPX</h2>
+          <h2>Salvar rota</h2>
           <button class="close" id="save-close" type="button" aria-label="Fechar">&times;</button>
         </header>
         <div class="save-body">
@@ -1141,12 +1151,11 @@
             <span>Nome da rota</span>
             <input type="text" id="save-name" maxlength="120" />
           </label>
-          <p class="muted">O arquivo será salvo como <code id="save-filename-preview">tracado.gpx</code>.</p>
+          <p class="muted">O arquivo será salvo como <code id="save-filename-preview">tracado.gpx</code>. <strong>Copiar link</strong>/<strong>QR</strong> salvam a rota no servidor com esse nome — que vira o endereço dela (<code>/route/…</code>) e por isso precisa ser inédito.</p>
           <div class="save-actions">
             <button type="button" id="save-cancel">Cancelar</button>
-            <button type="button" id="save-copy-link">Copiar link</button>
-            <button type="button" id="save-qr">QR</button>
-            <button type="button" id="save-server" title="Salvar a rota no servidor" aria-label="Salvar no servidor" hidden>☁ Servidor</button>
+            <button type="button" id="save-copy-link" title="Salvar no servidor e copiar o link por nome">Copiar link</button>
+            <button type="button" id="save-qr" title="Salvar no servidor e mostrar o QR do link">QR</button>
             <button type="button" id="save-confirm" class="primary-btn" title="Salvar GPX" aria-label="Salvar GPX">⤓🗺︎ Salvar</button>
           </div>
         </div>

@@ -60,8 +60,10 @@ import functools
 import json
 import math
 import os
+import re
 import threading
 import time
+import unicodedata
 import uuid
 from pathlib import Path
 
@@ -1939,6 +1941,22 @@ def _write_saved_routes(catalog):
                      content_type="application/json")
 
 
+def _route_slug(name):
+    """Slug do link /route/<slug> — derivado do NOME da rota (a identidade
+    humana dela): minúsculas, sem acento, [a-z0-9] ligados por '-'. Mesmo
+    algoritmo do filenameFromName do app.js, pra link e arquivo baterem."""
+    s = unicodedata.normalize("NFD", str(name or ""))
+    s = "".join(c for c in s if not unicodedata.combining(c)).lower()
+    s = re.sub(r"[^a-z0-9]+", "-", s).strip("-")
+    return s[:60].strip("-")
+
+
+def _entry_slug(entry):
+    """Slug de uma entrada do catálogo — o gravado, ou derivado do nome
+    (entradas legadas, salvas antes do slug existir)."""
+    return entry.get("slug") or _route_slug(entry.get("name"))
+
+
 @app.get("/saved-routes")
 def list_saved_routes():
     """Lista resumida das rotas salvas (sem geometria) — mais novas primeiro."""
@@ -1950,6 +1968,7 @@ def list_saved_routes():
         items.append({
             "id": rid,
             "name": r.get("name") or "",
+            "slug": _entry_slug(r),
             "created": r.get("created"),
             "points": r.get("points"),
         })
@@ -1959,30 +1978,70 @@ def list_saved_routes():
                                  headers={"Cache-Control": "no-cache"}))
 
 
-@app.get("/saved-route/<rid>")
-def get_saved_route(rid):
-    """Estado completo (formato de compartilhamento) de uma rota salva."""
-    rid = (rid or "").strip()
-    r = _read_saved_routes().get("routes", {}).get(rid)
+@app.get("/saved-route/<ref>")
+def get_saved_route(ref):
+    """Estado completo (formato de compartilhamento) de uma rota salva.
+
+    `ref` é o id hex OU o slug do nome (é o que o deep link /route/<slug>
+    resolve). A resposta leva `id`/`slug` junto do estado — o cliente adota o
+    id pra um re-salvar atualizar a MESMA rota (applyShareState ignora chaves
+    desconhecidas)."""
+    ref = (ref or "").strip()
+    routes = _read_saved_routes().get("routes", {})
+    rid, r = ref, routes.get(ref)
+    if not isinstance(r, dict):
+        # Busca por slug; empate (nomes duplicados legados, de antes da
+        # unicidade) → vence a atualizada mais recentemente.
+        matches = [(k, v) for k, v in routes.items()
+                   if isinstance(v, dict) and _entry_slug(v) == ref]
+        if not matches:
+            abort(404)
+        rid, r = max(matches, key=lambda kv: kv[1].get("updated")
+                     or kv[1].get("created") or "")
     if not isinstance(r, dict) or not isinstance(r.get("state"), dict):
         abort(404)
-    text = json.dumps(r["state"], ensure_ascii=False)
+    payload = dict(r["state"])
+    payload["id"] = rid
+    payload["slug"] = _entry_slug(r)
+    text = json.dumps(payload, ensure_ascii=False)
     return _conditional(Response(text, mimetype="application/json",
                                  headers={"Cache-Control": "no-cache"}))
+
+
+@app.get("/route/<slug>")
+def route_deep_link(slug):
+    """Link compartilhável de uma rota salva, POR NOME: /route/<slug>.
+
+    303 pro app com o slug no FRAGMENTO (/#rt=<slug>) — fragmento nunca chega
+    na Cloudflare nem no service worker (mesma razão do #st=), então o deep
+    link sobrevive ao strip de query do worker e ao cache do SW. O app resolve
+    o #rt= no cliente via GET /saved-route/<slug>."""
+    slug = (slug or "").strip().lower()
+    if not re.fullmatch(r"[a-z0-9][a-z0-9\-]{0,80}", slug):
+        abort(404)
+    return redirect(f"/#rt={slug}", code=303)
 
 
 @app.post("/save-route")
 @serialized
 def save_route():
-    """Upsert de uma rota salva. Body JSON: {name, state, id?}. Devolve {id}.
-    `state` é o objeto de snapshotForShare() do editor (wp + sg + rm + n).
-    Passar `id` (de uma rota existente) sobrescreve in-place; sem id, gera um."""
+    """Upsert de uma rota salva. Body JSON: {name, state, id?}. Devolve
+    {id, slug}. `state` é o objeto de snapshotForShare() do editor
+    (wp + sg + rm + n). Passar `id` (de uma rota existente) sobrescreve
+    in-place; sem id, gera um. O NOME é obrigatório e único (case/acento-
+    insensível, via slug): é ele que vira o link /route/<slug> — colisão com
+    outra rota devolve 409 e o cliente pede outro nome."""
     data = request.get_json(silent=True) or {}
     state = data.get("state")
     if (not isinstance(state, dict) or not isinstance(state.get("wp"), list)
             or not state["wp"]):
         return jsonify(error="state inválido (sem waypoints)"), 400
     name = str(data.get("name") or state.get("n") or "").strip()
+    if not name:
+        return jsonify(error="dê um nome à rota (é ele que vira o link)"), 400
+    slug = _route_slug(name)
+    if not slug:
+        return jsonify(error="nome inválido pro link — use ao menos uma letra ou número"), 400
     rid = str(data.get("id") or "").strip() or uuid.uuid4().hex[:12]
     if not (1 <= len(rid) <= 32) or not all(c in "0123456789abcdef" for c in rid):
         return jsonify(error="id inválido (esperado hex)"), 400
@@ -1991,10 +2050,18 @@ def save_route():
     except (ValueError, TypeError) as e:
         return jsonify(error=f"saved_routes.json corrompido, recusando salvar: {e}"), 500
     routes = cat.setdefault("routes", {})
+    for other_id, other in routes.items():
+        if other_id == rid or not isinstance(other, dict):
+            continue
+        if _entry_slug(other) == slug:
+            return jsonify(
+                error=f'já existe uma rota chamada "{other.get("name") or slug}" — escolha outro nome',
+                slug=slug), 409
     existing = routes.get(rid)
     now = datetime.now(timezone.utc).isoformat()
     routes[rid] = {
         "name": name,
+        "slug": slug,
         "state": state,
         "points": len(state["wp"]),
         "created": (existing or {}).get("created") if isinstance(existing, dict) else None,
@@ -2006,8 +2073,8 @@ def save_route():
         _write_saved_routes(cat)
     except Exception as e:  # noqa: BLE001
         return jsonify(error=f"persistência: {e}"), 500
-    print(f"[save-route] id={rid} pts={routes[rid]['points']} name={name!r}")
-    return jsonify(id=rid)
+    print(f"[save-route] id={rid} slug={slug} pts={routes[rid]['points']} name={name!r}")
+    return jsonify(id=rid, slug=slug)
 
 
 @app.post("/delete-route/<rid>")

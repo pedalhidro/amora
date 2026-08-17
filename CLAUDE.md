@@ -504,15 +504,22 @@ Key flows:
   `POST /delete-image/<phash>`, `POST /delete-video/<vhash>`,
   `POST /delete-tour/<tour_id>`. Rotas salvas (biblioteca do editor de
   traçado, `web/saved_routes.json`): `GET /saved-routes` (lista resumida,
-  mais novas primeiro), `GET /saved-route/<id>` (estado completo, formato de
-  compartilhamento), `POST /save-route` (upsert; body `{name, state, id?}`),
-  `POST /delete-route/<id>`. Cada rota salva tem um **link compartilhável**
-  `/?route=<id>` — resolvido no CLIENTE (`tryLoadSavedRouteFromQuery`, como o
-  `?tour=`: a Cloudflare tira a query no origin) via fetch de
-  `/saved-route/<id>`; espelha a semântica do `#st=` (tira o parâmetro da URL
-  após carregar e NÃO adota o id — salvar a partir do link cria rota nova).
-  O link vai pro clipboard ao salvar (☁ Servidor) e pelo botão 🔗 de cada
-  rota no modal 📂 Carregar. Localização ao vivo (efêmera, EM MEMÓRIA —
+  mais novas primeiro), `GET /saved-route/<id|slug>` (estado completo, formato
+  de compartilhamento, + `id`/`slug` da rota), `POST /save-route` (upsert;
+  body `{name, state, id?}`; o NOME é obrigatório e ÚNICO — vira o slug do
+  link; colisão com outra rota → 409), `POST /delete-route/<id>`. Cada rota
+  salva tem um **link compartilhável POR NOME** `/route/<slug>` —
+  `GET /route/<slug>` responde 303 pra `/#rt=<slug>` (FRAGMENTO, como o
+  `#st=`: nunca é comido pelo strip de query da Cloudflare nem pelo cache do
+  SW) e o cliente resolve (`tryLoadSavedRouteFromHash` → fetch de
+  `/saved-route/<slug>`); depois de carregar tira o `#rt=` da URL e ADOTA
+  id/nome (re-salvar atualiza a MESMA rota; cópia = salvar com outro nome).
+  O suporte antigo a `/?route=<id>` foi REMOVIDO. No modal Salvar, **Copiar
+  link**/**QR** salvam no servidor e compartilham esse link (sem backend
+  degradam pro `#st=`); o 🔗 de cada rota no modal 📂 Carregar copia o mesmo.
+  O rascunho do traçado persiste em localStorage (`phidro:traceDraft:v1`,
+  gravação debounced a cada mutação): Cancelar/Esc só fecham o editor e o
+  próximo Traçar restaura; o descarte real é o 🗑 da barra de edição. Localização ao vivo (efêmera, EM MEMÓRIA —
   NÃO toca os catálogos): `POST /live-location` (upsert da posição + rastro de
   um token pseudônimo; body JSON `{id, name?, lat, lng, accuracy?, heading?,
   ttl?}`; rastro thinned por tempo/distância, teto 500 pts/pessoa e 500

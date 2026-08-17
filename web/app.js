@@ -5714,9 +5714,10 @@ boot()
   })
   .finally(() => {
     // After the page is ready, decode any #st=... shared route from the URL;
-    // sem hash, tenta o deep link de rota salva no servidor (?route=<id>).
+    // sem estado embutido, tenta o deep link de rota salva por nome
+    // (#rt=<slug>, plantado pelo 303 de /route/<slug>).
     tryLoadFromShareHash()
-      .then((loaded) => (loaded ? true : tryLoadSavedRouteFromQuery()))
+      .then((loaded) => (loaded ? true : tryLoadSavedRouteFromHash()))
       .catch((err) => console.warn('[share] hash load failed:', err));
     tryOpenTourFromQuery();
   });
@@ -6673,6 +6674,7 @@ const traceUndo = document.getElementById('trace-undo');
 const traceRedo = document.getElementById('trace-redo');
 const traceSave = document.getElementById('trace-save');
 const traceView = document.getElementById('trace-view');
+const traceTrash = document.getElementById('trace-trash');
 const traceReverse = document.getElementById('trace-reverse');
 const traceCount = document.getElementById('trace-count');   // ausente desde a remoção do label "# pontos"
 // Modo "Ver": dentro da edição, oculta os pontos e suaviza a linha pra
@@ -6827,11 +6829,18 @@ let pendingRouteSeq = 0;     // increments per OSRM call; lets us discard stale 
 
 traceBtn.addEventListener('click', () => {
   if (previewMode) { exitPreviewMode(); return; }  // "Editar" volta pra edição
-  if (!drawingMode) enterDrawingMode();
-  else exitDrawingMode();
+  if (!drawingMode) {
+    enterDrawingMode();
+    // Rascunho persistido (fechou o navegador / Cancelar sem descartar)
+    // volta pra tela — o descarte explícito é o 🗑 da barra.
+    restoreTraceDraft();
+  } else {
+    exitDrawingMode();
+  }
 });
 traceSave.addEventListener('click', () => saveAndExit());
 traceView.addEventListener('click', () => enterPreviewMode());
+traceTrash?.addEventListener('click', () => discardTrace());
 traceReverse.addEventListener('click', () => reverseTraceDirection());
 traceUndo.addEventListener('click', undo);
 traceRedo.addEventListener('click', redo);
@@ -6842,6 +6851,7 @@ traceRoutingMode.addEventListener('change', () => {
   // só valia pros próximos waypoints). Reverte o seletor se o usuário recusar
   // um re-roteamento grande.
   rerouteCurrentDraft(prev);
+  scheduleTraceDraftSave();   // persiste o modo mesmo sem re-roteamento (reta)
 });
 
 document.addEventListener('keydown', (e) => {
@@ -6909,7 +6919,7 @@ function enterDrawingMode() {
   }
   traceBtn.textContent = '🗺︎ cancelar';
   traceBtn.setAttribute('aria-label', 'Cancelar');
-  traceBtn.setAttribute('title', 'Cancelar (Esc)');
+  traceBtn.setAttribute('title', 'Cancelar (Esc) — o traçado fica guardado');
   traceBtn.setAttribute('aria-pressed', 'true');
   traceControls.hidden = false;
   updateTraceControls();
@@ -6962,10 +6972,15 @@ function exitPreviewMode() {
   traceControls.hidden = false;
   traceBtn.textContent = '🗺︎ cancelar';
   traceBtn.setAttribute('aria-label', 'Cancelar');
-  traceBtn.setAttribute('title', 'Cancelar (Esc)');
+  traceBtn.setAttribute('title', 'Cancelar (Esc) — o traçado fica guardado');
 }
 
 function exitDrawingMode() {
+  // Cancelar/Esc NÃO descartam o traçado: o rascunho fica no localStorage e
+  // volta no próximo Traçar (o descarte explícito é o 🗑 da barra). Uma
+  // gravação debounced ainda pendente precisa ser descarregada AGORA — senão
+  // o timer dispararia depois do wipe abaixo e salvaria um rascunho vazio.
+  if (_traceDraftTimer) { clearTimeout(_traceDraftTimer); saveTraceDraft(); }
   drawingMode = false;
   previewMode = false;
   document.body.classList.remove('drawing', 'trace-preview');
@@ -7430,7 +7445,12 @@ async function refetchPath(idx, seqOverride) {
     }
     const stillExists = trackpoints.find((t) => t.id === tpId);
     if (!stillExists || seq !== pendingRouteSeq) return;
+    // Proveniência do segmento: o modo que produziu ESTA geometria. Viaja no
+    // snapshot/undo, no rascunho persistido e no GPX exportado (userWaypoints)
+    // — reabrir o arquivo devolve a opção de roteamento de cada waypoint.
+    if (path) path.mode = routingMode;
     stillExists.pathFromPrev = path;
+    scheduleTraceDraftSave();
   } catch (err) {
     console.warn(`Route failed (mode=${routingMode}, idx=${idx}):`, err.message);
     // Keep the straight fallback that was already set.
@@ -10505,7 +10525,7 @@ function updateMetrics() {
   const thrPct = (params.slopeFlatThreshold * 100).toFixed(1).replace('.', ',');
   const effPct = (params.efficiency * 100).toFixed(0);
   const carCompact = (params.suvCompareEnabled && totalKJ > 0.01)
-    ? ` · 🚙 ${Math.round(carKJ)} kJ / ⛽ ${fmt(carLiters, 2)} L (🚲 ${fmt(bikeVsCarRatio)}× mais eficiente)`
+    ? ` · 🚙 ${fmt(carKJ / 1000, 1)} MJ / ⛽ ${fmt(carLiters, 2)} L (${fmt(bikeVsCarRatio, 0)}× mais energia)`
     : '';
 
   traceMetrics.textContent =
@@ -10553,10 +10573,10 @@ function updateMetrics() {
         `    Subida (${params.carPowerAscent} W):  ${fmt(carVAscentKmh)} km/h\n` +
         `    Plano  (${params.carPowerFlat} W):  ${fmt(carVFlatKmh)} km/h\n` +
         `    Descida (${params.carPowerDescent} W): ${fmt(carVDescentKmh)} km/h\n` +
-        `  Energia do SUV (combustível):                             ${fmt(carKJ)} kJ\n` +
+        `  Energia do SUV (combustível):                             ${fmt(carKJ / 1000, 1)} MJ\n` +
         `  Gasolina (${GASOLINE_KJ_PER_LITER.toLocaleString('pt-BR')} kJ/L):                            ${fmt(carLiters, 2)} L\n` +
         `  Bike (metabólica, ${params.bikeMetabolicFactor}× a mecânica, eficiência humana ~25%): ${fmt(bikeMetabolicKJ)} kJ\n` +
-        `  Bike ${fmt(bikeVsCarRatio)}× mais eficiente que o SUV (comparando energia metabólica vs. combustível)`
+        `  SUV usa ${fmt(bikeVsCarRatio, 0)}× mais energia que a bike (combustível vs. energia metabólica)`
       : '') +
     (sim.elevMissing > 0 ? `\n\n${sim.elevMissing} ponto(s) ainda sem elevação.` : '');
 }
@@ -10781,6 +10801,7 @@ async function rerouteCurrentDraft(revertModeTo) {
   showToast(`Re-roteando ${indices.length} trecho(s)…`, 2500);
   await mapConcurrent(indices, 4, (idx) => refetchPath(idx, routeSeq));
   redrawAndMetrics();
+  scheduleTraceDraftSave();
 }
 
 // Trocar a fonte de elevação exige limpar o cache (senão valores já amostrados
@@ -11100,6 +11121,9 @@ function snapshot() {
     // Objetivo do roteador do segmento (J) — idem: capturado no roteamento,
     // não é reconstruível depois.
     routedEnergyJ: Number.isFinite(t.pathFromPrev?.routedEnergyJ) ? t.pathFromPrev.routedEnergyJ : null,
+    // Modo de roteamento que produziu a geometria deste segmento
+    // (proveniência; ver refetchPath) — sobrevive a undo/rascunho/GPX.
+    mode: t.pathFromPrev?.mode || null,
     name: t.name || '',
     isPoi: !!t.isPoi,
     sym: t.sym || 'Flag, Blue',
@@ -11111,6 +11135,7 @@ function pushHistory() {
   drawHistory.push(snapshot());
   historyIndex = drawHistory.length - 1;
   updateTraceControls();
+  scheduleTraceDraftSave();
 }
 
 function undo() {
@@ -11176,20 +11201,103 @@ function restoreSnapshot(snap) {
     tp.pathFromPrev = s.path ? s.path.map((p) => [p[0], p[1]]) : null;
     if (s.deckFlag && tp.pathFromPrev) tp.pathFromPrev.deckFlag = s.deckFlag;
     if (Number.isFinite(s.routedEnergyJ) && tp.pathFromPrev) tp.pathFromPrev.routedEnergyJ = s.routedEnergyJ;
+    if (s.mode && tp.pathFromPrev) tp.pathFromPrev.mode = s.mode;
     trackpoints.push(tp);
   }
   redrawAndMetrics();
   updateTraceControls();
+  scheduleTraceDraftSave();
 }
 
 function updateTraceControls() {
   traceUndo.disabled = historyIndex <= 0;
   traceRedo.disabled = historyIndex >= drawHistory.length - 1;
+  if (traceTrash) traceTrash.disabled = trackpoints.length === 0;
   if (traceReverse) traceReverse.disabled = trackpoints.length < 2;
   if (traceCount) {
     const n = trackpoints.length;
     traceCount.textContent = `${n} ponto${n === 1 ? '' : 's'}`;
   }
+}
+
+// ─── Rascunho persistente do traçado (localStorage) ─────────────────────────
+// O traçado em edição sobrevive a fechar o navegador/aba: cada mutação agenda
+// uma gravação (debounced — serializar uma rota longa a cada tecla sairia
+// caro) e o botão Traçar restaura o rascunho ao entrar. Cancelar/Esc só
+// fecham o editor; o descarte de verdade é o 🗑 (discardTrace). O formato
+// espelha snapshot() (geometria roteada, deckFlag, energia e modo por
+// segmento inclusos), mais o modo global, o nome e o vínculo com a rota
+// salva no servidor.
+const TRACE_DRAFT_KEY = 'phidro:traceDraft:v1';
+let _traceDraftTimer = null;
+
+function scheduleTraceDraftSave() {
+  if (_traceDraftTimer) clearTimeout(_traceDraftTimer);
+  _traceDraftTimer = setTimeout(saveTraceDraft, 400);
+}
+
+function saveTraceDraft() {
+  _traceDraftTimer = null;
+  try {
+    if (!trackpoints.length) { localStorage.removeItem(TRACE_DRAFT_KEY); return; }
+    localStorage.setItem(TRACE_DRAFT_KEY, JSON.stringify({
+      v: 1,
+      rm: routingMode,
+      n: defaultSaveName || '',
+      sid: currentSavedRouteId || null,
+      wp: snapshot(),
+    }));
+  } catch (err) {
+    // Quota cheia (rota gigante) ou storage indisponível — segue sem persistir.
+    console.warn('[draft] não persistiu:', err.message);
+  }
+}
+
+function clearTraceDraft() {
+  if (_traceDraftTimer) { clearTimeout(_traceDraftTimer); _traceDraftTimer = null; }
+  try { localStorage.removeItem(TRACE_DRAFT_KEY); } catch {}
+}
+
+// Restaura o rascunho persistido (se houver) na sessão de desenho recém-
+// aberta pelo botão Traçar. Retorna true se restaurou. Os DEMAIS caminhos de
+// entrada (carregar GPX/rota salva/link) NÃO restauram — eles trazem a
+// própria rota, que vira o novo rascunho no pushHistory deles.
+function restoreTraceDraft() {
+  let draft = null;
+  try { draft = JSON.parse(localStorage.getItem(TRACE_DRAFT_KEY) || 'null'); } catch {}
+  if (!draft || !Array.isArray(draft.wp)) return false;
+  const wp = draft.wp.filter((s) => s && Number.isFinite(s.lat) && Number.isFinite(s.lng));
+  if (!wp.length) return false;
+  if (draft.rm && ['straight', 'cycling', 'foot', 'energy', 'energy_road'].includes(draft.rm)) {
+    routingMode = draft.rm;
+    traceRoutingMode.value = draft.rm;
+  }
+  restoreSnapshot(wp);
+  defaultSaveName = draft.n || '';
+  currentSavedRouteId = draft.sid || null;
+  pushHistory();   // baseline do undo: [vazio, rascunho] — desfazer limpa a tela
+  const bounds = L.latLngBounds(trackpoints.map((t) => t.marker.getLatLng()));
+  if (bounds.isValid()) map.fitBounds(bounds, { padding: [40, 40] });
+  showToast(`Rascunho restaurado · ${trackpoints.length} pontos`);
+  return true;
+}
+
+// 🗑 Descartar: joga fora o traçado atual E o rascunho persistido — o único
+// caminho que apaga de verdade. Continua no modo de desenho, com tela limpa.
+function discardTrace() {
+  if (!trackpoints.length || previewMode) return;
+  if (!confirm('Descartar o traçado atual? Isso apaga o rascunho guardado neste navegador (rotas salvas no servidor não são afetadas).')) return;
+  clearTraceDraft();
+  pendingRouteSeq++;   // invalida roteamentos em voo do traçado descartado
+  for (const t of trackpoints) map.removeLayer(t.marker);
+  trackpoints = [];
+  drawHistory = [[]];
+  historyIndex = 0;
+  defaultSaveName = '';
+  currentSavedRouteId = null;
+  redrawAndMetrics();
+  updateTraceControls();
+  showToast('Traçado descartado.');
 }
 
 // Opens the save-name modal; the modal's confirm button does the actual save.
@@ -11236,6 +11344,10 @@ function performSave(name) {
       // Objetivo do roteador do segmento (J) — pra barra de métricas seguir
       // mostrando a energia da rota depois de reabrir o GPX.
       routedEnergyJ: Number.isFinite(t.pathFromPrev?.routedEnergyJ) ? t.pathFromPrev.routedEnergyJ : null,
+      // Modo de roteamento que produziu ESTE segmento (proveniência, ver
+      // refetchPath) — reabrir o GPX devolve a opção de roteamento por
+      // waypoint, não só a geometria.
+      mode: t.pathFromPrev?.mode || null,
     };
   });
   const ts = new Date();
@@ -11535,32 +11647,31 @@ async function tryLoadFromShareHash() {
   }
 }
 
-// Deep link de rota salva no servidor: /?route=<id> busca /saved-route/<id>
-// e aplica o mesmo estado de compartilhamento (formato do snapshotForShare).
-// Resolvido no CLIENTE como o ?tour= — a Cloudflare tira a query string antes
-// de chegar no origin, então o backend não pode responder por ela; o fetch
-// path-based (/saved-route/…) sempre chega. Espelha a semântica do #st=:
-// depois de carregar, tira o parâmetro da URL (um reload não clobbera as
-// edições) e NÃO adota o id como currentSavedRouteId — quem recebeu o link e
-// salvar cria uma rota NOVA em vez de sobrescrever a compartilhada.
-async function tryLoadSavedRouteFromQuery() {
-  const params = new URLSearchParams(location.search);
-  const id = params.get('route');
-  if (!id) return false;
+// Deep link de rota salva no servidor, POR NOME: /route/<slug> → o backend
+// responde 303 pra /#rt=<slug> (FRAGMENTO, como o #st= — nunca é comido pelo
+// strip de query da Cloudflare nem pelo cache do service worker) e aqui o
+// slug vira GET /saved-route/<slug>. Depois de carregar, tira o #rt= da URL
+// (um reload não clobbera as edições) e ADOTA id/nome da rota — re-salvar
+// com o mesmo nome atualiza a MESMA rota no servidor; com a unicidade de
+// nome, criar uma cópia = salvar com outro nome. (O suporte antigo a
+// ?route=<id> foi removido junto com os links por id.)
+async function tryLoadSavedRouteFromHash() {
+  const hashParams = new URLSearchParams(location.hash.replace(/^#/, ''));
+  const slug = hashParams.get('rt');
+  if (!slug) return false;
   try {
-    const res = await fetch(`./saved-route/${encodeURIComponent(id)}`, { cache: 'no-store' });
+    const res = await fetch(`./saved-route/${encodeURIComponent(slug)}`, { cache: 'no-store' });
     if (!res.ok) {
       throw new Error(res.status === 404 ? 'rota não encontrada no servidor' : `HTTP ${res.status}`);
     }
     const state = await res.json();
     if (!(await applyShareState(state))) throw new Error('estado sem waypoints');
-    params.delete('route');
-    const qs = params.toString();
-    window.history.replaceState(null, '', location.pathname + (qs ? `?${qs}` : '') + location.hash);
-    showToast(`Rota compartilhada carregada · ${trackpoints.length} pontos`);
+    if (state.id) currentSavedRouteId = state.id;
+    window.history.replaceState(null, '', location.pathname + location.search);
+    showToast(`Rota "${state.n || slug}" carregada · ${trackpoints.length} pontos`);
     return true;
   } catch (err) {
-    console.warn(`[route] deep link ?route=${id} falhou:`, err);
+    console.warn(`[route] deep link /route/${slug} falhou:`, err);
     showToast(`Não deu pra carregar a rota do link: ${err.message}`);
     return false;
   }
@@ -11926,43 +12037,51 @@ saveNameInput.addEventListener('keydown', (e) => {
 });
 saveConfirm.addEventListener('click', doSave);
 
-// "Copiar link" / "QR" — encode current trackpoints into a sharable URL.
+// "Copiar link" / "QR" — salvam a rota no servidor (upsert com o nome do
+// modal) e compartilham o link POR NOME (/route/<slug>): curto, estável e
+// legível. Sem backend alcançável (host estático / kit local), degradam pro
+// link #st= com o estado inteiro embutido — funciona offline, só que longo.
 const saveCopyLink = document.getElementById('save-copy-link');
 const saveQrBtn = document.getElementById('save-qr');
 
-async function currentShareUrl() {
-  if (!('CompressionStream' in window)) {
-    alert('Seu navegador não suporta o link compartilhável (precisa de CompressionStream).');
-    return null;
-  }
+// Devolve { url, server } — ou null quando não dá pra compartilhar agora
+// (sem pontos, sem nome, nome já usado: o usuário já foi avisado).
+async function shareableRouteUrl() {
   if (trackpoints.length < 2) {
     alert('Adicione pelo menos 2 pontos antes de gerar o link.');
     return null;
   }
-  return buildShareUrl(saveNameInput.value.trim());
+  try {
+    const saved = await saveRouteToServer();
+    if (!saved) return null;   // 409 (nome em uso) ou sem nome — já alertado
+    return { url: savedRouteShareUrl(saved.slug), server: true };
+  } catch (err) {
+    console.warn('[save-route] servidor indisponível, caindo pro link #st=:', err);
+  }
+  if (!('CompressionStream' in window)) {
+    alert('Servidor indisponível, e o navegador não suporta o link #st= (precisa de CompressionStream).');
+    return null;
+  }
+  return { url: await buildShareUrl(saveNameInput.value.trim()), server: false };
 }
 
 saveCopyLink?.addEventListener('click', async () => {
-  if (!('CompressionStream' in window)) {
-    alert('Seu navegador não suporta o link compartilhável (precisa de CompressionStream).');
-    return;
-  }
-  if (trackpoints.length < 2) {
-    alert('Adicione pelo menos 2 pontos antes de gerar o link.');
-    return;
-  }
+  let share = null;
   try {
-    const url = await currentShareUrl();
-    if (!url) return;
-    if (navigator.clipboard) {
-      await navigator.clipboard.writeText(url);
-      showToast(`Link copiado · ${url.length} caracteres`);
-    } else {
-      // Fallback: prompt window with the URL pre-selected for manual copy.
-      window.prompt('Copie o link:', url);
-    }
+    share = await shareableRouteUrl();
   } catch (err) {
     alert(`Falha ao gerar link: ${err.message}`);
+    return;
+  }
+  if (!share) return;
+  const note = share.server ? 'rota salva no servidor' : 'servidor fora — estado embutido no link';
+  try {
+    if (!navigator.clipboard) throw new Error('sem clipboard');
+    await navigator.clipboard.writeText(share.url);
+    showToast(`Link copiado · ${note}`);
+  } catch {
+    // Fallback: prompt window with the URL pre-selected for manual copy.
+    window.prompt(`Copie o link (${note}):`, share.url);
   }
 });
 
@@ -11984,9 +12103,16 @@ saveQrBtn?.addEventListener('click', async () => {
     alert('Biblioteca de QR não carregou — verifique conexão.');
     return;
   }
-  const url = await currentShareUrl();
-  if (!url) return;
-  showQrModal(url);
+  let share = null;
+  try {
+    share = await shareableRouteUrl();
+  } catch (err) {
+    alert(`Falha ao gerar link: ${err.message}`);
+    return;
+  }
+  if (!share) return;
+  if (share.server) showToast('Rota salva no servidor');
+  showQrModal(share.url);
 });
 
 qrClose?.addEventListener('click', () => (qrModal.hidden = true));
@@ -12182,31 +12308,22 @@ gpxConnectModal?.addEventListener('click', (e) => { if (e.target === gpxConnectM
 
 // ─── Rotas salvas no servidor ────────────────────────────────────────────────
 // Persistem o MESMO estado dos links de compartilhamento (snapshotForShare:
-// waypoints + geometria roteada por segmento + modo + parâmetros) no backend.
-// Só faz sentido quando o app é servido pelo backend (same-origin); num host
-// estático/CDN não há endpoint, então escondemos os botões via probe de /health.
-let _backendAvail = null;
-async function backendAvailable() {
-  if (_backendAvail !== null) return _backendAvail;
-  try {
-    const r = await fetch('./health', { cache: 'no-store' });
-    _backendAvail = r.ok;
-  } catch { _backendAvail = false; }
-  return _backendAvail;
-}
+// waypoints + geometria roteada por segmento + modo) no backend. O salvar
+// acontece pelos botões Copiar link / QR do modal Salvar (que compartilham o
+// link por nome) — sem backend same-origin eles degradam pro link #st=.
 
 // Id da rota carregada/salva do servidor — re-salvar atualiza ela no lugar.
 let currentSavedRouteId = null;
 
-// Link compartilhável de uma rota salva — deep link resolvido pelo cliente
-// (tryLoadSavedRouteFromQuery). Curto e estável, ao contrário do #st= que
-// embute o estado inteiro na URL.
-function savedRouteShareUrl(id) {
-  return `${location.origin}${location.pathname}?route=${encodeURIComponent(id)}`;
+// Link compartilhável de uma rota salva — POR NOME: /route/<slug>, que o
+// backend resolve com um 303 pra /#rt=<slug> (tryLoadSavedRouteFromHash).
+// Curto, estável e legível, ao contrário do #st= que embute o estado inteiro.
+function savedRouteShareUrl(slug) {
+  return `${location.origin}/route/${encodeURIComponent(slug)}`;
 }
 
-async function copySavedRouteLink(id) {
-  const url = savedRouteShareUrl(id);
+async function copySavedRouteLink(slug) {
+  const url = savedRouteShareUrl(slug);
   try {
     if (!navigator.clipboard) throw new Error('sem clipboard');
     await navigator.clipboard.writeText(url);
@@ -12217,36 +12334,35 @@ async function copySavedRouteLink(id) {
   }
 }
 
-const saveServerBtn = document.getElementById('save-server');
-saveServerBtn?.addEventListener('click', async () => {
-  if (trackpoints.length < 2) {
-    alert('Adicione pelo menos 2 pontos antes de salvar.');
-    return;
-  }
+// Salva/atualiza a rota atual no servidor. Devolve {id, slug} em caso de
+// sucesso; null quando o usuário precisa agir (sem nome, ou 409 de nome já
+// usado — já alertados aqui); LANÇA em erro de rede/servidor, pra quem chama
+// decidir o fallback (#st=). Nome é a identidade pública da rota: o servidor
+// recusa colisão com OUTRA rota (o mesmo id pode re-salvar/renomear à
+// vontade).
+async function saveRouteToServer() {
   const name = saveNameInput.value.trim();
-  const state = snapshotForShare(name);
-  try {
-    const res = await fetch('./save-route', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, state, id: currentSavedRouteId || undefined }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-    currentSavedRouteId = data.id;
-    // Já deixa o link compartilhável no clipboard; se o navegador negar
-    // (gesto de usuário expirado depois do await), o toast degrada e o link
-    // continua disponível pelo 🔗 do modal Carregar.
-    try {
-      await navigator.clipboard.writeText(savedRouteShareUrl(data.id));
-      showToast(`Rota salva no servidor · link copiado`);
-    } catch {
-      showToast(`Rota salva no servidor · ${name || 'sem nome'}`);
-    }
-  } catch (err) {
-    alert(`Não foi possível salvar no servidor: ${err.message}\n(requer o backend same-origin)`);
+  if (!name) {
+    alert('Dê um nome à rota antes de gerar o link — é ele que vira o endereço.');
+    return null;
   }
-});
+  const state = snapshotForShare(name);
+  const res = await fetch('./save-route', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, state, id: currentSavedRouteId || undefined }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (res.status === 409) {
+    alert(data.error || 'Já existe uma rota com esse nome — escolha outro.');
+    return null;
+  }
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  currentSavedRouteId = data.id;
+  defaultSaveName = name;
+  scheduleTraceDraftSave();   // o rascunho passa a apontar pra rota salva
+  return data;
+}
 
 const savedRoutesModal = document.getElementById('saved-routes-modal');
 const savedRoutesClose = document.getElementById('saved-routes-close');
@@ -12292,9 +12408,16 @@ function renderSavedRoutes(routes) {
     const linkBtn = document.createElement('button');
     linkBtn.type = 'button';
     linkBtn.textContent = '🔗';
-    linkBtn.title = 'Copiar link compartilhável';
     linkBtn.setAttribute('aria-label', `Copiar link compartilhável de ${r.name || r.id}`);
-    linkBtn.addEventListener('click', () => copySavedRouteLink(r.id));
+    // O link é POR NOME (/route/<slug>) — rota legada sem nome não tem link;
+    // carregá-la e salvá-la com um nome resolve.
+    if (r.slug) {
+      linkBtn.title = 'Copiar link compartilhável';
+      linkBtn.addEventListener('click', () => copySavedRouteLink(r.slug));
+    } else {
+      linkBtn.disabled = true;
+      linkBtn.title = 'Sem nome — salve a rota com um nome pra ela ter link';
+    }
     const delBtn = document.createElement('button');
     delBtn.type = 'button';
     delBtn.className = 'danger';
@@ -12335,13 +12458,6 @@ async function deleteSavedRoute(id, name) {
 savedRoutesClose?.addEventListener('click', closeSavedRoutesModal);
 savedRoutesModal?.addEventListener('click', (e) => {
   if (e.target === savedRoutesModal) closeSavedRoutesModal();
-});
-
-// O botão "☁ Servidor" (salvar no servidor) só aparece quando há backend
-// same-origin. O modal de carregar rota fica sempre acessível pelo Editar —
-// a lista do servidor degrada sozinha (mensagem "indisponível") sem backend.
-backendAvailable().then((ok) => {
-  if (ok) saveServerBtn?.removeAttribute('hidden');
 });
 
 // Pull a sidebar route's polyline straight into the drawing tool so the
@@ -12591,6 +12707,8 @@ async function loadGpxIntoEditor(gpxText) {
         tp.pathFromPrev.deckFlag = wp.deckFlag;
       }
       if (Number.isFinite(wp.routedEnergyJ)) tp.pathFromPrev.routedEnergyJ = wp.routedEnergyJ;
+      // Proveniência do segmento (modo de roteamento que o produziu).
+      if (wp.mode) tp.pathFromPrev.mode = wp.mode;
     }
     trackpoints.push(tp);
   }
