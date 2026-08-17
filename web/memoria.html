@@ -5,6 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Memória Hidrográfica — Pedal Hidrográfico</title>
 <meta name="description" content="A linha do tempo dos passeios do Pedal Hidrográfico: chamados, artes, energias e as fotos de cada pedal.">
+<link rel="canonical" href="https://amora.pedalhidrografi.co/memoria.html">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Memória Hidrográfica — Pedal Hidrográfico">
+<meta property="og:description" content="A linha do tempo dos passeios do Pedal Hidrográfico: chamados, artes, energias e as fotos de cada pedal.">
+<meta property="og:url" content="https://amora.pedalhidrografi.co/memoria.html">
+<meta property="og:image" content="https://amora.pedalhidrografi.co/icon-512.png">
 <!--
   Memória Hidrográfica — linha do tempo dos passeios.
 
@@ -160,6 +166,16 @@
 
   footer { margin: 26px 0 8px; color: var(--muted); font-size: 11px; }
 
+  /* ── SSR (crawlers / sem JS): o backend injeta a linha do tempo em texto
+     no marcador SSR:MEMORIA; com JS ela é removida após compor a viva. ── */
+  #memoria-ssr { border-top: 1px solid var(--border); margin-top: 18px; }
+  #memoria-ssr article { margin: 20px 0; max-width: 720px; }
+  #memoria-ssr h2 { font-size: 15px; margin: 0 0 4px; }
+  #memoria-ssr h2 a { color: var(--accent); text-decoration: none; }
+  #memoria-ssr h2 a:hover { text-decoration: underline; }
+  #memoria-ssr .meta { color: var(--muted); font-size: 12px; margin: 2px 0; }
+  #memoria-ssr p { line-height: 1.45; margin: 6px 0; }
+
   /* ── Impressão: só o conteúdo, sem cromo ─────────────────────────────── */
   @media print {
     :root { --bg: #fff; --panel: #fff; --muted: #333; --border: #999; }
@@ -196,6 +212,8 @@
 
 <div id="status" role="status" aria-live="polite">Carregando os grafos…</div>
 <ol class="linha" id="linha" hidden></ol>
+
+<!-- SSR:MEMORIA -->
 
 <footer>Composto ao vivo a partir dos grafos Turtle (tours.ttl + images.ttl) —
 a mesma fonte da verdade do mapa, da galeria e do censo.</footer>
@@ -614,6 +632,10 @@ function placeGalleries(force) {
     $('#conta').textContent = `${tours.length} passeios`;
     $('#ordem').addEventListener('click', () => { novasPrimeiro = !novasPrimeiro; render(); });
     render();
+    // Servido pelo backend, o HTML chega com a linha do tempo pré-renderizada
+    // (#memoria-ssr, pra crawlers e quem está sem JS) — composta a viva, sai
+    // de cena. (Numa falha acima, o catch a deixa no lugar: ainda é conteúdo.)
+    document.getElementById('memoria-ssr')?.remove();
     // Deep link #<slug> só funciona depois do render.
     if (location.hash.length > 1) {
       document.getElementById(decodeURIComponent(location.hash.slice(1)))

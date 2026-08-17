@@ -1876,7 +1876,8 @@ def get_data_ttl(filename):
         body = json.dumps({"byOldId": _tour_iri_map().get("byOldId", {})},
                           ensure_ascii=False, separators=(",", ":"))
         return _conditional(Response(body, mimetype="application/json",
-                                     headers={"Cache-Control": "no-cache"}))
+                                     headers={"Cache-Control": "no-cache",
+                                              "X-Robots-Tag": "noindex"}))
     # O converter padrão do Flask bloqueia "/" mas não um ".." solto —
     # `DATA_DIR / ".."` é um diretório existente e o read_text estourava
     # IsADirectoryError → 500 feio. Só servimos *.ttl de nome simples.
@@ -1890,8 +1891,13 @@ def get_data_ttl(filename):
             text = DATA_GRAPHS_SHIM  # manifesto estático (tours + images + identities)
         else:
             abort(404)
+    # robots.txt agora PERMITE o crawl dos dumps que as páginas compõem
+    # client-side (senão o renderer do Googlebot via memoria.html/index.html
+    # em branco); este header impede que os .ttl em si apareçam como
+    # resultado de busca — noindex controla indexação, robots.txt só crawl.
     return _conditional(Response(text, mimetype="text/turtle",
-                                 headers={"Cache-Control": "no-cache"}))
+                                 headers={"Cache-Control": "no-cache",
+                                          "X-Robots-Tag": "noindex"}))
 
 
 @app.get("/tour_assets/<path:p>")
@@ -2132,7 +2138,7 @@ def route_deep_link(slug):
     # Quilojaules + faixa de intensidade do censo (De boa…Insano).
     kj = (st or {}).get("energyKj")
     if isinstance(kj, (int, float)) and math.isfinite(kj):
-        bits.append(f"{round(kj)} kJ ({_intensity_for(float(kj))[0]})")
+        bits.append(f"{round(kj)} kJ ({_intensity_for(float(kj))})")
     desc = (" · ".join(bits) + " — " if bits else "") + \
         "rota traçada no amora, o mapa do Pedal Hidrográfico"
     target = f"/#rt={slug}"
@@ -2194,6 +2200,9 @@ _OG_HIDRO_TIMEOUT_S = 12
 
 # Faixas de intensidade do censo (fonte canônica: intensityFor em
 # censo.html) + as cores da pill de lá: (teto exclusivo kJ, rótulo, bg, fg).
+# NÃO chame de _intensity_for: esse nome é o helper de módulo (só o rótulo)
+# usado pelo feed e pelo SSR — a colisão de nomes fazia o repr da tupla
+# vazar pro <article> e pro RSS ("510 quilojaules (('Frito', …))").
 _INTENSITY_BANDS = [
     (150,  "De boa",      (211, 242, 224), (20, 83, 45)),
     (300,  "Ok",          (230, 244, 207), (63, 98, 18)),
@@ -2203,7 +2212,7 @@ _INTENSITY_BANDS = [
 ]
 
 
-def _intensity_for(kj):
+def _intensity_badge_for(kj):
     for cap, label, bg, fg in _INTENSITY_BANDS:
         if cap is None or kj < cap:
             return label, bg, fg
@@ -2396,7 +2405,7 @@ def _render_route_og(entry):
     kj = st.get("energyKj") if st else None
     if isinstance(kj, (int, float)) and math.isfinite(kj):
         try:
-            label, bg_rgb, fg_rgb = _intensity_for(float(kj))
+            label, bg_rgb, fg_rgb = _intensity_badge_for(float(kj))
             text = f"{round(kj)} kJ · {label}"
             font = _og_font(24 * ss)
             tb = d.textbbox((0, 0), text, font=font)
@@ -2883,6 +2892,15 @@ def _build_sitemap_xml(tours_text):
         "    <changefreq>weekly</changefreq>\n"
         "  </url>"
     ]
+    # Memória Hidrográfica — a linha do tempo muda junto com o catálogo,
+    # então o lastmod é a data do passeio mais recente.
+    memoria = ["  <url>",
+               f"    <loc>{escape(SITE_URL)}memoria.html</loc>"]
+    newest = next((dt for dt, _, _ in tours if dt), None)
+    if newest:
+        memoria.append(f"    <lastmod>{newest.date().isoformat()}</lastmod>")
+    memoria += ["    <changefreq>weekly</changefreq>", "  </url>"]
+    urls.append("\n".join(memoria))
     for dt, tour_id, title in tours:
         lines = ["  <url>",
                  f"    <loc>{escape(f'{SITE_URL}?tour={tour_id}')}</loc>"]
@@ -3052,7 +3070,9 @@ def _render_tour_index(tour_id):
         a.append("  <p>" + "<br/>".join(facts) + "</p>")
     if authors:
         a.append(f"  <p>Alguns elaboradores: {h(', '.join(authors))}</p>")
-    a.append(f'  <p><a href="{h(SITE_URL)}">← mapa do Pedal Hidrográfico</a></p>')
+    a.append(f'  <p><a href="{h(SITE_URL)}">← mapa do Pedal Hidrográfico</a> · '
+             f'<a href="{h(SITE_URL)}memoria.html#{h(tour_id)}">este passeio na '
+             "Memória Hidrográfica</a></p>")
     a.append("</article>")
     article = "\n".join(a)
 
@@ -3122,6 +3142,122 @@ def _render_tour_index(tour_id):
     html_text = html_text.replace("</head>", "    " + jsonld_tag + "\n  </head>", 1)
     html_text = html_text.replace("</body>", article + "\n</body>", 1)
     return html_text
+
+
+# ── Memória Hidrográfica (SSR da linha do tempo) ──────────────────────────
+# GET /memoria.html injeta uma versão texto da linha do tempo no lugar do
+# marcador <!-- SSR:MEMORIA --> — é o que crawlers e quem está sem JS leem
+# (a página compõe tudo client-side dos dumps, que o robots.txt bloqueava
+# pro renderer do Google; ver get_data_ttl). Com JS, o script da página
+# remove o nó #memoria-ssr depois de compor a linha do tempo viva.
+_memoria_cache = {"digest": None, "html": None}
+
+
+def _build_memoria_ssr():
+    """<section id="memoria-ssr"> com um <article> por passeio (texto só:
+    título, data, energia, rota, narrativa) — mais recentes primeiro."""
+    import re
+    from html import escape as h
+    from rdflib import Namespace, RDF
+
+    PH = Namespace(PH_NS)
+    SCHEMA = Namespace("https://schema.org/")
+    DCT = Namespace("http://purl.org/dc/terms/")
+
+    g = _tours_graph()
+    items = []
+    for t in g.subjects(RDF.type, PH.Tour):
+        date = g.value(t, DCT.date)
+        try:
+            dt = datetime.fromisoformat(str(date)) if date else None
+        except ValueError:
+            dt = None
+        items.append((dt, t))
+    items.sort(key=lambda x: _tour_date_sort_key(x[0]), reverse=True)
+
+    def kj_float(v):
+        try:
+            return float(v) if v is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    n = len(items)
+    out = ['<section id="memoria-ssr">',
+           f'  <p class="meta">{n} passeio{"s" if n != 1 else ""} — '
+           "versão texto da linha do tempo; com JavaScript ela vira a "
+           "versão completa, com artes e galerias.</p>"]
+    for dt, t in items:
+        slug = (str(t)[len(PAS_NS):] if str(t).startswith(PAS_NS)
+                else str(t).rsplit("/", 1)[-1])
+        title = _tour_display_title(g, t)
+        out.append(f'  <article id="{h(slug)}">')
+        out.append(f'    <h2><a href="{h(SITE_URL)}?tour={h(slug)}">'
+                   f"{h(title)}</a></h2>")
+        if dt:
+            date_label = f"{dt.day} de {_MONTHS_PT[dt.month - 1]} de {dt.year}"
+            out.append(f'    <p class="meta"><time datetime="{h(dt.isoformat())}">'
+                       f"{h(date_label)}</time></p>")
+        facts = []
+        est = kj_float(g.value(t, PH.energyEstimate))
+        med = kj_float(g.value(t, PH.measuredEnergy))
+        if est is not None:
+            label = _intensity_for(est)
+            facts.append(f"{est:.0f} quilojaules"
+                         + (f" ({label})" if label else ""))
+        if med is not None:
+            facts.append(f"{med:.0f} kJ medidos")
+        route_ref = g.value(t, PH.linkRoute)
+        route_url = g.value(route_ref, SCHEMA.url) if route_ref else None
+        if route_url:
+            facts.append(f'Rota: <a href="{h(str(route_url))}">'
+                         f"{h(str(route_url))}</a>")
+        ig_url = g.value(t, PH.linkInstagram)
+        if ig_url:
+            facts.append(f'<a href="{h(str(ig_url))}">Post no Instagram</a>')
+        if facts:
+            out.append('    <p class="meta">' + " · ".join(facts) + "</p>")
+        narrative = str(g.value(t, DCT.description) or "").strip()
+        for para in re.split(r"\r?\n+", narrative):
+            if para.strip():
+                out.append(f"    <p>{h(para.strip())}</p>")
+        out.append("  </article>")
+    out.append("</section>")
+    return "\n".join(out)
+
+
+def _render_memoria_html():
+    """memoria.html com o SSR injetado, cacheado pelo hash do catálogo
+    (mesma mecânica do feed/sitemap). O build roda FORA do _feed_lock —
+    _tours_graph() o adquire internamente e o lock não é reentrante."""
+    import hashlib
+    text = _tours_with_identities_text()
+    digest = hashlib.sha1(text.encode("utf-8")).hexdigest()
+    with _feed_lock:
+        if _memoria_cache["digest"] == digest and _memoria_cache["html"]:
+            return _memoria_cache["html"]
+    section = _build_memoria_ssr()
+    html_text = (WEB / "memoria.html").read_text(encoding="utf-8")
+    marker = "<!-- SSR:MEMORIA -->"
+    if marker in html_text:
+        html_text = html_text.replace(marker, section, 1)
+    with _feed_lock:
+        _memoria_cache["digest"] = digest
+        _memoria_cache["html"] = html_text
+    return html_text
+
+
+@app.get("/memoria.html")
+def memoria_page():
+    """memoria.html com a linha do tempo pré-renderizada — best-effort:
+    qualquer falha degrada pro arquivo estático (a página compõe tudo
+    client-side de qualquer jeito)."""
+    try:
+        html_text = _render_memoria_html()
+    except Exception:  # noqa: BLE001
+        app.logger.exception("[memoria] SSR falhou; servindo o estático")
+        return web_files("memoria.html")
+    return _conditional(Response(html_text, mimetype="text/html",
+                                 headers={"Cache-Control": "no-cache"}))
 
 
 @app.get("/<path:p>")

@@ -3874,9 +3874,9 @@ document.getElementById('subir-censo')?.addEventListener('click', () => {
   openCensoModal();
 });
 document.getElementById('subir-memoria')?.addEventListener('click', () => {
+  // Virou um <a href> de verdade (link rastreável pra indexação): o navegador
+  // abre a aba nova sozinho — aqui só fecha o modal.
   closeSubirModal();
-  // Página própria (não modal): abre em aba nova pra não derrubar o mapa.
-  window.open('./memoria.html', '_blank', 'noopener');
 });
 document.getElementById('subir-custos')?.addEventListener('click', () => {
   closeSubirModal();

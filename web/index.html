@@ -211,6 +211,12 @@
           <details class="help-changelog">
             <summary>Novidades (changelog)</summary>
             <dl>
+              <dt>17/08/2026 · v391</dt>
+              <dd>
+                <ul>
+                  <li><strong>Memória Hidrográfica e passeios visíveis pra buscadores.</strong> A Memória agora chega do servidor com a linha do tempo pré-renderizada (crawlers e quem está sem JS leem tudo), entrou no sitemap e o item 🕰 Memória do menu Ações virou um link de verdade. Os grafos Turtle ficaram acessíveis pro renderizador do Google (sem virarem resultado de busca), e cada artigo por passeio agora aponta pra sua entrada na Memória. De quebra: a linha de energia dos artigos e do feed RSS mostrava a estrutura interna da faixa de intensidade em vez do rótulo — consertado.</li>
+                </ul>
+              </dd>
               <dt>17/08/2026 · v390</dt>
               <dd>
                 <ul>
@@ -1827,7 +1833,9 @@
           <button type="button" id="subir-upload-media" class="subir-action">📤 Enviar fotos/vídeos</button>
           <button type="button" id="subir-new-tour" class="subir-action">🚵 Cadastrar passeio</button>
           <button type="button" id="subir-censo" class="subir-action">📊 Censo hidrográfico</button>
-          <button type="button" id="subir-memoria" class="subir-action">🕰 Memória</button>
+          <!-- <a> de verdade (não button): link rastreável por crawlers — a
+               Memória é uma página própria e indexável. -->
+          <a id="subir-memoria" class="subir-action" href="./memoria.html" target="_blank" rel="noopener">🕰 Memória</a>
           <button type="button" id="subir-custos" class="subir-action">💸 Custos</button>
           <button type="button" id="subir-download-gpx" class="subir-action">📥 Baixar rotas (GPX)</button>
           <button type="button" id="subir-share-loc" class="subir-action">📍 Compartilhar localização</button>

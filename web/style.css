@@ -3088,6 +3088,8 @@ body.trace-preview .tp-label { display: none !important; }
   cursor: pointer; text-align: left;
 }
 .subir-modal-body .subir-action:hover { border-color: var(--accent); background: rgba(45,169,255,0.12); }
+/* O item Memória é um <a> de verdade (link rastreável) — mesma cara dos botões. */
+.subir-modal-body a.subir-action { display: block; text-decoration: none; }
 
 /* Modal "Compartilhar localização" (apelido + tempo de retenção). */
 .share-name-content { width: min(380px, 92vw); }
