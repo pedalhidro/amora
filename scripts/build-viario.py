@@ -397,7 +397,8 @@ def build_ph_network_geojson(pbf: Path) -> None:
 #
 # O JS reconstrói o CSR (indptr/targets) num passe — ver decodeViarioGraph.
 
-FABDEM_BASE = "https://telhas.pedalhidrografi.co/fabdem/"
+# R2 (custom domain; tiles na raiz do bucket, sem segmento /fabdem/)
+FABDEM_BASE = "https://fabdem.pedalhidrografi.co/"
 SAMPA_DEM_URL = "https://telhas.pedalhidrografi.co/dem/sampa_geral.tif"
 ARCSEC = 1.0 / 3600.0            # célula do FABDEM (~30,9 m) — grade do bake
 M_DEG = 111320.0                 # mesma constante do app.js

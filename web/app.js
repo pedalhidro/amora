@@ -9560,10 +9560,11 @@ function totalDistanceMeters() {
   return total;
 }
 
-// ─── FABDEM (1°×1° COG tiles hospedadas em telhas.pedalhidrografi.co) ────────
+// ─── FABDEM (1°×1° COG tiles hospedadas no R2, fabdem.pedalhidrografi.co) ────
 // Range-fetch só dos strips que cobrem cada ponto/bbox. geotiff.js é
-// carregado sob demanda do CDN; window.GeoTIFF expõe a API.
-const FABDEM_BASE_URL = 'https://telhas.pedalhidrografi.co/fabdem/';
+// carregado sob demanda do CDN; window.GeoTIFF expõe a API. Os tiles ficam na
+// RAIZ do bucket (sem segmento /fabdem/) — nomes Bristol direto na base.
+const FABDEM_BASE_URL = 'https://fabdem.pedalhidrografi.co/';
 const FABDEM_TILE_DEG = 1;
 const FABDEM_ARCSEC   = 1 / 3600;            // ~30 m no equador
 const GEOTIFF_URL     = 'https://cdn.jsdelivr.net/npm/geotiff@3.0.5/dist-browser/geotiff.js';
