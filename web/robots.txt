@@ -1,5 +1,8 @@
 # amora — a página principal, a Memória e os passeios interessam pra busca;
-# formulários internos e o censo (iframe) ficam de fora. Os dumps Turtle que
+# formulários internos ficam de fora. O censo NÃO é bloqueado aqui de
+# propósito: bloquear o crawl esconderia o <meta noindex> da página, e uma
+# URL bloqueada mas linkada ainda pode ser indexada "sem conteúdo" — deixar
+# o Google rastrear e ver o noindex é a exclusão durável. Os dumps Turtle que
 # as páginas compõem client-side precisam ser RASTREÁVEIS (o renderer do
 # Googlebot obedece o robots.txt pros subrecursos — bloquear /data/ inteiro
 # deixava memoria.html em branco na indexação); o Allow mais específico vence
@@ -14,7 +17,6 @@ Allow: /data/identities.ttl
 Disallow: /upload_images.html
 Disallow: /upload_tour.html
 Disallow: /upload_videos.html
-Disallow: /censo.html
 Disallow: /data/
 Disallow: /photos/
 Disallow: /clips/
