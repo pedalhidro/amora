@@ -322,6 +322,9 @@ function buildTours(store) {
     tours.push({
       iri,
       slug: iri.split('/').pop(),
+      // Slug legível da URL /passeio/<slug> (schema:identifier) — o link
+      // navegável; âncoras/edição seguem no slug8 (estável).
+      prettySlug: obj1(iri, NS.schema + 'identifier'),
       date: obj1(iri, NS.dcterms + 'date') || '',
       title: obj1(iri, NS.dcterms + 'title') || iri.split('/').pop(),
       description: obj1(iri, NS.dcterms + 'description'),
@@ -494,7 +497,7 @@ function tourMemoryHtml(t, medias) {
     `<li class="tm" id="${escapeHtml(t.slug)}">${editar}` +
       `<div class="tm-grid${arte ? '' : ' sem-arte'}" data-gal="${galState}" data-np="${nP}" data-n="${medias.length}">` +
         `<div class="texto">${serie}` +
-          `<h2><a href="./?tour=${encodeURIComponent(t.slug)}" title="Abrir no mapa">${escapeHtml(t.title)}</a></h2>` +
+          `<h2><a href="./passeio/${encodeURIComponent(t.prettySlug || t.slug)}" title="Abrir no mapa">${escapeHtml(t.title)}</a></h2>` +
           `${dados}${desc}` +
         `</div>${arte}${galeria}` +
       `</div>` +

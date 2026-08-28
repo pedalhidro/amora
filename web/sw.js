@@ -18,7 +18,7 @@
 // origin) e v371/v372 saíram na `deploy` (busca de endereços, ⇄ inverter).
 // v373 fica acima de tudo que já circulou, que é o que importa: se a VERSION
 // não crescer, o service worker serve cache velho.
-const VERSION = 'phidro-v393';
+const VERSION = 'phidro-v394';
 const STATIC_CACHE = `${VERSION}-static`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 
@@ -149,7 +149,12 @@ self.addEventListener('fetch', (event) => {
         // Página de compartilhamento /route/<slug> (não pega o og.png, que
         // termina em .png): o redirect embutido aponta pro slug — servir uma
         // cópia velha depois de renomear a rota mandaria pro slug morto.
-        || /\/route\/[a-z0-9][a-z0-9-]*$/.test(url.pathname)) {
+        || /\/route\/[a-z0-9][a-z0-9-]*$/.test(url.pathname)
+        // Página por passeio /passeio/<slug> (o index SSR'ado): o conteúdo
+        // muda a cada edição do passeio — network-first, com fallback pro
+        // shell cacheado no networkFirst quando offline. (A forma de 2
+        // segmentos /passeio/<ES>/<seq> não casa — a classe não inclui "/".)
+        || /\/passeio\/[A-Za-z0-9-]+$/.test(url.pathname)) {
       event.respondWith(networkFirst(req, STATIC_CACHE));
     } else {
       event.respondWith(staleWhileRevalidate(req, STATIC_CACHE));
@@ -174,7 +179,16 @@ async function networkFirst(req, cacheName) {
     if (res && res.ok && res.status === 200) cache.put(req, res.clone());
     return res;
   } catch (_) {
-    return (await cache.match(req)) || Response.error();
+    const cached = await cache.match(req);
+    if (cached) return cached;
+    // Navegação offline pra um caminho nunca visitado (ex.: um
+    // /passeio/<slug> recém-compartilhado): serve o shell do app — o
+    // cliente abre o passeio pelo path (tryOpenTourFromPath).
+    if (req.mode === 'navigate') {
+      const shell = await cache.match('./index.html');
+      if (shell) return shell;
+    }
+    return Response.error();
   }
 }
 

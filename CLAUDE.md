@@ -220,7 +220,7 @@ senão a página/documento humano. Esquema (prefixos usados nos TTLs e no códig
 |---|---|---|---|
 | Vocabulário | `ph:` | `…/terms#<Termo>` | `GET /terms` (turtle=ontology.ttl \| HTML doc) |
 | Pessoa | `pes:` | `…/pessoas/<slug8>` | `GET /pessoas/<slug>` (turtle \| pessoas.html) |
-| Passeio | `pas:` | `…/passeio/<slug8>` | `GET /passeio/<slug>` (turtle \| 303 `/?tour=<slug>`) |
+| Passeio | `pas:` | `…/passeio/<slug8>` | `GET /passeio/<slug>` (turtle \| index SSR'ado servido NO path) — aceita também o **slug legível** (`schema:identifier`, mintado do título no save e IMUTÁVEL; slug8 com legível disponível 303a pra ele; `?tour=` e id numérico legado 303am pra cá). É a URL canônica dos links (compartilhar/sitemap/feed/memória); routes.json espelha em `entry.slug` |
 | Edição de série | (IRI full) | `…/passeio/<ES>/<seq>` (ex.: `…/passeio/BP/4`) | `GET /passeio/<es>/<seq>` (turtle \| 303 pro passeio) |
 | Série | `ser:` | `…/serie/<ES>` (PH/BT/BP/S/SESC) | `GET /serie/<es>` (turtle=série+edições \| HTML gerada, edições mais recentes primeiro, linkando pro passeio) |
 | Mídia | `med:` | `…/midia/<hash16>` (opaco — foto OU vídeo) | `GET /midia/<hash>` (turtle \| 303 `/imagens.html?pick=`) |
@@ -492,18 +492,22 @@ Key flows:
   "Censo →" sidebar link in the Routes panel — and the iframe is
   re-pointed to `./censo.html` on every open so navigating into the edit
   form internally doesn't strand the user there on re-open.
-- **Backend endpoint summary.** Static: `GET /` (com SSR mínimo por
-  passeio quando há `?tour=<id>`: troca title/description/canonical/OG,
-  injeta JSON-LD NewsArticle + um `<article>` renderizado de `tours.ttl`
-  pra crawlers/no-JS — o app remove o nó ao abrir o modal do deep link;
-  render é best-effort e degrada pro index estático), `GET /<path:p>`,
+- **Backend endpoint summary.** Static: `GET /` (deep links `?tour=<id>`
+  — slug8, slug legível ou id numérico legado — 303am pra URL canônica
+  `/passeio/<slug legível ou slug8>`; id desconhecido degrada pro index
+  estático). O SSR por passeio mora em `GET /passeio/<slug>`: troca
+  title/description/canonical/OG, injeta JSON-LD NewsArticle + um
+  `<article>` renderizado de `tours.ttl` pra crawlers/no-JS, servido NO
+  path com `<base href="/">` injetado (o app abre o modal pelo path e
+  remove o nó; render best-effort degrada pro 303 `/?tour=`). `GET /<path:p>`,
   `GET /data/<filename>`, `GET /photos/<path:p>`, `GET /clips/<path:p>`,
   `GET /tour_assets/<path:p>` (in `gcs` mode the last three 302-redirect
   to the bucket's public URL), `GET /feed.xml` (RSS 2.0 dos passeios,
   renderizado de `tours.ttl` e cacheado por hash do catálogo — atualiza
-  sozinho a cada tour CRUD), `GET /sitemap.xml` (dinâmico, sobrepõe o
-  estático: home + `/?tour=<id>` por passeio — deep link que o app abre
-  no modal da rota — com bloco Google News pros passeios das últimas
+  sozinho a cada tour CRUD; link do item = IG, senão a página do passeio),
+  `GET /sitemap.xml` (dinâmico, sobrepõe o
+  estático: home + `/passeio/<slug legível ou slug8>` por passeio — o app
+  abre no modal da rota — com bloco Google News pros passeios das últimas
   48 h; cache por hash + TTL de 1 h). Ops: `GET /health`, `POST /reload`
   (force re-read of the on-disk TTL catalog after an out-of-band edit).
   Mutations: `POST /upload-image`, `POST /upload-video`,

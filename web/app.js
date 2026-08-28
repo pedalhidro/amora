@@ -5723,15 +5723,18 @@ boot()
     tryLoadFromShareHash()
       .then((loaded) => (loaded ? true : tryLoadSavedRouteFromHash()))
       .catch((err) => console.warn('[share] hash load failed:', err));
-    tryOpenTourFromQuery();
+    if (!tryOpenTourFromPath()) tryOpenTourFromQuery();
   });
 
-// Abre o modal da rota cujo tourIri termina em `slug`. Retorna true se abriu.
+// Abre o modal da rota cujo passeio bate com `slug` — o slug8 (sufixo do
+// tourIri) OU o slug legível (entry.slug, o schema:identifier que o backend
+// espelha em routes.json). Retorna true se abriu.
 function _openTourBySlug(slug) {
   for (const [key, r] of routes) {
-    if (_tourIdFromIri(r.entry?.tourIri) !== slug) continue;
+    const tourId = _tourIdFromIri(r.entry?.tourIri);
+    if (tourId !== slug && r.entry?.slug !== slug) continue;
     const canon = document.querySelector('link[rel="canonical"]');
-    if (canon) canon.href = `https://amora.pedalhidrografi.co/?tour=${encodeURIComponent(slug)}`;
+    if (canon) canon.href = `https://amora.pedalhidrografi.co/passeio/${encodeURIComponent(r.entry?.slug || tourId)}`;
     // O backend injeta um <article> SSR pra crawlers/no-JS; com o modal
     // aberto ele é redundante — remove. Se o tour NÃO está em routes.json
     // (sem rota), o article fica como conteúdo de fallback abaixo do mapa.
@@ -5742,16 +5745,43 @@ function _openTourBySlug(slug) {
   return false;
 }
 
-// Deep link por passeio: /?tour=<slug> abre o modal da rota correspondente
-// (e ajusta o canonical, já que o estático aponta tudo pra home). São as
-// URLs que o sitemap dinâmico do backend anuncia — inclusive no bloco
-// Google News dos passeios recentes.
+// ── URL legível por passeio (/passeio/<slug>) ─────────────────────────────
+// Abrir um passeio reflete o endereço canônico na barra (replaceState — sem
+// poluir o histórico); fechar volta pra raiz. Só quando o app está servido
+// na raiz do host — num deploy em subpath a URL fica como está.
+function _urlAtHostRoot() {
+  const p = location.pathname;
+  return p === '/' || p === '/index.html' || p.startsWith('/passeio/');
+}
+function _setTourUrl(entry) {
+  if (!_urlAtHostRoot()) return;
+  const tourId = _tourIdFromIri(entry?.tourIri);
+  if (!tourId) return;   // rota sem passeio (importação legada) — URL fica
+  history.replaceState(null, '', `/passeio/${encodeURIComponent(entry.slug || tourId)}`);
+}
+function _clearTourUrl() {
+  if (location.pathname.startsWith('/passeio/')) history.replaceState(null, '', '/');
+}
+
+// Deep link por caminho: /passeio/<slug legível ou slug8> — a URL canônica
+// dos links compartilhados/sitemap. O servidor serve o index SSR'ado nesse
+// caminho (com <base href="/">); aqui só abrimos o modal correspondente.
+function tryOpenTourFromPath() {
+  const m = /^\/passeio\/([A-Za-z0-9-]+)$/.exec(location.pathname);
+  if (!m) return false;
+  if (_openTourBySlug(m[1])) return true;
+  console.warn(`[tour] deep link /passeio/${m[1]} não encontrado em routes.json`);
+  return false;
+}
+
+// Deep link por query: /?tour=<slug> (forma antiga — segue viva; o backend
+// 303a pra /passeio/<slug>, mas a Cloudflare pode comer a query string antes
+// de chegar na origem, então o cliente resolve aqui também). Depois de abrir,
+// openRouteModal normaliza a barra pro endereço canônico.
 //
 // A resolução do LEGADO (?tour=<id-numérico> antigo → slug) é feita AQUI, no
-// cliente: a Cloudflare tira a query string antes de chegar no backend, então
-// o 303 de continuidade do index() não roda via amora. O mapa (só byOldId) é
-// buscado sob demanda, só quando o id não bate direto — o caso comum (slug
-// novo) não paga nada.
+// cliente, pelo mesmo motivo. O mapa (só byOldId) é buscado sob demanda, só
+// quando o id não bate direto — o caso comum (slug novo) não paga nada.
 async function tryOpenTourFromQuery() {
   const id = new URLSearchParams(location.search).get('tour');
   if (!id) return;
@@ -5760,10 +5790,7 @@ async function tryOpenTourFromQuery() {
     const res = await fetch('./data/tour-iri-map.json', { cache: 'no-cache' });
     if (res.ok) {
       const slug = ((await res.json()).byOldId || {})[id];
-      if (slug && _openTourBySlug(slug)) {
-        history.replaceState(null, '', `?tour=${encodeURIComponent(slug)}`);
-        return;
-      }
+      if (slug && _openTourBySlug(slug)) return;
     }
   } catch (_) { /* sem mapa — degrada pro warning */ }
   console.warn(`[tour] deep link ?tour=${id} não encontrado em routes.json`);
@@ -6612,9 +6639,10 @@ function openRouteModal(id) {
     closeRouteModal();
   });
   // Link canônico do passeio (mesmo formato do <link rel="canonical"> da
-  // SSR e do sitemap — abre direto no modal certo pra quem recebe).
+  // SSR e do sitemap — abre direto no modal certo pra quem recebe). Slug
+  // legível quando o backend já o mintou; senão o slug8.
   routeModalMeta.querySelector('.share-tour-btn')?.addEventListener('click', () => {
-    shareLink(`https://amora.pedalhidrografi.co/?tour=${encodeURIComponent(tourId)}`, 'Link do passeio');
+    shareLink(`https://amora.pedalhidrografi.co/passeio/${encodeURIComponent(entry.slug || tourId)}`, 'Link do passeio');
   });
   routeModalMeta.querySelector('.edit-tour-btn')?.addEventListener('click', () => {
     openTourModal(tourId);
@@ -6637,6 +6665,7 @@ function openRouteModal(id) {
   }
 
   renderRoutePhotos(entry);
+  _setTourUrl(entry);   // barra de endereço ← /passeio/<slug> (canônico)
   routeModal.hidden = false;
 }
 
@@ -6645,6 +6674,7 @@ function closeRouteModal() {
   routeModalSummary.innerHTML = '';
   document.getElementById('route-modal-photos').innerHTML = '';
   _routeModalReqId++;  // invalida qualquer _renderTourSummary pendente
+  _clearTourUrl();
 }
 
 

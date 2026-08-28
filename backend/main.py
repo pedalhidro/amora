@@ -640,6 +640,110 @@ def _legacy_tour_iri(slug):
     return (PHD_NS + "tour_" + numid) if numid else None
 
 
+# ── Slug legível por passeio (schema:identifier) ─────────────────────────
+# Além do slug8 (a IDENTIDADE — o IRI pas:<slug8> não muda), cada passeio
+# ganha um slug legível derivado do título, gravado como schema:identifier
+# em tours.ttl. É o endereço "bonito" /passeio/foz-do-tamanduatei-…, usado
+# em todos os links gerados (compartilhar, sitemap, feed, memória); o slug8
+# segue resolvendo e 303a pra forma legível. Mintado server-side UMA vez na
+# criação (imutável — renomear o passeio não apodrece links compartilhados).
+
+def _slugify_title(title):
+    """Título → slug de URL: sem acentos, minúsculo, [a-z0-9-], ~60 chars
+    cortados em fronteira de palavra. Vazio se o título não render nada
+    slugificável (só emoji etc.) — aí o slug8 segue sendo o endereço."""
+    import re
+    import unicodedata
+    s = unicodedata.normalize("NFKD", title or "")
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    s = re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-")
+    if len(s) > 60:
+        cut = s[:60]
+        s = cut.rsplit("-", 1)[0] if "-" in cut else cut
+    return s
+
+
+def _tour_pretty_of(g, t):
+    """schema:identifier (slug legível) de um passeio no grafo, ou None.
+    Aceita as duas formas do namespace (catálogos antigos podem ter http)."""
+    from rdflib import URIRef
+    for ns in ("https://schema.org/", "http://schema.org/"):
+        v = g.value(t, URIRef(ns + "identifier"))
+        if v is not None:
+            return str(v)
+    return None
+
+
+def _tour_pretty_maps():
+    """(by_pretty: slug legível→slug8, by_id: slug8→slug legível) a partir
+    dos schema:identifier de tours.ttl. Deriva do grafo cacheado por digest
+    (_tours_graph) — barato o suficiente pra montar por request."""
+    from rdflib import RDF, Namespace
+    g = _tours_graph()
+    PH = Namespace(PH_NS)
+    by_pretty, by_id = {}, {}
+    for t in g.subjects(RDF.type, PH.Tour):
+        if not str(t).startswith(PAS_NS):
+            continue
+        pretty = _tour_pretty_of(g, t)
+        if not pretty:
+            continue
+        tid = str(t)[len(PAS_NS):]
+        by_pretty[pretty] = tid
+        by_id[tid] = pretty
+    return by_pretty, by_id
+
+
+def _ensure_tour_slug(ttl_text, tour_id):
+    """Garante o slug legível (schema:identifier) no documento final do tour.
+
+    Mintado do dcterms:title na criação e IMUTÁVEL dali em diante (mesma
+    filosofia do hash das mídias): um patch carrega o identifier existente
+    pelo merge; um replace re-herda do estado persistido. Colisão de título
+    → sufixo -2, -3… A unicidade cobre os três espaços que resolvem em
+    /passeio/<slug>: slugs legíveis, slug8 (identidade) e ids numéricos
+    legados.
+
+    Levanta ValueError se o cliente postou um identifier que já pertence a
+    OUTRO passeio (ambiguidade no resolver). Sem título slugificável, o doc
+    passa sem identifier.
+    """
+    from rdflib import Graph, RDF, URIRef
+    from rdflib.namespace import DCTERMS
+    tour_uri = URIRef(PAS_NS + tour_id)
+    ident_preds = (URIRef("https://schema.org/identifier"),
+                   URIRef("http://schema.org/identifier"))
+    g = Graph().parse(data=ttl_text, format="turtle")
+    by_pretty, by_id = _tour_pretty_maps()
+    posted = next((str(o) for p in ident_preds for o in g.objects(tour_uri, p)),
+                  None)
+    if posted is not None:
+        owner = by_pretty.get(posted)
+        if owner and owner != tour_id:
+            raise ValueError(
+                f"schema:identifier {posted!r} já pertence ao passeio {owner}")
+        return ttl_text
+    slug = by_id.get(tour_id)   # já mintado antes → re-herda (imutabilidade)
+    if not slug:
+        base = _slugify_title(str(g.value(tour_uri, DCTERMS.title) or ""))
+        if not base:
+            return ttl_text
+        gcat = _tours_graph()
+        taken = set(by_pretty)
+        taken |= {str(t)[len(PAS_NS):]
+                  for t in gcat.subjects(RDF.type, URIRef(PH_NS + "Tour"))
+                  if str(t).startswith(PAS_NS)}
+        taken |= set(_tour_iri_map().get("byOldId", {}))
+        taken.discard(tour_id)
+        slug, n = base, 2
+        while slug in taken:
+            slug, n = f"{base}-{n}", n + 1
+    return (ttl_text
+            + "\n# Slug legível da URL /passeio/<slug> (mintado server-side).\n"
+            + f'<{PAS_NS}{tour_id}> <https://schema.org/identifier> '
+            + f'"{_ttl_escape(slug)}" .\n')
+
+
 def _build_audit_ttl(upload_local, phash):
     """Bloco PROV server-side anexado ao TTL do upload. A atividade de envio vira
     env:<ts> (resolvível) e aponta pra mídia em med:<phash>."""
@@ -1424,31 +1528,33 @@ def reload_caches():
 @app.get("/")
 @app.get("/index.html")
 def index():
-    """index.html — com SSR mínimo por passeio quando há ?tour=<id>.
+    """index.html — deep links por passeio (?tour=<id>) 303am pro endereço
+    canônico /passeio/<slug legível ou slug8>, onde mora o SSR (ver
+    tour_page). Ids numéricos legados resolvem pelo tour-iri-map.
 
     Também registrado em /index.html: a Cloudflare reescreve `/` → `/index.html`
     antes do worker, então o deep link /?tour= chega na origem como
-    /index.html?tour= — sem esta rota, cairia no static file (sem SSR/alias).
+    /index.html?tour= — sem esta rota, cairia no static file (sem alias).
+    (E quando a CF come a query string, o cliente resolve — tryOpenTourFromQuery.)
 
-    O render é best-effort: qualquer falha (catálogo corrompido, tour sem
-    os campos esperados) degrada pro index estático, que é o comportamento
-    de sempre. Ver _render_tour_index lá embaixo."""
+    Best-effort: qualquer falha (catálogo corrompido, id desconhecido)
+    degrada pro index estático, que é o comportamento de sempre."""
     import re
     tour_id = (request.args.get("tour") or "").strip()
-    # Continuidade (F4): deep links antigos usam ?tour=<id-numérico>. Se o id
-    # bater num passeio migrado, 303 pro slug novo — o link antigo segue vivo.
-    legacy_slug = _tour_iri_map().get("byOldId", {}).get(tour_id)
-    if legacy_slug and legacy_slug != tour_id:
-        return redirect(f"/?tour={legacy_slug}", code=303)
     if tour_id and re.fullmatch(r"[A-Za-z0-9\-]+", tour_id):
         try:
-            page = _render_tour_index(tour_id)
+            from rdflib import RDF, Namespace, URIRef
+            by_pretty, by_id = _tour_pretty_maps()
+            tid = by_pretty.get(tour_id, tour_id)
+            # Continuidade (F4): ?tour=<id-numérico> antigo → slug migrado.
+            legacy = _tour_iri_map().get("byOldId", {}).get(tour_id)
+            if legacy:
+                tid = legacy
+            if (URIRef(PAS_NS + tid), RDF.type,
+                    Namespace(PH_NS).Tour) in _tours_graph():
+                return redirect(f"/passeio/{by_id.get(tid, tid)}", code=303)
         except Exception as e:  # noqa: BLE001
-            print(f"[tour-page] render falhou pra tour_{tour_id}: {e}")
-            page = None
-        if page is not None:
-            return _conditional(Response(page, mimetype="text/html",
-                                         headers={"Cache-Control": "no-cache"}))
+            print(f"[tour-page] alias falhou pra ?tour={tour_id}: {e}")
     return send_from_directory(WEB, "index.html")
 
 
@@ -1667,17 +1773,47 @@ def list_page(slug):
 @app.get("/passeio/<slug>")
 def tour_page(slug):
     """Dereferência de um passeio. IRI: https://id.pedalhidrografi.co/passeio/
-    <slug> (CF 303 pra cá). Conneg: Accept: text/turtle (ou ?format=ttl) → as
-    triples do passeio fatiadas de tours.ttl; senão 303 pro deep link do app
-    (/?tour=<slug>), que abre o modal da rota (com SSR pra crawlers/no-JS).
+    <slug8> (CF 303 pra cá). Aceita o slug8 (identidade) E o slug legível
+    (schema:identifier — ver _ensure_tour_slug); id numérico legado 303a pro
+    endereço novo. Conneg: Accept: text/turtle (ou ?format=ttl) → as triples
+    do passeio fatiadas de tours.ttl (sujeito canônico pas:<slug8>, em
+    qualquer forma da URL); senão a página humana: o index SSR'ado servido
+    AQUI MESMO (com <base href="/"> — o app abre o modal pelo path e a URL
+    legível fica na barra). slug8 de passeio COM slug legível → 303 canônico
+    pra forma legível. Caminho é imune ao strip de query da Cloudflare.
     (A forma de 2 segmentos /passeio/<ES>/<seq> é a edição — rota à parte.)"""
-    if not _wants_turtle(request):
-        return redirect(f"/?tour={slug}", code=303)
-    ttl = _resource_slice_ttl(PAS_NS + slug, "tours.ttl")
-    if ttl is None:
-        abort(404)
-    return _conditional(Response(ttl, mimetype="text/turtle",
-                                 headers={"Cache-Control": "no-cache"}))
+    try:
+        by_pretty, by_id = _tour_pretty_maps()
+    except Exception as e:  # noqa: BLE001 — catálogo quebrado degrada pro slug cru
+        print(f"[tour-page] mapa de slugs falhou: {e}")
+        by_pretty, by_id = {}, {}
+    tour_id, via_pretty = slug, False
+    if slug in by_pretty:
+        tour_id, via_pretty = by_pretty[slug], True
+    else:
+        legacy = _tour_iri_map().get("byOldId", {}).get(slug)
+        if legacy:
+            return redirect(f"/passeio/{by_id.get(legacy, legacy)}", code=303)
+    if _wants_turtle(request):
+        ttl = _resource_slice_ttl(PAS_NS + tour_id, "tours.ttl")
+        if ttl is None:
+            abort(404)
+        return _conditional(Response(ttl, mimetype="text/turtle",
+                                     headers={"Cache-Control": "no-cache"}))
+    pretty = by_id.get(tour_id)
+    if pretty and not via_pretty:
+        return redirect(f"/passeio/{pretty}", code=303)
+    try:
+        page = _render_tour_index(tour_id)
+    except Exception as e:  # noqa: BLE001
+        print(f"[tour-page] render falhou pra {tour_id}: {e}")
+        page = None
+    if page is not None:
+        return _conditional(Response(page, mimetype="text/html",
+                                     headers={"Cache-Control": "no-cache"}))
+    # Passeio desconhecido (ou render falhou): cai pro deep link antigo — o
+    # app abre com o toast de "não encontrado" em vez de um 404 seco.
+    return redirect(f"/?tour={slug}", code=303)
 
 
 def _render_series_html(g, series_iri, es, editions):
@@ -1708,14 +1844,17 @@ def _render_series_html(g, series_iri, es, editions):
         realizer = next(iter(g.subjects(INSERIES, ed)), None)
         tour_title = str(g.value(realizer, DCT.title)) if realizer is not None else None
         tour_date = g.value(realizer, DCT.date) if realizer is not None else None
-        tour_slug = str(realizer)[len(PAS_NS):] if realizer is not None else None
+        tour_slug = None
+        if realizer is not None:
+            tour_slug = (_tour_pretty_of(g, realizer)
+                         or str(realizer)[len(PAS_NS):])
         rows.append((seq_n, seg, tour_title, tour_date, tour_slug))
     rows.sort(key=lambda r: r[0], reverse=True)
 
     def row_html(seq_n, seg, tour_title, tour_date, tour_slug):
         label = tour_title or "(passeio sem título)"
         date_s = str(tour_date)[:10] if tour_date else ""
-        link = f"/?tour={esc(tour_slug)}" if tour_slug else f"/passeio/{esc(seg)}"
+        link = f"/passeio/{esc(tour_slug or seg)}"
         return (
             f'<div class="row"><span class="k"><a href="{esc(link)}">'
             f'{esc(es)} {seq_n}</a></span>'
@@ -1806,7 +1945,7 @@ def edition_page(es, seq):
     .../passeio/BP/3-5). 2 segmentos — não confunde com o passeio (1 segmento,
     /passeio/<slug>). Conneg: turtle → as triples da edição (de tours.ttl) + a
     aresta do passeio que a realiza; senão 303 pro passeio realizador
-    (/?tour=<slug>), resolvido via ph:inSeriesEdition inverso em tours.ttl."""
+    (/passeio/<slug>), resolvido via ph:inSeriesEdition inverso em tours.ttl."""
     from rdflib import URIRef
     edition_iri = f"{PAS_NS}{es}/{seq}"
     Graph = _load_validator()["Graph"]
@@ -1820,7 +1959,8 @@ def edition_page(es, seq):
     if not _wants_turtle(request):
         if realizer is None:
             abort(404)
-        return redirect(f"/?tour={str(realizer)[len(PAS_NS):]}", code=303)
+        slug = _tour_pretty_of(g, realizer) or str(realizer)[len(PAS_NS):]
+        return redirect(f"/passeio/{slug}", code=303)
     out = Graph()
     for pfx, ns in (("pas", PAS_NS), ("ser", SER_NS), ("ph", PH_NS)):
         out.bind(pfx, ns)
@@ -2725,7 +2865,11 @@ def _build_feed_xml(tours_text):
         title = _tour_display_title(g, t)
 
         ig = g.value(t, PH.linkInstagram)
-        link = str(ig) if ig else SITE_URL
+        # Sem post no IG, o link do item é a página canônica do passeio.
+        _lslug = str(t)[len(PAS_NS):] if str(t).startswith(PAS_NS) else None
+        link = (str(ig) if ig
+                else f"{SITE_URL}passeio/{_tour_pretty_of(g, t) or _lslug}"
+                if _lslug else SITE_URL)
 
         # Métricas pós-pedal (sem energia — ela vai junto da rota no corpo).
         metrics = []
@@ -2856,8 +3000,8 @@ def get_feed():
 
 
 # Sitemap dinâmico (sobrepõe o web/sitemap.xml estático, que fica como
-# fallback de host estático): home + uma URL por passeio (/?tour=<id> — o
-# app abre o modal da rota via deep link). Passeios com data nas últimas
+# fallback de host estático): home + uma URL por passeio (/passeio/<slug
+# legível ou slug8> — o app abre o modal da rota). Passeios com data nas últimas
 # 48 h ganham o bloco <news:news> do Google News; o cache expira em 1 h
 # pra essa janela deslizar mesmo sem mudança no tours.ttl.
 _NEWS_WINDOW_S = 48 * 3600
@@ -2882,7 +3026,8 @@ def _build_sitemap_xml(tours_text):
                 dt = None
             tour_id = str(t)[len(PAS_NS):] if str(t).startswith(PAS_NS) else str(t).rsplit("/", 1)[-1]
             title = str(g.value(t, DCT.title) or tour_id).strip()
-            tours.append((dt, tour_id, title))
+            # URL anunciada = a canônica /passeio/<slug legível ou slug8>.
+            tours.append((dt, _tour_pretty_of(g, t) or tour_id, title))
     tours.sort(key=lambda x: _tour_date_sort_key(x[0]), reverse=True)
 
     now = datetime.now(timezone.utc)
@@ -2903,7 +3048,7 @@ def _build_sitemap_xml(tours_text):
     urls.append("\n".join(memoria))
     for dt, tour_id, title in tours:
         lines = ["  <url>",
-                 f"    <loc>{escape(f'{SITE_URL}?tour={tour_id}')}</loc>"]
+                 f"    <loc>{escape(f'{SITE_URL}passeio/{tour_id}')}</loc>"]
         if dt:
             lines.append(f"    <lastmod>{dt.date().isoformat()}</lastmod>")
             # Google News só considera artigos das últimas ~48 h; usamos a
@@ -3005,7 +3150,9 @@ def _render_tour_index(tour_id):
         return None
 
     title = _tour_display_title(g, t)
-    page_url = f"{SITE_URL}?tour={tour_id}"
+    # URL canônica: o slug legível (schema:identifier) quando existe, senão o
+    # slug8 — mesmo formato do sitemap/feed/compartilhar.
+    page_url = f"{SITE_URL}passeio/{_tour_pretty_of(g, t) or tour_id}"
 
     date = g.value(t, DCT.date)
     try:
@@ -3112,6 +3259,11 @@ def _render_tour_index(tour_id):
                   + jsonld_body + "</script>")
 
     html_text = (WEB / "index.html").read_text(encoding="utf-8")
+    # Servido também em /passeio/<slug> (não só na raiz): o <base> faz as
+    # URLs relativas do app (./app.js, ./data/…) resolverem na raiz do host,
+    # como em pessoas.html. CSP tem base-uri 'self'; os href="#" do app são
+    # todos preventDefault'ados, então o base não os transforma em navegação.
+    html_text = html_text.replace("<head>", '<head>\n    <base href="/">', 1)
 
     def attr(pattern, value, text):
         # lambda no replacement: o valor pode conter '\' e '\1' literais.
@@ -3190,8 +3342,11 @@ def _build_memoria_ssr():
         slug = (str(t)[len(PAS_NS):] if str(t).startswith(PAS_NS)
                 else str(t).rsplit("/", 1)[-1])
         title = _tour_display_title(g, t)
+        # Âncora = slug8 (estável, usado por memoria.html#<slug8>); o link
+        # navegável usa o slug legível quando existe.
         out.append(f'  <article id="{h(slug)}">')
-        out.append(f'    <h2><a href="{h(SITE_URL)}?tour={h(slug)}">'
+        out.append(f'    <h2><a href="{h(SITE_URL)}passeio/'
+                   f'{h(_tour_pretty_of(g, t) or slug)}">'
                    f"{h(title)}</a></h2>")
         if dt:
             date_label = f"{dt.day} de {_MONTHS_PT[dt.month - 1]} de {dt.year}"
@@ -3909,6 +4064,17 @@ def upload_tour():
             return jsonify(error=f"parse: {e}"), 400
         if not ok:
             return jsonify(error="shacl", details=errors, tour_id=tour_id), 400
+
+        # Slug legível (schema:identifier) — mintado na criação, re-herdado
+        # nos saves seguintes; ver _ensure_tour_slug. Best-effort: uma falha
+        # no mint não derruba o save (o slug8 segue sendo o endereço), mas um
+        # identifier postado que colide com outro passeio é rejeitado.
+        try:
+            ttl_text = _ensure_tour_slug(ttl_text, tour_id)
+        except ValueError as e:
+            return jsonify(error=str(e), tour_id=tour_id), 400
+        except Exception as e:  # noqa: BLE001
+            print(f"[upload-tour] aviso mintando slug de {tour_id}: {e}")
 
         # Upload opcional do anúncio: salva no store e injeta `schema:image`.
         announcement_url = None

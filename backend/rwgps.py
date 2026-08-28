@@ -214,6 +214,16 @@ def tour_entry_from_graph(g, tour) -> dict | None:
     ig = next(iter(g.objects(tour, PH.linkInstagram)), None)
     ig = str(ig) if ig else ""
 
+    # Slug legível da URL /passeio/<slug> (schema:identifier, mintado pelo
+    # backend) — o app usa pra deep link/compartilhar; "" quando não há.
+    from rdflib import URIRef
+    pretty = ""
+    for ns in ("https://schema.org/", "http://schema.org/"):
+        v = next(iter(g.objects(tour, URIRef(ns + "identifier"))), None)
+        if v is not None:
+            pretty = str(v)
+            break
+
     assocs = []
     for a in g.objects(tour, PH.inSeriesEdition):
         seriesIri = next(iter(g.objects(a, PH.inEventSeries)), None)
@@ -231,6 +241,7 @@ def tour_entry_from_graph(g, tour) -> dict | None:
         "id":       rid,
         "provider": provider,
         "tourIri":  str(tour),
+        "slug":     pretty,
         "date":     date_disp,
         "dateMs":   date_ms,
         "name":     title,

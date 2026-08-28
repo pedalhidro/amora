@@ -450,8 +450,9 @@ function buildModel(quads) {
 
 // ── Render ────────────────────────────────────────────────────────────────────
 function tourHref(iri) {
+  // /passeio/<slug8> — o servidor 303a pro slug legível quando existe.
   const id = iri.slice(PAS.length);
-  return `./index.html?tour=${encodeURIComponent(id)}`;
+  return `./passeio/${encodeURIComponent(id)}`;
 }
 function photoThumb(iri) {
   const phash = iri.slice(MED.length);   // med:<hash> opaco (dispatch é por classe)

@@ -205,6 +205,16 @@ ph:TourShape a sh:NodeShape ;
         sh:message "Passeio precisa de data-hora (dcterms:date)."@pt ;
     ] ;
     sh:property [
+        # Slug legível da URL /passeio/<slug> — mintado pelo servidor a
+        # partir do título na criação (imutável); opcional no envio.
+        sh:path schema:identifier ;
+        sh:severity sh:Violation ;
+        sh:datatype xsd:string ;
+        sh:maxCount 1 ;
+        sh:pattern "^[a-z0-9][a-z0-9-]*$" ;
+        sh:message "schema:identifier (slug da URL) deve ser minúsculo, só [a-z0-9-] — normalmente é mintado pelo servidor; não precisa enviar."@pt ;
+    ] ;
+    sh:property [
         sh:path ph:linkRoute ;
         sh:severity sh:Warning ;
         sh:minCount 1 ;
