@@ -327,6 +327,12 @@ ph:TourShape a sh:NodeShape ;
         sh:message "Ideal: tempo em movimento (ph:movingDuration)."@pt ;
     ] ;
     sh:property [
+        sh:path ph:totalDuration ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:duration ;
+        sh:message "Se declarado, ph:totalDuration deve ser um xsd:duration (ex.: PT3H35M) — e só faz sentido sem ph:departedAt+ph:arrivedAt, que o derivam."@pt ;
+    ] ;
+    sh:property [
         sh:path ph:hadIncident ;
         sh:severity sh:Warning ;
         sh:or ( [ sh:datatype xsd:string ] [ sh:datatype rdf:langString ] ) ;

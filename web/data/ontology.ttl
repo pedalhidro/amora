@@ -215,6 +215,13 @@ ph:movingDuration a owl:DatatypeProperty ;
     rdfs:domain ph:Tour ;
     rdfs:range xsd:duration .
 
+ph:totalDuration a owl:DatatypeProperty ;
+    rdfs:label "tempo total"@pt ;
+    rdfs:comment
+        "Duração total do passeio, da saída à chegada (paradas incluídas), no formato ISO 8601 (ex.: 'PT3H35M'). Só é gravada quando ph:departedAt e ph:arrivedAt NÃO estão ambos registrados: com os dois, o tempo total é derivado (arrivedAt − departedAt) e este predicado é omitido/removido. Leitores derivam primeiro e caem neste literal na falta dos horários."@pt ;
+    rdfs:domain ph:Tour ;
+    rdfs:range xsd:duration .
+
 ph:hadIncident a owl:DatatypeProperty ;
     rdfs:label "incidente"@pt ;
     rdfs:comment

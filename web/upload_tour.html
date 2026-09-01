@@ -95,10 +95,37 @@
   .notice.ok   { background: rgba(64, 200, 96, 0.15);  color: var(--ok);   border: 1px solid rgba(64, 200, 96, 0.4); }
   .notice.warn { background: rgba(240, 200, 60, 0.15); color: var(--warn); border: 1px solid rgba(240, 200, 60, 0.4); }
   .notice.err  { background: rgba(230, 90, 90, 0.15);  color: var(--err);  border: 1px solid rgba(230, 90, 90, 0.45); }
+
+  /* Barra superior: "← Voltar ao censo" (só quando se chegou pelo censo). */
+  .topnav { display: flex; gap: .5rem; align-items: center; margin: 0 0 .75rem; }
+  .topnav[hidden] { display: none; }   /* display:flex venceria o [hidden] do UA */
+  .topnav a.back {
+    display: inline-block; padding: .35rem .7rem; border: 1px solid var(--border);
+    border-radius: 5px; background: var(--surface); color: var(--text);
+    text-decoration: none; font-size: .9rem;
+  }
+  .topnav a.back:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* Campo de data+hora: texto 24h (AAAA-MM-DD HH:MM) + botão 📅 que abre o
+     picker nativo (um datetime-local escondido — visualmente oculto, mas
+     RENDERIZADO, senão showPicker() recusa). O texto continua sendo a
+     fonte da verdade; o picker só escreve nele. */
+  .dt-field { display: flex; gap: .4rem; align-items: stretch; position: relative; }
+  .dt-field input[type="text"] { flex: 1; min-width: 0; }
+  .dt-field button.pick { padding: 0 .6rem; font-size: 1.05rem; line-height: 1; flex: 0 0 auto; }
+  .dt-field input[type="datetime-local"] {
+    position: absolute; left: 0; bottom: 0; width: 1px; height: 1px;
+    opacity: 0; pointer-events: none; border: 0; padding: 0; margin: 0;
+  }
 </style>
 <link href="./lib/tom-select.min.css" rel="stylesheet">
 </head>
 <body>
+
+<div class="topnav" id="topnav" hidden>
+  <a class="back" id="back-censo" href="./censo.html"
+     title="Volta pro censo sem salvar nada">← Voltar ao censo (sem salvar)</a>
+</div>
 
 <h1>Cadastrar / editar passeio</h1>
 <p class="lede">
@@ -129,7 +156,7 @@
         <input type="text" id="t-date" required inputmode="numeric"
                pattern="\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2})?"
                placeholder="2026-06-11 20:00">
-        <small>Formato 24h: <code>AAAA-MM-DD HH:MM</code>.</small>
+        <small>Formato 24h: <code>AAAA-MM-DD HH:MM</code> — ou escolha no 📅.</small>
       </div>
       <div>
         <label for="t-instagram">Link do Instagram (opcional)</label>
@@ -189,7 +216,7 @@
     <div id="attendee-fields" hidden>
       <label for="t-attendees-list">Participantes (lista nominal — opcional)</label>
       <select multiple id="t-attendees-list" placeholder="busca ou digita…"></select>
-      <small>Vira <code>schema:attendee</code>. Independente do contador <em>Participantes</em> abaixo.</small>
+      <small>Vira <code>schema:attendee</code>. Independente do contador <em>Participantes</em> (em Métricas reais).</small>
 
       <label for="t-newcomers-list">Iniciantes (lista nominal — opcional)</label>
       <select multiple id="t-newcomers-list" placeholder="busca ou digita…"></select>
@@ -198,19 +225,12 @@
   </fieldset>
 
   <fieldset>
-    <legend>Métricas estimadas</legend>
-    <div class="row3">
-      <div>
-        <label for="t-attendees">Participantes</label>
-        <input type="number" id="t-attendees" min="0" step="1" placeholder="ex.: 14">
-      </div>
-      <div>
-        <label for="t-newcomers">Iniciantes</label>
-        <input type="number" id="t-newcomers" min="0" step="1" placeholder="ex.: 3">
-      </div>
+    <legend>Métricas estimadas (antes do passeio)</legend>
+    <div class="row">
       <div>
         <label for="t-energy-kj">Energia estimada (kJ)</label>
         <input type="number" id="t-energy-kj" min="0" step="1" placeholder="ex.: 220">
+        <small>Vira <code>ph:energyEstimate</code>.</small>
       </div>
     </div>
   </fieldset>
@@ -223,14 +243,26 @@
         <input type="text" id="t-departed" inputmode="numeric"
                pattern="\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2})?"
                placeholder="2026-06-11 20:05">
-        <small>Vira <code>ph:departedAt</code>. Formato 24h: <code>AAAA-MM-DD HH:MM</code>.</small>
+        <small>Vira <code>ph:departedAt</code>. Formato 24h: <code>AAAA-MM-DD HH:MM</code> — ou 📅.</small>
       </div>
       <div>
         <label for="t-arrived">Chegou em</label>
         <input type="text" id="t-arrived" inputmode="numeric"
                pattern="\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2})?"
                placeholder="2026-06-11 23:40">
-        <small>Vira <code>ph:arrivedAt</code>. Formato 24h: <code>AAAA-MM-DD HH:MM</code>.</small>
+        <small>Vira <code>ph:arrivedAt</code>. Formato 24h: <code>AAAA-MM-DD HH:MM</code> — ou 📅.</small>
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label for="t-total-time">Tempo total</label>
+        <input type="text" id="t-total-time" placeholder="HH:MM — ex.: 3:35">
+        <small id="t-total-hint">Chegou em − Partiu em. Com os dois horários é calculado (travado); com um só, digite e o outro é deduzido; sem nenhum, vira ph:totalDuration.</small>
+      </div>
+      <div>
+        <label for="t-moving-time">Tempo de movimento</label>
+        <input type="text" id="t-moving-time" placeholder="HH:MM ou HH:MM:SS — ex.: 2:35">
+        <small>Vira <code>ph:movingDuration "PT…"^^xsd:duration</code>.</small>
       </div>
     </div>
     <div class="row">
@@ -247,11 +279,16 @@
         <small>Vira <code>ph:arrivalLocation</code>. Texto livre.</small>
       </div>
     </div>
-    <div class="row">
+    <div class="row3">
       <div>
-        <label for="t-moving-time">Tempo de movimento</label>
-        <input type="text" id="t-moving-time" placeholder="HH:MM ou HH:MM:SS — ex.: 2:35">
-        <small>Vira <code>ph:movingDuration "PT…"^^xsd:duration</code>.</small>
+        <label for="t-attendees">Participantes</label>
+        <input type="number" id="t-attendees" min="0" step="1" placeholder="ex.: 14">
+        <small>Vira <code>ph:countAttendee</code>.</small>
+      </div>
+      <div>
+        <label for="t-newcomers">Iniciantes</label>
+        <input type="number" id="t-newcomers" min="0" step="1" placeholder="ex.: 3">
+        <small>Vira <code>ph:countNewcomer</code>.</small>
       </div>
       <div>
         <label for="t-measured-kj">Energia medida (kJ)</label>
@@ -303,6 +340,18 @@ const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 if (window.self !== window.top) {
   $('h1')?.style.setProperty('display', 'none');
   $('.lede')?.style.setProperty('display', 'none');
+}
+
+// "← Voltar ao censo (sem salvar)": só quando se chegou PELO censo — os links
+// de lá carregam `from=censo` (e o referrer serve de fallback). No modal
+// Censo do app o iframe navega pra cá, então voltar = navegar o próprio
+// iframe de volta pra ./censo.html (o app já trata esse caminho como
+// "censo"). No modal "Subir passeio" do app (sem from=censo) o botão não
+// aparece — voltar lá é fechar o modal.
+{
+  const fromCenso = new URLSearchParams(location.search).get('from') === 'censo'
+    || /\/censo\.html(\?|$)/.test(document.referrer || '');
+  if (fromCenso) $('#topnav').hidden = false;
 }
 
 // ────────────────────── Tom Select on-demand load ─────────────────────
@@ -383,6 +432,132 @@ function fmtDateTime(value) {
   }
   return v.length === 16 ? `${v}:00-03:00` : `${v}-03:00`;
 }
+// Picker nativo de data+hora por trás de um campo de texto 24h. O texto
+// "AAAA-MM-DD HH:MM" segue sendo o valor canônico (o datetime-local cru
+// renderiza mm/dd/yyyy + AM/PM em locale en-US, sem como forçar formato —
+// por isso os campos viraram texto); o 📅 abre o picker escondido e copia a
+// escolha pro texto. `seedFrom()` dá o valor inicial do picker quando o
+// campo está vazio (ex.: Chegou em abre no dia do Partiu em).
+function attachDateTimePicker(input, seedFrom) {
+  const wrap = document.createElement('div');
+  wrap.className = 'dt-field';
+  input.parentNode.insertBefore(wrap, input);
+  wrap.appendChild(input);
+  const picker = document.createElement('input');
+  picker.type = 'datetime-local';
+  picker.tabIndex = -1;
+  picker.setAttribute('aria-hidden', 'true');
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'pick';
+  btn.textContent = '📅';
+  btn.title = 'Escolher data e hora no calendário';
+  btn.setAttribute('aria-label', 'Escolher data e hora');
+  wrap.append(btn, picker);
+  const toPicker = (txt) => {
+    const v = (txt || '').trim().replace(' ', 'T');
+    return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(v) ? v.slice(0, 16) : '';
+  };
+  btn.addEventListener('click', () => {
+    picker.value = toPicker(input.value) || toPicker(seedFrom?.()) || '';
+    // showPicker() exige gesto do usuário (estamos num click) e elemento
+    // renderizado; fora disso (Safari antigo) cai no focus+click, que no
+    // iOS abre a roda nativa.
+    try {
+      if (typeof picker.showPicker === 'function') picker.showPicker();
+      else { picker.focus(); picker.click(); }
+    } catch (_) { picker.focus(); picker.click(); }
+  });
+  const commit = () => {
+    if (!picker.value) return;
+    input.value = picker.value.slice(0, 16).replace('T', ' ');
+    input.dispatchEvent(new Event('input',  { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  };
+  picker.addEventListener('change', commit);
+  picker.addEventListener('input', commit);   // iOS: a roda emite input a cada giro
+}
+attachDateTimePicker($('#t-date'));
+attachDateTimePicker($('#t-departed'), () => $('#t-date').value);
+attachDateTimePicker($('#t-arrived'),  () => $('#t-departed').value || $('#t-date').value);
+
+// ── Tempo total = Chegou em − Partiu em ──────────────────────────────────
+// Com os dois horários preenchidos é calculado e travado (e NÃO vira triple:
+// o patch remove ph:totalDuration); com só um deles, digitar o total deduz o
+// que falta (partiu + total → chegou; chegou − total → partiu); sem nenhum,
+// o valor digitado é gravado como ph:totalDuration (xsd:duration). Deduz só
+// no `change` (blur/Enter) do total ou dos horários — nunca no `input`,
+// senão o re-preenchimento atropela o que a pessoa está digitando no outro
+// campo. `totalUserTyped` distingue um total digitado/carregado (dedutível
+// ao vivo) de um valor residual calculado que ficou pra trás quando um
+// horário foi limpo — esse não deduz ao vivo (limpar Chegou em é justamente
+// o jeito de editar o total); no submit a dedução é forçada de qualquer
+// jeito, pra gravar exatamente o que está na tela.
+function parseLocalDt(v) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?$/.exec((v || '').trim());
+  if (!m) return NaN;
+  return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0)).getTime();
+}
+function fmtLocalDt(ms) {
+  const d = new Date(ms), p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+function parseHM(v) {
+  const parts = (v || '').trim().split(':');
+  if (parts.length < 2 || parts.length > 3) return NaN;
+  const n = parts.map(x => (/^\d+$/.test(x.trim()) ? parseInt(x, 10) : NaN));
+  if (n.some(x => !Number.isFinite(x))) return NaN;
+  const [h, m, s = 0] = n;
+  return ((h * 60 + m) * 60 + s) * 1000;
+}
+function fmtHM(ms) {
+  const neg = ms < 0, mins = Math.round(Math.abs(ms) / 60000);
+  return `${neg ? '−' : ''}${Math.floor(mins / 60)}:${String(mins % 60).padStart(2, '0')}`;
+}
+let totalUserTyped = false;
+const totalHintDefault = $('#t-total-hint').textContent;
+function syncTotalTime() {
+  const dep = $('#t-departed'), arr = $('#t-arrived'), tot = $('#t-total-time'), hint = $('#t-total-hint');
+  const d = parseLocalDt(dep.value), a = parseLocalDt(arr.value);
+  const both = Number.isFinite(d) && Number.isFinite(a);
+  tot.readOnly = both;
+  hint.className = '';
+  if (both) {
+    tot.value = fmtHM(a - d);
+    totalUserTyped = false;
+    if (a < d) {
+      hint.textContent = 'Chegada antes da saída — confira os horários.';
+      hint.className = 'warn';
+    } else {
+      hint.textContent = 'Calculado (Chegou em − Partiu em). Pra mudar, limpe um dos dois horários e digite o total.';
+    }
+    return;
+  }
+  const one = Number.isFinite(d) || Number.isFinite(a);
+  hint.textContent = one
+    ? 'Digite o total e o horário que falta é deduzido (Partiu em + total, ou Chegou em − total).'
+    : totalHintDefault;
+}
+function deriveFromTotal(force = false) {
+  const dep = $('#t-departed'), arr = $('#t-arrived'), tot = $('#t-total-time');
+  if (tot.readOnly || (!force && !totalUserTyped)) return;
+  const ms = parseHM(tot.value);
+  if (!Number.isFinite(ms)) return;
+  const d = parseLocalDt(dep.value), a = parseLocalDt(arr.value);
+  if (Number.isFinite(d) && !Number.isFinite(a)) {
+    arr.value = fmtLocalDt(d + ms);
+  } else if (Number.isFinite(a) && !Number.isFinite(d)) {
+    dep.value = fmtLocalDt(a - ms);
+  }
+}
+$('#t-total-time').addEventListener('input', () => { totalUserTyped = true; });
+$('#t-total-time').addEventListener('change', () => { deriveFromTotal(); syncTotalTime(); });
+for (const id of ['#t-departed', '#t-arrived']) {
+  $(id).addEventListener('input',  syncTotalTime);
+  $(id).addEventListener('change', () => { deriveFromTotal(); syncTotalTime(); });
+}
+syncTotalTime();
+
 function parseDuration(value) {
   if (!value) return null;
   const parts = value.split(':').map(p => parseInt(p, 10));
@@ -692,6 +867,8 @@ function buildRemoveList() {
   if (!$('#t-departure-loc').value.trim()) rm.push('ph:departureLocation');
   if (!$('#t-arrival-loc').value.trim())   rm.push('ph:arrivalLocation');
   if (!$('#t-moving-time').value.trim()) rm.push('ph:movingDuration');
+  if (!($('#t-total-time').value.trim() && !$('#t-departed').value.trim() && !$('#t-arrived').value.trim()))
+    rm.push('ph:totalDuration');
   if ($('#t-measured-kj').value === '' && !measuredIsLegacy) rm.push('ph:measuredEnergy');
   if (!$('#t-had-bonde').checked)        rm.push('ph:hadBonde');
   if (!$('#t-had-rain').checked)         rm.push('ph:hadRain');
@@ -706,6 +883,10 @@ function buildRemoveList() {
 
 // ────────────────────── Construção do TTL ────────────────────────────
 function buildTtl() {
+  // Submit por Enter pode chegar antes do `change` do Tempo total — deduz
+  // aqui também, FORÇADO (grava o que está na tela: total + um horário ⇒ o
+  // outro horário).
+  deriveFromTotal(true); syncTotalTime();
   const id        = $('#t-id').value.trim();
   const title     = $('#t-title').value.trim();
   const date      = fmtDateTime($('#t-date').value);
@@ -722,6 +903,14 @@ function buildTtl() {
   const departureLoc = $('#t-departure-loc').value.trim();
   const arrivalLoc   = $('#t-arrival-loc').value.trim();
   const movingDur = parseDuration($('#t-moving-time').value);
+  // Tempo total só vira literal quando não há NENHUM dos dois horários (com
+  // os dois ele é derivado; com um, a dedução acima já preencheu o outro).
+  const totalRaw  = $('#t-total-time').value.trim();
+  let totalDur = null;
+  if (totalRaw && !departed && !arrived) {
+    totalDur = parseDuration(totalRaw);
+    if (!totalDur) throw new Error(`tempo total inválido: "${totalRaw}" — use HH:MM`);
+  }
   const measured  = $('#t-measured-kj').value;
   const hadBonde  = $('#t-had-bonde').checked;
   const hadRain   = $('#t-had-rain').checked;
@@ -802,6 +991,7 @@ function buildTtl() {
   if (departureLoc) props.push(`ph:departureLocation "${turtleEscape(departureLoc)}"`);
   if (arrivalLoc)   props.push(`ph:arrivalLocation "${turtleEscape(arrivalLoc)}"`);
   if (movingDur) props.push(`ph:movingDuration "${movingDur}"^^xsd:duration`);
+  if (totalDur)  props.push(`ph:totalDuration "${totalDur}"^^xsd:duration`);
   if (measured !== '') {
     const kj = parseFloat(String(measured).trim().replace(/,/g, '.'));
     if (Number.isFinite(kj) && kj >= 0)
@@ -1028,7 +1218,7 @@ async function prefillFromId(tourId) {
   const activities = [];
   let title = '', date = '', narrative = '', instagram = '';
   let attendees = '', newcomers = '', energyKj = '';
-  let departed = '', arrived = '', moving = '', measured = '';
+  let departed = '', arrived = '', moving = '', measured = '', total = '';
   let departureLoc = '', arrivalLoc = '';
   let hadBonde = false, hadRain = false;
   let routeUrl = '', routeProv = '';
@@ -1117,6 +1307,13 @@ async function prefillFromId(tourId) {
         moving = `${h}:${mn.padStart(2,'0')}:${String(s).padStart(2,'0')}`;
       }
     }
+    else if (p === PH_NS + 'totalDuration') {
+      const m = objLit(q).match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?$/);
+      if (m) {
+        const mins = Math.round(parseInt(m[1] || '0', 10) * 60 + parseInt(m[2] || '0', 10) + parseFloat(m[3] || '0') / 60);
+        total = `${Math.floor(mins / 60)}:${String(mins % 60).padStart(2, '0')}`;
+      }
+    }
   }
 
   // Preenche os inputs simples.
@@ -1133,6 +1330,10 @@ async function prefillFromId(tourId) {
   $('#t-arrival-loc').value   = arrivalLoc;
   $('#t-moving-time').value = moving;
   $('#t-measured-kj').value = measured;
+  // Total carregado do catálogo conta como "digitado": preencher um horário
+  // depois deduz o outro ao vivo (não é resíduo de cálculo).
+  if (total) { $('#t-total-time').value = total; totalUserTyped = true; }
+  syncTotalTime();
   $('#t-had-bonde').checked = hadBonde;
   $('#t-had-rain').checked  = hadRain;
   setFreeTags(incidentsTs, incidents);

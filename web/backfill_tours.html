@@ -49,6 +49,15 @@
   }
   .field textarea { min-height: 3.2rem; resize: vertical; }
   .field input.missing, .field textarea.missing { background: #fff8e1; border-color: #d4a017; }
+  /* Data+hora: texto 24h + 📅 que abre o datetime-local escondido (mas
+     RENDERIZADO — showPicker() recusa display:none). Igual ao upload_tour.html. */
+  .field .dt-field { display: flex; gap: .3rem; align-items: stretch; position: relative; }
+  .field .dt-field input[type="text"] { flex: 1; min-width: 0; }
+  .field .dt-field button.pick { padding: 0 .45rem; font-size: .95rem; line-height: 1; flex: 0 0 auto; }
+  .field .dt-field input[type="datetime-local"] {
+    position: absolute; left: 0; bottom: 0; width: 1px; height: 1px;
+    opacity: 0; pointer-events: none; border: 0; padding: 0; margin: 0;
+  }
   .field .img-current { font-size: .75rem; color: #666; display: block; margin-bottom: .2rem;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -262,6 +271,7 @@ function escapeHtml(s) {
 
 const FIELD_LABELS = {
   desc: 'descrição', departed: 'partida', arrived: 'chegada',
+  depLoc: 'local saída', arrLoc: 'local chegada',
   moving: 'duração', estimate: 'energia est.', measured: 'energia med.',
   image: 'imagem',
 };
@@ -307,6 +317,47 @@ function currentValues(t) {
 }
 
 // ───────────────────────── Render ─────────────────────────────────────────
+// Picker nativo por trás do campo de texto 24h (o texto segue canônico — o
+// datetime-local cru renderiza mm/dd/yyyy + AM/PM em locale en-US). O 📅 abre
+// o picker escondido e copia a escolha pro texto, disparando `input` pra
+// manter o dirty-tracking do card. `seedFrom()` dá o valor inicial quando o
+// campo está vazio (ex.: Chegou em abre no dia do Partiu em).
+function attachDateTimePicker(input, seedFrom) {
+  const wrap = document.createElement('div');
+  wrap.className = 'dt-field';
+  input.parentNode.insertBefore(wrap, input);
+  wrap.appendChild(input);
+  const picker = document.createElement('input');
+  picker.type = 'datetime-local';
+  picker.tabIndex = -1;
+  picker.setAttribute('aria-hidden', 'true');
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'pick';
+  btn.textContent = '📅';
+  btn.title = 'Escolher data e hora no calendário';
+  btn.setAttribute('aria-label', 'Escolher data e hora');
+  wrap.append(btn, picker);
+  const toPicker = (txt) => {
+    const v = (txt || '').trim().replace(' ', 'T');
+    return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(v) ? v.slice(0, 16) : '';
+  };
+  btn.addEventListener('click', () => {
+    picker.value = toPicker(input.value) || toPicker(seedFrom?.()) || '';
+    try {
+      if (typeof picker.showPicker === 'function') picker.showPicker();
+      else { picker.focus(); picker.click(); }
+    } catch (_) { picker.focus(); picker.click(); }
+  });
+  const commit = () => {
+    if (!picker.value) return;
+    input.value = picker.value.slice(0, 16).replace('T', ' ');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+  picker.addEventListener('change', commit);
+  picker.addEventListener('input', commit);   // iOS: a roda emite input a cada giro
+}
+
 function fieldEl(t, key, label, opts = {}) {
   const wrap = document.createElement('div');
   wrap.className = 'field' + (opts.full ? ' full' : '');
@@ -329,6 +380,7 @@ function fieldEl(t, key, label, opts = {}) {
   });
   wrap.appendChild(input);
   t.els[key] = input;
+  if (opts.picker) attachDateTimePicker(input, opts.picker);
   if (opts.after) wrap.appendChild(opts.after);
   return wrap;
 }
@@ -364,8 +416,10 @@ function renderCard(t) {
     t.els.departed.dispatchEvent(new Event('input'));
   });
   grid.appendChild(fieldEl(t, 'departed', 'Partiu em', {
-    placeholder: 'AAAA-MM-DD HH:MM', after: schedBtn }));
-  grid.appendChild(fieldEl(t, 'arrived', 'Chegou em', { placeholder: 'AAAA-MM-DD HH:MM' }));
+    placeholder: 'AAAA-MM-DD HH:MM', after: schedBtn,
+    picker: () => (t.state.date || '').slice(0, 16) }));
+  grid.appendChild(fieldEl(t, 'arrived', 'Chegou em', { placeholder: 'AAAA-MM-DD HH:MM',
+    picker: () => t.els.departed?.value || (t.state.date || '').slice(0, 16) }));
   grid.appendChild(fieldEl(t, 'depLoc', 'Local de saída', { placeholder: 'ex.: Bar Nova Magnata — Metrô Barra Funda' }));
   grid.appendChild(fieldEl(t, 'arrLoc', 'Local de chegada', { placeholder: 'ex.: CPTM Guaianases' }));
   grid.appendChild(fieldEl(t, 'moving', 'Tempo de movimento', { placeholder: 'HH:MM' }));

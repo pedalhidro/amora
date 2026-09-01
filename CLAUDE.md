@@ -636,6 +636,12 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
   predicado do nó do passe tiparia `pas:<slug>_sweep` como `ph:Tour`, jogando-o
   na `ph:TourShape` (que exige título e data) → Violation. Vale pra
   `ph:MediaSweep`, `ph:RouteReference`, `ph:SeriesEdition`.
+- **`ph:totalDuration` é fallback, não fonte.** O tempo total (saída→chegada)
+  é DERIVADO de `ph:arrivedAt − ph:departedAt` sempre que os dois existem; o
+  literal `ph:totalDuration` (xsd:duration) só é gravado quando NENHUM dos
+  dois horários existe (o form `upload_tour.html` deduz o horário que falta
+  quando há só um, e REMOVE o predicado no patch quando há os dois). Leitores
+  (censo) derivam primeiro e caem no literal. Não gravar os dois juntos.
 - **Um patch que não mexe na rota não rebusca a geometria.** `_sync_tour_route`
   reusa os `latlngs` já em `routes.json` quando o `ph:linkRoute` não mudou, e
   não reescreve o arquivo se a entrada ficou idêntica. Sem isso, escritas em

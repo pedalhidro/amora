@@ -282,7 +282,7 @@
 <div class="table-toolbar" hidden>
   <a class="btn-primary" href="./pessoas.html"
      title="Ver e editar as pessoas do acervo">👥 Pessoas</a>
-  <a class="btn-primary" href="./upload_tour.html"
+  <a class="btn-primary" href="./upload_tour.html?from=censo"
      title="Cadastrar um novo passeio em tours.ttl">＋ Cadastrar passeio</a>
   <button id="export-csv" class="btn-primary" type="button"
      title="Baixar todos os dados dos passeios em CSV (separador vírgula, decimais com ponto — pronto pra análise de dados)">⬇ Exportar CSV</button>
@@ -501,6 +501,15 @@ async function loadTours() {
               elapsedH = (a - d) / 3_600_000;
             }
           }
+          // Sem os dois horários, o form grava o total digitado como
+          // ph:totalDuration (ISO 8601) — fallback pra mesma métrica.
+          if (elapsedH == null && p.totalDuration) {
+            const m = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/.exec(p.totalDuration);
+            if (m) {
+              const h = parseInt(m[1] || '0', 10) + parseInt(m[2] || '0', 10) / 60 + parseInt(m[3] || '0', 10) / 3600;
+              if (h > 0) elapsedH = h;
+            }
+          }
           // ISO 8601 duration → horas (suporta H/M/S, sem dias/anos).
           let movingH = null;
           if (p.movingDuration) {
@@ -595,6 +604,7 @@ async function loadTours() {
       else if (pred === PH + 'departedAt')   s(sub).departedAt = obj;
       else if (pred === PH + 'arrivedAt')    s(sub).arrivedAt  = obj;
       else if (pred === PH + 'movingDuration') s(sub).movingDuration = obj;
+      else if (pred === PH + 'totalDuration')  s(sub).totalDuration  = obj;
       // ── Campos do painel de captura ──────────────────────────────────
       else if (pred === DCT + 'description')   s(sub).description   = obj;
       else if (pred === SCHEMA + 'image')      s(sub).image         = obj;
@@ -812,7 +822,7 @@ function renderTable(tours) {
     let tourId = t.iri;
     if (t.iri.startsWith(PAS)) tourId = t.iri.slice(PAS.length);
     else if (t.iri.startsWith(PHD + 'tour_')) tourId = t.iri.slice((PHD + 'tour_').length);
-    const editHref = `./upload_tour.html?id=${encodeURIComponent(tourId)}`;
+    const editHref = `./upload_tour.html?id=${encodeURIComponent(tourId)}&from=censo`;
     // Mídias: total com breakdown foto/vídeo no title (hover).
     const mediaTitle = isMissing(t.media)
       ? '' : `${t.mediaPhotos} foto(s), ${t.mediaVideos} vídeo(s)`;
@@ -878,7 +888,7 @@ const slugOf = (iri) => (iri || '').split('/').pop();
 
 function ferramenta(onde, tour) {
   if (onde === 'backfill') return './backfill_tours.html';
-  return `./upload_tour.html?id=${encodeURIComponent(slugOf(tour.iri))}`;
+  return `./upload_tour.html?id=${encodeURIComponent(slugOf(tour.iri))}&from=censo`;
 }
 
 function renderCaptura(tours) {
@@ -932,7 +942,7 @@ function renderCaptura(tours) {
         + (t.sweep.pasta ? `\n${t.sweep.pasta}` : '');
       cels.push(`<td class="f"><span class="sweep-n" title="${escapeHtml(ttl)}">${t.sweep.arquivos}</span></td>`);
     }
-    cels.push(`<td><a class="edit-btn" href="./upload_tour.html?id=${encodeURIComponent(slugOf(t.iri))}">Editar</a></td>`);
+    cels.push(`<td><a class="edit-btn" href="./upload_tour.html?id=${encodeURIComponent(slugOf(t.iri))}&from=censo">Editar</a></td>`);
     tr.innerHTML = cels.join('');
     tb.appendChild(tr);
   }

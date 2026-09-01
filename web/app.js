@@ -6427,6 +6427,7 @@ async function _renderTourSummary(tourId) {
   const departed    = first(PH + 'departedAt');
   const arrived     = first(PH + 'arrivedAt');
   const moving      = first(PH + 'movingDuration');
+  const totalDur    = first(PH + 'totalDuration');
   const hadBonde    = first(PH + 'hadBonde');
   const hadRain     = first(PH + 'hadRain');
   const incidents   = get(PH + 'hadIncident');
@@ -6549,6 +6550,21 @@ async function _renderTourSummary(tourId) {
   const realParts = [];
   if (departed) realParts.push(`Partiu ${escapeHtml(fmtDate(departed))}`);
   if (arrived)  realParts.push(`Chegou ${escapeHtml(fmtDate(arrived))}`);
+  // Tempo total: derivado (chegada − saída) quando há os dois horários; senão
+  // o literal ph:totalDuration que o form grava na falta deles.
+  {
+    let totalIso = null;
+    if (departed && arrived) {
+      const ms = Date.parse(arrived) - Date.parse(departed);
+      if (Number.isFinite(ms) && ms > 0) {
+        const mins = Math.round(ms / 60000);
+        totalIso = `PT${Math.floor(mins / 60)}H${mins % 60}M`;
+      }
+    } else if (totalDur) {
+      totalIso = totalDur;
+    }
+    if (totalIso) realParts.push(`Total ${escapeHtml(fmtDuration(totalIso))}`);
+  }
   if (moving)   realParts.push(`Movimento ${escapeHtml(fmtDuration(moving))}`);
   if (energyMeas) realParts.push(`${escapeHtml(energyMeas.value)} kJ medidos`);
   if (hadBonde === 'true') realParts.push('🚇 bonde');

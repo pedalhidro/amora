@@ -578,6 +578,17 @@ pas:6myfn5e9 a ph:Tour ;
     ph:movingDuration "PT1H"^^xsd:duration ;
     schema:identifier "crista-de-perdizes-altos-do-agua-preta-tiburtino-e-mercedes" .
 
+pas:74d4aa50 a ph:Tour ;
+    dcterms:date "2026-09-06T07:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description "Para os Mbyá-Guarani, os rios e as montanhas têm vida, são sujeitos e são sagrados. Nesta edição do Pedal Hidrográfico, as águas e morros que delineiam o relevo tocado por nossos pés nos guiarão até a cerimônia de celebração do ano novo guarani na Tekoa Yvyporã, localizada na Terra Indígena Jaraguá. Partiremos do Museu das Culturas Indígenas (próximo ao Parque Água Branca), cruzando os rios Sumaré, Água Preta, Cortume, Tiburtino, Fortunato Ferraz, Tietê, passando a surfar então pelos contra-rios: Colina do Anastácio, Desmorrodouro de Pirituba e Sopé do Planalto de Taipas, até avistarmos o Ribeirão Vermelho, águas que sinalizam a chegada ao nosso destino: a Tekoa Yvyporã. Lá, teremos a oportunidade de vivenciar a cerimônia e provar um almoço típico da aldeia."@pt ;
+    dcterms:title "Ano novo guarani na Tekoa Yvyporã" ;
+    prov:wasAttributedTo pes:wgb9b5fe ;
+    ph:energyEstimate 279.0 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/111> ;
+    ph:linkRoute pas:74d4aa50_route ;
+    schema:identifier "ano-novo-guarani-na-tekoa-yvypora" ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/74d4aa50/announcement.jpg> .
+
 pas:7d5ss8m1 a ph:Tour ;
     dcterms:date "2025-11-25T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:description """Idealizado por @g_mardegan, @giovannacstn e @giulianacucciolito, o pedal de hoje vai perseguir dois dos marcos remanescentes das antigas rotas e limites da cidade de São Paulo: Vila Mariana e Ipiranga.
@@ -659,6 +670,27 @@ pas:7rnbkmfk a ph:Tour ;
     ph:mediaCount 7 ;
     ph:mediaSweep pas:7rnbkmfk_sweep ;
     schema:identifier "fluindo-a-deriva" .
+
+pas:7w7a5f1b a ph:Tour ;
+    dcterms:date "2026-08-25T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description """Uma rota com 16 km de deslocamento, 112 m de elevação e 222 kJ de esforço, para testar a ideia de dois pontos de encontro, visitar o curioso Farol do Jaguaré e, como ninguém é de ferro, saborear o famoso cachorro-quente de Osasco. \r
+\r
+Concentra no primeiro ponto de encontro, na estação do metrô Sumaré, saída Rua Oscar Freire/Viaduto Dr. João Tranchesi às 19:50 horas. Saí para o segundo ponto de encontro às 20:00, chegando na estação do metrô Faria Lima às 20:20 e saindo às 20:35.\r
+\r
+Farol Invisível (Dir. Bruna Callegari) - Trailer\r
+\r
+https://www.youtube.com/watch?v=RGw4PCp9470"""@pt ;
+    dcterms:title "Farol e Cachorro Quente" ;
+    prov:wasAttributedTo pes:5pkv6dd4 ;
+    ph:countAttendee 17 ;
+    ph:countNewcomer 1 ;
+    ph:energyEstimate 222.0 ;
+    ph:hadIncident "dois furos"@pt ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/108> ;
+    ph:linkInstagram "https://www.instagram.com/p/DcbO9zum4Xw/"^^xsd:anyURI ;
+    ph:linkRoute pas:7w7a5f1b_route ;
+    schema:identifier "farol-e-cachorro-quente" ;
+    schema:image <https://storage.googleapis.com/phidro-state/tour_assets/7w7a5f1b/announcement.jpg> .
 
 pas:81z8cp2q a ph:Tour ;
     dcterms:date "2026-01-28T20:00:00-03:00"^^xsd:dateTime ;
@@ -941,10 +973,12 @@ Devidamente hidratados, cruzamos um nano divisor de águas para acessar o braço
     schema:image <https://storage.googleapis.com/phidro-state/tour_assets/33/announcement.jpg> .
 
 pas:bkbpnjf2 a ph:Tour ;
-    dcterms:date "2026-06-23T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:date "2026-06-30T20:00:00-03:00"^^xsd:dateTime ;
     dcterms:description "Já realizamos 96 passeios pedalando pelos rios e anti-rios de São Paulo, com uma distribuição bastante diversa de rotas para todas as direções da cidade. Apesar de já termos pedalado tudo-qué-canto, ainda há en-cantos topográficos na região central que não passamos. E é isso que faremos amanhã: conversar com a cachoeira do Córrego Augusta, logo antes destas águas darem corpo ao Rio Saracura. Encerraremos o passeio mais curto de todos os tempos no Robertinho, onde haverá uma assembleia geral regada à limonada para decidirmos duas coisas: 1) onde será o hidrokê na sequência e 2) ter ideias de próximas rotas."@pt ;
     dcterms:title "Conhecer cachoeira do Córrego Augusta e cantar rios no karaokê" ;
     prov:wasAttributedTo pes:wgb9b5fe ;
+    ph:countAttendee 9 ;
+    ph:countNewcomer 2 ;
     ph:energyEstimate 30.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/97> ;
     ph:linkInstagram "https://www.instagram.com/p/DZ6VH2Eub8s/"^^xsd:anyURI ;
@@ -1182,6 +1216,7 @@ pas:gw6hn4mk a ph:Tour ;
     prov:wasAttributedTo pes:2p6f8wmh,
         pes:wgb9b5fe ;
     ph:countAttendee 7 ;
+    ph:countNewcomer 1 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/77> ;
     ph:linkInstagram "https://www.instagram.com/p/DUTydjOgXYq/"^^xsd:anyURI ;
     ph:linkRoute pas:gw6hn4mk_route ;
@@ -1714,13 +1749,17 @@ Atenção! Vá com bicicleta revisada e use capacete. Leve água, protetor solar
 
 pas:q5artzrc a ph:Tour ;
     dcterms:date "2025-05-14T20:00:00-03:00"^^xsd:dateTime ;
-    dcterms:description """Neste Pedal, visitaremos o circuito Linha Verde nos sopés da Cantareira, o qual contorna as cabeçeiras Rio Piqueri em suas encostas com a Serra da Cantareira. Para ir lá, nos encontraremos no Metrô Tucuruvi e desceremos água abaixo com vistas a acessar o córrego Engorda-Sapo, afluente primário do Rio Tremembé.
-
-Um pouco após a foz deste, acessamos o divisor Cantareira - Engorda Sapo o qual eventualmente conflui com o divisor Tremembé - Piqueri. Lá, acessamos a linha verde! o qual andamos numa curva de nível elevada até oportunamente descer ao Ribeirão Piqueri e então acessar um ponto de sela para prosseguir ao Baixo Piqueri. Lá, voltamos ao nosso ponto de regresso ao seguir pelas planícies do Tremembé.
-
+    dcterms:description """Neste Pedal, visitaremos o circuito Linha Verde nos sopés da Cantareira, o qual contorna as cabeçeiras Rio Piqueri em suas encostas com a Serra da Cantareira. Para ir lá, nos encontraremos no Metrô Tucuruvi e desceremos água abaixo com vistas a acessar o córrego Engorda-Sapo, afluente primário do Rio Tremembé.\r
+\r
+Um pouco após a foz deste, acessamos o divisor Cantareira - Engorda Sapo o qual eventualmente conflui com o divisor Tremembé - Piqueri. Lá, acessamos a linha verde! o qual andamos numa curva de nível elevada até oportunamente descer ao Ribeirão Piqueri e então acessar um ponto de sela para prosseguir ao Baixo Piqueri. Lá, voltamos ao nosso ponto de regresso ao seguir pelas planícies do Tremembé.\r
+\r
 Cantareira foi o nome dado à Serra pelos tropeiros que faziam o comércio entre São Paulo e as outras regiões do país, nos Séculos XVI e XVII, devido à grande quantidade de nascentes e córregos encontrados na região.Pedal que segue o escoamento das águas na Zona Norte e acessa a Linha Verde do futuro trecho do Rodoanel. Obra que esta parada há muito tempo e hoje a população local ocupou na forma de lazer."""@pt ;
     dcterms:title "Sopés da Cantareira: Alto Piqueri e Tremembé" ;
     prov:wasAttributedTo pes:6a95fm2k ;
+    ph:countAttendee 0 ;
+    ph:countNewcomer 0 ;
+    ph:energyEstimate 392.0 ;
+    ph:hadIncident "cancelado devido a atropelamento durante trânsito ao começo"@pt ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/36> ;
     ph:linkInstagram "https://www.instagram.com/p/DJmCzVGuRwK/"^^xsd:anyURI ;
     ph:linkRoute pas:q5artzrc_route ;
@@ -2358,6 +2397,8 @@ Partindo das colinas do Tatuapé, mergulhamos em Aricanduva com vistas de passar
 \r
 Voltamos para a margem esquerda do Tietê com vistas a pegar o trem na CPTM Itaim, com o translado feito pela Jardim Helena / Pantanal."""@pt ;
     dcterms:title "Médio Tietê acima" ;
+    ph:countAttendee 17 ;
+    ph:countNewcomer 4 ;
     ph:energyEstimate 331.0 ;
     ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/107> ;
     ph:linkInstagram "https://www.instagram.com/p/DcHvFcNlN3l/"^^xsd:anyURI ;
@@ -2443,6 +2484,16 @@ pas:xzb05rn3 a ph:Tour ;
     ph:mediaSweep pas:xzb05rn3_sweep ;
     ph:movingDuration "PT2H50M"^^xsd:duration ;
     schema:identifier "foz-do-tamanduatei-ate-sua-nascente" .
+
+pas:y3zptkf2 a ph:Tour ;
+    dcterms:date "2026-09-02T20:00:00-03:00"^^xsd:dateTime ;
+    dcterms:description "Essa rota é uma reedição do PH-83, um passeio pelas várzeas do rio Tamanduateí e Tietê à procura de prédios históricos e ruínas da São Paulo do início do século XX, importante palco do processo acelerado de industrialização da cidade."@pt ;
+    dcterms:title "Reedição Ruínas" ;
+    ph:energyEstimate 286.0 ;
+    ph:inSeriesEdition <https://id.pedalhidrografi.co/passeio/PH/109> ;
+    ph:linkInstagram "https://www.instagram.com/p/DcvvofwIDay/"^^xsd:anyURI ;
+    ph:linkRoute pas:y3zptkf2_route ;
+    schema:identifier "reedicao-ruinas" .
 
 pas:yaszq6sb a ph:Tour ;
     dcterms:date "2025-07-01T20:00:00-03:00"^^xsd:dateTime ;
@@ -2876,6 +2927,10 @@ pas:6myfn5e9_sweep a ph:MediaSweep ;
     ph:collectedFileCount 10 ;
     ph:sweepContributor "fabiotarantes" .
 
+pas:74d4aa50_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/56891965> .
+
 pas:7d5ss8m1_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/53386705> .
@@ -2919,6 +2974,10 @@ pas:7rnbkmfk_sweep a ph:MediaSweep ;
     ph:collectedFileCount 7 ;
     ph:sweepContributor "josepelegrini",
         "zito" .
+
+pas:7w7a5f1b_route a ph:RouteReference ;
+    schema:provider ph:amora ;
+    schema:url <https://amora.pedalhidrografi.co/route/oz-rock-dog> .
 
 pas:81z8cp2q_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
@@ -3069,9 +3128,21 @@ pas:9s8bhtjw_route a ph:RouteReference ;
     ph:inEventSeries ser:PH ;
     ph:sequenceInSeries 107 .
 
+<https://id.pedalhidrografi.co/passeio/PH/108> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 108 .
+
+<https://id.pedalhidrografi.co/passeio/PH/109> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 109 .
+
 <https://id.pedalhidrografi.co/passeio/PH/11> a ph:SeriesEdition ;
     ph:inEventSeries ser:PH ;
     ph:sequenceInSeries 11 .
+
+<https://id.pedalhidrografi.co/passeio/PH/111> a ph:SeriesEdition ;
+    ph:inEventSeries ser:PH ;
+    ph:sequenceInSeries 111 .
 
 <https://id.pedalhidrografi.co/passeio/PH/12> a ph:SeriesEdition ;
     ph:inEventSeries ser:PH ;
@@ -4407,6 +4478,10 @@ pas:xzb05rn3_sweep a ph:MediaSweep ;
         "leoperandin",
         "sandronicodemo" .
 
+pas:y3zptkf2_route a ph:RouteReference ;
+    schema:provider ph:rwgps ;
+    schema:url <https://ridewithgps.com/routes/56956489> .
+
 pas:yaszq6sb_route a ph:RouteReference ;
     schema:provider ph:rwgps ;
     schema:url <https://ridewithgps.com/routes/51486572> .
@@ -4506,7 +4581,7 @@ ser:SESC a schema:EventSeries ;
     schema:name "alef" .
 
 ser:BT a schema:EventSeries ;
-    dcterms:title "Bondes / Trips" .
+    dcterms:title "Bicicletografia" .
 
 ser:BP a schema:EventSeries ;
     dcterms:title "Bicipassarinhadas" .
