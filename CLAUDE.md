@@ -47,7 +47,22 @@ one optional hosted deploy target, not a dependency.
   `upload_images.html`: mesmos `POST /upload-image` / `/upload-video` (vídeo
   inteiro, sem recorte nem pré-envio), mesma dedup por pHash/vHash; cada
   imagem enviada ganha ✎ editar (abre `upload_images.html?edit=`) / 🗑
-  excluir. O pipeline vem de `lib/media-pipeline.js` — **CÓPIA VERBATIM dos
+  excluir. Cada SESSÃO da página mint um **álbum** (`lst:<slug>`,
+  `schema:Collection` inline, slug derivado do nome "passeio · autora · data"
+  como o `slugifyList` do form completo; a data é a DO PASSEIO — vários
+  passeios no lote → "N passeios" + intervalo; o lote é lido/deduplicado
+  INTEIRO antes de mintar o álbum e começar os envios, porque o nome vai baked
+  no IRI de cada TTL) que toda mídia integra via `schema:isPartOf`; depois do
+  lote a página mostra o link `/listas/<slug>` e uma **colagem 9:16 ≤ 500 kB**
+  (canvas 1080×1920 + `compressToTarget`, conteúdo dentro da área segura do
+  story do Instagram: y ∈ [270, 1570]; legenda por célula quando há mais de um
+  passeio; 🎲 sorteio de 6) com share sheet (`navigator.share` com arquivo —
+  no iPhone é o caminho pras Fotos), download e copiar link. O "📍 Ver no
+  mapa" da galeria STANDALONE navega pra `/#midia=<hash>`
+  (`tryOpenMediaFromHash` → `galleryShowMedia`, que ESPERA os catálogos de
+  foto e clipe, avisa se a mídia não tem GPS e abre o popup no `moveend` do
+  flyTo) — embutida, segue por postMessage; a galeria só habilita o botão
+  quando `rec.geo` (`lib/media-query.js` marca quem tem `schema:locationCreated`). O pipeline vem de `lib/media-pipeline.js` — **CÓPIA VERBATIM dos
   helpers do form completo** (pHash/vHash, variantes, EXIF, moov, motores de
   transcodificação), gerada por marcador de função; o form completo NÃO
   importa de lá ainda — mexeu num helper lá, regenere o módulo, senão os dois

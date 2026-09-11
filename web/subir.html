@@ -74,6 +74,27 @@
   #grid .acts button:hover { border-color: var(--accent); color: var(--accent); }
   #grid .acts button.danger:hover { border-color: var(--err); color: var(--err); }
   #grid .acts button[disabled] { opacity: .45; cursor: not-allowed; }
+  /* Compartilhar: link do álbum + colagem (9:16, ≤ 500 kB) — aparece depois
+     do 1º envio da sessão e acompanha os envios seguintes. */
+  #share { margin: 1.25rem 0 0; padding: 1rem; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); }
+  #share h2 { font-size: 1rem; margin: 0 0 .5rem; }
+  #share .album { font-size: .85rem; overflow-wrap: anywhere; margin: 0 0 .75rem; }
+  #share .album a { font-weight: 600; }
+  #share .collage { display: flex; gap: .75rem; align-items: flex-start; }
+  #share .collage img { width: 40%; max-width: 180px; aspect-ratio: 9 / 16; object-fit: cover;
+    border: 1px solid var(--border); border-radius: 6px; background: var(--surface); }
+  #share .btns { display: flex; flex-direction: column; gap: .4rem; flex: 1; min-width: 0; }
+  #share .btns button, #share .btns a.btn {
+    display: block; width: 100%; box-sizing: border-box; padding: .55rem .6rem; font: inherit; font-size: .9rem;
+    text-align: center; cursor: pointer; text-decoration: none;
+    background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 6px;
+  }
+  #share .btns button:hover, #share .btns a.btn:hover { border-color: var(--accent); color: var(--accent); }
+  #share .btns .primary { background: var(--accent); border-color: var(--accent); color: #201206; font-weight: 600; }
+  #share .btns .primary:hover { background: var(--accent-hover); color: #201206; }
+  #share .btns small { color: var(--muted); font-size: .7rem; text-align: center; }
+  #share .btns small.hint { text-align: left; line-height: 1.35; }
+  #share .btns [hidden] { display: none; }
   .foot { margin-top: 2rem; font-size: .8rem; color: var(--muted); }
 </style>
 </head>
@@ -98,6 +119,23 @@ e passeio saem do próprio arquivo. Licença CC BY-SA 4.0, original preservado.<
 
 <ul id="grid"></ul>
 
+<section id="share" hidden>
+  <h2>Compartilhar</h2>
+  <p class="album">Álbum: <a id="album-link" href="#" target="_blank" rel="noopener"></a></p>
+  <div class="collage">
+    <img id="collage-img" alt="Colagem das imagens enviadas">
+    <div class="btns">
+      <button type="button" id="share-btn" class="primary" hidden>📲 Compartilhar / salvar nas Fotos</button>
+      <a id="collage-dl" class="btn" download="colagem.jpg" href="#">⤓ Baixar colagem</a>
+      <button type="button" id="copy-link">🔗 Copiar link do álbum</button>
+      <button type="button" id="sample-btn" hidden>🎲 Sortear 6 imagens</button>
+      <button type="button" id="all-btn" hidden>Mostrar todas</button>
+      <small id="collage-info"></small>
+      <small class="hint">No iPhone: <strong>Compartilhar → Salvar imagem</strong> guarda nas Fotos (Baixar vai pros Arquivos); toque e segure a colagem também funciona.</small>
+    </div>
+  </div>
+</section>
+
 <p class="foot">Precisa ajustar passeio, data, lugar ou recortar um vídeo?
   Use o <a href="./upload_images.html">formulário completo</a>. · <a href="./">Voltar ao mapa</a></p>
 
@@ -114,6 +152,9 @@ e passeio saem do próprio arquivo. Licença CC BY-SA 4.0, original preservado.<
 //           data/GPS do moov (Apple), passeio pela data; sem pré-envio
 //           (/stage-video) — o POST /upload-video vai com os blobs.
 // Dedup por pHash/vHash (Hamming ≤ 5) contra o lote, a sessão E o servidor.
+// Cada sessão mint um ÁLBUM (lst:, schema:Collection) que toda mídia enviada
+// integra; depois do lote a página oferece o link do álbum (/listas/<slug>)
+// e uma COLAGEM 9:16 ≤ 500 kB pra story/WhatsApp (share sheet, download).
 // O pipeline (pHash, variantes, transcodificação…) vem de lib/media-pipeline.js,
 // cópia verbatim do formulário completo.
 // ============================================================================
@@ -197,6 +238,11 @@ function plural(n, one, many) { return `${n} ${n === 1 ? one : many}`; }
 const PH_NS    = 'https://id.pedalhidrografi.co/terms#';
 const PES_NS   = 'https://id.pedalhidrografi.co/pessoas/';
 const MED_NS   = 'https://id.pedalhidrografi.co/midia/';
+const LST_NS   = 'https://id.pedalhidrografi.co/listas/';
+// Origem dos links compartilhados: SEMPRE a produção (como na galeria) — um
+// link mandado no grupo tem que abrir pra quem recebe; em dev (localhost)
+// usa a própria origem pra dar pra testar.
+const SHARE_ORIGIN = /^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? location.origin : 'https://amora.pedalhidrografi.co';
 const SCHEMA   = 'https://schema.org/';
 const RDF_TYPE = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
 const DCT_DATE = 'http://purl.org/dc/terms/date';
@@ -364,6 +410,13 @@ async function preprocessVideoFile(file) {
   return { kind: 'video', file, phash, thumbBlob, gps, dateLocal, duration };
 }
 
+// Data/hora da mídia em ms (EXIF DateTimeOriginal na foto; moov no vídeo).
+function itemDateMs(item) {
+  const raw = item.kind === 'video' ? item.dateLocal : item.exif?.DateTimeOriginal;
+  if (!raw) return NaN;
+  const ms = new Date(raw).getTime();
+  return Number.isFinite(ms) ? ms : NaN;
+}
 function detectTour(ms) {
   if (!Number.isFinite(ms) || !tourCatalog.length) return null;
   const matches = tourCatalog.filter(t =>
@@ -371,6 +424,58 @@ function detectTour(ms) {
   if (!matches.length) return null;
   matches.sort((a, b) => Math.abs(ms - a.ms) - Math.abs(ms - b.ms));
   return matches[0];
+}
+
+// ===================== Álbum da sessão ==================================
+// Um álbum (schema:Collection, lst:<slug>) por sessão da página, mintado no
+// 1º envio: nome = passeio detectado (ou "Envio") · autora · data; slug
+// derivado do nome como no form completo (slugifyList) — reabrir a página no
+// mesmo dia com a mesma autora/passeio cai no MESMO álbum, de propósito.
+// Toda mídia da sessão leva schema:isPartOf + a declaração inline (união
+// idempotente no servidor; _route_new_collections a desvia pra lists.ttl).
+let album = null;   // { slug, iri, name }
+function slugifyList(name) {
+  return (name || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'lista';
+}
+function fmtDate(ms) { const d = new Date(ms); return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`; }
+function fmtDay(ms)  { const d = new Date(ms); return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}`; }
+function fmtRange(msA, msB) {
+  const a = fmtDate(msA), b = fmtDate(msB);
+  if (a === b) return a;
+  return new Date(msA).getFullYear() === new Date(msB).getFullYear() ? `${fmtDay(msA)}–${b}` : `${a}–${b}`;
+}
+// Resumo de um conjunto de itens — os passeios DISTINTOS detectados (em ordem
+// de data), o título (1 passeio → o título dele; vários → "N passeios"; nenhum
+// → "Envio") e a data: a DO PASSEIO (ou o intervalo entre o primeiro e o
+// último), senão a das mídias, senão agora. Alimenta o nome do álbum e o
+// cabeçalho da colagem.
+function describeItems(items) {
+  const byIri = new Map();
+  for (const it of items) if (it.tour && !byIri.has(it.tour.iri)) byIri.set(it.tour.iri, it.tour);
+  const tours = [...byIri.values()].sort((a, b) => a.ms - b.ms);
+  let title, dateText;
+  if (tours.length === 1) { title = tours[0].title; dateText = fmtDate(tours[0].ms); }
+  else if (tours.length > 1) { title = `${tours.length} passeios`; dateText = fmtRange(tours[0].ms, tours[tours.length - 1].ms); }
+  else {
+    title = 'Envio';
+    const ms = items.map(i => i.dateMs).filter(Number.isFinite);
+    if (ms.length) dateText = fmtRange(Math.min(...ms), Math.max(...ms));
+    else { const now = new Date(); dateText = `${fmtDate(now.getTime())} ${pad(now.getHours())}:${pad(now.getMinutes())}`; }
+  }
+  return { tours, title, dateText };
+}
+function ensureAlbum(items) {
+  if (album) return album;
+  const { title, dateText } = describeItems(items);
+  const who = $('#author').value.trim();
+  const name = [title, who, dateText].filter(Boolean).join(' · ');
+  const slug = slugifyList(name);
+  album = { slug, iri: LST_NS + slug, name, url: `${SHARE_ORIGIN}/listas/${encodeURIComponent(slug)}` };
+  return album;
+}
+function albumTtl(a) {
+  return `<${a.iri}> a schema:Collection ;\n    schema:name "${turtle_escape(a.name)}" .\n`;
 }
 
 // ===================== TTL ==============================================
@@ -382,6 +487,7 @@ const PREFIXES = [
   '@prefix ph:      <https://id.pedalhidrografi.co/terms#> .',
   '@prefix pes:     <https://id.pedalhidrografi.co/pessoas/> .',
   '@prefix med:     <https://id.pedalhidrografi.co/midia/> .',
+  '@prefix lst:     <https://id.pedalhidrografi.co/listas/> .',
   '@prefix prov:    <http://www.w3.org/ns/prov#> .',
   '@prefix schema:  <https://schema.org/> .',
   '@prefix xsd:     <http://www.w3.org/2001/XMLSchema#> .',
@@ -400,14 +506,7 @@ function commonProps(item, author, { dateLocal, tzOverride, lat, lon }) {
   const props = [], derived = [];
   const hasGeo = Number.isFinite(lat) && Number.isFinite(lon);
   let dateXsd = null;
-  item.tour = null;
-  if (dateLocal) {
-    const d = new Date(dateLocal);
-    if (!isNaN(d)) {
-      dateXsd = localToXsdDateTime(dateLocal, tzOverride || null);
-      item.tour = detectTour(d.getTime());
-    }
-  }
+  if (dateLocal && !isNaN(new Date(dateLocal))) dateXsd = localToXsdDateTime(dateLocal, tzOverride || null);
   if (dateXsd)  props.push(`dcterms:date "${dateXsd}"^^xsd:dateTime`);
   if (hasGeo) {
     props.push(`schema:locationCreated ${id}_geo`);
@@ -423,9 +522,10 @@ function commonProps(item, author, { dateLocal, tzOverride, lat, lon }) {
   }
   return { id, hasGeo, props, derived };
 }
-function assembleTtl(id, typeLine, props, derived, author) {
-  const body = [typeLine, ...props].map(p => `    ${p}`).join(' ;\n');
-  const decls = author?.decl ? `\n# Pessoa nova\n${author.decl}` : '';
+function assembleTtl(item, id, typeLine, props, derived, author) {
+  const a = ensureAlbum([item]);   // normalmente já mintado pro lote inteiro (ver handlePickedFiles)
+  const body = [typeLine, ...props, `schema:isPartOf <${a.iri}>`].map(p => `    ${p}`).join(' ;\n');
+  const decls = (author?.decl ? `\n# Pessoa nova\n${author.decl}` : '') + `\n# Álbum da sessão\n${albumTtl(a)}`;
   return `${PREFIXES}\n${decls}\n${id}\n${body} .\n\n${derived.join('\n\n')}\n`;
 }
 function buildImageTtl(item, author) {
@@ -447,7 +547,7 @@ function buildImageTtl(item, author) {
     `${id}_hash a nfo:FileHash ;\n` +
     `    nfo:hashAlgorithm "pHash" ;\n` +
     `    nfo:hashValue "${phash}" .`);
-  return assembleTtl(id, `a ph:StillImage${hasGeo ? ', ph:GeoreferencedImage' : ''}`, [...own, ...props], derived, author);
+  return assembleTtl(item, id, `a ph:StillImage${hasGeo ? ', ph:GeoreferencedImage' : ''}`, [...own, ...props], derived, author);
 }
 // Espelha buildClipBlock do form completo: clipe inteiro, 360p sempre, 720p
 // só se o blob existe (HD ligado E o motor produziu), áudio à parte.
@@ -467,7 +567,7 @@ function buildVideoTtl(item, author, result) {
   const res = ['"audio"', '"360p"'];
   if (result.blob720) { own.push(`ph:video720p "${vid}.720p.webm"`); res.push('"720p"'); }
   own.push(`ph:availableResolution ${res.join(', ')}`);
-  return assembleTtl(id, `a ph:MotionImage${hasGeo ? ', ph:GeoreferencedImage' : ''}`, [...own, ...props], derived, author);
+  return assembleTtl(item, id, `a ph:MotionImage${hasGeo ? ', ph:GeoreferencedImage' : ''}`, [...own, ...props], derived, author);
 }
 
 // Original preservado bit a bit; large = ≤500 kB com o EXIF copiado; thumb.
@@ -537,10 +637,12 @@ async function postMedia(item, url, fd) {
     return 'err';
   }
 }
+const sentItems = [];   // enviados nesta sessão (alimentam a colagem e o álbum)
 function markSent(item, extra = '') {
   const where = item.tour ? escapeHtml(item.tour.title) : 'sem passeio';
   setState(item, 'is-ok', `✓ enviada · ${where}${extra}`);
   addItemActions(item);
+  sentItems.push(item);
 }
 
 // ✎ editar / 🗑 excluir por imagem enviada — os mesmos caminhos do popup do
@@ -582,6 +684,8 @@ function addItemActions(item) {
     acts.remove();
     setState(item, 'is-dup', 'excluída');
     notifyParent(item.kind === 'video' ? 'delete-video' : 'delete-image', item.phash);
+    const si = sentItems.indexOf(item); if (si >= 0) sentItems.splice(si, 1);
+    updateShare();
   });
 }
 
@@ -632,7 +736,7 @@ async function uploadVideoItem(item, author) {
   fd.append('id', vid);
   fd.append('audio', result.audio, `${vid}.audio.webm`);
   const thumb = result.thumb || item.thumbBlob;
-  if (thumb) fd.append('thumb', thumb, `${vid}.thumb.jpg`);
+  if (thumb) { fd.append('thumb', thumb, `${vid}.thumb.jpg`); item.thumbBlob = thumb; }
   if (result.blob360) fd.append('video360', result.blob360, `${vid}.360p.webm`);
   if (result.blob720) fd.append('video720', result.blob720, `${vid}.720p.webm`);
   const r = await postMedia(item, './upload-video', fd);
@@ -643,6 +747,169 @@ async function uploadVideoItem(item, author) {
   }
   return r;
 }
+
+// ===================== Compartilhar: álbum + colagem ====================
+// Depois de cada lote (e a cada exclusão) refaz a colagem com o que subiu
+// nesta sessão (todas, ou um SORTEIO de 6): tela 1080×1920 (9:16 — story do
+// WhatsApp/Instagram), com TODO o conteúdo dentro da área segura do story
+// (o Instagram cobre ~250 px no topo e ~340 px embaixo com a UI dele):
+// cabeçalho, grade de células quadradas (cover) com o melhor encaixe de
+// colunas, e o link do álbum no pé. Com mais de um passeio no conjunto,
+// cada célula ganha a legenda "dd/mm · passeio". JPEG ≤ 500 kB via o mesmo
+// compressToTarget das variantes (mantém a proporção).
+const COLLAGE_W = 1080, COLLAGE_H = 1920, COLLAGE_MAX_BYTES = 500 * 1024;
+const SAFE_TOP = 270, SAFE_BOTTOM = 1570, PAD = 48, GAP = 12;
+const SAMPLE_N = 6;
+let _collageBlob = null, _collageUrl = null, _shareBusy = false, _shareAgain = false;
+let collageMode = 'all', collageSample = [];
+const FONT_MONO = "'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace";
+
+function fitText(ctx, text, maxW) {
+  if (ctx.measureText(text).width <= maxW) return text;
+  let t = text;
+  while (t.length > 1 && ctx.measureText(t + '…').width > maxW) t = t.slice(0, -1);
+  return t + '…';
+}
+async function itemBitmap(item) {
+  // Foto: o próprio arquivo (já JPEG se veio de HEIC convertido), reduzido
+  // no decode; vídeo: a miniatura do passe (320 px — sobe na célula).
+  const src = item.kind === 'video' ? item.thumbBlob : item.file;
+  if (!src) return null;
+  try { return await createImageBitmap(src, { imageOrientation: 'from-image', resizeWidth: 1080, resizeQuality: 'medium' }); }
+  catch (_) { try { return await createImageBitmap(src, { imageOrientation: 'from-image' }); } catch (_) { return null; } }
+}
+// Colunas que dão a MAIOR célula quadrada pro número de itens na área útil.
+function bestGrid(n, availW, availH) {
+  let best = { cols: 1, cell: 0 };
+  for (let cols = 1; cols <= Math.min(5, n); cols++) {
+    const rows = Math.ceil(n / cols);
+    const cell = Math.min((availW - GAP * (cols - 1)) / cols, (availH - GAP * (rows - 1)) / rows);
+    if (cell > best.cell + 0.5) best = { cols, cell };
+  }
+  return { cols: best.cols, rows: Math.ceil(n / best.cols), cell: Math.floor(best.cell) };
+}
+function collageItems() {
+  if (collageMode !== 'sample') return sentItems;
+  const alive = collageSample.filter(i => sentItems.includes(i));
+  if (alive.length < Math.min(SAMPLE_N, sentItems.length)) return resample();
+  return alive;
+}
+function resample() {
+  const pool = sentItems.slice();
+  for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+  collageSample = pool.slice(0, SAMPLE_N).sort((a, b) => sentItems.indexOf(a) - sentItems.indexOf(b));
+  return collageSample;
+}
+async function buildCollage(items, a) {
+  try { await document.fonts.load(`600 48px ${FONT_MONO}`); } catch (_) {}
+  const c = document.createElement('canvas');
+  c.width = COLLAGE_W; c.height = COLLAGE_H;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#101820'; ctx.fillRect(0, 0, COLLAGE_W, COLLAGE_H);
+  const maxW = COLLAGE_W - 2 * PAD;
+  const { tours, title, dateText } = describeItems(items);
+  const who = $('#author').value.trim();
+  // Cabeçalho (dentro da área segura)
+  ctx.textBaseline = 'top';
+  let y = SAFE_TOP + 10;
+  ctx.fillStyle = '#ff8c2e'; ctx.font = `600 36px ${FONT_MONO}`;
+  ctx.fillText('Pedal Hidrográfico', PAD, y); y += 52;
+  ctx.fillStyle = '#fafbfc'; ctx.font = `600 40px ${FONT_MONO}`;
+  ctx.fillText(fitText(ctx, title, maxW), PAD, y); y += 58;
+  ctx.fillStyle = '#c6ced6'; ctx.font = `400 28px ${FONT_MONO}`;
+  const sub = [dateText, who, `${items.length} ${items.length === 1 ? 'imagem' : 'imagens'}${collageMode === 'sample' && sentItems.length > items.length ? ` de ${sentItems.length}` : ''}`].filter(Boolean).join(' · ');
+  ctx.fillText(fitText(ctx, sub, maxW), PAD, y); y += 40;
+  if (tours.length > 1) {
+    ctx.fillStyle = '#8fa1b3'; ctx.font = `400 24px ${FONT_MONO}`;
+    ctx.fillText(fitText(ctx, tours.map(t => `${fmtDay(t.ms)} ${t.title}`).join(' / '), maxW), PAD, y); y += 36;
+  }
+  // Rodapé: o link do álbum (sem o esquema), ainda dentro da área segura
+  ctx.fillStyle = '#ff8c2e'; ctx.font = `600 30px ${FONT_MONO}`;
+  ctx.fillText(fitText(ctx, a.url.replace(/^https?:\/\//, ''), maxW), PAD, SAFE_BOTTOM - 78);
+  ctx.fillStyle = '#c6ced6'; ctx.font = `400 24px ${FONT_MONO}`;
+  ctx.fillText('álbum · CC BY-SA 4.0', PAD, SAFE_BOTTOM - 34);
+  // Grade
+  const n = items.length;
+  const top = y + 28, bottom = SAFE_BOTTOM - 110;
+  const { cols, rows, cell } = bestGrid(n, maxW, bottom - top);
+  const gridW = cols * cell + GAP * (cols - 1), gridH = rows * cell + GAP * (rows - 1);
+  const x0 = Math.round((COLLAGE_W - gridW) / 2), y0 = Math.round(top + (bottom - top - gridH) / 2);
+  const captions = tours.length > 1;
+  for (let i = 0; i < n; i++) {
+    const it = items[i];
+    const x = x0 + (i % cols) * (cell + GAP), yy = y0 + Math.floor(i / cols) * (cell + GAP);
+    ctx.fillStyle = '#1f2a36'; ctx.fillRect(x, yy, cell, cell);
+    const bm = await itemBitmap(it);
+    if (bm) {
+      const sz = Math.min(bm.width, bm.height);   // cover: recorta o centro
+      ctx.drawImage(bm, (bm.width - sz) / 2, (bm.height - sz) / 2, sz, sz, x, yy, cell, cell);
+      try { bm.close?.(); } catch (_) {}
+    }
+    if (it.kind === 'video') {
+      const r = Math.max(22, cell * 0.11), cx = x + cell / 2, cy = yy + cell / 2;
+      ctx.fillStyle = 'rgba(16,24,32,.75)';
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.moveTo(cx - r * .35, cy - r * .5); ctx.lineTo(cx + r * .55, cy); ctx.lineTo(cx - r * .35, cy + r * .5); ctx.closePath(); ctx.fill();
+    }
+    if (captions) {
+      const h = Math.max(30, Math.round(cell * 0.12)), fs = Math.max(18, Math.round(h * 0.6));
+      ctx.fillStyle = 'rgba(16,24,32,.72)'; ctx.fillRect(x, yy + cell - h, cell, h);
+      ctx.fillStyle = '#fafbfc'; ctx.font = `500 ${fs}px ${FONT_MONO}`;
+      const label = it.tour ? `${fmtDay(it.tour.ms)} · ${it.tour.title}` : 'sem passeio';
+      ctx.fillText(fitText(ctx, label, cell - 16), x + 8, yy + cell - h + Math.round((h - fs) / 2));
+    }
+  }
+  const bm = await createImageBitmap(c);
+  try { return await compressToTarget(bm, COLLAGE_MAX_BYTES, COLLAGE_H); }
+  finally { try { bm.close?.(); } catch (_) {} }
+}
+async function updateShare() {
+  if (_shareBusy) { _shareAgain = true; return; }
+  _shareBusy = true;
+  try {
+    const sec = $('#share');
+    if (!sentItems.length || !album) { sec.hidden = true; return; }
+    const a = album;
+    const link = $('#album-link'); link.href = a.url; link.textContent = a.url.replace(/^https?:\/\//, '');
+    sec.hidden = false;
+    $('#sample-btn').hidden = sentItems.length <= SAMPLE_N;
+    $('#all-btn').hidden = collageMode !== 'sample' || sentItems.length <= SAMPLE_N;
+    $('#all-btn').textContent = `Mostrar todas (${sentItems.length})`;
+    $('#collage-info').textContent = 'montando a colagem…';
+    const items = collageItems();
+    const blob = await buildCollage(items, a);
+    if (_collageUrl) URL.revokeObjectURL(_collageUrl);
+    _collageBlob = blob; _collageUrl = URL.createObjectURL(blob);
+    $('#collage-img').src = _collageUrl;
+    const dl = $('#collage-dl'); dl.href = _collageUrl; dl.download = `colagem-${a.slug}.jpg`;
+    const which = items.length < sentItems.length ? `${items.length} de ${sentItems.length} imagens` : `${items.length} ${items.length === 1 ? 'imagem' : 'imagens'}`;
+    $('#collage-info').textContent = `${Math.round(blob.size / 1024)} kB · 9:16 (story) · ${which}`;
+    $('#collage-info').dataset.bytes = blob.size;
+    const file = new File([blob], dl.download, { type: 'image/jpeg' });
+    $('#share-btn').hidden = !(navigator.canShare && navigator.canShare({ files: [file] }));
+  } catch (e) {
+    console.warn('colagem falhou:', e);
+    $('#collage-info').textContent = `colagem falhou: ${e.message}`;
+  } finally {
+    _shareBusy = false;
+    if (_shareAgain) { _shareAgain = false; updateShare(); }
+  }
+}
+$('#share-btn').addEventListener('click', async () => {
+  if (!_collageBlob || !album) return;
+  const file = new File([_collageBlob], `colagem-${album.slug}.jpg`, { type: 'image/jpeg' });
+  try { await navigator.share({ files: [file], title: album.name, text: `${album.name} — ${album.url}` }); }
+  catch (e) { if (e?.name !== 'AbortError') console.warn('share:', e); }
+});
+$('#copy-link').addEventListener('click', async () => {
+  if (!album) return;
+  try { await navigator.clipboard.writeText(album.url); $('#copy-link').textContent = '✓ Link copiado'; }
+  catch (_) { prompt('Copie o link:', album.url); }
+  setTimeout(() => { $('#copy-link').textContent = '🔗 Copiar link do álbum'; }, 2000);
+});
+$('#sample-btn').addEventListener('click', () => { collageMode = 'sample'; resample(); updateShare(); });
+$('#all-btn').addEventListener('click', () => { collageMode = 'all'; updateShare(); });
 
 // ===================== Wake lock (lotes grandes / vídeo) =================
 let _wakeLock = null;
@@ -677,7 +944,12 @@ async function handlePickedFiles(files) {
       const pre = items.map(it => isVideoFile(it.file)
         ? videoPre(() => preprocessVideoFile(it.file))
         : limit(() => preprocessImageFile(it.file)));
-      const uploads = [];
+      // Fase 1: lê/deduplica TUDO e detecta o passeio de cada item. Só então
+      // o álbum é mintado (fase 2) — o nome dele depende do CONJUNTO de
+      // passeios do lote (1 passeio → título dele; vários → "N passeios"),
+      // e vai baked no slug/IRI de cada TTL. Custo: os envios só começam
+      // depois da leitura do lote inteiro (o pool de leitura segue paralelo).
+      const accepted = [];
       for (let i = 0; i < items.length; i++) {
         const item = items[i];
         $('#status').textContent = `lendo ${i + 1}/${items.length}…`;
@@ -693,16 +965,20 @@ async function handlePickedFiles(files) {
         if (dupIn(batchHashes)) { setState(item, 'is-dup', 'duplicada (já no lote)'); tally.dup++; continue; }
         if (catalogOk && dupIn(server)) { setState(item, 'is-dup', 'já está no acervo'); tally.dup++; continue; }
         batchHashes.push(r.phash);
-        // Autora: se a pessoa foi MINTADA, o 1º envio do lote a declara e os
-        // demais repetem a mesma declaração (união idempotente no servidor).
-        const send = item.kind === 'video'
-          ? () => uploadVideoItem(item, author0)
-          : () => uploadLimit(() => uploadImageItem(item, author0));
-        uploads.push(send().then(k => { tally[k]++; }));
+        item.dateMs = itemDateMs(item);
+        item.tour = catalogOk ? detectTour(item.dateMs) : null;
+        setState(item, 'is-busy', item.tour ? `na fila · ${escapeHtml(item.tour.title)}` : 'na fila…');
+        accepted.push(item);
         await new Promise(res => setTimeout(res));   // deixa o navegador pintar
       }
+      if (!accepted.length) return;
+      ensureAlbum(accepted);
+      // Fase 2: envios. Autora: se a pessoa foi MINTADA, o 1º envio do lote a
+      // declara e os demais repetem a mesma declaração (união idempotente).
       $('#status').textContent = `enviando…`;
-      await Promise.all(uploads);
+      await Promise.all(accepted.map(item => (item.kind === 'video'
+        ? uploadVideoItem(item, author0)
+        : uploadLimit(() => uploadImageItem(item, author0))).then(k => { tally[k]++; })));
     };
     if (media.length > 5 || hasVideo) await withWakeLock(run); else await run();
     const parts = [];
@@ -711,6 +987,7 @@ async function handlePickedFiles(files) {
     if (tally.err)  parts.push(`<span class="err">${tally.err} com erro</span>`);
     if (tally.skip) parts.push(`<span class="warn">${plural(tally.skip, 'arquivo ignorado', 'arquivos ignorados')} (só imagens e vídeos)</span>`);
     $('#status').innerHTML = parts.length ? parts.join(' · ') + '.' : 'nada a enviar.';
+    if (sentItems.length) updateShare();   // álbum + colagem (assíncrono, serializado)
   } finally {
     pickerBusy = false;
     $('#picker').classList.remove('busy');

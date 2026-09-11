@@ -1504,8 +1504,18 @@ function wireLightbox() {
   });
   $('#lb-map').addEventListener('click', () => {
     if (!lbRecord) return;
-    try { window.parent.postMessage({ type: 'phidro-gallery-show', iri: lbRecord.iri }, '*'); } catch (_) {}
-    closeLightbox();
+    if (window.self !== window.top) {
+      // Embutida no modal do app: o app fecha a galeria e voa até o marcador.
+      try { window.parent.postMessage({ type: 'phidro-gallery-show', iri: lbRecord.iri }, '*'); } catch (_) {}
+      closeLightbox();
+      return;
+    }
+    // Standalone (link /listas/…, /midia/…, ?pick=): não há app-pai pra ouvir o
+    // postMessage — antes o botão só fechava o lightbox. Vai pro mapa com o
+    // deep link por FRAGMENTO (#midia=<hash>, como #rt=/#st=: sobrevive ao
+    // strip de query da Cloudflare e ao cache do SW); o app abre o popup.
+    const hash = lbRecord.iri.slice(MED.length);
+    location.href = `./#midia=${encodeURIComponent(hash)}`;
   });
   $('#lb-share').addEventListener('click', shareLightboxLink);
   // Listas salvam sozinhas ao mudar (sem botão). setValue(...,true) na abertura
@@ -1516,6 +1526,13 @@ const scheduleLbSave = debounce(saveLightboxLists, 500);
 function openLightbox(rec) {
   lbRecord = rec;
   $('#lb-error').hidden = true;
+  // "Ver no mapa" só pra mídia COM coordenada — sem GPS não há marcador (o
+  // caso típico das fotos de celular sem localização): o botão fica
+  // desabilitado e diz o porquê, em vez de "ir pro mapa" e não mostrar nada.
+  const mapBtn = $('#lb-map');
+  mapBtn.disabled = !rec.geo;
+  mapBtn.textContent = rec.geo ? '📍 Ver no mapa' : '📍 Sem localização';
+  mapBtn.title = rec.geo ? 'Abre o mapa nesta mídia' : 'Esta mídia não tem GPS, então não aparece no mapa';
   // Mídia
   const media = $('#lb-media');
   if (rec.kind === 'video' && rec.clipUrl) {

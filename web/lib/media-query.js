@@ -196,6 +196,10 @@
           uploaders: objs(iri, NS.pav + 'providedBy').map(function (p) { return people[p] || short(p); }),
           lists: objs(iri, NS.schema + 'isPartOf'),
           weekday: weekdayOf(obj1(iri, NS.dcterms + 'date')),
+          // Tem coordenada → tem marcador no mapa (só mídia georreferenciada
+          // vira marcador; a galeria usa isto pra só oferecer "Ver no mapa"
+          // quando faz sentido).
+          geo: !!obj1(iri, NS.schema + 'locationCreated'),
         };
         if (kind === 'image') {
           var phash = iri.slice(NS.med.length);

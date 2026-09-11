@@ -3860,22 +3860,46 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && imagensModal && !imagensModal.hidden) closeImagensModal();
 });
 // "Ver no mapa" da galeria → fecha o modal, voa até o marcador e abre o popup.
-function galleryShowMedia(iri) {
+// Voa até uma mídia e abre o popup dela. Chamado pela galeria embutida
+// (postMessage) e pelo deep link #midia= (tryOpenMediaFromHash). Espera os
+// catálogos de foto E de clipe (no boot ainda podem estar em voo); mídia sem
+// GPS não tem marcador — avisa na hora, em vez de silêncio. O popup só abre
+// DEPOIS do flyTo terminar (moveend): aberto no meio da animação (era um
+// setTimeout de 450 ms) ele se perdia quando o voo era longo.
+async function galleryShowMedia(iri) {
   closeImagensModal();
   if (!iri) return;
+  try { await loadPhotos(); } catch (_) {}
+  try { await loadClipsCatalog(); } catch (_) {}   // makeClipMarkers já está encadeado no boot
   let marker = photoMarkers.find((m) => m._photo && m._photo.id === iri) || null;
   if (!marker) {
     const cm = clipsMarkers.find((x) => x && x.clip && x.clip.iri === iri);
     if (cm) marker = cm.marker;
   }
-  if (!marker) { showToast('Mídia não está no mapa.'); return; }
-  photosVisible = true;
+  if (!marker) { showToast('Esta imagem não tem localização — só mídia com GPS aparece no mapa.'); return; }
+  if (!photosVisible) {
+    photosVisible = true;
+    syncLayerCheckbox('photos', true);
+    applyPhotoVisibility();
+  }
   const ll = marker.getLatLng();
-  map.flyTo(ll, Math.max(map.getZoom(), 16));
-  setTimeout(() => {
+  const target = Math.max(map.getZoom(), 16);
+  const open = () => {
     if (!map.hasLayer(marker)) marker.addTo(map);
     marker.openPopup();
-  }, 450);
+  };
+  if (map.getZoom() === target && map.getCenter().distanceTo(ll) < 2) { open(); return; }
+  let done = false, guard = 0;
+  const finish = () => {
+    if (done) return;
+    done = true;
+    map.off('moveend', finish);
+    clearTimeout(guard);
+    setTimeout(open, 60);   // deixa o relax/zoomend assentar antes do popup
+  };
+  map.once('moveend', finish);
+  guard = setTimeout(finish, 5000);   // rede de segurança se o moveend não vier
+  map.flyTo(ll, target);
 }
 
 // Menu "Subir" — atalho no topbar que abre um mini-modal com as duas ações
@@ -5770,7 +5794,23 @@ boot()
       .then((loaded) => (loaded ? true : tryLoadSavedRouteFromHash()))
       .catch((err) => console.warn('[share] hash load failed:', err));
     if (!tryOpenTourFromPath()) tryOpenTourFromQuery();
+    tryOpenMediaFromHash();
   });
+
+// Deep link de MÍDIA por fragmento (#midia=<hash>) — plantado pelo "📍 Ver no
+// mapa" da galeria STANDALONE (aberta por /listas/…, /midia/…, ?pick=; sem
+// app-pai pra receber o postMessage). Fragmento, como #rt=/#st=: sobrevive ao
+// strip de query da Cloudflare e ao cache do SW. Espera os marcadores de foto
+// (photosLoaded) e de clipe carregarem, tira o fragmento da URL e voa até a
+// mídia com o popup aberto (galleryShowMedia — que avisa se ela não tem GPS).
+function tryOpenMediaFromHash() {
+  const raw = new URLSearchParams(location.hash.replace(/^#/, '')).get('midia');
+  if (!raw) return false;
+  const iri = MED_NS + raw.trim().replace(/^(image|video)_/, '');   // aceita o formato legado
+  window.history.replaceState(null, '', location.pathname + location.search);
+  galleryShowMedia(iri);   // espera os catálogos e avisa se a mídia não tem GPS
+  return true;
+}
 
 // Abre o modal da rota cujo passeio bate com `slug` — o slug8 (sufixo do
 // tourIri) OU o slug legível (entry.slug, o schema:identifier que o backend
