@@ -194,6 +194,7 @@ const DEFAULT_LAYER_ORDER = [
   'mtpi-pindorama', 'mtpi-parana', // MTPI (índice de posição topográfica multiescala)
   'positron',                  // OSM claro (CARTO) em multiply — ACIMA dos rasters
   'custom-wms', 'custom-xyz',  // camadas custom do usuário
+  'osm-viario',                // todas as vias em branco — sob cicloinfra/águas
   'osm-cicloinfra',
   'osm-overpass',
   'routes',                    // linhas das rotas, no topo das camadas de mapa
@@ -666,6 +667,16 @@ const OVERLAY_LAYERS = [
     hide: () => cicloinfraLayer.hide(),
     setOpacity: (frac) => cicloinfraLayer.setOpacity(frac),
   },
+  // Viário do OSM (todo highway=*), branco com 3 m de largura real.
+  {
+    id: 'osm-viario',
+    label: 'Viário OSM',
+    defaultVisible: false,
+    defaultPct: 100,
+    show: () => viarioLayer.show(),
+    hide: () => viarioLayer.hide(),
+    setOpacity: (frac) => viarioLayer.setOpacity(frac),
+  },
   // Fotos geotaggeadas (lidas do manifesto web/data/data_graphs.ttl, que
   // aponta pra uploads.ttl entre outros dumps). Pequenos círculos que abrem
   // o thumbnail num popup ao clicar.
@@ -809,6 +820,101 @@ function bboxAreaKm2(bb) {
   return Math.abs(h * w);
 }
 
+// Metros no chão → px de tela no zoom atual (Web Mercator, na latitude do
+// centro — dentro de uma viewport de cidade a variação é desprezível).
+function metersToPixels(m) {
+  const lat = map.getCenter().lat * Math.PI / 180;
+  return m * 256 * 2 ** map.getZoom() / (40075016.686 * Math.cos(lat));
+}
+
+// Web Mercator normalizado em [0,1]² — × 256·2^zoom dá o pixel global do
+// Leaflet (é a conta do EPSG3857 dele, com o raio já cancelado).
+const MERC_MAX_LAT = 85.0511287798;
+const mercX = (lng) => (lng + 180) / 360;
+function mercY(lat) {
+  const s = Math.sin(Math.max(-MERC_MAX_LAT, Math.min(MERC_MAX_LAT, lat)) * Math.PI / 180);
+  return 0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI);
+}
+
+// Linhas EMPACOTADAS num <canvas> próprio — pras camadas densas demais pra
+// L.polyline. No Leaflet cada vértice vira um LatLng + um Point (medido: as
+// 164 mil vias de um zoom 12 em SP custavam ~400 MB de heap). Aqui os vértices
+// já chegam projetados num Float64Array (`streamFgbPackedLines`) e o desenho é
+// um laço de lineTo e UM stroke — com opacidade < 1, os cruzamentos não
+// acumulam alfa. Redesenha no moveend; na animação de zoom só escala via CSS.
+// A largura é em METROS (`widthM`): o lineWidth sai do zoom a cada desenho.
+const PackedLinesLayer = L.Layer.extend({
+  initialize(lines, { pane, color = '#fff', widthM = 1, opacity = 1 } = {}) {
+    this._lines = lines;
+    L.setOptions(this, { pane, color, widthM, opacity });
+  },
+  onAdd() {
+    // leaflet-zoom-animated: pega a transição de transform do CSS do Leaflet.
+    this._canvas = L.DomUtil.create('canvas', 'leaflet-zoom-animated');
+    // Nada aqui é clicável, mas o canvas cobre a tela: sem isto engoliria
+    // clique/hover das camadas empilhadas abaixo dele.
+    this._canvas.style.pointerEvents = 'none';
+    this._canvas.style.opacity = this.options.opacity;
+    this.getPane().appendChild(this._canvas);
+    this._draw();
+  },
+  onRemove() {
+    L.DomUtil.remove(this._canvas);
+    this._canvas = null;
+  },
+  getEvents() {
+    const ev = { moveend: this._draw, resize: this._draw };
+    if (this._map.options.zoomAnimation && L.Browser.any3d) ev.zoomanim = this._animateZoom;
+    return ev;
+  },
+  setOpacity(frac) {
+    this.options.opacity = frac;
+    if (this._canvas) this._canvas.style.opacity = frac;
+  },
+  // Mesmo padrão dos overlays do Leaflet: o canto do canvas é um latlng fixo;
+  // durante a animação ele vai pro ponto novo e o canvas escala a partir dali.
+  _animateZoom(e) {
+    const scale = this._map.getZoomScale(e.zoom, this._zoom);
+    const offset = this._map._latLngToNewLayerPoint(this._topLeft, e.zoom, e.center);
+    L.DomUtil.setTransform(this._canvas, offset, scale);
+  },
+  _draw() {
+    const map = this._map, c = this._canvas;
+    if (!map || !c) return;
+    const size = map.getSize(), dpr = window.devicePixelRatio || 1;
+    const topLeft = map.containerPointToLayerPoint([0, 0]);
+    L.DomUtil.setPosition(c, topLeft);           // e zera a escala da animação
+    this._topLeft = map.containerPointToLatLng([0, 0]);
+    this._zoom = map.getZoom();
+    const w = Math.round(size.x * dpr), h = Math.round(size.y * dpr);
+    if (c.width !== w || c.height !== h) {
+      c.width = w; c.height = h;
+      c.style.width = `${size.x}px`; c.style.height = `${size.y}px`;
+    }
+    const ctx = c.getContext('2d');
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    const { xy, starts, parts } = this._lines;
+    if (!parts) return;
+    // Pixel global do canto do canvas; vértice → xy·scale − origem.
+    const scale = 256 * 2 ** this._zoom;
+    const o = topLeft.add(map.getPixelOrigin());
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.beginPath();
+    for (let p = 0; p < parts; p++) {
+      let i = starts[p] * 2;
+      const end = starts[p + 1] * 2;
+      ctx.moveTo(xy[i] * scale - o.x, xy[i + 1] * scale - o.y);
+      for (i += 2; i < end; i += 2) ctx.lineTo(xy[i] * scale - o.x, xy[i + 1] * scale - o.y);
+    }
+    ctx.strokeStyle = this.options.color;
+    ctx.lineWidth = metersToPixels(this.options.widthM);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+  },
+});
+
 // A rede cicloviária do coletivo (relations cycle_network=BR:PedalHidrografico)
 // vem num GeoJSON minúsculo, baixado UMA vez e reusado — são poucas e locais,
 // não valem um range request por pan. Falha não derruba a camada: a hidrografia
@@ -825,16 +931,29 @@ async function loadPhCycleNetwork() {
   return _phNetworkPromise;
 }
 
-// Driver compartilhado das duas camadas. Cada `source` sabe buscar suas feições
-// na bbox e como estilizar/rotular — é só isso que distingue Morros e Águas de
+// Driver compartilhado das camadas. Cada `source` sabe buscar suas feições na
+// bbox e como estilizar/rotular — é só isso que distingue Morros e Águas de
 // Cicloinfra. A ordem das sources é a ordem de desenho (a última fica por cima).
-function makeOsmFgbLayer({ id, label, sources }) {
+// Os limites de área/feições têm default nas constantes acima; o viário, muito
+// mais denso, passa os seus.
+//
+// Uma source `packed: true` (o viário) troca styleFor/tipFor por um `style`
+// fixo ({color, widthM}) e o seu `load` devolve linhas empacotadas
+// ({xy, starts, parts, capped} — ver streamFgbPackedLines), desenhadas por uma
+// PackedLinesLayer em vez de um L.polyline por feição. O `load` recebe
+// {maxParts, isStale} pra parar o download no teto ou quando um pan mais novo
+// já saiu na frente.
+function makeOsmFgbLayer({ id, label, sources,
+                           maxKm2 = OSM_FGB_MAX_BBOX_KM2,
+                           fullKm2 = OSM_FGB_FULL_BBOX_KM2,
+                           maxFeatures = OSM_FGB_MAX_FEATURES }) {
   const drawn = [];
-  let active = false, opacity = 1, debounce = null, seq = 0;
+  let active = false, opacity = 1, debounce = null, seq = 0, nDrawn = 0;
 
   function clear() {
     for (const l of drawn) map.removeLayer(l);
     drawn.length = 0;
+    nDrawn = 0;
   }
 
   function render(perSource, detail) {
@@ -842,11 +961,21 @@ function makeOsmFgbLayer({ id, label, sources }) {
     const pane = LAYER_PANE(id);
     let capped = false;
     for (let s = 0; s < sources.length; s++) {
-      const { styleFor, tipFor, alwaysDraw } = sources[s];
+      const { styleFor, tipFor, alwaysDraw, packed, style: packedStyle } = sources[s];
       // Teto batido: para de desenhar as fontes volumosas, mas SEGUE nas
       // isentas (`continue`, não `break` — sair do laço aqui puliria a rede do
       // coletivo, que é justamente a última source e a que não pode sumir).
       if (capped && !alwaysDraw) continue;
+      if (packed) {
+        const lines = perSource[s];
+        if (!lines || !lines.parts) continue;   // falhou (virou []) ou vazio
+        nDrawn += lines.parts;
+        if (lines.capped) capped = true;        // o teto já foi aplicado no load
+        const layer = new PackedLinesLayer(lines, { ...packedStyle, opacity, pane });
+        layer.addTo(map);
+        drawn.push(layer);
+        continue;
+      }
       for (const f of perSource[s] || []) {
         const g = f && f.geometry; if (!g) continue;
         const props = f.properties || {};
@@ -861,7 +990,8 @@ function makeOsmFgbLayer({ id, label, sources }) {
           // rede do coletivo é a ÚLTIMA source (pra ficar por cima), então sem
           // isto ela sumiria justo onde a hidrografia é densa o bastante pra
           // estourar o limite.
-          if (!alwaysDraw && drawn.length >= OSM_FGB_MAX_FEATURES) { capped = true; break; }
+          if (!alwaysDraw && nDrawn >= maxFeatures) { capped = true; break; }
+          nDrawn++;
           // O FGB guarda [lng,lat]; o Leaflet quer [lat,lng].
           const layer = L.polyline(coords.map((c) => [c[1], c[0]]),
             { ...style, opacity, pane });
@@ -884,12 +1014,12 @@ function makeOsmFgbLayer({ id, label, sources }) {
       east: b.getEast(), north: b.getNorth(),
     };
     const areaKm2 = bboxAreaKm2(bb);
-    if (areaKm2 > OSM_FGB_MAX_BBOX_KM2) {
+    if (areaKm2 > maxKm2) {
       clear();
       showToast(`Área grande demais para carregar ${label} — aproxime o mapa`);
       return;
     }
-    const detail = areaKm2 > OSM_FGB_FULL_BBOX_KM2 ? DETAIL_MAIN : DETAIL_FULL;
+    const detail = areaKm2 > fullKm2 ? DETAIL_MAIN : DETAIL_FULL;
     const mySeq = ++seq;
     showToast(`Buscando ${label}…`, 1500);
     try {
@@ -898,13 +1028,14 @@ function makeOsmFgbLayer({ id, label, sources }) {
       // conselhos opostos (aproximar vs tentar de novo), e sem isso um 404 no
       // FGB aparecia pro usuário como área vazia.
       let failed = 0;
-      const perSource = await Promise.all(sources.map((s) => s.load(bb).catch((e) => {
+      const opts = { maxParts: maxFeatures, isStale: () => mySeq !== seq || !active };
+      const perSource = await Promise.all(sources.map((s) => s.load(bb, opts).catch((e) => {
         failed++;
         console.warn(`[${id}] fonte indisponível:`, e.message);
         return [];
       })));
       if (mySeq !== seq || !active) return;   // um pan mais novo já saiu na frente
-      const total = perSource.reduce((n, fs) => n + fs.length, 0);
+      const total = perSource.reduce((n, r) => n + (r.parts ?? r.length), 0);
       if (!total) {
         clear();
         showToast(failed === sources.length
@@ -922,7 +1053,7 @@ function makeOsmFgbLayer({ id, label, sources }) {
       if (failed) notes.push('parte das fontes indisponível');
       if (capped) notes.push('aproxime para ver o resto');
       else if (detail === DETAIL_MAIN) notes.push('só o principal — aproxime para o resto');
-      showToast(`${label}: ${drawn.length} feições`
+      showToast(`${label}: ${nDrawn} feições`
         + (notes.length ? ` (${notes.join('; ')})` : ''), 1800);
     } catch (err) {
       if (mySeq !== seq) return;
@@ -937,7 +1068,15 @@ function makeOsmFgbLayer({ id, label, sources }) {
   }
 
   return {
-    show() { active = true; map.on('moveend', onMoveEnd); refresh(); },
+    show() {
+      active = true;
+      map.on('moveend', onMoveEnd);
+      // Microtask, não direto: o restoreLayerState() do boot chama show()
+      // antes de o resto do app.js avaliar, e o caminho do FGB
+      // (`_flatgeobufPromise`, VIARIO_FGB_URL) ainda estava em TDZ — a
+      // hidrografia lembrada ligada abria só com a rede do coletivo.
+      queueMicrotask(refresh);
+    },
     hide() {
       active = false;
       map.off('moveend', onMoveEnd);
@@ -946,7 +1085,10 @@ function makeOsmFgbLayer({ id, label, sources }) {
     },
     setOpacity(frac) {
       opacity = frac;
-      for (const l of drawn) l.setStyle({ opacity: frac });
+      for (const l of drawn) {
+        if (l instanceof PackedLinesLayer) l.setOpacity(frac);
+        else l.setStyle({ opacity: frac });
+      }
     },
   };
 }
@@ -1024,6 +1166,36 @@ const cicloinfraLayer = makeOsmFgbLayer({
     load: (bb) => streamFgbFeatures(CICLOINFRA_FGB_URL, bb, false),
     styleFor: styleForCycloinfra,
     tipFor: cicloinfraTipFor,
+  }],
+});
+
+// Viário OSM: TODO highway=* — o mesmo FGB do "Menor energia pelo viário" e do
+// modo terreno (VIARIO_FGB_URL, na seção do viário; só é lido no refresh, que
+// sai depois do boot) — em branco sobre fundo transparente, com 3 m de
+// largura REAL, sem piso em px (decisão do coletivo): em SP dá ~0,09 px no
+// zoom 12, ~0,7 no 15 e ~5,5 no 18 — de longe é um véu que só aparece onde o
+// arruamento é denso, de perto ganha corpo de rua. O FGB só traz
+// bridge/tunnel/layer (o pré-filtro do osmium já garante que toda linha é
+// via), então não há o que diferenciar por tipo: um estilo só, um traço.
+//
+// Densidade medida no centro de SP (Sé): ~300 vias e ~80 kB por km², ~50× a
+// hidrografia. O zoom 12 de um notebook (876 km²) são 164 mil vias e 37 MB; o
+// de uma tela full HD (2.545 km²), 287 mil e 62 MB. Por isso: linhas
+// empacotadas (PackedLinesLayer, não L.polyline) e o cache de blocos do SW
+// (sw.js) — a primeira visita a uma área paga o download, as seguintes (pan de
+// volta, zoom pra dentro, outra sessão) saem do disco. O teto de 3.200 km²
+// cobre o zoom 12 de uma tela full HD em qualquer latitude da América do Sul.
+const VIARIO_LAYER_WIDTH_M = 3;
+const viarioLayer = makeOsmFgbLayer({
+  id: 'osm-viario',
+  label: 'viário OSM',
+  maxKm2: 3200,
+  fullKm2: 3200,         // sem nível "só o principal": o FGB não traz `highway`
+  maxFeatures: 400000,
+  sources: [{
+    packed: true,
+    load: (bb, opts) => streamFgbPackedLines(VIARIO_FGB_URL, bb, opts),
+    style: { color: '#fff', widthM: VIARIO_LAYER_WIDTH_M },
   }],
 });
 
@@ -7919,18 +8091,17 @@ async function ensureFlatgeobuf() {
   return _flatgeobufPromise;
 }
 
-// Cache LRU das consultas FGB por (url, bbox arredondada): o SW NÃO cacheia
-// respostas 206 (e é contornado pros .fgb — ver sw.js), então este cache é o
-// que absorve a consulta dupla da mesma bbox (modo terreno consulta viário e
-// água pro mesmo trecho; rotas re-traçadas idem).
+// Cache LRU das consultas FGB por (url, bbox arredondada), já PARSEADAS: o
+// cache de blocos do SW (sw.js) poupa a rede, mas cada consulta ainda refaria
+// o parse — este absorve a consulta dupla da mesma bbox (modo terreno consulta
+// viário e água pro mesmo trecho; rotas re-traçadas idem).
 const _fgbCache = new Map();
 const FGB_CACHE_MAX = 10;
 // `useCache=false` pras CAMADAS DE MAPA (Morros e Águas / Cicloinfra): elas
 // reconsultam a cada pan, então cada viewport viraria uma entrada nova e as 10
 // vagas do LRU acabariam segurando 10 viewports inteiras de feições na memória
 // — dezenas de milhares de linhas cada. Elas redesenham do zero de qualquer
-// jeito, e os BYTES já ficam no cache HTTP do navegador (o SW deixa .fgb
-// passar direto justamente pra não estragar as respostas 206).
+// jeito, e os BYTES já ficam no cache de blocos do SW.
 async function streamFgbFeatures(url, bb, useCache = true) {
   const key = `${url}|${bb.west.toFixed(4)},${bb.south.toFixed(4)},${bb.east.toFixed(4)},${bb.north.toFixed(4)}`;
   if (useCache && _fgbCache.has(key)) {
@@ -7952,6 +8123,53 @@ async function streamFgbFeatures(url, bb, useCache = true) {
     while (_fgbCache.size > FGB_CACHE_MAX) _fgbCache.delete(_fgbCache.keys().next().value);
   }
   return feats;
+}
+
+// Irmã da streamFgbFeatures pras camadas densas (o viário): em vez de juntar
+// feições GeoJSON, projeta cada vértice (mercX/mercY) direto num Float64Array
+// enquanto o FGB ainda está chegando — a feição vira lixo na hora, e o pico de
+// memória fica no tamanho dos vértices. Devolve {xy, starts, parts, capped}:
+// a linha p ocupa os vértices [starts[p], starts[p+1]) de xy (x,y
+// intercalados). Sem LRU (camada de mapa, ver acima). Sair do for-await solta
+// o gerador, que para de pedir ranges: `isStale()` (um pan mais novo já saiu),
+// o teto `maxParts` ou o timeout cortam o DOWNLOAD, não só o resultado — no
+// zoom 12 são dezenas de MB que não devem continuar baixando à toa.
+async function streamFgbPackedLines(url, bb, { maxParts = Infinity, isStale = () => false } = {}) {
+  const fgb = await ensureFlatgeobuf();
+  const rect = { minX: bb.west, minY: bb.south, maxX: bb.east, maxY: bb.north };
+  let xy = new Float64Array(1 << 17), starts = new Uint32Array(1 << 14);
+  let nv = 0, parts = 0, capped = false, timedOut = false, timer;
+  const addLine = (coords) => {
+    if (!Array.isArray(coords) || coords.length < 2) return;
+    const need = (nv + coords.length) * 2;
+    if (need > xy.length) {                  // cresce dobrando
+      const grown = new Float64Array(Math.max(xy.length * 2, need));
+      grown.set(xy); xy = grown;
+    }
+    if (parts + 2 > starts.length) {         // +1 da sentinela do fim
+      const grown = new Uint32Array(starts.length * 2);
+      grown.set(starts); starts = grown;
+    }
+    starts[parts++] = nv;
+    for (const c of coords) { xy[nv * 2] = mercX(c[0]); xy[nv * 2 + 1] = mercY(c[1]); nv++; }
+  };
+  await Promise.race([
+    (async () => {
+      for await (const f of fgb.deserialize(url, rect)) {
+        if (timedOut || isStale()) break;
+        const g = f.geometry; if (!g) continue;
+        if (g.type === 'LineString') addLine(g.coordinates);
+        else if (g.type === 'MultiLineString') g.coordinates.forEach(addLine);
+        if (parts >= maxParts) { capped = true; break; }
+      }
+    })(),
+    new Promise((_, rej) => {
+      timer = setTimeout(() => { timedOut = true; rej(new Error('timeout FGB')); }, VIARIO_FETCH_TIMEOUT_MS);
+    }),
+  ]).finally(() => clearTimeout(timer));
+  starts[parts] = nv;                          // sentinela
+  // slice (não subarray): devolve a folga do crescimento por dobra.
+  return { xy: xy.slice(0, nv * 2), starts: starts.slice(0, parts + 1), parts, capped };
 }
 
 let _sqlJsPromise = null;

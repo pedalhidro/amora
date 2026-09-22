@@ -426,13 +426,49 @@ Key flows:
   - These layers call `streamFgbFeatures(url, bb, **false**)` — the third
     arg bypasses the shared 10-slot LRU, which they would otherwise fill
     with whole viewports of features (they re-query on every pan and
-    re-render from scratch anyway; the *bytes* stay in the browser's HTTP
-    cache).
+    re-render from scratch anyway; the *bytes* stay in the SW block cache
+    below).
+  - **"Viário OSM"** (`osm-viario`) is a third layer on the same driver:
+    every `highway=*` from `south-america-viario.fgb`, white, **3 m of real
+    width with NO px floor** (the collective's call — at zoom 12 it's a
+    ~0.09 px veil only visible where streets are dense). It's a `packed: true`
+    source: `streamFgbPackedLines` projects each vertex straight into a
+    `Float64Array` while the FGB streams (no GeoJSON/LatLng objects kept) and
+    `PackedLinesLayer` draws them on its own `<canvas>` in one stroke
+    (`pointer-events: none`; CSS-scaled during zoom animation, redrawn on
+    `moveend`). L.polyline was ~400 MB of heap for a zoom-12 view (164k
+    ways); packed is ~55 MB and redraws in ~40 ms. Density (Sé): ~300 ways
+    and ~80 kB per km², ~50× the hidro — zoom 12 on a laptop = 37 MB, full
+    HD = 62 MB — hence its own limits (`maxKm2` 3200 = full-HD zoom 12,
+    `maxFeatures` 400k) and no `DETAIL_MAIN` (that FGB has no `highway`
+    column). The driver hands `load(bb, {maxParts, isStale})` so a
+    superseded pan or the cap stops the DOWNLOAD, not just the result.
+  - The driver's `show()` defers the first `refresh` to a microtask:
+    `restoreLayerState()` runs mid-module, before `_flatgeobufPromise` /
+    `VIARIO_FGB_URL` are initialized (TDZ — a persisted-on "Morros e Águas"
+    used to boot with only the collective's network).
   - Rebuilt **weekly** by `.github/workflows/build-fgb.yml` (free: the repo
     is public). It reuses deploy.yml's keyless WIF and is inert until those
     repo vars exist. It runs `--no-viario --water --layers`, so the 4.5 GB
     viário FGB and the baked graph are NOT in the weekly path —
     `workflow_dispatch` has a `viario` input for those.
+  - **The SW keeps a block cache of FGB range requests** (`FGB_CACHE =
+    'phidro-fgb-blocks-v1'` in `web/sw.js`). Nothing else stores them: the
+    Cache API refuses 206, Cloudflare BYPASSes (file too big for its cache),
+    and Chrome's HTTP cache served ~0 ranges after a browser restart
+    (measured). Each `Range` request is split into aligned 64 KB blocks
+    stored as plain 200s under `<url>?__fgb=<etag>&b=<n>`; only missing
+    blocks hit the network, as contiguous runs, deduped across parallel
+    requests (`fgbInflight`). The file's ETag is IN THE KEY (generations
+    never mix), revalidated every 24 h with a 1-byte range (changed → old
+    blocks purged); offline it keeps serving the known version. FIFO budget
+    of 4096 blocks (256 MB). The cache name is NOT versioned and is exempt
+    from the activate cleanup — don't fold it into `VERSION`, or every deploy
+    drops tens of MB of viário. Any failure falls back to plain network.
+    **The SW is off on `localhost`/`127.0.0.1`** (app.js unregisters it and
+    wipes caches for dev), so test the cache at `http://amora.localhost:8080`
+    — Chrome treats `*.localhost` as secure and the dev check doesn't match
+    it.
   - **Coverage regressed to South America** (the extract the pipeline
     already used). Overpass worked worldwide. Outside SA the layers are
     empty and "pelo viário" falls through to free-energy routing.
