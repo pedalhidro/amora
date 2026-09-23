@@ -20,7 +20,7 @@
 // origin) e v371/v372 saíram na `deploy` (busca de endereços, ⇄ inverter).
 // v373 fica acima de tudo que já circulou, que é o que importa: se a VERSION
 // não crescer, o service worker serve cache velho.
-const VERSION = 'phidro-v410';
+const VERSION = 'phidro-v411';
 const STATIC_CACHE = `${VERSION}-static`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 // Cache de blocos dos FlatGeobuf (ver a seção lá embaixo). NÃO leva a VERSION
@@ -65,6 +65,7 @@ const STATIC_ASSETS = [
   './lib/qrcode.js',
   './lib/leaflet/leaflet.js',
   './lib/leaflet/leaflet.css',
+  './lib/leaflet-rotate/leaflet-rotate-src.js',   // rotação do mapa (GPL-3.0)
   './lib/leaflet/images/layers.png',
   './lib/leaflet/images/layers-2x.png',
   './lib/leaflet/images/marker-icon.png',

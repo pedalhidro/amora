@@ -222,6 +222,13 @@
           <details class="help-changelog">
             <summary>Novidades (changelog)</summary>
             <dl>
+              <dt>22/09/2026 · v411</dt>
+              <dd>
+                <ul>
+                  <li><strong>🧭 O mapa agora gira.</strong> No celular, gire com dois dedos (só depois de uns 15° de torção, pra pinça de zoom não entortar o mapa sem querer); no computador, <strong>Shift + roda do mouse</strong>. Com o mapa girado aparece uma <strong>bússola</strong> na coluna da esquerda: toque nela pra voltar o norte pra cima. O app sempre abre com o norte pra cima.</li>
+                  <li><strong>O amora agora é licenciado sob a GNU AGPL v3.0</strong> (antes, GPL v2) — o link pro código-fonte está no fim desta Ajuda.</li>
+                </ul>
+              </dd>
               <dt>22/09/2026 · v410</dt>
               <dd>
                 <ul>
@@ -1231,7 +1238,7 @@
             </dl>
           </details>
           <h3>Mapa</h3>
-          <p>Arraste para mover, scroll/pinça para zoom. O painel de camadas (canto sup. direito) controla visibilidade e opacidade de cada camada — base (OSM ou satélite), sobreposições (Topografia colorida, SARA Brasil 1930, rotas cadastradas) e duas camadas customizáveis (XYZ e WMS — clique no ✎ para colar uma URL).</p>
+          <p>Arraste para mover, scroll/pinça para zoom. Para <strong>girar</strong>: dois dedos girando (celular) ou Shift + roda do mouse (computador); a bússola que aparece à esquerda volta o norte pra cima. O painel de camadas (canto sup. direito) controla visibilidade e opacidade de cada camada — base (OSM ou satélite), sobreposições (Topografia colorida, SARA Brasil 1930, rotas cadastradas) e duas camadas customizáveis (XYZ e WMS — clique no ✎ para colar uma URL).</p>
 
           <h3>Rotas cadastradas</h3>
           <p>A barra lateral lista as rotas em ordem decrescente de data. Use o filtro de data para mostrar só as rotas dentro de uma janela. Clique numa rota para abrir o post do Instagram + atalho para abrir no RideWithGPS, ou para entrar no editor (<em>Editar este traçado</em>) com aquela rota carregada.</p>
@@ -1270,6 +1277,9 @@
             <li>Roteamento ciclismo/a-pé: <a href="https://project-osrm.org" target="_blank" rel="noopener">OSRM</a> sobre OSM.</li>
             <li>Hidrografia, cristas e infra cicloviária: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> (ODbL), via extrato da <a href="https://download.geofabrik.de" target="_blank" rel="noopener">Geofabrik</a> assado em FlatGeobuf.</li>
           </ul>
+
+          <h3>Código-fonte</h3>
+          <p>O amora é software livre, sob a <a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener">GNU AGPL v3.0</a>: o código está em <a href="https://github.com/pedalhidro/amora" target="_blank" rel="noopener">github.com/pedalhidro/amora</a>. Quem rodar uma versão modificada pra outras pessoas pela rede tem que oferecer o código dela também.</p>
 
           <p class="help-credit">feito por Cláudio · pedido e dirigido pelos neogeógrafos hidrográficos</p>
         </div>
@@ -2011,6 +2021,9 @@
     <!-- Vendorados em lib/ (local-first: nada de CDN no caminho crítico).
          SHA-256 conferidos contra os pins SRI originais ao vendorar. -->
     <script src="lib/leaflet/leaflet.js"></script>
+    <!-- Rotação do mapa (GPL-3.0). Tem que vir antes do app.js: estende
+         L.Map/L.Marker/L.GridLayer antes de o mapa ser criado. -->
+    <script src="lib/leaflet-rotate/leaflet-rotate-src.js"></script>
     <script src="lib/locatecontrol/L.Control.Locate.min.js"></script>
     <script src="lib/qrcode.js"></script>
     <!-- Infra de consulta compartilhada (Store N3 + Comunica lazy) usada pelo

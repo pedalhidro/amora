@@ -174,8 +174,18 @@ if (settings.spotlight) settings.spotlight.enabled = false;
 if (settings.liveLocation) settings.liveLocation.enabled = false;
 
 // ─── Map ─────────────────────────────────────────────────────────────────────
-const map = L.map('map', { zoomControl: true })
-  .setView(SP, settings.mapDefaults.startZoom);
+// Rotação pelo leaflet-rotate (lib/leaflet-rotate, GPL-3.0): pinça de dois
+// dedos gira, Shift+roda gira no desktop, e um botão do norte aparece quando o
+// mapa está girado. Os controles de rotação DO PLUGIN ficam desligados — o
+// amora põe os seus (ver setupMapRotation, que explica o porquê de cada um).
+// Sem o plugin carregado, as opções extras são ignoradas e o mapa segue fixo.
+const map = L.map('map', {
+  zoomControl: true,
+  rotate: true,
+  touchRotate: true,
+  shiftKeyRotate: false,
+  rotateControl: false,
+}).setView(SP, settings.mapDefaults.startZoom);
 
 // ─── Ordem de empilhamento das camadas (z-index por pane) ────────────────────
 // Cada camada de mapa reordenável vive no seu próprio pane, numa faixa de
@@ -220,7 +230,16 @@ try {
 // Cria os panes ANTES de qualquer camada que os referencie. Tiles e vetores
 // herdam o pointer-events correto da CSS do Leaflet (tiles não bloqueiam
 // clique; paths interativos continuam clicáveis), então não mexemos nisso.
-for (const id of DEFAULT_LAYER_ORDER) map.createPane(LAYER_PANE(id));
+// Com a rotação ligada o plugin divide o mapPane em `rotatePane` (tiles e
+// vetores — giram com o mapa) e `norotatePane` (marcadores, tooltips, popups —
+// ficam de pé). Um pane criado SEM container cai direto no mapPane e não gira:
+// as camadas de mapa têm que nascer no rotatePane, e os panes de marcador no
+// norotatePane (o z-index deles só se compara com o dos popups lá dentro — no
+// mapPane, clipes e pessoas ao vivo cobririam os popups). Sem o plugin, os
+// dois são undefined e o createPane cai no mapPane como antes.
+const ROTATE_PANE = map.getPane('rotatePane');
+const NOROTATE_PANE = map.getPane('norotatePane');
+for (const id of DEFAULT_LAYER_ORDER) map.createPane(LAYER_PANE(id), ROTATE_PANE);
 function applyLayerOrder() {
   layerOrder.forEach((id, i) => {
     const pane = map.getPane(LAYER_PANE(id));
@@ -840,13 +859,20 @@ const PackedLinesLayer = L.Layer.extend({
     this._draw();
   },
   onRemove() {
+    cancelAnimationFrame(this._raf);
     L.DomUtil.remove(this._canvas);
     this._canvas = null;
   },
   getEvents() {
-    const ev = { moveend: this._draw, resize: this._draw };
+    const ev = { moveend: this._draw, resize: this._draw, rotate: this._drawSoon };
     if (this._map.options.zoomAnimation && L.Browser.any3d) ev.zoomanim = this._animateZoom;
     return ev;
+  },
+  // Girar dispara `rotate` a cada passo do gesto: no máximo um desenho por
+  // quadro.
+  _drawSoon() {
+    cancelAnimationFrame(this._raf);
+    this._raf = requestAnimationFrame(() => this._draw());
   },
   setOpacity(frac) {
     this.options.opacity = frac;
@@ -863,14 +889,20 @@ const PackedLinesLayer = L.Layer.extend({
     const map = this._map, c = this._canvas;
     if (!map || !c) return;
     const size = map.getSize(), dpr = window.devicePixelRatio || 1;
-    const topLeft = map.containerPointToLayerPoint([0, 0]);
+    // O canvas vive no referencial das CAMADAS. Com o mapa girado, o canvas
+    // está no rotatePane e a tela vira um losango nesse referencial: cobre a
+    // caixa dos quatro cantos (sem rotação ela é exatamente a tela).
+    const box = L.bounds([[0, 0], [size.x, 0], [0, size.y], [size.x, size.y]]
+      .map((p) => map.containerPointToLayerPoint(p)));
+    const topLeft = box.min.floor();
+    const cssW = Math.ceil(box.max.x) - topLeft.x, cssH = Math.ceil(box.max.y) - topLeft.y;
     L.DomUtil.setPosition(c, topLeft);           // e zera a escala da animação
-    this._topLeft = map.containerPointToLatLng([0, 0]);
+    this._topLeft = map.layerPointToLatLng(topLeft);
     this._zoom = map.getZoom();
-    const w = Math.round(size.x * dpr), h = Math.round(size.y * dpr);
+    const w = Math.round(cssW * dpr), h = Math.round(cssH * dpr);
     if (c.width !== w || c.height !== h) {
       c.width = w; c.height = h;
-      c.style.width = `${size.x}px`; c.style.height = `${size.y}px`;
+      c.style.width = `${cssW}px`; c.style.height = `${cssH}px`;
     }
     const ctx = c.getContext('2d');
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -1051,7 +1083,9 @@ function makeOsmFgbLayer({ id, label, sources,
   return {
     show() {
       active = true;
-      map.on('moveend', onMoveEnd);
+      // `rotate`: girar muda a bbox (o getBounds do leaflet-rotate cobre os
+      // quatro cantos) — o mesmo debounce espera o giro assentar.
+      map.on('moveend rotate', onMoveEnd);
       // Microtask, não direto: o restoreLayerState() do boot chama show()
       // antes de o resto do app.js avaliar, e o caminho do FGB
       // (`_flatgeobufPromise`, VIARIO_FGB_URL) ainda estava em TDZ — a
@@ -1060,7 +1094,7 @@ function makeOsmFgbLayer({ id, label, sources,
     },
     hide() {
       active = false;
-      map.off('moveend', onMoveEnd);
+      map.off('moveend rotate', onMoveEnd);
       clearTimeout(debounce);
       clear();
     },
@@ -1627,7 +1661,9 @@ function refreshPhotoLayout() {
   updatePhotoScale();
   relaxPhotoMarkers();
 }
-map.on('zoomend moveend', refreshPhotoLayout);
+// rotateend: disparado por setupMapRotation quando o giro assenta — girar
+// muda as posições na TELA, e a relaxação é em pixels de tela.
+map.on('zoomend moveend rotateend', refreshPhotoLayout);
 updatePhotoScale();
 
 // ── Spotlight contínuo ───────────────────────────────────────────────────
@@ -2107,7 +2143,7 @@ function makeClipMarkers(clips) {
   // Pane dedicado pra clipes — z-index acima do markerPane (600) faz com
   // que os anéis pulsando fiquem ACIMA das fotos quando se sobrepõem.
   if (!map.getPane('clipMarkers')) {
-    const pane = map.createPane('clipMarkers');
+    const pane = map.createPane('clipMarkers', NOROTATE_PANE);
     pane.style.zIndex = '650';
   }
   for (const e of clipsMarkers) { if (e) map.removeLayer(e.marker); }
@@ -4883,6 +4919,118 @@ if (L.control.locate) {
     },
   }).addTo(map);
 }
+// ─── Rotação do mapa (leaflet-rotate) ───────────────────────────────────────
+// O plugin gira; aqui moram os ajustes do amora por cima dele:
+//  1. Botão do norte PRÓPRIO: o do plugin (rotateControl) cicla três modos a
+//     cada clique (pinça livre → bússola do aparelho → travado), o que
+//     confunde. O nosso só aparece com o mapa girado, a agulha aponta o norte
+//     e o clique volta pro norte com uma animação curta.
+//  2. Shift+roda PRÓPRIO: o do plugin (shiftKeyRotate) só lê deltaY, e no
+//     macOS o Shift vira a roda vertical em horizontal (deltaY = 0) — não
+//     girava. Aqui vale deltaY OU deltaX, proporcional ao delta (trackpad gira
+//     suave; roda de mouse anda ~5° por dente).
+//  3. ZONA MORTA na pinça: o plugin gira desde o primeiro grau, então todo zoom
+//     de dois dedos entortava o mapa um pouco. Só gira depois de
+//     ROTATE_DEADZONE_DEG de torção — e desconta esses graus, pra não pular.
+//  4. `rotateend`: o plugin só dispara `rotate`, a cada passo do gesto; quem
+//     precisa esperar o giro assentar (a relaxação das fotos) ouve este.
+// O rumo NÃO persiste entre sessões: o app sempre abre com o norte pra cima.
+const ROTATE_DEADZONE_DEG = 15;
+if (typeof map.setBearing === 'function' && map.options.rotate) setupMapRotation();
+
+function setupMapRotation() {
+  const container = map.getContainer();
+  // Ângulo em (-180, 180] — a menor volta entre dois rumos.
+  const wrap180 = (deg) => ((deg % 360) + 540) % 360 - 180;
+
+  // 4) rotateend
+  let rotateEndTimer = null;
+  map.on('rotate', () => {
+    clearTimeout(rotateEndTimer);
+    rotateEndTimer = setTimeout(() => map.fire('rotateend'), 250);
+  });
+
+  // 3) zona morta: embrulha o setBearing da INSTÂNCIA só enquanto há dois dedos
+  //    na tela — o handler de pinça do plugin chama map.setBearing, e as outras
+  //    origens (botão, Shift+roda) passam direto.
+  let pinch = null;   // { start, offset } — offset null até vencer a zona morta
+  container.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 2) pinch = { start: map.getBearing(), offset: null };
+  }, { capture: true, passive: true });
+  const endPinch = (e) => { if (e.touches.length < 2) pinch = null; };
+  container.addEventListener('touchend', endPinch, { capture: true, passive: true });
+  container.addEventListener('touchcancel', endPinch, { capture: true, passive: true });
+  const rawSetBearing = map.setBearing.bind(map);
+  map.setBearing = (deg) => {
+    if (!pinch) return rawSetBearing(deg);
+    const delta = wrap180(deg - pinch.start);
+    if (pinch.offset === null) {
+      if (Math.abs(delta) < ROTATE_DEADZONE_DEG) return map;   // ainda é só zoom
+      pinch.offset = Math.sign(delta) * ROTATE_DEADZONE_DEG;
+    }
+    return rawSetBearing(deg - pinch.offset);
+  };
+
+  // 2) Shift+roda. Captura no container + stopImmediatePropagation: o
+  //    scrollWheelZoom do Leaflet escuta a roda no MESMO container e daria zoom
+  //    junto. Sobre um controle (painel de camadas etc.) a roda é dele.
+  container.addEventListener('wheel', (e) => {
+    if (!e.shiftKey || e.target.closest('.leaflet-control')) return;
+    const d = e.deltaY || e.deltaX;
+    if (!d) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    const perUnit = e.deltaMode ? 5 : 0.05;   // linhas (Firefox) vs pixels
+    map.setBearing(map.getBearing() + Math.max(-5, Math.min(5, d * perUnit)));
+  }, { capture: true, passive: false });
+
+  // 1) botão do norte
+  let anim = null;
+  function animateBearingTo(target) {
+    cancelAnimationFrame(anim);
+    const from = map.getBearing();
+    const delta = wrap180(target - from);
+    const t0 = performance.now(), dur = 300;
+    const step = (now) => {
+      const t = Math.min(1, (now - t0) / dur);
+      const ease = 1 - (1 - t) ** 3;
+      map.setBearing(from + delta * ease);
+      if (t < 1) anim = requestAnimationFrame(step);
+    };
+    anim = requestAnimationFrame(step);
+  }
+  const NorthControl = L.Control.extend({
+    options: { position: 'topleft' },
+    onAdd() {
+      const bar = L.DomUtil.create('div', 'leaflet-bar leaflet-control-north');
+      const a = L.DomUtil.create('a', '', bar);
+      a.href = '#';
+      a.setAttribute('role', 'button');
+      a.title = 'Girar de volta: norte pra cima';
+      a.setAttribute('aria-label', a.title);
+      // Agulha: metade norte vermelha, sul cinza (a do plugin, em SVG inline).
+      a.innerHTML = '<svg class="north-needle" viewBox="0 0 29 29" width="26" height="26" aria-hidden="true">'
+        + '<path d="M10.5 14l4-8 4 8h-8z" fill="#c0392b"/><path d="M10.5 16l4 8 4-8h-8z" fill="#999"/></svg>';
+      this._bar = bar;
+      this._needle = a.firstChild;
+      L.DomEvent.disableClickPropagation(bar);
+      L.DomEvent.on(a, 'click', (e) => { L.DomEvent.preventDefault(e); animateBearingTo(0); });
+      map.on('rotate', this._sync, this);
+      this._sync();
+      return bar;
+    },
+    onRemove() { map.off('rotate', this._sync, this); },
+    _sync() {
+      const b = map.getBearing();
+      // Some quando está (praticamente) no norte — a coluna da esquerda não
+      // ganha um botão inútil no uso normal.
+      this._bar.style.display = Math.abs(wrap180(b)) < 0.5 ? 'none' : '';
+      this._needle.style.transform = `rotate(${b}deg)`;
+    },
+  });
+  new NorthControl().addTo(map);
+}
+
 const locateBtn = document.getElementById('locate-btn');
 locateBtn?.addEventListener('click', () => {
   if (!locateControl) {
@@ -4964,14 +5112,17 @@ pruneLiveOverrides();
 
 function livePeoplePane() {
   if (!map.getPane('livePeople')) {
-    const pane = map.createPane('livePeople');
+    const pane = map.createPane('livePeople', NOROTATE_PANE);
     pane.style.zIndex = '660';   // acima de clipMarkers (650) e fotos (600)
   }
   return 'livePeople';
 }
 function liveTrailsPane() {
   if (!map.getPane('liveTrails')) {
-    const pane = map.createPane('liveTrails');
+    // Linha gira com o mapa → rotatePane; com a rotação ligada, o rastro fica
+    // sob TODOS os marcadores (o norotatePane inteiro vem por cima), não só
+    // sob os dots das pessoas.
+    const pane = map.createPane('liveTrails', ROTATE_PANE);
     pane.style.zIndex = '655';   // linhas de rastro abaixo dos dots (660)
   }
   return 'liveTrails';

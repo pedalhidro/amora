@@ -132,3 +132,15 @@ credentials.
   timestamps — there's no real source for those when drawing from scratch).
   Most platforms (RWGPS, Strava, Komoot) will fill in elevation server-side
   on upload.
+
+## License
+
+amora is free software under the **GNU Affero General Public License v3.0**
+(AGPL-3.0) — see [`LICENSE`](LICENSE). It was GPL-2.0 until September 2026;
+the switch lets it bundle GPL-3.0 code (the leaflet-rotate map-rotation plugin)
+and makes the network clause explicit: if you run a modified amora for other
+people over a network, you must offer them its source.
+
+Bundled third-party code keeps its own license: Leaflet and flatgeobuf
+(BSD-2-Clause), leaflet-rotate (GPL-3.0), N3.js, exifr, qrcode.js and
+leaflet.locatecontrol (MIT), Tom Select (Apache-2.0), mediabunny (MPL-2.0).

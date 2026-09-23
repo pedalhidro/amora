@@ -1552,6 +1552,10 @@ body.trace-preview .tp-label { display: none !important; }
 }
 .geo-search-btn:hover { background: #f4f4f4; }
 .geo-search-btn[aria-pressed='true'] { background: #d8ecff; }
+
+/* Botão do norte (rotação do mapa, app.js setupMapRotation): só aparece com o
+   mapa girado; a agulha acompanha o rumo. */
+.leaflet-control-north a { display: flex; align-items: center; justify-content: center; }
 .geo-search-panel {
   position: absolute;
   z-index: 1100; /* acima dos panes e controles do mapa */

@@ -33,6 +33,8 @@ one optional hosted deploy target, not a dependency.
   `flatgeobuf-geojson.min.js` (FGB reader, flatgeobuf 4.4.0),
   `tom-select.complete.min.js`,
   `tom-select.min.css`, `qrcode.js`, `leaflet/` (js+css+images),
+  `leaflet-rotate/` (map rotation, GPL-3.0, vendored VERBATIM as the readable
+  `-src` build — see "The map rotates" under Conventions),
   `locatecontrol/` — Leaflet & friends were vendored off unpkg/jsdelivr;
   only app.js's lazy loads (exifr/heic2any/jszip/geotiff) still hit
   jsdelivr; `upload_images.html`/`upload_tour.html` load N3 from the
@@ -789,6 +791,36 @@ There is **no `clips.json`** — that intermediary was removed; `build-clips.py`
 writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
 
 ## Conventions — please follow
+
+- **License: AGPL-3.0** (was GPL-2.0 until v411, 09/2026 — switched so the
+  GPL-3.0 `leaflet-rotate` could be bundled; GPL-3.0 and AGPL-3.0 combine via
+  §13 of each). Every vendored dep must stay AGPL-compatible (today: BSD,
+  MIT, Apache-2.0, MPL-2.0, GPL-3.0 — see README's License section; note
+  Apache-2.0 is NOT GPL-2.0-compatible, so don't "go back"). The Ajuda modal
+  links the source (AGPL §13) — keep that link.
+- **The map rotates** (`leaflet-rotate` 0.2.8, `web/lib/leaflet-rotate/`,
+  loaded before app.js; map created with `rotate: true`). Rules:
+  - **Panes:** the plugin splits `mapPane` into `rotatePane` (tiles/vectors)
+    and `norotatePane` (markers/tooltips/popups), but a pane created WITHOUT
+    a container lands in `mapPane` and does NOT rotate. So layer panes are
+    `map.createPane(name, ROTATE_PANE)` and marker panes
+    `map.createPane(name, NOROTATE_PANE)` (constants next to the `phlyr-*`
+    loop). A marker pane left in `mapPane` also stacks ABOVE popups (the whole
+    `norotatePane` sits at z 400).
+  - **Custom canvases** live in the layer frame: under rotation the screen is
+    a rhombus there, so `PackedLinesLayer` sizes its canvas to the box of the
+    four `containerPointToLayerPoint` corners and redraws on `rotate`.
+  - The plugin fires only `rotate` (every step). `setupMapRotation` adds a
+    debounced **`rotateend`** (photo relaxation listens); the FGB driver
+    refreshes on `moveend rotate` (rotating exposes new corners —
+    `getBounds()` covers all four).
+  - The plugin's own `rotateControl` and `shiftKeyRotate` are OFF on purpose:
+    amora has its own north button (hidden at bearing 0, click animates back),
+    its own Shift+wheel (the plugin reads only `deltaY`, which macOS zeroes
+    with Shift), and a **15° pinch dead zone** (`ROTATE_DEADZONE_DEG`, via a
+    per-instance `map.setBearing` wrapper active only during two-finger
+    touches) — without it every pinch-zoom tilted the map. Bearing is not
+    persisted. Don't edit the vendored file; adjust in `setupMapRotation`.
 
 - **`index.html` carrega `<base href="/">`.** Abrir um passeio reescreve a
   barra pra `/passeio/<slug>` (`_setTourUrl`, replaceState) e, sem o base,
