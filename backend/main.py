@@ -2012,6 +2012,18 @@ Reusa PROV-O, schema.org, Dublin Core, NFO, EXIF, GeoSPARQL.</footer>
 </div></body></html>"""
 
 
+@app.get("/levabici/<path:rest>")
+def levabici_iri(rest):
+    """IRIs do levabici (https://id.pedalhidrografi.co/levabici/…) moram em
+    OUTRO serviço: a CF manda todo id.pedalhidrografi.co/<path> pra cá, então
+    este prefixo segue adiante num 2º 303 path-preserving — o levabici faz a
+    content negotiation (/empresa/<slug>, /avaliacao/<slug>, /terms)."""
+    target = f"https://levabici.pedalhidrografi.co/{rest}"
+    if request.query_string:
+        target += "?" + request.query_string.decode("latin-1")
+    return redirect(target, code=303)
+
+
 @app.get("/terms")
 def terms_vocab():
     """Dereferência do vocabulário ph:. O namespace é
