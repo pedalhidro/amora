@@ -466,8 +466,11 @@ Key flows:
   - **The SW keeps a block cache of FGB range requests** (`FGB_CACHE =
     'phidro-fgb-blocks-v1'` in `web/sw.js`). Nothing else stores them: the
     Cache API refuses 206, Cloudflare BYPASSes (file too big for its cache —
-    also true on the R2 host; the first request on a cold key can come back as
-    a full 200),
+    also true on the R2 host). **Files > 500 MB are published with
+    `Cache-Control: private`** (CI, both GCS and R2): with `public`, Cloudflare
+    TRIES to cache on every cold key — fetches the WHOLE file from the origin,
+    ignoring Range, and answers 200 with 1.7–4.5 GB (on GCS that was paid egress
+    of the full file, each time). `private` makes it pass the Range → 206 always,
     and Chrome's HTTP cache served ~0 ranges after a browser restart
     (measured). Each `Range` request is split into aligned 64 KB blocks
     stored as plain 200s under `<url>?__fgb=<etag>&b=<n>`; only missing

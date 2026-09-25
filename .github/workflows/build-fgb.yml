@@ -133,12 +133,20 @@ jobs:
       # que o cliente usa pra ler só a bbox. O GeoJSON é baixado inteiro, então
       # nele o -Z vale. (Um `gcloud storage cp` publica o objeto de forma
       # atômica: leitor nenhum vê arquivo pela metade.)
+      # Cache-Control: acima de 500 MB → `private`. A Cloudflare não cacheia
+      # objetos > 512 MB, mas com `public` ela TENTA na 1ª requisição de cada
+      # chave fria: busca o arquivo INTEIRO na origem ignorando o Range e
+      # devolve 200 com o corpo todo (1,7–4,5 GB!) — no telhas/GCS isso era
+      # egress pago do arquivo inteiro a cada vez. Com `private` ela nem tenta:
+      # repassa o Range e sai 206 sempre (medido 25/09/2026). Os menores seguem
+      # `public` (a Cloudflare cacheia — mais rápido).
       - name: Publicar no bucket
         run: |
           set -euo pipefail
-          gcloud storage cp --cache-control="public,max-age=86400" \
-            ignore/south-america-*.fgb \
-            gs://telhas/viario/
+          for f in ignore/south-america-*.fgb; do
+            if [ "$(stat -c %s "$f")" -gt 500000000 ]; then cc="private, max-age=86400"; else cc="public, max-age=86400"; fi
+            gcloud storage cp --cache-control="$cc" "$f" gs://telhas/viario/
+          done
           # O build-viario.py APAGA este arquivo quando sai com zero relations
           # (ou quando o ogr2ogr falha e deixa 0 byte), justamente pra que este
           # `-f` não publique um FeatureCollection vazio por cima da rede boa —
@@ -174,9 +182,10 @@ jobs:
             exit 0
           fi
           for f in ignore/south-america-*.fgb; do
+            if [ "$(stat -c %s "$f")" -gt 500000000 ]; then cc="private, max-age=86400"; else cc="public, max-age=86400"; fi
             aws s3 cp "$f" "s3://fabdem/viario/$(basename "$f")" \
               --endpoint-url "$R2_ENDPOINT" --only-show-errors \
-              --content-type application/octet-stream --cache-control "public, max-age=86400"
+              --content-type application/octet-stream --cache-control "$cc"
             echo "→ R2: $(basename "$f") ($(stat -c %s "$f") B)"
           done
 
