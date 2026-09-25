@@ -43,11 +43,11 @@ Depois de gerar, suba pro mesmo host dos DEMs. ATENÇÃO: **SEM -Z nos .fgb** �
         ignore/south-america-water-rivers.fgb \\
         gs://telhas/viario/
 
-(servidos em https://telhas.pedalhidrografi.co/viario/<nome>.fgb — ver
+(servidos em https://fabdem.pedalhidrografi.co/viario/<nome>.fgb (R2) — ver
 VIARIO_FGB_URL / WATER_*_FGB_URL em web/app.js). Verificação pós-upload:
 
     curl -sI -H 'Range: bytes=0-15' \\
-        https://telhas.pedalhidrografi.co/viario/south-america-viario.fgb
+        https://fabdem.pedalhidrografi.co/viario/south-america-viario.fgb
     # esperar: 206 + Content-Range, sem Content-Encoding
 
 Requisitos: ogr2ogr (GDAL ≥ 3.1, driver FlatGeobuf) e osmium no PATH;

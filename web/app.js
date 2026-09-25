@@ -781,8 +781,14 @@ const OVERLAY_LAYERS = [
 // .github/workflows/build-fgb.yml. COBERTURA: AMÉRICA DO SUL — o mesmo extrato
 // Geofabrik que o resto do pipeline já usa. Fora dela as camadas ficam vazias
 // (com o Overpass funcionavam no mundo inteiro; ver o changelog da Ajuda).
-const HIDRO_FGB_URL      = 'https://telhas.pedalhidrografi.co/viario/south-america-hidro.fgb';
-const CICLOINFRA_FGB_URL = 'https://telhas.pedalhidrografi.co/viario/south-america-cicloinfra.fgb';
+// Os .fgb saem do R2 (bucket `fabdem`, domínio fabdem.pedalhidrografi.co), NÃO
+// do GCS/telhas: o R2 não cobra download, e o navegador lê esses arquivos de
+// GBs por range request direto — pelo telhas (Cloudflare → GCS, arquivos acima
+// do limite de 512 MB do cache) cada byte virava egress pago do GCS. O CI
+// (build-fgb.yml) publica nos dois; o backend segue lendo do GCS (mesma região).
+// (O .geojson e o .bin, pequenos, seguem no telhas — a Cloudflare os cacheia.)
+const HIDRO_FGB_URL      = 'https://fabdem.pedalhidrografi.co/viario/south-america-hidro.fgb';
+const CICLOINFRA_FGB_URL = 'https://fabdem.pedalhidrografi.co/viario/south-america-cicloinfra.fgb';
 const PH_NETWORK_URL     = 'https://telhas.pedalhidrografi.co/viario/ph-cycle-network.geojson';
 
 // O Overpass exigia zoom ≥ 13 porque cada consulta pesava num servidor
@@ -8202,9 +8208,9 @@ function rasterizeRoads(lines, bb, H, W, A) {
 // pré-cozido (VIARIO_GRAPH_URL abaixo); segue sendo a fonte PRIMÁRIA do modo
 // terreno (água + corredores + portais de ponte/túnel). Gerado por
 // scripts/build-viario.py. sql.js/proj4 ficam SÓ pra rede custom em .gpkg.
-const VIARIO_FGB_URL       = 'https://telhas.pedalhidrografi.co/viario/south-america-viario.fgb';
-const WATER_AREAS_FGB_URL  = 'https://telhas.pedalhidrografi.co/viario/south-america-water-areas.fgb';
-const WATER_RIVERS_FGB_URL = 'https://telhas.pedalhidrografi.co/viario/south-america-water-rivers.fgb';
+const VIARIO_FGB_URL       = 'https://fabdem.pedalhidrografi.co/viario/south-america-viario.fgb';
+const WATER_AREAS_FGB_URL  = 'https://fabdem.pedalhidrografi.co/viario/south-america-water-areas.fgb';
+const WATER_RIVERS_FGB_URL = 'https://fabdem.pedalhidrografi.co/viario/south-america-water-rivers.fgb';
 const SQLJS_BASE = 'https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/';
 const PROJ4_URL  = 'https://cdn.jsdelivr.net/npm/proj4@2.9.0/dist/proj4.js';
 

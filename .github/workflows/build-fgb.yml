@@ -151,6 +151,35 @@ jobs:
             echo "ph-cycle-network.geojson ausente/vazio — mantendo o publicado."
           fi
 
+      # Espelho no R2 (bucket `fabdem`, servido em fabdem.pedalhidrografi.co): é
+      # DE LÁ que o navegador lê os .fgb — o R2 não cobra download; pelo GCS
+      # (telhas, arquivos acima do limite de 512 MB do cache da Cloudflare) cada
+      # byte lido era egress pago. O GCS segue sendo publicado (backend lê de lá,
+      # mesma região). Segredos R2_* no repo; sem eles, pula com aviso e o R2
+      # fica com a versão anterior (nada quebra, só desatualiza).
+      # checksum "when_required": o AWS CLI ≥ 2.23 manda checksums novos por
+      # padrão, que S3-compatíveis podem recusar.
+      - name: Espelhar os .fgb no R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          AWS_DEFAULT_REGION: auto
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+        run: |
+          set -euo pipefail
+          if [ -z "${R2_ENDPOINT:-}" ] || [ -z "${AWS_ACCESS_KEY_ID:-}" ]; then
+            echo "::warning::Segredos R2_* ausentes — o R2 (onde o navegador lê) fica com a versão anterior"
+            exit 0
+          fi
+          for f in ignore/south-america-*.fgb; do
+            aws s3 cp "$f" "s3://fabdem/viario/$(basename "$f")" \
+              --endpoint-url "$R2_ENDPOINT" --only-show-errors \
+              --content-type application/octet-stream --cache-control "public, max-age=86400"
+            echo "→ R2: $(basename "$f") ($(stat -c %s "$f") B)"
+          done
+
       # Guarda contra a regressão mais fácil de cometer aqui: se algum objeto
       # sair com Content-Encoding, os range requests param de funcionar e as
       # camadas quebram silenciosamente no cliente.
@@ -160,7 +189,7 @@ jobs:
           fail=0
           for f in south-america-hidro south-america-cicloinfra \
                    south-america-water-areas south-america-water-rivers; do
-            url="https://telhas.pedalhidrografi.co/viario/$f.fgb"
+            url="https://fabdem.pedalhidrografi.co/viario/$f.fgb"   # R2: de onde o navegador lê
             hdr=$(curl -sI -H 'Range: bytes=0-15' "$url")
             echo "→ $f: $(printf '%s' "$hdr" | head -1 | tr -d '\r')"
             # O QUE REALMENTE IMPORTA é não haver Content-Encoding: é ele que

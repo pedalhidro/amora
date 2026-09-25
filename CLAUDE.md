@@ -152,7 +152,16 @@ one optional hosted deploy target, not a dependency.
   for "Cicloinfra OSM" — plus the tiny `ph-cycle-network.geojson`
   (`cycle_network=BR:PedalHidrografico` relations, fetched whole);
   **`--no-viario`** skips the expensive 4.5 GB viário build and is what the
-  weekly CI job runs. Two gotchas baked into the script: GDAL **sanitizes
+  weekly CI job runs. **The browser reads the `.fgb` from R2**, not GCS:
+  `https://fabdem.pedalhidrografi.co/viario/<name>.fgb` (the cameratopo
+  FABDEM R2 bucket `fabdem`; CORS open for GET/HEAD, Range works). R2 has no
+  download fees — via `telhas.pedalhidrografi.co` (Cloudflare → GCS, files over
+  its 512 MB cache limit) every byte the reader range-requested was paid GCS
+  egress (22 Sep 2026: ~10 GiB in 40 min testing the viário layer). CI publishes
+  to BOTH (`build-fgb.yml`: GCS, then an R2 mirror via the `R2_*` repo secrets
+  — missing secrets = warning, R2 goes stale); the backend (`_OG_HIDRO_FGB`)
+  keeps reading GCS (same region, free). The small `ph-cycle-network.geojson`
+  and `sampa-viario-graph.bin` stay on telhas (Cloudflare caches them). Two gotchas baked into the script: GDAL **sanitizes
   `cycleway:left` → `cycleway_left`** (that's the name in `-select`, in
   `-where`, and in `props.*` on the client), and `osmium tags-filter` is a
   UNION with no value regex — so cicloinfra pre-filters a cheap superset and
@@ -409,7 +418,7 @@ Key flows:
 - **OSM layers come from FlatGeobuf — there is NO Overpass.** "Morros e
   Águas" and "Cicloinfra OSM" used to live-query the Overpass API on every
   pan/zoom. They now range-request `south-america-hidro.fgb` /
-  `south-america-cicloinfra.fgb` from the same host as the viário, through
+  `south-america-cicloinfra.fgb` from the same host as the viário (R2), through
   one shared driver (`makeOsmFgbLayer` in `web/app.js`) whose only per-layer
   parts are `styleFor(props, detail)` / `tipFor(props)`. Notes:
   - **The layer id stays `osm-overpass`** even though Overpass is gone — it
@@ -456,7 +465,9 @@ Key flows:
     `workflow_dispatch` has a `viario` input for those.
   - **The SW keeps a block cache of FGB range requests** (`FGB_CACHE =
     'phidro-fgb-blocks-v1'` in `web/sw.js`). Nothing else stores them: the
-    Cache API refuses 206, Cloudflare BYPASSes (file too big for its cache),
+    Cache API refuses 206, Cloudflare BYPASSes (file too big for its cache —
+    also true on the R2 host; the first request on a cold key can come back as
+    a full 200),
     and Chrome's HTTP cache served ~0 ranges after a browser restart
     (measured). Each `Range` request is split into aligned 64 KB blocks
     stored as plain 200s under `<url>?__fgb=<etag>&b=<n>`; only missing
