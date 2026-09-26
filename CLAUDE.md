@@ -58,7 +58,7 @@ one optional hosted deploy target, not a dependency.
   passeios no lote → "N passeios" + intervalo; o lote é lido/deduplicado
   INTEIRO antes de mintar o álbum e começar os envios, porque o nome vai baked
   no IRI de cada TTL) que toda mídia integra via `schema:isPartOf`; depois do
-  lote a página mostra o link `/listas/<slug>` e uma **colagem 9:16 ≤ 500 kB**
+  lote a página mostra o link `/imagens/lista/<slug>` e uma **colagem 9:16 ≤ 500 kB**
   (canvas 1080×1920 + `compressToTarget`, conteúdo dentro da área segura do
   story do Instagram: y ∈ [270, 1570]; legenda por célula quando há mais de um
   passeio; 🎲 sorteio de 6) com share sheet (`navigator.share` com arquivo —
@@ -293,7 +293,7 @@ senão a página/documento humano. Esquema (prefixos usados nos TTLs e no códig
 | Edição de série | (IRI full) | `…/passeio/<ES>/<seq>` (ex.: `…/passeio/BP/4`) | `GET /passeio/<es>/<seq>` (turtle \| 303 pro passeio) |
 | Série | `ser:` | `…/serie/<ES>` (PH/BT/BP/S/SESC) | `GET /serie/<es>` (turtle=série+edições \| HTML gerada, edições mais recentes primeiro, linkando pro passeio) |
 | Mídia | `med:` | `…/midia/<hash16>` (opaco — foto OU vídeo) | `GET /midia/<hash>` (turtle \| 303 `/imagens.html?pick=`) |
-| Lista/álbum | `lst:` | `…/listas/<slug>` | `GET /listas/<slug>` (turtle \| 303 `/imagens.html`) |
+| Lista/álbum | `lst:` | `…/listas/<slug>` | `GET /listas/<slug>` (turtle \| 303 `/imagens/lista/<slug>`, o álbum na galeria) |
 | Envio (ph:Upload) | `env:` | `…/envio/<ts>` | (sem resolver; provenance interna) |
 
 Invariantes: o hash é a IDENTIDADE da mídia e o localname do IRI é ele SOZINHO
@@ -880,6 +880,23 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
   e gravam blobs FORA do `_state_lock`; só o RMW do catálogo, com
   re-checagem TOCTOU da colisão cross-type, roda sob o lock. Não reintroduzir
   `@serialized` num handler que lê `request.files`.
+- **Álbum = `/imagens/lista/<slug>[/<n>]`.** O backend (`album_page`) serve o
+  `imagens.html` estático nesse path (turtle/markdown → `list_page`);
+  `/listas/<slug>` faz 303 pra cá e `?list=<slug>` é reescrito no cliente. Por
+  isso o `imagens.html` traz `<base href="/">` — e `new URL(rel,
+  location.href)` NÃO respeita o base: use `document.baseURI`. Com a faceta
+  Listas numa lista só (standalone), a barra mostra o álbum; com uma foto
+  aberta, `/<n>` = posição dela na ordem CANÔNICA do álbum (`albumSequence`:
+  a visão padrão, agrupada por passeio — independe do agrupamento de quem
+  compartilha; o `ORDER BY DESC(?d) ?m` de `media-query.js` desempata datas
+  iguais, não tirar o `?m`). Abrir a foto faz `pushState` (voltar = fechar);
+  deslizar/setas fazem `replaceState`; embutida no iframe do app não mexe em
+  URL/histórico. O `n` desloca se o álbum ganhar/perder mídia antes dela — o
+  link durável de UMA mídia segue sendo `/midia/<hash>`. O SW serve essas
+  navegações do cache do `imagens.html`. Anterior/próxima (deslizar, ‹ ›, ←/→)
+  seguem a ordem da grade NA TELA. No toque a grade abre a foto no
+  `pointerup` e o click que vem depois cairia no lightbox (fechava a foto,
+  ou clicava num link do painel): `_lbOpenedAt` engole esse click fantasma.
 - **Tiles da galeria (`imagens.html`) usam o `thumb.jpg`**; o `large.jpg`
   (2400 px) só com tile grande e, em aparelho de toque, poucos na tela
   (`wantLargeTiles`).

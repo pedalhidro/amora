@@ -305,8 +305,11 @@
       W.push('BIND("" AS ?group)');
     }
 
+    // Desempate por ?m: mídias com a MESMA data (ex.: o acervo do zap, datado
+    // pelo horário do passeio) saem sempre na mesma ordem — é o que numera
+    // /imagens/lista/<slug>/<n> (albumSequence em imagens.html).
     return P.join('\n') + '\n\nSELECT DISTINCT ?m ?group WHERE {\n  ' +
-      W.join('\n  ') + '\n}\nORDER BY DESC(?d)';
+      W.join('\n  ') + '\n}\nORDER BY DESC(?d) ?m';
   }
 
   // Consulta simples de pertencimento (default do mapa): membros de uma lista.

@@ -81,7 +81,7 @@
         "summary": "Uma lista/álbum (schema:Collection)",
         "description": "Markdown: nome + membros (cada mídia com link e passeio). Turtle: a Collection + `schema:hasPart` calculado. HTML: 303 pra galeria filtrada pela lista.",
         "parameters": [{"$ref": "#/components/parameters/slug"}, {"$ref": "#/components/parameters/format"}],
-        "responses": {"200": {"$ref": "#/components/responses/MarkdownOrTurtle"}, "303": {"description": "HTML → /imagens.html?list=<slug>."}, "404": {"description": "Lista desconhecida."}}
+        "responses": {"200": {"$ref": "#/components/responses/MarkdownOrTurtle"}, "303": {"description": "HTML → /imagens/lista/<slug> (o álbum na galeria)."}, "404": {"description": "Lista desconhecida."}}
       }
     },
     "/terms": {

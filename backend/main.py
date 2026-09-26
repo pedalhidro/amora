@@ -2060,8 +2060,8 @@ def list_page(slug):
     https://id.pedalhidrografi.co/listas/<slug> (CF 303 pra cá). Conneg:
     Accept: text/turtle (ou ?format=ttl) → a Collection (de lists.ttl) + seus
     membros como schema:hasPart (calculados de images.ttl via schema:isPartOf
-    inverso); senão 303 pra galeria JÁ FILTRADA por esta lista
-    (imagens.html?list=<slug> — a galeria pré-seleciona a faceta Listas)."""
+    inverso); senão 303 pro álbum na galeria (/imagens/lista/<slug> — ver
+    album_page; a galeria pré-seleciona a faceta Listas)."""
     list_iri = LST_NS + slug
     fmt = _negotiated_format(request)
     if fmt == "md":   # Accept: text/markdown → a lista + membros (ver _render_list_markdown)
@@ -2071,7 +2071,7 @@ def list_page(slug):
         return _markdown_response(md)
     if fmt != "ttl":
         from urllib.parse import quote
-        return redirect(f"/imagens.html?list={quote(slug, safe='')}", code=303)
+        return redirect(f"/imagens/lista/{quote(slug, safe='')}", code=303)
     from rdflib import URIRef, Literal
     Graph = _load_validator()["Graph"]
     ISPARTOF = URIRef(SCHEMA_NS + "isPartOf")
@@ -2358,6 +2358,21 @@ def edition_page(es, seq):
     return _negotiated(Response(out.serialize(format="turtle"),
                                 mimetype="text/turtle",
                                 headers={"Cache-Control": "no-cache"}))
+
+
+@app.get("/imagens/lista/<slug>")
+@app.get("/imagens/lista/<slug>/<int:n>")
+def album_page(slug, n=None):
+    """Álbum (lista) na galeria — a URL legível que circula: /imagens/lista/
+    <slug> abre a galeria já filtrada pela lista; /imagens/lista/<slug>/<n>
+    abre direto a n-ésima mídia (1-based, na ordem da visão padrão do álbum —
+    albumSequence em imagens.html) no lightbox. O conteúdo é o imagens.html
+    estático (traz <base href="/">, então as URLs relativas resolvem na raiz);
+    quem lê o path é o cliente. Agente (turtle/markdown) → a mesma resposta
+    da lista (list_page)."""
+    if _negotiated_format(request) != "html":
+        return list_page(slug)
+    return send_from_directory(WEB, "imagens.html")
 
 
 @app.get("/midia/<local>")
@@ -4079,7 +4094,7 @@ def _render_list_markdown(slug):
             f"- **IRI:** `{LST_NS}{slug}`",
             f"- **RDF (Turtle):** [{SITE_URL}listas/{slug}?format=ttl]"
             f"({SITE_URL}listas/{slug}?format=ttl) — ou `Accept: text/turtle` na mesma URL",
-            f"- [Galeria filtrada por esta lista]({SITE_URL}imagens.html?list={slug})", ""]
+            f"- [Álbum na galeria]({SITE_URL}imagens/lista/{slug})", ""]
     return "\n".join(out)
 
 

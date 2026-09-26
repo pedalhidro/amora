@@ -174,7 +174,7 @@ paciência) ou por um computador.</p>
 //           junto do seletor).
 // Dedup por pHash/vHash (Hamming ≤ 5) contra o lote, a sessão E o servidor.
 // Cada sessão mint um ÁLBUM (lst:, schema:Collection) que toda mídia enviada
-// integra; depois do lote a página oferece o link do álbum (/listas/<slug>)
+// integra; depois do lote a página oferece o link do álbum (/imagens/lista/<slug>)
 // e uma COLAGEM 9:16 ≤ 500 kB pra story/WhatsApp (share sheet, download).
 // O pipeline (pHash, variantes, transcodificação…) vem de lib/media-pipeline.js,
 // cópia verbatim do formulário completo.
@@ -492,7 +492,7 @@ function ensureAlbum(items) {
   const who = $('#author').value.trim();
   const name = [title, who, dateText].filter(Boolean).join(' · ');
   const slug = slugifyList(name);
-  album = { slug, iri: LST_NS + slug, name, url: `${SHARE_ORIGIN}/listas/${encodeURIComponent(slug)}` };
+  album = { slug, iri: LST_NS + slug, name, url: `${SHARE_ORIGIN}/imagens/lista/${encodeURIComponent(slug)}` };
   return album;
 }
 function albumTtl(a) {
