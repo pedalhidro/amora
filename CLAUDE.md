@@ -45,7 +45,10 @@ one optional hosted deploy target, not a dependency.
   `backfill_tours.html` (mass-backfill applet for missing tour fields),
   `subir.html` (**envio simplificado**, servido em `/subir` e no modal do
   botão **📤 enviar imgs** da barra — só autora opcional + imagens (fotos,
-  vídeos, artes), que sobem ao serem escolhidas; tudo o mais é o default do
+  vídeos, artes — **no iOS/iPadOS só fotos**, stopgap: o seletor de fotos do
+  WebKit transcodifica cada vídeo escolhido antes de soltar os arquivos, sem
+  progresso e com o seletor aberto, e parece travado), que sobem ao serem
+  escolhidas; tudo o mais é o default do
   `upload_images.html`: mesmos `POST /upload-image` / `/upload-video` (vídeo
   inteiro, sem recorte nem pré-envio), mesma dedup por pHash/vHash; cada
   imagem enviada ganha ✎ editar (abre `upload_images.html?edit=`) / 🗑
@@ -877,6 +880,16 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
   e gravam blobs FORA do `_state_lock`; só o RMW do catálogo, com
   re-checagem TOCTOU da colisão cross-type, roda sob o lock. Não reintroduzir
   `@serialized` num handler que lê `request.files`.
+- **Tiles da galeria (`imagens.html`) usam o `thumb.jpg`**; o `large.jpg`
+  (2400 px) só com tile grande e, em aparelho de toque, poucos na tela
+  (`wantLargeTiles`).
+  Não voltar ao `srcset "… large.jpg 2x"`: DPR 2–3 (todo celular) escolhia o
+  large em TODO tile, e o WebKit decodifica em tamanho cheio o que está
+  visível (sem subamostrar abaixo de 5 MP, ~17 MB cada) — o álbum de 64 fotos
+  do PH 113 passava de 1 GB e o Safari do iPhone matava a aba ("A problem
+  repeatedly occurred"). Pelo mesmo motivo a View Transition da galeria só
+  roda com ela ≤ ~2 telas de altura: o snapshot do WebKit é do elemento
+  inteiro, não da parte visível.
 - **Os forms avisam o app-pai por `postMessage`** — `phidro-media-changed`
   (upload_images.html: envio, edição) e `phidro-tour-changed`
   (upload_tour.html: save, delete). O app marca o modal como "sujo" e só
