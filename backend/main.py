@@ -2367,12 +2367,296 @@ def album_page(slug, n=None):
     <slug> abre a galeria já filtrada pela lista; /imagens/lista/<slug>/<n>
     abre direto a n-ésima mídia (1-based, na ordem da visão padrão do álbum —
     albumSequence em imagens.html) no lightbox. O conteúdo é o imagens.html
-    estático (traz <base href="/">, então as URLs relativas resolvem na raiz);
-    quem lê o path é o cliente. Agente (turtle/markdown) → a mesma resposta
-    da lista (list_page)."""
+    (traz <base href="/">, então as URLs relativas resolvem na raiz) com as
+    tags de preview de link (og:*) do álbum ou da n-ésima mídia injetadas —
+    quem lê o path é o cliente. Álbum desconhecido/falha → o estático puro.
+    Agente (turtle/markdown) → a mesma resposta da lista (list_page)."""
     if _negotiated_format(request) != "html":
         return list_page(slug)
-    return send_from_directory(WEB, "imagens.html")
+    try:
+        meta = _album_share_meta(slug, n)
+    except Exception as e:  # noqa: BLE001 — o preview é best-effort
+        print(f"[album-og] meta falhou pra {slug}/{n}: {e}")
+        meta = None
+    if meta is None:
+        return send_from_directory(WEB, "imagens.html")
+    return _negotiated(Response(_album_page_html(meta), mimetype="text/html",
+                                headers={"Cache-Control": "no-cache"}))
+
+
+# ── Álbum: ordem canônica + preview de link (WhatsApp/Telegram/redes) ────
+# O /<n> de /imagens/lista/<slug>/<n> numera as mídias na ordem da VISÃO
+# PADRÃO do álbum na galeria (albumSequence em imagens.html). Os crawlers de
+# preview não rodam JS, então o servidor precisa chegar na MESMA ordem pra o
+# link da foto 5 mostrar a foto 5 — ela é espelhada aqui. Mudou a ordem da
+# galeria (canonicalRowOrder / groupRows / groupOrderStr em imagens.html; o
+# agrupamento de buildQueryFromFacets em lib/media-query.js)? Mude
+# _album_sequence junto.
+_MEDIA_OG_W, _MEDIA_OG_H = 1200, 630
+_MEDIA_OG_CACHE_MAX = 64
+_media_og_cache = {}   # spec → JPEG (LRU simples por ordem de inserção)
+_media_og_lock = threading.Lock()   # guarda o dict (crawlers pedem em paralelo)
+
+
+def _album_sequence(cat, list_iri):
+    """IRIs (str) das mídias do álbum na ordem canônica — espelho do
+    albumSequence de imagens.html: membros da lista (fotos/vídeos) em
+    canonicalRowOrder (data desc pelo instante, sem data no fim, desempate
+    pelo IRI), agrupados por passeio, grupos pela data do passeio desc (sem
+    passeio/data no fim; empate mantém a ordem de 1ª aparição — o sort do JS
+    é estável), achatado."""
+    import functools
+    from datetime import date
+    from rdflib import Namespace, RDF, URIRef
+    SCHEMA = Namespace(SCHEMA_NS)
+    PH = Namespace(PH_NS)
+    DCT = Namespace("http://purl.org/dc/terms/")
+    lu = URIRef(list_iri)
+    media = [m for m in set(cat.subjects(SCHEMA.isPartOf, lu))
+             if (m, RDF.type, PH.StillImage) in cat
+             or (m, RDF.type, PH.MotionImage) in cat]
+
+    def instant(m):   # pelo instante; sem fuso = UTC (como canonicalRowOrder)
+        d = cat.value(m, DCT.date)
+        v = d.toPython() if d is not None else None
+        if isinstance(v, datetime):
+            return (v if v.tzinfo else v.replace(tzinfo=timezone.utc)).timestamp()
+        if isinstance(v, date):
+            return datetime(v.year, v.month, v.day, tzinfo=timezone.utc).timestamp()
+        return None
+
+    rows = sorted(((instant(m), str(m), m) for m in media),
+                  key=lambda r: (r[0] is None, -(r[0] or 0.0), r[1]))
+    groups = {}   # chave → [iri], na ordem de 1ª aparição
+    for _, iri, m in rows:
+        t = cat.value(m, PH.capturedDuring)
+        groups.setdefault(str(t) if t is not None else "sem-passeio", []).append(iri)
+
+    def order_str(k):   # groupOrderStr
+        if k.startswith(PAS_NS):
+            t = URIRef(k)
+            if (t, RDF.type, PH.Tour) not in cat:
+                return ""
+            return str(cat.value(t, DCT.date) or "")[:10]
+        return "" if k in ("sem-passeio", "sem-data", "") else k
+
+    def cmp(a, b):   # o comparador do renderGroups
+        av, bv = order_str(a), order_str(b)
+        if not av and not bv:
+            return 0
+        if not av:
+            return 1
+        if not bv:
+            return -1
+        return (bv > av) - (bv < av)
+
+    seen, seq = set(), []
+    for k in sorted(groups, key=functools.cmp_to_key(cmp)):
+        for iri in groups[k]:
+            if iri not in seen:
+                seen.add(iri)
+                seq.append(iri)
+    return seq
+
+
+def _media_og_has_source(cat, m):
+    """A mídia tem imagem pra virar card? Foto sempre; vídeo, se tem
+    miniatura. Só IRIs med:<hash> (o card é endereçado pelo hash)."""
+    from rdflib import Namespace, RDF
+    PH = Namespace(PH_NS)
+    if not str(m).startswith(MED_NS):
+        return False
+    if (m, RDF.type, PH.StillImage) in cat:
+        return True
+    return (m, RDF.type, PH.MotionImage) in cat and \
+        cat.value(m, Namespace(SCHEMA_NS).thumbnail) is not None
+
+
+def _album_share_meta(slug, n=None):
+    """Título/descrição/imagem/URL do preview de link do álbum (n=None, ou n
+    fora do álbum) ou da n-ésima mídia dele. None se a lista não existe."""
+    from urllib.parse import quote
+    from rdflib import Namespace, RDF, URIRef
+    SCHEMA = Namespace(SCHEMA_NS)
+    PH = Namespace(PH_NS)
+    DCT = Namespace("http://purl.org/dc/terms/")
+    cat = _load_catalog()
+    lu = URIRef(LST_NS + slug)
+    if (lu, RDF.type, SCHEMA.Collection) not in cat:
+        return None
+    name = str(cat.value(lu, SCHEMA.name) or slug)
+    seq = _album_sequence(cat, str(lu))
+    album_url = f"{SITE_URL}imagens/lista/{quote(slug, safe='')}"
+    hash_of = lambda iri: iri[len(MED_NS):]  # noqa: E731
+    if n and 1 <= n <= len(seq):
+        m = URIRef(seq[n - 1])
+        video = (m, RDF.type, PH.MotionImage) in cat
+        bits = []
+        authors = sorted(_person_name(cat, p) for p in cat.objects(
+            m, URIRef("http://www.w3.org/ns/prov#wasAttributedTo")))
+        bits.append(("Vídeo" if video else "Foto") + (f" de {', '.join(authors)}" if authors else ""))
+        tour = cat.value(m, PH.capturedDuring)
+        if tour is not None and (tour, RDF.type, PH.Tour) in cat:
+            bits.append(_tour_display_title(cat, tour))
+        d = cat.value(m, DCT.date)
+        v = d.toPython() if d is not None else None
+        if isinstance(v, datetime):
+            bits.append(v.strftime("%d/%m/%Y"))
+        return {
+            "title": f"{name} · {n}/{len(seq)}",
+            "description": " · ".join(bits) + " — álbum no acervo do Pedal Hidrográfico",
+            "url": f"{album_url}/{n}",
+            "image": (f"{SITE_URL}imagens/og/{hash_of(seq[n - 1])}.jpg"
+                      if _media_og_has_source(cat, m) else None),
+            "alt": f"{'Vídeo' if video else 'Foto'} {n} de {len(seq)} do álbum {name}",
+        }
+    videos = sum(1 for iri in seq if (URIRef(iri), RDF.type, PH.MotionImage) in cat)
+    photos = len(seq) - videos
+    counts = [f"{c} {w}{'s' if c != 1 else ''}"
+              for c, w in ((photos, "foto"), (videos, "vídeo")) if c]
+    cover = [hash_of(iri) for iri in seq if _media_og_has_source(cat, URIRef(iri))][:3]
+    return {
+        "title": name,
+        "description": (f"Álbum com {' e '.join(counts)}" if counts else "Álbum")
+                       + " no acervo do Pedal Hidrográfico",
+        "url": album_url,
+        "image": f"{SITE_URL}imagens/og/{'-'.join(cover)}.jpg" if cover else None,
+        "alt": f"Fotos do álbum {name}",
+    }
+
+
+def _album_page_html(meta):
+    """imagens.html com as tags de preview (og:/twitter:) logo depois do
+    <title>. O <title> fica como está: o cliente usa o título estático como
+    base do título da aba (PAGE_TITLE em imagens.html)."""
+    import html as _html
+    esc = _html.escape
+    tags = [
+        '<meta property="og:type" content="website">',
+        '<meta property="og:site_name" content="amora · Pedal Hidrográfico">',
+        f'<meta property="og:title" content="{esc(meta["title"])}">',
+        f'<meta property="og:description" content="{esc(meta["description"])}">',
+        f'<meta property="og:url" content="{esc(meta["url"])}">',
+        f'<meta name="description" content="{esc(meta["description"])}">',
+    ]
+    if meta.get("image"):
+        tags += [
+            f'<meta property="og:image" content="{esc(meta["image"])}">',
+            '<meta property="og:image:type" content="image/jpeg">',
+            f'<meta property="og:image:width" content="{_MEDIA_OG_W}">',
+            f'<meta property="og:image:height" content="{_MEDIA_OG_H}">',
+            f'<meta property="og:image:alt" content="{esc(meta["alt"])}">',
+            '<meta name="twitter:card" content="summary_large_image">',
+        ]
+    html_text = (WEB / "imagens.html").read_text(encoding="utf-8")
+    return html_text.replace("</title>", "</title>\n" + "\n".join(tags), 1)
+
+
+def _media_og_source(cat, h):
+    """(bytes da melhor imagem da mídia `h`, é_vídeo) — foto: large → thumb;
+    vídeo: a miniatura. (None, False) se não há."""
+    from rdflib import Namespace, RDF, URIRef
+    PH = Namespace(PH_NS)
+    m = URIRef(MED_NS + h)
+    if (m, RDF.type, PH.StillImage) in cat:
+        keys, video = [f"photos/{h}/large.jpg", f"photos/{h}/thumb.jpg"], False
+    elif (m, RDF.type, PH.MotionImage) in cat:
+        thumb = str(cat.value(m, Namespace(SCHEMA_NS).thumbnail) or "")
+        if not thumb or ".." in thumb or thumb.startswith("/"):
+            return None, False
+        keys, video = [f"clips/{thumb}"], True
+    else:
+        return None, False
+    for k in keys:
+        try:
+            data = STORE.read_bytes(k)
+        except Exception:  # noqa: BLE001
+            data = None
+        if data:
+            return data, video
+    return None, False
+
+
+def _render_media_og(parts):
+    """Card 1200×630 (JPEG) do preview. Uma mídia: a foto inteira (contain)
+    sobre ela mesma desfocada e escurecida — retrato não perde nada pro corte
+    1,91:1. Duas ou três (capa do álbum): faixas lado a lado, cortadas no
+    centro. Vídeo ganha o ▶ no meio. Sem exif_transpose de propósito: o
+    large.jpg já vem com os pixels na orientação visual (ver
+    `.lb-media img { image-orientation: none }` em imagens.html)."""
+    import io
+    from PIL import Image, ImageDraw, ImageFilter, ImageOps
+    W, H = _MEDIA_OG_W, _MEDIA_OG_H
+
+    def load(data):
+        im = Image.open(io.BytesIO(data))
+        im.draft("RGB", (W, W))   # JPEG: decodifica já reduzido (DCT scaling)
+        return im.convert("RGB")
+
+    def play_badge(canvas, cx, cy, r=54):
+        ov = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+        d = ImageDraw.Draw(ov)
+        d.ellipse((cx - r, cy - r, cx + r, cy + r), fill=(0, 0, 0, 150))
+        t = r * 0.42
+        d.polygon([(cx - t * 0.8, cy - t), (cx - t * 0.8, cy + t), (cx + t * 1.1, cy)],
+                  fill=(255, 255, 255, 235))
+        canvas.paste(ov, (0, 0), ov)
+
+    imgs = [(load(data), video) for data, video in parts]
+    if len(imgs) == 1:
+        src, video = imgs[0]
+        bg = ImageOps.fit(src, (W // 8, H // 8), Image.BILINEAR)
+        bg = bg.filter(ImageFilter.GaussianBlur(3)).resize((W, H), Image.BILINEAR)
+        canvas = Image.blend(bg, Image.new("RGB", (W, H), (0, 0, 0)), 0.45)
+        fg = ImageOps.contain(src, (W, H), Image.LANCZOS)
+        canvas.paste(fg, ((W - fg.width) // 2, (H - fg.height) // 2))
+        if video:
+            play_badge(canvas, W // 2, H // 2)
+    else:
+        gap, k = 6, len(imgs)
+        canvas = Image.new("RGB", (W, H), (16, 24, 32))
+        x = 0
+        for i, (src, video) in enumerate(imgs):
+            cw = (W - gap * (k - 1)) // k if i < k - 1 else W - x
+            cell = ImageOps.fit(src, (cw, H), Image.LANCZOS, centering=(0.5, 0.45))
+            canvas.paste(cell, (x, 0))
+            if video:
+                play_badge(canvas, x + cw // 2, H // 2, r=44)
+            x += cw + gap
+    buf = io.BytesIO()
+    canvas.save(buf, "JPEG", quality=82, optimize=True, progressive=True)
+    return buf.getvalue()
+
+
+@app.get("/imagens/og/<spec>.jpg")
+def album_og_jpg(spec):
+    """Imagem do preview de link de um álbum/mídia. `spec` = 1 a 3 hashes de
+    mídia separados por "-" (1 = a mídia; 2–3 = capa do álbum) — endereçada
+    pelo CONTEÚDO, então pode ficar no cache da borda. Só aceita mídias do
+    catálogo (não vira renderizador genérico); cache em memória, sem gravar
+    no store (um GET não enche o bucket)."""
+    hashes = spec.split("-")
+    if not 1 <= len(hashes) <= 3 or \
+            not all(re.fullmatch(r"[0-9a-f]{16}", h) for h in hashes):
+        abort(404)
+    with _media_og_lock:
+        jpg = _media_og_cache.get(spec)
+    if jpg is None:
+        cat = _load_catalog()
+        parts = [_media_og_source(cat, h) for h in hashes]
+        if any(data is None for data, _ in parts):
+            abort(404)
+        try:
+            jpg = _render_media_og(parts)
+        except Exception as e:  # noqa: BLE001 — sem Pillow / imagem corrompida
+            print(f"[album-og] render falhou pra {spec}: {e}")
+            abort(404)
+        with _media_og_lock:
+            _media_og_cache[spec] = jpg
+            while len(_media_og_cache) > _MEDIA_OG_CACHE_MAX:
+                _media_og_cache.pop(next(iter(_media_og_cache)))
+    return Response(jpg, mimetype="image/jpeg",
+                    headers={"Cache-Control": "public, max-age=86400"})
 
 
 @app.get("/midia/<local>")

@@ -305,9 +305,12 @@
       W.push('BIND("" AS ?group)');
     }
 
-    // Desempate por ?m: mídias com a MESMA data (ex.: o acervo do zap, datado
-    // pelo horário do passeio) saem sempre na mesma ordem — é o que numera
-    // /imagens/lista/<slug>/<n> (albumSequence em imagens.html).
+    // O ORDER BY documenta a ordem (data desc, desempate pelo IRI), mas a
+    // galeria NÃO confia nele pro desempate: este Comunica não aplica a 2ª
+    // chave de forma confiável (medido — mídias com a mesma data, ou sem
+    // data, saem embaralhadas). A ordem total é imposta no cliente
+    // (canonicalRowOrder em imagens.html) e espelhada no backend
+    // (_album_sequence) — é ela que numera /imagens/lista/<slug>/<n>.
     return P.join('\n') + '\n\nSELECT DISTINCT ?m ?group WHERE {\n  ' +
       W.join('\n  ') + '\n}\nORDER BY DESC(?d) ?m';
   }

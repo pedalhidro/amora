@@ -1067,10 +1067,36 @@ function groupLabel(key) {
 
 let lastRows = null, lastFacets = null;   // cache p/ re-render sem re-consultar
 function rerender() { if (lastRows) withViewTransition(() => renderGroups(lastRows, lastFacets), tileCount(lastRows)); }
+// Ordem TOTAL das linhas de uma consulta de facetas: data desc (pelo
+// instante), sem data no fim, desempate pelo IRI. O ORDER BY da consulta diz o
+// mesmo, mas o Comunica não aplica a 2ª chave de forma confiável (medido:
+// mídias com a mesma data, ou sem data, saíam embaralhadas) — e o /<n> do
+// álbum precisa de uma ordem exata, que o backend reproduz (_album_sequence)
+// pro preview do link. Sort estável: a mesma mídia em dois grupos mantém a
+// ordem relativa. Data sem fuso conta como UTC (como no backend).
+function canonicalRowOrder(rows) {
+  const instant = (iri) => {
+    const s = iri && recordByIri.get(iri) && recordByIri.get(iri).datetime;
+    if (!s) return null;
+    const v = Date.parse(s.length > 10 && !/(?:[zZ]|[+-]\d\d:?\d\d)$/.test(s) ? s + 'Z' : s);
+    return Number.isNaN(v) ? null : v;
+  };
+  return rows.map((row) => {
+    const iri = (row.m && row.m.value) || '';
+    return { row, iri, t: instant(iri) };
+  }).sort((a, b) => {
+    if ((a.t == null) !== (b.t == null)) return a.t == null ? 1 : -1;
+    if (a.t !== b.t) return b.t - a.t;
+    return a.iri < b.iri ? -1 : (a.iri > b.iri ? 1 : 0);
+  }).map((x) => x.row);
+}
 // Linhas da consulta → grupos (dedup por grupo, dia-da-semana no cliente) e
-// chaves na ordem de exibição. `pick` = pickSet do link compartilhado (ou null).
-// Compartilhado pelo render e pela ordem canônica do álbum (albumSequence).
-function groupRows(rows, facets, pick) {
+// chaves na ordem de exibição. `pick` = pickSet do link compartilhado (ou
+// null); `canonical` = impõe canonicalRowOrder (consultas de facetas — uma
+// consulta SPARQL personalizada fica com o ORDER BY dela). Compartilhado pelo
+// render e pela ordem canônica do álbum (albumSequence).
+function groupRows(rows, facets, pick, canonical) {
+  if (canonical) rows = canonicalRowOrder(rows);
   const wds = facets.weekdays || [];
   // Dia-da-semana NÃO existe em SPARQL → filtrado no cliente, aqui.
   const filterWd = wds.length > 0 && wds.length < 7;
@@ -1104,7 +1130,7 @@ function groupRows(rows, facets, pick) {
 function renderGroups(rows, facets) {
   lastRows = rows; lastFacets = facets;
   tileLarge = wantLargeTiles();
-  const { groups, keys } = groupRows(rows, facets, pickSet);
+  const { groups, keys } = groupRows(rows, facets, pickSet, !isCustom);
 
   const gallery = $('#gallery');
   const total = keys.reduce((n, k) => n + groups.get(k).records.length, 0);
@@ -1643,16 +1669,16 @@ function syncAlbumUrl() {
 // Ordem CANÔNICA de um álbum = a da visão padrão dele (só a faceta da lista,
 // agrupado por passeio — o que abre em /imagens/lista/<slug>), achatada. É ela
 // que numera o /<n>: quem compartilha e quem recebe contam igual, seja qual
-// for o agrupamento/filtro na tela de quem compartilhou. (O ORDER BY desempata
-// por ?m em media-query.js — sem isso, mídias com a MESMA data, caso comum no
-// acervo do zap, não teriam ordem garantida.)
+// for o agrupamento/filtro na tela de quem compartilhou. A ordem dentro dos
+// grupos vem de canonicalRowOrder, e o backend a reproduz em _album_sequence
+// (preview do link) — mudou uma, mude a outra.
 function albumSequence(listIri) {
   let p = _albumSeqCache.get(listIri);
   if (p) return p;
   const gen = _dataGen;
   const facets = { group: 'tour', lists: [listIri] };
   p = MQ.runQuery(store, MQ.buildQueryFromFacets(facets)).then((rows) => {
-    const { groups, keys } = groupRows(rows, facets, null);
+    const { groups, keys } = groupRows(rows, facets, null, true);
     const seen = new Set(), seq = [];
     for (const k of keys) {
       for (const r of groups.get(k).records) if (!seen.has(r.iri)) { seen.add(r.iri); seq.push(r.iri); }

@@ -881,15 +881,30 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
   re-checagem TOCTOU da colisão cross-type, roda sob o lock. Não reintroduzir
   `@serialized` num handler que lê `request.files`.
 - **Álbum = `/imagens/lista/<slug>[/<n>]`.** O backend (`album_page`) serve o
-  `imagens.html` estático nesse path (turtle/markdown → `list_page`);
+  `imagens.html` nesse path com as tags de **preview de link** (og:/twitter:)
+  do álbum ou da n-ésima mídia injetadas depois do `<title>` (o `<title>` fica
+  — o cliente usa ele de base do título da aba); turtle/markdown →
+  `list_page`; álbum desconhecido ou falha → o estático puro. A imagem do
+  preview é `GET /imagens/og/<h1>[-<h2>[-<h3>]].jpg` (Pillow, 1200×630 JPEG
+  ~100 KB — o WhatsApp recusa og:image grande): 1 hash = a mídia inteira
+  sobre ela mesma desfocada (+ ▶ se vídeo); 2–3 = a capa do álbum em faixas.
+  Endereçada pelo conteúdo (max-age 1 dia na borda), só aceita hashes do
+  catálogo e fica só em memória (LRU de 64) — um GET não grava no bucket.
   `/listas/<slug>` faz 303 pra cá e `?list=<slug>` é reescrito no cliente. Por
   isso o `imagens.html` traz `<base href="/">` — e `new URL(rel,
   location.href)` NÃO respeita o base: use `document.baseURI`. Com a faceta
   Listas numa lista só (standalone), a barra mostra o álbum; com uma foto
   aberta, `/<n>` = posição dela na ordem CANÔNICA do álbum (`albumSequence`:
   a visão padrão, agrupada por passeio — independe do agrupamento de quem
-  compartilha; o `ORDER BY DESC(?d) ?m` de `media-query.js` desempata datas
-  iguais, não tirar o `?m`). Abrir a foto faz `pushState` (voltar = fechar);
+  compartilha). **A ordem total é imposta em JS** (`canonicalRowOrder`: data
+  desc pelo instante, sem data no fim, desempate pelo IRI) em toda consulta
+  de facetas — o Comunica NÃO aplica a 2ª chave do `ORDER BY DESC(?d) ?m` de
+  forma confiável (medido: mesma data / sem data saíam embaralhadas). O
+  backend ESPELHA essa ordem em `_album_sequence` pro preview do `/<n>`
+  mostrar a mesma foto que o link abre — mudou `canonicalRowOrder`,
+  `groupRows` ou `groupOrderStr`, mude `_album_sequence` junto (paridade
+  conferida em 09/2026 contra os 10 álbuns + um álbum com as 822 mídias).
+  Abrir a foto faz `pushState` (voltar = fechar);
   deslizar/setas fazem `replaceState`; embutida no iframe do app não mexe em
   URL/histórico. O `n` desloca se o álbum ganhar/perder mídia antes dela — o
   link durável de UMA mídia segue sendo `/midia/<hash>`. O SW serve essas

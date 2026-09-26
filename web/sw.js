@@ -20,7 +20,7 @@
 // origin) e v371/v372 saíram na `deploy` (busca de endereços, ⇄ inverter).
 // v373 fica acima de tudo que já circulou, que é o que importa: se a VERSION
 // não crescer, o service worker serve cache velho.
-const VERSION = 'phidro-v414';
+const VERSION = 'phidro-v415';
 const STATIC_CACHE = `${VERSION}-static`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 // Cache de blocos dos FlatGeobuf (ver a seção lá embaixo). NÃO leva a VERSION
