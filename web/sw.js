@@ -20,7 +20,7 @@
 // origin) e v371/v372 saíram na `deploy` (busca de endereços, ⇄ inverter).
 // v373 fica acima de tudo que já circulou, que é o que importa: se a VERSION
 // não crescer, o service worker serve cache velho.
-const VERSION = 'phidro-v413';
+const VERSION = 'phidro-v415';
 const STATIC_CACHE = `${VERSION}-static`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 // Cache de blocos dos FlatGeobuf (ver a seção lá embaixo). NÃO leva a VERSION
@@ -151,6 +151,17 @@ self.addEventListener('fetch', (event) => {
   // reaparecia/sumia só depois de dois refreshes). `endsWith`/`includes`
   // (e não ===) pra funcionar também sob hosting com subpath (ex.: o
   // mirror legado em /rotas_app/).
+  // Álbum /imagens/lista/<slug>[/<n>]: a página É o imagens.html (o backend
+  // serve o mesmo arquivo nesse path; quem lê o path é o cliente). Sai do
+  // cache do imagens.html em vez de guardar uma cópia por álbum/foto — e
+  // abre offline.
+  if (url.origin === self.location.origin && req.mode === 'navigate'
+      && /\/imagens\/lista\/[^/]+(\/\d+)?\/?$/.test(url.pathname)) {
+    event.respondWith(staleWhileRevalidate(
+      new Request(new URL('./imagens.html', self.registration.scope).href), STATIC_CACHE));
+    return;
+  }
+
   if (url.origin === self.location.origin) {
     if (url.pathname.endsWith('/data/data_graphs.ttl')
         || url.pathname.endsWith('/data/uploads.ttl')

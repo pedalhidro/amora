@@ -2,6 +2,11 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
+<!-- Servida também em /imagens/lista/<slug>[/<n>] (álbum): o base faz as URLs
+     relativas (./lib/…, ./data/…, ./photos/…, fetch('./update-…')) resolverem
+     na raiz do host, como no index.html. `new URL(rel, location.href)` NÃO
+     respeita o base — use document.baseURI. -->
+<base href="/">
 <meta name="robots" content="noindex">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Imagens — Pedal Hidrográfico</title>
@@ -308,11 +313,30 @@
   }
 
   /* ── Lightbox ─────────────────────────────────────────────────────────── */
-  .lightbox { position: fixed; inset: 0; z-index: 100; display: flex; }
-  .lb-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.86); }
+  /* pan-y: o navegador cuida da rolagem vertical e do pinch; o arrasto
+     horizontal fica pro gesto de trocar de foto (wireLightboxSwipe). */
+  .lightbox { position: fixed; inset: 0; z-index: 100; display: flex; touch-action: pan-y pinch-zoom; }
+  /* fixed (não absolute): no celular o .lightbox rola (foto + painel não cabem
+     numa tela) e o fundo/× têm que ficar parados cobrindo a viewport. */
+  .lb-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.86); }
   .lb-close {
-    position: absolute; top: 12px; right: 14px; z-index: 3; background: transparent;
+    position: fixed; top: 12px; right: 14px; z-index: 3; background: transparent;
     border: none; color: #fff; font-size: 34px; line-height: 1; cursor: pointer;
+  }
+  /* Anterior/próxima (setas no desktop; no toque é o gesto de deslizar) e o
+     contador "n / total" da sequência que está na tela. */
+  .lb-nav {
+    position: fixed; top: 50%; transform: translateY(-50%); z-index: 3;
+    width: 44px; height: 64px; border: none; border-radius: 8px; cursor: pointer;
+    background: rgba(0,0,0,.35); color: #fff; font-size: 34px; line-height: 1;
+  }
+  .lb-nav:hover { background: rgba(0,0,0,.6); }
+  .lb-prev { left: 8px; }
+  .lb-next { right: 8px; }
+  body.touch-ui .lb-nav { display: none; }
+  .lb-count {
+    position: fixed; top: 18px; left: 16px; z-index: 3; color: #fff; font-size: 14px;
+    text-shadow: 0 1px 3px rgba(0,0,0,.6); pointer-events: none;
   }
   .lb-content {
     position: relative; z-index: 2; margin: auto; display: flex; gap: 16px;
@@ -422,6 +446,14 @@
     .range-block .dual { flex: 1 1 120px; }
     .facet-range input[type="date"].range-end { width: auto; flex: 1 1 100px; }
     .selbar { flex-wrap: wrap; }
+    /* Lightbox: foto em cima, painel (listas, Ver no mapa, Compartilhar)
+       embaixo — ROLANDO. Antes o painel passava da tela e não dava pra
+       chegar nos botões. A foto deixa o topo do painel aparecendo. */
+    .lightbox { overflow-y: auto; overscroll-behavior: contain; }
+    .lb-content { margin: 0 auto; padding: 52px 8px 20px; max-width: 100vw; max-height: none; gap: 10px; }
+    .lb-media { flex-basis: 100%; }
+    .lb-media img, .lb-media video { max-height: 72vh; }
+    .lb-panel { flex-basis: 100%; max-height: none; overflow: visible; }
   }
 </style>
 <link href="./lib/tom-select.min.css" rel="stylesheet">
@@ -526,6 +558,9 @@
 <div id="lightbox" class="lightbox" hidden>
   <div class="lb-backdrop" id="lb-backdrop"></div>
   <button class="lb-close" id="lb-close" aria-label="Fechar">×</button>
+  <div class="lb-count" id="lb-count" hidden></div>
+  <button type="button" class="lb-nav lb-prev" id="lb-prev" aria-label="Anterior" title="Anterior (←)" hidden>‹</button>
+  <button type="button" class="lb-nav lb-next" id="lb-next" aria-label="Próxima" title="Próxima (→)" hidden>›</button>
   <div class="lb-content">
     <div class="lb-media" id="lb-media"></div>
     <div class="lb-panel">
@@ -699,7 +734,7 @@ async function loadData() {
   let urls = null;
   // 1) tenta o manifesto e segue cada void:dataDump (URL relativa).
   try {
-    const manifestUrl = new URL('./data/data_graphs.ttl', location.href).href;
+    const manifestUrl = new URL('./data/data_graphs.ttl', document.baseURI).href;
     const res = await fetch(manifestUrl, { cache: 'no-cache' });
     if (!res.ok) throw new Error(`data_graphs.ttl HTTP ${res.status}`);
     const manifestText = await res.text();
@@ -715,10 +750,10 @@ async function loadData() {
     // 2) fallback: baixa os dois dumps conhecidos diretamente.
     console.warn('[imagens] manifesto indisponível, usando fallback:', e.message);
     urls = [
-      new URL('./data/tours.ttl', location.href).href,
-      new URL('./data/images.ttl', location.href).href,
-      new URL('./data/identities.ttl', location.href).href,
-      new URL('./data/lists.ttl', location.href).href,
+      new URL('./data/tours.ttl', document.baseURI).href,
+      new URL('./data/images.ttl', document.baseURI).href,
+      new URL('./data/identities.ttl', document.baseURI).href,
+      new URL('./data/lists.ttl', document.baseURI).href,
     ];
   }
   // Baixa e concatena o texto de todos os grafos, depois parseia tudo junto.
@@ -762,6 +797,24 @@ const pendingNewLists = new Map();   // listIri → nome (listas criadas na sess
 let ftLists, ftAuthors, ftUploaders, ftTours, assignTS, lbTS;
 let lbRecord = null;                 // record aberto no lightbox
 let _lbSavePending = false;          // há um scheduleLbSave() pendente (debounce) a ser descartado/reforçado ao fechar
+let _lbPushed = false;               // openLightbox empurrou uma entrada no histórico (voltar = fechar a foto)
+let _lbNavigated = false;            // trocou de foto dentro do lightbox (ao fechar, rola a grade até ela)
+let _lbOpenedAt = 0;                 // performance.now() da abertura (engole o click fantasma do toque)
+
+// ── Álbum: /imagens/lista/<slug>[/<n>] ───────────────────────────────────────
+// URL legível de uma lista (o backend serve este mesmo arquivo nesse path). Com
+// a faceta Listas em UMA lista, a barra de endereço mostra o álbum e, com uma
+// foto aberta, /<n> = posição dela no álbum (1-based, ordem de albumSequence).
+// Só standalone: embutida no modal do app não há barra de endereço, e mexer no
+// histórico do iframe faria o "voltar" do app voltar dentro da galeria.
+const STANDALONE = window.self === window.top;
+const ALBUM_PATH_RE = /\/imagens\/lista\/([^/]+)(?:\/(\d+))?\/?$/;
+const SHARE_ORIGIN = 'https://amora.pedalhidrografi.co';   // links compartilhados apontam pra produção
+const PAGE_TITLE = document.title;
+let albumSlug = null;                // álbum refletido na barra de endereço (standalone)
+let _dataGen = 0;                    // bump a cada loadAndBuild (invalida sequências em voo)
+const _albumSeqCache = new Map();    // listIri → Promise<string[]>
+const _albumSeqReady = new Map();    // listIri → string[] (IRIs na ordem do álbum), p/ uso síncrono
 
 // Reconstrói store + model + índice a partir dos dados atuais.
 async function loadAndBuild() {
@@ -769,6 +822,7 @@ async function loadAndBuild() {
   store = MQ.makeStore(quads);
   model = MQ.buildMediaRecords(store);
   recordByIri = new Map(model.records.map((r) => [r.iri, r]));
+  _dataGen++; _albumSeqCache.clear(); _albumSeqReady.clear();
 }
 
 // ── Opções de faceta ─────────────────────────────────────────────────────────
@@ -943,6 +997,7 @@ function rebuildAndRun() {
   isCustom = false;
   $('#adv-sparql').value = sparql;
   $('#adv-flag').hidden = true;
+  syncAlbumUrl();
   runAndRender(sparql, facets);
 }
 
@@ -1012,9 +1067,36 @@ function groupLabel(key) {
 
 let lastRows = null, lastFacets = null;   // cache p/ re-render sem re-consultar
 function rerender() { if (lastRows) withViewTransition(() => renderGroups(lastRows, lastFacets), tileCount(lastRows)); }
-function renderGroups(rows, facets) {
-  lastRows = rows; lastFacets = facets;
-  tileLarge = wantLargeTiles();
+// Ordem TOTAL das linhas de uma consulta de facetas: data desc (pelo
+// instante), sem data no fim, desempate pelo IRI. O ORDER BY da consulta diz o
+// mesmo, mas o Comunica não aplica a 2ª chave de forma confiável (medido:
+// mídias com a mesma data, ou sem data, saíam embaralhadas) — e o /<n> do
+// álbum precisa de uma ordem exata, que o backend reproduz (_album_sequence)
+// pro preview do link. Sort estável: a mesma mídia em dois grupos mantém a
+// ordem relativa. Data sem fuso conta como UTC (como no backend).
+function canonicalRowOrder(rows) {
+  const instant = (iri) => {
+    const s = iri && recordByIri.get(iri) && recordByIri.get(iri).datetime;
+    if (!s) return null;
+    const v = Date.parse(s.length > 10 && !/(?:[zZ]|[+-]\d\d:?\d\d)$/.test(s) ? s + 'Z' : s);
+    return Number.isNaN(v) ? null : v;
+  };
+  return rows.map((row) => {
+    const iri = (row.m && row.m.value) || '';
+    return { row, iri, t: instant(iri) };
+  }).sort((a, b) => {
+    if ((a.t == null) !== (b.t == null)) return a.t == null ? 1 : -1;
+    if (a.t !== b.t) return b.t - a.t;
+    return a.iri < b.iri ? -1 : (a.iri > b.iri ? 1 : 0);
+  }).map((x) => x.row);
+}
+// Linhas da consulta → grupos (dedup por grupo, dia-da-semana no cliente) e
+// chaves na ordem de exibição. `pick` = pickSet do link compartilhado (ou
+// null); `canonical` = impõe canonicalRowOrder (consultas de facetas — uma
+// consulta SPARQL personalizada fica com o ORDER BY dela). Compartilhado pelo
+// render e pela ordem canônica do álbum (albumSequence).
+function groupRows(rows, facets, pick, canonical) {
+  if (canonical) rows = canonicalRowOrder(rows);
   const wds = facets.weekdays || [];
   // Dia-da-semana NÃO existe em SPARQL → filtrado no cliente, aqui.
   const filterWd = wds.length > 0 && wds.length < 7;
@@ -1024,7 +1106,7 @@ function renderGroups(rows, facets) {
   for (const row of rows) {
     const iri = row.m && row.m.value;
     if (!iri) continue;
-    if (pickSet && !pickSet.has(iri)) continue;   // link compartilhado: só a seleção
+    if (pick && !pick.has(iri)) continue;   // link compartilhado: só a seleção
     const rec = recordByIri.get(iri);
     if (!rec) continue;
     if (filterWd && (rec.weekday == null || !wdSet.has(rec.weekday))) continue;
@@ -1043,6 +1125,12 @@ function renderGroups(rows, facets) {
     if (!bv) return -1;
     return bv.localeCompare(av);   // desc
   });
+  return { groups, keys };
+}
+function renderGroups(rows, facets) {
+  lastRows = rows; lastFacets = facets;
+  tileLarge = wantLargeTiles();
+  const { groups, keys } = groupRows(rows, facets, pickSet, !isCustom);
 
   const gallery = $('#gallery');
   const total = keys.reduce((n, k) => n + groups.get(k).records.length, 0);
@@ -1534,19 +1622,281 @@ function updateSelUI() {
   ['#sel-share', '#sel-menu'].forEach((s) => { $(s).disabled = none; });
 }
 
+// ── Álbum (lista na barra de endereço) ───────────────────────────────────────
+function parseAlbumRoute() {
+  const m = location.pathname.match(ALBUM_PATH_RE);
+  if (!m) return null;
+  let slug = m[1];
+  try { slug = decodeURIComponent(slug); } catch (_) {}
+  return { slug, n: m[2] ? parseInt(m[2], 10) : null };
+}
+// URL do álbum (+ /<n>) na origem atual, preservando a query (menos ?list=,
+// que o path substitui).
+function albumUrl(slug, n) {
+  const u = new URL(`imagens/lista/${encodeURIComponent(slug)}${n ? '/' + n : ''}`, document.baseURI);
+  const qs = new URLSearchParams(location.search);
+  qs.delete('list');
+  u.search = qs.toString();
+  return u.href;
+}
+// Faceta Listas com exatamente UMA lista → o IRI dela; senão null.
+function singleListIri() {
+  const lists = ftLists ? ftLists.getValue() : [];
+  return (lists.length === 1 && lists[0].startsWith(LIST_PREFIX)) ? lists[0] : null;
+}
+// Barra de endereço ⇄ faceta Listas (a cada rebuildAndRun). UMA lista →
+// /imagens/lista/<slug> (e a aba ganha o nome do álbum); saiu dela → volta pra
+// /imagens.html. Não mexe em link compartilhado de seleção (?p=/?pick=).
+function syncAlbumUrl() {
+  if (!STANDALONE || pickSet) return;
+  const iri = singleListIri();
+  const slug = iri ? iri.slice(LIST_PREFIX.length) : null;
+  if (slug === albumSlug) return;
+  const wasAlbum = albumSlug != null || ALBUM_PATH_RE.test(location.pathname);
+  albumSlug = slug;
+  if (slug) {
+    history.replaceState(history.state, '', albumUrl(slug));
+    albumSequence(iri).catch(() => {});   // aquece: a 1ª foto aberta já sai com o /<n>
+  } else if (wasAlbum) {
+    const u = new URL('imagens.html', document.baseURI);
+    const qs = new URLSearchParams(location.search);
+    qs.delete('list');
+    u.search = qs.toString();
+    history.replaceState(history.state, '', u.href);
+  }
+  document.title = slug ? `${model.lists[iri] || slug} — ${PAGE_TITLE}` : PAGE_TITLE;
+}
+// Ordem CANÔNICA de um álbum = a da visão padrão dele (só a faceta da lista,
+// agrupado por passeio — o que abre em /imagens/lista/<slug>), achatada. É ela
+// que numera o /<n>: quem compartilha e quem recebe contam igual, seja qual
+// for o agrupamento/filtro na tela de quem compartilhou. A ordem dentro dos
+// grupos vem de canonicalRowOrder, e o backend a reproduz em _album_sequence
+// (preview do link) — mudou uma, mude a outra.
+function albumSequence(listIri) {
+  let p = _albumSeqCache.get(listIri);
+  if (p) return p;
+  const gen = _dataGen;
+  const facets = { group: 'tour', lists: [listIri] };
+  p = MQ.runQuery(store, MQ.buildQueryFromFacets(facets)).then((rows) => {
+    const { groups, keys } = groupRows(rows, facets, null, true);
+    const seen = new Set(), seq = [];
+    for (const k of keys) {
+      for (const r of groups.get(k).records) if (!seen.has(r.iri)) { seen.add(r.iri); seq.push(r.iri); }
+    }
+    if (gen === _dataGen) _albumSeqReady.set(listIri, seq);
+    return seq;
+  });
+  p.catch(() => { if (_albumSeqCache.get(listIri) === p) _albumSeqCache.delete(listIri); });
+  _albumSeqCache.set(listIri, p);
+  return p;
+}
+// Posição (1-based) da mídia no álbum, se a sequência já está pronta; senão null.
+function albumIndexSync(listIri, rec) {
+  const seq = listIri && _albumSeqReady.get(listIri);
+  const i = seq ? seq.indexOf(rec.iri) : -1;
+  return i >= 0 ? i + 1 : null;
+}
+// Álbum de contexto da mídia aberta: a faceta Listas tem UMA lista e a mídia é dela.
+function albumContextIri(rec) {
+  const iri = singleListIri();
+  return iri && (rec.lists || []).includes(iri) ? iri : null;
+}
+// Abre a n-ésima mídia (1-based) do álbum da barra de endereço (deep link
+// /imagens/lista/<slug>/<n>, ou "avançar" do navegador de volta pra uma foto).
+async function openAlbumItem(n, opts = {}) {
+  if (!albumSlug) return;
+  const slug = albumSlug;
+  let seq;
+  try { seq = await albumSequence(LIST_PREFIX + slug); } catch (_) { return; }
+  if (albumSlug !== slug) return;
+  const rec = recordByIri.get(seq[n - 1]);
+  if (!rec) {
+    history.replaceState(null, '', albumUrl(slug));
+    toast(`Este álbum tem ${seq.length} mídia${seq.length === 1 ? '' : 's'} — não há a nº ${n}.`);
+    return;
+  }
+  // Deep link: a entrada atual vira o álbum e abrir a foto empurra o /<n> —
+  // assim o "voltar" fecha a foto e mostra o álbum. Vindo do "avançar", já
+  // estamos na entrada da foto.
+  if (opts.fromPop) _lbPushed = true;
+  else history.replaceState(null, '', albumUrl(slug));
+  openLightbox(rec);
+}
+// Barra de endereço com a foto aberta: /imagens/lista/<slug>/<n>. Abrir empurra
+// UMA entrada no histórico (o "voltar" do celular fecha a foto em vez de sair
+// do álbum); trocar de foto (deslizar/setas) só substitui essa entrada.
+function syncLightboxUrl(rec, wasOpen) {
+  if (!STANDALONE || !albumSlug) return;
+  const slug = albumSlug, listIri = LIST_PREFIX + slug;
+  if (!(rec.lists || []).includes(listIri)) {   // ex.: tirada do álbum pelo seletor de listas
+    if (wasOpen) history.replaceState(history.state, '', albumUrl(slug));
+    return;
+  }
+  // Manual: ao fechar (history.back) o navegador não "restaura" a rolagem da
+  // entrada do álbum por cima do scrollIntoView da última foto vista.
+  try { history.scrollRestoration = 'manual'; } catch (_) {}
+  const n = albumIndexSync(listIri, rec);
+  if (!wasOpen && !_lbPushed) { history.pushState({ phLb: 1 }, '', albumUrl(slug, n)); _lbPushed = true; }
+  else history.replaceState({ phLb: 1 }, '', albumUrl(slug, n));
+  if (n == null) {   // sequência ainda calculando: completa o /<n> quando chegar
+    albumSequence(listIri).then(() => {
+      const m = albumIndexSync(listIri, rec);
+      if (m && lbRecord === rec && albumSlug === slug) history.replaceState({ phLb: 1 }, '', albumUrl(slug, m));
+    }).catch(() => {});
+  }
+}
+
 // ── Lightbox ─────────────────────────────────────────────────────────────────
+let _lbSeq = [];   // sequência do anterior/próxima (ver lbSequence), refeita a cada abertura
+// Anterior/próxima = a ordem da grade NA TELA (o que a pessoa vê, com o
+// agrupamento/filtros atuais). Sem a mídia na grade (deep link abrindo antes
+// da grade renderizar), cai pra ordem do álbum.
+function lbSequence() {
+  if (!lbRecord) return [];
+  const seen = new Set(), dom = [];
+  document.querySelectorAll('#gallery .tile[data-iri]').forEach((t) => {
+    const iri = t.dataset.iri;
+    if (!seen.has(iri)) { seen.add(iri); dom.push(iri); }
+  });
+  if (seen.has(lbRecord.iri)) return dom;
+  const ctx = albumContextIri(lbRecord);
+  const seq = ctx && _albumSeqReady.get(ctx);
+  return (seq && seq.includes(lbRecord.iri)) ? seq : [lbRecord.iri];
+}
+function updateLightboxNav() {
+  _lbSeq = lbSequence();
+  const i = lbRecord ? _lbSeq.indexOf(lbRecord.iri) : -1;
+  $('#lb-prev').hidden = !(i > 0);
+  $('#lb-next').hidden = !(i >= 0 && i < _lbSeq.length - 1);
+  const c = $('#lb-count');
+  c.hidden = !(i >= 0 && _lbSeq.length > 1);
+  c.textContent = `${i + 1} / ${_lbSeq.length}`;
+}
+function lbNeighbor(delta) {
+  const i = lbRecord ? _lbSeq.indexOf(lbRecord.iri) : -1;
+  return i >= 0 ? (recordByIri.get(_lbSeq[i + delta]) || null) : null;
+}
+function lbStep(delta) {
+  const rec = lbNeighbor(delta);
+  if (!rec) return false;
+  openLightbox(rec, { dir: delta });
+  return true;
+}
+// Pré-carrega as vizinhas: a miniatura das duas (o blur-up sai na hora) e a
+// grande só da próxima no sentido em que se anda — no iPhone cada large.jpg
+// decodificado são ~17 MB (ver wantLargeTiles).
+function preloadNeighbors(dir) {
+  for (const d of [dir, -dir]) {
+    const r = lbNeighbor(d);
+    if (!r) continue;
+    if (r.thumbUrl) new Image().src = r.thumbUrl;
+    if (d === dir && r.kind !== 'video' && r.largeUrl) new Image().src = r.largeUrl;
+  }
+}
+const REDUCED_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)');
+// Entrada da foto nova vindo do lado de onde o dedo "puxou".
+function animateLbIn(dir) {
+  const media = $('#lb-media');
+  media.style.transition = ''; media.style.transform = '';
+  if (REDUCED_MOTION.matches || !media.animate) return;
+  media.animate([
+    { transform: `translateX(${dir * 56}px)`, opacity: 0.25 },
+    { transform: 'none', opacity: 1 },
+  ], { duration: 200, easing: 'ease-out' });
+}
+// Deslizar pro lado troca de foto (iPhone/Android) — em qualquer ponto do
+// lightbox fora do painel (a foto pode ainda não ter carregado e ter altura 0).
+// A foto acompanha o dedo; o gesto só vira "trocar" se for claramente
+// horizontal — vertical é a rolagem do painel (touch-action: pan-y no CSS).
+// Não dispara com 2 dedos (pinch), com a página ampliada (aí o arrasto é pra
+// passear pela foto), nem na barra de controles do vídeo (arrastar ali é
+// buscar no tempo).
+function wireLightboxSwipe() {
+  const box = $('#lightbox'), media = $('#lb-media');
+  let active = false, lock = null, x0 = 0, y0 = 0, t0 = 0, dx = 0;
+  const zoomed = () => !!(window.visualViewport && window.visualViewport.scale > 1.01);
+  const snapBack = () => {
+    media.style.transition = 'transform .2s ease';
+    media.style.transform = '';
+  };
+  box.addEventListener('touchstart', (e) => {
+    active = false;
+    if (e.touches.length !== 1 || zoomed()) return;
+    const t = e.touches[0];
+    if (e.target.closest('.lb-panel, .lb-close, .lb-nav, audio')) return;
+    const v = e.target.closest('video');
+    if (v && t.clientY > v.getBoundingClientRect().bottom - 56) return;
+    active = true; lock = null; dx = 0;
+    x0 = t.clientX; y0 = t.clientY; t0 = performance.now();
+    media.style.transition = 'none';
+  }, { passive: true });
+  box.addEventListener('touchmove', (e) => {
+    if (!active) return;
+    if (e.touches.length !== 1) { active = false; snapBack(); return; }
+    const t = e.touches[0];
+    const mx = t.clientX - x0, my = t.clientY - y0;
+    if (!lock) {
+      if (Math.abs(mx) < 8 && Math.abs(my) < 8) return;
+      lock = Math.abs(mx) > Math.abs(my) ? 'x' : 'y';
+      if (lock === 'y') { active = false; return; }
+    }
+    if (e.cancelable) e.preventDefault();
+    dx = mx;
+    // Na ponta da sequência a foto resiste (sem vizinha desse lado).
+    const shown = lbNeighbor(dx < 0 ? 1 : -1) ? dx : dx * 0.3;
+    media.style.transform = `translateX(${shown}px)`;
+  }, { passive: false });
+  box.addEventListener('touchend', () => {
+    if (!active) return;
+    active = false;
+    const w = media.clientWidth || window.innerWidth;
+    const flick = Math.abs(dx) > 30 && performance.now() - t0 < 250;
+    if (lock === 'x' && (Math.abs(dx) > Math.min(90, w * 0.2) || flick) && lbStep(dx < 0 ? 1 : -1)) return;
+    snapBack();
+  });
+  box.addEventListener('touchcancel', () => { if (active) { active = false; snapBack(); } });
+}
 function wireLightbox() {
-  $('#lb-close').addEventListener('click', closeLightbox);
+  $('#lb-close').addEventListener('click', () => closeLightbox());
+  $('#lb-prev').addEventListener('click', () => lbStep(-1));
+  $('#lb-next').addEventListener('click', () => lbStep(1));
   // Clicar fora da foto E do painel de infos fecha (backdrop, moldura ou a
   // área vazia ao redor da imagem). Cliques na própria mídia/painel não fecham.
   $('#lightbox').addEventListener('click', (e) => {
     if (e.target.closest('.lb-panel')) return;
     if (e.target.matches('img, video, audio')) return;
-    if (e.target.closest('.lb-close')) return;
+    if (e.target.closest('.lb-close, .lb-nav')) return;
     closeLightbox();
   });
+  // Esc fecha; ←/→ andam (fora de campos — o seletor de listas usa as setas).
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !$('#lightbox').hidden) closeLightbox();
+    if ($('#lightbox').hidden) return;
+    if (e.key === 'Escape') { closeLightbox(); return; }
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const t = e.target;
+    if (t && t.closest && t.closest('input, textarea, select, video, audio, .ts-wrapper, [contenteditable="true"]')) return;
+    if (lbStep(e.key === 'ArrowRight' ? 1 : -1)) e.preventDefault();
+  });
+  wireLightboxSwipe();
+  // No toque a grade abre a foto no pointerup, e o click que o navegador
+  // dispara logo depois cai no que o lightbox pôs sob o dedo: o fundo (fechava
+  // a foto na hora), um link do painel, um botão. Engole esse click fantasma.
+  document.addEventListener('click', (e) => {
+    if (performance.now() - _lbOpenedAt > 450) return;
+    if (!e.target.closest || !e.target.closest('#lightbox')) return;
+    e.preventDefault(); e.stopPropagation();
+  }, true);
+  // Voltar do navegador (ou o gesto de borda do iPhone) com a foto aberta: fecha
+  // a foto. Avançar de volta pra entrada de uma foto: reabre.
+  window.addEventListener('popstate', (e) => {
+    const open = !$('#lightbox').hidden;
+    const lbEntry = !!(e.state && e.state.phLb);
+    if (open && !lbEntry) { _lbPushed = false; closeLightbox({ fromPop: true }); return; }
+    if (!open && lbEntry) {
+      const r = parseAlbumRoute();
+      if (r && r.n) openAlbumItem(r.n, { fromPop: true });
+    }
   });
   $('#lb-map').addEventListener('click', () => {
     if (!lbRecord) return;
@@ -1569,9 +1919,16 @@ function wireLightbox() {
   lbTS.on('change', () => { if (lbRecord) { _lbSavePending = true; scheduleLbSave(); } });
 }
 const scheduleLbSave = debounce(saveLightboxLists, 500);
-function openLightbox(rec) {
+function openLightbox(rec, opts = {}) {
+  const wasOpen = !$('#lightbox').hidden;
+  // Trocando de foto com uma alteração de listas ainda no debounce: salva
+  // agora, pra foto CERTA (o timer dispararia depois com a próxima já aberta).
+  if (lbRecord && lbRecord !== rec && _lbSavePending) saveLightboxLists();
+  if (wasOpen && lbRecord !== rec) _lbNavigated = true;
+  if (!wasOpen && _downType === 'touch') _lbOpenedAt = performance.now();   // só o toque gera o click fantasma
   lbRecord = rec;
   $('#lb-error').hidden = true;
+  $('#lb-lists-status').textContent = '';
   // "Ver no mapa" só pra mídia COM coordenada — sem GPS não há marcador (o
   // caso típico das fotos de celular sem localização): o botão fica
   // desabilitado e diz o porquê, em vez de "ir pro mapa" e não mostrar nada.
@@ -1632,26 +1989,54 @@ function openLightbox(rec) {
   lbTS.addOptions(listOptions());
   lbTS.setValue(rec.lists || [], true);
   $('#lightbox').hidden = false;
+  updateLightboxNav();
+  syncLightboxUrl(rec, wasOpen);
+  const ctx = albumContextIri(rec);
+  if (ctx) albumSequence(ctx).catch(() => {});   // o 🔗 Compartilhar usa o nº no álbum
+  if (opts.dir) animateLbIn(opts.dir);
+  preloadNeighbors(opts.dir || 1);
 }
 let _lbDirty = false;   // houve save no lightbox → refaz galeria+mapa ao fechar
-function closeLightbox() {
+function closeLightbox(opts = {}) {
+  const shownIri = lbRecord && lbRecord.iri;
   $('#lightbox').hidden = true;
   $('#lb-media').innerHTML = '';   // para o vídeo/áudio ao fechar
   // Flush: se há uma alteração de listas ainda esperando o debounce de 500ms,
   // salva agora (com lbRecord ainda setado) em vez de deixar o timer disparar
-  // depois com lbRecord já nulo (saveLightboxLists() bailaria e a mudança se perderia).
-  if (_lbSavePending) { _lbSavePending = false; saveLightboxLists(); }
+  // depois com lbRecord já nulo (saveLightboxLists() bailaria e a mudança se
+  // perderia). Esse save termina DEPOIS daqui — o refresh vem quando ele acabar.
+  if (_lbSavePending) {
+    saveLightboxLists().then(() => {
+      if (_lbDirty && $('#lightbox').hidden) { _lbDirty = false; refresh(); }
+    });
+  }
   lbRecord = null;
+  // Histórico: abrir empurrou uma entrada → volta (a menos que tenha sido o
+  // próprio "voltar" do navegador a fechar); senão só tira o /<n> da URL.
+  if (_lbPushed) { _lbPushed = false; if (!opts.fromPop) history.back(); }
+  else if (STANDALONE && albumSlug && (parseAlbumRoute() || {}).n) history.replaceState(null, '', albumUrl(albumSlug));
+  // Andou pelas fotos: a grade fica na última vista.
+  if (_lbNavigated && shownIri) {
+    const t = tileByIri(shownIri);
+    if (t) t.scrollIntoView({ block: 'nearest' });
+  }
+  _lbNavigated = false;
   if (_lbDirty) { _lbDirty = false; refresh(); }   // re-fetch + re-render + avisa o mapa
 }
 // Auto-save: salva o pertencimento COMPLETO da mídia (substitui isPartOf) via
 // /update-*. NÃO fecha o lightbox nem re-renderiza (isso fica pro closeLightbox,
 // pra não piscar a galeria a cada toggle); só atualiza o registro + os chips.
 async function saveLightboxLists() {
+  // Só com mudança pendente: o flush (fechar/trocar de foto) já salvou e o
+  // timer do debounce ainda dispara depois — aí não há o que salvar.
+  if (!_lbSavePending) return;
   _lbSavePending = false;
   if (!lbRecord) return;
   const rec = lbRecord;
   const listIris = lbTS.getValue().slice();
+  // O save termina depois que a pessoa pode ter trocado de foto/fechado: status,
+  // erro e chips só se o lightbox ainda mostra ESTA mídia.
+  const shown = () => lbRecord === rec;
   const status = $('#lb-lists-status');
   const ttl = membershipTtl(rec, listIris);
   const fd = new FormData();
@@ -1665,8 +2050,12 @@ async function saveLightboxLists() {
     const j = await resp.json().catch(() => ({}));
     if (!resp.ok || j.error) throw new Error(j.error || (j.details ? JSON.stringify(j.details) : 'HTTP ' + resp.status));
   } catch (e) {
-    const el = $('#lb-error'); el.textContent = 'Falha ao salvar listas: ' + e.message; el.hidden = false;
-    status.textContent = '';
+    if (shown()) {
+      const el = $('#lb-error'); el.textContent = 'Falha ao salvar listas: ' + e.message; el.hidden = false;
+      status.textContent = '';
+    } else {
+      toast('Falha ao salvar listas: ' + e.message);
+    }
     return;
   }
   // Atualiza o registro (mesma referência em model.records) + catálogo de listas
@@ -1675,13 +2064,14 @@ async function saveLightboxLists() {
   for (const li of listIris) {
     if (!model.lists[li]) model.lists[li] = pendingNewLists.get(li) || short(li);
   }
+  _lbDirty = true;
+  if (!shown()) return;
   const chips = (rec.lists || []).map((l) => `<span class="chip">${escapeHtml(model.lists[l] || short(l))}</span>`).join('');
   let chipsEl = $('#lb-meta .chips');
   if (chips) {
     if (!chipsEl) { chipsEl = document.createElement('div'); chipsEl.className = 'chips'; $('#lb-meta').appendChild(chipsEl); }
     chipsEl.innerHTML = chips;
   } else if (chipsEl) { chipsEl.remove(); }
-  _lbDirty = true;
   status.textContent = 'salvo ✓'; status.className = 'lb-lists-status ok';
 }
 // Fragmento Turtle: pertencimento da mídia + Collections novas inline.
@@ -1826,17 +2216,30 @@ function shareSelectedLink() {
     prompt('Copie o link:', link);
   }
 }
-// Link direto pra ESTA mídia (aberta no lightbox), formato ?pick=<hash> —
-// consistente com o botão de compartilhar do popup no mapa. Origem SEMPRE
-// fixa em amora.pedalhidrografi.co (não location.href): um link compartilhado
-// tem que funcionar pra quem recebe, mesmo testando em localhost.
+// Link direto pra ESTA mídia (aberta no lightbox). Vendo um álbum (faceta
+// Listas numa lista só, da qual a mídia faz parte): a foto DENTRO do álbum,
+// /imagens/lista/<slug>/<n> — quem recebe cai nela e desliza pelo resto.
+// Fora de álbum: ?pick=<hash>, consistente com o compartilhar do popup no
+// mapa. Origem SEMPRE fixa em amora.pedalhidrografi.co (não location.href):
+// um link compartilhado tem que funcionar pra quem recebe, mesmo testando em
+// localhost. (O nº sai de albumSequence, já aquecida pelo openLightbox — o
+// clipboard do Safari exige a escrita ainda dentro do toque, sem await.)
 function shareLightboxLink() {
   if (!lbRecord) return;
-  const hash = lbRecord.iri.slice(MED.length);
-  const link = `https://amora.pedalhidrografi.co/imagens.html?pick=${encodeURIComponent(hash)}`;
+  const ctx = albumContextIri(lbRecord);
+  const n = albumIndexSync(ctx, lbRecord);
+  let link, msg;
+  if (n) {
+    link = `${SHARE_ORIGIN}/imagens/lista/${encodeURIComponent(ctx.slice(LIST_PREFIX.length))}/${n}`;
+    msg = `✓ Link copiado (mídia ${n} do álbum)`;
+  } else {
+    const hash = lbRecord.iri.slice(MED.length);
+    link = `${SHARE_ORIGIN}/imagens.html?pick=${encodeURIComponent(hash)}`;
+    msg = '✓ Link da mídia copiado';
+  }
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(link).then(
-      () => toast('✓ Link da mídia copiado'),
+      () => toast(msg),
       () => prompt('Copie o link:', link));
   } else {
     prompt('Copie o link:', link);
@@ -1985,6 +2388,7 @@ async function refresh() {
     return;
   }
   syncListOptions();
+  if (albumSlug) albumSequence(LIST_PREFIX + albumSlug).catch(() => {});   // pertencimento pode ter mudado
   try { window.parent.postMessage({ type: 'phidro-gallery-reload' }, '*'); } catch (_) {}
   runAndRender(currentSparql, readFacets());
 }
@@ -2173,16 +2577,25 @@ function applyPickParam() {
   });
 }
 
-// Deep link por lista: ?list=<slug>[,<slug>…] pré-seleciona a faceta Listas
-// (é pra onde /listas/<slug> — o IRI dereferenciável do álbum — redireciona).
-// Roda DEPOIS de buildFacetControls (ftLists já existe); o rebuildAndRun do
-// boot então filtra. Só aplica listas que existem no catálogo.
+// Deep link por lista: /imagens/lista/<slug>[/<n>] (o álbum — é pra onde
+// /listas/<slug>, o IRI dereferenciável, redireciona) ou o legado
+// ?list=<slug>[,<slug>…] pré-selecionam a faceta Listas. Roda DEPOIS de
+// buildFacetControls (ftLists já existe); o rebuildAndRun do boot então filtra
+// (e o syncAlbumUrl dele troca um ?list=<slug> pelo path). Só aplica listas
+// que existem no catálogo.
 function applyListParam() {
-  const raw = new URLSearchParams(location.search).get('list');
-  if (!raw || !ftLists) return;
+  if (!ftLists) return;
+  const route = parseAlbumRoute();
+  const raw = route ? route.slug : new URLSearchParams(location.search).get('list');
+  if (!raw) return;
   const iris = raw.split(',').map((s) => s.trim()).filter(Boolean)
     .map((s) => LIST_PREFIX + s).filter((iri) => model.lists[iri]);
   if (iris.length) ftLists.setValue(iris, true);   // silent — rebuildAndRun roda no boot
+  else if (route) {
+    const note = $('#pick-note');
+    note.innerHTML = `<span>Álbum “${escapeHtml(route.slug)}” não encontrado — mostrando todas as mídias.</span>`;
+    note.hidden = false;
+  }
 }
 
 // ── Boot ─────────────────────────────────────────────────────────────────────
@@ -2191,9 +2604,11 @@ function applyListParam() {
     embeddedSetup();
     await Promise.all([loadN3(), loadTomSelect()]);
     await loadAndBuild();
+    // Lido ANTES do rebuildAndRun: o syncAlbumUrl dele reescreve a URL (tira o /<n>).
+    const bootRoute = parseAlbumRoute();
     applyPickParam();          // antes dos controles p/ refletirem o estado do link
     buildFacetControls();
-    applyListParam();          // ?list=<slug> → pré-seleciona a faceta Listas
+    applyListParam();          // /imagens/lista/<slug> ou ?list=<slug> → pré-seleciona a faceta Listas
     wireToolbar();
     wireTimeline();
     wireGallery();
@@ -2213,6 +2628,9 @@ function applyListParam() {
     if (pickSet && pickSet.size === 1) {
       const rec = recordByIri.get([...pickSet][0]);
       if (rec) openLightbox(rec);
+    } else {
+      // /imagens/lista/<slug>/<n>: abre a n-ésima mídia do álbum.
+      if (bootRoute && bootRoute.n && albumSlug) openAlbumItem(bootRoute.n);
     }
   } catch (e) {
     console.error(e);

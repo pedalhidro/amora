@@ -305,8 +305,14 @@
       W.push('BIND("" AS ?group)');
     }
 
+    // O ORDER BY documenta a ordem (data desc, desempate pelo IRI), mas a
+    // galeria NÃO confia nele pro desempate: este Comunica não aplica a 2ª
+    // chave de forma confiável (medido — mídias com a mesma data, ou sem
+    // data, saem embaralhadas). A ordem total é imposta no cliente
+    // (canonicalRowOrder em imagens.html) e espelhada no backend
+    // (_album_sequence) — é ela que numera /imagens/lista/<slug>/<n>.
     return P.join('\n') + '\n\nSELECT DISTINCT ?m ?group WHERE {\n  ' +
-      W.join('\n  ') + '\n}\nORDER BY DESC(?d)';
+      W.join('\n  ') + '\n}\nORDER BY DESC(?d) ?m';
   }
 
   // Consulta simples de pertencimento (default do mapa): membros de uma lista.
