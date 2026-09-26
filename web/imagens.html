@@ -950,9 +950,21 @@ function rebuildAndRun() {
 // troca é um corte seco. View Transitions tira um "antes"/"depois" e faz um
 // crossfade+morph nativo; sem suporte (Safari/Firefox mais antigos), cai pro
 // render direto, sem quebrar nada.
-function withViewTransition(fn) {
-  if (document.startViewTransition) document.startViewTransition(fn);
+// Só com a galeria (antes E depois) de até ~2 telas de altura: o WebKit aloca
+// o snapshot do tamanho do elemento INTEIRO, não da parte visível, e repinta
+// nele cada imagem carregada decodificada em tamanho cheio — a galeria toda
+// (centenas de tiles, ou dezenas em 1 coluna) vira centenas de MB e o Safari
+// do iPhone mata a aba. Acima disso, troca seca. `nextTiles` estima o depois.
+function withViewTransition(fn, nextTiles) {
+  const g = $('#gallery'), cols = galleryCols();
+  const nextH = Math.ceil(nextTiles / cols) * (g.clientWidth / cols);
+  const maxH = 2 * window.innerHeight;
+  if (document.startViewTransition && g.offsetHeight <= maxH && nextH <= maxH) document.startViewTransition(fn);
   else fn();
+}
+// Nº de tiles que `rows` vai render (o link compartilhado filtra no render).
+function tileCount(rows) {
+  return pickSet ? rows.filter((r) => r.m && pickSet.has(r.m.value)).length : rows.length;
 }
 
 async function runAndRender(sparql, facets) {
@@ -970,7 +982,7 @@ async function runAndRender(sparql, facets) {
   }
   if (seq !== runSeq) return;   // uma consulta mais nova já começou
   setQueryStatus('');
-  withViewTransition(() => renderGroups(rows, facets));
+  withViewTransition(() => renderGroups(rows, facets), tileCount(rows));
 }
 
 function setQueryStatus(msg) { $('#query-status').textContent = msg; }
@@ -999,9 +1011,10 @@ function groupLabel(key) {
 }
 
 let lastRows = null, lastFacets = null;   // cache p/ re-render sem re-consultar
-function rerender() { if (lastRows) withViewTransition(() => renderGroups(lastRows, lastFacets)); }
+function rerender() { if (lastRows) withViewTransition(() => renderGroups(lastRows, lastFacets), tileCount(lastRows)); }
 function renderGroups(rows, facets) {
   lastRows = rows; lastFacets = facets;
+  tileLarge = wantLargeTiles();
   const wds = facets.weekdays || [];
   // Dia-da-semana NÃO existe em SPARQL → filtrado no cliente, aqui.
   const filterWd = wds.length > 0 && wds.length < 7;
@@ -1307,17 +1320,50 @@ function drawGroupPolygons() {
   overlay.innerHTML = `<svg width="${W}" height="${H}" style="position:absolute;inset:0;overflow:visible">${paths.join('')}</svg>${chips.join('')}`;
 }
 
+// ── Resolução dos tiles: thumb.jpg × large.jpg ───────────────────────────────
+// O tile mostra o thumb.jpg (256 px no lado maior → ~192 px úteis no recorte
+// quadrado) e só troca pro large.jpg (2400 px, ~17 MB decodificado) quando o
+// tile tem mais que ~2× isso em pixels de tela E, em aparelho de toque, cabem
+// poucos tiles na tela. Era um srcset "large 2x", e todo celular (DPR 2–3)
+// caía no large em TODOS os tiles: o WebKit decodifica em tamanho cheio o que
+// está visível (sem subamostrar abaixo de 5 MP) — o álbum de 64 fotos do PH 113
+// passava de 1 GB e o Safari do iPhone matava a aba ("A problem repeatedly
+// occurred"). Toque = celular/tablet (inclusive iPad com mouse — por isso não
+// é o TOUCH_UI, que segue o último ponteiro): lá a aba morre bem antes que num
+// desktop.
+const THUMB_USEFUL_PX = 192;
+const LARGE_DECODED_MB = 17;     // 2400×1800×4
+const LARGE_BUDGET_MB = 200;     // teto de larges decodificados na tela (toque)
+const MEMORY_TIGHT = navigator.maxTouchPoints > 0;
+let tileLarge = false;
+function wantLargeTiles() {
+  const cw = $('#gallery').clientWidth || document.documentElement.clientWidth;
+  const tile = cw / galleryCols();
+  if (tile * (window.devicePixelRatio || 1) <= 2 * THUMB_USEFUL_PX) return false;
+  if (!MEMORY_TIGHT) return true;   // desktop: memória sobra
+  const onScreen = galleryCols() * (window.innerHeight / tile + 1);   // + a linha cortada
+  return onScreen * LARGE_DECODED_MB <= LARGE_BUDGET_MB;
+}
+function tileSrc(rec) {
+  return (tileLarge && rec.largeUrl) ? rec.largeUrl : rec.thumbUrl;
+}
+// Zoom/resize cruzou o limiar: troca o src dos tiles já na grade (o navegador
+// segue mostrando a imagem atual até a nova carregar).
+function syncTileResolution() {
+  const want = wantLargeTiles();
+  if (want === tileLarge) return;
+  tileLarge = want;
+  $$('#gallery .tile img').forEach((img) => {
+    const rec = recordByIri.get(img.closest('.tile').dataset.iri);
+    if (rec) img.src = tileSrc(rec);
+  });
+}
+
 function tileHtml(rec, opts) {
   const sel = selected.has(rec.iri) ? ' selected' : '';
   const noImg = rec.thumbUrl ? '' : ' no-img';
-  // srcset com hint de densidade (não de largura — o large.jpg não tem
-  // dimensão fixa, varia por foto) pra telas retina/desktop não esticarem o
-  // thumb.jpg de 256px além da resolução real dele.
-  const srcset = (rec.largeUrl && rec.largeUrl !== rec.thumbUrl)
-    ? ` srcset="${escapeHtml(rec.thumbUrl)} 1x, ${escapeHtml(rec.largeUrl)} 2x"`
-    : '';
   const img = rec.thumbUrl
-    ? `<img loading="lazy" src="${escapeHtml(rec.thumbUrl)}"${srcset} alt="" ` +
+    ? `<img loading="lazy" src="${escapeHtml(tileSrc(rec))}" alt="" ` +
       `onerror="this.style.display='none';this.parentElement.classList.add('no-img')">`
     : '';
   const badge = rec.kind === 'video' ? `<span class="badge">▶</span>` : '';
@@ -1994,6 +2040,7 @@ function wireToolbar() {
     galleryZoom = Math.max(0, Math.min(GALLERY_COLS.length - 1, idx));
     try { localStorage.setItem('phidro:galleryZoom', String(galleryZoom)); } catch (_) {}
     applyGalleryLayout();
+    syncTileResolution();
     if (overlayGroups) requestAnimationFrame(drawGroupPolygons);   // grade mudou → redesenha
     updateZoomButtons();
   }
@@ -2054,6 +2101,7 @@ function wireToolbar() {
   window.addEventListener('resize', debounce(() => {
     if (galleryLayout === 'collage') layoutAllJustified();
     if (overlayGroups) drawGroupPolygons();
+    syncTileResolution();
     refreshTimelineActive();
   }, 120));
 }

@@ -46,6 +46,7 @@
   .picker.busy { opacity: .6; cursor: progress; }
   .picker input { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
   #status { min-height: 1.2em; font-size: .85rem; color: var(--muted); margin: 0 0 .75rem; }
+  #ios-video-note { font-size: .8rem; line-height: 1.4; color: var(--muted); margin: 0 0 .75rem; }
   .ok { color: var(--ok); } .warn { color: var(--warn); } .err { color: var(--err); }
   /* Grade de miniaturas: uma célula por imagem, com o estado embaixo. */
   #grid { list-style: none; margin: 0; padding: 0; display: grid; gap: .5rem;
@@ -115,6 +116,24 @@ e passeio saem do próprio arquivo. Licença CC BY-SA 4.0, original preservado.<
   <span aria-hidden="true">📷</span> Escolher imagens
   <input type="file" id="files" accept="image/*,video/*" multiple>
 </label>
+<p id="ios-video-note" hidden>No iPhone/iPad, por enquanto só fotos por aqui: o iOS converte
+cada vídeo escolhido antes de entregá-lo à página, sem mostrar progresso, e o seletor parece
+travado. Vídeo: pelo <a href="./upload_images.html">formulário completo</a> (um por vez, com
+paciência) ou por um computador.</p>
+<script>
+  // Stopgap: no iOS/iPadOS (todo navegador lá é WebKit, inclusive o shell
+  // Capacitor) o seletor de fotos do sistema TRANSCODIFICA cada vídeo
+  // escolhido (HEVC → formato compatível) antes de soltar os arquivos — sem
+  // barra de progresso, com o seletor ainda aberto: um lote com vídeo parece
+  // travado (WKFileUploadPanel.mm, _uploadItemFromResult). Só imagens aqui;
+  // `accept` sem video/* faz o seletor esconder os vídeos. Script clássico,
+  // síncrono, pra valer desde o 1º toque (o módulo abaixo espera os imports).
+  if (/iP(hone|ad|od)/.test(navigator.userAgent) ||
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) {
+    document.getElementById('files').accept = 'image/*';
+    document.getElementById('ios-video-note').hidden = false;
+  }
+</script>
 <p id="status">carregando catálogo…</p>
 
 <ul id="grid"></ul>
@@ -150,7 +169,9 @@ e passeio saem do próprio arquivo. Licença CC BY-SA 4.0, original preservado.<
 //   vídeo — clipe inteiro (sem recorte), áudio embutido + audio.webm à parte,
 //           360p sempre, 720p só em aparelho sem toque (default do form),
 //           data/GPS do moov (Apple), passeio pela data; sem pré-envio
-//           (/stage-video) — o POST /upload-video vai com os blobs.
+//           (/stage-video) — o POST /upload-video vai com os blobs. No
+//           iOS/iPadOS o seletor só oferece imagens (stopgap — ver o <script>
+//           junto do seletor).
 // Dedup por pHash/vHash (Hamming ≤ 5) contra o lote, a sessão E o servidor.
 // Cada sessão mint um ÁLBUM (lst:, schema:Collection) que toda mídia enviada
 // integra; depois do lote a página oferece o link do álbum (/listas/<slug>)
