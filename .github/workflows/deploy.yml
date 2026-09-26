@@ -1,4 +1,9 @@
-# Deploy automático pro Cloud Run a cada push na branch `deploy`.
+# Deploy automático pro Cloud Run (amora.pedalhidrografi.co) a cada push na
+# `main` — o mesmo push que já republica o GitHub Pages.
+#
+# (Rodou pela branch `deploy` de 07/2026 a 09/2026; ela parou no v384 enquanto
+# a produção seguia por deploy manual. Não volte pra ela sem apagá-la: um push
+# nessa branch velha redeployaria código antigo por cima da produção.)
 #
 # Reusa scripts/deploy-cloudrun.sh (mesmo caminho testado do deploy manual):
 # build pelo Cloud Build a partir do Dockerfile + sync de shapes/ontology pro
@@ -55,7 +60,7 @@ name: Deploy to Cloud Run
 
 on:
   push:
-    branches: [deploy]
+    branches: [main]
     # Pushes que SÓ mexem nestes caminhos não redeployam (o container não os leva).
     paths-ignore:
       - 'eink/**'

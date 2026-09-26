@@ -25,8 +25,8 @@
 # é o primeiro lugar pra olhar — reative na aba Actions.
 #
 # ATENÇÃO (branch): `schedule:` só dispara a partir da branch PADRÃO, que aqui é
-# a `main`. O deploy do app vai pela branch `deploy` — se este arquivo ficar só
-# lá, o cron nunca roda e não há erro nenhum, só silêncio.
+# a `main`. Se este arquivo ficar só noutra branch, o cron nunca roda e não há
+# erro nenhum, só silêncio.
 #
 # ATENÇÃO (sem rede de segurança no bucket): `gs://telhas` está SEM Object
 # Versioning (diferente do `gs://phidro-state`), então sobrescrever um .fgb bom
