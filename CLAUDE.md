@@ -1078,6 +1078,13 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
   to 360p/720p mp4 + `.m4a` audio + thumbnail, and upsert each as a
   `ph:Video` in `web/data/uploads.ttl` (associates with nearest tour
   within ±12 h). See "Clips workflow" above. Requires `ffmpeg` + `exiftool`.
+- **Every push to `main` deploys to production** (amora.pedalhidrografi.co):
+  `.github/workflows/deploy.yml` runs `deploy-cloudrun.sh --no-catalog-push`
+  via keyless WIF (code + shapes/ontology only — never catalogs or state).
+  Pushes touching only `docs/`, `research/`, `eink/`, `*.md`, `.vscode/` or
+  `.github/` skip it; the Actions tab has a manual "Run workflow" button. So
+  don't push half-done `web/` work to `main` — use a branch. The manual script
+  below is still the path for `--state`/`--state-only` syncs.
 - `bash scripts/deploy-cloudrun.sh` — build + deploy backend to Cloud Run
   (project `pedal-hidrografico`, region `southamerica-east1`, service
   `phidro`, bucket `phidro-state`). Reads `RWGPS_API_KEY`/`RWGPS_AUTH_TOKEN`

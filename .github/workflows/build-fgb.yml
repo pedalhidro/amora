@@ -25,8 +25,8 @@
 # é o primeiro lugar pra olhar — reative na aba Actions.
 #
 # ATENÇÃO (branch): `schedule:` só dispara a partir da branch PADRÃO, que aqui é
-# a `main`. O deploy do app vai pela branch `deploy` — se este arquivo ficar só
-# lá, o cron nunca roda e não há erro nenhum, só silêncio.
+# a `main`. Se este arquivo ficar só noutra branch, o cron nunca roda e não há
+# erro nenhum, só silêncio.
 #
 # ATENÇÃO (sem rede de segurança no bucket): `gs://telhas` está SEM Object
 # Versioning (diferente do `gs://phidro-state`), então sobrescrever um .fgb bom
@@ -54,7 +54,11 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # Pinado (não `ubuntu-latest`, que vira Ubuntu 26 em 19/10/2026): o GDAL e o
+    # osmium vêm do apt, e o nome das colunas que o app lê depende da versão
+    # (ex.: o GDAL sanitiza `cycleway:left` → `cycleway_left`). Subir de versão
+    # é decisão consciente — reasse e confira as camadas no mapa.
+    runs-on: ubuntu-24.04
     # INERTE até o setup do WIF (ver deploy.yml): sem a variável, job "skipped".
     if: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER != '' }}
     timeout-minutes: 330   # abaixo do teto de 6 h do runner, com folga
@@ -62,7 +66,7 @@ jobs:
       contents: read
       id-token: write      # necessário pro OIDC do WIF
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Ferramentas (osmium + GDAL)
         run: |
@@ -80,12 +84,12 @@ jobs:
           df -h / /mnt
 
       - id: auth
-        uses: google-github-actions/auth@v2
+        uses: google-github-actions/auth@v3
         with:
           workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_DEPLOY_SA }}
 
-      - uses: google-github-actions/setup-gcloud@v2
+      - uses: google-github-actions/setup-gcloud@v3
 
       - name: Assar os FGBs
         run: |
