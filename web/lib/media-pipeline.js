@@ -440,11 +440,12 @@ async function videoFirstFrameBlob(file) {
 
 // ===================== Vídeo: transcodificação =========================
 // MediaRecorder grava o canvas re-escalado + a trilha de áudio do source
-// num webm único (vp9+opus ou vp8+opus). Áudio embutido garante som no
+// num webm único (vp9+opus ou vp8+opus; mp4 H.264+AAC onde o navegador não
+// grava WebM — ver recorderFormats). Áudio embutido garante som no
 // ghost-video player em iOS (iOS Safari muta MediaElementAudioSourceNode
 // em algumas configs — som embutido contorna isso). Mantemos extractAudio
-// gerando `<vhash>.audio.webm` separado pra o audio loop usar sem precisar
-// baixar o webm de vídeo cheio.
+// gerando `<vhash>.audio.webm` (ou .m4a) separado pra o audio loop usar sem
+// precisar baixar o vídeo cheio.
 // Aguarda um evento de mídia com timeout + tratamento de 'error' — sem isto,
 // um `seeked`/`loadedmetadata` que nunca dispara (codec problemático, aba em
 // background) pendurava o transcode pra sempre e travava a UI de upload.
@@ -500,15 +501,149 @@ function robustVideoSeek(v, t, errMsg = 'seek falhou', timeoutMs = 12000) {
   });
 }
 
+// ── MediaRecorder: formato de gravação + gesto de mídia (WebKit) ──────────
+// WebM (vp9/vp8 + opus) é o formato de sempre do catálogo, mas o Safari só
+// grava WebM a partir do 18.4: antes disso o MediaRecorder só grava MP4
+// (H.264 + AAC) e o construtor com 'video/webm' LANÇA ("mimeType is not
+// supported"), derrubando os motores todos. O formato vem então do que o
+// navegador grava de fato — WebM se der, senão MP4. O mapa e a galeria tocam
+// os dois (build-clips.py sempre gerou mp4/m4a) e o servidor aceita os dois
+// sufixos (_CLIP_VARIANTS no backend). `?mp4=1` finge que não há WebM (teste
+// do caminho do iPhone num Chrome).
+const FORCE_MP4_RECORDING = new URLSearchParams(location.search).has('mp4');
+function recorderFormats() {
+  const ok = (t) => { try { return MediaRecorder.isTypeSupported(t); } catch (_) { return false; } };
+  const pick = (list) => list.find(ok) || null;
+  if (typeof MediaRecorder === 'undefined') return { video: null, audio: null };
+  const webmV = FORCE_MP4_RECORDING ? null : pick(['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm']);
+  const webmA = FORCE_MP4_RECORDING ? null : pick(['audio/webm;codecs=opus', 'audio/webm']);
+  const mp4V = webmV ? null : pick(['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4;codecs=avc1,mp4a.40.2', 'video/mp4']);
+  const mp4A = webmA ? null : pick(['audio/mp4;codecs=mp4a.40.2', 'audio/mp4']);
+  return {
+    video: webmV ? { mime: webmV, type: 'video/webm' } : (mp4V ? { mime: mp4V, type: 'video/mp4' } : null),
+    audio: webmA ? { mime: webmA, type: 'audio/webm' } : (mp4A ? { mime: mp4A, type: 'audio/mp4' } : null),
+  };
+}
+function requireRecorderFormat(kind) {
+  const f = recorderFormats()[kind];
+  if (!f) throw new DOMException('este navegador não grava vídeo (MediaRecorder sem WebM nem MP4)', 'NotSupportedError');
+  return f;
+}
+// Nome do arquivo de cada variante pelo contêiner que o blob TEM de fato:
+// <id>.audio.webm | .audio.m4a, <id>.360p.webm | .360p.mp4 (idem 720p).
+function clipFileName(id, kind, blob) {
+  if (kind === 'thumb') return `${id}.thumb.jpg`;
+  const mp4 = /mp4/i.test(blob?.type || '');
+  if (kind === 'audio') return `${id}.audio.${mp4 ? 'm4a' : 'webm'}`;
+  return `${id}.${kind}.${mp4 ? 'mp4' : 'webm'}`;   // kind: '360p' | '720p'
+}
+// WebKit (Safari, todo navegador do iOS, o shell Capacitor): tocar mídia COM
+// SOM exige gesto do usuário — e o MediaRecorder precisa de um <video>
+// tocando com som (o áudio vem pelo grafo do AudioContext).
+const MEDIA_NEEDS_GESTURE = /iP(hone|ad|od)/.test(navigator.userAgent) ||
+  (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) ||
+  /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+// O WebKit deixa tocar com som dentro de um gesto — ou num elemento que
+// recebeu play() durante um gesto: HTMLMediaElement::play() com gesto remove
+// as restrições DAQUELE elemento de vez (removeBehaviorRestrictionsAfter-
+// FirstUserGesture), e um elemento criado no gesto já nasce sem a de áudio.
+// O toque em Enviar chama isto SÍNCRONO no handler: deixa prontos os <video>
+// que as conversões vão usar depois (num lote o 2º vídeo começa minutos
+// depois do toque, bem além dos ~5 s de ativação transitória) e um
+// AudioContext retomado no mesmo gesto (fora de gesto ele nasce suspenso e o
+// áudio gravado sai mudo). Sem src ainda: nada carrega até a conversão.
+const _blessedVideos = [];
+let _gestureAudioCtx = null;
+function blessMediaForGesture(nVideos = 1) {
+  if (!MEDIA_NEEDS_GESTURE || nVideos < 1) return;
+  try {
+    if (!_gestureAudioCtx || _gestureAudioCtx.state === 'closed') {
+      _gestureAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    const r = _gestureAudioCtx.resume?.();
+    r?.catch?.(() => {});
+  } catch (_) { _gestureAudioCtx = null; }
+  // 4 por vídeo: o passe único usa 1; o sequencial, 3 (áudio, 720p, 360p).
+  const want = Math.min(40, nVideos * 4) - _blessedVideos.length;
+  for (let i = 0; i < want; i++) {
+    const v = document.createElement('video');
+    v.playsInline = true; v.setAttribute('playsinline', '');
+    try { const p = v.play(); p?.catch?.(() => {}); v.pause(); } catch (_) {}
+    _blessedVideos.push(v);
+  }
+}
+// <video> de uma conversão: um "abençoado" pelo último toque, se houver. No
+// WebKit ele vai pro DOM fora da tela — desanexado e "frio" ele às vezes não
+// emite 'seeked' (ver primeVideoForFrames).
+function transcodeVideoElement(src) {
+  const v = _blessedVideos.shift() || document.createElement('video');
+  v.src = src;
+  v.muted = false;
+  v.playsInline = true;
+  v.preload = 'auto';
+  if (MEDIA_NEEDS_GESTURE && !v.isConnected) {
+    Object.assign(v.style, {
+      position: 'fixed', left: '-9999px', top: '0', width: '1px', height: '1px',
+      opacity: '0', pointerEvents: 'none',
+    });
+    document.body.appendChild(v);
+  }
+  return v;
+}
+function releaseTranscodeVideo(v) {
+  try { v.pause(); } catch (_) {}
+  try { v.removeAttribute('src'); v.load(); } catch (_) {}   // solta o decoder já
+  v.remove();
+}
+// AudioContext de uma conversão: o do gesto (compartilhado — NUNCA fechado
+// aqui, só suspenso quando ninguém usa: ligado, ele segura a sessão de áudio
+// do iPhone; o resume() seguinte não precisa de gesto, a restrição caiu no
+// toque) ou um novo (fechado no fim, como sempre foi). Contexto suspenso =
+// grafo parado = áudio mudo: no WebKit, sem o gesto, falha com a mensagem que
+// manda tocar em Enviar; fora dele o resume() passa (a página já teve toque).
+let _gestureAudioUsers = 0;
+async function transcodeAudioContext() {
+  const shared = !!_gestureAudioCtx && _gestureAudioCtx.state !== 'closed';
+  const ctx = shared ? _gestureAudioCtx : new (window.AudioContext || window.webkitAudioContext)();
+  const a = { ctx, shared };
+  if (shared) _gestureAudioUsers++;
+  if (ctx.state !== 'running') {
+    const r = ctx.resume?.();
+    r?.catch?.(() => {});
+    if (MEDIA_NEEDS_GESTURE) {
+      await Promise.race([r, new Promise((res) => setTimeout(res, 1500))]).catch(() => {});
+      if (ctx.state !== 'running') {
+        closeTranscodeAudio(a);
+        throw new DOMException('áudio bloqueado sem um toque', 'NotAllowedError');
+      }
+    }
+  }
+  return a;
+}
+function closeTranscodeAudio(a) {
+  if (!a) return;
+  if (!a.shared) { try { a.ctx.close(); } catch (_) {} return; }
+  if (a.released) return;
+  a.released = true;
+  if (--_gestureAudioUsers <= 0) {
+    _gestureAudioUsers = 0;
+    try { a.ctx.suspend()?.catch?.(() => {}); } catch (_) {}
+  }
+}
+// play() recusado (sem gesto) mantém o nome NotAllowedError — a mensagem
+// amigável e a decisão de não tentar o motor seguinte dependem dele.
+function playRejected(e) {
+  const err = new Error('play() rejeitado: ' + (e?.message || e));
+  if (e?.name === 'NotAllowedError' || e?.name === 'NotSupportedError') err.name = e.name;
+  return err;
+}
+function isGestureError(e) { return e?.name === 'NotAllowedError'; }
+
 async function transcodeAtShortSide(blob, startSec, endSec, shortSide, onProgress) {
   return new Promise(async (resolve, reject) => {
-    const video = document.createElement('video');
     const url = URL.createObjectURL(blob);
-    video.src = url;
-    video.muted = false;
-    video.playsInline = true;
-    video.preload = 'auto';
-    let audioCtx = null, audioSrc = null, videoStream = null, combined = null;
+    const video = transcodeVideoElement(url);
+    let audio = null, audioSrc = null, videoStream = null, combined = null;
     let raf = 0, watchdog = 0, settled = false;
     // Cleanup ÚNICO e idempotente, alcançado por onstop, onerror, o catch E o
     // watchdog. Antes o cleanup vivia só no onstop, então um erro async do
@@ -519,14 +654,16 @@ async function transcodeAtShortSide(blob, startSec, endSec, shortSide, onProgres
       try { videoStream?.getTracks().forEach(t => t.stop()); } catch (_) {}
       try { combined?.getTracks().forEach(t => t.stop()); } catch (_) {}
       try { audioSrc?.disconnect(); } catch (_) {}
-      try { audioCtx?.close(); } catch (_) {}
-      try { video.pause(); } catch (_) {}
+      closeTranscodeAudio(audio);
+      releaseTranscodeVideo(video);
       URL.revokeObjectURL(url);
     };
     const done = (out) => { if (settled) return; settled = true; cleanup(); resolve(out); };
     const fail = (err) => { if (settled) return; settled = true; cleanup(); reject(err instanceof Error ? err : new Error(String(err))); };
     try {
+      const fmt = requireRecorderFormat('video');
       await waitVideoEvent(video, 'loadedmetadata', 'vídeo não carregou');
+      if (settled) return;   // cancelado (abort/limpeza) enquanto esperava
       const iw = video.videoWidth, ih = video.videoHeight;
       if (!iw || !ih) throw new Error('vídeo sem dimensões');
       const aspect = iw / ih;
@@ -540,36 +677,33 @@ async function transcodeAtShortSide(blob, startSec, endSec, shortSide, onProgres
       videoStream = canvas.captureStream(30);
       // Grafo de áudio: source → destination stream (sem tocar enquanto
       // transcoda). Combinado com o videoStream num único MediaStream.
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      audioSrc = audioCtx.createMediaElementSource(video);
-      const audioDest = audioCtx.createMediaStreamDestination();
+      audio = await transcodeAudioContext();
+      if (settled) { closeTranscodeAudio(audio); return; }   // a limpeza já passou (audio ainda era null)
+      audioSrc = audio.ctx.createMediaElementSource(video);
+      const audioDest = audio.ctx.createMediaStreamDestination();
       audioSrc.connect(audioDest);
       combined = new MediaStream([
         ...videoStream.getVideoTracks(),
         ...audioDest.stream.getAudioTracks(),
       ]);
-      const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
-        ? 'video/webm;codecs=vp9,opus'
-        : (MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')
-            ? 'video/webm;codecs=vp8,opus' : 'video/webm');
       const recorder = new MediaRecorder(combined, {
-        mimeType: mime,
+        mimeType: fmt.mime,
         videoBitsPerSecond: shortSide >= 720 ? 1_600_000 : 700_000,
         audioBitsPerSecond: 128_000,
       });
       const chunks = [];
       recorder.ondataavailable = (e) => { if (e.data?.size) chunks.push(e.data); };
       recorder.onerror = (e) => fail(e.error || new Error('recorder error'));
-      recorder.onstop = () => done(new Blob(chunks, { type: 'video/webm' }));
-      video.currentTime = startSec;
-      await waitVideoEvent(video, 'seeked', 'seek falhou');
+      recorder.onstop = () => done(new Blob(chunks, { type: fmt.type }));
+      await robustVideoSeek(video, startSec, 'seek falhou', 15000);
+      if (settled) return;
       let stopped = false;
       const dur = Math.max(0.001, endSec - startSec);
       recorder.start(250);
       // Watchdog: se o playback nunca avançar (play() rejeitado/travado), o
       // loop de render nunca encerraria — aborta após o tempo real + folga.
       watchdog = setTimeout(() => fail(new Error('transcode timeout')), dur * 1000 + 8000);
-      video.play().catch((e) => fail(new Error('play() rejeitado: ' + (e?.message || e))));
+      video.play().catch((e) => fail(playRejected(e)));
       const render = () => {
         if (stopped || settled) return;
         if (video.currentTime >= endSec || video.ended) {
@@ -599,13 +733,9 @@ async function transcodeAtShortSide(blob, startSec, endSec, shortSide, onProgres
 async function transcodeClip(blob, startSec, endSec, { want720 = true, want360 = true, onProgress, signal } = {}) {
   return new Promise(async (resolve, reject) => {
     if (signal?.aborted) { reject(abortError()); return; }
-    const video = document.createElement('video');
     const url = URL.createObjectURL(blob);
-    video.src = url;
-    video.muted = false;
-    video.playsInline = true;
-    video.preload = 'auto';
-    let audioCtx = null, audioSrc = null;
+    const video = transcodeVideoElement(url);
+    let audio = null, audioSrc = null;
     const streams = [], recorders = [];
     let raf = 0, watchdog = 0, settled = false;
     const cleanup = () => {
@@ -613,8 +743,8 @@ async function transcodeClip(blob, startSec, endSec, { want720 = true, want360 =
       clearTimeout(watchdog);
       for (const s of streams) { try { s.getTracks().forEach(t => t.stop()); } catch (_) {} }
       try { audioSrc?.disconnect(); } catch (_) {}
-      try { audioCtx?.close(); } catch (_) {}
-      try { video.pause(); } catch (_) {}
+      closeTranscodeAudio(audio);
+      releaseTranscodeVideo(video);
       URL.revokeObjectURL(url);
     };
     // A miniatura sai do MESMO passe (frame ~5% adentro do recorte, ou 0,5 s
@@ -643,19 +773,19 @@ async function transcodeClip(blob, startSec, endSec, { want720 = true, want360 =
     const fail = (err) => { if (settled) return; settled = true; cleanup(); signal?.removeEventListener('abort', onAbort); reject(err instanceof Error ? err : new Error(String(err))); };
     signal?.addEventListener('abort', onAbort, { once: true });
     try {
+      const afmt = requireRecorderFormat('audio');
+      const vfmt = (want720 || want360) ? requireRecorderFormat('video') : null;
       await waitVideoEvent(video, 'loadedmetadata', 'vídeo não carregou');
+      if (settled) return;   // cancelado (abort/limpeza) enquanto esperava
       const iw = video.videoWidth, ih = video.videoHeight;
       if ((want720 || want360) && (!iw || !ih)) throw new Error('vídeo sem dimensões');
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      audioSrc = audioCtx.createMediaElementSource(video);
-      const audioDest = audioCtx.createMediaStreamDestination();
+      audio = await transcodeAudioContext();
+      if (settled) { closeTranscodeAudio(audio); return; }   // a limpeza já passou (audio ainda era null)
+      audioSrc = audio.ctx.createMediaElementSource(video);
+      const audioDest = audio.ctx.createMediaStreamDestination();
       audioSrc.connect(audioDest);
       streams.push(audioDest.stream);
       const audioTrack = audioDest.stream.getAudioTracks()[0];
-      const vmime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
-        ? 'video/webm;codecs=vp9,opus'
-        : (MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus') ? 'video/webm;codecs=vp8,opus' : 'video/webm');
-      const amime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm';
       const outs = {};   // key → { rec, chunks, type }
       const mk = (key, stream, opts, type) => {
         const rec = new MediaRecorder(stream, opts);
@@ -665,7 +795,7 @@ async function transcodeClip(blob, startSec, endSec, { want720 = true, want360 =
         outs[key] = { rec, chunks, type };
         recorders.push(rec);
       };
-      mk('audio', audioDest.stream, { mimeType: amime, audioBitsPerSecond: 192_000 }, 'audio/webm');
+      mk('audio', audioDest.stream, { mimeType: afmt.mime, audioBitsPerSecond: 192_000 }, afmt.type);
       const draws = [];
       const aspect = iw / ih;
       for (const [key, shortSide, vbr, want] of [['blob720', 720, 1_600_000, want720], ['blob360', 360, 700_000, want360]]) {
@@ -683,7 +813,7 @@ async function transcodeClip(blob, startSec, endSec, { want720 = true, want360 =
         try { atrack = audioTrack.clone(); } catch (_) { /* sem clone: compartilha a trilha */ }
         const combined = new MediaStream([...vs.getVideoTracks(), atrack]);
         streams.push(combined);
-        mk(key, combined, { mimeType: vmime, videoBitsPerSecond: vbr, audioBitsPerSecond: 128_000 }, 'video/webm');
+        mk(key, combined, { mimeType: vfmt.mime, videoBitsPerSecond: vbr, audioBitsPerSecond: 128_000 }, vfmt.type);
         draws.push(() => ctx.drawImage(video, 0, 0, outW, outH));
       }
       let pending = recorders.length;
@@ -694,13 +824,13 @@ async function transcodeClip(blob, startSec, endSec, { want720 = true, want360 =
           if (--pending === 0) done(results);
         };
       }
-      video.currentTime = startSec;
-      await waitVideoEvent(video, 'seeked', 'seek falhou');
+      await robustVideoSeek(video, startSec, 'seek falhou', 15000);
+      if (settled) return;
       let stopped = false;
       const dur = Math.max(0.001, endSec - startSec);
       for (const r of recorders) r.start(250);
       watchdog = setTimeout(() => fail(new Error('transcode timeout')), dur * 1000 + 8000);
-      video.play().catch((e) => fail(new Error('play() rejeitado: ' + (e?.message || e))));
+      video.play().catch((e) => fail(playRejected(e)));
       const render = () => {
         if (stopped || settled) return;
         if (video.currentTime >= endSec || video.ended) {
@@ -843,51 +973,47 @@ async function transcodeClipFast(file, startSec, endSec, { want720 = true, want3
 
 async function extractAudio(blob, startSec, endSec, onProgress) {
   return new Promise(async (resolve, reject) => {
-    const video = document.createElement('video');
     const url = URL.createObjectURL(blob);
-    video.src = url;
-    video.muted = false;
-    video.playsInline = true;
-    video.preload = 'auto';
-    let audioCtx = null, audioSrc = null, audioDest = null;
+    const video = transcodeVideoElement(url);
+    let audio = null, audioSrc = null, audioDest = null;
     let raf = 0, watchdog = 0, settled = false;
     const cleanup = () => {
       cancelAnimationFrame(raf);
       clearTimeout(watchdog);
       try { audioDest?.stream.getTracks().forEach(t => t.stop()); } catch (_) {}
       try { audioSrc?.disconnect(); } catch (_) {}
-      try { audioCtx?.close(); } catch (_) {}
-      try { video.pause(); } catch (_) {}
+      closeTranscodeAudio(audio);
+      releaseTranscodeVideo(video);
       URL.revokeObjectURL(url);
     };
     const done = (out) => { if (settled) return; settled = true; cleanup(); resolve(out); };
     const fail = (err) => { if (settled) return; settled = true; cleanup(); reject(err instanceof Error ? err : new Error(String(err))); };
     try {
+      const fmt = requireRecorderFormat('audio');
       await waitVideoEvent(video, 'loadedmetadata', 'mídia não carregou');
-      // audioCtx hoisted (declarado fora do try) pra que o cleanup feche o
+      if (settled) return;   // cancelado (abort/limpeza) enquanto esperava
+      // audio hoisted (declarado fora do try) pra que o cleanup feche o
       // contexto mesmo se a falha vier depois da criação dele.
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      audioSrc = audioCtx.createMediaElementSource(video);
-      audioDest = audioCtx.createMediaStreamDestination();
+      audio = await transcodeAudioContext();
+      if (settled) { closeTranscodeAudio(audio); return; }   // a limpeza já passou (audio ainda era null)
+      audioSrc = audio.ctx.createMediaElementSource(video);
+      audioDest = audio.ctx.createMediaStreamDestination();
       audioSrc.connect(audioDest);
-      const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-        ? 'audio/webm;codecs=opus'
-        : 'audio/webm';
       const recorder = new MediaRecorder(audioDest.stream, {
-        mimeType: mime,
+        mimeType: fmt.mime,
         audioBitsPerSecond: 192_000,
       });
       const chunks = [];
       recorder.ondataavailable = (e) => { if (e.data?.size) chunks.push(e.data); };
       recorder.onerror = (e) => fail(e.error || new Error('audio recorder error'));
-      recorder.onstop = () => done(new Blob(chunks, { type: 'audio/webm' }));
-      video.currentTime = startSec;
-      await waitVideoEvent(video, 'seeked', 'seek falhou');
+      recorder.onstop = () => done(new Blob(chunks, { type: fmt.type }));
+      await robustVideoSeek(video, startSec, 'seek falhou', 15000);
+      if (settled) return;
       let stopped = false;
       const dur = Math.max(0.001, endSec - startSec);
       recorder.start(250);
       watchdog = setTimeout(() => fail(new Error('audio extract timeout')), dur * 1000 + 8000);
-      video.play().catch((e) => fail(new Error('play() rejeitado: ' + (e?.message || e))));
+      video.play().catch((e) => fail(playRejected(e)));
       const tick = () => {
         if (stopped || settled) return;
         if (video.currentTime >= endSec || video.ended) {
@@ -951,6 +1077,9 @@ export async function processClipFile(file, p, { onProgress, signal, onEngine } 
     return { ...out, engine: 'MediaRecorder' };
   } catch (e) {
     if (isAbortError(e) || signal?.aborted) throw abortError();
+    // Sem toque (WebKit) ou sem formato de gravação, o sequencial bate na
+    // mesma parede — 3 passes depois. Falha já, com a mensagem certa.
+    if (isGestureError(e) || e?.name === 'NotSupportedError') throw e;
     console.warn('transcode em passe único falhou — caindo pro sequencial:', e.message);
   }
   onEngine?.('sequencial');
@@ -975,6 +1104,7 @@ export {
   isHeicFile, isVideoFile,
   tryExtractVideoGps, tryExtractVideoCreationDate, videoFirstFrameBlob,
   waitVideoEvent, primeVideoForFrames, robustVideoSeek,
+  recorderFormats, clipFileName, blessMediaForGesture, isGestureError, MEDIA_NEEDS_GESTURE,
   transcodeAtShortSide, transcodeClip, loadMediabunny, fastTranscodeCodec,
   abortError, isAbortError, transcodeClipFast, extractAudio, makeLimiter,
 };

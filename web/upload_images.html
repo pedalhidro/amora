@@ -17,6 +17,9 @@
   }
   body { font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace; max-width: 1400px; margin: 1.5rem auto; padding: 0 1rem;
     color: var(--text); background: var(--bg); transition: background .2s; }
+  /* Sem "puxar pra recarregar" nem rolagem encadeada pro app-pai: um puxão
+     no topo recarregava a página e sumia com todos os cards. */
+  html, body { overscroll-behavior: contain; }
   h1 { font-size: 1.4rem; margin: 0 0 .25rem; }
   /* Barra superior: "← Voltar ao censo" (só quando se chegou pelo censo —
      mesmo padrão do upload_tour.html). */
@@ -158,6 +161,10 @@
   #cards::-webkit-scrollbar-thumb:hover { background: #aeb9c4; }
   .card {
     flex: 0 0 min(360px, 82vw);
+    /* min-width: 0 — senão o "auto" do flex item vira a largura mínima do
+       conteúdo (inputs com fonte de 16 px no toque) e o card passa da faixa,
+       cortando o × e os steppers à direita. */
+    min-width: 0;
     scroll-snap-align: start;
     border: 1px solid var(--border);
     border-radius: 8px;
@@ -169,6 +176,7 @@
     gap: .25rem;
     transition: background .2s, border-color .2s;
   }
+  .card[hidden] { display: none; }   /* remoção com Desfazer — display:flex venceria o [hidden] do UA */
   /* Fundo do card reflete o estado de envio: amarelo=pendente, verde=enviado,
      vermelho=erro (tons que leem bem no escuro). */
   .card.card-pending  { background: rgba(240, 200, 60, 0.13); border-color: rgba(240, 200, 60, 0.45); }
@@ -186,11 +194,14 @@
   .card-meta { flex: 1; min-width: 0; }
   .card-meta strong { display: block; font-size: .85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .card-meta .hash { font-size: .65rem; color: var(--muted); word-break: break-all; }
+  /* × do card: alvo de toque de verdade (era ~19 px, colado no título) — e
+     remover tem "Desfazer" (ver removeCardWithUndo). */
   .card-remove {
-    border: 0; background: transparent; cursor: pointer;
-    font-size: 1.2rem; color: var(--err); padding: 0 .25rem; line-height: 1;
+    border: 0; background: transparent; cursor: pointer; flex: 0 0 auto;
+    font-size: 1.5rem; color: var(--err); padding: 0; line-height: 1;
+    min-width: 36px; min-height: 36px; border-radius: 6px;
   }
-  .card-remove:hover { color: #b3261e; }
+  .card-remove:hover { color: #b3261e; background: rgba(230, 90, 90, 0.1); }
   .card-section { border-top: 1px dashed var(--border); padding-top: .4rem; margin-top: .25rem; }
   .card-section h4 {
     font-size: .7rem; color: var(--muted); font-weight: 600;
@@ -225,16 +236,20 @@
     width: 100%; max-height: 220px; background: #000;
     border-radius: 4px; display: block;
   }
+  /* touch-action: arrastar na linha do recorte não rola a faixa de cards
+     (antes o dedo no trilho do slider levava pro card vizinho). */
   .trim-row {
     display: grid; grid-template-columns: 40px 1fr auto; align-items: center;
-    gap: .35rem; margin: .3rem 0 .1rem;
+    gap: .35rem; margin: .3rem 0 .1rem; touch-action: pan-y;
   }
   .trim-row > span { font-size: .72rem; color: var(--muted); }
   input[type="range"] { accent-color: var(--accent); }
   .trim-steppers { display: flex; gap: .15rem; }
+  /* Rótulo visível (−1s / −1q / +1q / +1s; q = quadro) em vez de só tooltip. */
   .trim-step-btn {
     background: var(--surface); border: 1px solid var(--border); border-radius: 3px; color: var(--text);
-    padding: 0 .3rem; cursor: pointer; font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .75rem;
+    padding: .1rem .3rem; cursor: pointer; font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .72rem;
+    white-space: nowrap;
   }
   .trim-step-btn:hover { background: var(--panel); border-color: var(--accent); }
   .trim-times {
@@ -243,6 +258,39 @@
     margin-top: .25rem;
   }
   .trim-times .warn { color: var(--err); }
+  .trim-budget { display: block; font-size: .72rem; margin-top: .2rem; min-height: 0; }
+  .trim-budget:empty { display: none; }
+
+  /* Aviso pro iPhone/iPad embaixo do seletor (vídeo). */
+  #ios-video-note { font-size: .78rem; line-height: 1.4; color: var(--warn); margin-top: .35rem; }
+
+  /* "Removido · Desfazer" — toast fixo no pé da página. */
+  #undo-toast {
+    position: fixed; left: 50%; bottom: max(12px, env(safe-area-inset-bottom)); transform: translateX(-50%);
+    z-index: 10000; display: flex; gap: .6rem; align-items: center; max-width: calc(100vw - 24px);
+    background: #101820; color: #fff; border-radius: 8px; padding: .5rem .6rem .5rem .9rem;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, .3); font-size: .85rem;
+  }
+  #undo-toast[hidden] { display: none; }
+  #undo-toast span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  #undo-toast button {
+    flex: 0 0 auto; min-height: 36px; padding: .3rem .8rem; font-size: .9rem; font-weight: 600;
+    background: var(--accent); border-color: var(--accent); color: #201206;
+  }
+
+  /* Toque (celular/tablet): campos a 16 px — o iOS dá zoom na página ao focar
+     campo menor e não desfaz (fora do app não há o maximum-scale do
+     index.html). Inclui o Tom Select (o CSS vendorado fixa 13 px). Steppers do
+     recorte e × com ≥ 40 px; os steppers descem pra uma linha própria pro
+     slider ficar com a largura do card. */
+  @media (pointer: coarse) {
+    input, select, textarea, .ts-control, .ts-control input, .ts-dropdown { font-size: 16px !important; }
+    .card-remove { min-width: 44px; min-height: 44px; }
+    .trim-row { grid-template-columns: 44px 1fr; row-gap: .3rem; }
+    .trim-row input[type="range"] { min-height: 32px; }
+    .trim-steppers { grid-column: 1 / -1; gap: .4rem; }
+    .trim-step-btn { flex: 1 1 0; min-height: 40px; font-size: .85rem; }
+  }
 </style>
 <link href="./lib/tom-select.min.css" rel="stylesheet">
 </head>
@@ -304,7 +352,14 @@
              soltar no desktop (contorna o seletor); no celular, escolher em lotes
              menores — os cards se acumulam (dedup evita repetição). -->
         <input type="file" id="files" accept="image/*,image/heic,image/heif,video/*" multiple>
-        <small id="filesStatus">Escolha ou arraste imagens. Videos serão convertidos para 360p+720p webm e cortados em 10min.</small>
+        <small id="filesStatus">Escolha ou arraste imagens. Vídeos são convertidos para 360p (+720p opcional) e cortados em até 10 min.</small>
+        <!-- iPhone/iPad (ver IS_IOS no script): o seletor de Fotos converte
+             cada vídeo ANTES de devolver os arquivos, sem progresso — parece
+             travado; e a conversão pra envio só roda depois de um toque. -->
+        <small id="ios-video-note" hidden>No iPhone/iPad: o iOS converte cada vídeo antes de entregar
+          (o seletor parece travado) — escolha um ou dois vídeos por vez e aguarde. Depois, a conversão
+          pro envio pode levar o tempo do vídeo: toque em <strong>Enviar</strong> e mantenha esta tela
+          aberta até terminar.</small>
         <small id="catalogStatus">Carregando catálogo…</small>
         <div id="notices" role="status" aria-live="polite" style="margin: .5rem 0;"></div>
         <div style="margin-top: .5rem">
@@ -332,6 +387,12 @@
   </div>
 
 </form>
+
+<!-- "Removido · Desfazer" depois do × de um card (removeCardWithUndo). -->
+<div id="undo-toast" role="status" aria-live="polite" hidden>
+  <span id="undo-toast-text"></span>
+  <button type="button" id="undo-toast-btn">Desfazer</button>
+</div>
 
 <!-- Modal de seleção de coordenadas no mapa (Leaflet/OSM, lazy-load).
      `display:none` inline garante que o atributo `hidden` não compita com
@@ -377,6 +438,21 @@ $('#files')?.addEventListener('change', (e) => {
 // Embutido no iframe do app: o título vive na faixa do header do modal —
 // esconde o <h1> interno pra não duplicar. Standalone mostra normalmente.
 if (window.self !== window.top) $('h1')?.style.setProperty('display', 'none');
+
+// Embutido: pinça dentro da folha não pode deixar o APP inteiro com zoom (o
+// Safari do iOS ignora user-scalable=no; estes são os eventos do WebKit).
+// Standalone mantém o zoom por pinça (acessibilidade).
+if (window.self !== window.top) {
+  for (const t of ['gesturestart', 'gesturechange']) document.addEventListener(t, (e) => e.preventDefault(), { passive: false });
+}
+
+// iPhone/iPad (inclui o iPadOS que se apresenta como Mac) — mesma checagem do
+// subir.html. No iOS todo navegador é WebKit: converter vídeo pelo
+// MediaRecorder exige um <video> tocando COM SOM, e isso só com um toque (ver
+// blessMediaForGesture).
+const IS_IOS = /iP(hone|ad|od)/.test(navigator.userAgent) ||
+  (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+if (IS_IOS) $('#ios-video-note').hidden = false;
 
 // "← Voltar ao censo": só quando se chegou PELO censo — o botão "Subir" de lá
 // carrega `from=censo` (e o referrer serve de fallback). No modal Censo do app
@@ -878,6 +954,61 @@ function hammingDistance(h1, h2) {
 let cardCounter = 0;
 let pickerBusy  = false;   // guarda contra re-entrada do handler de #files
 
+// ===================== Estado do form → app-pai =========================
+// Contrato `phidro-form-state` (embutido no iframe da folha do app): a cada
+// mudança o form diz se há trabalho em curso que se perderia ao fechar
+// (`busy`: envio, conversão, pré-envio, leitura de arquivos), se há coisa não
+// enviada (`dirty`: cards pendentes, edição não salva) e um `label` curto do
+// que se perderia. O app não fecha a folha num toque fora e pergunta antes de
+// fechar/navegar o iframe busy/dirty.
+let _batchRunning = false;   // "Enviar todas" em andamento
+let _batchStop    = false;   // pedido de parada (a folha fechou) — ver stopUploadAll
+let _editDirty    = false;   // ?edit=: alteração não salva
+let _editSaving   = false;
+let _lastFormState = '';
+let _formStateQueued = false;
+function scheduleFormState() {
+  if (_formStateQueued || window.parent === window) return;
+  _formStateQueued = true;
+  setTimeout(() => { _formStateQueued = false; postFormState(); }, 0);
+}
+function postFormState() {
+  const st = computeFormState();
+  const key = JSON.stringify(st);
+  if (key === _lastFormState) return;
+  _lastFormState = key;
+  try { window.parent.postMessage({ type: 'phidro-form-state', ...st }, window.location.origin); } catch (_) {}
+}
+// "3 imagens e 1 vídeo" + a concordância do particípio.
+function describeCards(list) {
+  const i = list.filter((c) => c.kind !== 'video').length;
+  const v = list.length - i;
+  const parts = [];
+  if (i) parts.push(`${i} ${i > 1 ? 'imagens' : 'imagem'}`);
+  if (v) parts.push(`${v} ${v > 1 ? 'vídeos' : 'vídeo'}`);
+  const fem = !v;   // só imagens → "enviadas"
+  const plural = list.length > 1;
+  return { text: parts.join(' e '), sent: `enviad${fem ? 'a' : 'o'}${plural ? 's' : ''}` };
+}
+function computeFormState() {
+  const unsent = cards.filter((c) => !c.uploaded);
+  const sending = cards.some((c) => c.sending);
+  const preparing = cards.some((c) => !c.uploaded && !c.sending &&
+    ((c.proc && !c.proc.result && !c.proc.failed) || c.staging));
+  const busy = _batchRunning || sending || preparing || pickerBusy || _editSaving;
+  const dirty = unsent.length > 0 || _editDirty;
+  let label = '';
+  if (unsent.length) {
+    const d = describeCards(unsent);
+    label = (_batchRunning || sending) ? `${d.text} ainda enviando`
+      : preparing ? `${d.text} não ${d.sent} (vídeo em preparo)`
+      : `${d.text} não ${d.sent}`;
+  } else if (pickerBusy) label = 'arquivos escolhidos ainda sendo lidos';
+  else if (_editSaving) label = 'salvando a edição';
+  else if (_editDirty) label = 'alterações não salvas';
+  return { busy, dirty, label };
+}
+
 // ===================== Bootstrap catálogo ==============================
 try {
   const { tours, persons, lists, existingPhashes: srvHashes, existingVhashes: srvVHashes } = await loadCatalog();
@@ -1034,6 +1165,9 @@ function initListSelect(selectEl) {
     searchField: ['text'],
     plugins: ['remove_button'],
     persist: false,
+    // No <body>, como o das pessoas: dentro do card o overflow-y: hidden da
+    // faixa cortava o fim da lista (sobretudo nos cards de vídeo).
+    dropdownParent: 'body',
     create: (input) => mintList(input) || false,
     render: {
       option_create: (data, escape) =>
@@ -1188,14 +1322,25 @@ async function startEditMode(iri) {
   if (f.lists.length)     listTs.setValue(f.lists);
 
   const orig = { lat: f.lat, lon: f.lon };
+  // Alterações não salvas → o app-pai pergunta antes de fechar (phidro-form-state).
+  // Liga DEPOIS do prefill: o setValue dos Tom Select dispara `change`.
+  setTimeout(() => {
+    const markDirty = () => { if (!_editDirty) { _editDirty = true; scheduleFormState(); } };
+    card.addEventListener('input', markDirty);
+    card.addEventListener('change', markDirty);
+  }, 0);
   $('#edit-save', card).addEventListener('click', async () => {
     const status = $('#edit-status', card);
     status.textContent = 'Salvando…';
+    _editSaving = true; scheduleFormState();
     try {
       await saveMediaEdit(f, card, authorTs, providerTs, listTs, orig);
+      _editDirty = false;
       status.innerHTML = '<span style="color:#1a7f4b">Salvo! Feche esta janela pra atualizar o mapa.</span>';
     } catch (e) {
       status.innerHTML = `<span style="color:#b3261e">Erro: ${escapeHtml(e.message)}</span>`;
+    } finally {
+      _editSaving = false; scheduleFormState();
     }
   });
 }
@@ -1499,22 +1644,22 @@ function buildVideoCardElem(displayIdx, file) {
       <video class="card-video-preview" muted controls playsinline preload="metadata"></video>
       <div class="trim-row">
         <span>Início</span>
-        <input type="range" data-field="trim-start" min="0" max="100" step="0.01" value="0">
+        <input type="range" data-field="trim-start" min="0" max="100" step="0.01" value="0" aria-label="Início do recorte">
         <div class="trim-steppers">
-          <button type="button" class="trim-step-btn" data-step="-1"      data-trim="start" title="−1s">⟨⟨</button>
-          <button type="button" class="trim-step-btn" data-step="-0.033"  data-trim="start" title="−1 frame">⟨</button>
-          <button type="button" class="trim-step-btn" data-step="0.033"   data-trim="start" title="+1 frame">⟩</button>
-          <button type="button" class="trim-step-btn" data-step="1"       data-trim="start" title="+1s">⟩⟩</button>
+          <button type="button" class="trim-step-btn" data-step="-1"      data-trim="start" title="Início: −1 segundo" aria-label="Início: voltar 1 segundo">−1s</button>
+          <button type="button" class="trim-step-btn" data-step="-0.033"  data-trim="start" title="Início: −1 quadro" aria-label="Início: voltar 1 quadro">−1q</button>
+          <button type="button" class="trim-step-btn" data-step="0.033"   data-trim="start" title="Início: +1 quadro" aria-label="Início: avançar 1 quadro">+1q</button>
+          <button type="button" class="trim-step-btn" data-step="1"       data-trim="start" title="Início: +1 segundo" aria-label="Início: avançar 1 segundo">+1s</button>
         </div>
       </div>
       <div class="trim-row">
         <span>Fim</span>
-        <input type="range" data-field="trim-end" min="0" max="100" step="0.01" value="100">
+        <input type="range" data-field="trim-end" min="0" max="100" step="0.01" value="100" aria-label="Fim do recorte">
         <div class="trim-steppers">
-          <button type="button" class="trim-step-btn" data-step="-1"      data-trim="end" title="−1s">⟨⟨</button>
-          <button type="button" class="trim-step-btn" data-step="-0.033"  data-trim="end" title="−1 frame">⟨</button>
-          <button type="button" class="trim-step-btn" data-step="0.033"   data-trim="end" title="+1 frame">⟩</button>
-          <button type="button" class="trim-step-btn" data-step="1"       data-trim="end" title="+1s">⟩⟩</button>
+          <button type="button" class="trim-step-btn" data-step="-1"      data-trim="end" title="Fim: −1 segundo" aria-label="Fim: voltar 1 segundo">−1s</button>
+          <button type="button" class="trim-step-btn" data-step="-0.033"  data-trim="end" title="Fim: −1 quadro" aria-label="Fim: voltar 1 quadro">−1q</button>
+          <button type="button" class="trim-step-btn" data-step="0.033"   data-trim="end" title="Fim: +1 quadro" aria-label="Fim: avançar 1 quadro">+1q</button>
+          <button type="button" class="trim-step-btn" data-step="1"       data-trim="end" title="Fim: +1 segundo" aria-label="Fim: avançar 1 segundo">+1s</button>
         </div>
       </div>
       <div class="trim-times">
@@ -1522,6 +1667,7 @@ function buildVideoCardElem(displayIdx, file) {
         <span>Duração: <strong data-out="dur">0,00s</strong></span>
         <span>Fim: <strong data-out="end">0,00s</strong></span>
       </div>
+      <small class="trim-budget warn" aria-live="polite"></small>
     </div>
 
     <div class="card-section">
@@ -1541,7 +1687,7 @@ function buildVideoCardElem(displayIdx, file) {
       <h4>Saída</h4>
       <div class="opts">
         <label><input type="checkbox" data-field="audio-only"> Apenas áudio (sem trilha de vídeo)</label>
-        <label title="O mapa só toca o 720p com “HD” ligado nos Ajustes; o arquivo pesa ~3× o 360p pra subir"><input type="checkbox" data-field="hd"> Também 720p (HD)</label>
+        <label title="O mapa só toca o 720p com “HD” ligado nos Ajustes; o arquivo pesa ~3× o 360p pra subir"><input type="checkbox" data-field="hd"> Também 720p (HD, ~3× mais pesado)</label>
       </div>
       <small class="card-prep-status" aria-live="polite"></small>
     </div>
@@ -1587,12 +1733,14 @@ function buildVideoCardElem(displayIdx, file) {
 
 function removeCard(card) {
   card.removed = true;
+  card.retryPending = false;
   clearTimeout(card._specTimer);
   if (card.proc) card.proc.controller.abort();
   discardStaged(card);
   cardActivationObserver.unobserve(card.elem);   // no-op se já ativado/desativado
   destroyPersonSelect(card.authorTs);
   destroyPersonSelect(card.providerTs);
+  destroyListSelect(card.listTs);
   try { URL.revokeObjectURL($('.card-thumb', card.elem).src); } catch (_) {}
   const previewEl = $('.card-video-preview', card.elem);
   if (previewEl?.src) { try { URL.revokeObjectURL(previewEl.src); } catch (_) {} }
@@ -1602,11 +1750,69 @@ function removeCard(card) {
   if (i >= 0) cards.splice(i, 1);
   refreshGenerateButtons();
   updateCarouselNav();
+  scheduleFormState();
 }
+
+// ── × com Desfazer ───────────────────────────────────────────────────────
+// O × era um alvo de ~19 px colado no título que apagava o card (edições,
+// recorte, pré-envio) sem volta. Agora a remoção espera UNDO_MS: o card some
+// e sai de `cards` (dedup, "Enviar todas" e contadores já o ignoram), mas nada
+// é destruído até o prazo — "Desfazer" o devolve exatamente como estava.
+const UNDO_MS = 6000;
+let _undo = null;   // { card, index, timer }
+const undoToastEl = $('#undo-toast');
+function removeCardWithUndo(card) {
+  finalizePendingRemoval();   // um por vez: o anterior vira definitivo
+  const index = cards.indexOf(card);
+  if (index < 0) return;
+  cards.splice(index, 1);
+  card.pendingRemoval = true;
+  clearTimeout(card._specTimer);
+  card.elem.hidden = true;
+  if (card.gridThumbBtn) card.gridThumbBtn.hidden = true;
+  refreshGenerateButtons();
+  updateCarouselNav();
+  scheduleFormState();
+  _undo = { card, index, timer: setTimeout(finalizePendingRemoval, UNDO_MS) };
+  $('#undo-toast-text').textContent = `Removido: ${card.index}. ${card.file.name}`;
+  undoToastEl.hidden = false;
+}
+function finalizePendingRemoval() {
+  const u = _undo;
+  if (!u) return;
+  _undo = null;
+  clearTimeout(u.timer);
+  undoToastEl.hidden = true;
+  u.card.pendingRemoval = false;
+  removeCard(u.card);   // já saiu de `cards`; aqui aborta/descarta/destrói
+}
+function undoRemoval() {
+  const u = _undo;
+  if (!u) return;
+  _undo = null;
+  clearTimeout(u.timer);
+  undoToastEl.hidden = true;
+  const c = u.card;
+  c.pendingRemoval = false;
+  // O mesmo arquivo foi escolhido de novo no meio-tempo → voltar criaria duplicata.
+  if (cards.some((o) => o.phash && c.phash && hammingDistance(o.phash, c.phash) <= PHASH_DUP_THRESHOLD)) {
+    removeCard(c);
+    notify(`<strong>${escapeHtml(c.file.name)}</strong>: não deu pra desfazer — o arquivo já foi adicionado de novo.`);
+    return;
+  }
+  cards.splice(Math.min(u.index, cards.length), 0, c);
+  c.elem.hidden = false;
+  if (c.gridThumbBtn) c.gridThumbBtn.hidden = false;
+  refreshGenerateButtons();
+  updateCarouselNav();
+  scheduleFormState();
+  focusCard(c);
+}
+$('#undo-toast-btn').addEventListener('click', undoRemoval);
 
 function refreshGenerateButtons() {
   const has = cards.length > 0;
-  $$('.upload-all-btn').forEach((btn) => { btn.disabled = !has; });
+  $$('.upload-all-btn').forEach((btn) => { btn.disabled = !has || _batchRunning; });
   $('#clearAll').disabled = !has;
 }
 
@@ -1643,6 +1849,7 @@ function addThumbToGrid(card) {
   escalateZoneState(1);   // adicionou imagem → grupo fica verde (se ainda não amarelo/vermelho)
   if (!card.uploaded) setCardBg(card, 'pending');   // card novo = pendente (amarelo)
   document.body.classList.remove('all-uploaded');   // novo card → não é mais "tudo enviado"
+  scheduleFormState();
 }
 // Atualiza a src da miniatura (usado quando o thumb do vídeo fica pronto).
 function setGridThumbSrc(card, url) { if (card.gridThumb) card.gridThumb.src = url; }
@@ -1851,11 +2058,12 @@ async function videoFirstFrameBlob(file) {
 
 // ===================== Vídeo: transcodificação =========================
 // MediaRecorder grava o canvas re-escalado + a trilha de áudio do source
-// num webm único (vp9+opus ou vp8+opus). Áudio embutido garante som no
+// num webm único (vp9+opus ou vp8+opus; mp4 H.264+AAC onde o navegador não
+// grava WebM — ver recorderFormats). Áudio embutido garante som no
 // ghost-video player em iOS (iOS Safari muta MediaElementAudioSourceNode
 // em algumas configs — som embutido contorna isso). Mantemos extractAudio
-// gerando `<vhash>.audio.webm` separado pra o audio loop usar sem precisar
-// baixar o webm de vídeo cheio.
+// gerando `<vhash>.audio.webm` (ou .m4a) separado pra o audio loop usar sem
+// precisar baixar o vídeo cheio.
 // Aguarda um evento de mídia com timeout + tratamento de 'error' — sem isto,
 // um `seeked`/`loadedmetadata` que nunca dispara (codec problemático, aba em
 // background) pendurava o transcode pra sempre e travava a UI de upload.
@@ -1911,15 +2119,149 @@ function robustVideoSeek(v, t, errMsg = 'seek falhou', timeoutMs = 12000) {
   });
 }
 
+// ── MediaRecorder: formato de gravação + gesto de mídia (WebKit) ──────────
+// WebM (vp9/vp8 + opus) é o formato de sempre do catálogo, mas o Safari só
+// grava WebM a partir do 18.4: antes disso o MediaRecorder só grava MP4
+// (H.264 + AAC) e o construtor com 'video/webm' LANÇA ("mimeType is not
+// supported"), derrubando os motores todos. O formato vem então do que o
+// navegador grava de fato — WebM se der, senão MP4. O mapa e a galeria tocam
+// os dois (build-clips.py sempre gerou mp4/m4a) e o servidor aceita os dois
+// sufixos (_CLIP_VARIANTS no backend). `?mp4=1` finge que não há WebM (teste
+// do caminho do iPhone num Chrome).
+const FORCE_MP4_RECORDING = new URLSearchParams(location.search).has('mp4');
+function recorderFormats() {
+  const ok = (t) => { try { return MediaRecorder.isTypeSupported(t); } catch (_) { return false; } };
+  const pick = (list) => list.find(ok) || null;
+  if (typeof MediaRecorder === 'undefined') return { video: null, audio: null };
+  const webmV = FORCE_MP4_RECORDING ? null : pick(['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm']);
+  const webmA = FORCE_MP4_RECORDING ? null : pick(['audio/webm;codecs=opus', 'audio/webm']);
+  const mp4V = webmV ? null : pick(['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4;codecs=avc1,mp4a.40.2', 'video/mp4']);
+  const mp4A = webmA ? null : pick(['audio/mp4;codecs=mp4a.40.2', 'audio/mp4']);
+  return {
+    video: webmV ? { mime: webmV, type: 'video/webm' } : (mp4V ? { mime: mp4V, type: 'video/mp4' } : null),
+    audio: webmA ? { mime: webmA, type: 'audio/webm' } : (mp4A ? { mime: mp4A, type: 'audio/mp4' } : null),
+  };
+}
+function requireRecorderFormat(kind) {
+  const f = recorderFormats()[kind];
+  if (!f) throw new DOMException('este navegador não grava vídeo (MediaRecorder sem WebM nem MP4)', 'NotSupportedError');
+  return f;
+}
+// Nome do arquivo de cada variante pelo contêiner que o blob TEM de fato:
+// <id>.audio.webm | .audio.m4a, <id>.360p.webm | .360p.mp4 (idem 720p).
+function clipFileName(id, kind, blob) {
+  if (kind === 'thumb') return `${id}.thumb.jpg`;
+  const mp4 = /mp4/i.test(blob?.type || '');
+  if (kind === 'audio') return `${id}.audio.${mp4 ? 'm4a' : 'webm'}`;
+  return `${id}.${kind}.${mp4 ? 'mp4' : 'webm'}`;   // kind: '360p' | '720p'
+}
+// WebKit (Safari, todo navegador do iOS, o shell Capacitor): tocar mídia COM
+// SOM exige gesto do usuário — e o MediaRecorder precisa de um <video>
+// tocando com som (o áudio vem pelo grafo do AudioContext).
+const MEDIA_NEEDS_GESTURE = /iP(hone|ad|od)/.test(navigator.userAgent) ||
+  (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) ||
+  /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+// O WebKit deixa tocar com som dentro de um gesto — ou num elemento que
+// recebeu play() durante um gesto: HTMLMediaElement::play() com gesto remove
+// as restrições DAQUELE elemento de vez (removeBehaviorRestrictionsAfter-
+// FirstUserGesture), e um elemento criado no gesto já nasce sem a de áudio.
+// O toque em Enviar chama isto SÍNCRONO no handler: deixa prontos os <video>
+// que as conversões vão usar depois (num lote o 2º vídeo começa minutos
+// depois do toque, bem além dos ~5 s de ativação transitória) e um
+// AudioContext retomado no mesmo gesto (fora de gesto ele nasce suspenso e o
+// áudio gravado sai mudo). Sem src ainda: nada carrega até a conversão.
+const _blessedVideos = [];
+let _gestureAudioCtx = null;
+function blessMediaForGesture(nVideos = 1) {
+  if (!MEDIA_NEEDS_GESTURE || nVideos < 1) return;
+  try {
+    if (!_gestureAudioCtx || _gestureAudioCtx.state === 'closed') {
+      _gestureAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    const r = _gestureAudioCtx.resume?.();
+    r?.catch?.(() => {});
+  } catch (_) { _gestureAudioCtx = null; }
+  // 4 por vídeo: o passe único usa 1; o sequencial, 3 (áudio, 720p, 360p).
+  const want = Math.min(40, nVideos * 4) - _blessedVideos.length;
+  for (let i = 0; i < want; i++) {
+    const v = document.createElement('video');
+    v.playsInline = true; v.setAttribute('playsinline', '');
+    try { const p = v.play(); p?.catch?.(() => {}); v.pause(); } catch (_) {}
+    _blessedVideos.push(v);
+  }
+}
+// <video> de uma conversão: um "abençoado" pelo último toque, se houver. No
+// WebKit ele vai pro DOM fora da tela — desanexado e "frio" ele às vezes não
+// emite 'seeked' (ver primeVideoForFrames).
+function transcodeVideoElement(src) {
+  const v = _blessedVideos.shift() || document.createElement('video');
+  v.src = src;
+  v.muted = false;
+  v.playsInline = true;
+  v.preload = 'auto';
+  if (MEDIA_NEEDS_GESTURE && !v.isConnected) {
+    Object.assign(v.style, {
+      position: 'fixed', left: '-9999px', top: '0', width: '1px', height: '1px',
+      opacity: '0', pointerEvents: 'none',
+    });
+    document.body.appendChild(v);
+  }
+  return v;
+}
+function releaseTranscodeVideo(v) {
+  try { v.pause(); } catch (_) {}
+  try { v.removeAttribute('src'); v.load(); } catch (_) {}   // solta o decoder já
+  v.remove();
+}
+// AudioContext de uma conversão: o do gesto (compartilhado — NUNCA fechado
+// aqui, só suspenso quando ninguém usa: ligado, ele segura a sessão de áudio
+// do iPhone; o resume() seguinte não precisa de gesto, a restrição caiu no
+// toque) ou um novo (fechado no fim, como sempre foi). Contexto suspenso =
+// grafo parado = áudio mudo: no WebKit, sem o gesto, falha com a mensagem que
+// manda tocar em Enviar; fora dele o resume() passa (a página já teve toque).
+let _gestureAudioUsers = 0;
+async function transcodeAudioContext() {
+  const shared = !!_gestureAudioCtx && _gestureAudioCtx.state !== 'closed';
+  const ctx = shared ? _gestureAudioCtx : new (window.AudioContext || window.webkitAudioContext)();
+  const a = { ctx, shared };
+  if (shared) _gestureAudioUsers++;
+  if (ctx.state !== 'running') {
+    const r = ctx.resume?.();
+    r?.catch?.(() => {});
+    if (MEDIA_NEEDS_GESTURE) {
+      await Promise.race([r, new Promise((res) => setTimeout(res, 1500))]).catch(() => {});
+      if (ctx.state !== 'running') {
+        closeTranscodeAudio(a);
+        throw new DOMException('áudio bloqueado sem um toque', 'NotAllowedError');
+      }
+    }
+  }
+  return a;
+}
+function closeTranscodeAudio(a) {
+  if (!a) return;
+  if (!a.shared) { try { a.ctx.close(); } catch (_) {} return; }
+  if (a.released) return;
+  a.released = true;
+  if (--_gestureAudioUsers <= 0) {
+    _gestureAudioUsers = 0;
+    try { a.ctx.suspend()?.catch?.(() => {}); } catch (_) {}
+  }
+}
+// play() recusado (sem gesto) mantém o nome NotAllowedError — a mensagem
+// amigável e a decisão de não tentar o motor seguinte dependem dele.
+function playRejected(e) {
+  const err = new Error('play() rejeitado: ' + (e?.message || e));
+  if (e?.name === 'NotAllowedError' || e?.name === 'NotSupportedError') err.name = e.name;
+  return err;
+}
+function isGestureError(e) { return e?.name === 'NotAllowedError'; }
+
 async function transcodeAtShortSide(blob, startSec, endSec, shortSide, onProgress) {
   return new Promise(async (resolve, reject) => {
-    const video = document.createElement('video');
     const url = URL.createObjectURL(blob);
-    video.src = url;
-    video.muted = false;
-    video.playsInline = true;
-    video.preload = 'auto';
-    let audioCtx = null, audioSrc = null, videoStream = null, combined = null;
+    const video = transcodeVideoElement(url);
+    let audio = null, audioSrc = null, videoStream = null, combined = null;
     let raf = 0, watchdog = 0, settled = false;
     // Cleanup ÚNICO e idempotente, alcançado por onstop, onerror, o catch E o
     // watchdog. Antes o cleanup vivia só no onstop, então um erro async do
@@ -1930,14 +2272,16 @@ async function transcodeAtShortSide(blob, startSec, endSec, shortSide, onProgres
       try { videoStream?.getTracks().forEach(t => t.stop()); } catch (_) {}
       try { combined?.getTracks().forEach(t => t.stop()); } catch (_) {}
       try { audioSrc?.disconnect(); } catch (_) {}
-      try { audioCtx?.close(); } catch (_) {}
-      try { video.pause(); } catch (_) {}
+      closeTranscodeAudio(audio);
+      releaseTranscodeVideo(video);
       URL.revokeObjectURL(url);
     };
     const done = (out) => { if (settled) return; settled = true; cleanup(); resolve(out); };
     const fail = (err) => { if (settled) return; settled = true; cleanup(); reject(err instanceof Error ? err : new Error(String(err))); };
     try {
+      const fmt = requireRecorderFormat('video');
       await waitVideoEvent(video, 'loadedmetadata', 'vídeo não carregou');
+      if (settled) return;   // cancelado (abort/limpeza) enquanto esperava
       const iw = video.videoWidth, ih = video.videoHeight;
       if (!iw || !ih) throw new Error('vídeo sem dimensões');
       const aspect = iw / ih;
@@ -1951,36 +2295,33 @@ async function transcodeAtShortSide(blob, startSec, endSec, shortSide, onProgres
       videoStream = canvas.captureStream(30);
       // Grafo de áudio: source → destination stream (sem tocar enquanto
       // transcoda). Combinado com o videoStream num único MediaStream.
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      audioSrc = audioCtx.createMediaElementSource(video);
-      const audioDest = audioCtx.createMediaStreamDestination();
+      audio = await transcodeAudioContext();
+      if (settled) { closeTranscodeAudio(audio); return; }   // a limpeza já passou (audio ainda era null)
+      audioSrc = audio.ctx.createMediaElementSource(video);
+      const audioDest = audio.ctx.createMediaStreamDestination();
       audioSrc.connect(audioDest);
       combined = new MediaStream([
         ...videoStream.getVideoTracks(),
         ...audioDest.stream.getAudioTracks(),
       ]);
-      const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
-        ? 'video/webm;codecs=vp9,opus'
-        : (MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')
-            ? 'video/webm;codecs=vp8,opus' : 'video/webm');
       const recorder = new MediaRecorder(combined, {
-        mimeType: mime,
+        mimeType: fmt.mime,
         videoBitsPerSecond: shortSide >= 720 ? 1_600_000 : 700_000,
         audioBitsPerSecond: 128_000,
       });
       const chunks = [];
       recorder.ondataavailable = (e) => { if (e.data?.size) chunks.push(e.data); };
       recorder.onerror = (e) => fail(e.error || new Error('recorder error'));
-      recorder.onstop = () => done(new Blob(chunks, { type: 'video/webm' }));
-      video.currentTime = startSec;
-      await waitVideoEvent(video, 'seeked', 'seek falhou');
+      recorder.onstop = () => done(new Blob(chunks, { type: fmt.type }));
+      await robustVideoSeek(video, startSec, 'seek falhou', 15000);
+      if (settled) return;
       let stopped = false;
       const dur = Math.max(0.001, endSec - startSec);
       recorder.start(250);
       // Watchdog: se o playback nunca avançar (play() rejeitado/travado), o
       // loop de render nunca encerraria — aborta após o tempo real + folga.
       watchdog = setTimeout(() => fail(new Error('transcode timeout')), dur * 1000 + 8000);
-      video.play().catch((e) => fail(new Error('play() rejeitado: ' + (e?.message || e))));
+      video.play().catch((e) => fail(playRejected(e)));
       const render = () => {
         if (stopped || settled) return;
         if (video.currentTime >= endSec || video.ended) {
@@ -2010,13 +2351,9 @@ async function transcodeAtShortSide(blob, startSec, endSec, shortSide, onProgres
 async function transcodeClip(blob, startSec, endSec, { want720 = true, want360 = true, onProgress, signal } = {}) {
   return new Promise(async (resolve, reject) => {
     if (signal?.aborted) { reject(abortError()); return; }
-    const video = document.createElement('video');
     const url = URL.createObjectURL(blob);
-    video.src = url;
-    video.muted = false;
-    video.playsInline = true;
-    video.preload = 'auto';
-    let audioCtx = null, audioSrc = null;
+    const video = transcodeVideoElement(url);
+    let audio = null, audioSrc = null;
     const streams = [], recorders = [];
     let raf = 0, watchdog = 0, settled = false;
     const cleanup = () => {
@@ -2024,8 +2361,8 @@ async function transcodeClip(blob, startSec, endSec, { want720 = true, want360 =
       clearTimeout(watchdog);
       for (const s of streams) { try { s.getTracks().forEach(t => t.stop()); } catch (_) {} }
       try { audioSrc?.disconnect(); } catch (_) {}
-      try { audioCtx?.close(); } catch (_) {}
-      try { video.pause(); } catch (_) {}
+      closeTranscodeAudio(audio);
+      releaseTranscodeVideo(video);
       URL.revokeObjectURL(url);
     };
     // A miniatura sai do MESMO passe (frame ~5% adentro do recorte, ou 0,5 s
@@ -2054,19 +2391,19 @@ async function transcodeClip(blob, startSec, endSec, { want720 = true, want360 =
     const fail = (err) => { if (settled) return; settled = true; cleanup(); signal?.removeEventListener('abort', onAbort); reject(err instanceof Error ? err : new Error(String(err))); };
     signal?.addEventListener('abort', onAbort, { once: true });
     try {
+      const afmt = requireRecorderFormat('audio');
+      const vfmt = (want720 || want360) ? requireRecorderFormat('video') : null;
       await waitVideoEvent(video, 'loadedmetadata', 'vídeo não carregou');
+      if (settled) return;   // cancelado (abort/limpeza) enquanto esperava
       const iw = video.videoWidth, ih = video.videoHeight;
       if ((want720 || want360) && (!iw || !ih)) throw new Error('vídeo sem dimensões');
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      audioSrc = audioCtx.createMediaElementSource(video);
-      const audioDest = audioCtx.createMediaStreamDestination();
+      audio = await transcodeAudioContext();
+      if (settled) { closeTranscodeAudio(audio); return; }   // a limpeza já passou (audio ainda era null)
+      audioSrc = audio.ctx.createMediaElementSource(video);
+      const audioDest = audio.ctx.createMediaStreamDestination();
       audioSrc.connect(audioDest);
       streams.push(audioDest.stream);
       const audioTrack = audioDest.stream.getAudioTracks()[0];
-      const vmime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
-        ? 'video/webm;codecs=vp9,opus'
-        : (MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus') ? 'video/webm;codecs=vp8,opus' : 'video/webm');
-      const amime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm';
       const outs = {};   // key → { rec, chunks, type }
       const mk = (key, stream, opts, type) => {
         const rec = new MediaRecorder(stream, opts);
@@ -2076,7 +2413,7 @@ async function transcodeClip(blob, startSec, endSec, { want720 = true, want360 =
         outs[key] = { rec, chunks, type };
         recorders.push(rec);
       };
-      mk('audio', audioDest.stream, { mimeType: amime, audioBitsPerSecond: 192_000 }, 'audio/webm');
+      mk('audio', audioDest.stream, { mimeType: afmt.mime, audioBitsPerSecond: 192_000 }, afmt.type);
       const draws = [];
       const aspect = iw / ih;
       for (const [key, shortSide, vbr, want] of [['blob720', 720, 1_600_000, want720], ['blob360', 360, 700_000, want360]]) {
@@ -2094,7 +2431,7 @@ async function transcodeClip(blob, startSec, endSec, { want720 = true, want360 =
         try { atrack = audioTrack.clone(); } catch (_) { /* sem clone: compartilha a trilha */ }
         const combined = new MediaStream([...vs.getVideoTracks(), atrack]);
         streams.push(combined);
-        mk(key, combined, { mimeType: vmime, videoBitsPerSecond: vbr, audioBitsPerSecond: 128_000 }, 'video/webm');
+        mk(key, combined, { mimeType: vfmt.mime, videoBitsPerSecond: vbr, audioBitsPerSecond: 128_000 }, vfmt.type);
         draws.push(() => ctx.drawImage(video, 0, 0, outW, outH));
       }
       let pending = recorders.length;
@@ -2105,13 +2442,13 @@ async function transcodeClip(blob, startSec, endSec, { want720 = true, want360 =
           if (--pending === 0) done(results);
         };
       }
-      video.currentTime = startSec;
-      await waitVideoEvent(video, 'seeked', 'seek falhou');
+      await robustVideoSeek(video, startSec, 'seek falhou', 15000);
+      if (settled) return;
       let stopped = false;
       const dur = Math.max(0.001, endSec - startSec);
       for (const r of recorders) r.start(250);
       watchdog = setTimeout(() => fail(new Error('transcode timeout')), dur * 1000 + 8000);
-      video.play().catch((e) => fail(new Error('play() rejeitado: ' + (e?.message || e))));
+      video.play().catch((e) => fail(playRejected(e)));
       const render = () => {
         if (stopped || settled) return;
         if (video.currentTime >= endSec || video.ended) {
@@ -2290,6 +2627,9 @@ async function processClip(card, p, { onProgress, signal, onEngine } = {}) {
     return { ...out, engine: 'MediaRecorder' };
   } catch (e) {
     if (isAbortError(e) || signal?.aborted) throw abortError();
+    // Sem toque (WebKit) ou sem formato de gravação, o sequencial bate na
+    // mesma parede — 3 passes depois. Falha já, com a mensagem certa.
+    if (isGestureError(e) || e?.name === 'NotSupportedError') throw e;
     console.warn('transcode em passe único falhou — caindo pro sequencial:', e.message);
   }
   // Sequencial (3 passes, cada um ≈ a duração do recorte): último recurso.
@@ -2306,6 +2646,31 @@ async function processClip(card, p, { onProgress, signal, onEngine } = {}) {
   }
   return { audio, blob720, blob360, thumb, engine: 'sequencial' };
 }
+// Mensagem legível pras falhas de conversão (a crua vai pro console).
+function friendlyClipError(e) {
+  const m = String(e?.message || e || '');
+  if (isGestureError(e) || /not allowed|user agent|user gesture/i.test(m)) {
+    return IS_IOS
+      ? 'o iPhone só converte vídeo logo depois de um toque — toque em “📤 Enviar este vídeo” e mantenha a tela aberta'
+      : 'o navegador bloqueou a conversão — toque em “📤 Enviar este vídeo”';
+  }
+  if (e?.name === 'NotSupportedError' || /mimeType is not supported|não grava vídeo/i.test(m)) {
+    return 'este navegador não consegue converter vídeo — atualize o sistema (iOS 18.4 ou mais novo) ou envie do computador';
+  }
+  if (/timeout/i.test(m)) return 'a conversão parou (tela bloqueada ou app em segundo plano?) — mantenha esta tela aberta e tente de novo';
+  if (/seek falhou|não carregou|sem dimensões|decoder indisponível/i.test(m)) return `não consegui ler este vídeo (${m})`;
+  return m;
+}
+// Resultado do sonda do caminho rápido, síncrono (undefined = ainda não
+// sabido; false = só MediaRecorder; 'vp9'|'vp8' = WebCodecs).
+let _fastCodecKnown;
+function probeFastCodec() { return fastTranscodeCodec().then((c) => (_fastCodecKnown = c)); }
+// WebKit sem WebCodecs completo (iOS/Safari 18): converter exige um toque.
+function transcodeNeedsTap(card) {
+  if (!MEDIA_NEEDS_GESTURE || _fastCodecKnown) return false;
+  const p = clipParams(card);
+  return !(card.proc?.result && card.proc.key === p.key);
+}
 // Um transcode de vídeo por vez (dois em máquinas com ≥ 8 threads): cada um é
 // um decoder de hardware + 2 encoders (WebCodecs) ou um <video> tocando + 3
 // MediaRecorders — concorrência só derruba frames em celular.
@@ -2320,7 +2685,9 @@ function ensureProcessed(card, p, hooks = {}) {
   cancelStaging(card);
   const controller = new AbortController();
   const proc = { key: p.key, controller, hooks: { ...hooks }, result: null, failed: false, engine: '', startedAt: 0 };
-  proc.promise = TRANSCODE_POOL(async () => {
+  // Tela acesa durante a conversão: com a tela bloqueada o WebCodecs/rAF param
+  // e o recorte morre no meio ("transcode timeout").
+  proc.promise = TRANSCODE_POOL(() => withWakeLock(async () => {
     if (controller.signal.aborted) throw abortError();
     proc.startedAt = performance.now();
     return processClip(card, p, {
@@ -2328,8 +2695,10 @@ function ensureProcessed(card, p, hooks = {}) {
       onProgress: (f) => proc.hooks.onProgress?.(f),
       onEngine: (label) => { proc.engine = label; proc.hooks.onEngine?.(label); },
     });
-  }).then((r) => { proc.result = r; return r; }, (e) => { proc.failed = true; throw e; });
+  })).then((r) => { proc.result = r; scheduleFormState(); return r; },
+           (e) => { proc.failed = true; scheduleFormState(); throw e; });
   card.proc = proc;
+  scheduleFormState();
   return proc.promise;
 }
 function setPrepStatus(card, label, kind = '') {
@@ -2337,28 +2706,105 @@ function setPrepStatus(card, label, kind = '') {
   if (!el) return;
   el.textContent = label;
   el.className = `card-prep-status ${kind}`;
+  scheduleFormState();
 }
 const SPECULATE_DELAY_MS = 1200;
+// Toque (celular/tablet): converter + pré-enviar o clipe INTEIRO sem pedido
+// custa bateria, calor e dados móveis (~7,6 MB/min), e o primeiro ajuste de
+// recorte joga tudo fora. Lá a preparação só começa depois que a pessoa mexe
+// no recorte/opções do card (card.userEdited) — ou de cara, se é curto.
+const SPECULATE_TOUCH_MAX_S = 20;
 function scheduleSpeculativeTranscode(card, delayMs = SPECULATE_DELAY_MS) {
   clearTimeout(card._specTimer);
   card._specTimer = setTimeout(() => speculativeTranscode(card), delayMs);
 }
-function speculativeTranscode(card) {
-  if (card.uploaded || card.removed || card.sending || !card.activated || !card.duration) return;
+async function speculativeTranscode(card) {
+  const gone = () => card.uploaded || card.removed || card.pendingRemoval || card.sending;
+  if (gone() || !card.activated || !card.duration) return;
+  // WebKit sem WebCodecs (iOS/Safari 18): o único motor é o MediaRecorder, que
+  // precisa de um toque — preparar aqui só daria "play() rejeitado".
+  if (MEDIA_NEEDS_GESTURE && !(await probeFastCodec())) {
+    setPrepStatus(card, 'a conversão começa quando você tocar em Enviar (mantenha a tela aberta)');
+    return;
+  }
+  if (gone()) return;
   const p = clipParams(card);
   if (p.error) { setPrepStatus(card, p.error, 'warn'); return; }
+  const tooBig = clipBudgetProblem(p, estimateClipBytes(p), BUDGET_ESTIMATE_SLACK);
+  if (tooBig) { setPrepStatus(card, tooBig, 'warn'); return; }
   if (card.proc?.key === p.key && !card.proc.failed) return;
+  if (IS_TOUCH_DEVICE && !card.userEdited && (p.tEnd - p.tStart) > SPECULATE_TOUCH_MAX_S) {
+    setPrepStatus(card, 'a conversão começa quando você ajustar o recorte ou tocar em Enviar');
+    return;
+  }
   ensureProcessed(card, p, {
     onEngine:   (l) => setPrepStatus(card, `preparando em segundo plano (${l})…`),
     onProgress: (f) => setPrepStatus(card, `preparando em segundo plano (${card.proc?.engine || ''})… ${Math.round(f * 100)}%`),
   }).then((r) => {
     if (card.proc?.key !== p.key) return;   // recorte mudou no meio — o novo cuida do status
+    const over = clipBudgetProblem(p, resultSizes(r, p));
+    if (over) { setPrepStatus(card, over, 'warn'); return; }
     const secs = ((performance.now() - card.proc.startedAt) / 1000).toFixed(1);
     setPrepStatus(card, `pronto pra enviar (${r.engine} em ${secs} s)`, 'ok');
     stageClip(card, p, r);
   }).catch((e) => {
-    if (!isAbortError(e)) setPrepStatus(card, `preparação falhou: ${e.message} — processa de novo no envio`, 'warn');
+    if (!isAbortError(e)) setPrepStatus(card, `preparação falhou: ${friendlyClipError(e)} — processa de novo no envio`, 'warn');
   });
+}
+
+// ── Teto por requisição ──────────────────────────────────────────────────
+// O Cloud Run (HTTP/1) recusa corpo > 32 MiB com um 413 que nem chega no
+// Flask — e o form deixava recortar 10 min (~75 MB em 360p), gastava o
+// transcode inteiro e mostrava "erro: HTTP 413". Agora os arquivos de um
+// clipe vão numa requisição só quando cabem; senão em várias pelo
+// /stage-video (agrupados até o teto) e o /upload-video leva só o TTL. Um
+// arquivo SOZINHO acima do teto não tem como subir → pede pra cortar (a conta
+// sai das taxas reais do resultado; antes de converter, da estimativa pelas
+// taxas-alvo — que só barra o que passa muito do teto).
+// 32 MiB − folga do multipart/TTL. Debug: `?maxreq=<MiB>` baixa o teto (testa
+// o envio em partes sem precisar de um clipe de 5 min).
+const REQUEST_BODY_BUDGET = (() => {
+  const mib = parseFloat(new URLSearchParams(location.search).get('maxreq'));
+  return (mib > 0 ? mib : 31) * 1024 * 1024;
+})();
+const BUDGET_ESTIMATE_SLACK = 1.3;
+function estimateClipBytes(p) {
+  const d = Math.max(0, p.tEnd - p.tStart);
+  return {
+    audio: d * 192_000 / 8,
+    blob360: p.audioOnly ? 0 : d * (VIDEO_BITRATE[360] + 128_000) / 8,
+    blob720: (p.audioOnly || !p.hd) ? 0 : d * (VIDEO_BITRATE[720] + 128_000) / 8,
+  };
+}
+function resultSizes(r, p) {
+  return {
+    audio: r.audio?.size || 0,
+    blob360: p.audioOnly ? 0 : (r.blob360?.size || 0),
+    blob720: (p.audioOnly || !p.hd) ? 0 : (r.blob720?.size || 0),
+  };
+}
+function fmtClipLimit(sec) {
+  if (sec >= 90) return `~${String(Math.floor(sec / 30) / 2).replace('.', ',')} min`;
+  return `~${Math.max(5, Math.floor(sec / 5) * 5)} s`;
+}
+// null = cabe; senão a mensagem pra pessoa. `sizes`: bytes por arquivo.
+function clipBudgetProblem(p, sizes, slack = 1) {
+  const [worstKey, worst] = Object.entries(sizes).sort((a, b) => b[1] - a[1])[0] || ['', 0];
+  if (!(worst > REQUEST_BODY_BUDGET * slack)) return null;
+  const maxSec = Math.max(0.1, p.tEnd - p.tStart) * REQUEST_BODY_BUDGET / worst;
+  const hdHint = worstKey === 'blob720' && Math.max(sizes.audio || 0, sizes.blob360 || 0) <= REQUEST_BODY_BUDGET
+    ? ' ou desligue o 720p (HD)' : '';
+  return `vídeo longo demais pra enviar (até 32 MB por arquivo): corte pra ${fmtClipLimit(maxSec)}${hdHint}`;
+}
+// Erro HTTP legível (o 413 do Cloud Run nem é JSON — virava "HTTP 413").
+function httpErrorText(res, data, kind = 'video') {
+  if (res.status === 413) {
+    return kind === 'video'
+      ? 'arquivo grande demais pro servidor (até 32 MB por envio) — corte o vídeo ou desligue o 720p'
+      : 'arquivo grande demais pro servidor (até 32 MB por envio) — marque “Comprimir”';
+  }
+  if (res.status === 408 || res.status === 504) return 'o envio demorou demais (conexão lenta?) — tente de novo, de preferência no Wi-Fi';
+  return (data?.details || []).join('; ') || data?.error || `HTTP ${res.status}`;
 }
 
 // ── Pré-envio (staging) ──────────────────────────────────────────────────
@@ -2368,32 +2814,63 @@ function speculativeTranscode(card) {
 // catálogo referenciar o vhash. O Enviar então manda só o TTL (`staged=1`);
 // se o servidor não achar os blobs (varridos, reiniciado sem store), responde
 // 409 `staging-missing` e o cliente reenvia com os blobs. Sem backend (host
-// estático) o POST falha em silêncio e o envio segue com os blobs.
+// estático) o POST falha em silêncio e o envio segue com os blobs. O mesmo
+// endpoint é o caminho dos clipes que não cabem numa requisição só.
 const STAGE_VIDEO_URL = './stage-video/';
+// Arquivos de um resultado, com o nome pelo contêiner real (webm/mp4/m4a).
+function clipParts(card, r, p) {
+  const id = card.clipId;
+  const parts = [{ field: 'audio', blob: r.audio, name: clipFileName(id, 'audio', r.audio) }];
+  if (r.thumb) parts.push({ field: 'thumb', blob: r.thumb, name: clipFileName(id, 'thumb') });
+  if (!p.audioOnly && r.blob360) parts.push({ field: 'video360', blob: r.blob360, name: clipFileName(id, '360p', r.blob360) });
+  if (!p.audioOnly && p.hd && r.blob720) parts.push({ field: 'video720', blob: r.blob720, name: clipFileName(id, '720p', r.blob720) });
+  return parts;
+}
 function appendClipBlobs(fd, card, r, p) {
-  fd.append('audio', r.audio, `${card.clipId}.audio.webm`);
-  if (r.thumb) fd.append('thumb', r.thumb, `${card.clipId}.thumb.jpg`);
-  if (!p.audioOnly && r.blob360) fd.append('video360', r.blob360, `${card.clipId}.360p.webm`);
-  if (!p.audioOnly && p.hd && r.blob720) fd.append('video720', r.blob720, `${card.clipId}.720p.webm`);
+  for (const x of clipParts(card, r, p)) fd.append(x.field, x.blob, x.name);
+}
+function clipBytes(card, r, p) {
+  return clipParts(card, r, p).reduce((a, x) => a + x.blob.size, 0);
+}
+// Sobe os arquivos pro /stage-video em requisições ≤ teto (maior primeiro,
+// cada um no primeiro grupo onde couber). Lança com a mensagem legível.
+async function stageClipBlobs(card, r, p, { signal } = {}) {
+  const groups = [];
+  for (const x of clipParts(card, r, p).sort((a, b) => b.blob.size - a.blob.size)) {
+    const g = groups.find((gr) => gr.size + x.blob.size <= REQUEST_BODY_BUDGET);
+    if (g) { g.parts.push(x); g.size += x.blob.size; } else groups.push({ parts: [x], size: x.blob.size });
+  }
+  for (const g of groups) {
+    const fd = new FormData();
+    for (const x of g.parts) fd.append(x.field, x.blob, x.name);
+    const res = await fetch(STAGE_VIDEO_URL + encodeURIComponent(card.clipId), { method: 'POST', body: fd, signal });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw Object.assign(new Error(httpErrorText(res, data)), { status: res.status });
+    }
+  }
+  return groups.length;
 }
 function cancelStaging(card) {
   if (card.staging) { card.staging.controller.abort(); card.staging = null; }
   card.stagedKey = null;
 }
 function stageClip(card, p, r) {
-  if (!navigator.onLine || card.uploaded || card.removed) return null;
+  if (!navigator.onLine || card.uploaded || card.removed || card.pendingRemoval) return null;
+  // Economia de dados ligada: nada sobe sem o Enviar.
+  if (navigator.connection?.saveData) return null;
+  if (clipBudgetProblem(p, resultSizes(r, p))) return null;   // não cabe — o Enviar explica
   cancelStaging(card);
   const controller = new AbortController();
-  const fd = new FormData();
-  appendClipBlobs(fd, card, r, p);
-  const promise = fetch(STAGE_VIDEO_URL + encodeURIComponent(card.clipId), { method: 'POST', body: fd, signal: controller.signal })
-    .then((res) => res.ok)
-    .catch(() => false);
+  const promise = withWakeLock(() => stageClipBlobs(card, r, p, { signal: controller.signal }))
+    .then(() => true, () => false);
   const st = { key: p.key, controller, promise };
   card.staging = st;
+  scheduleFormState();
   promise.then((ok) => {
     if (card.staging !== st) return;   // cancelado/substituído
     card.staging = null;
+    scheduleFormState();
     if (ok) {
       card.stagedKey = p.key;
       setPrepStatus(card, `pronto e já no servidor (${r.engine}) — Enviar só grava o catálogo`, 'ok');
@@ -2409,59 +2886,59 @@ function discardStaged(card) {
   if (!had) return;
   try { navigator.sendBeacon(STAGE_VIDEO_URL + encodeURIComponent(card.clipId) + '/discard'); } catch (_) {}
 }
-window.addEventListener('pagehide', () => { for (const c of cards) if (!c.uploaded) discardStaged(c); });
+window.addEventListener('pagehide', () => {
+  finalizePendingRemoval();   // o card no "Desfazer" também descarta o pré-envio
+  for (const c of cards) if (!c.uploaded) discardStaged(c);
+});
 
-// Extrai o áudio do trecho [startSec, endSec] como opus dentro de webm
+// Extrai o áudio do trecho [startSec, endSec] como opus dentro de webm (ou
+// AAC em m4a, ver recorderFormats)
 // — 192 kbps é perceptualmente transparente pra material falado/ambiente
 // e mantém arquivos pequenos. Sem WAV: arquivos seriam ~5 MB por 30 s,
 // e o gateway de upload do backend tem ceiling baixo.
 async function extractAudio(blob, startSec, endSec, onProgress) {
   return new Promise(async (resolve, reject) => {
-    const video = document.createElement('video');
     const url = URL.createObjectURL(blob);
-    video.src = url;
-    video.muted = false;
-    video.playsInline = true;
-    video.preload = 'auto';
-    let audioCtx = null, audioSrc = null, audioDest = null;
+    const video = transcodeVideoElement(url);
+    let audio = null, audioSrc = null, audioDest = null;
     let raf = 0, watchdog = 0, settled = false;
     const cleanup = () => {
       cancelAnimationFrame(raf);
       clearTimeout(watchdog);
       try { audioDest?.stream.getTracks().forEach(t => t.stop()); } catch (_) {}
       try { audioSrc?.disconnect(); } catch (_) {}
-      try { audioCtx?.close(); } catch (_) {}
-      try { video.pause(); } catch (_) {}
+      closeTranscodeAudio(audio);
+      releaseTranscodeVideo(video);
       URL.revokeObjectURL(url);
     };
     const done = (out) => { if (settled) return; settled = true; cleanup(); resolve(out); };
     const fail = (err) => { if (settled) return; settled = true; cleanup(); reject(err instanceof Error ? err : new Error(String(err))); };
     try {
+      const fmt = requireRecorderFormat('audio');
       await waitVideoEvent(video, 'loadedmetadata', 'mídia não carregou');
-      // audioCtx hoisted (declarado fora do try) pra que o cleanup feche o
+      if (settled) return;   // cancelado (abort/limpeza) enquanto esperava
+      // audio hoisted (declarado fora do try) pra que o cleanup feche o
       // contexto mesmo se a falha vier depois da criação dele.
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      audioSrc = audioCtx.createMediaElementSource(video);
-      audioDest = audioCtx.createMediaStreamDestination();
+      audio = await transcodeAudioContext();
+      if (settled) { closeTranscodeAudio(audio); return; }   // a limpeza já passou (audio ainda era null)
+      audioSrc = audio.ctx.createMediaElementSource(video);
+      audioDest = audio.ctx.createMediaStreamDestination();
       audioSrc.connect(audioDest);
-      const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-        ? 'audio/webm;codecs=opus'
-        : 'audio/webm';
       const recorder = new MediaRecorder(audioDest.stream, {
-        mimeType: mime,
+        mimeType: fmt.mime,
         audioBitsPerSecond: 192_000,
       });
       const chunks = [];
       recorder.ondataavailable = (e) => { if (e.data?.size) chunks.push(e.data); };
       recorder.onerror = (e) => fail(e.error || new Error('audio recorder error'));
-      recorder.onstop = () => done(new Blob(chunks, { type: 'audio/webm' }));
-      video.currentTime = startSec;
-      await waitVideoEvent(video, 'seeked', 'seek falhou');
+      recorder.onstop = () => done(new Blob(chunks, { type: fmt.type }));
+      await robustVideoSeek(video, startSec, 'seek falhou', 15000);
+      if (settled) return;
       let stopped = false;
       const dur = Math.max(0.001, endSec - startSec);
       recorder.start(250);
       watchdog = setTimeout(() => fail(new Error('audio extract timeout')), dur * 1000 + 8000);
-      video.play().catch((e) => fail(new Error('play() rejeitado: ' + (e?.message || e))));
+      video.play().catch((e) => fail(playRejected(e)));
       const tick = () => {
         if (stopped || settled) return;
         if (video.currentTime >= endSec || video.ended) {
@@ -2653,9 +3130,9 @@ function acceptImageCard(pre, defaults) {
   const dateInput = $('[data-field="date"]', elem);
   dateInput.addEventListener('change', () => autoDetectTour(card));
   dateInput.addEventListener('input',  () => autoDetectTour(card));
-  // Remove
-  $('.card-remove', elem).addEventListener('click', () => removeCard(card));
-  $('.card-send',   elem).addEventListener('click', () => uploadCard(card));
+  // Remove (com "Desfazer") / envia este card (tela acesa até terminar)
+  $('.card-remove', elem).addEventListener('click', () => removeCardWithUndo(card));
+  $('.card-send',   elem).addEventListener('click', () => sendCardFromTap(card));
   // Mapa pra escolher coordenadas
   $('.pick-on-map', elem).addEventListener('click', () => {
     const latI = $('[data-field="lat"]', elem);
@@ -2758,10 +3235,14 @@ async function createVideoCard(file, defaults) {
     staging: null, stagedKey: null,   // pré-envio dos blobs — ver stageClip
     sending: false, removed: false,
     uploaded: false,
+    userEdited: false,      // mexeu no recorte/opções — ver speculativeTranscode
   };
   cards.push(card);
   addThumbToGrid(card);
   $('.hash', elem).textContent = `pHash: ${vhash}`;
+  // WebKit: saber cedo se há o caminho rápido decide se o Enviar precisa
+  // "abençoar" elementos de mídia (transcodeNeedsTap / blessMediaForGesture).
+  if (MEDIA_NEEDS_GESTURE) probeFastCodec();
 
   // Tom Select (autoras/quem subiu/listas) e a prévia de vídeo só são montadas
   // na ativação do card (A3) — ver activateCard/scheduleCardActivation.
@@ -2782,8 +3263,8 @@ async function createVideoCard(file, defaults) {
   const dateInput = $('[data-field="date"]', elem);
   dateInput.addEventListener('change', () => autoDetectTour(card));
   dateInput.addEventListener('input',  () => autoDetectTour(card));
-  $('.card-remove', elem).addEventListener('click', () => removeCard(card));
-  $('.card-send',   elem).addEventListener('click', () => uploadCard(card));
+  $('.card-remove', elem).addEventListener('click', () => removeCardWithUndo(card));
+  $('.card-send',   elem).addEventListener('click', () => sendCardFromTap(card));
   $('.pick-on-map', elem).addEventListener('click', () => {
     const latI = $('[data-field="lat"]', elem);
     const lonI = $('[data-field="lon"]', elem);
@@ -2808,13 +3289,17 @@ async function createVideoCard(file, defaults) {
   const outStart = $('[data-out="start"]', elem);
   const outEnd   = $('[data-out="end"]',   elem);
   const outDur   = $('[data-out="dur"]',   elem);
+  const budgetEl = $('.trim-budget', elem);
   // preview.src só é setado na ativação do card (A3, ver activateCard) —
   // evita montar 1 <video> com objectURL de arquivo cheio por card criado.
 
   function fmtSec(s) {
     return (Math.round(s * 100) / 100).toFixed(2).replace('.', ',') + 's';
   }
-  function updateTrimLabels() {
+  // `seek`: qual ponta a prévia deve mostrar ('start' | 'end') — vem de QUEM
+  // mexeu (o slider ou o stepper), não do foco: o Safari não foca <input
+  // type=range> no toque, então a prévia nunca seguia o arrasto no iPhone.
+  function updateTrimLabels(seek) {
     let s = Math.max(0, Math.min(parseFloat(tStart.value) || 0, card.duration));
     let e = Math.max(0, Math.min(parseFloat(tEnd.value)   || 0, card.duration));
     if (e < s) [s, e] = [e, s];
@@ -2826,9 +3311,15 @@ async function createVideoCard(file, defaults) {
     const dur = e - s;
     outDur.textContent = fmtSec(dur);
     outDur.parentElement.classList.toggle('warn', dur > 600 || dur < 0.1);
-    if (document.activeElement === tStart) preview.currentTime = s;
-    else if (document.activeElement === tEnd) preview.currentTime = e;
+    // Aviso de tamanho ANTES de converter (teto de 32 MB por arquivo).
+    budgetEl.textContent = card.duration ? (clipBudgetProblem(clipParams(card), estimateClipBytes(clipParams(card))) || '') : '';
+    if (seek && preview.src && preview.readyState >= 1) {
+      try { preview.currentTime = seek === 'end' ? e : s; } catch (_) {}
+    }
   }
+  // Mexeu no recorte/opções = pedido explícito (libera a preparação em 2º
+  // plano no toque — ver SPECULATE_TOUCH_MAX_S).
+  const edited = (delay) => { card.userEdited = true; scheduleSpeculativeTranscode(card, delay); };
   preview.addEventListener('loadedmetadata', () => {
     card.duration = preview.duration || 0;
     tStart.max = String(card.duration);
@@ -2837,18 +3328,19 @@ async function createVideoCard(file, defaults) {
     tStart.value = '0';
     updateTrimLabels();
     setCardSendEnabled(card, true);
-    scheduleSpeculativeTranscode(card, 400);   // recorte default: já começa a preparar
+    scheduleSpeculativeTranscode(card, 400);   // recorte default: já começa a preparar (ver a política lá)
   });
-  tStart.addEventListener('input', updateTrimLabels);
-  tEnd.addEventListener('input',   updateTrimLabels);
+  tStart.addEventListener('input', () => updateTrimLabels('start'));
+  tEnd.addEventListener('input',   () => updateTrimLabels('end'));
   // `change` = slider solto (input dispara a cada pixel). Debounced: re-prepara
   // com o novo recorte, cancelando o que estava em voo.
-  tStart.addEventListener('change', () => scheduleSpeculativeTranscode(card));
-  tEnd.addEventListener('change',   () => scheduleSpeculativeTranscode(card));
-  $('[data-field="audio-only"]', elem).addEventListener('change', () => scheduleSpeculativeTranscode(card, 300));
+  tStart.addEventListener('change', () => edited());
+  tEnd.addEventListener('change',   () => edited());
+  $('[data-field="audio-only"]', elem).addEventListener('change', () => { updateTrimLabels(); edited(300); });
   $('[data-field="hd"]', elem).addEventListener('change', (e) => {
     try { localStorage.setItem('phidro:uploadHd', e.target.checked ? '1' : '0'); } catch (_) {}
-    scheduleSpeculativeTranscode(card, 300);
+    updateTrimLabels();
+    edited(300);
   });
   for (const btn of elem.querySelectorAll('.trim-step-btn')) {
     btn.addEventListener('click', () => {
@@ -2857,9 +3349,8 @@ async function createVideoCard(file, defaults) {
       const inp = which === 'start' ? tStart : tEnd;
       const cur = parseFloat(inp.value) || 0;
       inp.value = String(Math.max(0, Math.min(card.duration, cur + step)));
-      inp.focus();
-      updateTrimLabels();
-      scheduleSpeculativeTranscode(card);
+      updateTrimLabels(which);
+      edited();
     });
   }
 
@@ -2944,8 +3435,13 @@ async function releaseWakeLock() {
 }
 // Reconquista o lock ao voltar pro primeiro plano se algum lote/envio ainda
 // está rodando (o SO/navegador libera o lock sozinho ao esconder a aba).
+// `_hiddenEpoch` conta as idas pro fundo: uma falha que atravessou uma delas
+// (tela bloqueada, troca de app) é retomada sozinha — ver retryPendingCards.
+let _hiddenEpoch = 0;
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && _wakeLockRefCount > 0) acquireWakeLock();
+  if (document.visibilityState !== 'visible') { _hiddenEpoch++; return; }
+  if (_wakeLockRefCount > 0) acquireWakeLock();
+  retryPendingCards();
 });
 async function withWakeLock(fn) {
   _wakeLockRefCount++;
@@ -2956,6 +3452,45 @@ async function withWakeLock(fn) {
     _wakeLockRefCount--;
     if (_wakeLockRefCount === 0) await releaseWakeLock();
   }
+}
+
+// ── Retomada automática ──────────────────────────────────────────────────
+// Tela bloqueada, troca de app ou o 4G caindo matavam o fetch em voo ("Load
+// failed") e o card ficava vermelho até alguém achar e tocar nele de novo. O
+// card fica marcado (retryPending) e o envio recomeça sozinho quando a página
+// volta a ficar visível E online. Exceção: vídeo que ainda precisa converter
+// no WebKit sem WebCodecs — o MediaRecorder exige um toque (não dá sozinho).
+function isNetworkError(e) {
+  return e instanceof TypeError || /load failed|failed to fetch|networkerror|network connection/i.test(e?.message || '');
+}
+let _retryTimer = 0;
+function retryPendingCards() {
+  clearTimeout(_retryTimer);
+  _retryTimer = setTimeout(() => {
+    if (!navigator.onLine || document.visibilityState !== 'visible') return;
+    for (const c of cards) {
+      if (!c.retryPending || c.uploaded || c.sending || c.removed || c.pendingRemoval) continue;
+      c.retryPending = false;
+      if (c.kind === 'video' && transcodeNeedsTap(c)) {
+        setCardStatus(c, 'toque em “📤 Enviar este vídeo” pra tentar de novo', 'err');
+        continue;
+      }
+      setCardStatus(c, 'tentando de novo…', 'warn');
+      RETRY_POOL(() => withWakeLock(() => uploadCard(c)));
+    }
+  }, 800);
+}
+const RETRY_POOL = makeLimiter(2);
+window.addEventListener('online', retryPendingCards);
+
+// Toque em "Enviar este…": no WebKit, abençoa AGORA (síncrono, dentro do
+// gesto) o <video>/AudioContext que a conversão vai usar; tela acesa até o fim.
+function sendCardFromTap(card) {
+  // Só quando a conversão vai de fato pelo MediaRecorder: um AudioContext
+  // ligado à toa toma a sessão de áudio do iPhone (pausa a música de fundo).
+  if (card.kind === 'video' && transcodeNeedsTap(card)) blessMediaForGesture(1);
+  card.retryPending = false;
+  return withWakeLock(() => uploadCard(card));
 }
 
 // ===================== File pickers ====================================
@@ -2973,6 +3508,7 @@ $('#files').addEventListener('change', (e) => {
 async function handlePickedFiles(files) {
   if (pickerBusy) { _pickQueue.push(files); return; }   // enfileira, não descarta
   pickerBusy = true;
+  scheduleFormState();
   try {
     clearNotices();                  // mensagens antigas saem antes do novo lote
     const defaults = readDefaults();
@@ -2999,8 +3535,9 @@ async function handlePickedFiles(files) {
         await new Promise(res => setTimeout(res));
       }
     };
-    if (files.length > 5) await withWakeLock(processBatch);
-    else await processBatch();
+    // Tela acesa enquanto lê (antes só com > 5 arquivos — mas 1 vídeo longo
+    // já leva o bastante pro iPhone bloquear no meio do vHash).
+    await withWakeLock(processBatch);
     const parts = [`+${tally.ok} card(s)`];
     if (tally.duplicate)             parts.push(`<span class="warn">${tally.duplicate} duplicado(s)</span>`);
     const errs = tally['decode-error'] + tally['heic-unavailable'] + tally['heic-convert-failed'] + tally['vhash-failed'];
@@ -3010,6 +3547,7 @@ async function handlePickedFiles(files) {
     refreshGenerateButtons();
   } finally {
     pickerBusy = false;
+    scheduleFormState();
     const next = _pickQueue.shift();
     if (next) handlePickedFiles(next);
   }
@@ -3022,6 +3560,7 @@ async function handlePickedFiles(files) {
 }
 
 function clearAllCards() {
+  finalizePendingRemoval();                    // o do "Desfazer" some junto
   for (const c of [...cards]) removeCard(c);   // remove cada card + sua miniatura
   thumbGridEl.replaceChildren();               // garante grade vazia
   cardCounter = 0;
@@ -3031,6 +3570,7 @@ function clearAllCards() {
   updateCarouselNav();
   resetZoneState();                            // volta o grupo pra cor neutra
   document.body.classList.remove('all-uploaded');  // limpa o azul de "tudo enviado"
+  scheduleFormState();
 }
 
 // Botão "Limpar todos os cards"
@@ -3039,12 +3579,21 @@ $('#clearAll').addEventListener('click', () => {
   clearAllCards();
 });
 
-// O app-pai pede pra limpar os cards ao fechar o modal de upload — evita que
-// fotos já enviadas (ou abandonadas no meio do caminho) fiquem acumuladas pra
-// próxima abertura. Sem confirm() aqui: fechar já é a intenção de terminar.
+// O app-pai avisa quando a folha fecha. Antes isto limpava TUDO sem perguntar
+// — um toque no mapa acima da folha apagava cards não enviados, abortava
+// conversões e apagava pré-envios, e um "Enviar todas" em curso seguia
+// subindo invisível. Agora: o lote para de puxar cards novos (os que já estão
+// no ar terminam), nada pendente é apagado (o iframe sobrevive — reabrir mostra
+// os cards) e só se limpa quando tudo já foi enviado (próxima abertura limpa).
+// `discard: true` na mensagem = a pessoa confirmou descartar (limpa mesmo com
+// pendentes).
 window.addEventListener('message', (e) => {
   if (e.origin !== window.location.origin) return;
-  if (e.data && e.data.type === 'phidro-upload-modal-closed') clearAllCards();
+  if (!e.data || e.data.type !== 'phidro-upload-modal-closed') return;
+  finalizePendingRemoval();   // com a folha fechada ninguém toca no "Desfazer"
+  if (_batchRunning) stopUploadAll();
+  const idle = !cards.some((c) => c.sending || (c.proc && !c.proc.result && !c.proc.failed) || c.staging);
+  if (e.data.discard === true || (idle && !pickerBusy && cards.every((c) => c.uploaded))) clearAllCards();
 });
 
 // ===================== Geração do Turtle ===============================
@@ -3176,8 +3725,11 @@ function buildNewListDecls(listIris) {
   return `\n# Listas novas\n${body}\n`;
 }
 
-// Constrói o bloco TTL para 1 clipe (ph:MotionImage).
-function buildClipBlock(card) {
+// Constrói o bloco TTL para 1 clipe (ph:MotionImage). `r` = o resultado do
+// processamento: os nomes dos arquivos saem do contêiner real de cada blob
+// (webm ou mp4/m4a — ver clipFileName) e só entra no TTL o que existe (sem
+// miniatura, sem schema:thumbnail; sem blob 720p, sem ph:video720p).
+function buildClipBlock(card, r) {
   const elem = card.elem;
   const dateXsd = localToXsdDateTime($('[data-field="date"]', elem).value);
   // Vírgula → ponto antes de emitir xsd:decimal — ver buildImageBlock.
@@ -3203,25 +3755,25 @@ function buildClipBlock(card) {
 
   const id = card.clipId;
   const iri = `med:${id}`;
-  const audioFile = `${id}.audio.webm`;
-  const thumbFile = `${id}.thumb.jpg`;
   // GeoCoordinates como IRI derivada (`<iri>_geo`) em vez de bnode — ver
   // buildImageBlock.
   const props = [
     `a ph:MotionImage${hasGeo ? ', ph:GeoreferencedImage' : ''}`,
     `dcterms:license <${license}>`,
     `schema:duration "${isoDur}"^^xsd:duration`,
-    `ph:audio "${audioFile}"`,
-    `schema:thumbnail "${thumbFile}"`,
+    `ph:audio "${clipFileName(id, 'audio', r.audio)}"`,
   ];
+  if (r.thumb) props.push(`schema:thumbnail "${clipFileName(id, 'thumb')}"`);
   if (dateXsd) props.push(`dcterms:date "${dateXsd}"^^xsd:dateTime`);
   if (hasGeo)  props.push(`schema:locationCreated ${iri}_geo`);
   const resolutions = ['"audio"'];
-  if (!audioOnly) {
-    props.push(`ph:video360p "${id}.360p.webm"`);
-    if (wantHd) props.push(`ph:video720p "${id}.720p.webm"`);
+  if (!audioOnly && r.blob360) {
+    props.push(`ph:video360p "${clipFileName(id, '360p', r.blob360)}"`);
     resolutions.push('"360p"');
-    if (wantHd) resolutions.push('"720p"');
+  }
+  if (!audioOnly && wantHd && r.blob720) {
+    props.push(`ph:video720p "${clipFileName(id, '720p', r.blob720)}"`);
+    resolutions.push('"720p"');
   }
   props.push(`ph:availableResolution ${resolutions.join(', ')}`);
   if (tour)         props.push(`ph:capturedDuring ${tour}`);
@@ -3238,7 +3790,7 @@ function buildClipBlock(card) {
 }
 
 // TTL auto-suficiente para 1 clipe: prefixos + pessoas novas + bloco.
-function buildSingleClipTtl(card) {
+function buildSingleClipTtl(card, r) {
   const prefixes = [
     '@prefix dcterms: <http://purl.org/dc/terms/> .',
     '@prefix pav:     <http://purl.org/pav/> .',
@@ -3260,7 +3812,7 @@ function buildSingleClipTtl(card) {
   ).join('\n\n');
   const decls = personDecls ? `\n# Pessoas novas\n${personDecls}\n` : '';
   const listDecls = buildNewListDecls(listValues(card));
-  return `${prefixes}\n${decls}${listDecls}\n${buildClipBlock(card).ttl}\n`;
+  return `${prefixes}\n${decls}${listDecls}\n${buildClipBlock(card, r).ttl}\n`;
 }
 
 // Constrói as 3 variantes da imagem em blobs (mesma lógica do kit ZIP do
@@ -3322,13 +3874,18 @@ function setCardStatus(card, label, kind = '') {
   el.className = `card-send-status ${kind}`;
   if (kind === 'ok')  setCardBg(card, 'uploaded');   // enviado → card verde
   if (kind === 'err') { setCardBg(card, 'error'); escalateZoneState(3); }  // erro → card vermelho + grupo vermelho
+  scheduleFormState();
 }
 function setCardSendEnabled(card, enabled) {
   const btn = $('.card-send', card.elem);
   if (btn) btn.disabled = !enabled;
 }
+// Sem rede (ou caiu no meio): marca pra retomada automática (retryPendingCards).
+const OFFLINE_LABEL = 'sem conexão — envia sozinho quando a conexão voltar';
 
 async function uploadCard(card) {
+  // Removido (×/limpar) enquanto esperava na fila do "Enviar todas".
+  if (card.removed || card.pendingRemoval || card.uploaded) return false;
   if (card.kind === 'video') return uploadVideoCard(card);
   return uploadImageCard(card);
 }
@@ -3338,50 +3895,70 @@ async function uploadImageCard(card) {
     setCardStatus(card, 'erro: imagem não pronta', 'err');
     return false;
   }
+  if (card.sending) return false;
   // Valida só os campos DESTE card — reportValidity() no <form> inteiro
   // reprovaria o envio se QUALQUER outro card tivesse um campo inválido.
   const inputsValid = [...card.elem.querySelectorAll('input, select')].every((el) => el.reportValidity());
   if (!inputsValid) return false;
-  setCardSendEnabled(card, false);
-  setCardStatus(card, 'preparando…', 'warn');
-  let ttl, variants;
-  try {
-    ttl = buildSingleImageTtl(card);
-    variants = await buildVariants(card);
-  } catch (e) {
-    setCardStatus(card, `falha local: ${e.message}`, 'err');
-    setCardSendEnabled(card, true);
+  if (!navigator.onLine) {
+    card.retryPending = true;
+    setCardStatus(card, OFFLINE_LABEL, 'err');
     return false;
   }
-  const fd = new FormData();
-  fd.append('ttl', ttl);
-  fd.append('original', variants.original.blob, variants.original.name);
-  fd.append('large',    variants.large.blob,    variants.large.name);
-  fd.append('thumb',    variants.thumb.blob,    variants.thumb.name);
-  setCardStatus(card, 'enviando…', 'warn');
+  setCardSendEnabled(card, false);
+  card.sending = true;
+  setCardStatus(card, 'preparando…', 'warn');
   try {
-    const res = await fetch(UPLOAD_URL, { method: 'POST', body: fd });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      const detail = (data.details || []).join('; ') || data.error || `HTTP ${res.status}`;
-      setCardStatus(card, `erro: ${detail}`, 'err');
+    let ttl, variants;
+    try {
+      ttl = buildSingleImageTtl(card);
+      variants = await buildVariants(card);
+    } catch (e) {
+      setCardStatus(card, `falha local: ${e.message}`, 'err');
       setCardSendEnabled(card, true);
       return false;
     }
-    card.uploaded = true;
-    setCardStatus(card, `✓ enviada (phash ${data.phash || card.phash})`, 'ok');
-    notifyParentChanged('upload-image', data.phash || card.phash);
-    return true;
-  } catch (e) {
-    setCardStatus(card, `erro de rede: ${e.message}`, 'err');
-    setCardSendEnabled(card, true);
-    return false;
+    if (card.removed || card.pendingRemoval) {   // × no meio (o "Desfazer" devolve pronto pra enviar)
+      setCardStatus(card, 'pendente', '');
+      setCardSendEnabled(card, true);
+      return false;
+    }
+    const fd = new FormData();
+    fd.append('ttl', ttl);
+    fd.append('original', variants.original.blob, variants.original.name);
+    fd.append('large',    variants.large.blob,    variants.large.name);
+    fd.append('thumb',    variants.thumb.blob,    variants.thumb.name);
+    setCardStatus(card, 'enviando…', 'warn');
+    try {
+      const res = await fetch(UPLOAD_URL, { method: 'POST', body: fd });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setCardStatus(card, `erro: ${httpErrorText(res, data, 'image')}`, 'err');
+        setCardSendEnabled(card, true);
+        return false;
+      }
+      card.uploaded = true;
+      card.retryPending = false;
+      setCardStatus(card, `✓ enviada (phash ${data.phash || card.phash})`, 'ok');
+      notifyParentChanged('upload-image', data.phash || card.phash);
+      return true;
+    } catch (e) {
+      const net = isNetworkError(e);
+      card.retryPending = net;
+      setCardStatus(card, net ? `erro de rede (${e.message}) — tenta de novo sozinho quando a conexão voltar` : `erro: ${e.message}`, 'err');
+      setCardSendEnabled(card, true);
+      return false;
+    }
+  } finally {
+    card.sending = false;
+    scheduleFormState();
   }
 }
 
 const UPLOAD_VIDEO_URL = './upload-video';
 
 async function uploadVideoCard(card) {
+  if (card.sending) return false;
   // Garante que o card já passou pela ativação preguiçosa (A3) — inclusive
   // quando chamado via "Enviar todas" antes do usuário rolar até ele —
   // senão card.duration/trim ficam nos defaults do template e o recorte
@@ -3400,10 +3977,18 @@ async function uploadVideoCard(card) {
     setCardStatus(card, p.error, 'err');
     return false;
   }
+  // Não gasta minutos de conversão num recorte que não vai caber (teto de
+  // 32 MB por arquivo) — a estimativa só barra o que passa muito do teto.
+  const tooBigEst = clipBudgetProblem(p, estimateClipBytes(p), BUDGET_ESTIMATE_SLACK);
+  if (tooBigEst) {
+    setCardStatus(card, tooBigEst, 'err');
+    return false;
+  }
 
   setCardSendEnabled(card, false);
   card.sending = true;
   clearTimeout(card._specTimer);
+  const epoch = _hiddenEpoch;
   let ttl, result;
   try {
     // Normalmente o recorte já foi preparado em segundo plano (ensureProcessed
@@ -3415,55 +4000,90 @@ async function uploadVideoCard(card) {
       onEngine:   (l) => setCardStatus(card, `transcodando (${l})…`, 'warn'),
       onProgress: (f) => setCardStatus(card, `transcodando (${card.proc?.engine || ''})… ${Math.round(f * 100)}%`, 'warn'),
     });
-    ttl = buildSingleClipTtl(card);
+    ttl = buildSingleClipTtl(card, result);
   } catch (e) {
-    setCardStatus(card, isAbortError(e) ? 'processamento cancelado' : `falha local: ${e.message}`, 'err');
+    if (!isAbortError(e)) console.warn('[upload-video] falha local:', e);
+    // Parou porque a página foi pro fundo (tela bloqueada/troca de app)? Retoma
+    // sozinho na volta — menos quando converter exige um toque (retryPendingCards).
+    card.retryPending = !isAbortError(e) && !isGestureError(e) && _hiddenEpoch !== epoch;
+    setCardStatus(card, isAbortError(e) ? 'processamento cancelado' : `falha local: ${friendlyClipError(e)}`, 'err');
     setCardSendEnabled(card, true);
     card.sending = false;
+    scheduleFormState();
     return false;
   }
-
-  // Pré-envio do MESMO recorte ainda subindo? Esperar é mais barato que
-  // mandar os blobs de novo.
-  if (card.staging?.key === p.key) {
-    setCardStatus(card, 'aguardando o pré-envio terminar…', 'warn');
-    await card.staging.promise;
-  }
-  const send = async (useStaged) => {
-    const fd = new FormData();
-    fd.append('ttl', ttl);
-    fd.append('id',  card.clipId);
-    if (useStaged) fd.append('staged', '1');
-    else appendClipBlobs(fd, card, result, p);
-    setCardStatus(card, useStaged ? 'gravando no catálogo (blobs já no servidor)…' : 'enviando…', 'warn');
-    const res = await fetch(UPLOAD_VIDEO_URL, { method: 'POST', body: fd });
-    const data = await res.json().catch(() => ({}));
-    return { res, data };
-  };
   try {
-    let { res, data } = await send(card.stagedKey === p.key);
+    if (card.removed || card.pendingRemoval) {   // × durante a conversão (o "Desfazer" devolve pronto pra enviar)
+      setCardStatus(card, 'pronto — pendente', '');
+      setCardSendEnabled(card, true);
+      return false;
+    }
+    // Cada arquivo tem que caber numa requisição (o total pode ser dividido).
+    const tooBig = clipBudgetProblem(p, resultSizes(result, p));
+    if (tooBig) {
+      setCardStatus(card, tooBig, 'err');
+      setCardSendEnabled(card, true);
+      return false;
+    }
+    if (!navigator.onLine) {
+      card.retryPending = true;
+      setCardStatus(card, OFFLINE_LABEL, 'err');
+      setCardSendEnabled(card, true);
+      return false;
+    }
+    // Pré-envio do MESMO recorte ainda subindo? Esperar é mais barato que
+    // mandar os blobs de novo.
+    if (card.staging?.key === p.key) {
+      setCardStatus(card, 'aguardando o pré-envio terminar…', 'warn');
+      await card.staging.promise;
+    }
+    const oneRequest = clipBytes(card, result, p) <= REQUEST_BODY_BUDGET;
+    // Não cabe numa requisição → sobe arquivo por arquivo pelo /stage-video.
+    const stageAll = async () => {
+      setCardStatus(card, 'enviando os arquivos em partes…', 'warn');
+      await stageClipBlobs(card, result, p);
+      card.stagedKey = p.key;
+    };
+    const sendTtl = async (useStaged) => {
+      const fd = new FormData();
+      fd.append('ttl', ttl);
+      fd.append('id',  card.clipId);
+      if (useStaged) fd.append('staged', '1');
+      else appendClipBlobs(fd, card, result, p);
+      setCardStatus(card, useStaged ? 'gravando no catálogo (arquivos já no servidor)…' : 'enviando…', 'warn');
+      const res = await fetch(UPLOAD_VIDEO_URL, { method: 'POST', body: fd });
+      const data = await res.json().catch(() => ({}));
+      return { res, data };
+    };
+    if (card.stagedKey !== p.key && !oneRequest) await stageAll();
+    let { res, data } = await sendTtl(card.stagedKey === p.key);
     if (res.status === 409 && data.code === 'staging-missing') {
       card.stagedKey = null;   // varrido/perdido no servidor → reenvia com os blobs
-      ({ res, data } = await send(false));
+      if (oneRequest) ({ res, data } = await sendTtl(false));
+      else { await stageAll(); ({ res, data } = await sendTtl(true)); }
     }
     if (!res.ok) {
-      const detail = (data.details || []).join('; ') || data.error || `HTTP ${res.status}`;
-      setCardStatus(card, `erro: ${detail}`, 'err');
+      setCardStatus(card, `erro: ${httpErrorText(res, data)}`, 'err');
       setCardSendEnabled(card, true);
       return false;
     }
     card.uploaded = true;
     card.stagedKey = null;
+    card.retryPending = false;
     setCardStatus(card, `✓ enviado (video_${card.clipId}, ${result.engine})`, 'ok');
     setPrepStatus(card, '');
     notifyParentChanged('upload-video', card.clipId);
     return true;
   } catch (e) {
-    setCardStatus(card, `erro de rede: ${e.message}`, 'err');
+    // e.status = erro HTTP do pré-envio em partes (mensagem já legível).
+    const net = !e.status && isNetworkError(e);
+    card.retryPending = net;
+    setCardStatus(card, net ? `erro de rede (${e.message}) — tenta de novo sozinho quando a conexão voltar` : `erro: ${e.message}`, 'err');
     setCardSendEnabled(card, true);
     return false;
   } finally {
     card.sending = false;
+    scheduleFormState();
   }
 }
 
@@ -3491,38 +4111,64 @@ function notifyParentChanged(kind, hash) {
 // de vídeo simultâneos em celulares mais fracos.
 const UPLOAD_CONCURRENCY = 3;
 async function uploadAll() {
-  const pending = cards.filter(c => !c.uploaded);
-  if (!pending.length) { setUploadAllStatus('tudo enviado.'); return; }
+  if (_batchRunning) return;
+  const pending = cards.filter(c => !c.uploaded && !c.sending);
+  if (!pending.length) { setUploadAllStatus(cards.length ? 'nada pendente (os que faltam já estão enviando).' : 'tudo enviado.'); return; }
   $$('.upload-all-btn').forEach((btn) => { btn.disabled = true; });
-  await withWakeLock(async () => {
-    let ok = 0, fail = 0, done = 0, next = 0;
-    setUploadAllStatus(`enviando 0/${pending.length}…`);
-    async function worker() {
-      while (next < pending.length) {
-        const card = pending[next++];
-        const success = await uploadCard(card);
-        done++;
-        if (success) ok++; else fail++;
-        setUploadAllStatus(`enviando ${done}/${pending.length}…`);
+  _batchRunning = true;
+  _batchStop = false;
+  scheduleFormState();
+  // No celular a tela precisa ficar aberta (a conversão/envio param com ela bloqueada).
+  const keepOpen = IS_TOUCH_DEVICE ? ' — mantenha esta tela aberta' : '';
+  try {
+    await withWakeLock(async () => {
+      let ok = 0, fail = 0, done = 0, skipped = 0, next = 0;
+      setUploadAllStatus(`enviando 0/${pending.length}…${keepOpen}`);
+      async function worker() {
+        // Parada pedida (a folha fechou): nenhum card NOVO começa; os que já
+        // estão no ar terminam.
+        while (next < pending.length && !_batchStop) {
+          const card = pending[next++];
+          // Removido (×/limpar) ou enviado por fora enquanto esperava na fila.
+          if (card.removed || card.pendingRemoval || card.uploaded || card.sending) { skipped++; continue; }
+          const success = await uploadCard(card);
+          done++;
+          if (success) ok++; else fail++;
+          setUploadAllStatus(`enviando ${done}/${pending.length - skipped}…${keepOpen}`);
+        }
       }
-    }
-    const workers = Array.from(
-      { length: Math.min(UPLOAD_CONCURRENCY, pending.length) },
-      () => worker(),
-    );
-    await Promise.all(workers);
-    setUploadAllStatus(
-      `<span class="ok">${ok} enviada(s)</span>` +
-      (fail ? ` · <span class="err">${fail} com erro</span>` : ''),
-    );
-    // Todas enviadas sem erro (e nenhum card pendente restante) → modal azul.
-    const allDone = fail === 0 && cards.every(c => c.uploaded);
-    document.body.classList.toggle('all-uploaded', allDone);
-  });
-  $$('.upload-all-btn').forEach((btn) => { btn.disabled = false; });
+      const workers = Array.from(
+        { length: Math.min(UPLOAD_CONCURRENCY, pending.length) },
+        () => worker(),
+      );
+      await Promise.all(workers);
+      const left = cards.filter((c) => !c.uploaded).length;
+      setUploadAllStatus(
+        `<span class="ok">${ok} enviada(s)</span>` +
+        (fail ? ` · <span class="err">${fail} com erro</span>` : '') +
+        (_batchStop && left ? ` · <span class="warn">envio pausado (a janela foi fechada) — ${left} pendente(s); toque em “Enviar todas” pra continuar</span>` : ''),
+      );
+      // Todas enviadas sem erro (e nenhum card pendente restante) → modal azul.
+      const allDone = fail === 0 && cards.every(c => c.uploaded);
+      document.body.classList.toggle('all-uploaded', allDone);
+    });
+  } finally {
+    _batchRunning = false;
+    _batchStop = false;
+    scheduleFormState();
+    refreshGenerateButtons();
+  }
+}
+// A folha fechou com o lote rodando: para de puxar cards (ver o listener de
+// phidro-upload-modal-closed). O lote não some — "Enviar todas" continua.
+function stopUploadAll() {
+  if (_batchRunning) _batchStop = true;
 }
 
 $$('.upload-all-btn').forEach((btn) => btn.addEventListener('click', () => {
+  // WebKit: abençoa AGORA, dentro do toque, os elementos de mídia que as
+  // conversões do lote vão usar (o 2º vídeo começa minutos depois).
+  blessMediaForGesture(cards.filter((c) => c.kind === 'video' && !c.uploaded && transcodeNeedsTap(c)).length);
   // Ao enviar, leva o botão pro topo da viewport — o grupo "Adicionar" some
   // pra cima e a grade/faixa de cards (com o progresso) fica à vista.
   btn.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -3608,6 +4254,9 @@ _pickerModal.addEventListener('click', (e) => { if (e.target === _pickerModal) c
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && _pickerModal.style.display !== 'none') closeMapPicker();
 });
+
+// Estado inicial pro app-pai (o contrato phidro-form-state pede um no load).
+scheduleFormState();
 </script>
 </body>
 </html>
