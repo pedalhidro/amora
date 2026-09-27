@@ -1,25 +1,189 @@
 <!doctype html>
 <!--
-  Stub de fallback. O app real é carregado de server.url
-  (https://amora.pedalhidrografi.co) — ver capacitor.config.json. O Capacitor
-  exige um webDir existente pra `cap sync` copiar; este arquivo só aparece se o
-  carregamento remoto falhar (ex.: primeiro boot totalmente offline).
+  Tela "sem conexão" do shell nativo — é o `server.errorPath` do
+  capacitor.config.json. O app de verdade vem de `server.url`
+  (https://amora.pedalhidrografi.co); o Capacitor só abre ESTA página,
+  empacotada no app (o `cap sync` copia o webDir `www/` pro `public/` do
+  projeto nativo), quando a navegação principal falha: abrir o app sem sinal
+  antes de o service worker ter o shell em cache, a WebView recarregada pelo
+  sistema sem rede e, no Android, também um erro HTTP da página.
+
+  No iOS o Capacitor não distingue falha de CANCELAMENTO: toda navegação
+  principal cancelada também cai aqui (ex.: um link same-origin que redireciona
+  pra outro host — o Capacitor abre esse no Safari e cancela a navegação). Por
+  isso a página volta sozinha pro mapa assim que alcança o servidor, com
+  backoff pra nunca virar um laço de recargas.
+
+  Regras: nada externo (abre offline — sem fonte/imagem/script de rede) e
+  nada de plugin (no Android esta página não enxerga a ponte do Capacitor).
+  Renomeou o arquivo? Mude `server.errorPath` junto (os run-*.sh conferem).
+  Mudou o `server.url`? Mude o APP_URL lá embaixo.
 -->
 <html lang="pt-BR">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>Amora</title>
+    <meta name="color-scheme" content="light" />
+    <title>Amora — sem conexão</title>
     <style>
-      body { margin: 0; background: #0f1721; color: #fff;
-             font: 16px/1.5 system-ui, sans-serif; display: grid;
-             place-items: center; height: 100vh; text-align: center; padding: 24px; }
+      /* Mesmas cores do app (web/style.css). Claro sempre: o app é claro e a
+         barra de status do shell é fixa em ícones escuros. */
+      :root { color-scheme: light; }
+      html, body { height: 100%; }
+      body {
+        margin: 0;
+        box-sizing: border-box;
+        display: grid;
+        place-items: center;
+        text-align: center;
+        background: #fafbfc;
+        color: #101820;
+        font: 17px/1.45 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+        /* Texto Maior do iOS (Dynamic Type); onde não existe, o navegador
+           descarta a declaração e fica a de cima. */
+        font: -apple-system-body;
+        font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+        line-height: 1.45;
+        -webkit-text-size-adjust: 100%;
+        padding: max(24px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right))
+                 max(24px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
+      }
+      main { max-width: 30em; }
+      .glyph { font-size: 2.6em; line-height: 1; margin-bottom: .3em; }
+      h1 { font-size: 1.3em; margin: 0 0 .5em; }
+      p { margin: .5em 0; }
+      .status { color: #4a5867; min-height: 1.45em; }
+      button {
+        font: inherit;
+        font-weight: 600;
+        margin-top: 1em;
+        min-height: 44px;
+        padding: .6em 1.6em;
+        border: 0;
+        border-radius: 999px;
+        background: #c2410c;
+        color: #fff;
+        cursor: pointer;
+      }
+      button:active { background: #9a3412; }
+      button:disabled { opacity: .5; cursor: default; }
+      button:focus-visible { outline: 2px solid #c2410c; outline-offset: 3px; }
+      .note { font-size: .85em; color: #4a5867; margin-top: 1.6em; }
+      /* Explicação e aviso só com a falha confirmada — no "Conectando…" de uma
+         volta rápida eles só assustariam. */
+      body:not([data-state="offline"]) .when-offline { display: none; }
     </style>
   </head>
-  <body>
-    <div>
-      <p>Carregando o Pedal Hidrográfico…</p>
-      <p><a style="color:#7fd" href="https://amora.pedalhidrografi.co">amora.pedalhidrografi.co</a></p>
-    </div>
+  <body data-state="offline">
+    <main>
+      <div class="glyph" aria-hidden="true">🚲</div>
+      <h1 id="title">Sem conexão com o Amora</h1>
+      <p class="when-offline">O mapa não abriu. Pode ser falta de sinal, os dados móveis bloqueados para o Amora ou o servidor fora do ar.</p>
+      <p id="status" class="status" role="status" aria-live="polite"></p>
+      <button type="button" id="retry">Tentar de novo</button>
+      <p class="note when-offline">Se você estava transmitindo a localização ao vivo, a transmissão parou: ligue de novo quando o mapa voltar.</p>
+    </main>
+    <script>
+      (function () {
+        'use strict';
+        // = server.url do capacitor.config.json.
+        var APP_URL = 'https://amora.pedalhidrografi.co/';
+        // Sonda barata antes de cada volta AUTOMÁTICA: no-cors basta (resposta
+        // opaca = servidor alcançável; erro de rede rejeita). Uma sonda que
+        // falha não recarrega a página — a navegação que falha, sim (o
+        // Capacitor traz a WebView de novo pra cá).
+        var PROBE_URL = APP_URL + 'health';
+        var PROBE_TIMEOUT_MS = 8000;
+        var RETRY_BASE_MS = 5000;
+        var RETRY_MAX_MS = 60000;
+        // Voltar pra cá até 30 s depois de uma volta automática = a volta
+        // falhou (servidor instável, erro HTTP no Android…): conta como falha
+        // e o backoff cresce — nunca um laço de recargas.
+        var BOUNCE_WINDOW_MS = 30000;
+        var KEY = 'amora-offline:auto-return';
+
+        var titleEl = document.getElementById('title');
+        var statusEl = document.getElementById('status');
+        var btn = document.getElementById('retry');
+        var navigating = false;
+        var probing = false;
+        var timer = 0;
+
+        function load() {
+          try { return JSON.parse(sessionStorage.getItem(KEY) || 'null') || {}; } catch (_) { return {}; }
+        }
+        function save(v) {
+          try { sessionStorage.setItem(KEY, JSON.stringify(v)); } catch (_) {}
+        }
+
+        var last = load();
+        var misses = (last.at && Date.now() - last.at < BOUNCE_WINDOW_MS) ? (last.n || 0) + 1 : 0;
+
+        function backoff(n) {
+          return n > 0 ? Math.min(RETRY_MAX_MS, RETRY_BASE_MS * Math.pow(2, n - 1)) : 0;
+        }
+
+        function setState(state, title, status) {
+          document.body.setAttribute('data-state', state);
+          titleEl.textContent = title;
+          statusEl.textContent = status;
+        }
+
+        function go(auto) {
+          if (navigating) return;
+          navigating = true;
+          clearTimeout(timer);
+          btn.disabled = true;
+          setState('navigating', 'Abrindo o Amora…', 'Carregando o mapa. Com sinal fraco pode levar até um minuto.');
+          save(auto ? { at: Date.now(), n: misses } : {});
+          // Uma navegação por vez: disparar outra com esta pendente cancelaria
+          // a primeira, e cancelamento também traz o Capacitor pra cá.
+          location.replace(APP_URL);
+        }
+
+        function schedule(ms) {
+          clearTimeout(timer);
+          // Em segundo plano não sonda (o sistema congela os timers mesmo);
+          // retoma no visibilitychange.
+          if (document.visibilityState === 'hidden') return;
+          timer = setTimeout(probe, ms);
+        }
+
+        function offline() {
+          misses++;
+          setState('offline', 'Sem conexão com o Amora', 'A gente tenta de novo sozinho assim que o sinal voltar.');
+          schedule(backoff(misses));
+        }
+
+        function probe() {
+          if (navigating || probing) return;
+          clearTimeout(timer);
+          if (!window.fetch || navigator.onLine === false) { offline(); return; }
+          probing = true;
+          statusEl.textContent = 'Procurando conexão…';
+          var ctrl = window.AbortController ? new AbortController() : null;
+          var t = setTimeout(function () { if (ctrl) ctrl.abort(); }, PROBE_TIMEOUT_MS);
+          fetch(PROBE_URL, { mode: 'no-cors', cache: 'no-store', signal: ctrl ? ctrl.signal : undefined })
+            .then(function () { clearTimeout(t); probing = false; go(true); },
+                  function () { clearTimeout(t); probing = false; offline(); });
+        }
+
+        btn.addEventListener('click', function () { go(false); });
+        window.addEventListener('online', function () { if (!navigating) probe(); });
+        document.addEventListener('visibilitychange', function () {
+          if (document.visibilityState === 'visible') { if (!navigating) probe(); }
+          else clearTimeout(timer);
+        });
+
+        if (misses > 0) {
+          // A última volta automática acabou de falhar: espera antes de sondar.
+          setState('offline', 'Sem conexão com o Amora', 'A gente tenta de novo sozinho assim que o sinal voltar.');
+          schedule(backoff(misses));
+        } else {
+          setState('checking', 'Conectando ao Amora…', 'Procurando conexão…');
+          probe();
+        }
+      })();
+    </script>
   </body>
 </html>
