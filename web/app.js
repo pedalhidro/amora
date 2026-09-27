@@ -867,6 +867,15 @@ const OSM_FGB_FULL_BBOX_KM2 = 1200;
 // densidade local desminta a estimativa acima.
 const OSM_FGB_MAX_FEATURES = 20000;
 
+// Aparelho de toque (celular/tablet): tela pequena, DPR alto, pouca memória
+// por aba (o iOS recarrega a aba perto de ~1 GB) e dados móveis — as camadas
+// e caches pesados (viário OSM, tiles de DEM, feições FGB) usam orçamentos
+// menores nele. Avaliado a cada uso: um tablet pode ganhar mouse no meio da
+// sessão.
+function dataBudgetCoarse() {
+  try { return window.matchMedia('(pointer: coarse)').matches; } catch { return false; }
+}
+
 // Nível de detalhe derivado da área: em bbox grande desenha só o que ainda
 // significa alguma coisa naquela escala (rios e cristas; ciclovias
 // segregadas), em vez de recusar a camada ou travar a aba.
@@ -902,10 +911,21 @@ function mercY(lat) {
 // Linhas EMPACOTADAS num <canvas> próprio — pras camadas densas demais pra
 // L.polyline. No Leaflet cada vértice vira um LatLng + um Point (medido: as
 // 164 mil vias de um zoom 12 em SP custavam ~400 MB de heap). Aqui os vértices
-// já chegam projetados num Float64Array (`streamFgbPackedLines`) e o desenho é
+// já chegam projetados em Float64Arrays (`streamFgbPackedLines`) e o desenho é
 // um laço de lineTo e UM stroke — com opacidade < 1, os cruzamentos não
-// acumulam alfa. Redesenha no moveend; na animação de zoom só escala via CSS.
-// A largura é em METROS (`widthM`): o lineWidth sai do zoom a cada desenho.
+// acumulam alfa. Os vértices vêm em pedaços com a caixa das suas linhas: o
+// desenho pula os pedaços fora do canvas (a bbox carregada tem folga — ver
+// makeOsmFgbLayer). Redesenha no moveend/resize; na animação de zoom e na
+// PINÇA (evento `zoom`: o leaflet-rotate move o mapa a cada toque com
+// `_move(…, {pinch})`, que não dispara zoomanim) só reposiciona/escala via CSS,
+// como os renderers do Leaflet. No GIRO não redesenha: o canvas está no
+// rotatePane e gira junto; com o mapa girado ele cobre o quadrado da DIAGONAL
+// da tela (qualquer rumo cabe), então só o primeiro passo de um giro a partir
+// do norte redesenha — antes era um desenho completo + realocação do canvas a
+// cada quadro do gesto. A largura é em METROS (`widthM`): o lineWidth sai do
+// zoom a cada desenho. DPR limitado a PACKED_MAX_DPR: é um véu fino, e em DPR 3
+// o backing store custava 9× a área da tela.
+const PACKED_MAX_DPR = 2;
 const PackedLinesLayer = L.Layer.extend({
   initialize(lines, { pane, color = '#fff', widthM = 1, opacity = 1 } = {}) {
     this._lines = lines;
@@ -925,17 +945,29 @@ const PackedLinesLayer = L.Layer.extend({
     cancelAnimationFrame(this._raf);
     L.DomUtil.remove(this._canvas);
     this._canvas = null;
+    this._box = null;
   },
   getEvents() {
-    const ev = { moveend: this._draw, resize: this._draw, rotate: this._drawSoon };
+    const ev = { moveend: this._draw, resize: this._draw, rotate: this._onRotate, zoom: this._onZoom };
     if (this._map.options.zoomAnimation && L.Browser.any3d) ev.zoomanim = this._animateZoom;
     return ev;
   },
-  // Girar dispara `rotate` a cada passo do gesto: no máximo um desenho por
-  // quadro.
-  _drawSoon() {
+  // Giro: só redesenha se algum canto da tela saiu do canvas (no máximo um
+  // desenho por quadro).
+  _onRotate() {
+    if (this._covers()) return;
     cancelAnimationFrame(this._raf);
     this._raf = requestAnimationFrame(() => this._draw());
+  },
+  _covers() {
+    const map = this._map, box = this._box;
+    if (!map || !box) return false;
+    const size = map.getSize();
+    for (const p of [[0, 0], [size.x, 0], [0, size.y], [size.x, size.y]]) {
+      const lp = map.containerPointToLayerPoint(p);
+      if (lp.x < box.min.x || lp.y < box.min.y || lp.x > box.max.x || lp.y > box.max.y) return false;
+    }
+    return true;
   },
   setOpacity(frac) {
     this.options.opacity = frac;
@@ -943,25 +975,39 @@ const PackedLinesLayer = L.Layer.extend({
   },
   // Mesmo padrão dos overlays do Leaflet: o canto do canvas é um latlng fixo;
   // durante a animação ele vai pro ponto novo e o canvas escala a partir dali.
-  _animateZoom(e) {
-    const scale = this._map.getZoomScale(e.zoom, this._zoom);
-    const offset = this._map._latLngToNewLayerPoint(this._topLeft, e.zoom, e.center);
-    L.DomUtil.setTransform(this._canvas, offset, scale);
+  _animateZoom(e) { this._transform(e.center, e.zoom); },
+  _onZoom() {
+    // Na animação normal quem posiciona é o _animateZoom (e o moveend redesenha).
+    if (!this._canvas || !this._topLeft || this._map._animatingZoom) return;
+    this._transform(this._map.getCenter(), this._map.getZoom());
+  },
+  _transform(center, zoom) {
+    const map = this._map;
+    L.DomUtil.setTransform(this._canvas,
+      map._latLngToNewLayerPoint(this._topLeft, zoom, center), map.getZoomScale(zoom, this._zoom));
   },
   _draw() {
     const map = this._map, c = this._canvas;
     if (!map || !c) return;
-    const size = map.getSize(), dpr = window.devicePixelRatio || 1;
-    // O canvas vive no referencial das CAMADAS. Com o mapa girado, o canvas
-    // está no rotatePane e a tela vira um losango nesse referencial: cobre a
-    // caixa dos quatro cantos (sem rotação ela é exatamente a tela).
-    const box = L.bounds([[0, 0], [size.x, 0], [0, size.y], [size.x, size.y]]
-      .map((p) => map.containerPointToLayerPoint(p)));
+    const size = map.getSize(), dpr = Math.min(PACKED_MAX_DPR, window.devicePixelRatio || 1);
+    // O canvas vive no referencial das CAMADAS. Sem giro, é exatamente a tela.
+    // Girado, a tela vira um losango nesse referencial: o canvas cobre o
+    // quadrado da diagonal centrado nela, que contém a tela em QUALQUER rumo.
+    let box;
+    if (map.getBearing && map.getBearing() % 360) {
+      const half = Math.ceil(Math.hypot(size.x, size.y) / 2) + 1;
+      const mid = map.containerPointToLayerPoint(size.divideBy(2));
+      box = L.bounds(mid.subtract([half, half]), mid.add([half, half]));
+    } else {
+      box = L.bounds([[0, 0], [size.x, 0], [0, size.y], [size.x, size.y]]
+        .map((p) => map.containerPointToLayerPoint(p)));
+    }
     const topLeft = box.min.floor();
     const cssW = Math.ceil(box.max.x) - topLeft.x, cssH = Math.ceil(box.max.y) - topLeft.y;
     L.DomUtil.setPosition(c, topLeft);           // e zera a escala da animação
     this._topLeft = map.layerPointToLatLng(topLeft);
     this._zoom = map.getZoom();
+    this._box = L.bounds(topLeft, topLeft.add([cssW, cssH]));
     const w = Math.round(cssW * dpr), h = Math.round(cssH * dpr);
     if (c.width !== w || c.height !== h) {
       c.width = w; c.height = h;
@@ -970,18 +1016,26 @@ const PackedLinesLayer = L.Layer.extend({
     const ctx = c.getContext('2d');
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, w, h);
-    const { xy, starts, parts } = this._lines;
-    if (!parts) return;
+    const { chunks } = this._lines;
+    if (!chunks || !chunks.length) return;
     // Pixel global do canto do canvas; vértice → xy·scale − origem.
     const scale = 256 * 2 ** this._zoom;
     const o = topLeft.add(map.getPixelOrigin());
+    // Caixa do canvas em Mercator normalizado (a unidade dos vértices).
+    const mx0 = o.x / scale, my0 = o.y / scale;
+    const mx1 = (o.x + cssW) / scale, my1 = (o.y + cssH) / scale;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.beginPath();
-    for (let p = 0; p < parts; p++) {
-      let i = starts[p] * 2;
-      const end = starts[p + 1] * 2;
-      ctx.moveTo(xy[i] * scale - o.x, xy[i + 1] * scale - o.y);
-      for (i += 2; i < end; i += 2) ctx.lineTo(xy[i] * scale - o.x, xy[i + 1] * scale - o.y);
+    for (const ch of chunks) {
+      const b = ch.box;
+      if (b[2] < mx0 || b[0] > mx1 || b[3] < my0 || b[1] > my1) continue;
+      const { xy, starts, parts } = ch;
+      for (let p = 0; p < parts; p++) {
+        let i = starts[p] * 2;
+        const end = starts[p + 1] * 2;
+        ctx.moveTo(xy[i] * scale - o.x, xy[i + 1] * scale - o.y);
+        for (i += 2; i < end; i += 2) ctx.lineTo(xy[i] * scale - o.x, xy[i + 1] * scale - o.y);
+      }
     }
     ctx.strokeStyle = this.options.color;
     ctx.lineWidth = metersToPixels(this.options.widthM);
@@ -1011,20 +1065,34 @@ async function loadPhCycleNetwork() {
 // bbox e como estilizar/rotular — é só isso que distingue Morros e Águas de
 // Cicloinfra. A ordem das sources é a ordem de desenho (a última fica por cima).
 // Os limites de área/feições têm default nas constantes acima; o viário, muito
-// mais denso, passa os seus.
+// mais denso, passa os seus — número OU função (avaliada a cada consulta: o
+// viário usa tetos menores em aparelho de toque, ver dataBudgetCoarse).
 //
 // Uma source `packed: true` (o viário) troca styleFor/tipFor por um `style`
 // fixo ({color, widthM}) e o seu `load` devolve linhas empacotadas
-// ({xy, starts, parts, capped} — ver streamFgbPackedLines), desenhadas por uma
+// ({chunks, parts, capped} — ver streamFgbPackedLines), desenhadas por uma
 // PackedLinesLayer em vez de um L.polyline por feição. O `load` recebe
-// {maxParts, isStale} pra parar o download no teto ou quando um pan mais novo
-// já saiu na frente.
+// {maxParts, isStale, keep} pra parar o download no teto ou quando um pan mais
+// novo (ou esconder a camada) já saiu na frente, e pra descartar na hora o que
+// o nível de detalhe não desenha.
+//
+// REUSO: guarda a bbox da última carga COMPLETA (sem teto, sem fonte falhando).
+// Enquanto a viewport couber nela no mesmo nível de detalhe — aproximar o
+// zoom, pan curto, ir pra uma foto perto, girar pouco — nada é rebaixado nem
+// reparseado (as camadas se redesenham sozinhas). `padFrac` > 0 carrega com
+// essa folga de cada lado, limitada pelo teto de área e pela densidade (a da
+// carga anterior; antes da primeira, `density0` — a folga não pode empurrar a
+// carga pro teto de feições).
 function makeOsmFgbLayer({ id, label, sources,
                            maxKm2 = OSM_FGB_MAX_BBOX_KM2,
                            fullKm2 = OSM_FGB_FULL_BBOX_KM2,
-                           maxFeatures = OSM_FGB_MAX_FEATURES }) {
+                           maxFeatures = OSM_FGB_MAX_FEATURES,
+                           padFrac = 0, density0 = 0 }) {
   const drawn = [];
+  const lim = (v) => (typeof v === 'function' ? v() : v);
   let active = false, opacity = 1, debounce = null, seq = 0, nDrawn = 0;
+  let loaded = null;      // { bb, detail, complete }
+  let density = density0; // feições/km² da última carga completa (0 = desconhecida)
 
   function clear() {
     for (const l of drawn) map.removeLayer(l);
@@ -1032,7 +1100,23 @@ function makeOsmFgbLayer({ id, label, sources,
     nDrawn = 0;
   }
 
-  function render(perSource, detail) {
+  const contains = (o, i) => i.west >= o.west && i.east <= o.east && i.south >= o.south && i.north <= o.north;
+
+  // Folga f de cada lado: (1+2f)² × área ≤ teto de área e, com a densidade
+  // conhecida, ≤ 80% do teto de feições.
+  function padded(view, areaKm2, maxA, maxF) {
+    if (!(padFrac > 0) || !(areaKm2 > 0) || !(density > 0)) return view;
+    const cap = Math.min(maxA, 0.8 * maxF / density);
+    const f = Math.max(0, Math.min(padFrac, (Math.sqrt(cap / areaKm2) - 1) / 2));
+    if (!f) return view;
+    const dx = (view.east - view.west) * f, dy = (view.north - view.south) * f;
+    return {
+      west: view.west - dx, east: view.east + dx,
+      south: Math.max(-MERC_MAX_LAT, view.south - dy), north: Math.min(MERC_MAX_LAT, view.north + dy),
+    };
+  }
+
+  function render(perSource, detail, maxF) {
     clear();
     const pane = LAYER_PANE(id);
     let capped = false;
@@ -1052,7 +1136,9 @@ function makeOsmFgbLayer({ id, label, sources,
         drawn.push(layer);
         continue;
       }
-      for (const f of perSource[s] || []) {
+      const feats = perSource[s] || [];
+      if (feats.capped && !alwaysDraw) capped = true;
+      for (const f of feats) {
         const g = f && f.geometry; if (!g) continue;
         const props = f.properties || {};
         // styleFor devolve null pro que não vale a pena nesta escala.
@@ -1066,7 +1152,7 @@ function makeOsmFgbLayer({ id, label, sources,
           // rede do coletivo é a ÚLTIMA source (pra ficar por cima), então sem
           // isto ela sumiria justo onde a hidrografia é densa o bastante pra
           // estourar o limite.
-          if (!alwaysDraw && nDrawn >= maxFeatures) { capped = true; break; }
+          if (!alwaysDraw && nDrawn >= maxF) { capped = true; break; }
           nDrawn++;
           // O FGB guarda [lng,lat]; o Leaflet quer [lat,lng].
           const layer = L.polyline(coords.map((c) => [c[1], c[0]]),
@@ -1085,17 +1171,25 @@ function makeOsmFgbLayer({ id, label, sources,
   async function refresh() {
     if (!active) return;
     const b = map.getBounds();
-    const bb = {
+    const view = {
       west: b.getWest(), south: b.getSouth(),
       east: b.getEast(), north: b.getNorth(),
     };
-    const areaKm2 = bboxAreaKm2(bb);
-    if (areaKm2 > maxKm2) {
+    const areaKm2 = bboxAreaKm2(view);
+    const maxA = lim(maxKm2), fullA = lim(fullKm2), maxF = lim(maxFeatures);
+    if (areaKm2 > maxA) {
+      ++seq;   // uma carga em voo (de uma área menor) fica obsoleta
       clear();
+      loaded = null;
       showToast(`Área grande demais para carregar ${label} — aproxime o mapa`);
       return;
     }
-    const detail = areaKm2 > fullKm2 ? DETAIL_MAIN : DETAIL_FULL;
+    const detail = areaKm2 > fullA ? DETAIL_MAIN : DETAIL_FULL;
+    if (loaded && loaded.complete && loaded.detail === detail && contains(loaded.bb, view)) {
+      ++seq;   // idem: já temos esta área desenhada
+      return;
+    }
+    const bb = padded(view, areaKm2, maxA, maxF);
     const mySeq = ++seq;
     showToast(`Buscando ${label}…`, 1500);
     try {
@@ -1104,22 +1198,31 @@ function makeOsmFgbLayer({ id, label, sources,
       // conselhos opostos (aproximar vs tentar de novo), e sem isso um 404 no
       // FGB aparecia pro usuário como área vazia.
       let failed = 0;
-      const opts = { maxParts: maxFeatures, isStale: () => mySeq !== seq || !active };
-      const perSource = await Promise.all(sources.map((s) => s.load(bb, opts).catch((e) => {
-        failed++;
-        console.warn(`[${id}] fonte indisponível:`, e.message);
+      const isStale = () => mySeq !== seq || !active;
+      const perSource = await Promise.all(sources.map((s) => s.load(bb, {
+        maxParts: maxF,
+        isStale,
+        keep: s.styleFor ? (p) => s.styleFor(p, detail) != null : null,
+      }).catch((e) => {
+        if (!(e && e.name === 'AbortError')) {
+          failed++;
+          console.warn(`[${id}] fonte indisponível:`, e.message);
+        }
         return [];
       })));
-      if (mySeq !== seq || !active) return;   // um pan mais novo já saiu na frente
+      if (isStale()) return;   // um pan mais novo já saiu na frente
       const total = perSource.reduce((n, r) => n + (r.parts ?? r.length), 0);
       if (!total) {
         clear();
+        loaded = { bb, detail, complete: !failed };
         showToast(failed === sources.length
           ? `${label}: fonte indisponível`
           : `${label}: nada nesta área`, 1800);
         return;
       }
-      const capped = render(perSource, detail);
+      const capped = render(perSource, detail, maxF);
+      loaded = { bb, detail, complete: !failed && !capped };
+      if (loaded.complete) density = total / Math.max(1e-6, bboxAreaKm2(bb));
       // `failed` PRECISA aparecer também no caminho de sucesso. A rede do
       // coletivo não é filtrada por bbox e fica memoizada, então ela sozinha
       // mantém `total > 0` mesmo com o FGB da hidrografia fora do ar — sem
@@ -1156,10 +1259,11 @@ function makeOsmFgbLayer({ id, label, sources,
       queueMicrotask(refresh);
     },
     hide() {
-      active = false;
+      active = false;   // isStale() → a carga em voo para de baixar
       map.off('moveend rotate', onMoveEnd);
       clearTimeout(debounce);
       clear();
+      loaded = null;
     },
     setOpacity(frac) {
       opacity = frac;
@@ -1217,8 +1321,10 @@ const hidroLayer = makeOsmFgbLayer({
   sources: [
     {
       // `false` = fora do LRU do viário: a camada reconsulta a cada pan e
-      // encheria o cache (10 slots) com viewports inteiras de feições.
-      load: (bb) => streamFgbFeatures(HIDRO_FGB_URL, bb, false),
+      // encheria o cache com viewports inteiras de feições. `opts` (teto,
+      // isStale, filtro do nível de detalhe) corta o download de um pan
+      // superado ou da camada escondida.
+      load: (bb, opts) => streamFgbFeatures(HIDRO_FGB_URL, bb, false, opts),
       styleFor: hidroStyleFor,
       tipFor: hidroTipFor,
     },
@@ -1241,7 +1347,7 @@ const cicloinfraLayer = makeOsmFgbLayer({
   id: 'osm-cicloinfra',
   label: 'cicloinfra OSM',
   sources: [{
-    load: (bb) => streamFgbFeatures(CICLOINFRA_FGB_URL, bb, false),
+    load: (bb, opts) => streamFgbFeatures(CICLOINFRA_FGB_URL, bb, false, opts),
     styleFor: styleForCycloinfra,
     tipFor: cicloinfraTipFor,
   }],
@@ -1263,13 +1369,21 @@ const cicloinfraLayer = makeOsmFgbLayer({
 // (sw.js) — a primeira visita a uma área paga o download, as seguintes (pan de
 // volta, zoom pra dentro, outra sessão) saem do disco. O teto de 3.200 km²
 // cobre o zoom 12 de uma tela full HD em qualquer latitude da América do Sul.
+// Em aparelho de toque o teto cai pra 800 km² / 120 mil vias: um iPhone no
+// zoom 11 (~1.300 km², ~250 mil vias, ~56 MB) passava no teto de desktop e
+// segurava 150–230 MB de arrays numa aba que o iOS recarrega perto de 1 GB;
+// no celular a camada abre a partir do zoom 12. A carga leva 20% de folga de
+// cada lado (dentro dos tetos): pan curto, zoom pra dentro e ir pra uma foto
+// perto não rebaixam nada.
 const VIARIO_LAYER_WIDTH_M = 3;
 const viarioLayer = makeOsmFgbLayer({
   id: 'osm-viario',
   label: 'viário OSM',
-  maxKm2: 3200,
-  fullKm2: 3200,         // sem nível "só o principal": o FGB não traz `highway`
-  maxFeatures: 400000,
+  maxKm2: () => (dataBudgetCoarse() ? 800 : 3200),
+  fullKm2: () => (dataBudgetCoarse() ? 800 : 3200),   // sem nível "só o principal": o FGB não traz `highway`
+  maxFeatures: () => (dataBudgetCoarse() ? 120000 : 400000),
+  padFrac: 0.2,
+  density0: 300,         // vias/km² no centro de SP — estimativa da 1ª carga
   sources: [{
     packed: true,
     load: (bb, opts) => streamFgbPackedLines(VIARIO_FGB_URL, bb, opts),
@@ -10220,12 +10334,56 @@ function runEnergyWorker(payload) {
   });
 }
 
+// ─── Memória do roteamento: soltar quando o editor fecha ou fica ocioso ─────
+// O grafo do viário (worker, ~130 MB), os tiles de DEM decodificados, as
+// feições FGB em cache e os produtos do viário só valem enquanto se roteia —
+// antes ficavam presos até a página recarregar (num PWA, dias). Cada uso marca
+// o relógio; um temporizador solta tudo ROUTING_IDLE_OUTSIDE_MS depois de sair
+// do editor, ou após ROUTING_IDLE_INSIDE_MS parado dentro dele. Tudo volta sob
+// demanda (o grafo e os blocos FGB saem do cache do service worker). Não mexe
+// no rascunho nem nas elevações já amostradas.
+const ROUTING_IDLE_OUTSIDE_MS = 30 * 1000;
+const ROUTING_IDLE_INSIDE_MS = 5 * 60 * 1000;
+let _routingLastUse = 0;
+let _routingIdleTimer = null;
+let _routingInflight = 0;       // roteamentos/esperas em andamento (não solta no meio)
+
+function touchRoutingMemory() {
+  _routingLastUse = Date.now();
+  if (!_routingIdleTimer) _routingIdleTimer = setTimeout(checkRoutingIdle, ROUTING_IDLE_OUTSIDE_MS);
+}
+function checkRoutingIdle() {
+  _routingIdleTimer = null;
+  const idle = Date.now() - _routingLastUse;
+  const limit = drawingMode ? ROUTING_IDLE_INSIDE_MS : ROUTING_IDLE_OUTSIDE_MS;
+  const loading = !!_graphLoad && !_graphWorker;   // grafo ainda baixando
+  if (idle >= limit && !_routingInflight && !loading) { releaseRoutingMemory(); return; }
+  // Rechecagem curta: sair do editor solta em ≤ ROUTING_IDLE_OUTSIDE_MS.
+  _routingIdleTimer = setTimeout(checkRoutingIdle,
+    Math.max(5000, Math.min(Math.max(0, limit - idle), ROUTING_IDLE_OUTSIDE_MS)));
+}
+function releaseRoutingMemory() {
+  const had = { graph: !!_graphWorker, tiles: _demTiles.size, fgb: _fgbCache.size, road: _roadProductsCache.size };
+  if (_graphWorker) dropGraphWorker(new Error('grafo solto (editor ocioso)'));
+  _fgbCache.clear();
+  _fgbCacheBytes = 0;
+  _roadProductsCache.clear();
+  demTilesDrop();
+  if (had.graph || had.tiles || had.fgb || had.road) {
+    console.info(`[routing] memória solta — grafo ${had.graph ? 'sim' : 'não'} · ${had.tiles} tiles de DEM · ` +
+      `${had.fgb} consultas FGB · ${had.road} produtos do viário`);
+  }
+}
+
 // Costura tiles 1°×1° em um Float32Array sobre uma bbox dada. Cells fora
-// da cobertura → NaN/mask=0. Devolve { height, mask, H, W }.
-async function loadFabdemMosaic(bb) {
+// da cobertura → NaN/mask=0. Devolve { height, mask, H, W }. A grade é a do
+// próprio FABDEM (1″), então os pixels são copiados direto dos tiles 512² do
+// COG (cacheados — ver demTile), sem reamostrar.
+async function loadFabdemMosaic(bb, signal) {
   const A = FABDEM_ARCSEC;
   const W = Math.round((bb.east  - bb.west)  / A);
   const H = Math.round((bb.north - bb.south) / A);
+  if (W * H > DEM_MOSAIC_MAX_CELLS) throw new Error('área grande demais para o mosaico de relevo');
   const height = new Float32Array(W * H);
   const mask   = new Uint8Array(W * H);
   height.fill(NaN);
@@ -10253,19 +10411,21 @@ async function loadFabdemMosaic(bb) {
         Math.round((interEast  - oX) / rX),
         Math.round((interSouth - oY) / rY),
       ];
-      const raster = await t.image.readRasters({ window: wnd, interleave: true });
       const rW = wnd[2] - wnd[0];
       const rH = wnd[3] - wnd[1];
+      if (rW <= 0 || rH <= 0) continue;
       const colOffset = Math.round((interWest - bb.west)    / A);
       const rowOffset = Math.round((bb.north  - interNorth) / A);
+      const px = await demWindowReader(t, t.level0, wnd, signal);
+      if (!px) continue;
       for (let r = 0; r < rH; r++) {
         const mr = rowOffset + r;
         if (mr < 0 || mr >= H) continue;
         for (let c = 0; c < rW; c++) {
           const mc = colOffset + c;
           if (mc < 0 || mc >= W) continue;
-          const v = raster[r * rW + c];
-          if (Number.isFinite(v) && (t.nodata == null || v !== t.nodata)) {
+          const v = px(wnd[0] + c, wnd[1] + r);
+          if (v !== undefined && Number.isFinite(v) && (t.nodata == null || v !== t.nodata)) {
             const idx = mr * W + mc;
             height[idx] = v;
             mask[idx]   = 1;
@@ -10277,12 +10437,50 @@ async function loadFabdemMosaic(bb) {
   return { height, mask, H, W };
 }
 
-// Mosaico de elevação a partir do COG de SP, reamostrado pra MESMA grade do
-// FABDEM (A = FABDEM_ARCSEC) — assim o Dijkstra e o índice seed/goal seguem
-// idênticos, independente da fonte. Lê uma janela única do COG cobrindo a bbox
-// e amostra o vizinho mais próximo. Retorna null se a bbox não couber inteira
-// na extensão do DEM (aí o chamador cai pro FABDEM, evitando buracos).
-async function loadDemHandleMosaic(t, bb) {
+// Leitor de pixels de uma janela [c0,r0,c1,r1) de um nível do COG: busca (em
+// paralelo, pelo cache) os tiles que a cobrem e devolve px(c, r) → valor, ou
+// undefined fora da imagem. null se a janela pede tiles demais (DEM custom
+// muito fino sem overviews) — o chamador cai pra outra fonte.
+async function demWindowReader(h, lv, wnd, signal) {
+  const c0 = Math.max(0, wnd[0]), r0 = Math.max(0, wnd[1]);
+  const c1 = Math.min(lv.W, wnd[2]), r1 = Math.min(lv.H, wnd[3]);
+  if (c1 <= c0 || r1 <= r0) return () => undefined;
+  const tx0 = Math.floor(c0 / lv.tw), tx1 = Math.floor((c1 - 1) / lv.tw);
+  const ty0 = Math.floor(r0 / lv.th), ty1 = Math.floor((r1 - 1) / lv.th);
+  const ntx = tx1 - tx0 + 1, nty = ty1 - ty0 + 1;
+  if (ntx * nty > DEM_MOSAIC_MAX_TILES) {
+    console.warn(`[dem] janela pede ${ntx * nty} tiles (> ${DEM_MOSAIC_MAX_TILES}) — pulando esta fonte`);
+    return null;
+  }
+  const tiles = new Array(ntx * nty);
+  const jobs = [];
+  for (let ty = ty0; ty <= ty1; ty++) {
+    for (let tx = tx0; tx <= tx1; tx++) {
+      const slot = (ty - ty0) * ntx + (tx - tx0);
+      jobs.push(demTile(h, lv, tx, ty, signal).then((t) => { tiles[slot] = t; }));
+    }
+  }
+  await Promise.all(jobs);
+  const { W, H, tw, th } = lv;
+  return (c, r) => {
+    if (c < 0 || r < 0 || c >= W || r >= H) return undefined;
+    const tx = Math.floor(c / tw) - tx0, ty = Math.floor(r / th) - ty0;
+    if (tx < 0 || ty < 0 || tx >= ntx || ty >= nty) return undefined;
+    const t = tiles[ty * ntx + tx];
+    return t.data[(r - t.y0) * t.w + (c - t.x0)];
+  };
+}
+
+// Mosaico de elevação a partir de um DEM de COG único (SP ou custom),
+// reamostrado pra MESMA grade do FABDEM (A = FABDEM_ARCSEC) — assim o Dijkstra
+// e o índice seed/goal seguem idênticos, independente da fonte. Lê o OVERVIEW
+// mais grosso que ainda é ≤ a grade (no DEM de SP o IFD2, ~21 m, AVERAGE) e
+// amostra o pixel que CONTÉM o centro de cada célula (floor — com o round de
+// antes o erro de meia célula era 10 m nesse nível). Antes lia o IFD0 (~5 m)
+// sobre a bbox inteira: 16× os pixels, 10–45 MB por trecho. Retorna null se a
+// bbox não couber inteira na extensão do DEM (aí o chamador cai pro FABDEM,
+// evitando buracos).
+async function loadDemHandleMosaic(t, bb, signal) {
   if (!t) return null;
   // Só usa este DEM se a bbox do segmento cabe INTEIRA na extensão dele —
   // senão devolve null e o caller cai pra próxima fonte (sem costurar bordas).
@@ -10292,39 +10490,43 @@ async function loadDemHandleMosaic(t, bb) {
   const W = Math.round((bb.east  - bb.west)  / A);
   const H = Math.round((bb.north - bb.south) / A);
   if (!W || !H) return null;
-  const [oX, oY] = t.origin;
-  const [rX, rY] = t.resolution;   // rX>0, rY<0
-  // Janela de pixels do COG que cobre a bbox (com folga de 1).
-  const scMin = Math.max(0, Math.floor((bb.west  - oX) / rX) - 1);
-  const scMax = Math.min(t.W - 1, Math.ceil((bb.east  - oX) / rX) + 1);
-  const srMin = Math.max(0, Math.floor((bb.north - oY) / rY) - 1);
-  const srMax = Math.min(t.H - 1, Math.ceil((bb.south - oY) / rY) + 1);
-  if (scMax < scMin || srMax < srMin) return null;
-  let ras;
+  if (W * H > DEM_MOSAIC_MAX_CELLS) throw new Error('área grande demais para o mosaico de relevo');
+  let lv = t.level0;
   try {
-    ras = await t.image.readRasters({
-      window: [scMin, srMin, scMax + 1, srMax + 1],
-      interleave: true,
-    });
+    for (const L of await demLevels(t)) {
+      if (Math.abs(L.rX) <= A * 1.0001 && Math.abs(L.rY) <= A * 1.0001 && Math.abs(L.rX) > Math.abs(lv.rX)) lv = L;
+    }
   } catch (e) {
+    if (e && e.name === 'AbortError') throw e;
+    console.warn(`[dem] overviews indisponíveis, lendo a resolução cheia: ${e.message}`);
+  }
+  const [oX, oY] = t.origin;
+  const colPx = new Int32Array(W), rowPx = new Int32Array(H);
+  for (let mc = 0; mc < W; mc++) {
+    const c = Math.floor((bb.west + (mc + 0.5) * A - oX) / lv.rX);
+    colPx[mc] = c < 0 ? 0 : c >= lv.W ? lv.W - 1 : c;
+  }
+  for (let mr = 0; mr < H; mr++) {
+    const r = Math.floor((bb.north - (mr + 0.5) * A - oY) / lv.rY);
+    rowPx[mr] = r < 0 ? 0 : r >= lv.H ? lv.H - 1 : r;
+  }
+  let px;
+  try {
+    px = await demWindowReader(t, lv, [colPx[0], rowPx[0], colPx[W - 1] + 1, rowPx[H - 1] + 1], signal);
+  } catch (e) {
+    if (e && e.name === 'AbortError') throw e;
     console.warn(`[dem] mosaico falhou: ${e.message}`);
     return null;
   }
-  const wndW = scMax - scMin + 1;
-  const wndH = srMax - srMin + 1;
+  if (!px) return null;
   const height = new Float32Array(W * H);
   const mask   = new Uint8Array(W * H);
   height.fill(NaN);
   for (let mr = 0; mr < H; mr++) {
-    const lat = bb.north - (mr + 0.5) * A;
-    let sr = Math.round((lat - oY) / rY) - srMin;
-    if (sr < 0) sr = 0; else if (sr >= wndH) sr = wndH - 1;
+    const r = rowPx[mr];
     for (let mc = 0; mc < W; mc++) {
-      const lng = bb.west + (mc + 0.5) * A;
-      let sc = Math.round((lng - oX) / rX) - scMin;
-      if (sc < 0) sc = 0; else if (sc >= wndW) sc = wndW - 1;
-      const v = ras[sr * wndW + sc];
-      if (Number.isFinite(v) && (t.nodata == null || v !== t.nodata)) {
+      const v = px(colPx[mc], r);
+      if (v !== undefined && Number.isFinite(v) && (t.nodata == null || v !== t.nodata)) {
         const idx = mr * W + mc;
         height[idx] = v;
         mask[idx]   = 1;
@@ -10333,8 +10535,8 @@ async function loadDemHandleMosaic(t, bb) {
   }
   return { height, mask, H, W };
 }
-async function loadSampaDemMosaic(bb) { return loadDemHandleMosaic(await openSampaDem(), bb); }
-async function loadCustomDemMosaic(bb) { return loadDemHandleMosaic(_customDem, bb); }
+async function loadSampaDemMosaic(bb, signal) { return loadDemHandleMosaic(await openSampaDem(), bb, signal); }
+async function loadCustomDemMosaic(bb, signal) { return loadDemHandleMosaic(_customDem, bb, signal); }
 
 // Tratamento σ do mapa (Entry 74 do bicycling-energy-model): suavização
 // Gaussiana do mosaico DEM antes do roteamento por energia. CÓPIA MANTIDA À
@@ -10406,16 +10608,17 @@ function smoothHeightsInPlace(height, mask, H, W, dxM, dyM, sigmaM) {
 
 // Escolhe a fonte do mosaico: DEM custom (se carregado e a bbox cabe nele) →
 // DEM de SP (se ligado) → FABDEM. Cada fonte só vale onde cobre a bbox inteira.
-async function loadDemMosaic(bb) {
+// `signal` aborta as leituras de tile em voo (trecho superado — ver energyRoute).
+async function loadDemMosaic(bb, signal) {
   if (_customDem) {
-    const custom = await loadCustomDemMosaic(bb);
+    const custom = await loadCustomDemMosaic(bb, signal);
     if (custom) return custom;
   }
   if (params.useSampaDem) {
-    const sampa = await loadSampaDemMosaic(bb);
+    const sampa = await loadSampaDemMosaic(bb, signal);
     if (sampa) return sampa;
   }
-  return loadFabdemMosaic(bb);
+  return loadFabdemMosaic(bb, signal);
 }
 
 // Bresenham: pinta (r0,c0)→(r1,c1) na máscara.
@@ -10488,83 +10691,328 @@ async function ensureFlatgeobuf() {
 
 // Cache LRU das consultas FGB por (url, bbox arredondada), já PARSEADAS: o
 // cache de blocos do SW (sw.js) poupa a rede, mas cada consulta ainda refaria
-// o parse — este absorve a consulta dupla da mesma bbox (modo terreno consulta
-// viário e água pro mesmo trecho; rotas re-traçadas idem).
-const _fgbCache = new Map();
+// o parse — este absorve a consulta repetida da mesma bbox (água do modo
+// terreno, viário do fallback do "pelo viário", rotas re-traçadas). Com
+// orçamento em BYTES (estimado pelos vértices), não só em entradas: uma bbox
+// de viário são dezenas de MB de GeoJSON, e 10 delas passavam de 200 MB. O
+// modo terreno não guarda mais o viário aqui (ver viarioRoadProducts); o
+// cache é solto quando o editor fecha/fica ocioso (releaseRoutingMemory).
+const _fgbCache = new Map();   // chave → { feats, bytes }
+let _fgbCacheBytes = 0;
 const FGB_CACHE_MAX = 10;
-// `useCache=false` pras CAMADAS DE MAPA (Morros e Águas / Cicloinfra): elas
-// reconsultam a cada pan, então cada viewport viraria uma entrada nova e as 10
-// vagas do LRU acabariam segurando 10 viewports inteiras de feições na memória
-// — dezenas de milhares de linhas cada. Elas redesenham do zero de qualquer
-// jeito, e os BYTES já ficam no cache de blocos do SW.
-async function streamFgbFeatures(url, bb, useCache = true) {
-  const key = `${url}|${bb.west.toFixed(4)},${bb.south.toFixed(4)},${bb.east.toFixed(4)},${bb.north.toFixed(4)}`;
-  if (useCache && _fgbCache.has(key)) {
-    const v = _fgbCache.get(key);
-    _fgbCache.delete(key); _fgbCache.set(key, v);   // refresca a posição LRU
-    return v;
+function fgbCacheBudget() { return (dataBudgetCoarse() ? 32 : 128) * 1024 * 1024; }
+// ~56 B por vértice ([x,y] num array JS) + ~200 B por feição (objeto,
+// properties, geometry) — ordem de grandeza medida no heap do Chrome.
+const FGB_BYTES_PER_VERTEX = 56, FGB_BYTES_PER_FEATURE = 200;
+
+function geomVertexCount(g) {
+  if (!g || !g.coordinates) return 0;
+  const c = g.coordinates;
+  switch (g.type) {
+    case 'Point': return 1;
+    case 'LineString': case 'MultiPoint': return c.length;
+    case 'MultiLineString': case 'Polygon': { let n = 0; for (const p of c) n += p.length; return n; }
+    case 'MultiPolygon': { let n = 0; for (const poly of c) for (const r of poly) n += r.length; return n; }
+    default: return 0;
   }
+}
+
+function fgbCachePut(key, feats, bytes) {
+  const budget = fgbCacheBudget();
+  if (bytes > budget / 2) return;   // grande demais pra valer a pena segurar
+  _fgbCache.set(key, { feats, bytes });
+  _fgbCacheBytes += bytes;
+  for (const [k, v] of _fgbCache) {
+    if (_fgbCacheBytes <= budget && _fgbCache.size <= FGB_CACHE_MAX) break;
+    if (k === key) continue;
+    _fgbCache.delete(k);
+    _fgbCacheBytes -= v.bytes;
+  }
+}
+
+function fgbCancelError() { return new DOMException('consulta FGB cancelada', 'AbortError'); }
+
+// Cancelamento DE VERDADE dos range requests. O flatgeobuf 4.4 não aceita
+// AbortSignal e, depois de percorrer o índice, pede TODOS os lotes de feições
+// da bbox de uma vez (Repeater.merge, um GET por lote) — sair do for-await
+// parava o parse, mas os bytes já pedidos continuavam chegando (medido: os
+// ~3 MB inteiros da hidrografia de um z10 baixados DEPOIS de desligar a
+// camada), e o return() do gerador ainda esperava esses downloads acabarem. O
+// cliente HTTP dele chama o fetch GLOBAL com os headers que o deserialize
+// recebe (5º argumento): um header-marcador liga cada range request à sua
+// consulta, e este gancho troca o marcador pelo AbortSignal dela. O marcador
+// sai ANTES do request ir pra rede — o que o servidor/SW vê não muda (sem
+// header extra, sem preflight de CORS). Qualquer outro fetch passa direto.
+const FGB_QUERY_HEADER = 'x-phidro-fgb-query';
+const _fgbQuerySignals = new Map();   // id da consulta → AbortSignal
+let _fgbQuerySeq = 0;
+function installFgbFetchAbort() {
+  if (window.__phidroFgbFetchAbort) return;
+  window.__phidroFgbFetchAbort = true;
+  const orig = window.fetch;
+  window.fetch = function (input, init) {
+    const h = init && init.headers;
+    if (h instanceof Headers && h.has(FGB_QUERY_HEADER)) {
+      const signal = _fgbQuerySignals.get(h.get(FGB_QUERY_HEADER));
+      const headers = new Headers(h);
+      headers.delete(FGB_QUERY_HEADER);
+      init = { ...init, headers };
+      if (signal) init.signal = signal;
+    }
+    return orig.call(window, input, init);
+  };
+}
+
+// Devolve a vez pro event loop (uma macrotarefa). O gerador do flatgeobuf
+// entrega um LOTE inteiro de feições em microtarefas encadeadas — dezenas de
+// milhares de feições parseadas sem o navegador desenhar nem responder a toque
+// (medido: blocos de ~2 s com CPU×4 num trecho de 9 km). MessageChannel e não
+// setTimeout: aba em segundo plano estica o setTimeout pra ≥1 s.
+function yieldToEventLoop() {
+  return new Promise((resolve) => {
+    const ch = new MessageChannel();
+    ch.port1.onmessage = () => { ch.port1.close(); resolve(); };
+    ch.port2.postMessage(null);
+  });
+}
+const FGB_YIELD_EVERY_MS = 40;
+
+// Itera as feições do FGB na bbox (range requests), chamando onFeature(f) —
+// que devolve false pra parar (teto). Parar (teto, `isStale()`, `signal`,
+// timeout) ABORTA os range requests da consulta ainda em voo (ver
+// installFgbFetchAbort) e sai do for-await; cancelado rejeita com AbortError
+// (quem chamou não usa resultado parcial). `isStale()` é conferido a cada
+// feição e, enquanto nenhuma chega (a travessia do índice, os lotes em voo),
+// a cada 250 ms. O timeout é de INATIVIDADE — VIARIO_FETCH_TIMEOUT_MS sem
+// nenhuma feição: uma bbox grande num 4G lento pode passar disso no total sem
+// estar travada.
+async function forEachFgbFeature(url, bb, onFeature, { isStale = null, signal = null } = {}) {
+  const stale = () => (signal && signal.aborted) || (isStale && isStale());
+  if (stale()) throw fgbCancelError();
   const fgb = await ensureFlatgeobuf();
+  if (stale()) throw fgbCancelError();
+  installFgbFetchAbort();
   const rect = { minX: bb.west, minY: bb.south, maxX: bb.east, maxY: bb.north };
-  // O deserialize não aceita AbortSignal — o timeout corre por fora e rejeita
-  // a espera (as fetches órfãs morrem sozinhas quando o generator é solto).
+  const ctrl = new AbortController();
+  const qid = String(++_fgbQuerySeq);
+  _fgbQuerySignals.set(qid, ctrl.signal);
+  let timer = null, poll = null, expired = false, cancelled = false, stopping = false, fail = null;
+  let lastFeature = performance.now();
+  const timeout = new Promise((_, rej) => { fail = rej; });
+  // Aborta ANTES de sair do laço: o return() do gerador espera os lotes em voo.
+  const stop = () => { stopping = true; ctrl.abort(); };
+  // Um temporizador só, que se reagenda pelo tempo que falta — rearmar um
+  // setTimeout por feição custava ~150 ms num trecho de 56 mil vias.
+  const check = () => {
+    const idle = performance.now() - lastFeature;
+    if (idle >= VIARIO_FETCH_TIMEOUT_MS) { expired = true; stop(); fail(new Error('timeout FGB')); }
+    else timer = setTimeout(check, VIARIO_FETCH_TIMEOUT_MS - idle);
+  };
+  const loop = (async () => {
+    let slice = lastFeature;
+    try {
+      for await (const f of fgb.deserialize(url, rect, undefined, false, { [FGB_QUERY_HEADER]: qid })) {
+        if (expired || stopping) break;
+        if (stale()) { cancelled = true; stop(); break; }
+        const now = performance.now();
+        lastFeature = now;
+        if (onFeature(f) === false) { stop(); break; }
+        // A cada ~40 ms de parse, uma pausa pro navegador (ver yieldToEventLoop).
+        if (now - slice > FGB_YIELD_EVERY_MS) {
+          await yieldToEventLoop();
+          slice = lastFeature = performance.now();
+          if (expired || stopping) break;
+          if (stale()) { cancelled = true; stop(); break; }
+        }
+      }
+    } catch (e) {
+      // O abort que NÓS demos rejeita os ranges em voo, e o erro pode vazar
+      // pelo gerador (na travessia do índice) ou pelo return() dele — não é falha.
+      if (!stopping) throw e;
+    }
+  })();
+  // Se o timeout ganhou, um erro tardio do laço não fica órfão; e o marcador só
+  // sai do mapa quando o gerador acabou de vez (um range pedido depois do abort
+  // ainda pega o sinal já abortado).
+  loop.catch(() => {}).then(() => _fgbQuerySignals.delete(qid));
+  timer = setTimeout(check, VIARIO_FETCH_TIMEOUT_MS);
+  if (isStale || signal) poll = setInterval(() => { if (!stopping && stale()) { cancelled = true; stop(); } }, 250);
+  try {
+    await Promise.race([loop, timeout]);
+  } finally {
+    clearTimeout(timer);
+    if (poll) clearInterval(poll);
+  }
+  if (cancelled) throw fgbCancelError();
+}
+
+// `useCache=false` pras CAMADAS DE MAPA (Morros e Águas / Cicloinfra): elas
+// reconsultam a cada pan, então cada viewport viraria uma entrada nova e o LRU
+// acabaria segurando viewports inteiras de feições na memória — dezenas de
+// milhares de linhas cada. Elas redesenham do zero de qualquer jeito, e os
+// BYTES já ficam no cache de blocos do SW. `opts`: {isStale, signal} cortam o
+// download (AbortError); `maxParts` é o teto de feições guardadas (o array
+// volta com `.capped = true`, e resultado cortado não entra no cache);
+// `keep(props)` descarta na hora o que não vai ser desenhado.
+async function streamFgbFeatures(url, bb, useCache = true, { isStale = null, signal = null, maxParts = Infinity, keep = null } = {}) {
+  const key = `${url}|${bb.west.toFixed(4)},${bb.south.toFixed(4)},${bb.east.toFixed(4)},${bb.north.toFixed(4)}`;
+  const hit = useCache && _fgbCache.get(key);
+  if (hit) {
+    _fgbCache.delete(key); _fgbCache.set(key, hit);   // refresca a posição LRU
+    touchRoutingMemory();
+    return hit.feats;
+  }
   const feats = [];
-  await Promise.race([
-    (async () => { for await (const f of fgb.deserialize(url, rect)) feats.push(f); })(),
-    new Promise((_, rej) => setTimeout(() => rej(new Error('timeout FGB')), VIARIO_FETCH_TIMEOUT_MS)),
-  ]);
-  if (useCache) {
-    _fgbCache.set(key, feats);
-    while (_fgbCache.size > FGB_CACHE_MAX) _fgbCache.delete(_fgbCache.keys().next().value);
+  let verts = 0, capped = false;
+  await forEachFgbFeature(url, bb, (f) => {
+    if (keep && !keep(f.properties || {})) return true;
+    feats.push(f);
+    verts += geomVertexCount(f.geometry);
+    if (feats.length >= maxParts) { capped = true; return false; }
+    return true;
+  }, { isStale, signal });
+  if (capped) feats.capped = true;
+  else if (useCache) {
+    fgbCachePut(key, feats, verts * FGB_BYTES_PER_VERTEX + feats.length * FGB_BYTES_PER_FEATURE);
+    touchRoutingMemory();
   }
   return feats;
 }
 
 // Irmã da streamFgbFeatures pras camadas densas (o viário): em vez de juntar
-// feições GeoJSON, projeta cada vértice (mercX/mercY) direto num Float64Array
+// feições GeoJSON, projeta cada vértice (mercX/mercY) direto em Float64Arrays
 // enquanto o FGB ainda está chegando — a feição vira lixo na hora, e o pico de
-// memória fica no tamanho dos vértices. Devolve {xy, starts, parts, capped}:
-// a linha p ocupa os vértices [starts[p], starts[p+1]) de xy (x,y
-// intercalados). Sem LRU (camada de mapa, ver acima). Sair do for-await solta
-// o gerador, que para de pedir ranges: `isStale()` (um pan mais novo já saiu),
-// o teto `maxParts` ou o timeout cortam o DOWNLOAD, não só o resultado — no
-// zoom 12 são dezenas de MB que não devem continuar baixando à toa.
-async function streamFgbPackedLines(url, bb, { maxParts = Infinity, isStale = () => false } = {}) {
-  const fgb = await ensureFlatgeobuf();
-  const rect = { minX: bb.west, minY: bb.south, maxX: bb.east, maxY: bb.north };
-  let xy = new Float64Array(1 << 17), starts = new Uint32Array(1 << 14);
-  let nv = 0, parts = 0, capped = false, timedOut = false, timer;
+// memória fica no tamanho dos vértices. Os vértices vão em PEDAÇOS de até
+// PACKED_CHUNK_VERTS (1 MB cada), não num array que dobra e depois é copiado
+// inteiro (eram 2–3 cópias do maior array no pico); cada pedaço guarda a caixa
+// das suas linhas — como o FGB entrega em ordem Hilbert, um pedaço é uma região
+// compacta e o PackedLinesLayer pula os que estão fora da tela. Devolve
+// {chunks: [{xy, starts, parts, box}], parts, capped}: no pedaço, a linha p
+// ocupa os vértices [starts[p], starts[p+1]) de xy (x,y intercalados). Sem LRU
+// (camada de mapa, ver acima). `isStale()` (um pan mais novo já saiu), o teto
+// `maxParts` ou o timeout cortam o DOWNLOAD, não só o resultado — no zoom 12
+// são dezenas de MB que não devem continuar baixando à toa.
+const PACKED_CHUNK_VERTS = 1 << 16;
+async function streamFgbPackedLines(url, bb, { maxParts = Infinity, isStale = null } = {}) {
+  const chunks = [];
+  let cur = null, parts = 0, capped = false;
   const addLine = (coords) => {
     if (!Array.isArray(coords) || coords.length < 2) return;
-    const need = (nv + coords.length) * 2;
-    if (need > xy.length) {                  // cresce dobrando
-      const grown = new Float64Array(Math.max(xy.length * 2, need));
-      grown.set(xy); xy = grown;
+    const n = coords.length;
+    if (!cur || cur.nv + n > cur.xy.length / 2) {
+      cur = { xy: new Float64Array(Math.max(PACKED_CHUNK_VERTS, n) * 2), starts: new Uint32Array(1024),
+        parts: 0, nv: 0, box: [Infinity, Infinity, -Infinity, -Infinity] };
+      chunks.push(cur);
     }
-    if (parts + 2 > starts.length) {         // +1 da sentinela do fim
-      const grown = new Uint32Array(starts.length * 2);
-      grown.set(starts); starts = grown;
+    if (cur.parts + 2 > cur.starts.length) {   // +1 da sentinela do fim
+      const grown = new Uint32Array(cur.starts.length * 2);
+      grown.set(cur.starts); cur.starts = grown;
     }
-    starts[parts++] = nv;
-    for (const c of coords) { xy[nv * 2] = mercX(c[0]); xy[nv * 2 + 1] = mercY(c[1]); nv++; }
+    cur.starts[cur.parts++] = cur.nv;
+    const xy = cur.xy, box = cur.box;
+    let k = cur.nv * 2;
+    for (const c of coords) {
+      const x = mercX(c[0]), y = mercY(c[1]);
+      xy[k++] = x; xy[k++] = y;
+      if (x < box[0]) box[0] = x;
+      if (y < box[1]) box[1] = y;
+      if (x > box[2]) box[2] = x;
+      if (y > box[3]) box[3] = y;
+    }
+    cur.nv += n;
+    parts++;
   };
-  await Promise.race([
-    (async () => {
-      for await (const f of fgb.deserialize(url, rect)) {
-        if (timedOut || isStale()) break;
-        const g = f.geometry; if (!g) continue;
-        if (g.type === 'LineString') addLine(g.coordinates);
-        else if (g.type === 'MultiLineString') g.coordinates.forEach(addLine);
-        if (parts >= maxParts) { capped = true; break; }
-      }
-    })(),
-    new Promise((_, rej) => {
-      timer = setTimeout(() => { timedOut = true; rej(new Error('timeout FGB')); }, VIARIO_FETCH_TIMEOUT_MS);
-    }),
-  ]).finally(() => clearTimeout(timer));
-  starts[parts] = nv;                          // sentinela
-  // slice (não subarray): devolve a folga do crescimento por dobra.
-  return { xy: xy.slice(0, nv * 2), starts: starts.slice(0, parts + 1), parts, capped };
+  await forEachFgbFeature(url, bb, (f) => {
+    const g = f.geometry;
+    if (!g) return true;
+    if (g.type === 'LineString') addLine(g.coordinates);
+    else if (g.type === 'MultiLineString') g.coordinates.forEach(addLine);
+    if (parts >= maxParts) { capped = true; return false; }
+    return true;
+  }, { isStale });
+  for (const ch of chunks) {
+    ch.starts[ch.parts] = ch.nv;               // sentinela
+    // Só o último pedaço tem folga grande; devolve ela (os outros saem cheios).
+    if (ch === cur && ch.nv * 2 < ch.xy.length * 0.75) ch.xy = ch.xy.slice(0, ch.nv * 2);
+  }
+  return { chunks, parts, capped };
+}
+
+// Produtos do viário que o modo TERRENO usa — sem guardar as feições: a
+// máscara raster das vias (corredores passáveis sobre a água) e a lista de
+// tabuleiros de ponte/túnel (portais), [lng0, lat0, lng1, lat1, compr. m] das
+// pontas. Antes o terreno parseava e prendia o viário inteiro da bbox num LRU
+// (dezenas de MB por trecho, ~120–200 MB depois de uns trechos) só pra isto.
+// Um cache pequeno de produtos por bbox evita reler/reparsear no re-roteamento
+// do mesmo trecho.
+const _roadProductsCache = new Map();   // bbox → { road, decks, bytes }
+const ROAD_PRODUCTS_MAX = 4;
+
+function newRoadProducts(bb, W, H, A) {
+  const road = new Uint8Array(W * H), decks = [];
+  const toG = (lng, lat) => [(lng - bb.west) / A, (bb.north - lat) / A];
+  const M = 111320;
+  // Uma linha [[lng,lat],…] (com o recorte de bbox e a regra de tabuleiro de
+  // queryGeojsonLines) → pinta a máscara e, se for tabuleiro, anota o portal.
+  const addLine = (coords, isDeck) => {
+    if (!Array.isArray(coords) || coords.length < 2) return;
+    let loX = Infinity, hiX = -Infinity, loY = Infinity, hiY = -Infinity;
+    for (const c of coords) {
+      const x = c[0], y = c[1];
+      if (x < loX) loX = x; if (x > hiX) hiX = x;
+      if (y < loY) loY = y; if (y > hiY) hiY = y;
+    }
+    if (hiX < bb.west || loX > bb.east || hiY < bb.south || loY > bb.north) return;
+    rasterSupercover(coords.map((p) => toG(p[0], p[1])), road, W, H);
+    if (!isDeck) return;
+    let len = 0;
+    for (let i = 1; i < coords.length; i++) {
+      const dLat = (coords[i][1] - coords[i - 1][1]) * M;
+      const dLng = (coords[i][0] - coords[i - 1][0]) * M * Math.cos((coords[i][1] + coords[i - 1][1]) / 2 * Math.PI / 180);
+      len += Math.hypot(dLat, dLng);
+    }
+    const a = coords[0], b = coords[coords.length - 1];
+    decks.push([a[0], a[1], b[0], b[1], len]);
+  };
+  return { road, decks, addLine };
+}
+
+// A partir de linhas já em mãos (o "pelo viário", que acabou de consultar o FGB).
+function roadProductsFromLines(lines, meta, bb, W, H, A) {
+  const p = newRoadProducts(bb, W, H, A);
+  for (let i = 0; i < lines.length; i++) p.addLine(lines[i], !!(meta && meta[i] && meta[i].deck));
+  return { road: p.road, decks: p.decks };
+}
+
+// Lendo o FGB do viário direto pros produtos (terreno).
+async function viarioRoadProducts(bb, W, H, A, { signal = null } = {}) {
+  const key = `${bb.west.toFixed(5)},${bb.south.toFixed(5)},${bb.east.toFixed(5)},${bb.north.toFixed(5)}|${W}x${H}`;
+  const hit = _roadProductsCache.get(key);
+  if (hit) {
+    _roadProductsCache.delete(key); _roadProductsCache.set(key, hit);
+    touchRoutingMemory();
+    return hit;
+  }
+  const t0 = performance.now();
+  const p = newRoadProducts(bb, W, H, A);
+  let nFeat = 0;
+  await forEachFgbFeature(VIARIO_FGB_URL, bb, (f) => {
+    const g = f.geometry;
+    if (!g) return true;
+    nFeat++;
+    const props = f.properties || {};
+    const deck = (props.bridge && props.bridge !== 'no') || props.tunnel === 'yes';
+    if (g.type === 'LineString') p.addLine(g.coordinates, deck);
+    else if (g.type === 'MultiLineString') for (const ln of g.coordinates) p.addLine(ln, deck);
+    return true;
+  }, { signal });
+  const out = { road: p.road, decks: p.decks, bytes: p.road.byteLength + p.decks.length * 64 };
+  _roadProductsCache.set(key, out);
+  while (_roadProductsCache.size > ROAD_PRODUCTS_MAX) _roadProductsCache.delete(_roadProductsCache.keys().next().value);
+  touchRoutingMemory();
+  console.info(`[viario] FGB → máscara+portais ${(performance.now() - t0).toFixed(0)} ms · ` +
+    `${nFeat} feições (${p.decks.length} tabuleiros), sem guardar as feições`);
+  return out;
 }
 
 let _sqlJsPromise = null;
@@ -10649,7 +11097,9 @@ function parseWKB(view, off) {
   return null;
 }
 
-// Timeout compartilhado das buscas de rede do viário (FGB, grafo pré-cozido).
+// Timeout de INATIVIDADE das consultas FGB (sem nenhuma feição por este tempo
+// → desiste; ver forEachFgbFeature). O grafo pré-cozido tem o seu
+// (VIARIO_GRAPH_STALL_MS).
 const VIARIO_FETCH_TIMEOUT_MS = 60000;
 
 // Abre um GeoPackage (bytes já em memória) num handle de viário reusável pelas
@@ -10706,18 +11156,44 @@ async function buildViarioSrc(SQL, bytes) {
 // Fonte PRIMÁRIA do "Menor energia pelo viário": o grafo já montado no bake
 // (scripts/build-viario.py --graph) com as elevações amostradas POR NÓ (DEM de
 // SP ~5 m onde cobre, FABDEM no resto) e tabuleiros de ponte/túnel achatados em
-// rampa. Zero DEM, zero montagem de grafo por sessão: a decodificação é um
-// passe de typed arrays. O FGB do viário (streamFgbFeatures acima) segue em
-// uso pro modo TERRENO (água/corredores/portais) e como fallback do viário
-// fora da cobertura do grafo (que é SÓ SP — o FGB cobre a América do Sul).
-// Formato: ver o bloco "Grafo pré-cozido" no script.
+// rampa. Zero DEM, zero montagem de grafo por sessão. O FGB do viário
+// (streamFgbFeatures acima) segue em uso pro modo TERRENO (água/corredores/
+// portais) e como fallback do viário fora da cobertura do grafo (que é SÓ SP —
+// o FGB cobre a América do Sul). Formato: ver o bloco "Grafo pré-cozido" no
+// script.
+//
+// O grafo (~4,8 M nós, ~68 MB descomprimido) mora num WORKER
+// (lib/viario-graph-worker.js): decode e Dijkstra fora do main thread, buffers
+// do tamanho da bbox, buffer cru descartado — e terminar o worker devolve tudo
+// (releaseRoutingMemory, quando o editor fecha/fica ocioso). No main thread
+// ficou só o DOWNLOAD (pelo service worker — é ele que guarda o arquivo), com
+// progresso e timeout de INATIVIDADE: antes um teto de 60 s pro arquivo
+// INTEIRO abortava qualquer 4G abaixo de ~4,6 Mbps e cada trecho recomeçava do
+// zero. Depois de uma falha, espera VIARIO_GRAPH_RETRY_MS antes de tentar de
+// novo (no meio-tempo o trecho cai pro FGB). Não há retomada por Range: o
+// arquivo é servido com Content-Encoding gzip, e um pedaço do meio de um gzip
+// não se descomprime sozinho.
 const VIARIO_GRAPH_URL = 'https://telhas.pedalhidrografi.co/viario/sampa-viario-graph.bin';
+// Extensão do grafo = GRAPH_BBOX do scripts/build-viario.py (manter em
+// sincronia). O cabeçalho do .bin não a traz, e ela é consultada ANTES de
+// baixar: trecho com ponta fora dela vai direto pro FGB, sem os ~34 MB.
+const VIARIO_GRAPH_BBOX = { west: -47.419098, south: -24.041109, east: -45.807267, north: -23.088709 };
+const VIARIO_GRAPH_STALL_MS = 20 * 1000;       // sem NENHUM byte por 20 s → desiste
+const VIARIO_GRAPH_RETRY_MS = 60 * 1000;
+const VIARIO_GRAPH_MAX_BYTES = 256 * 1024 * 1024;   // cabeçalho absurdo = arquivo errado
 
-// Custo v2 por aresta — IDÊNTICO ao v2Edge do worker (lib/energy-worker.js) e
+function viarioGraphCovers(a, b) {
+  const g = VIARIO_GRAPH_BBOX;
+  const inside = (p) => p.lat >= g.south && p.lat <= g.north && p.lng >= g.west && p.lng <= g.east;
+  return inside(a) && inside(b);
+}
+
+// Custo v2 por aresta — IDÊNTICO ao v2Edge do worker (lib/energy-worker.js),
+// ao stepCost do lib/graph-engine.js (que o worker do grafo pré-cozido usa) e
 // ao v2_edge do backend Rust do simujaules; manter em sincronia. dist = metros
 // de solo, dh = desnível com sinal. Rolamento sempre; arrasto só fora das
-// subidas; recuperação na descida ε por grade. Compartilhado pelo grafo do
-// FGB (viarioGraphRoute) e pelo grafo pré-cozido (bakedViarioRoute).
+// subidas; recuperação na descida ε por grade. Usado pelo grafo do FGB
+// (viarioGraphRoute).
 function v2EdgeCostFn(cost) {
   return (dist, dh) => {
     if (dh >= 0) {
@@ -10734,174 +11210,177 @@ function v2EdgeCostFn(cost) {
   };
 }
 
-// Decodifica o binário PHVG (little-endian; seções alinhadas a 4 bytes) e
-// reconstrói o CSR num passe. Nós em µgrau (1e-6 — a MESMA quantização de
-// junção do viarioGraphRoute), elevação em decímetros, flags bit0 = interior
-// de tabuleiro, bit1 = aresta de cadeia pro nó i+1.
-function decodeViarioGraph(buf) {
-  const dv = new DataView(buf);
-  if (buf.byteLength < 24 || dv.getUint32(0, true) !== 0x47564850) // 'PHVG' LE
-    throw new Error('grafo: magic inválido');
+// Tamanho EXATO do arquivo PHVG a partir do cabeçalho de 24 bytes (seções
+// alinhadas a 4 — mesmo layout que o worker decodifica): o download escreve
+// direto num buffer desse tamanho (sem o acúmulo + cópia do arrayBuffer()) e o
+// progresso é a fração real, não uma estimativa.
+function phvgByteLength(head) {
+  const dv = new DataView(head.buffer, head.byteOffset, 24);
+  if (dv.getUint32(0, true) !== 0x47564850) throw new Error('grafo: magic inválido');   // 'PHVG' LE
   const version = dv.getUint32(4, true);
   if (version !== 1) throw new Error(`grafo: versão ${version} não suportada`);
-  const N = dv.getUint32(8, true);
-  const NESC = dv.getUint32(12, true);
-  const EX = dv.getUint32(16, true);
+  const N = dv.getUint32(8, true), NESC = dv.getUint32(12, true), EX = dv.getUint32(16, true);
   let off = 24;
-  const pad4 = () => { off = (off + 3) & ~3; };
-  const view = (Ctor, len) => { pad4(); const v = new Ctor(buf, off, len); off += len * Ctor.BYTES_PER_ELEMENT; return v; };
-  const dLat  = view(Int16Array, N);
-  const dLng  = view(Int16Array, N);
-  const elev  = view(Int16Array, N);   // dm
-  const flags = view(Uint8Array, N);
-  const chain = view(Uint16Array, N);  // dm
-  const escIdx = view(Uint32Array, NESC);
-  const escLat = view(Int32Array, NESC);
-  const escLng = view(Int32Array, NESC);
-  const exU = view(Uint32Array, EX);
-  const exV = view(Uint32Array, EX);
-  const exD = view(Uint16Array, EX);   // dm
-  if (off > buf.byteLength) throw new Error('grafo: arquivo truncado');
-
-  // Deltas → coordenadas absolutas (µgrau). Sentinela dLat=-32768 → escape.
-  const latU = new Int32Array(N), lngU = new Int32Array(N);
-  let pLat = 0, pLng = 0, e = 0;
-  for (let i = 0; i < N; i++) {
-    if (dLat[i] === -32768) {
-      if (e >= NESC || escIdx[e] !== i) throw new Error('grafo: escape fora de ordem');
-      pLat = escLat[e]; pLng = escLng[e]; e++;
-    } else {
-      pLat += dLat[i]; pLng += dLng[i];
-    }
-    latU[i] = pLat; lngU[i] = pLng;
+  for (const s of [2 * N, 2 * N, 2 * N, N, 2 * N, 4 * NESC, 4 * NESC, 4 * NESC, 4 * EX, 4 * EX, 2 * EX]) {
+    off = Math.ceil(off / 4) * 4 + s;
   }
-
-  // CSR: grau → prefix-sum → preenchimento (cadeia i↔i+1 + explícitas).
-  const indptr = new Uint32Array(N + 1);
-  for (let i = 0; i < N; i++) if ((flags[i] & 2) && i + 1 < N) { indptr[i + 1]++; indptr[i + 2]++; }
-  for (let k = 0; k < EX; k++) { indptr[exU[k] + 1]++; indptr[exV[k] + 1]++; }
-  for (let i = 0; i < N; i++) indptr[i + 1] += indptr[i];
-  const E2 = indptr[N];
-  const targets = new Uint32Array(E2);
-  const edist   = new Uint16Array(E2);  // dm
-  const cursor  = indptr.slice(0, N);
-  const put = (u, v, d) => { const c = cursor[u]++; targets[c] = v; edist[c] = d; };
-  for (let i = 0; i < N; i++) if ((flags[i] & 2) && i + 1 < N) { put(i, i + 1, chain[i]); put(i + 1, i, chain[i]); }
-  for (let k = 0; k < EX; k++) { put(exU[k], exV[k], exD[k]); put(exV[k], exU[k], exD[k]); }
-  return { N, latU, lngU, elev, flags, indptr, targets, edist };
+  if (off > VIARIO_GRAPH_MAX_BYTES) throw new Error('grafo: tamanho inválido no cabeçalho');
+  return off;
 }
 
-let _viarioGraphPromise = null;
-async function ensureViarioGraph() {
-  if (_viarioGraphPromise) return _viarioGraphPromise;
-  _viarioGraphPromise = (async () => {
-    showToast('Baixando grafo do viário de SP (uma vez)…');
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), VIARIO_FETCH_TIMEOUT_MS);
-    let buf;
-    try {
-      const t0 = performance.now();
-      const res = await fetch(VIARIO_GRAPH_URL, { signal: ctrl.signal });
-      if (!res.ok) throw new Error(`grafo ${res.status}`);
-      buf = await res.arrayBuffer();
-      const g = decodeViarioGraph(buf);
-      console.info(`[viario] grafo pré-cozido: ${g.N} nós · ${g.indptr[g.N]} arestas dirigidas · ` +
-        `${(buf.byteLength / 1e6).toFixed(0)} MB em ${(performance.now() - t0).toFixed(0)} ms`);
-      return g;
-    } finally {
-      clearTimeout(timer);
+async function downloadViarioGraph() {
+  const ctrl = new AbortController();
+  let stall = null;
+  const arm = () => { clearTimeout(stall); stall = setTimeout(() => ctrl.abort(), VIARIO_GRAPH_STALL_MS); };
+  const t0 = performance.now();
+  showToast('Baixando o grafo do viário de SP…', 4000);
+  arm();
+  try {
+    const res = await fetch(VIARIO_GRAPH_URL, { signal: ctrl.signal });
+    if (!res.ok) throw new Error(`grafo HTTP ${res.status}`);
+    // Bytes NA REDE (o .bin vem gzip, ~metade do descomprimido) — só pro rótulo.
+    const netBytes = Number(res.headers.get('content-length')) || 0;
+    if (!res.body || !res.body.getReader) return await res.arrayBuffer();
+    const reader = res.body.getReader();
+    const head = new Uint8Array(24);
+    let headLen = 0, out = null, total = 0, got = 0, lastToast = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      arm();
+      let chunk = value;
+      if (!out) {
+        const take = Math.min(24 - headLen, chunk.length);
+        head.set(chunk.subarray(0, take), headLen);
+        headLen += take;
+        if (headLen < 24) continue;
+        total = phvgByteLength(head);
+        out = new Uint8Array(total);
+        out.set(head, 0);
+        got = 24;
+        chunk = chunk.subarray(take);
+      }
+      if (got + chunk.length > total) throw new Error('grafo: maior que o cabeçalho diz');
+      out.set(chunk, got);
+      got += chunk.length;
+      const now = performance.now();
+      if (now - lastToast > 700) {
+        lastToast = now;
+        showToast(`Baixando o grafo do viário de SP… ${Math.floor(got * 100 / total)}%` +
+          (netBytes ? ` de ${Math.round(netBytes / 1e6)} MB` : ''), 4000);
+      }
     }
-  })();
-  _viarioGraphPromise.catch(() => { _viarioGraphPromise = null; });
-  return _viarioGraphPromise;
+    if (!out || got !== total) throw new Error('grafo: download incompleto');
+    console.info(`[viario] grafo baixado: ${(total / 1e6).toFixed(0)} MB em ${(performance.now() - t0).toFixed(0)} ms`);
+    return out.buffer;
+  } catch (e) {
+    if (ctrl.signal.aborted) throw new Error(`grafo: download parado (${VIARIO_GRAPH_STALL_MS / 1000} s sem dados)`);
+    throw e;
+  } finally {
+    clearTimeout(stall);
+  }
 }
 
-// Buffers de trabalho do Dijkstra no grafo pré-cozido, reusados entre chamadas
-// (N ~5 M — realocar por rota seria ~70 MB de churn). Seguro mesmo com rotas
-// concorrentes (mapConcurrent): o miolo síncrono roda sem await no meio.
-let _bakedScratch = null;
-function bakedScratch(N) {
-  if (!_bakedScratch || _bakedScratch.dist.length !== N) {
-    _bakedScratch = {
-      allowed: new Uint8Array(N),
-      done:    new Uint8Array(N),
-      dist:    new Float32Array(N),
-      prev:    new Int32Array(N),
+// Worker do grafo + chamadas correlacionadas por reqId.
+let _graphWorker = null;
+let _graphLoad = null;          // Promise do grafo carregado no worker atual
+let _graphFailUntil = 0;
+let _graphReqSeq = 0;
+const _graphPending = new Map();   // reqId → { resolve, reject }
+
+function dropGraphWorker(err) {
+  if (_graphWorker) { try { _graphWorker.terminate(); } catch { /* já morto */ } }
+  _graphWorker = null;
+  _graphLoad = null;
+  for (const p of _graphPending.values()) p.reject(err);
+  _graphPending.clear();
+}
+
+function graphCall(msg, transfer = []) {
+  if (!_graphWorker) {
+    const w = new Worker('./lib/viario-graph-worker.js');
+    w.onmessage = (ev) => {
+      const m = ev.data || {};
+      const p = _graphPending.get(m.reqId);
+      if (!p) return;
+      _graphPending.delete(m.reqId);
+      if (m.kind === 'error') p.reject(new Error(m.message)); else p.resolve(m);
     };
+    // Erro não tratado no worker (ou falha ao carregar o script): descarta —
+    // o próximo uso recria e recarrega.
+    w.onerror = (ev) => {
+      if (ev && ev.preventDefault) ev.preventDefault();
+      dropGraphWorker(new Error((ev && ev.message) || 'worker do grafo falhou'));
+    };
+    _graphWorker = w;
   }
-  return _bakedScratch;
+  const reqId = ++_graphReqSeq;
+  return new Promise((resolve, reject) => {
+    _graphPending.set(reqId, { resolve, reject });
+    _graphWorker.postMessage({ ...msg, reqId }, transfer);
+  });
+}
+
+function ensureViarioGraph() {
+  if (_graphLoad) return _graphLoad;
+  if (Date.now() < _graphFailUntil) {
+    return Promise.reject(new Error('grafo do viário indisponível — nova tentativa em instantes'));
+  }
+  const p = (async () => {
+    const buf = await downloadViarioGraph();
+    const info = await graphCall({ kind: 'load', buf }, [buf]);   // transfere: o main thread solta os 68 MB
+    console.info(`[viario] grafo pré-cozido: ${info.N} nós · ${info.E} arestas dirigidas · ` +
+      `decode ${info.ms.toFixed(0)} ms no worker`);
+    return info;
+  })();
+  _graphLoad = p;
+  p.catch((e) => {
+    if (_graphLoad !== p) return;   // worker solto de propósito (releaseRoutingMemory)
+    _graphLoad = null;
+    _graphFailUntil = Date.now() + VIARIO_GRAPH_RETRY_MS;
+    console.warn('[viario] grafo pré-cozido indisponível:', e.message);
+    showToast('Grafo do viário indisponível agora — roteando pelo FGB (mais lento).', 4000);
+  });
+  return p;
 }
 
 // Roteia origem→destino no grafo pré-cozido, restrito à bbox (paridade com o
-// grafo por-bbox do FGB). Devolve a polilinha [lat,lng] com .deckFlag, ou
-// null se não há caminho. Sem DEM: as elevações já vêm baked por nó.
-async function bakedViarioRoute(fromLatLng, toLatLng, bb) {
-  const g = await ensureViarioGraph();
-  const t0 = performance.now();
-  const { N, latU, lngU, elev, flags, indptr, targets, edist } = g;
-  const s6 = Math.round(bb.south * 1e6), n6 = Math.round(bb.north * 1e6);
-  const w6 = Math.round(bb.west * 1e6),  e6 = Math.round(bb.east * 1e6);
-  const sc = bakedScratch(N);
-  const { allowed, done, dist, prev } = sc;
-  done.fill(0); dist.fill(Infinity);
-
-  // Passe único: marca os nós na bbox e acha o nó mais próximo de cada ponta
-  // (mesma métrica não escalada do nearest() do viarioGraphRoute).
-  const fLat = Math.round(fromLatLng.lat * 1e6), fLng = Math.round(fromLatLng.lng * 1e6);
-  const tLat = Math.round(toLatLng.lat * 1e6),   tLng = Math.round(toLatLng.lng * 1e6);
-  let s = -1, t = -1, sD = Infinity, tD = Infinity, nAllowed = 0;
-  for (let i = 0; i < N; i++) {
-    const la = latU[i], lg = lngU[i];
-    if (la < s6 || la > n6 || lg < w6 || lg > e6) { allowed[i] = 0; continue; }
-    allowed[i] = 1; nAllowed++;
-    let dl = la - fLat, dg = lg - fLng;
-    let d = dl * dl + dg * dg;
-    if (d < sD) { sD = d; s = i; }
-    dl = la - tLat; dg = lg - tLng;
-    d = dl * dl + dg * dg;
-    if (d < tD) { tD = d; t = i; }
-  }
-  if (s < 0 || t < 0) return null;
-
-  const edgeCost = v2EdgeCostFn(readCost(params));
-  const heap = new MinHeap();
-  dist[s] = 0;
-  heap.push(0, s);
-  while (heap.size) {
-    const u = heap.pop();
-    if (done[u]) continue;
-    done[u] = 1;
-    if (u === t) break;
-    const du = dist[u], hu = elev[u];
-    for (let k = indptr[u], end = indptr[u + 1]; k < end; k++) {
-      const v = targets[k];
-      if (done[v] || !allowed[v]) continue;
-      const w = edgeCost(edist[k] * 0.1, (elev[v] - hu) * 0.1);
-      const nd = du + w;
-      if (nd < dist[v]) { dist[v] = nd; prev[v] = u; heap.push(nd, v); }
+// grafo por-bbox do FGB). Devolve a polilinha [lat,lng] com .deckFlag e
+// .routedEnergyJ, ou null se não há caminho. Sem DEM: as elevações já vêm
+// baked por nó. `signal` só desiste de ESPERAR (o download do grafo é de
+// todos os trechos e segue).
+async function bakedViarioRoute(fromLatLng, toLatLng, bb, signal) {
+  _routingInflight++;
+  try {
+    await withAbort(ensureViarioGraph(), signal);
+    const t0 = performance.now();
+    const r = await graphCall({
+      kind: 'route',
+      from: { lat: fromLatLng.lat, lng: fromLatLng.lng },
+      to: { lat: toLatLng.lat, lng: toLatLng.lng },
+      bb: { west: bb.west, south: bb.south, east: bb.east, north: bb.north },
+      cost: readCost(params),
+    });
+    if (!r.path) {
+      console.info(`[viario] grafo pré-cozido: ${r.nAllowed} nós na bbox · sem caminho`);
+      return null;
     }
+    const n = r.path.length / 2;
+    const path = new Array(n), deckFlag = new Array(n);
+    for (let i = 0; i < n; i++) {
+      path[i] = [r.path[2 * i], r.path[2 * i + 1]];
+      deckFlag[i] = r.deck[i] === 1;
+    }
+    path.deckFlag = deckFlag;
+    // Objetivo do roteador (J) — exibido na barra de métricas (ver energyRoute).
+    path.routedEnergyJ = r.J;
+    console.info(`[viario] grafo pré-cozido: ${r.nAllowed} nós na bbox · rota ${n} pts em ` +
+      `${r.ms.toFixed(0)} ms no worker (${(performance.now() - t0).toFixed(0)} ms ida e volta)`);
+    return path;
+  } finally {
+    _routingInflight--;
+    touchRoutingMemory();
   }
-  if (!done[t]) {
-    console.info(`[viario] grafo pré-cozido: ${nAllowed} nós na bbox · sem caminho`);
-    return null;
-  }
-
-  const path = [];
-  const deckFlag = [];
-  for (let v = t; ; v = prev[v]) {
-    path.push([latU[v] / 1e6, lngU[v] / 1e6]);
-    deckFlag.push(!!(flags[v] & 1));
-    if (v === s) break;
-  }
-  path.reverse(); deckFlag.reverse();
-  path.unshift([fromLatLng.lat, fromLatLng.lng]); deckFlag.unshift(false);
-  path.push([toLatLng.lat, toLatLng.lng]); deckFlag.push(false);
-  path.deckFlag = deckFlag;
-  // Objetivo do roteador (J) — exibido na barra de métricas (ver energyRoute).
-  path.routedEnergyJ = dist[t];
-  console.info(`[viario] grafo pré-cozido: ${nAllowed} nós na bbox · rota ${path.length} pts em ` +
-    `${(performance.now() - t0).toFixed(0)} ms`);
-  return path;
 }
 
 // ─── Rede viária custom (fgb, gpkg ou GeoJSON carregado de arquivo) ──────────
@@ -10992,17 +11471,27 @@ async function queryCustomNetworkLines(bb) {
 window.__phidroViario = {
   queryViarioLines, queryWater, streamFgbFeatures,
   setCustomNetwork, clearCustomNetwork, queryCustomNetworkLines,
+  // Memória/rede do roteamento (diagnóstico e testes). Getter: demStats é
+  // declarado mais abaixo no módulo (TDZ na avaliação desta linha).
+  releaseRoutingMemory,
+  get demStats() { return demStats; },
+  memory: () => ({
+    demTiles: _demTiles.size, demTileMB: +(_demTileBytes / 1e6).toFixed(1),
+    fgbEntries: _fgbCache.size, fgbMB: +(_fgbCacheBytes / 1e6).toFixed(1),
+    roadProducts: _roadProductsCache.size, graphWorker: !!_graphWorker,
+  }),
 };
 
 // Consulta o viário que cai na bbox e devolve as linhas em WGS84 (array de
 // polilinhas [[lng,lat], …]). É a matéria-prima do roteamento vetorial — a
 // rota segue a geometria real das vias, sem o serrilhado do grid raster.
 // Sem `src`: o FGB remoto da América do Sul, por range request (só os bytes
-// da bbox). Com `src`: um .gpkg custom já aberto (pipeline sql.js abaixo).
-async function queryViarioLines(bb, src) {
+// da bbox; `opts` = {signal, isStale} de streamFgbFeatures). Com `src`: um
+// .gpkg custom já aberto (pipeline sql.js abaixo).
+async function queryViarioLines(bb, src, opts = {}) {
   if (!src) {
     const t0 = performance.now();
-    const feats = await streamFgbFeatures(VIARIO_FGB_URL, bb);
+    const feats = await streamFgbFeatures(VIARIO_FGB_URL, bb, true, opts);
     const out = queryGeojsonLines(bb, { features: feats });
     // O produtor SEMPRE grava bridge/tunnel/layer no FGB — hasTags fixo em
     // true pra nunca acionar o fallback de tags por proximidade (que só
@@ -11120,8 +11609,8 @@ async function queryGpkgLines(bb, src) {
 // viário, que já carrega bridge/tunnel/layer — uma fonte a menos e uma
 // consulta a menos (o LRU do streamFgbFeatures ainda reaproveita a busca que
 // o roteamento já fez pra esta bbox).
-async function fetchViarioDecksForBbox(bb) {
-  const { lines, meta } = await queryViarioLines(bb);
+async function fetchViarioDecksForBbox(bb, opts = {}) {
+  const { lines, meta } = await queryViarioLines(bb, null, opts);
   const decks = [];
   for (let i = 0; i < lines.length; i++) {
     const m = meta[i];
@@ -11216,9 +11705,10 @@ function rasterSupercover(pts, out, W, H) {
 // polys = anéis por polígono ([anel externo, buracos…]); lines = polilinhas.
 // Best-effort por arquivo: um dos dois falhando não derruba o outro; os dois
 // falhando → null (o chamador segue sem máscara, como antes).
-async function queryWater(bb) {
+async function queryWater(bb, opts = {}) {
   let failures = 0;
-  const grab = (url) => streamFgbFeatures(url, bb).catch((e) => {
+  const grab = (url) => streamFgbFeatures(url, bb, true, opts).catch((e) => {
+    if (e && e.name === 'AbortError') throw e;
     failures++; console.warn('[water] FGB falhou:', url, e.message); return [];
   });
   const [areas, rivers] = await Promise.all([
@@ -11321,8 +11811,8 @@ function viarioGraphRoute(lines, meta, fromLatLng, toLatLng, dem, bb, A) {
   const adj = [];                     // adj[u] = [v0, cost0, v1, cost1, …]
   const M_DEG = 111320;
   const cellM = A * M_DEG;            // ~tamanho da célula do DEM em metros
-  // Custo v2 por aresta — helper compartilhado com o grafo pré-cozido
-  // (v2EdgeCostFn, junto do decodeViarioGraph acima).
+  // Custo v2 por aresta — mesma fórmula do grafo pré-cozido (v2EdgeCostFn, na
+  // seção dele acima; o worker do grafo usa o stepCost do graph-engine.js).
   const edgeCost = v2EdgeCostFn(readCost(params));
 
   // Pontos do caminho que caem em tabuleiro (p/ achatar também o perfil do
@@ -11480,13 +11970,41 @@ function viarioGraphRoute(lines, meta, fromLatLng, toLatLng, dem, bb, A) {
 
 // `mode` = 'free' (qualquer célula do DEM) | 'road' (restringe ao viário:
 // grafo pré-cozido → FGB da América do Sul → grid raster do mesmo FGB)
-async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
+// `superseded` diz quando o resultado não vai mais ser usado: um número = o
+// pendingRouteSeq da chamada (modelo de seq global — velho quando outra edição
+// sai na frente) ou uma função que devolve true quando o pedido ficou velho
+// (roteamento por segmento: um pedido mais novo pro mesmo trecho). Sair do
+// editor sempre conta. Nesses casos as leituras em voo (tiles de DEM, FGB,
+// espera do grafo) são abortadas e a função devolve null — NUNCA uma reta, que
+// o chamador tomaria por resultado roteado e poderia gravar no trecho.
+async function energyRoute(fromLatLng, toLatLng, mode = 'free', superseded = null) {
   const distKm = fromLatLng.distanceTo(toLatLng) / 1000;
   if (distKm > ENERGY_MAX_SEGMENT_KM) {
     showToast(`Segmento ${distKm.toFixed(2)} km > ${ENERGY_MAX_SEGMENT_KM} km — usando reta`);
     return straightPath(fromLatLng, toLatLng);
   }
+  const extra = typeof superseded === 'function' ? superseded
+    : typeof superseded === 'number' ? () => superseded !== pendingRouteSeq : null;
+  const isStale = () => !drawingMode || !!(extra && extra());
+  if (isStale()) return null;
+  const ctrl = new AbortController();
+  const signal = ctrl.signal;
+  const poll = setInterval(() => { if (isStale()) ctrl.abort(); }, 200);
+  _routingInflight++;
+  try {
+    return await energyRouteInner(fromLatLng, toLatLng, mode, signal);
+  } catch (e) {
+    if (signal.aborted || (e && e.name === 'AbortError')) return null;
+    throw e;
+  } finally {
+    clearInterval(poll);
+    _routingInflight--;
+    touchRoutingMemory();
+  }
+}
 
+async function energyRouteInner(fromLatLng, toLatLng, mode, signal) {
+  const checkAbort = () => { if (signal.aborted) throw demAbortError(); };
   // Clampa nos dois lados: sem teto, um valor corrompido importado inflaria
   // a bbox do mosaico FABDEM e alocaria um Float32Array gigante. 200% é
   // folga de sobra pro segmento de até 2 km.
@@ -11523,26 +12041,42 @@ async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
 
   // ROAD primário: grafo PRÉ-COZIDO do viário de SP — elevações já amostradas
   // no bake, então resolve SEM baixar DEM nem FGB (por isso roda antes do
-  // mosaico abaixo). Rede custom carregada tem prioridade e cai pro fluxo
-  // clássico; falha/sem caminho cai pro FGB, como sempre. O mesmo toggle
-  // useViarioGpkg governa grafo pré-cozido + FGB (é a mesma fonte, só o
-  // empacotamento muda); desligado, pula direto pro grid raster.
-  if (mode === 'road' && !_customNetwork && params.useViarioGpkg !== false) {
+  // mosaico abaixo). Só é tentado quando as DUAS pontas caem na extensão do
+  // grafo (VIARIO_GRAPH_BBOX) — fora dela nem baixa os ~34 MB. Rede custom
+  // carregada tem prioridade e cai pro fluxo clássico; falha/sem caminho cai
+  // pro FGB, como sempre. O mesmo toggle useViarioGpkg governa grafo
+  // pré-cozido + FGB (é a mesma fonte, só o empacotamento muda); desligado,
+  // pula direto pro grid raster.
+  if (mode === 'road' && !_customNetwork && params.useViarioGpkg !== false &&
+      viarioGraphCovers(fromLatLng, toLatLng)) {
     try {
-      const path = await bakedViarioRoute(fromLatLng, toLatLng, bb);
+      const path = await bakedViarioRoute(fromLatLng, toLatLng, bb, signal);
       if (path && path.length) return path;
       console.info('[energy_road] grafo pré-cozido sem caminho — caindo pro FGB');
     } catch (e) {
+      checkAbort();
       console.warn('[energy_road] grafo pré-cozido indisponível:', e.message);
     }
   }
 
-  await ensureGeoTIFF();
+  try {
+    await ensureGeoTIFF();
+  } catch (e) {
+    noteDemDegraded('leitor de relevo (geotiff.js)', false);
+    console.warn('[energy] geotiff.js indisponível — reta:', e.message);
+    return straightPath(fromLatLng, toLatLng);
+  }
+  checkAbort();
   const tDem = performance.now();
-  const dem = await loadDemMosaic(bb);
-  console.info(`[energy] DEM ${dem.W}×${dem.H} em ${(performance.now() - tDem).toFixed(0)} ms`);
-  if (!dem.W || !dem.H) {
-    console.warn('[energy] DEM vazio — fallback pra reta');
+  const dem = await loadDemMosaic(bb, signal);
+  checkAbort();
+  let covered = 0;
+  if (dem.W && dem.H) for (let i = 0; i < dem.mask.length; i++) covered += dem.mask[i];
+  console.info(`[energy] DEM ${dem.W}×${dem.H} (${covered} células com dado) em ${(performance.now() - tDem).toFixed(0)} ms`);
+  if (!covered) {
+    // Nenhuma fonte de relevo respondeu (fora do ar/sem cobertura): antes a
+    // rota virava reta EM SILÊNCIO.
+    showToast('Sem dados de relevo pra este trecho agora — ficou em linha reta.', 4000);
     return straightPath(fromLatLng, toLatLng);
   }
 
@@ -11573,9 +12107,10 @@ async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
       if (lines.length) {
         if (!hasTags) {
           try {
-            const decks = await fetchViarioDecksForBbox(bb);
+            const decks = await fetchViarioDecksForBbox(bb, { signal });
             markDecksByProximity(lines, meta, decks, bb);
           } catch (e3) {
+            checkAbort();
             console.warn('[energy_road] pontes do viário (rede custom) indisponíveis:', e3.message);
           }
         }
@@ -11584,6 +12119,7 @@ async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
         console.info('[energy_road] rede custom sem caminho — caindo pro FGB');
       }
     } catch (e) {
+      checkAbort();
       console.warn('[energy_road] grafo da rede custom falhou:', e.message);
     }
   }
@@ -11600,17 +12136,18 @@ async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
   // direto na energia livre).
   // Toggle (Parâmetros): ligado usa o grafo vetorial; desligado vai direto ao
   // grid raster da MESMA rede.
-  let roadLines = null;
+  let roadLines = null, roadMeta = null;
   if (mode === 'road') {
     try {
-      const { lines, meta } = await queryViarioLines(bb);
-      roadLines = lines;
+      const { lines, meta } = await queryViarioLines(bb, null, { signal });
+      roadLines = lines; roadMeta = meta;
       if (params.useViarioGpkg !== false) {
         const path = viarioGraphRoute(lines, meta, fromLatLng, toLatLng, dem, bb, A);
         if (path && path.length) return path;
         console.info('[energy_road] grafo do FGB sem caminho — tentando grid raster');
       }
     } catch (e) {
+      checkAbort();
       console.warn('[energy_road] viário do FGB falhou:', e.message);
       showToast(`Viário indisponível (${e.message}) — caindo para menor energia livre.`);
     }
@@ -11647,75 +12184,85 @@ async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
   // do viário): preenche lagos/represas e barra rios dos FGBs de água, pra
   // rota não atravessar água. Pontes/túneis viram PORTAIS (abaixo), pra
   // cruzar a água barrada no tabuleiro. Origem/destino nunca são barrados.
+  // A ÁGUA vem primeiro: ela é pequena e diz se o viário precisa abrir
+  // corredores (só onde a água barra alguma célula).
   let portals = null;
   const waterBlocked = [];   // células barradas pela água (p/ refazer sem elas)
-  // Viário (linhas do FGB): usado pra (a) abrir CORREDORES passáveis na máscara
-  // de água — estradas/pontes atravessam a água, como no sampasimu — e (b) os
-  // portais de ponte/túnel. Buscado UMA vez e reusado pelos dois blocos abaixo.
-  let viaLines = null, viaMeta = null;
-  if (params.useWaterMask !== false || params.usePortals !== false) {
-    try { const q = await queryViarioLines(bb); viaLines = q.lines; viaMeta = q.meta; }
-    catch (e) { console.warn('[energy] viário (corredores/portais) falhou:', e.message); }
-  }
+  const toG = (lng, lat) => [(lng - bb.west) / A, (bb.north - lat) / A];
+  let block = null, waterCells = 0, waterInfo = '';
   // Toggle nos Parâmetros (useWaterMask): desligado → água ignorada (e os FGBs
-  // nem são consultados se os portais também estiverem off → zero tráfego).
+  // nem são consultados).
   if (params.useWaterMask !== false) try {
-    const water = await queryWater(bb);
+    const water = await queryWater(bb, { signal });
     if (water && (water.polys.length || water.lines.length)) {
-      const block = new Uint8Array(dem.W * dem.H);
-      const toG = (lng, lat) => [(lng - bb.west) / A, (bb.north - lat) / A];
+      block = new Uint8Array(dem.W * dem.H);
       for (const rings of water.polys) fillRingsEvenOdd(rings.map((r) => r.map((p) => toG(p[0], p[1]))), block, dem.W, dem.H);
       for (const ln of water.lines) rasterSupercover(ln.map((p) => toG(p[0], p[1])), block, dem.W, dem.H);
-      // CORREDORES: as vias (incl. pontes/túneis) abrem caminho passável sobre a
-      // água — uma estrada que cruza um rio/represa não é barreira. Poupa essas
-      // células do bloqueio (o "network carves corridors" do sampasimu). Sem
-      // isto, um destino sobre/à beira d'água fica ilhado.
-      //
-      // Duas fontes de corredor: (a) `networkMask` — a rede RASTER em uso no
-      // "pelo viário" quando o grafo vetorial não achou caminho (ou o toggle
-      // está desligado); é ELA que o worker roteia, então é ELA que precisa
-      // atravessar a água, senão a ponte fica barrada e a rota cai na reta.
-      // (b) `road` — as linhas VETORIAIS do FGB (corredores do modo terreno;
-      // só existem com o viário consultado). Sem (a), o fallback raster perdia
-      // todas as travessias d'água.
-      let road = null;
-      if (viaLines) { road = new Uint8Array(dem.W * dem.H); for (const ln of viaLines) rasterSupercover(ln.map((p) => toG(p[0], p[1])), road, dem.W, dem.H); }
-      let blocked = 0, corr = 0;
-      for (let i = 0; i < block.length; i++) {
-        if (!block[i] || !dem.mask[i]) continue;
-        if (networkMask && networkMask[i]) { corr++; continue; }   // via raster cruza a água
-        if (road && road[i]) { corr++; continue; }                 // via vetorial (FGB) cruza a água
-        dem.mask[i] = 0; waterBlocked.push(i); blocked++;
-      }
-      dem.mask[seedR * dem.W + seedC] = 1; dem.mask[goalR * dem.W + goalC] = 1;
-      console.info(`[energy] máscara de água: ${blocked} células barradas (${water.polys.length} áreas, ${water.lines.length} rios)${corr ? `, ${corr} de corredor viário liberadas` : ''}`);
+      for (let i = 0; i < block.length; i++) if (block[i] && dem.mask[i]) waterCells++;
+      waterInfo = `${water.polys.length} áreas, ${water.lines.length} rios`;
     }
-  } catch (e) { console.warn('[energy] máscara de água falhou:', e.message); }
+  } catch (e) { checkAbort(); console.warn('[energy] máscara de água falhou:', e.message); }
+
+  // Viário: (a) CORREDORES passáveis sobre a água — estradas/pontes atravessam
+  // a água, como no sampasimu (só precisa se a água barrou alguma célula);
+  // (b) os PORTAIS de ponte/túnel (se ligados). No "pelo viário" as linhas já
+  // estão em mãos (roadLines); no terreno o FGB é LIDO DIRETO pra máscara +
+  // lista de tabuleiros, sem guardar as feições (eram dezenas de MB por trecho
+  // presos num LRU).
+  let road = null, decks = null;
+  const needCorridors = waterCells > 0;
+  const needPortals = params.usePortals !== false;
+  if (needCorridors || needPortals) {
+    try {
+      const prod = roadLines
+        ? roadProductsFromLines(roadLines, roadMeta, bb, dem.W, dem.H, A)
+        : await viarioRoadProducts(bb, dem.W, dem.H, A, { signal });
+      road = prod.road; decks = prod.decks;
+    } catch (e) { checkAbort(); console.warn('[energy] viário (corredores/portais) falhou:', e.message); }
+  }
+
+  if (block) {
+    // CORREDORES: as vias (incl. pontes/túneis) abrem caminho passável sobre a
+    // água — uma estrada que cruza um rio/represa não é barreira. Poupa essas
+    // células do bloqueio (o "network carves corridors" do sampasimu). Sem
+    // isto, um destino sobre/à beira d'água fica ilhado.
+    //
+    // Duas fontes de corredor: (a) `networkMask` — a rede RASTER em uso no
+    // "pelo viário" quando o grafo vetorial não achou caminho (ou o toggle
+    // está desligado); é ELA que o worker roteia, então é ELA que precisa
+    // atravessar a água, senão a ponte fica barrada e a rota cai na reta.
+    // (b) `road` — as linhas VETORIAIS do FGB rasterizadas (corredores do modo
+    // terreno). Sem (a), o fallback raster perdia todas as travessias d'água.
+    let blocked = 0, corr = 0;
+    for (let i = 0; i < block.length; i++) {
+      if (!block[i] || !dem.mask[i]) continue;
+      if (networkMask && networkMask[i]) { corr++; continue; }   // via raster cruza a água
+      if (road && road[i]) { corr++; continue; }                 // via vetorial (FGB) cruza a água
+      dem.mask[i] = 0; waterBlocked.push(i); blocked++;
+    }
+    dem.mask[seedR * dem.W + seedC] = 1; dem.mask[goalR * dem.W + goalC] = 1;
+    console.info(`[energy] máscara de água: ${blocked} células barradas (${waterInfo})${corr ? `, ${corr} de corredor viário liberadas` : ''}`);
+  }
 
   // Portais de ponte/túnel (raster): atalho dirigido entre as duas células de
   // apoio no custo do tabuleiro plano — deixa a rota cruzar a água barrada por
-  // cima da ponte. Decks = linhas do viário com bridge/tunnel (FGB já em cache
-  // pela água); o worker calcula o custo a partir das alturas das pontas.
+  // cima da ponte. Decks = linhas do viário com bridge/tunnel; o worker calcula
+  // o custo a partir das alturas das pontas.
   // Toggle nos Parâmetros (usePortals): desligado → água vira barreira total.
-  if (params.usePortals !== false && viaLines) try {
-    const lines = viaLines, meta = viaMeta;
-    const u = [], v = [], lenM = [], M = 111320;
+  if (needPortals && decks && decks.length) try {
+    const u = [], v = [], lenM = [];
     const cellOf = (lng, lat) => { const r = Math.round((bb.north - lat) / A), c = Math.round((lng - bb.west) / A); return (r < 0 || r >= dem.H || c < 0 || c >= dem.W) ? -1 : r * dem.W + c; };
-    for (let li = 0; li < lines.length; li++) {
-      if (!(meta[li] && meta[li].deck)) continue;
-      const ln = lines[li];
-      if (ln.length < 2) continue;
-      const a = cellOf(ln[0][0], ln[0][1]), b = cellOf(ln[ln.length - 1][0], ln[ln.length - 1][1]);
+    for (const d of decks) {
+      const a = cellOf(d[0], d[1]), b = cellOf(d[2], d[3]);
       if (a < 0 || b < 0 || a === b) continue;
-      let len = 0;
-      for (let i = 1; i < ln.length; i++) { const dLat = (ln[i][1] - ln[i - 1][1]) * M, dLng = (ln[i][0] - ln[i - 1][0]) * M * Math.cos((ln[i][1] + ln[i - 1][1]) / 2 * Math.PI / 180); len += Math.hypot(dLat, dLng); }
-      u.push(a); v.push(b); lenM.push(len);
+      u.push(a); v.push(b); lenM.push(d[4]);
     }
     if (u.length) portals = { u: Int32Array.from(u), v: Int32Array.from(v), lenM: Float64Array.from(lenM), n: u.length };
     if (portals) console.info(`[energy] ${portals.n} portais de ponte/túnel`);
   } catch (e) { console.warn('[energy] portais falharam:', e.message); }
 
   try {
+    checkAbort();
     const tWork = performance.now();
     const baseOpts = {
       height: dem.height,
@@ -11742,6 +12289,7 @@ async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
     // sem a barreira. Uma rota real que raspa a água é melhor que cair na reta.
     // (mask é CLONADA no postMessage, não transferida → dá pra reusar dem.mask.)
     if ((!res.path || !res.path.length) && waterBlocked.length) {
+      checkAbort();
       for (const idx of waterBlocked) dem.mask[idx] = 1;
       console.warn(`[energy] água ainda selou o caminho — refazendo sem a barreira (${waterBlocked.length} células)`);
       res = await runEnergyWorker({ ...baseOpts, mask: dem.mask });
@@ -11762,6 +12310,7 @@ async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
     if (Number.isFinite(res.pathEnergy)) out.routedEnergyJ = res.pathEnergy;
     return out;
   } catch (e) {
+    checkAbort();
     console.warn('[energy] worker falhou:', e.message);
     return straightPath(fromLatLng, toLatLng);
   }
@@ -12430,9 +12979,10 @@ function totalDistanceMeters() {
 }
 
 // ─── FABDEM (1°×1° COG tiles hospedadas no R2, fabdem.pedalhidrografi.co) ────
-// Range-fetch só dos strips que cobrem cada ponto/bbox. geotiff.js é
+// Range-fetch só dos tiles (512²) que cobrem cada ponto/bbox. geotiff.js é
 // carregado sob demanda do CDN; window.GeoTIFF expõe a API. Os tiles ficam na
 // RAIZ do bucket (sem segmento /fabdem/) — nomes Bristol direto na base.
+// A abertura/leitura de TODO DEM passa pela seção "Leitura de COGs" abaixo.
 const FABDEM_BASE_URL = 'https://fabdem.pedalhidrografi.co/';
 const FABDEM_TILE_DEG = 1;
 const FABDEM_ARCSEC   = 1 / 3600;            // ~30 m no equador
@@ -12460,42 +13010,21 @@ function fabdemTileName(lat, lon) {
   return `${ns}${la}${ew}${lo}_FABDEM_V1-2.tif`;
 }
 
-// Cache de tiles abertos. Cada entrada guarda só o IFD (geotiff.js
-// adia o fetch de pixels até readRasters).
-const _fabdemTileCache = new Map();   // "SXX[E|W]XXX" → { image, origin, resolution, nodata } | null
-async function openFabdemTile(latLo, lonLo) {
-  const key = `${latLo}_${lonLo}`;
-  if (_fabdemTileCache.has(key)) return _fabdemTileCache.get(key);
-  const url = FABDEM_BASE_URL + fabdemTileName(latLo, lonLo);
-  try {
-    const GeoTIFF = await ensureGeoTIFF();
-    const tiff   = await GeoTIFF.fromUrl(url);
-    const image  = await tiff.getImage();
-    const origin = image.getOrigin();
-    const resolution = image.getResolution();
-    const nodataRaw = image.fileDirectory.getValue
-      ? image.fileDirectory.getValue('GDAL_NODATA')
-      : image.fileDirectory.GDAL_NODATA;
-    const nodata = nodataRaw ? parseFloat(nodataRaw) : null;
-    const entry = { image, origin, resolution, nodata };
-    _fabdemTileCache.set(key, entry);
-    return entry;
-  } catch (e) {
-    console.info(`[fabdem] tile (${latLo},${lonLo}) indisponível: ${e.message}`);
-    _fabdemTileCache.set(key, null);    // negative cache: don't keep retrying
-    return null;
-  }
+// Tile 1°×1° aberto (só o IFD — os pixels vêm por demTile). null = sem tile
+// (404 no mar/fora da cobertura, definitivo) ou fora do ar agora (rede — nova
+// tentativa em COG_RETRY_MS; ver openCogHandle).
+function openFabdemTile(latLo, lonLo) {
+  return openCogHandle(FABDEM_BASE_URL + fabdemTileName(latLo, lonLo), 'FABDEM');
 }
 
-// Interpolação BILINEAR num buffer de janela (interleave) lido via readRasters.
-// (u, v) são coords de pixel CENTRADAS — já descontado o 0.5 da borda, então o
-// valor da célula k mora em k e os vizinhos são floor(u)/floor(u)+1. cMin/rMin
-// são o canto da janela lida; winW/winH suas dimensões. Cantos nodata / NaN /
-// fora-da-janela são descartados e os pesos renormalizados (degrada com graça
-// nas bordas de cobertura); null se nenhum dos 4 cantos vale. A amostragem
+// Interpolação BILINEAR em (u, v) — coords de pixel CENTRADAS (já descontado o
+// 0.5 da borda: o valor da célula k mora em k e os vizinhos são floor(u) e
+// floor(u)+1). `px(c, r)` devolve o pixel (ou undefined fora da imagem/janela).
+// Cantos nodata / NaN / fora são descartados e os pesos renormalizados (degrada
+// com graça nas bordas de cobertura); null se nenhum dos 4 cantos vale. A
 // bilinear suaviza o serrilhado do nearest-neighbor — perfil de elevação mais
 // fiel à rampa real da célula, sem saltos de ±meia-célula entre pontos.
-function bilinearFromWindow(ras, winW, winH, cMin, rMin, u, v, nodata) {
+function bilinearAt(px, u, v, nodata) {
   const c0 = Math.floor(u), r0 = Math.floor(v);
   const fu = u - c0, fv = v - r0;
   const corners = [
@@ -12507,50 +13036,26 @@ function bilinearFromWindow(ras, winW, winH, cMin, rMin, u, v, nodata) {
   let acc = 0, wsum = 0;
   for (const [r, c, w] of corners) {
     if (w <= 0) continue;
-    const lc = c - cMin, lr = r - rMin;
-    if (lc < 0 || lr < 0 || lc >= winW || lr >= winH) continue;
-    const val = ras[lr * winW + lc];
-    if (!Number.isFinite(val) || (nodata != null && val === nodata)) continue;
+    const val = px(c, r);
+    if (val === undefined || !Number.isFinite(val) || (nodata != null && val === nodata)) continue;
     acc += val * w; wsum += w;
   }
   return wsum > 0 ? acc / wsum : null;
 }
 
-// Sample elevation (meters) at lat/lng, BILINEAR. Returns null when the tile is
-// missing or every covering cell is nodata. Batched callers should prefer
-// `sampleFabdemBatch` to reuse a single window per tile.
+// Elevação (m) num ponto, BILINEAR — null sem tile/nodata. Em lote, prefira
+// sampleFabdemBatch (um tile lido serve a todos os pontos dele).
 async function sampleFabdemAt(lat, lng) {
-  const latLo = Math.floor(lat);
-  const lonLo = Math.floor(lng);
-  const t = await openFabdemTile(latLo, lonLo);
-  if (!t) return null;
-  const [oX, oY] = t.origin;
-  const [rX, rY] = t.resolution;   // rX > 0, rY < 0
-  const W = t.image.getWidth(), H = t.image.getHeight();
-  const u = (lng - oX) / rX - 0.5;
-  const v = (lat - oY) / rY - 0.5;
-  const cMin = Math.max(0, Math.floor(u)), rMin = Math.max(0, Math.floor(v));
-  const cMax = Math.min(W - 1, Math.floor(u) + 1), rMax = Math.min(H - 1, Math.floor(v) + 1);
-  if (cMax < cMin || rMax < rMin) return null;
-  try {
-    const winW = cMax - cMin + 1, winH = rMax - rMin + 1;
-    const ras = await t.image.readRasters({
-      window: [cMin, rMin, cMax + 1, rMax + 1],
-      interleave: true,
-    });
-    return bilinearFromWindow(ras, winW, winH, cMin, rMin, u, v, t.nodata);
-  } catch (e) {
-    console.warn(`[fabdem] sample ${lat},${lng} falhou: ${e.message}`);
-    return null;
-  }
+  return (await sampleFabdemBatch([[lat, lng]]))[0];
 }
 
-// Sample many points efficiently: groups by tile and reads one bounding
-// window per tile, then indexes each point into the buffer. ~1 HTTP
-// range request per tile instead of one per point.
-async function sampleFabdemBatch(points /* [[lat, lng], …] */) {
-  if (!points.length) return [];
-  // Bucket points by their tile.
+// Muitos pontos: agrupa por tile 1°×1° e amostra só os tiles 512² do COG que
+// CONTÊM pontos (sampleDemPoints). `out.unavailable` = algum tile estava fora
+// do ar (rede) — quem cair pra fonte seguinte marca os valores como
+// provisórios (ver fetchMissingElevations).
+async function sampleFabdemBatch(points /* [[lat, lng], …] */, signal) {
+  const out = new Array(points.length).fill(null);
+  if (!points.length) return out;
   const groups = new Map();   // "latLo_lonLo" → { latLo, lonLo, idxs: [origIdx,…] }
   points.forEach(([lat, lng], i) => {
     const latLo = Math.floor(lat);
@@ -12559,56 +13064,32 @@ async function sampleFabdemBatch(points /* [[lat, lng], …] */) {
     if (!groups.has(k)) groups.set(k, { latLo, lonLo, idxs: [] });
     groups.get(k).idxs.push(i);
   });
-  const out = new Array(points.length).fill(null);
   for (const { latLo, lonLo, idxs } of groups.values()) {
     const t = await openFabdemTile(latLo, lonLo);
-    if (!t) continue;
-    const [oX, oY] = t.origin;
-    const [rX, rY] = t.resolution;
-    const W = t.image.getWidth(), H = t.image.getHeight();
-    // Janela cobrindo os 4 vizinhos bilineares (floor..floor+1) de cada ponto.
-    let cMin = Infinity, cMax = -Infinity, rMin = Infinity, rMax = -Infinity;
-    const samp = idxs.map(i => {
-      const [lat, lng] = points[i];
-      const u = (lng - oX) / rX - 0.5;
-      const v = (lat - oY) / rY - 0.5;
-      const c0 = Math.floor(u), r0 = Math.floor(v);
-      if (c0     < cMin) cMin = c0;     if (c0 + 1 > cMax) cMax = c0 + 1;
-      if (r0     < rMin) rMin = r0;     if (r0 + 1 > rMax) rMax = r0 + 1;
-      return [i, u, v];
-    });
-    cMin = Math.max(0, cMin); rMin = Math.max(0, rMin);
-    cMax = Math.min(W - 1, cMax); rMax = Math.min(H - 1, rMax);
-    if (cMax < cMin || rMax < rMin) continue;
-    try {
-      const winW = cMax - cMin + 1, winH = rMax - rMin + 1;
-      const ras = await t.image.readRasters({
-        window: [cMin, rMin, cMax + 1, rMax + 1],
-        interleave: true,
-      });
-      for (const [i, u, v] of samp) {
-        const z = bilinearFromWindow(ras, winW, winH, cMin, rMin, u, v, t.nodata);
-        if (z != null) out[i] = z;
-      }
-    } catch (e) {
-      console.warn(`[fabdem] read window (${latLo},${lonLo}) falhou: ${e.message}`);
+    if (!t) {
+      if (cogTemporarilyDown(FABDEM_BASE_URL + fabdemTileName(latLo, lonLo))) out.unavailable = true;
+      continue;
     }
+    const vals = await sampleDemPoints(t, idxs.map((i) => points[i]), signal);
+    idxs.forEach((i, k) => { if (vals[k] != null) out[i] = vals[k]; });
   }
   return out;
 }
 
 // ─── DEM local de SP (sampa_geral): COG único EPSG:4326 (~5 m) ───────────────
-// COG único hospedado em telhas.pedalhidrografi.co; geotiff.js puxa só os
-// blocos necessários por Range request. Mesma matemática de pixel do FABDEM
-// (ambos EPSG:4326), só que UMA imagem em vez de tiles 1°×1°. Aberto sob
-// demanda e cacheado; ativo apenas quando params.useSampaDem está ligado.
+// COG único hospedado em telhas.pedalhidrografi.co (IFD0 ~5,3 m + overviews
+// AVERAGE de ~10,7/21/43/85/171 m); geotiff.js puxa só os tiles necessários
+// por Range request. Mesma matemática de pixel do FABDEM (ambos EPSG:4326), só
+// que UMA imagem em vez de tiles 1°×1°. Aberto sob demanda; ativo apenas
+// quando params.useSampaDem está ligado.
 const SAMPA_DEM_URL = 'https://telhas.pedalhidrografi.co/dem/sampa_geral.tif';
 
-// Constrói o "handle" de DEM (origin/resolution/bounds/nodata) a partir de uma
-// imagem geotiff.js já aberta. Compartilhado entre o DEM de SP (Range fetch de
-// URL) e o DEM custom (GeoTIFF carregado de arquivo em memória). A matemática
-// de pixel assume EPSG:4326 (graus) — igual ao FABDEM.
-function demHandleFromImage(image) {
+// Constrói o "handle" de DEM a partir de uma imagem geotiff.js já aberta:
+// origin/resolution/bounds/nodata + `level0` (a grade de tiles da resolução
+// cheia) + `key` (identidade no cache de tiles). Compartilhado entre o DEM de
+// SP e o FABDEM (Range fetch de URL) e o DEM custom (GeoTIFF carregado de
+// arquivo). A matemática de pixel assume EPSG:4326 (graus).
+function demHandleFromImage(image, tiff = null, key = '') {
   const origin = image.getOrigin();         // [oX(west lon), oY(north lat)]
   const resolution = image.getResolution(); // [rX>0, rY<0]
   const W = image.getWidth();
@@ -12623,23 +13104,13 @@ function demHandleFromImage(image) {
     east:  origin[0] + W * resolution[0],
     south: origin[1] + H * resolution[1],
   };
-  return { image, origin, resolution, W, H, nodata, bounds };
+  const h = { image, tiff, key, origin, resolution, W, H, nodata, bounds, levels: null, _levelsP: null };
+  h.level0 = demLevel(image, h, 0);
+  return h;
 }
 
-let _sampaDemPromise = null;
-async function openSampaDem() {
-  if (_sampaDemPromise) return _sampaDemPromise;
-  _sampaDemPromise = (async () => {
-    try {
-      const GeoTIFF = await ensureGeoTIFF();
-      const tiff  = await GeoTIFF.fromUrl(SAMPA_DEM_URL);
-      return demHandleFromImage(await tiff.getImage());
-    } catch (e) {
-      console.info(`[sampa-dem] indisponível: ${e.message}`);
-      return null;   // negative cache: don't keep retrying
-    }
-  })();
-  return _sampaDemPromise;
+function openSampaDem() {
+  return openCogHandle(SAMPA_DEM_URL, 'DEM de SP');
 }
 
 // ─── DEM custom (GeoTIFF carregado de arquivo, EPSG:4326) ────────────────────
@@ -12648,11 +13119,12 @@ async function openSampaDem() {
 // handle/matemática do DEM de SP — só que a imagem vem de um ArrayBuffer
 // (fromArrayBuffer) em vez de Range fetch. Efêmero: some ao recarregar a página.
 let _customDem = null;   // { image, …, bounds, projected, name } | null
+let _customDemSeq = 0;
 async function setCustomDem(file) {
   const GeoTIFF = await ensureGeoTIFF();
   const buf = await file.arrayBuffer();
   const tiff = await GeoTIFF.fromArrayBuffer(buf);
-  const h = demHandleFromImage(await tiff.getImage());
+  const h = demHandleFromImage(await tiff.getImage(), tiff, `custom#${++_customDemSeq}`);
   // Aviso de CRS: a matemática de pixel é em graus (EPSG:4326). Um DEM projetado
   // (UTM/Web Mercator…) amostraria errado. Detecta por DUAS vias: a geokey
   // ProjectedCSTypeGeoKey (presente ⇒ projetado, mesmo que a base seja 4326) E
@@ -12665,57 +13137,395 @@ async function setCustomDem(file) {
     if (keys.ProjectedCSTypeGeoKey) h.projected = true;
   } catch { /* sem geokeys: vale a heurística de resolução acima */ }
   h.name = file.name;
+  if (_customDem) demTilesDrop(_customDem.key);
   _customDem = h;
   return h;
 }
-function clearCustomDem() { _customDem = null; }
+function clearCustomDem() {
+  if (_customDem) demTilesDrop(_customDem.key);
+  _customDem = null;
+}
 
 function withinSampaDem(b, lat, lng) {
   return lat >= b.south && lat <= b.north && lng >= b.west && lng <= b.east;
 }
 
-// Sample many points from the single COG: one bounding-window read covering
-// every in-bounds point. Out-of-bounds (or nodata) entries stay null so the
-// caller can fall back to FABDEM/Open-Meteo.
-async function sampleDemHandle(t, points /* [[lat,lng], …] */) {
+async function sampleSampaDemBatch(points, signal) {
+  const h = await openSampaDem();
+  if (!h) {
+    const out = new Array(points.length).fill(null);
+    if (cogTemporarilyDown(SAMPA_DEM_URL)) out.unavailable = true;
+    return out;
+  }
+  return sampleDemPoints(h, points, signal);
+}
+async function sampleCustomDemBatch(points, signal) { return sampleDemPoints(_customDem, points, signal); }
+
+// ─── Leitura de COGs (DEM de SP, FABDEM, DEM custom) ─────────────────────────
+// Toda leitura de DEM passa por aqui. Antes cada leitura era UMA janela na
+// resolução cheia sobre a bbox inteira (10–45 MB por trecho do modo terreno,
+// ~7 MB por perfil de rota, ~40 MB no "Estimar" da Câmera), decodificada no
+// main thread, sem cache nem cancelamento, e uma falha de rede desligava o DEM
+// até recarregar a página. Agora:
+//  • ABRIR (openCogHandle): cliente HTTP próprio pro geotiff.js — erro HTTP
+//    chega com o status: 4xx é definitivo (fica null a sessão toda), rede/5xx
+//    é temporário (nova tentativa em COG_RETRY_MS, com toast avisando que a
+//    precisão caiu); aberturas concorrentes são deduplicadas; timeout por
+//    requisição.
+//  • LER (demTile): por tile do COG (512²), decodificado e guardado num LRU com
+//    orçamento em bytes — re-rotear, arrastar ou reabrir na mesma área não
+//    baixa nem decodifica de novo. Um tile compartilhado só é cancelado quando
+//    NENHUM leitor espera mais por ele (AbortSignal por leitor).
+//  • PERFIL (sampleDemPoints): só os tiles que CONTÊM pontos, na resolução cheia
+//    — os mesmos pixels e a mesma bilinear de antes, então os números são
+//    idênticos.
+//  • MOSAICO do roteamento/Câmera (loadDemHandleMosaic): o overview mais grosso
+//    que ainda é ≤ a grade de 1″ (~30 m). No DEM de SP é o IFD2 (~21 m,
+//    overview AVERAGE): 1/16 dos pixels do IFD0 que era lido.
+const COG_RETRY_MS = 30 * 1000;
+const COG_REQ_TIMEOUT_MS = 30 * 1000;
+const DEM_MOSAIC_MAX_CELLS = 8e6;      // 1″: ~32 MB de Float32 — acima disso é pedido absurdo
+const DEM_MOSAIC_MAX_TILES = 48;       // tiles do COG por mosaico (DEM custom denso sem overview)
+const demStats = { requests: 0, bytes: 0 };   // diagnóstico (__phidroViario.demStats)
+
+function demAbortError() { return new DOMException('leitura de DEM cancelada', 'AbortError'); }
+
+// Promise que rejeita com AbortError quando ESTE chamador desiste (o trabalho
+// por baixo pode seguir pra outros leitores).
+function withAbort(promise, signal) {
+  if (!signal) return promise;
+  if (signal.aborted) return Promise.reject(demAbortError());
+  return new Promise((resolve, reject) => {
+    const onAbort = () => reject(demAbortError());
+    signal.addEventListener('abort', onAbort, { once: true });
+    promise.then(
+      (v) => { signal.removeEventListener('abort', onAbort); resolve(v); },
+      (e) => { signal.removeEventListener('abort', onAbort); reject(e); },
+    );
+  });
+}
+
+// Cliente do geotiff.js (fromCustomClient). O FetchClient padrão jogava fora o
+// status ("Error fetching data.") — sem ele não dá pra separar um 404 (tile que
+// não existe) de uma queda de rede. O corpo só é lido em getData(): uma
+// resposta 200 a um pedido com Range (servidor/cache ignorando o Range) é
+// cortada na hora em vez de baixar o arquivo inteiro.
+function makeCogClient(url) {
+  return {
+    url,
+    async request({ headers = {}, signal } = {}) {
+      if (signal && signal.aborted) throw demAbortError();
+      const ctrl = new AbortController();
+      const onAbort = () => ctrl.abort();
+      if (signal) signal.addEventListener('abort', onAbort, { once: true });
+      const timer = setTimeout(() => ctrl.abort(), COG_REQ_TIMEOUT_MS);
+      const done = () => { clearTimeout(timer); if (signal) signal.removeEventListener('abort', onAbort); };
+      let res;
+      try {
+        res = await fetch(url, { headers, signal: ctrl.signal });
+      } catch (e) {
+        done();
+        if (signal && signal.aborted) throw demAbortError();
+        throw e;
+      }
+      if (!res.ok || (res.status === 200 && (headers.Range || headers.range))) {
+        ctrl.abort(); done();
+        const err = new Error(res.ok ? 'servidor ignorou o Range' : `HTTP ${res.status}`);
+        err.status = res.status;
+        throw err;
+      }
+      demStats.requests++;
+      return {
+        status: res.status,
+        ok: true,
+        getHeader: (name) => res.headers.get(name) || undefined,
+        async getData() {
+          try {
+            const data = await res.arrayBuffer();
+            demStats.bytes += data.byteLength;
+            return data;
+          } catch (e) {
+            if (signal && signal.aborted) throw demAbortError();
+            throw e;
+          } finally { done(); }
+        },
+      };
+    },
+  };
+}
+
+// url → { promise } (aberto ou abrindo) | { failedAt, until, permanent }
+const _cogHandles = new Map();
+const _demToastAt = new Map();
+let _demRetryTimer = null;
+
+function cogTemporarilyDown(url) {
+  const e = _cogHandles.get(url);
+  return !!(e && !e.promise && !e.permanent);
+}
+
+// Abre um COG remoto (só os IFDs; pixels via demTile). Deduplica aberturas
+// concorrentes; falha 4xx = definitiva (null pra sessão toda), qualquer outra
+// (rede, 5xx, timeout, geotiff.js que não carregou) = temporária: null até
+// COG_RETRY_MS e aí tenta de novo — um tropeço de rede não desliga mais o DEM
+// até a página recarregar. `label` identifica a fonte no toast.
+function openCogHandle(url, label) {
+  const hit = _cogHandles.get(url);
+  if (hit) {
+    if (hit.promise) return hit.promise;
+    if (hit.permanent || Date.now() < hit.until) return Promise.resolve(null);
+  }
+  const wasDown = !!(hit && !hit.permanent);
+  const entry = {};
+  entry.promise = (async () => {
+    try {
+      const GeoTIFF = await ensureGeoTIFF();
+      const tiff = await GeoTIFF.fromCustomClient(makeCogClient(url));
+      const h = demHandleFromImage(await tiff.getImage(), tiff, url);
+      if (wasDown) onDemRecovered(label);
+      return h;
+    } catch (e) {
+      const permanent = e && e.status >= 400 && e.status < 500;
+      _cogHandles.set(url, { failedAt: Date.now(), until: Date.now() + COG_RETRY_MS, permanent, label });
+      console.info(`[dem] ${label} indisponível (${permanent ? 'definitivo' : 'nova tentativa em 30 s'}): ${e.message}`);
+      // 404 de tile do FABDEM = mar/fora da cobertura: não é perda de precisão.
+      if (!(permanent && label === 'FABDEM')) noteDemDegraded(label, permanent);
+      if (!permanent) armDemRetry();
+      return null;
+    }
+  })();
+  _cogHandles.set(url, entry);
+  return entry.promise;
+}
+
+function noteDemDegraded(label, permanent) {
+  const now = Date.now();
+  if (now - (_demToastAt.get(label) || 0) < 60 * 1000) return;
+  _demToastAt.set(label, now);
+  showToast(permanent
+    ? `${label} indisponível — relevo por uma fonte menos precisa.`
+    : `Sem conexão com o ${label} — relevo menos preciso por enquanto (nova tentativa em 30 s).`, 5000);
+}
+
+// Com o editor aberto e elevações provisórias (vindas de uma fonte pior durante
+// a queda), tenta reabrir as fontes caídas sozinho — o PWA fica aberto dias.
+function armDemRetry() {
+  if (_demRetryTimer) return;
+  _demRetryTimer = setTimeout(() => {
+    _demRetryTimer = null;
+    if (!drawingMode || !elevationProvisional.size) return;
+    for (const [url, e] of _cogHandles) {
+      if (!e.promise && !e.permanent && Date.now() >= e.until) openCogHandle(url, e.label);
+    }
+  }, COG_RETRY_MS + 1000);
+}
+
+function onDemRecovered(label) {
+  console.info(`[dem] ${label} de volta`);
+  if (!elevationProvisional.size) return;
+  // Os pontos que caíram pra fonte pior durante a queda são reamostrados.
+  for (const k of elevationProvisional) elevationCache.delete(k);
+  elevationProvisional.clear();
+  showToast(`${label} de volta — recalculando o perfil.`, 2500);
+  scheduleElevationFetch();
+}
+
+// Grade de tiles de um nível (IFD0 = resolução cheia; overviews = mais grossos).
+// Overviews não têm georreferência própria: a resolução sai do IFD0 × razão de
+// tamanhos (mesma conta do image.getResolution(referência) do geotiff.js).
+function demLevel(image, h, index) {
+  const W = image.getWidth(), H = image.getHeight();
+  return {
+    image, index, W, H,
+    tw: image.getTileWidth(), th: image.getTileHeight(),
+    rX: h.resolution[0] * h.W / W,
+    rY: h.resolution[1] * h.H / H,
+    offsets: null,
+  };
+}
+
+// Níveis do COG (IFD0 + overviews; máscaras de fora), sob demanda — o perfil
+// só usa o IFD0 e não paga o parse dos outros IFDs.
+function demLevels(h) {
+  if (!h._levelsP) {
+    h._levelsP = (async () => {
+      const out = [h.level0];
+      const n = h.tiff ? await h.tiff.getImageCount() : 1;
+      for (let i = 1; i < n; i++) {
+        const im = await h.tiff.getImage(i);
+        let nst = 0;
+        try { nst = im.fileDirectory.getValue('NewSubfileType') || 0; } catch { /* ausente */ }
+        if ((nst & 1) && !(nst & 4)) out.push(demLevel(im, h, i));
+      }
+      h.levels = out;
+      return out;
+    })();
+    h._levelsP.catch(() => { h._levelsP = null; });
+  }
+  return h._levelsP;
+}
+
+// "Pool" pro readRasters do geotiff.js: decodifica no main thread como antes
+// (o Pool de verdade cria workers de blob:, barrados pela CSP), mas começa
+// cada tile numa macrotarefa própria — tiles que chegam juntos decodificavam
+// em cadeia de microtarefas, um bloco só de vários segundos (CPU×4).
+const DEM_YIELDING_POOL = {
+  bindParameters(compression, params) {
+    let decoder = null;
+    return {
+      async decode(buffer) {
+        await yieldToEventLoop();
+        if (!decoder) decoder = window.GeoTIFF.getDecoder(compression, params);
+        return (await decoder).decode(buffer);
+      },
+    };
+  },
+};
+
+// ── Cache de tiles decodificados (LRU com orçamento em bytes) ──
+// Chave: handle | nível | tx,ty. Cada entrada conta quantos leitores esperam
+// por ela: o download de um tile só é abortado quando o ÚLTIMO desiste.
+const _demTiles = new Map();   // chave → { promise, ctrl, users, tile, bytes, hkey }
+let _demTileBytes = 0;
+function demTileBudget() { return (dataBudgetCoarse() ? 24 : 64) * 1024 * 1024; }
+
+function demTilesEvict() {
+  const budget = demTileBudget();
+  if (_demTileBytes <= budget) return;
+  for (const [k, e] of _demTiles) {
+    if (_demTileBytes <= budget) break;
+    if (!e.tile || e.users > 0) continue;
+    _demTiles.delete(k);
+    _demTileBytes -= e.bytes;
+  }
+}
+// Solta os tiles (de um handle, ou todos) que ninguém está lendo agora.
+function demTilesDrop(hkey = null) {
+  for (const [k, e] of _demTiles) {
+    if (hkey != null && e.hkey !== hkey) continue;
+    if (e.users > 0) continue;
+    _demTiles.delete(k);
+    if (e.tile) _demTileBytes -= e.bytes;
+  }
+}
+
+async function demTile(h, lv, tx, ty, signal, retried = false) {
+  const key = `${h.key}|${lv.index}|${tx},${ty}`;
+  let e = _demTiles.get(key);
+  if (e) {
+    _demTiles.delete(key); _demTiles.set(key, e);   // refresca a posição no LRU
+  } else {
+    const ctrl = new AbortController();
+    e = { ctrl, users: 0, tile: null, bytes: 0, hkey: h.key };
+    e.promise = (async () => {
+      // As tabelas de offsets do nível numa leitura só (senão o geotiff.js
+      // faz 2 ranges minúsculos por tile antes do tile).
+      if (!lv.offsets) {
+        const fd = lv.image.fileDirectory;
+        const names = fd.hasTag && fd.hasTag('TileOffsets') ? ['TileOffsets', 'TileByteCounts'] : ['StripOffsets', 'StripByteCounts'];
+        lv.offsets = Promise.all(names.map((n) => fd.loadValue(n)));
+        lv.offsets.catch(() => { lv.offsets = null; });
+      }
+      await lv.offsets;
+      const x0 = tx * lv.tw, y0 = ty * lv.th;
+      const x1 = Math.min(x0 + lv.tw, lv.W), y1 = Math.min(y0 + lv.th, lv.H);
+      const data = await lv.image.readRasters({
+        window: [x0, y0, x1, y1], interleave: true, signal: ctrl.signal, pool: DEM_YIELDING_POOL,
+      });
+      return { data, x0, y0, w: x1 - x0, h: y1 - y0 };
+    })();
+    _demTiles.set(key, e);
+    e.promise.then((tile) => {
+      e.tile = tile;
+      e.bytes = tile.data.byteLength;
+      if (_demTiles.get(key) === e) { _demTileBytes += e.bytes; demTilesEvict(); }
+    }, () => { if (_demTiles.get(key) === e) _demTiles.delete(key); });
+  }
+  touchRoutingMemory();
+  e.users++;
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
+    e.users--;
+    // Este leitor desistiu e ninguém mais espera: corta o download (um tile
+    // que já chegou fica no cache — é trabalho feito).
+    if (e.users === 0 && !e.tile && signal && signal.aborted) e.ctrl.abort();
+  };
+  try {
+    return await withAbort(e.promise, signal);
+  } catch (err) {
+    // O download compartilhado foi abortado por OUTRO leitor que desistiu
+    // enquanto este ainda queria o tile: refaz uma vez.
+    if (err && err.name === 'AbortError' && !(signal && signal.aborted) && !retried) {
+      release();
+      if (_demTiles.get(key) === e) _demTiles.delete(key);
+      return demTile(h, lv, tx, ty, signal, true);
+    }
+    throw err;
+  } finally {
+    release();
+  }
+}
+
+// Amostra pontos (bilinear, resolução cheia) lendo SÓ os tiles que contêm os
+// pontos (e os vizinhos de borda que a bilinear toca). Mesma conta e mesmos
+// pixels da janela única de antes — os valores saem idênticos — mas sem
+// baixar a bbox inteira da rota. Fora da extensão/nodata → null (o chamador
+// cai pra próxima fonte).
+async function sampleDemPoints(h, points /* [[lat,lng], …] */, signal) {
   const out = new Array(points.length).fill(null);
-  if (!t || !points.length) return out;
-  const [oX, oY] = t.origin;
-  const [rX, rY] = t.resolution;
-  // Janela cobrindo os 4 vizinhos bilineares (floor..floor+1) de cada ponto.
-  let cMin = Infinity, cMax = -Infinity, rMin = Infinity, rMax = -Infinity;
-  const samp = [];
+  if (!h || !points.length) return out;
+  const lv = h.level0;
+  const [oX, oY] = h.origin;
+  const [rX, rY] = h.resolution;
+  const { W, H, tw, th } = lv;
+  const groups = new Map();   // tile do canto (c0,r0) → [[i, u, v], …]
   points.forEach(([lat, lng], i) => {
-    if (!withinSampaDem(t.bounds, lat, lng)) return;
+    if (!withinSampaDem(h.bounds, lat, lng)) return;
     const u = (lng - oX) / rX - 0.5;
     const v = (lat - oY) / rY - 0.5;
     const c0 = Math.floor(u), r0 = Math.floor(v);
-    if (c0 + 1 < 0 || c0 > t.W - 1 || r0 + 1 < 0 || r0 > t.H - 1) return;
-    if (c0     < cMin) cMin = c0;     if (c0 + 1 > cMax) cMax = c0 + 1;
-    if (r0     < rMin) rMin = r0;     if (r0 + 1 > rMax) rMax = r0 + 1;
-    samp.push([i, u, v]);
+    if (c0 + 1 < 0 || c0 > W - 1 || r0 + 1 < 0 || r0 > H - 1) return;
+    const k = Math.floor(Math.max(0, c0) / tw) * 65536 + Math.floor(Math.max(0, r0) / th);
+    let g = groups.get(k);
+    if (!g) groups.set(k, (g = []));
+    g.push([i, u, v]);
   });
-  if (!samp.length) return out;
-  cMin = Math.max(0, cMin); rMin = Math.max(0, rMin);
-  cMax = Math.min(t.W - 1, cMax); rMax = Math.min(t.H - 1, rMax);
-  if (cMax < cMin || rMax < rMin) return out;
-  try {
-    const winW = cMax - cMin + 1, winH = rMax - rMin + 1;
-    const ras = await t.image.readRasters({
-      window: [cMin, rMin, cMax + 1, rMax + 1],
-      interleave: true,
-    });
-    for (const [i, u, v] of samp) {
-      const z = bilinearFromWindow(ras, winW, winH, cMin, rMin, u, v, t.nodata);
+  if (!groups.size) return out;
+  const inImage = (c, r) => c >= 0 && r >= 0 && c < W && r < H;
+  await mapConcurrent([...groups.values()], 4, async (grp) => {
+    // Tiles dos cantos bilineares com peso > 0 dentro da imagem.
+    const need = new Map();
+    for (const [, u, v] of grp) {
+      const c0 = Math.floor(u), r0 = Math.floor(v), fu = u - c0, fv = v - r0;
+      for (const [r, c, w] of [[r0, c0, (1 - fu) * (1 - fv)], [r0, c0 + 1, fu * (1 - fv)],
+                               [r0 + 1, c0, (1 - fu) * fv], [r0 + 1, c0 + 1, fu * fv]]) {
+        if (w <= 0 || !inImage(c, r)) continue;
+        const tx = Math.floor(c / tw), ty = Math.floor(r / th);
+        need.set(tx * 65536 + ty, [tx, ty]);
+      }
+    }
+    const tiles = new Map();
+    try {
+      await Promise.all([...need].map(async ([k, [tx, ty]]) => { tiles.set(k, await demTile(h, lv, tx, ty, signal)); }));
+    } catch (e) {
+      if (e && e.name === 'AbortError') throw e;
+      console.warn(`[dem] leitura de tile falhou: ${e.message}`);
+      return;   // como a janela de antes: pontos do grupo ficam null
+    }
+    const px = (c, r) => {
+      if (!inImage(c, r)) return undefined;
+      const t = tiles.get(Math.floor(c / tw) * 65536 + Math.floor(r / th));
+      return t ? t.data[(r - t.y0) * t.w + (c - t.x0)] : undefined;
+    };
+    for (const [i, u, v] of grp) {
+      const z = bilinearAt(px, u, v, h.nodata);
       if (z != null) out[i] = z;
     }
-  } catch (e) {
-    console.warn(`[dem] read window falhou: ${e.message}`);
-  }
+  });
   return out;
 }
-async function sampleSampaDemBatch(points) { return sampleDemHandle(await openSampaDem(), points); }
-async function sampleCustomDemBatch(points) { return sampleDemHandle(_customDem, points); }
 
 // ─── Câmera Topográfica: relevo servido como tiles XYZ ───────────────────────
 // Igual ao sampasimu: elevação na paleta cmocean.phase (cíclica, perceptual)
@@ -12878,6 +13688,18 @@ async function buildCameraTopoFrame() {
 const elevationCache = new Map();
 let elevationDebounceTimer = null;
 let elevationFetchSeq = 0;
+// Geração da FONTE de elevação: só muda quando a fonte muda (toggle de DEM,
+// DEM custom — ver recomputeAfterDemChange). Uma leitura que termina depois de
+// uma edição continua valendo (o ponto é o mesmo); só a troca de fonte a
+// descarta — e aborta as leituras em voo.
+let elevationSourceGen = 0;
+let elevationAbort = new AbortController();
+// ponto → leitura em voo que vai preenchê-lo (uma busca mais nova espera por
+// ela em vez de ler o mesmo ponto de novo).
+const elevationInflight = new Map();
+// Pontos preenchidos por uma fonte PIOR porque a melhor estava fora do ar
+// (rede): voltam a ser lidos quando ela volta (onDemRecovered).
+const elevationProvisional = new Set();
 
 function elevKey(lat, lng) {
   return `${lat.toFixed(5)},${lng.toFixed(5)}`;
@@ -12935,33 +13757,64 @@ function scheduleElevationFetch() {
   }, 400);
 }
 
+// `seq` fica na assinatura por compatibilidade: uma busca superada NÃO joga
+// mais fora o que já leu (o resultado vale pro mesmo ponto) — quem decide se
+// redesenha é o scheduleElevationFetch. Pontos que uma busca anterior ainda
+// está lendo não são pedidos de novo: esta espera a leitura dela terminar.
 async function fetchMissingElevations(path, seq) {
+  const gen = elevationSourceGen;
+  const signal = elevationAbort.signal;
   // Collect unique cache keys we don't have.
   const seen = new Set();
   const missing = [];
+  const waits = new Set();
   for (const [lat, lng] of path) {
     const k = elevKey(lat, lng);
     if (elevationCache.has(k) || seen.has(k)) continue;
     seen.add(k);
+    const pending = elevationInflight.get(k);
+    if (pending) { waits.add(pending); continue; }
     missing.push([lat, lng]);
   }
-  if (missing.length === 0) return;
+  if (missing.length) {
+    const job = sampleElevationChain(missing, gen, signal);
+    const keys = missing.map(([la, lo]) => elevKey(la, lo));
+    for (const k of keys) elevationInflight.set(k, job);
+    job.finally(() => {
+      for (const k of keys) if (elevationInflight.get(k) === job) elevationInflight.delete(k);
+    }).catch(() => {});
+    waits.add(job);
+  }
+  if (waits.size) await Promise.allSettled([...waits]);
+}
 
-  // Cadeia de fontes: DEM de SP (se ligado, alta-res dentro da RMSP) →
-  // FABDEM (se ligado) → Open-Meteo. Cada fonte só recebe o que sobrou null.
+// Cadeia de fontes: DEM custom → DEM de SP (se ligado, alta-res dentro da
+// RMSP) → FABDEM (se ligado) → Open-Meteo. Cada fonte só recebe o que sobrou
+// null. Só a troca de FONTE (gen) cancela; se uma fonte melhor estava fora do
+// ar, o que as seguintes preencherem fica marcado como provisório.
+async function sampleElevationChain(missing, gen, signal) {
+  const stale = () => gen !== elevationSourceGen;
   let stillMissing = missing;
+  let provisional = false;
+  const store = (la, lo, e) => {
+    const k = elevKey(la, lo);
+    elevationCache.set(k, e);
+    if (provisional) elevationProvisional.add(k); else elevationProvisional.delete(k);
+  };
   const drainSource = async (label, sampleFn) => {
     try {
-      const elevs = await sampleFn(stillMissing);
-      if (seq !== elevationFetchSeq) return true; // cancelado: aborta
+      const elevs = await sampleFn(stillMissing, signal);
+      if (stale()) return true; // fonte trocada: descarta
       const remaining = [];
       stillMissing.forEach(([la, lo], i) => {
         const e = elevs[i];
-        if (Number.isFinite(e)) elevationCache.set(elevKey(la, lo), e);
+        if (Number.isFinite(e)) store(la, lo, e);
         else remaining.push([la, lo]);
       });
       stillMissing = remaining;
+      if (elevs.unavailable) provisional = true;
     } catch (err) {
+      if (stale() || (err && err.name === 'AbortError')) return true;
       console.warn(`${label} elevation fetch failed:`, err.message);
     }
     return false;
@@ -12982,21 +13835,23 @@ async function fetchMissingElevations(path, seq) {
   // Open-Meteo (fallback): 1 chamada a cada 100 coords.
   const BATCH = 100;
   for (let i = 0; i < stillMissing.length; i += BATCH) {
-    if (seq !== elevationFetchSeq) return;
+    if (stale()) return;
     const batch = stillMissing.slice(i, i + BATCH);
     const lats = batch.map(([la]) => la.toFixed(5)).join(',');
     const lons = batch.map(([, lo]) => lo.toFixed(5)).join(',');
     const url = `https://api.open-meteo.com/v1/elevation?latitude=${lats}&longitude=${lons}`;
     try {
-      const res = await fetch(url);
+      const res = await fetch(url, { signal });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
+      if (stale()) return;
       const elevs = Array.isArray(data.elevation) ? data.elevation : [];
       batch.forEach(([la, lo], j) => {
         const e = elevs[j];
-        if (Number.isFinite(e)) elevationCache.set(elevKey(la, lo), e);
+        if (Number.isFinite(e)) store(la, lo, e);
       });
     } catch (err) {
+      if (err && err.name === 'AbortError') return;
       console.warn('Open-Meteo elevation fetch failed:', err.message);
       return;
     }
@@ -13687,39 +14542,109 @@ function fillDataSourceInputs() {
   PARAM_CHECKBOXES.useViarioGpkg.checked = params.useViarioGpkg !== false;
   refreshDataSourceStatus();
 }
-// Re-roteia TODOS os segmentos do rascunho atual com o modo/fontes vigentes.
-// Chamado quando algo que afeta a GEOMETRIA roteada muda: o seletor de modo, a
-// rede viária custom, ou os toggles de viário/DEM (no modo energia) — antes
-// essas mudanças só valiam pros próximos waypoints, então uma rota já carregada
-// ignorava as fontes. Sem efeito fora do desenho ou em 'straight' (reta não
-// roteia). Acima do limiar pede confirmação (re-rotear centenas de trechos por
-// energia é pesado); se recusar e `revertModeTo` veio (troca de seletor), volta
-// o modo anterior.
+// Retrato das configurações de DADOS que mudam a geometria roteada. Cada
+// chamada de rerouteCurrentDraft compara com o retrato anterior pra saber o
+// que mudou — os handlers dos toggles/fontes só chamam "re-roteie", e é aqui
+// que se decide QUEM depende da mudança (ver segmentDependsOn). O useFabdem
+// não entra: só vale pra elevação do perfil (o mosaico do roteamento cai no
+// FABDEM de qualquer jeito).
+function routingSettingsNow() {
+  return {
+    dem: `${params.useSampaDem ? 1 : 0}|${+params.demSmoothSigmaM || 0}`,
+    customDem: _customDem,
+    grid: params.nDirs | 0,
+    water: `${params.useWaterMask !== false}|${params.usePortals !== false}`,
+    viario: params.useViarioGpkg !== false,
+    network: _customNetwork,
+  };
+}
+let _routingSnap = routingSettingsNow();
+function routingSettingsChanged() {
+  const now = routingSettingsNow(), prev = _routingSnap;
+  _routingSnap = now;
+  return new Set(Object.keys(now).filter((k) => now[k] !== prev[k]));
+}
+
+// O trecho i (trackpoints[i-1] → trackpoints[i]) depende do que mudou? Só
+// trechos produzidos pelo MODO ATUAL (proveniência path.mode) — ou retas sem
+// proveniência (roteamento que falhou; nada de exato a perder): uma geometria
+// restaurada de GPX ou feita noutro modo não é sobrescrita por um toggle.
+// OSRM (Bicicleta/A pé) não lê nenhuma destas configurações. "Pelo terreno" lê
+// DEM/σ/direções/água/portais. "Pelo viário" lê a fonte do viário (grafo/FGB/
+// rede custom) — e DEM/σ/direções/água/portais SÓ nos trechos fora do grafo
+// pré-cozido (FGB/grid raster).
+function segmentDependsOn(i, changed) {
+  const tp = trackpoints[i], prev = trackpoints[i - 1];
+  const path = tp && tp.pathFromPrev;
+  if (!tp || !prev) return false;
+  const segMode = path && path.mode;
+  if (segMode ? segMode !== routingMode : (path && path.length > 2)) return false;
+  const terrainInputs = ['dem', 'customDem', 'grid', 'water'].some((k) => changed.has(k));
+  if (routingMode === 'energy') return terrainInputs;
+  if (routingMode === 'energy_road') {
+    if (changed.has('viario') || changed.has('network')) return true;
+    if (!terrainInputs) return false;
+    return !!_customNetwork || params.useViarioGpkg === false ||
+      !viarioGraphCovers(prev.marker.getLatLng(), tp.marker.getLatLng());
+  }
+  return false;
+}
+
+// Re-roteia o rascunho atual com o modo/fontes vigentes. Chamado quando algo
+// que afeta a GEOMETRIA roteada muda: o seletor de modo (`revertModeTo` vem —
+// re-roteia TODOS os trechos), a rede viária custom, ou os toggles de
+// viário/DEM/água/grade (só os trechos que dependem da mudança — antes um
+// toggle re-roteava tudo, até no OSRM, onde não tem efeito, e passava por cima
+// de geometria restaurada). Sem efeito fora do desenho ou em 'straight' (reta
+// não roteia). Acima do limiar pede confirmação (re-rotear centenas de trechos
+// por energia é pesado); se recusar e `revertModeTo` veio, volta o modo
+// anterior. Ao terminar entra no histórico (desfazer volta pro traçado de
+// antes).
 const REROUTE_CONFIRM_THRESHOLD = 150;
 async function rerouteCurrentDraft(revertModeTo) {
+  const changed = routingSettingsChanged();   // sempre atualiza o retrato
   if (!drawingMode || routingMode === 'straight' || trackpoints.length < 2) return;
+  const modeSwitch = revertModeTo !== undefined;
   const indices = [];
-  for (let i = 1; i < trackpoints.length; i++) indices.push(i);
+  for (let i = 1; i < trackpoints.length; i++) {
+    if (modeSwitch || segmentDependsOn(i, changed)) indices.push(i);
+  }
+  if (!indices.length) return;
   if (indices.length > REROUTE_CONFIRM_THRESHOLD &&
       !confirm(`Isto vai rotear ${indices.length} trechos pelo modo selecionado e pode demorar bastante. Continuar?`)) {
-    if (revertModeTo !== undefined) {
+    if (modeSwitch) {
       routingMode = revertModeTo;
       traceRoutingMode.value = revertModeTo;
     }
     return;
   }
-  const routeSeq = ++pendingRouteSeq;
   showToast(`Re-roteando ${indices.length} trecho(s)…`, 2500);
+  // Com o roteamento POR SEGMENTO do editor (routeSegmentsBatch: marca os
+  // trechos pendentes, entra no histórico e roteia por referência, sem
+  // invalidar o que está em voo nos outros trechos), é ele que roteia.
+  if (typeof routeSegmentsBatch === 'function') {
+    await routeSegmentsBatch(indices.map((i) => trackpoints[i]));
+    return;
+  }
+  const routeSeq = ++pendingRouteSeq;
   await mapConcurrent(indices, 4, (idx) => refetchPath(idx, routeSeq));
   redrawAndMetrics();
-  scheduleTraceDraftSave();
+  // Superado por outra edição no meio do caminho: ela cuida do histórico.
+  if (routeSeq === pendingRouteSeq && drawingMode) pushHistory();
+  else scheduleTraceDraftSave();
 }
 
 // Trocar a fonte de elevação exige limpar o cache (senão valores já amostrados
 // de outra fonte permaneceriam) e reagendar o fetch — que recalcula o perfil e
-// as métricas. No modo energia o DEM também muda a geometria roteada, então
-// re-roteia o rascunho.
+// as métricas. As leituras em voo da fonte antiga são abortadas (a geração
+// muda). No modo energia o DEM também muda a geometria roteada, então
+// re-roteia o que depende dele.
 function recomputeAfterDemChange() {
+  elevationSourceGen++;
+  elevationAbort.abort();
+  elevationAbort = new AbortController();
+  elevationInflight.clear();
+  elevationProvisional.clear();
   elevationCache.clear();
   scheduleElevationFetch();
   rerouteCurrentDraft();
