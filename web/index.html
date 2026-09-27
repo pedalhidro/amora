@@ -12,7 +12,11 @@
     <!-- maximum-scale=1 + user-scalable=no: o iOS NÃO dá zoom automático ao
          focar um input (font < 16px), o que antes "sumia" com a interface (a
          tela zumia e não voltava). O zoom do MAPA é do Leaflet (JS), então
-         segue funcionando — isto desliga só o zoom do navegador na interface. -->
+         segue funcionando — isto desliga só o zoom do navegador na interface.
+         O Safari ignora esses limites pra PINÇA; quem a segura é o
+         gesturestart do app.js + touch-action nas folhas (pinçar uma folha
+         ampliava a página inteira sem volta). Legibilidade vem do tamanho
+         do texto dos controles, não do zoom da página. -->
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
     <meta name="theme-color" content="#ffffff" />
     <!--
@@ -44,7 +48,11 @@
       object-src 'none';
     " />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <!-- "default" (barra de status opaca, ícones escuros): com
+         "black-translucent" o iOS desenha hora/bateria em BRANCO por cima da
+         topbar branca — invisíveis no app da tela de início. Instalações
+         antigas só pegam a troca ao re-adicionar o atalho. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="Amora" />
     <meta name="mobile-web-app-capable" content="yes" />
     <link rel="manifest" href="manifest.json" />

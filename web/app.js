@@ -160,8 +160,11 @@ function _migratePhotoSourceValue(v) {
 }
 const settings = loadSettings();
 // Migração: fonte de imagens ficava em chave separada — preserva valor antigo.
+// Leituras de localStorage no nível do módulo passam pelo `storage` (try/catch):
+// com o "Bloquear todos os cookies" do Safari o getter LANÇA SecurityError, e
+// um throw aqui abortava o módulo antes do L.map — o app nem subia.
 {
-  const legacy = localStorage.getItem('phidro:photoSource');
+  const legacy = storage.get('phidro:photoSource');
   if (legacy && settings.photoSource === SETTINGS_DEFAULTS.photoSource) {
     settings.photoSource = legacy;
   }
@@ -179,6 +182,28 @@ if (settings.liveLocation) settings.liveLocation.enabled = false;
 // mapa está girado. Os controles de rotação DO PLUGIN ficam desligados — o
 // amora põe os seus (ver setupMapRotation, que explica o porquê de cada um).
 // Sem o plugin carregado, as opções extras são ignoradas e o mapa segue fixo.
+//
+// Pinça na interface: o Safari ignora o user-scalable=no — pinçar uma folha,
+// o overlay transparente de um modal ou a barra de cima dava zoom na PÁGINA
+// inteira, e com a folha fechada o mapa (touch-action:none) engolia todo gesto:
+// a interface ficava ampliada sem volta. gesturestart/gesturechange são os
+// eventos de pinça do WebKit; o zoom do MAPA vem dos pointer/touch events do
+// Leaflet e segue funcionando. (As páginas embutidas nas folhas — galeria,
+// formulários, censo — fazem o mesmo quando estão num iframe.)
+for (const t of ['gesturestart', 'gesturechange']) {
+  document.addEventListener(t, (e) => e.preventDefault(), { passive: false });
+}
+// O <article id="tour-article"> que o backend injeta em /passeio/<slug> (pra
+// crawlers/no-JS) entra no grid do body como uma 3ª linha implícita e espreme
+// o mapa a ~0 px. O Leaflet mede o contêiner UMA vez aqui no L.map: o passeio
+// abria sobre um mapa cinza, sem rota, em zoom 19. Com JS ele sai do fluxo
+// ANTES de criar o mapa (fica no DOM, oculto): passeio com rota abre no modal
+// da rota (_openTourBySlug o remove); sem rota, vira uma folha
+// (showSsrTourArticle).
+{
+  const art = document.getElementById('tour-article');
+  if (art) art.hidden = true;
+}
 const map = L.map('map', {
   zoomControl: true,
   rotate: true,
@@ -186,6 +211,13 @@ const map = L.map('map', {
   shiftKeyRotate: false,
   rotateControl: false,
 }).setView(SP, settings.mapDefaults.startZoom);
+// O Leaflet só re-mede o contêiner no resize da JANELA. Qualquer outra mudança
+// de tamanho do #map (cabeçalho oculto/visível, sidebar, o artigo SSR acima…)
+// deixava o tamanho velho — tiles só na área antiga, fitBounds errado. Um
+// ResizeObserver re-mede sempre (invalidateSize é no-op se nada mudou).
+if (window.ResizeObserver) {
+  new ResizeObserver(() => map.invalidateSize()).observe(map.getContainer());
+}
 
 // ─── Ordem de empilhamento das camadas (z-index por pane) ────────────────────
 // Cada camada de mapa reordenável vive no seu próprio pane, numa faixa de
@@ -1352,12 +1384,13 @@ document.addEventListener('click', (ev) => {
   const me = ev.target.closest?.('.photo-popup button.media-edit[data-hash]');
   if (me) {
     ev.preventDefault();
-    const kind = me.getAttribute('data-kind');
     const hash = me.getAttribute('data-hash');
     const iri = MED_NS + hash;   // IRI opaco (tipo é a classe, não o prefixo)
-    const ifr = document.getElementById('upload-iframe');
-    if (ifr) ifr.src = './upload_images.html?edit=' + encodeURIComponent(iri);
-    if (typeof openUploadModal === 'function') openUploadModal();
+    // openUploadModal navega o iframe pro editor — e PERGUNTA antes se o form
+    // que está lá (ex.: um lote do /subir ainda enviando) avisou pendência.
+    if (typeof openUploadModal === 'function') {
+      openUploadModal('upload_images.html?edit=' + encodeURIComponent(iri));
+    }
     return;
   }
   // Botão "🔍 Ver grande" no popup: fecha o popup e abre a MESMA mídia na
@@ -3420,8 +3453,18 @@ async function saveMediaLists(kind, hash, listIris, pendingNew) {
   return res.json();
 }
 
+// Fecha o editor ESCONDENDO antes de remover: o controlador de acessibilidade
+// dos modais reage ao atributo `hidden` — um remove() direto deixava o modal
+// na pilha dele e o fundo (mapa, barra, popups) inerte até recarregar a página.
+function closeMediaListsEditor() {
+  const modal = document.getElementById('media-lists-editor');
+  if (!modal) return;
+  modal.hidden = true;
+  modal.remove();
+}
+
 function openMediaListsEditor(kind, hash, currentLists) {
-  document.getElementById('media-lists-editor')?.remove();
+  closeMediaListsEditor();
   const modal = document.createElement('div');
   modal.id = 'media-lists-editor';
   modal.className = 'modal media-lists-modal';
@@ -3437,23 +3480,31 @@ function openMediaListsEditor(kind, hash, currentLists) {
     `<div class="modal-content media-lists-content">` +
     `<header><h3>Listas da mídia</h3><button class="close" title="Fechar" aria-label="Fechar">✕</button></header>` +
     `<div class="mle-lists">${rows}</div>` +
-    `<div class="mle-new"><input type="text" id="mle-newname" placeholder="Nova lista (álbum)…" maxlength="60">` +
+    `<div class="mle-new"><input type="text" id="mle-newname" placeholder="Nova lista (álbum)…" maxlength="60" enterkeyhint="done" autocomplete="off">` +
     `<button type="button" id="mle-add" class="mle-btn">+ criar</button></div>` +
     `<div class="mle-actions"><button type="button" id="mle-save" class="mle-save">Salvar</button></div>` +
     `<div id="mle-err" class="mle-err"></div></div>`;
+  const close = closeMediaListsEditor;
+  // Bolinha de fechar visível (o ✕ do cabeçalho é display:none como nos outros
+  // modais) — antes o único jeito de sair era tocar fora.
+  modal.querySelector('.media-lists-content').prepend(makeCloseDot(close));
   document.body.appendChild(modal);
   modal.hidden = false;
-  const close = () => modal.remove();
   modal.querySelector('.close').onclick = close;
   modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
   const pendingNew = [];
-  modal.querySelector('#mle-add').onclick = () => {
-    const inp = modal.querySelector('#mle-newname');
+  const inp = modal.querySelector('#mle-newname');
+  // Cria (ou marca, se já existe) a lista digitada. Usado pelo "+ criar", pelo
+  // Enter do campo e pelo Salvar — antes o Salvar ignorava o nome digitado sem
+  // "+ criar" e ainda mostrava "Listas atualizadas".
+  const addTyped = () => {
     const nm = inp.value.trim();
     if (!nm) return;
     const li = LST_NS + slugifyList(nm);
-    const exists = [...modal.querySelectorAll('.mle-list')].some((c) => c.value === li);
-    if (!exists) {
+    const existing = [...modal.querySelectorAll('.mle-list')].find((c) => c.value === li);
+    if (existing) {
+      existing.checked = true;
+    } else {
       pendingNew.push({ iri: li, name: nm });
       const lab = document.createElement('label');
       lab.className = 'mle-row';
@@ -3464,10 +3515,17 @@ function openMediaListsEditor(kind, hash, currentLists) {
     }
     inp.value = '';
   };
-  modal.querySelector('#mle-save').onclick = async () => {
+  modal.querySelector('#mle-add').onclick = addTyped;
+  inp.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); addTyped(); }
+  });
+  const saveBtn = modal.querySelector('#mle-save');
+  saveBtn.onclick = async () => {
+    addTyped();
     const chosen = [...modal.querySelectorAll('.mle-list:checked')].map((c) => c.value);
     const errBox = modal.querySelector('#mle-err');
     errBox.textContent = 'Salvando…';
+    saveBtn.disabled = true;
     try {
       await saveMediaLists(kind, hash, chosen, pendingNew);
       close();
@@ -3476,6 +3534,7 @@ function openMediaListsEditor(kind, hash, currentLists) {
       else { clipsCatalog = null; loadClipsCatalog().then((clips) => makeClipMarkers(clips)); }
     } catch (e) {
       errBox.textContent = 'Erro: ' + (e.message || e);
+      saveBtn.disabled = false;
     }
   };
 }
@@ -3845,6 +3904,78 @@ function renderUploadChip() {
   chip.querySelector('[data-act="clear"]').onclick = clearUploadedPhotos;
 }
 
+// ─── Estado dos formulários embutidos (contrato phidro-form-state) ─────────
+// Os forms que rodam nas folhas (subir.html, upload_images.html,
+// upload_tour.html) avisam o app a cada mudança — e uma vez no load — com
+// { type: 'phidro-form-state', busy, dirty, label }: `busy` = trabalho em
+// andamento que se perderia (envios, transcodificações, fila), `dirty` = entrada
+// ainda não enviada, `label` = o que se perderia ("3 imagens ainda enviando").
+// O app NÃO fecha nem navega um form com pendência sem perguntar, e nunca
+// limpa/apaga um que está ocupado. O aviso vale só pro DOCUMENTO que o mandou:
+// se o iframe navegou depois (outra página, ou src=''), o estado é velho.
+const _formStates = new Map();   // <iframe> → { doc, busy, dirty, label }
+function _noteFormState(e) {
+  const f = [uploadIframe, tourIframe, censoIframe].find((x) => x && x.contentWindow === e.source);
+  if (!f) return;
+  let doc = null;
+  try { doc = e.source.document; } catch (_) {}
+  _formStates.set(f, {
+    doc,
+    busy: !!e.data.busy,
+    dirty: !!e.data.dirty,
+    label: String(e.data.label || '').slice(0, 160),
+  });
+}
+// Pendência atual do form no iframe `f` ({busy, dirty, label}) — ou null.
+function formPending(f) {
+  const s = f && _formStates.get(f);
+  if (!s || !(s.busy || s.dirty)) return null;
+  let doc = null;
+  try { doc = f.contentDocument; } catch (_) {}
+  return doc && doc === s.doc ? s : null;
+}
+function _formPendingLabel(s) {
+  return s.label || (s.busy ? 'Envio em andamento' : 'Há dados ainda não enviados');
+}
+// Antes de FECHAR a folha. Ocupado: fechar só esconde — o envio segue em
+// segundo plano (e as fotos aparecem no mapa quando chegam). Só com entrada
+// não enviada: fechar descarta.
+function confirmFormClose(f) {
+  const s = formPending(f);
+  if (!s) return true;
+  return window.confirm(s.busy
+    ? `${_formPendingLabel(s)}.\n\nFechar a janela? O envio continua em segundo plano.`
+    : `${_formPendingLabel(s)}.\n\nFechar e descartar o que não foi enviado?`);
+}
+// Antes de NAVEGAR o iframe pra outra página (trocar de form, abrir o editor).
+function confirmFormNavigate(f) {
+  const s = formPending(f);
+  if (!s) return true;
+  return window.confirm(s.busy
+    ? `${_formPendingLabel(s)}.\n\nSair deste formulário cancela o que falta enviar. Continuar?`
+    : `${_formPendingLabel(s)}.\n\nSair deste formulário descarta o que não foi enviado. Continuar?`);
+}
+// Fechar pela bolinha / Esc passa por aqui (ver makeCloseDot mais abaixo):
+// modal → função que fecha com a limpeza e as perguntas certas.
+const _modalClosers = new WeakMap();
+// Toque: o toque na faixa acima de uma folha de FORMULÁRIO não fecha — era o
+// gesto de esconder o teclado e apagava o formulário inteiro. Fecha pela
+// bolinha. No desktop, clicar fora fecha (perguntando se há pendência).
+const _isCoarsePointer = () => window.matchMedia('(pointer: coarse)').matches;
+// Envios que terminam com a folha FECHADA (lote em segundo plano, ou um save
+// feito pelo Censo) também atualizam o mapa — antes só o próximo fechar-a-
+// folha recarregava. Com debounce: um lote de 30 fotos vira um reload só.
+let _bgReloadTimer = 0;
+function scheduleBackgroundReload() {
+  clearTimeout(_bgReloadTimer);
+  _bgReloadTimer = setTimeout(() => {
+    let reload = false;
+    if (_uploadDirty && uploadModal?.hidden) { _uploadDirty = false; reload = true; }
+    if (_tourDirty && tourModal?.hidden) { _tourDirty = false; reload = true; }
+    if (reload) reloadPhotos();
+  }, 2000);
+}
+
 // "Enviar imagens" abre o upload_images.html dentro de um iframe modal:
 // isola o estado da página (CDN imports, Tom Select, etc.) e devolve um
 // uploadModal limpo a cada abertura.
@@ -3853,57 +3984,85 @@ const uploadModal      = document.getElementById('upload-modal');
 const uploadIframe     = document.getElementById('upload-iframe');
 let _uploadDirty = false;   // o form avisou (phidro-media-changed) que salvou/editou algo
 // `page` escolhe o form dentro do MESMO iframe/modal: o completo
-// (upload_images.html, default — menu Ações e ✎ Editar dos popups) ou o
-// simplificado (`subir`, botão ⬆ da barra). Os dois avisam o app por
-// postMessage (phidro-media-changed), então o reload ao fechar é o mesmo.
+// (upload_images.html, default — menu Ações; com ?edit=<iri> é o ✎ Editar dos
+// popups) ou o simplificado (`subir`, botão 📤 da barra). Os dois avisam o app
+// por postMessage (phidro-media-changed), então o reload ao fechar é o mesmo.
 function openUploadModal(page = 'upload_images.html') {
   if (!uploadModal) return;
   closeOtherMobileDialogs('upload');
-  // Lazy-load: só seta o src na 1ª abertura (depois mantém o estado do form).
-  // NB: `iframe.src` (IDL) é truthy mesmo quando o atributo está vazio
-  // (devolve a URL da página pai/`about:blank`). Checamos o atributo cru.
-  // Trocar de form (completo ↔ simplificado) recarrega o iframe — o estado do
-  // outro form se perde, por construção.
-  const cur = uploadIframe.getAttribute('src') || '';
-  const want = './' + page;
-  if (!cur || cur.split('?')[0] !== want) {
-    uploadIframe.src = want;
+  // Lazy-load: só navega o iframe quando a página pedida não é a que ele JÁ
+  // mostra (senão mantém o estado do form). Compara com a página DE FATO
+  // carregada (contentWindow.location, como o Censo), não com o atributo src:
+  // o /subir navega por dentro (✎ editar → upload_images.html?edit=…) e o
+  // atributo ficava velho — o 📤 seguia abrindo o form completo. Sem query
+  // vale só o caminho; com query (✎ Editar), a URL inteira.
+  const want = new URL('./' + page, document.baseURI);
+  const norm = (p) => p.replace(/\.html$/, '');
+  let cur = null;
+  try { cur = uploadIframe.contentWindow?.location || null; } catch (_) {}
+  const curPath = cur && cur.protocol !== 'about:' ? norm(cur.pathname) : '';
+  let shown = curPath;
+  if (curPath !== norm(want.pathname) || (want.search && cur.search !== want.search)) {
+    // Trocar de página descarta o form atual — pergunta se ele avisou
+    // pendência (um lote do /subir ainda enviando, cards não enviados).
+    // Cancelou: mostra o que já está lá.
+    if (confirmFormNavigate(uploadIframe)) {
+      uploadIframe.src = './' + page;
+      shown = norm(want.pathname);
+    }
   }
   uploadModal.hidden = false;
   uploadBtn?.setAttribute('aria-pressed', 'true');
-  subirImagensBtn?.setAttribute('aria-pressed', String(page === 'subir'));
+  subirImagensBtn?.setAttribute('aria-pressed', String(shown === '/subir'));
 }
 function closeUploadModal() {
   if (uploadModal) uploadModal.hidden = true;
   uploadBtn?.setAttribute('aria-pressed', 'false');
   subirImagensBtn?.setAttribute('aria-pressed', 'false');
-  // Pede pro upload_images.html limpar os cards — evita acumular fotos já
-  // enviadas (ou abandonadas) entre uma abertura e outra do modal.
-  try {
-    uploadIframe?.contentWindow?.postMessage({ type: 'phidro-upload-modal-closed' }, window.location.origin);
-  } catch (_) {}
+  // Pede pro form limpar os cards — evita acumular fotos já enviadas (ou
+  // abandonadas) entre uma abertura e outra do modal. NUNCA com envio em
+  // andamento: o lote segue em segundo plano (limpar abortaria transcodificação
+  // e pré-envio).
+  if (!formPending(uploadIframe)?.busy) {
+    try {
+      uploadIframe?.contentWindow?.postMessage({ type: 'phidro-upload-modal-closed' }, window.location.origin);
+    } catch (_) {}
+  }
   // Recarrega o catálogo SÓ se o form avisou que salvou algo
   // (phidro-media-changed): fechar sem enviar não custa mais 4 dumps + um
   // rebuild de todos os marcadores.
   if (_uploadDirty) { _uploadDirty = false; reloadPhotos(); }
 }
+// Fechar pedido pela pessoa (bolinha, Esc, clique fora, 📤 de novo): pergunta
+// antes se o form avisou pendência.
+function requestCloseUploadModal() {
+  if (!uploadModal || uploadModal.hidden) return;
+  if (!confirmFormClose(uploadIframe)) return;
+  closeUploadModal();
+}
+if (uploadModal) _modalClosers.set(uploadModal, requestCloseUploadModal);
 uploadBtn?.addEventListener('click', () => openUploadModal());
-// ⬆ subir imagens (barra): o envio simplificado (/subir) no mesmo modal.
+// 📤 enviar imgs (barra): o envio simplificado (/subir) no mesmo modal.
 const subirImagensBtn = document.getElementById('subir-imagens-btn');
 subirImagensBtn?.addEventListener('click', () => {
   if (uploadModal && !uploadModal.hidden && subirImagensBtn.getAttribute('aria-pressed') === 'true') {
-    closeUploadModal();
+    requestCloseUploadModal();
     return;
   }
   openUploadModal('subir');
 });
-// Clique no overlay (fora do conteúdo) fecha.
+// Clique no overlay (fora do conteúdo) fecha — menos no toque (ver acima).
 uploadModal?.addEventListener('click', (e) => {
-  if (e.target === uploadModal) closeUploadModal();
+  if (e.target !== uploadModal || _isCoarsePointer()) return;
+  requestCloseUploadModal();
 });
-// Esc também fecha.
+// Esc também fecha. preventDefault: o Esc genérico do controlador de
+// acessibilidade não fecha por cima se a pessoa cancelou a pergunta.
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && uploadModal && !uploadModal.hidden) closeUploadModal();
+  if (e.key === 'Escape' && uploadModal && !uploadModal.hidden) {
+    e.preventDefault();
+    requestCloseUploadModal();
+  }
 });
 
 // Cadastro/edição de passeio em iframe — o src é remontado a cada abertura
@@ -3920,26 +4079,50 @@ function openTourModal(tourId) {
     : './upload_tour.html';
   // Título da faixa reflete o modo (criar vs editar).
   const tourTitle = document.getElementById('tour-modal-title');
-  if (tourTitle) tourTitle.textContent = tourId ? 'Editar passeio' : 'Subir passeio';
-  // Forçar reload mesmo quando o ?id é o mesmo: substitui o src.
-  tourIframe.src = src;
+  // Forçar reload mesmo quando o ?id é o mesmo: substitui o src. EXCETO se o
+  // form que ficou lá (folha escondida com save em curso ou dados não
+  // salvos) avisou pendência: o MESMO passeio reabre como está; outro pergunta
+  // antes (Cancelar → mostra o que estava lá).
+  const pending = formPending(tourIframe);
+  let reload = true;
+  if (pending) {
+    let cur = '';
+    try { cur = tourIframe.contentWindow.location.pathname + tourIframe.contentWindow.location.search; } catch (_) {}
+    const want = new URL(src, document.baseURI);
+    reload = cur !== want.pathname + want.search && confirmFormNavigate(tourIframe);
+  }
+  if (reload) {
+    if (tourTitle) tourTitle.textContent = tourId ? 'Editar passeio' : 'Subir passeio';
+    tourIframe.src = src;
+  }
   tourModal.hidden = false;
 }
 function closeTourModal() {
   if (tourModal) tourModal.hidden = true;
-  // Libera o iframe (e seu state) — próxima abertura monta limpo.
-  if (tourIframe) tourIframe.src = '';
+  // Libera o iframe (e seu state) — próxima abertura monta limpo. Menos com um
+  // save em andamento: aí só esconde (apagar o src cancelaria o envio).
+  if (tourIframe && !formPending(tourIframe)?.busy) tourIframe.src = '';
   // Tour criado/editado/deletado (o form avisa via phidro-tour-changed) →
   // recarrega catálogos; fechar sem salvar não recarrega nada. O resumo no
   // route-modal re-fetch'a tours.ttl com no-cache na próxima abertura, então
   // mudanças aparecem sem refresh.
   if (_tourDirty) { _tourDirty = false; reloadPhotos(); }
 }
+function requestCloseTourModal() {
+  if (!tourModal || tourModal.hidden) return;
+  if (!confirmFormClose(tourIframe)) return;
+  closeTourModal();
+}
+if (tourModal) _modalClosers.set(tourModal, requestCloseTourModal);
 tourModal?.addEventListener('click', (e) => {
-  if (e.target === tourModal) closeTourModal();
+  if (e.target !== tourModal || _isCoarsePointer()) return;
+  requestCloseTourModal();
 });
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && tourModal && !tourModal.hidden) closeTourModal();
+  if (e.key === 'Escape' && tourModal && !tourModal.hidden) {
+    e.preventDefault();
+    requestCloseTourModal();
+  }
 });
 
 // Censo em iframe — re-aponta pra censo.html toda vez que abre. Sem isto,
@@ -3964,7 +4147,10 @@ function openCensoModal() {
     // Cross-origin protection — não devia rolar em same-origin, mas seguro.
     needsReset = !censoIframe.getAttribute('src');
   }
-  if (needsReset) censoIframe.src = CENSO_URL;
+  // O Censo navega por dentro pro form de passeio (Editar/Cadastrar): se ele
+  // avisou pendência (phidro-form-state), pergunta antes de voltar pro censo —
+  // Cancelar reabre o form como estava.
+  if (needsReset && confirmFormNavigate(censoIframe)) censoIframe.src = CENSO_URL;
   censoModal.hidden = false;
 }
 function closeCensoModal() {
@@ -3996,8 +4182,11 @@ window.addEventListener('message', (e) => {
       loadClipsCatalog().then((clips) => makeClipMarkers(clips));
       break;
     case 'phidro-gallery-show':   galleryShowMedia(e.data.iri); break;
-    case 'phidro-media-changed':  _uploadDirty = true; break;   // form de upload salvou/editou
-    case 'phidro-tour-changed':   _tourDirty = true; break;     // form de passeio salvou/apagou
+    // Form de upload salvou/editou / form de passeio salvou/apagou: recarrega ao
+    // fechar a folha — ou já, se ela está fechada (lote em segundo plano, Censo).
+    case 'phidro-media-changed':  _uploadDirty = true; scheduleBackgroundReload(); break;
+    case 'phidro-tour-changed':   _tourDirty = true; scheduleBackgroundReload(); break;
+    case 'phidro-form-state':     _noteFormState(e); break;
     default: break;
   }
 });
@@ -4176,21 +4365,33 @@ function makeCloseDot(onClose, title = 'Fechar') {
   return dot;
 }
 
-// Modais: a bolinha dispara o clique-no-overlay (`modal.click()`), reusando o
-// handler de clique-fora que cada modal já tem (e.target === modal → fecha
-// corretamente, com toda a limpeza: reloadPhotos, reset de iframe, aria, etc.).
+// Modais: a bolinha fecha pelo "fechador" registrado do modal (_modalClosers —
+// os de formulário perguntam antes se há pendência) ou, sem registro, dispara
+// o clique-no-overlay (`modal.click()`), reusando o handler de clique-fora que
+// cada modal já tem (e.target === modal → fecha com toda a limpeza:
+// reloadPhotos, reset de iframe, aria, etc.). Entra como 1º FILHO: é o
+// primeiro controle que o leitor de tela encontra (antes vinha depois de todo o
+// conteúdo — ~130 miniaturas num passeio grande) e, no toque, gruda no topo da
+// folha ao rolar (CSS: position sticky).
 for (const content of document.querySelectorAll('.modal > .modal-content')) {
   const modal = content.closest('.modal');
   if (!modal) continue;
-  content.appendChild(makeCloseDot(() => modal.click()));
+  content.prepend(makeCloseDot(() => {
+    const close = _modalClosers.get(modal);
+    if (close) close(); else modal.click();
+  }));
 }
 
-// Bolinha verde de maximizar (estilo macOS) nos modais em iframe: alterna entre
-// janela e tela cheia (classe .maximized no .modal-content), persistido por
-// chave. Usada na galeria e no censo.
+// Bolinha verde de maximizar (estilo macOS) nos modais em iframe e no da rota:
+// alterna entre janela e tela cheia (classe .maximized no .modal-content),
+// persistida por chave — mas só no desktop. No celular (layout de folhas,
+// ≤760px) sempre começa em janela e a escolha NÃO persiste: a verde fica
+// grudada na vermelha, um toque torto maximizava a folha pra sempre, e a
+// galeria já abria maximizada.
 function addMaximizeDot(modalEl, key, defaultOn = false) {
   const content = modalEl?.querySelector('.modal-content');
   if (!content) return;
+  const phone = () => window.matchMedia('(max-width: 760px)').matches;
   const dot = document.createElement('button');
   dot.type = 'button';
   dot.className = 'maximize-dot';
@@ -4199,31 +4400,34 @@ function addMaximizeDot(modalEl, key, defaultOn = false) {
     dot.setAttribute('aria-pressed', String(on));
     dot.title = on ? 'Restaurar' : 'Maximizar';
     dot.setAttribute('aria-label', dot.title);
-    if (persist) { try { localStorage.setItem(key, on ? '1' : '0'); } catch (_) {} }
+    if (persist && !phone()) { try { localStorage.setItem(key, on ? '1' : '0'); } catch (_) {} }
   };
   dot.addEventListener('click', (e) => {
     e.stopPropagation();   // não borbulha pro overlay (que fecharia o modal)
     setMax(!content.classList.contains('maximized'), true);
   });
-  content.appendChild(dot);
-  // Sem preferência salva ainda, usa `defaultOn` (ex.: galeria já maximizada
-  // por padrão no celular); uma vez que a pessoa mexe na bolinha, a escolha
-  // dela persiste e passa a valer sempre.
+  // Logo depois da vermelha (ordem de leitura/Tab: fechar, maximizar, título).
+  const closeDot = content.querySelector(':scope > .close-dot');
+  if (closeDot) closeDot.after(dot); else content.prepend(dot);
+  // Sem preferência salva ainda, usa `defaultOn`; uma vez que a pessoa mexe na
+  // bolinha (no desktop), a escolha dela persiste e passa a valer sempre.
   let saved = defaultOn;
-  try {
-    const stored = localStorage.getItem(key);
-    if (stored !== null) saved = stored === '1';
-  } catch (_) {}
+  if (!phone()) {
+    try {
+      const stored = localStorage.getItem(key);
+      if (stored !== null) saved = stored === '1';
+    } catch (_) {}
+  }
   setMax(saved, false);
 }
-addMaximizeDot(imagensModal, 'phidro:galleryMaximized', window.matchMedia('(max-width: 760px)').matches);
+addMaximizeDot(imagensModal, 'phidro:galleryMaximized');
 addMaximizeDot(censoModal, 'phidro:censoMaximized');
 addMaximizeDot(uploadModal, 'phidro:uploadModalMaximized');
 addMaximizeDot(tourModal, 'phidro:tourModalMaximized');
 
 // Sidebar de Rotas: a bolinha fecha o painel (mesmo caminho do ☰/toggle). Como
 // só é clicável com a sidebar aberta, o toggle sempre fecha.
-document.getElementById('sidebar')?.appendChild(
+document.getElementById('sidebar')?.prepend(
   makeCloseDot(() => toggleRoutesSidebar(), 'Fechar rotas'),
 );
 
@@ -4771,7 +4975,7 @@ function cicloinfraTipFor(p) {
 }
 
 // ─── Custom XYZ / WMS layers ─────────────────────────────────────────────────
-let customXyzUrl = localStorage.getItem('phidro:customXyz') || '';
+let customXyzUrl = storage.get('phidro:customXyz') || '';   // storage: não lança sem cookies
 let customXyzLayer = null;
 let customWmsConfig = (() => {
   try { return JSON.parse(localStorage.getItem('phidro:customWms') || 'null'); }
@@ -6286,8 +6490,11 @@ layerPanel.onAdd = function () {
     //   setas)   col3=ação (☰/📍/✨/✎/⚙/🗑)
     const btns = [];
     if (reorderable) {
-      btns.push('<button type="button" class="layer-move-up btn-up" title="Empilhar acima" aria-label="Empilhar acima">▲</button>');
-      btns.push('<button type="button" class="layer-move-down btn-down" title="Empilhar abaixo" aria-label="Empilhar abaixo">▼</button>');
+      // O nome da camada no rótulo: o leitor de tela lia só "Empilhar acima"
+      // em todas as linhas. (No toque as setas só aparecem no modo ↕ Ordenar.)
+      const nm = escapeHtml(l.label);
+      btns.push(`<button type="button" class="layer-move-up btn-up" title="Empilhar acima" aria-label="Empilhar acima — ${nm}">▲</button>`);
+      btns.push(`<button type="button" class="layer-move-down btn-down" title="Empilhar abaixo" aria-label="Empilhar abaixo — ${nm}">▼</button>`);
     }
     // Ação secundária (col3): filtro de mídias na camada "Imagens contribuídas".
     if (l.id === 'photos')
@@ -6353,6 +6560,20 @@ layerPanel.onAdd = function () {
   for (const id of contentIds()) { const l = byId(id); if (l) rowEls[id] = makeRow(l, false); }
   layoutRows();
 
+  // No toque (CSS, pointer: coarse) as setas ▲▼ ficam escondidas até ligar
+  // "↕ Ordenar": a 2 px do ☰/📍, um toque torto reordenava (e persistia) a
+  // pilha. No mouse o botão não aparece e as setas seguem sempre visíveis.
+  const orderToggle = L.DomUtil.create('button', 'layer-order-toggle', div);
+  orderToggle.type = 'button';
+  orderToggle.textContent = '↕ Ordenar camadas';
+  orderToggle.setAttribute('aria-pressed', 'false');
+  orderToggle.addEventListener('click', () => {
+    const on = !div.classList.contains('is-ordering');
+    div.classList.toggle('is-ordering', on);
+    orderToggle.setAttribute('aria-pressed', String(on));
+    orderToggle.textContent = on ? '✓ Pronto' : '↕ Ordenar camadas';
+  });
+
   // Reset da ordem de empilhamento (substitui o botão "Restaurar padrão" do
   // antigo modal).
   const reset = L.DomUtil.create('button', 'layer-order-reset-inline', div);
@@ -6369,10 +6590,24 @@ layerPanel.onAdd = function () {
   const panelTitle = L.DomUtil.create('div', 'layer-panel-title', div);
   panelTitle.textContent = 'Camadas';
 
+  // "☰ Rotas" de tamanho de dedo na faixa do título (só no toque — CSS): no
+  // celular o ☰ de 18 px da linha "Rotas cadastradas" era o ÚNICO jeito de abrir
+  // a lista de rotas, colado nas setas de reordenar.
+  const routesBtn = L.DomUtil.create('button', 'layer-routes-btn', div);
+  routesBtn.type = 'button';
+  routesBtn.textContent = '☰ Rotas';
+  routesBtn.title = 'Mostrar a lista de rotas';
+  routesBtn.setAttribute('aria-pressed', 'false');
+  routesBtn.addEventListener('click', (e) => {
+    e.preventDefault(); e.stopPropagation();   // senão o clique-fora fecha a sidebar recém-aberta
+    toggleRoutesSidebar();
+  });
+
   // Bolinha de fechar (macOS) no canto do painel — fecha as camadas (mesmo
   // caminho do botão ⧉ Camadas: esconde + persiste). Absolute → não desloca
   // as linhas; a faixa superior reservada no CSS evita colisão com o conteúdo.
-  div.appendChild(makeCloseDot(() => {
+  // 1º filho: primeiro controle pro leitor de tela.
+  div.prepend(makeCloseDot(() => {
     closeOtherMobileDialogs('layers');
     applyLayersVisibility(true);
     try { localStorage.setItem(LAYERS_HIDDEN_KEY, '1'); } catch {}
@@ -6414,6 +6649,18 @@ const LAYERS_AUTO_HIDE_AREA_FRAC = 0.2; // se o painel cobriria >20% da tela, oc
 function applyLayersVisibility(hidden) {
   document.body.classList.toggle('layers-hidden', hidden);
   if (layersBtn) layersBtn.setAttribute('aria-pressed', String(!hidden));
+  syncSheetsInert();
+}
+// Folhas fechadas no celular (Camadas, Rotas) só saem da tela por transform —
+// o VoiceOver seguia lendo ~200 controles invisíveis e o cursor dele sumia
+// abaixo da tela. Fechadas, ficam `inert` (fora da leitura e do Tab). No
+// desktop o CSS já as tira com display:none.
+function syncSheetsInert() {
+  const mobile = window.matchMedia('(max-width: 760px)').matches;
+  const panel = document.querySelector('.layer-panel');
+  if (panel) panel.inert = mobile && document.body.classList.contains('layers-hidden');
+  const sb = document.getElementById('sidebar');
+  if (sb) sb.inert = mobile && !document.body.classList.contains('sidebar-open');
 }
 function defaultLayersHiddenByArea() {
   const el = document.querySelector('.layer-panel');
@@ -6425,7 +6672,7 @@ function defaultLayersHiddenByArea() {
   return panelArea > LAYERS_AUTO_HIDE_AREA_FRAC * viewportArea;
 }
 {
-  const persisted = localStorage.getItem(LAYERS_HIDDEN_KEY);
+  const persisted = storage.get(LAYERS_HIDDEN_KEY);
   const shouldHide = persisted !== null
     ? persisted === '1'
     : defaultLayersHiddenByArea();
@@ -6477,7 +6724,7 @@ function applyHeaderVisibility(hidden) {
     headerToggle.setAttribute('title', hidden ? 'Mostrar cabeçalho' : 'Ocultar cabeçalho');
   }
 }
-applyHeaderVisibility(localStorage.getItem(HEADER_HIDDEN_KEY) === '1');
+applyHeaderVisibility(storage.get(HEADER_HIDDEN_KEY) === '1');
 headerToggle?.addEventListener('click', () => {
   const nowHidden = !document.body.classList.contains('header-hidden');
   applyHeaderVisibility(nowHidden);
@@ -6496,6 +6743,14 @@ const isMobileViewport = () => window.matchMedia('(max-width: 760px)').matches;
 // pedimos pros outros se recolherem. (No desktop é no-op, pra não atrapalhar
 // quem quer ver dois painéis lado a lado.)
 function closeOtherMobileDialogs(except) {
+  // A folha da foto (o popup promovido a modal, anexado no FIM do body, com o
+  // mesmo z-index dos modais) ficava POR CIMA do que se abria pelos links dela
+  // (Passeio, ✎ Editar): o toque parecia não fazer nada. Sai antes — em
+  // qualquer viewport (no desktop estreito o popup também é promovido).
+  if (except !== 'photo') {
+    const pm = document.getElementById('photo-fallback-modal');
+    if (pm && !pm.hidden) closePhotoPreview();
+  }
   if (!isMobileViewport()) return;
   if (except !== 'sidebar' && document.body.classList.contains('sidebar-open')) {
     document.body.classList.remove('sidebar-open');
@@ -6519,7 +6774,9 @@ function closeOtherMobileDialogs(except) {
   }
   if (except !== 'tour' && tourModal && !tourModal.hidden) {
     tourModal.hidden = true;
-    if (tourIframe) tourIframe.src = '';
+    // Só libera o iframe se o form não avisou pendência — senão ele fica lá
+    // (escondido) e o próximo openTourModal pergunta antes de trocar.
+    if (tourIframe && !formPending(tourIframe)) tourIframe.src = '';
   }
   if (except !== 'censo' && censoModal && !censoModal.hidden) {
     censoModal.hidden = true;
@@ -6553,7 +6810,7 @@ function defaultDesktopSidebarHidden() {
   );
 }
 if (!isMobileViewport()) {
-  const persisted = localStorage.getItem(SIDEBAR_HIDDEN_KEY);
+  const persisted = storage.get(SIDEBAR_HIDDEN_KEY);
   const shouldHide = persisted !== null ? persisted === '1' : defaultDesktopSidebarHidden();
   if (shouldHide) {
     document.body.classList.add('sidebar-hidden');
@@ -6628,12 +6885,14 @@ function updateTitleAlignment() {
 updateTitleAlignment();
 
 function updateMenuBtnPressed() {
-  const btn = document.getElementById('routes-panel-toggle');
-  if (!btn) return;
   const visible = isMobileViewport()
     ? document.body.classList.contains('sidebar-open')
     : !document.body.classList.contains('sidebar-hidden');
-  btn.setAttribute('aria-pressed', String(visible));
+  for (const btn of document.querySelectorAll('#routes-panel-toggle, .layer-routes-btn')) {
+    btn.setAttribute('aria-pressed', String(visible));
+  }
+  // Todo abre/fecha da sidebar passa por aqui — mantém o `inert` das folhas.
+  syncSheetsInert();
 }
 
 // ─── PWA: register service worker ────────────────────────────────────────────
@@ -6701,14 +6960,49 @@ function _openTourBySlug(slug) {
     if (tourId !== slug && r.entry?.slug !== slug) continue;
     const canon = document.querySelector('link[rel="canonical"]');
     if (canon) canon.href = `https://amora.pedalhidrografi.co/passeio/${encodeURIComponent(r.entry?.slug || tourId)}`;
-    // O backend injeta um <article> SSR pra crawlers/no-JS; com o modal
-    // aberto ele é redundante — remove. Se o tour NÃO está em routes.json
-    // (sem rota), o article fica como conteúdo de fallback abaixo do mapa.
+    // O backend injeta um <article> SSR pra crawlers/no-JS (já oculto desde o
+    // boot — ver antes do L.map); com o modal aberto ele é redundante —
+    // remove. Se o tour NÃO está em routes.json (sem rota), o article vira uma
+    // folha (showSsrTourArticle). invalidateSize: o mapa re-mede depois da
+    // mudança de layout (o ResizeObserver também cobre).
     document.getElementById('tour-article')?.remove();
+    map.invalidateSize();
     openRouteModal(key);
     return true;
   }
   return false;
+}
+
+// Passeio SEM rota em routes.json (ou routes.json indisponível, ex. offline):
+// o <article> SSR do backend é o conteúdo — abre numa folha por cima do mapa em
+// vez de voltar pro grid do body (onde espremia o mapa). Fechar volta pra raiz,
+// como o modal da rota.
+function showSsrTourArticle() {
+  const art = document.getElementById('tour-article');
+  if (!art) return false;
+  let modal = document.getElementById('tour-article-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'tour-article-modal';
+    modal.className = 'modal tour-article-modal';
+    modal.hidden = true;
+    const content = document.createElement('div');
+    content.className = 'modal-content tour-article-content';
+    const title = art.querySelector('h1')?.textContent || 'Passeio';
+    content.innerHTML = `<header><h2>${escapeHtml(title)}</h2>`
+      + '<button class="close" type="button" aria-label="Fechar">&times;</button></header>';
+    const close = () => { modal.hidden = true; _clearTourUrl(); };
+    content.querySelector('.close').addEventListener('click', close);
+    content.prepend(makeCloseDot(close));
+    art.hidden = false;
+    content.appendChild(art);
+    modal.appendChild(content);
+    modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
+    document.body.appendChild(modal);
+  }
+  closeOtherMobileDialogs('tour-article');
+  modal.hidden = false;
+  return true;
 }
 
 // ── URL legível por passeio (/passeio/<slug>) ─────────────────────────────
@@ -6737,7 +7031,7 @@ function tryOpenTourFromPath() {
   if (!m) return false;
   if (_openTourBySlug(m[1])) return true;
   console.warn(`[tour] deep link /passeio/${m[1]} não encontrado em routes.json`);
-  return false;
+  return showSsrTourArticle();
 }
 
 // Deep link por query: /?tour=<slug> (forma antiga — segue viva; o backend
@@ -14108,6 +14402,29 @@ async function loadGpxIntoEditor(gpxText) {
     pick(); setTimeout(pick, 0); setTimeout(pick, 80);
   };
 
+  // Dica de rolagem nas folhas do celular: o iOS esconde a barra de rolagem até
+  // a pessoa rolar, e o corte da folha (40–70vh) costuma cair ENTRE dois botões
+  // — o ☰ Ações parecia completo sem Ajustes/Ajuda. `.has-more` liga um
+  // "mais ↓" grudado no pé da folha (CSS, só ≤760px) enquanto há conteúdo
+  // abaixo. Folhas de iframe não rolam por fora — ficam de fora.
+  const updateCue = (c) => {
+    c.classList.toggle('has-more', c.scrollHeight - c.scrollTop - c.clientHeight > 8);
+  };
+  const cueRO = window.ResizeObserver
+    ? new ResizeObserver((entries) => { for (const en of entries) updateCue(en.target); })
+    : null;
+  const wireScrollCue = (modal) => {
+    const c = modal.querySelector(':scope > .modal-content');
+    if (!c || c.classList.contains('upload-modal-content')) return;
+    if (!c._cueScroll) {
+      c._cueScroll = true;
+      c.addEventListener('scroll', () => updateCue(c), { passive: true });
+    }
+    cueRO?.observe(c);   // a folha cresce até o teto enquanto o conteúdo chega
+    updateCue(c);
+    setTimeout(() => updateCue(c), 350);
+  };
+
   function onShown(modal) {
     if (openStack.includes(modal)) return;
     modal.setAttribute('role', 'dialog');
@@ -14121,14 +14438,20 @@ async function loadGpxIntoEditor(gpxText) {
       returnFocusEl = document.activeElement;
       document.body.classList.add('modal-open');
       try { map.scrollWheelZoom.disable(); } catch (_) {}
-      inerted = bgEls();
+      // Só o que ainda NÃO estava inerte — e é só isso que volta no fim: a
+      // sidebar fechada no celular é inerte por conta própria (syncSheetsInert)
+      // e não pode "reviver" quando o modal fecha.
+      inerted = bgEls().filter((el) => !el.inert);
       inerted.forEach((el) => { el.inert = true; });
     }
     openStack.push(modal);
     focusModalSoon(modal);
+    wireScrollCue(modal);
   }
 
   function onHidden(modal) {
+    const c = modal.querySelector(':scope > .modal-content');
+    if (c) cueRO?.unobserve(c);
     const i = openStack.indexOf(modal);
     if (i === -1) return;
     openStack.splice(i, 1);
@@ -14142,25 +14465,38 @@ async function loadGpxIntoEditor(gpxText) {
       if (el && document.contains(el)) focusSoon(el);
     } else {
       // Modal aninhado fechou (ex.: QR sobre Salvar): devolve o foco pro modal
-      // que ficou por baixo em vez de largar no <body>.
+      // que ficou por baixo em vez de largar no <body> — num controle de
+      // conteúdo, não nas bolinhas de fechar/maximizar (agora as 1ªs da folha).
       const top = openStack[openStack.length - 1];
       const f = focusablesIn(top);
-      focusSoon(f.find((el) => !el.classList.contains('close')) || f[0]);
+      focusSoon(f.find((el) => !el.matches('.close, .close-dot, .maximize-dot')) || f[0]);
     }
   }
 
   function watch(modal) {
-    new MutationObserver(() => {
-      if (!modal.hidden) onShown(modal); else onHidden(modal);
-    }).observe(modal, { attributes: true, attributeFilter: ['hidden'] });
+    if (!modal._a11yWatched) {
+      modal._a11yWatched = true;
+      new MutationObserver(() => {
+        if (!modal.hidden && modal.isConnected) onShown(modal); else onHidden(modal);
+      }).observe(modal, { attributes: true, attributeFilter: ['hidden'] });
+    }
     if (!modal.hidden) onShown(modal);   // raro: modal já aberto no boot
   }
 
   document.querySelectorAll('.modal').forEach(watch);
   // Modais criados em runtime (ex.: photo-fallback) também entram no esquema.
+  // E um modal ABERTO removido do DOM (remove() sem hidden=true antes) conta
+  // como fechado — senão ficava na pilha e o fundo inteiro seguia inerte (o app
+  // "congelava" até recarregar; era o que o editor de Listas fazia).
   new MutationObserver((muts) => {
-    for (const m of muts) for (const n of m.addedNodes) {
-      if (n.nodeType === 1 && n.classList && n.classList.contains('modal')) watch(n);
+    for (const m of muts) {
+      for (const n of m.addedNodes) {
+        if (n.nodeType === 1 && n.classList && n.classList.contains('modal')) watch(n);
+      }
+      for (const n of m.removedNodes) {
+        // isConnected: um modal só MOVIDO (reanexado) segue aberto.
+        if (n.nodeType === 1 && n.classList && n.classList.contains('modal') && !n.isConnected) onHidden(n);
+      }
     }
   }).observe(document.body, { childList: true });
 
@@ -14184,11 +14520,15 @@ async function loadGpxIntoEditor(gpxText) {
   // existentes fecham o seu antes deste rodar, então aqui ele já sai da lista
   // (sem duplo-fechamento). O guard do modo de edição (ver onMapClickInDrawing)
   // já ignora ESC quando há `.modal:not([hidden])`.
+  // Um listener anterior que já tratou o Esc marca preventDefault (ex.: o form
+  // de envio perguntou "descartar?" e a pessoa cancelou) — aí não fecha por cima.
   document.addEventListener('keydown', (e) => {
-    if (e.key !== 'Escape') return;
+    if (e.key !== 'Escape' || e.defaultPrevented) return;
     const open = document.querySelectorAll('.modal:not([hidden])');
     if (!open.length) return;
     const modal = open[open.length - 1];
+    const closer = _modalClosers.get(modal);
+    if (closer) { e.preventDefault(); closer(); return; }
     const btn = modal.querySelector('.close');
     if (btn) { e.preventDefault(); btn.click(); } else { modal.hidden = true; }
   });
