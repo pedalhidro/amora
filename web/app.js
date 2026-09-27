@@ -1982,12 +1982,14 @@ function nearestMediaMarkerAt(pt, slop = PHOTO_TAP_SLOP_PX) {
 function openMediaMarker(m) {
   m.fire('click', { latlng: m.getLatLng() });
 }
+// Um toque no mapa pra FECHAR um popup não pode abrir o vizinho — nem, pelas
+// faixas de toque das rotas, um passeio (onRouteHitClick). O 'preclick' do
+// mapa corre antes do close do próprio popup.
+let _popupOpenAtPreclick = false;
+map.on('preclick', () => { _popupOpenAtPreclick = !!(map._popup && map.hasLayer(map._popup)); });
 {
-  // Um toque no mapa pra FECHAR um popup não pode abrir o vizinho.
-  let popupWasOpen = false;
-  map.on('preclick', () => { popupWasOpen = !!(map._popup && map.hasLayer(map._popup)); });
   map.on('click', (e) => {
-    if (!COARSE_POINTER || popupWasOpen || drawingMode) return;
+    if (!COARSE_POINTER || _popupOpenAtPreclick || drawingMode) return;
     const t = e.originalEvent?.target;
     if (t?.closest?.('.leaflet-marker-icon, .leaflet-popup, .leaflet-control')) return;
     const m = nearestMediaMarkerAt(e.containerPoint);
@@ -4863,9 +4865,16 @@ window.addEventListener('message', (e) => {
     case 'phidro-gallery-reload': reloadPhotos(); break;
     case 'phidro-gallery-show':   galleryShowMedia(e.data.iri); break;
     // Form de upload salvou/editou / form de passeio salvou/apagou: recarrega ao
-    // fechar a folha — ou já, se ela está fechada (lote em segundo plano, Censo).
-    case 'phidro-media-changed':  _uploadDirty = true; scheduleBackgroundReload(); break;
-    case 'phidro-tour-changed':   _tourDirty = true; scheduleBackgroundReload(); break;
+    // fechar a folha — ou já, se ela está fechada (lote em segundo plano).
+    // Save feito DENTRO do Censo: quem recarrega é o fechar do Censo
+    // (_censoDirty) — daqui sairia um 2º reload do catálogo inteiro, com o
+    // Censo ainda cobrindo o mapa.
+    case 'phidro-media-changed':
+      if (censoIframe && e.source === censoIframe.contentWindow) break;
+      _uploadDirty = true; scheduleBackgroundReload(); break;
+    case 'phidro-tour-changed':
+      if (censoIframe && e.source === censoIframe.contentWindow) break;
+      _tourDirty = true; scheduleBackgroundReload(); break;
     case 'phidro-form-state':     _noteFormState(e); break;
     default: break;
   }
@@ -6638,6 +6647,7 @@ let _liveCursor = 0;           // `now` do servidor no último poll aplicado
 let _livePollFails = 0;        // falhas seguidas (backoff + chip "sem conexão")
 let _livePollIdle = 0;         // polls seguidos sem mais ninguém transmitindo
 let _livePollOkAt = 0;         // Date.now() do último poll bem-sucedido
+let _liveNoEndpoint = false;   // 404/405: servidor sem o endpoint (host estático) — não é "sem conexão"
 
 function livePollDelay() {
   const base = Math.max(1500, settings.liveLocation?.pollMs || 4000);
@@ -6664,6 +6674,7 @@ async function pollLivePositions() {
   let ok = false;
   try {
     const r = await fetch(liveApiUrl('/live-locations?since=' + since), { cache: 'no-store', signal: ctl.signal });
+    _liveNoEndpoint = r.status === 404 || r.status === 405;
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const data = await r.json();
     if (gen === _livePollGen) ok = applyLiveResponse(data);
@@ -6744,7 +6755,11 @@ function renderLiveChip() {
     msg = '📍 O app está sem permissão de localização.';
     acts.push(['settings', 'Abrir ajustes'], ['dismiss', '✕', 'Dispensar']);
   } else {
-    const recvDown = _liveViewing && _livePollFails > 0;
+    // "Sem conexão" só quando há o que ficar velho (gente no mapa, ou eu
+    // transmitindo) — o ver vem ligado por padrão e, sem ninguém ao vivo, o
+    // chip só cobria o pé do mapa em 4G ruim. Endpoint ausente não é conexão.
+    const recvDown = _liveViewing && _livePollFails > 0 && !_liveNoEndpoint &&
+      (_personMarkers.size > 0 || _liveSharing);
     const pending = _liveSharing && _livePostFails > 0 ? _liveOutbox.length : 0;
     if (recvDown || pending) {
       const parts = [];
@@ -8217,6 +8232,11 @@ const ROUTE_HIT_WEIGHT = window.matchMedia?.('(pointer: coarse)').matches ? 22 :
 function onRouteHitClick(key, e) {
   // No Traçar o clique segue pro mapa (onMapClickInDrawing adiciona o ponto).
   if (drawingMode) return;
+  // Toque pra DISPENSAR (popup aberto no toque, busca de endereço aberta):
+  // segue pro mapa, cujos handlers fecham o que estiver aberto — no celular
+  // as faixas cobrem mais da metade do mapa, e esse toque abria um passeio
+  // de brinde por cima.
+  if ((COARSE_POINTER && _popupOpenAtPreclick) || (geoSearchPanel && !geoSearchPanel.hidden)) return;
   // Fotos costumam estar EM CIMA da rota: um toque que errou o dot por pouco
   // abre a foto, não o passeio (os dots encolhem a 16–23 px).
   const near = nearestMediaMarkerAt(e.containerPoint);
@@ -13303,6 +13323,10 @@ function openCogHandle(url, label) {
 }
 
 function noteDemDegraded(label, permanent) {
+  // Um aviso COM ação na tela (o "↺ Restaurar" depois de abrir um link/GPX)
+  // não é atropelado — este volta na próxima leitura degradada (≤ 30 s).
+  const t = document.getElementById('toast');
+  if (t && !t.hidden && !t.classList.contains('fade') && t.querySelector('.toast-action')) return;
   const now = Date.now();
   if (now - (_demToastAt.get(label) || 0) < 60 * 1000) return;
   _demToastAt.set(label, now);
