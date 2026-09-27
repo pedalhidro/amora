@@ -505,7 +505,10 @@ Key flows:
     blocks hit the network, as contiguous runs, deduped across parallel
     requests (`fgbInflight`). The file's ETag is IN THE KEY (generations
     never mix), revalidated every 24 h with a 1-byte range (changed → old
-    blocks purged); offline it keeps serving the known version. FIFO budget
+    blocks purged; with a stale meta a read waits at most 2.5 s for that
+    revalidation, then serves the disk blocks — weak 4G used to hang the
+    first read ~60 s; a failed revalidation retries after 5 min); offline it
+    keeps serving the known version. FIFO budget
     of 4096 blocks (256 MB). The cache name is NOT versioned and is exempt
     from the activate cleanup — don't fold it into `VERSION`, or every deploy
     drops tens of MB of viário. Any failure falls back to plain network.
@@ -1152,7 +1155,50 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
   won't reach users. It's a monotonic `phidro-vN` integer counter; just
   increment. For user-visible changes, also add an entry to the collapsed
   changelog `<details class="help-changelog">` at the top of the Ajuda
-  modal in `index.html` (dated, keyed to the new vN).
+  modal in `index.html` (dated, keyed to the new vN). Since v416 this is
+  STRICT: shell and pages are served cache-first from the version's precache.
+- **Service worker = one precache per deploy (v416).** Every file that
+  `index.html`/`app.js` loads at boot goes in `SHELL_ASSETS` — ONE atomic
+  `cache.addAll` (`{cache:'no-cache'}`: fresh but 304 when unchanged), so a
+  404 there blocks everyone's update (the old SW keeps control with its
+  complete set). Iframe pages and their libs go in `PAGE_ASSETS`
+  (best-effort). No `?v=` anywhere — `VERSION` is the only version
+  mechanism; code is cache-first, so HTML and JS of two deploys never mix. A
+  query-versioned import (`media-pipeline.js?api=N`) falls back offline to
+  the precached copy without the query. Navigations to `/`, `/index.html`,
+  `/passeio/<slug>` (the app opens tours from the path — the SSR only reaches
+  crawlers and clients without a SW), `/imagens/lista/…`, `/pessoas/<slug>`,
+  `/subir` and the iframe pages come from the precache; `?format=` bypasses
+  the SW. Unversioned caches (`KEEP_CACHES`; anything else is DELETED on
+  activate — don't add a page-side Cache Storage): `phidro-data-v1`
+  (network-first racing a 3.5 s timer — the cached copy wins on weak 4G and
+  the network updates it in the background; `data_graphs.ttl` is SWR),
+  `phidro-media-v1` (photo/clip `thumb.jpg`, refetched in CORS through the
+  302, FIFO 3000; `large.jpg` goes to the network and falls back to the
+  thumb offline; `original.*`, clip video/audio and `tour_assets/` are never
+  cached), `phidro-tiles-v1` (only layers with `crossOrigin: ''` on hosts that
+  ALWAYS send ACAO — osm, satellite, rmsampa, mtpi*, 1850; not sara1930, whose
+  WMS only sends it with an Origin), `phidro-cdn-v1`, `phidro-graph-v1` (the
+  baked viário graph, cache-first, HEAD-revalidated ≤ 1×/24 h, one shared
+  in-flight GET) and the FGB block cache. Install copies data/graph/CDN
+  entries from the old versioned caches; opaque responses are never cached.
+  Updates: skipWaiting + clients.claim, `registration.update()` when the page
+  becomes visible (throttled 15 min), and `watchSwUpdates` shows "Nova versão
+  do amora disponível — ↻ Atualizar" (asks first if a form is busy/dirty).
+  Clients without a SW still get JS/CSS up to 4 h stale: Cloudflare's Browser
+  Cache TTL rewrites the origin's `no-cache` to `max-age=14400` ("Respect
+  Existing Headers" there would fix it). routes.json with no cached copy and
+  no network shows "↻ Tentar de novo" (sidebar + banner, `showActionToast`)
+  and retries by itself on `online`.
+- **Media blob Cache-Control (`storage.blob_cache_control`).** Photo
+  `thumb`/`large` (content-addressed by pHash): 1 year immutable; `original.*`
+  keeps the short default (it carries the EXIF/GPS, and a privacy delete must
+  not stay servable from Google's edge cache for a year); clips (keyed by the
+  SOURCE vHash — a re-upload with another trim rewrites them): 1 day. Applied
+  to new GCS writes and to local-mode Flask responses; objects written before
+  keep 1 h until a `gcloud storage objects update --cache-control`. The
+  `/photos` and `/clips` 302 itself is `public, max-age=2592000, immutable`
+  (30 days): moving buckets means keeping the old one readable that long.
 - **Compression + ETags are load-bearing.** The backend uses
   `flask-compress` (best-effort import; `COMPRESS_STREAMS = True` is
   required or `send_from_directory` responses — app.js, style.css — go out
