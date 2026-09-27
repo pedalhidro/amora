@@ -3294,6 +3294,23 @@ def get_tour_asset(p):
     abort(404)
 
 
+# O 302 de /photos e /clips pro bucket PODE ficar em cache: o destino é função
+# só da chave (a URL pública do objeto). Sem Cache-Control ele era incacheável
+# (RFC 9111 não cacheia 302 por heurística) — cada boot pagava ~600 idas ao
+# Cloud Run só pros marcadores, e a Cloudflare dava BYPASS. 30 dias e não 1 ano
+# porque a única coisa que muda o destino é trocar o bucket (migração pro R2,
+# p.ex.): mantenha o antigo legível por 30 dias depois de repontar. O conteúdo
+# em si segue o Cache-Control do objeto (storage.blob_cache_control).
+BLOB_REDIRECT_CACHE = "public, max-age=2592000, immutable"
+from storage import blob_cache_control  # noqa: E402 — política única com o GCS
+
+
+def _blob_redirect(url):
+    resp = redirect(url, code=302)
+    resp.headers["Cache-Control"] = BLOB_REDIRECT_CACHE
+    return resp
+
+
 @app.get("/photos/<path:p>")
 def get_photo(p):
     key = f"photos/{p}"
@@ -3301,11 +3318,11 @@ def get_photo(p):
     # que streamar via Flask. Local store retorna None e cai no fallback.
     url = STORE.public_url(key)
     if url:
-        return redirect(url, code=302)
+        return _blob_redirect(url)
     # Fallback: serve diretamente do filesystem (modo local).
     if (WEB / "photos" / p).is_file():
         resp = send_from_directory(WEB / "photos", p)
-        resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        resp.headers["Cache-Control"] = blob_cache_control(key)
         return resp
     abort(404)
 
@@ -3320,10 +3337,12 @@ def get_clip(p):
     key = f"clips/{p}"
     url = STORE.public_url(key)
     if url:
-        return redirect(url, code=302)
+        return _blob_redirect(url)
     if (WEB / "clips" / p).is_file():
         resp = send_from_directory(WEB / "clips", p)
-        resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        # Mesmo Cache-Control do objeto no bucket (1 dia: excluir e reenviar
+        # com outro recorte reescreve a chave — ver storage.blob_cache_control).
+        resp.headers["Cache-Control"] = blob_cache_control(key) or "no-cache"
         return resp
     abort(404)
 

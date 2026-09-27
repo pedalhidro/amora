@@ -36,6 +36,24 @@ import tempfile
 from pathlib import Path
 
 
+def blob_cache_control(key: str) -> str | None:
+    """Cache-Control dos blobs de mídia — os objetos do bucket (servidos direto
+    dele via 302) e, em modo local, a resposta do Flask. None = default do
+    store (1 h no GCS) — catálogos, artes de passeio e cards OG são mutáveis.
+
+    Foto é endereçada pelo pHash da própria imagem: o conteúdo de uma chave não
+    muda → 1 ano, immutable (antes: 1 h, e cada boot revalidava centenas de
+    miniaturas). Clipe é endereçado pelo vHash da FONTE e o recorte é escolhido
+    no envio — excluir e reenviar o mesmo vídeo com outro recorte reescreve as
+    mesmas chaves — então 1 dia. Os marcadores de pré-envio
+    (clips/_staging/<vhash>) ficam no default."""
+    if key.startswith("photos/"):
+        return "public, max-age=31536000, immutable"
+    if key.startswith("clips/") and not key.startswith("clips/_staging/"):
+        return "public, max-age=86400"
+    return None
+
+
 class StateStore:
     def read_text(self, key: str) -> str | None:
         raise NotImplementedError
@@ -213,6 +231,12 @@ class GCSStateStore(StateStore):
 
     def write_bytes(self, key, data, content_type=None):
         blob = self._bucket.blob(key)
+        # Metadado do objeto: vale pra quem baixa direto do bucket (o 302 de
+        # /photos e /clips). Objetos gravados antes disto seguem no default de
+        # 1 h até um `gcloud storage objects update --cache-control=…`.
+        cache_control = blob_cache_control(key)
+        if cache_control:
+            blob.cache_control = cache_control
         blob.upload_from_string(
             data, content_type=content_type or self._ct_for(key)
         )
