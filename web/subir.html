@@ -282,7 +282,8 @@ import {
   tryExtractVideoGps, tryExtractVideoCreationDate, videoFirstFrameBlob,
   probeVideoDuration, processClipFile, isAbortError, makeLimiter,
   scaledJpeg, compressToTargetLean, copyExifSegmentFromHead,
-} from './lib/media-pipeline.js?api=2';
+  clipFileName, blessMediaForGesture,
+} from './lib/media-pipeline.js?api=3';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -929,12 +930,14 @@ function buildVideoTtl(item, author, result) {
   const own = [
     `dcterms:license <${LICENSE}>`,
     `schema:duration "${isoDur}"^^xsd:duration`,
-    `ph:audio "${vid}.audio.webm"`,
+    // Nome pelo contêiner REAL do blob (.webm | .m4a/.mp4 onde o navegador só
+    // grava MP4) — o mesmo que o FormData manda em postVideo.
+    `ph:audio "${clipFileName(vid, 'audio', result.audio)}"`,
     `schema:thumbnail "${vid}.thumb.jpg"`,
-    `ph:video360p "${vid}.360p.webm"`,
+    `ph:video360p "${clipFileName(vid, '360p', result.blob360)}"`,
   ];
   const res = ['"audio"', '"360p"'];
-  if (result.blob720) { own.push(`ph:video720p "${vid}.720p.webm"`); res.push('"720p"'); }
+  if (result.blob720) { own.push(`ph:video720p "${clipFileName(vid, '720p', result.blob720)}"`); res.push('"720p"'); }
   own.push(`ph:availableResolution ${res.join(', ')}`);
   return assembleTtl(item, id, `a ph:MotionImage${hasGeo ? ', ph:GeoreferencedImage' : ''}`, [...own, ...props], derived, author);
 }
@@ -1163,11 +1166,11 @@ async function postVideo(item) {
   const fd = new FormData();
   fd.append('ttl', buildVideoTtl(item, item.author, result));
   fd.append('id', vid);
-  fd.append('audio', result.audio, `${vid}.audio.webm`);
+  fd.append('audio', result.audio, clipFileName(vid, 'audio', result.audio));
   const thumb = result.thumb || item.thumbBlob;
   if (thumb) { fd.append('thumb', thumb, `${vid}.thumb.jpg`); item.thumbBlob = thumb; }
-  if (result.blob360) fd.append('video360', result.blob360, `${vid}.360p.webm`);
-  if (result.blob720) fd.append('video720', result.blob720, `${vid}.720p.webm`);
+  if (result.blob360) fd.append('video360', result.blob360, clipFileName(vid, '360p', result.blob360));
+  if (result.blob720) fd.append('video720', result.blob720, clipFileName(vid, '720p', result.blob720));
   const bytes = [result.audio, thumb, result.blob360, result.blob720].reduce((s, b) => s + (b?.size || 0), 0);
   const r = await postMedia(item, './upload-video', fd, bytes);
   if (r === 'ok') {
@@ -1721,6 +1724,11 @@ function handlePickedFiles(files) {
   }
 }
 
+// Safari no Mac (o iOS aqui só aceita fotos): a conversão pelo MediaRecorder
+// precisa de <video>/AudioContext liberados num TOQUE, e o 'change' do seletor
+// não conta como gesto — o clique em "Escolher imagens" conta. No-op fora do
+// WebKit (ver blessMediaForGesture no pipeline).
+$('#picker').addEventListener('click', () => { if (!IS_IOS) blessMediaForGesture(3); });
 // Listener real (o provisório do <script> clássico desliga ao ver
 // _phidroEarlyPicks = null) + seleções feitas antes do módulo subir.
 $('#files').addEventListener('change', (e) => {
