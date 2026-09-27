@@ -3094,6 +3094,18 @@ body.trace-preview .tp-label { display: none !important; }
 }
 .live-ctrl .lc-reset:hover { border-color: var(--accent); color: var(--accent); }
 
+/* Chip de estado ao vivo ("sem conexão", fila de envio, retomar, permissão) —
+   mesmo .map-chip dos outros, empilhado acima deles (filtro 52 px, envio 92 px). */
+#live-status-chip { bottom: 132px; max-width: calc(100% - 24px); flex-wrap: wrap; row-gap: 6px; }
+#live-status-chip > span { flex: 1 1 auto; min-width: 0; }
+@media (pointer: coarse) {
+  #live-status-chip button { height: 36px; padding: 0 14px; border-radius: 18px; }
+}
+/* "Mostrar minha localização" sem fix recente (túnel, prédio, copa de árvore):
+   o ponto azul e o círculo esmaecem até o GPS voltar, em vez de sumir. */
+.locate-no-fix .leaflet-control-locate-location,
+.locate-no-fix .leaflet-control-locate-circle { opacity: 0.4; }
+
 /* Modal "Subir" — atalho pra enviar mídia ou cadastrar passeio. */
 .subir-modal-content { width: min(320px, 92vw); }
 .subir-modal-body { padding: 16px; display: flex; flex-direction: column; gap: 10px; }
@@ -3121,6 +3133,10 @@ body.trace-preview .tp-label { display: none !important; }
 .share-name-body .ttl-fields { display: inline-flex; align-items: center; gap: 4px; justify-self: end; }
 .share-name-body .ttl-fields input[type="number"] { width: 48px; text-align: right; }
 .share-name-body .ttl-sep { color: var(--muted); font-size: 12px; }
+/* .settings-row é display:grid — sem isto o [hidden] (aviso/opção só do
+   navegador ou só do app) não esconderia nada. */
+.share-name-body [hidden] { display: none; }
+.share-name-body .share-name-note { font-size: 12px; line-height: 1.4; }
 .share-name-body .settings-actions { display: flex; justify-content: flex-end; margin-top: 2px; }
 .share-name-body #share-name-confirm {
   background: var(--accent); color: #fff; border: none;

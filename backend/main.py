@@ -262,13 +262,22 @@ def serialized(fn):
 # per-process, depende de --workers 1 / 1 instância (mesma premissa do
 # _state_lock); em multi-instância as posições se fragmentariam. Tem lock
 # próprio (leve) em vez do _state_lock pra não competir com os uploads.
-_live_positions = {}            # token -> {name, lat, lng, ts, accuracy?, heading?, trail}
+_live_positions = {}            # token -> {name, lat, lng, ts, ttl, accuracy?, heading?, trail}
 _live_positions_lock = threading.Lock()
 LIVE_TRAIL_S = 3 * 3600         # janela de visibilidade/rastro: 3h
 LIVE_TRAIL_MIN_GAP_S = 8        # thinning: tempo mínimo entre pontos guardados (s)
 LIVE_TRAIL_MIN_MOVE_M = 12      # thinning: distância mínima entre pontos guardados (m)
 LIVE_TRAIL_MAX_POINTS = 500     # teto de pontos de rastro por pessoa (memória)
 LIVE_MAX_PEERS = 500            # teto defensivo de participantes
+# Leitura incremental (GET /live-locations?since=<cursor>): cada ponto de
+# rastro guarda, além do instante do FIX (`ts`, que pode ser retrodatado — o
+# cliente reenvia os fixes que ficaram na fila sem conexão), o instante em que o
+# servidor o RECEBEU (`rt`). O cursor compara com `rt`: um fix retrodatado que
+# chega depois do último poll de alguém ainda aparece no delta dessa pessoa.
+LIVE_RESP_MAX_POINTS = 200      # teto de pontos por pessoa numa resposta ?since=
+LIVE_RESP_SIMPLIFY_M = 4        # tolerância (m) do Douglas-Peucker nessas respostas
+LIVE_POST_MAX_POINTS = 240      # teto de fixes enfileirados aceitos num POST
+_live_clock = 0.0               # último instante emitido por _live_now()
 
 # CORS restrito aos endpoints /live-* — o app rodando dentro do shell nativo
 # (Capacitor: capacitor://localhost / https://localhost) bate aqui cross-origin
@@ -294,6 +303,87 @@ def _prune_live(now):
             p["trail"] = [pt for pt in tr if pt[2] > cutoff]
     for t in dead:
         del _live_positions[t]
+
+
+def _live_now():
+    """Relógio do subsistema ao vivo: time.time(), mas ESTRITAMENTE crescente
+    entre chamadas. Chamar sob _live_positions_lock — é o que ordena os POSTs
+    e os GETs: todo ponto recebido depois de um GET tem `rt` maior que o `now`
+    que esse GET devolveu como cursor, e todo ponto anterior, menor. Assim o
+    `?since=` não perde nem repete ponto (nem com o relógio voltando)."""
+    global _live_clock
+    t = time.time()
+    if t <= _live_clock:
+        t = _live_clock + 1e-6
+    _live_clock = t
+    return t
+
+
+def _live_simplify(pts, tol_m=LIVE_RESP_SIMPLIFY_M, max_n=LIVE_RESP_MAX_POINTS):
+    """Emagrece um rastro [[lat, lng, …], …] pra resposta: Douglas-Peucker com
+    tolerância em metros (projeção equiretangular local — o rastro cabe numa
+    cidade) e, se ainda passar de max_n, amostragem uniforme. Mantém sempre o
+    primeiro e o último ponto. Não muda o que fica guardado em memória."""
+    n = len(pts)
+    if n <= 2:
+        return list(pts)
+    lat0, lng0 = pts[0][0], pts[0][1]
+    kx = 111320.0 * math.cos(math.radians(lat0))
+    xy = [((p[1] - lng0) * kx, (p[0] - lat0) * 110540.0) for p in pts]
+    keep = [False] * n
+    keep[0] = keep[-1] = True
+    tol2 = tol_m * tol_m
+    stack = [(0, n - 1)]
+    while stack:
+        a, b = stack.pop()
+        if b - a < 2:
+            continue
+        ax, ay = xy[a]
+        dx, dy = xy[b][0] - ax, xy[b][1] - ay
+        l2 = dx * dx + dy * dy
+        best, bi = -1.0, a
+        for i in range(a + 1, b):
+            px, py = xy[i][0] - ax, xy[i][1] - ay
+            u = (px * dx + py * dy) / l2 if l2 else 0.0
+            u = 0.0 if u < 0 else (1.0 if u > 1 else u)
+            ex, ey = px - u * dx, py - u * dy
+            d2 = ex * ex + ey * ey
+            if d2 > best:
+                best, bi = d2, i
+        if best > tol2:
+            keep[bi] = True
+            stack.append((a, bi))
+            stack.append((bi, b))
+    out = [p for p, k in zip(pts, keep) if k]
+    if len(out) > max_n:
+        step = (len(out) - 1) / (max_n - 1)
+        out = [out[round(i * step)] for i in range(max_n)]
+    return out
+
+
+def _live_fix(d):
+    """Valida um fix do corpo do POST → (lat, lng, accuracy|None,
+    heading|None, age_s). ValueError com a mensagem da resposta 400."""
+    if not isinstance(d, dict):
+        raise ValueError("lat/lng inválidos")
+    try:
+        lat = float(d.get("lat"))
+        lng = float(d.get("lng"))
+    except (TypeError, ValueError):
+        raise ValueError("lat/lng inválidos")
+    if not (math.isfinite(lat) and math.isfinite(lng)) or \
+            not (-90 <= lat <= 90 and -180 <= lng <= 180):
+        raise ValueError("lat/lng fora de faixa")
+    opt = {}
+    for k in ("accuracy", "heading", "age"):
+        try:
+            v = d.get(k)
+            if v is not None and math.isfinite(float(v)):
+                opt[k] = float(v)
+        except (TypeError, ValueError):
+            pass
+    return (lat, lng, opt.get("accuracy"), opt.get("heading"),
+            max(0.0, opt.get("age", 0.0)))
 
 
 def _valid_live_token(t):
@@ -324,7 +414,12 @@ def _live_cors(resp):
 def post_live_location():
     """Atualiza a posição ao vivo de um participante e acumula o rastro (3h).
     Efêmero, sem o lock de estado pesado. Body JSON:
-    {id, name?, lat, lng, accuracy?, heading?}."""
+    {id, name?, lat, lng, accuracy?, heading?, age?, ttl?, points?}.
+    `age` = há quantos segundos o fix foi obtido (default 0). `points` = fixes
+    MAIS ANTIGOS que ficaram na fila do cliente enquanto ele estava sem conexão,
+    cada um {lat, lng, accuracy?, heading?, age}: entram no rastro,
+    retrodatados e em ordem, antes do fix principal (que vira a posição atual).
+    Clientes antigos mandam só o fix principal — mesmo comportamento de antes."""
     if request.method == "OPTIONS":
         return ("", 204)
     data = request.get_json(silent=True) or {}
@@ -332,23 +427,9 @@ def post_live_location():
     if not _valid_live_token(token):
         return jsonify(error="id inválido"), 400
     try:
-        lat = float(data.get("lat"))
-        lng = float(data.get("lng"))
-    except (TypeError, ValueError):
-        return jsonify(error="lat/lng inválidos"), 400
-    if not (math.isfinite(lat) and math.isfinite(lng)) or \
-            not (-90 <= lat <= 90 and -180 <= lng <= 180):
-        return jsonify(error="lat/lng fora de faixa"), 400
-    now = time.time()
-    head = {"name": str(data.get("name") or "").strip()[:40],
-            "lat": lat, "lng": lng, "ts": now}
-    for k in ("accuracy", "heading"):
-        try:
-            v = data.get(k)
-            if v is not None and math.isfinite(float(v)):
-                head[k] = float(v)
-        except (TypeError, ValueError):
-            pass
+        main_fix = _live_fix(data)
+    except ValueError as e:
+        return jsonify(error=str(e)), 400
     # Retenção escolhida por quem compartilha (segundos): por quanto tempo o
     # servidor guarda o rastro deste token. Default 3h, teto defensivo de 24h.
     ttl = LIVE_TRAIL_S
@@ -358,30 +439,57 @@ def post_live_location():
             ttl = int(max(60, min(24 * 3600, float(v))))
     except (TypeError, ValueError):
         pass
-    head["ttl"] = ttl
+    queued = []
+    raw = data.get("points")
+    if isinstance(raw, list):
+        for d in raw[-LIVE_POST_MAX_POINTS:]:
+            try:
+                f = _live_fix(d)
+            except ValueError:
+                continue
+            if f[4] < ttl:          # fora da janela: seria podado na hora
+                queued.append(f)
+    queued.sort(key=lambda f: -f[4])          # mais antigo (maior age) primeiro
+    fixes = queued + [main_fix]
+    name = str(data.get("name") or "").strip()[:40]
     from rwgps import haversine_meters   # cacheado em sys.modules; boot barato
     with _live_positions_lock:
+        now = _live_now()           # sob o lock: ordena este POST contra os GETs
         _prune_live(now)
         prev = _live_positions.get(token)
         if prev is None and len(_live_positions) >= LIVE_MAX_PEERS:
             return jsonify(error="muitos participantes ao vivo"), 503
         trail = prev["trail"] if prev else []
-        # Thinning: só guarda um ponto novo se passou tempo OU distância
-        # suficiente desde o último — limita memória e suaviza a linha. O
-        # `head` sempre reflete o último fix (marcador preciso entre pontos).
-        if not trail:
-            keep = True
-        else:
-            llat, llng, lts = trail[-1][0], trail[-1][1], trail[-1][2]
-            keep = (now - lts >= LIVE_TRAIL_MIN_GAP_S
-                    or haversine_meters(llat, llng, lat, lng) >= LIVE_TRAIL_MIN_MOVE_M)
-        if keep:
-            # Ponto = [lat, lng, ts, accuracy?]. A precisão por ponto alimenta
-            # a faixa de incerteza desenhada ao longo do rastro no cliente.
-            trail.append([lat, lng, now, head.get("accuracy")])
-            if len(trail) > LIVE_TRAIL_MAX_POINTS:
-                del trail[:len(trail) - LIVE_TRAIL_MAX_POINTS]
-        head["trail"] = trail
+        last_ts = trail[-1][2] if trail else (prev["ts"] if prev else 0.0)
+        for lat, lng, acc, _hdg, age in fixes:
+            # Instante do fix no relógio do servidor. Nunca antes do último
+            # ponto: o rastro fica em ordem cronológica mesmo com um cliente
+            # atrasado/adiantado (a poda conta com isso).
+            ts = max(now - min(age, ttl - 1), last_ts)
+            # Thinning: só guarda um ponto novo se passou tempo OU distância
+            # suficiente desde o último — limita memória e suaviza a linha. O
+            # `head` sempre reflete o último fix (marcador preciso entre pontos).
+            if not trail:
+                keep = True
+            else:
+                llat, llng, lts = trail[-1][0], trail[-1][1], trail[-1][2]
+                keep = (ts - lts >= LIVE_TRAIL_MIN_GAP_S
+                        or haversine_meters(llat, llng, lat, lng) >= LIVE_TRAIL_MIN_MOVE_M)
+            if keep:
+                # Ponto = [lat, lng, ts, accuracy|None, rt]. A precisão por ponto
+                # alimenta os pontos de incerteza desenhados ao longo do rastro no
+                # cliente; `rt` (recebido em) é o que o cursor ?since= compara.
+                trail.append([lat, lng, ts, acc, now])
+                if len(trail) > LIVE_TRAIL_MAX_POINTS:
+                    del trail[:len(trail) - LIVE_TRAIL_MAX_POINTS]
+            last_ts = ts
+        lat, lng, acc, hdg, _age = main_fix
+        head = {"name": name, "lat": lat, "lng": lng, "ts": last_ts, "ttl": ttl,
+                "trail": trail}
+        if acc is not None:
+            head["accuracy"] = acc
+        if hdg is not None:
+            head["heading"] = hdg
         _live_positions[token] = head
     return jsonify(ok=True)
 
@@ -389,24 +497,73 @@ def post_live_location():
 @app.get("/live-locations")
 def get_live_locations():
     """Posições ao vivo (janela de 3h) + rastro de cada pessoa. Muda toda hora,
-    então SEM ETag/_conditional e com Cache-Control: no-store."""
-    now = time.time()
-    out = []
+    então SEM ETag/_conditional e com Cache-Control: no-store.
+
+    Sem parâmetro: o formato de sempre (rastro INTEIRO, cada ponto com a idade)
+    — clientes antigos e o shell nativo desatualizado seguem funcionando.
+    `?since=<cursor>` (o `now` devolvido pelo poll anterior; 0 = carga inicial):
+    as posições atuais de todo mundo + só os pontos de rastro RECEBIDOS depois
+    do cursor, emagrecidos (_live_simplify), com instante absoluto; `t0` = o
+    ponto mais antigo que o servidor ainda guarda (o cliente poda o que for
+    anterior). Quem sumiu da lista expirou ou parou. ~50× menos bytes por poll
+    num pedal em grupo."""
+    since = request.args.get("since")
+    if since is not None:
+        try:
+            since = float(since)
+        except ValueError:
+            return jsonify(error="since inválido"), 400
+        if not math.isfinite(since) or since < 0:
+            return jsonify(error="since inválido"), 400
+    snap = []
     with _live_positions_lock:
+        now = _live_now()
         _prune_live(now)
+        if since is not None and since > now:
+            since = 0.0             # cursor "do futuro" (outro processo): recomeça
         for t, p in _live_positions.items():
+            tr = p["trail"]
+            if since is None:
+                pts = list(tr)
+            else:
+                # `rt` só cresce ao longo do rastro: os novos estão no fim.
+                i = len(tr)
+                while i > 0 and (tr[i - 1][4] if len(tr[i - 1]) > 4 else 0.0) > since:
+                    i -= 1
+                pts = tr[i:]
+            snap.append((t, dict(p, trail=None), tr[0][2] if tr else None, pts))
+    # Serializa FORA do lock (o emagrecimento é O(n log n) por pessoa).
+    out = []
+    for t, p, t0, pts in snap:
+        if since is None:
             item = {"id": t, "name": p["name"], "lat": p["lat"], "lng": p["lng"],
                     "ts": p["ts"], "age": round(now - p["ts"], 1),
                     "trail": [[round(pt[0], 5), round(pt[1], 5),
                                (round(pt[3], 1) if len(pt) > 3 and pt[3] is not None else None),
                                round(now - pt[2])]   # idade (s) do ponto, p/ tooltip
-                              for pt in p["trail"]]}
+                              for pt in pts]}
             if "accuracy" in p:
                 item["accuracy"] = p["accuracy"]
             if "heading" in p:
                 item["heading"] = p["heading"]
-            out.append(item)
-    return Response(json.dumps({"positions": out}, ensure_ascii=False),
+        else:
+            item = {"id": t, "name": p["name"], "lat": round(p["lat"], 6),
+                    "lng": round(p["lng"], 6), "ts": round(p["ts"], 1),
+                    "age": round(now - p["ts"], 1),
+                    "t0": round(t0, 1) if t0 is not None else None,
+                    "trail": [[round(pt[0], 5), round(pt[1], 5),
+                               (round(pt[3], 1) if pt[3] is not None else None),
+                               round(pt[2], 1)]      # instante do fix (relógio do servidor)
+                              for pt in _live_simplify(pts)]}
+            if "accuracy" in p:
+                item["accuracy"] = round(p["accuracy"], 1)
+            if "heading" in p:
+                item["heading"] = round(p["heading"])
+        out.append(item)
+    body = {"now": now, "positions": out}
+    if since is not None:
+        body["since"] = since
+    return Response(json.dumps(body, ensure_ascii=False),
                     mimetype="application/json",
                     headers={"Cache-Control": "no-store"})
 

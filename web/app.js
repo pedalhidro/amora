@@ -4902,9 +4902,42 @@ function promptCustomWmsConfig() {
 // "Where am I" control (leaflet-locatecontrol). Adds the small target icon
 // in the top-left of the map AND wires the topbar "📍 Localização" button
 // to trigger it programmatically — same control instance, two affordances.
+//
+// Subclasse do controle: o original desliga e dá um alert() em inglês em
+// QUALQUER erro que não seja timeout — e o iPhone manda "sem fix por enquanto"
+// (túnel, viaduto, dentro de prédio, copa de árvore) como POSITION_UNAVAILABLE
+// (code 2): o ponto azul sumia de vez no meio do pedal atrás de um alerta
+// bloqueante. Aqui: code 2/3 → o watch do navegador segue vivo (o erro não é
+// fatal), UM aviso por queda e o ponto esmaece até o próximo fix; code 1
+// (permissão negada) → para e diz onde liberar. Nunca alert().
 let locateControl = null;
-if (L.control.locate) {
-  locateControl = L.control.locate({
+const LocateBase = L.Control.Locate?.LocateControl;
+if (LocateBase && L.control.locate) {
+  const PhLocate = LocateBase.extend({
+    _onLocationError(err) {
+      if (err && err.code === 1) {
+        this.stop();
+        showToast(geoDeniedHelp(), 10000);
+        return;
+      }
+      map.getContainer().classList.add('locate-no-fix');
+      if (!this._phNoFixWarned) {
+        this._phNoFixWarned = true;
+        showToast('Sem sinal de GPS agora — continuo tentando.');
+      }
+    },
+    _onLocationFound(e) {
+      this._phNoFixWarned = false;
+      map.getContainer().classList.remove('locate-no-fix');
+      return LocateBase.prototype._onLocationFound.call(this, e);
+    },
+    stop() {
+      this._phNoFixWarned = false;
+      map.getContainer().classList.remove('locate-no-fix');
+      return LocateBase.prototype.stop.call(this);
+    },
+  });
+  locateControl = new PhLocate({
     position: 'topleft',
     // 'once': centraliza/zooma só no PRIMEIRO fix; depois disso o mapa não se
     // mexe mais (cada update do watchPosition reposicionava + re-zoomava pra
@@ -4915,7 +4948,15 @@ if (L.control.locate) {
     drawCircle: true,
     showPopup: false,
     keepCurrentZoomLevel: false,
+    // Sem o cone de bússola: ele ignorava a rotação do mapa (apontava errado
+    // com o mapa girado) e redesenhava o marcador a cada deviceorientation
+    // (~60 Hz no iPhone, a pedalada inteira).
+    showCompass: false,
     locateOptions: { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 },
+    // Redes de segurança — os caminhos acima já tratam tudo, mas nenhum erro
+    // deste controle pode cair no alert() padrão da biblioteca.
+    onLocationError: () => {},
+    onLocationOutsideMapBounds: (ctl) => { ctl.stop(); showToast('Fora dos limites do mapa'); },
     strings: {
       title: 'Mostrar minha localização',
       metersUnit: 'm',
@@ -4924,6 +4965,15 @@ if (L.control.locate) {
       outsideMapBoundsMsg: 'Fora dos limites do mapa',
     },
   }).addTo(map);
+}
+// Onde liberar a localização quando ela foi negada (code 1 / NOT_AUTHORIZED).
+// "Ajustes" aqui é o app de Ajustes do aparelho, não o ⚙ do amora.
+function geoDeniedHelp() {
+  if (liveIsNative()) return 'Localização bloqueada para o app — libere em Ajustes do aparelho › Amora › Localização.';
+  const ios = /iP(hone|ad|od)/.test(navigator.userAgent)
+    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  if (ios) return 'Localização bloqueada — libere em Ajustes do iPhone › Privacidade e Segurança › Serviços de Localização › Sites do Safari (“Durante o Uso”) e tente de novo.';
+  return 'Localização bloqueada — permita a localização deste site nas configurações do navegador (ícone ao lado do endereço) e tente de novo.';
 }
 // ─── Rotação do mapa (leaflet-rotate) ───────────────────────────────────────
 // O plugin gira; aqui moram os ajustes do amora por cima dele:
@@ -5040,7 +5090,7 @@ function setupMapRotation() {
 const locateBtn = document.getElementById('locate-btn');
 locateBtn?.addEventListener('click', () => {
   if (!locateControl) {
-    alert('Geolocalização não disponível neste navegador.');
+    showToast('Geolocalização não disponível neste navegador.');
     return;
   }
   // Toggle behavior: tap once to start tracking, tap again to stop.
@@ -5052,10 +5102,18 @@ locateBtn?.addEventListener('click', () => {
 // Compartilhamento de posição em tempo (quase) real: opt-in, pseudônimo,
 // efêmero. O mesmo substrato roda em três cenários: (a) browser com tela
 // ligada/app em foco → watchPosition; (b) browser em segundo plano → pausa
-// (limite da plataforma); (c) shell nativo (Capacitor) → o plugin de
-// background-geolocation chama `window.phidroLivePush(coords)` mesmo com a
-// tela apagada. Ver o plano de implementação. Toda a visualização é idêntica
-// independente da fonte do fix.
+// (limite da plataforma: o iPhone congela o watch com a tela apagada — o
+// modal avisa, e com o celular no guidão um wake lock segura a tela acesa);
+// (c) shell nativo (Capacitor) → o plugin de background-geolocation chama
+// `window.phidroLivePush(coords)` mesmo com a tela apagada. Toda a
+// visualização é idêntica independente da fonte do fix.
+//
+// Rede (pedal em grupo, 4G): o poll é INCREMENTAL (GET /live-locations?since=
+// → as posições atuais + só os pontos novos de cada rastro; a 1ª carga vem
+// emagrecida pelo servidor), um pedido por vez, com timeout e backoff; a idade
+// dos marcadores corre no cliente (sem conexão ninguém fica "agora" pra
+// sempre) e um chip avisa "sem conexão". Os meus fixes que não saíram ficam
+// numa fila e vão no próximo envio que der certo.
 const LIVE_ID_KEY = 'phidro:liveId';
 // Único ponto que monta a URL dos endpoints /live-*: no browser fica
 // same-origin (base vazia); o shell nativo seta window.PHIDRO_API_BASE
@@ -5080,9 +5138,6 @@ function liveColorForId(id) {
 }
 
 let _liveWatchId = null;       // id do navigator.geolocation.watchPosition
-let _livePollTimer = null;     // setInterval da leitura
-let _livePollMs = null;        // intervalo (ms) atualmente aplicado — só recria o timer se mudar
-let _liveLastSentMs = 0;       // throttle do envio (settings.liveLocation.shareMs)
 let _liveGeoErrShown = false;  // já avisei de falha de GPS (code 2/3) nesta sessão de envio?
 // Ver e transmitir são independentes: dá pra ver as pessoas no mapa sem
 // transmitir a própria posição (e vice-versa). Cada um tem seu flag de
@@ -5090,7 +5145,11 @@ let _liveGeoErrShown = false;  // já avisei de falha de GPS (code 2/3) nesta se
 let _liveViewing = false;      // poll + render ligado
 let _liveSharing = false;      // transmissão da minha posição ligada
 let _liveBandOpacity = 0.7;    // opacidade dos pontos do rastro (slider em Pessoas ao vivo)
-const _personMarkers = new Map();   // token -> { marker, trail, ticks, tickDots, last }
+// token -> { marker, trail, ticks, tickDots, acc, last, pts, mine, iconKey }
+//   last = posição atual {id, name, lat, lng, ts, accuracy, heading}
+//   pts  = rastro local [[lat, lng, acc|null, ts], …] em ordem de ts
+//   (ts = instante do fix no relógio do SERVIDOR, em s)
+const _personMarkers = new Map();
 // Ajustes por pessoa (clique no dot abre um popup): { token: {color?, opacity?, hideHistory?} }.
 // Persistido localmente, aplicado em upsertPersonMarker.
 const LIVE_OVERRIDES_KEY = 'phidro:livePersonOverrides';
@@ -5133,6 +5192,12 @@ function liveTrailsPane() {
   }
   return 'liveTrails';
 }
+// Seta de rumo: o marcador mora no norotatePane (fica "em pé" com o mapa
+// girado), então soma o rumo do mapa pra apontar pro rumo REAL — 0° = norte.
+function liveArrowTransform(heading) {
+  const b = typeof map.getBearing === 'function' ? (map.getBearing() || 0) : 0;
+  return `translate(-50%,-50%) rotate(${Math.round(heading + b)}deg) translateY(-20px)`;
+}
 // divIcon de uma pessoa ao vivo — anel colorido + inicial + (opcional) seta
 // de rumo. Classe própria (.live-person), distinta do .photo-dot. `stale`
 // (sem fix recente) tira o pulso "ao vivo" via .is-stale.
@@ -5141,7 +5206,7 @@ function personDivIcon(p, mine, stale, color) {
   const initial = (p.name || '').trim().charAt(0).toUpperCase() || '•';
   const heading = Number.isFinite(p.heading) ? p.heading : null;
   const arrow = heading != null
-    ? `<div class="live-person-arrow" style="transform:translate(-50%,-50%) rotate(${heading}deg) translateY(-20px)"></div>` : '';
+    ? `<div class="live-person-arrow" style="transform:${liveArrowTransform(heading)}"></div>` : '';
   const label = p.name
     ? `<div class="live-person-label">${escapeHtml(p.name)}</div>` : '';
   const cls = 'live-person' + (mine ? ' is-me' : '') + (stale ? ' is-stale' : '');
@@ -5154,6 +5219,15 @@ function personDivIcon(p, mine, stale, color) {
     popupAnchor: [0, -18],
   });
 }
+// Girar o mapa só mexe no transform das setas (sem refazer os ícones).
+function syncLiveArrows() {
+  for (const e of _personMarkers.values()) {
+    if (!Number.isFinite(e.last?.heading)) continue;
+    const el = e.marker.getElement()?.querySelector('.live-person-arrow');
+    if (el) el.style.transform = liveArrowTransform(e.last.heading);
+  }
+}
+if (typeof map.getBearing === 'function') map.on('rotate', syncLiveArrows);
 
 // Idade (s) → opacidade do marcador. Janela de 3h: fresco = 1, esmaece
 // gradualmente e estaciona em ~0.35 depois de ~20 min sem novo fix.
@@ -5170,38 +5244,93 @@ function formatLiveAgo(sec) {
   if (sec < 3600) return `há ${Math.round(sec / 60)} min`;
   return `há ${(sec / 3600).toFixed(1).replace('.', ',')} h`;
 }
+// Duração (s) → "45 s" / "3 min" / "1 h 5 min" (avisos de transmissão parada).
+function formatLiveDur(sec) {
+  if (sec < 90) return `${Math.round(sec)} s`;
+  if (sec < 3600) return `${Math.round(sec / 60)} min`;
+  const h = Math.floor(sec / 3600), m = Math.round((sec % 3600) / 60);
+  return m ? `${h} h ${m} min` : `${h} h`;
+}
+// Relógio: as idades são calculadas AQUI, do instante do fix (`ts`, relógio do
+// servidor) + a diferença de relógio medida a cada poll. Assim elas continuam
+// correndo com o poll falhando — antes vinham prontas do servidor e, sem
+// conexão, todo mundo ficava "agora" e opaco na última posição conhecida.
+let _liveSkewS = 0;            // relógio do servidor − Date.now(), em s
+function liveAgeOf(ts) {
+  return Number.isFinite(ts) ? Math.max(0, Date.now() / 1000 + _liveSkewS - ts) : NaN;
+}
 
-function upsertPersonMarker(p, mine) {
+// Aparência de uma pessoa: cor/opacidade (ajustes por pessoa) + idade agora.
+function livePersonStyle(e) {
+  const ov = _personOverrides[e.last.id] || {};
+  return {
+    color: ov.color || (e.mine ? '#1e88e5' : liveColorForId(e.last.id)),
+    opMul: Number.isFinite(ov.opacity) ? Math.max(0, Math.min(1, ov.opacity)) : 1,
+    showHistory: ov.hideHistory !== true,
+    age: liveAgeOf(e.last.ts),
+  };
+}
+// O que depende da IDADE (esmaecer, perder o pulso, o círculo de precisão) —
+// refeito também ENTRE polls pelo tick, sem mexer no rastro. O ícone só é
+// recriado quando algo dele mudou (antes: setIcon a cada poll).
+function applyPersonAge(e, st = livePersonStyle(e)) {
+  const p = e.last;
+  const stale = st.age > LIVE_STALE_AGE_S;
+  const hdg = Number.isFinite(p.heading) ? Math.round(p.heading) : '';
+  const key = `${p.name}|${hdg}|${stale ? 1 : 0}|${st.color}|${e.mine ? 1 : 0}`;
+  if (key !== e.iconKey) {
+    e.iconKey = key;
+    e.marker.setIcon(personDivIcon(p, e.mine, stale, st.color));
+  }
+  const fade = liveOpacityForAge(st.age);
+  e.marker.setOpacity(fade * st.opMul);
+  if (e.acc) e.acc.setStyle({ opacity: 0.55 * fade * st.opMul, fillOpacity: 0.1 * fade * st.opMul });
+}
+function refreshLiveAges() {
+  for (const e of _personMarkers.values()) applyPersonAge(e);
+}
+
+function upsertPersonMarker(p, pts, mine) {
   const ll = [p.lat, p.lng];
-  const stale = Number.isFinite(p.age) && p.age > LIVE_STALE_AGE_S;
-  // Ajustes por pessoa (clique no dot → popup): cor, opacidade, esconder histórico.
-  const ov = _personOverrides[p.id] || {};
-  const color = ov.color || (mine ? '#1e88e5' : liveColorForId(p.id));
-  const opMul = Number.isFinite(ov.opacity) ? Math.max(0, Math.min(1, ov.opacity)) : 1;
-  const showHistory = ov.hideHistory !== true;
   let e = _personMarkers.get(p.id);
-  const icon = personDivIcon(p, mine, stale, color);
   if (!e) {
-    const marker = L.marker(ll, { icon, pane: livePeoplePane(), zIndexOffset: 1000 });
+    const marker = L.marker(ll, { icon: personDivIcon(p, mine, false, null),
+      pane: livePeoplePane(), zIndexOffset: 1000 });
     marker.addTo(map);
     marker.on('click', () => openLivePersonControls(p.id));
-    e = { marker, trail: null, ticks: null, tickDots: [], last: null };
+    e = { marker, trail: null, ticks: null, tickDots: [], acc: null, last: p, pts, mine, iconKey: '' };
+    // Tooltip calculado ao abrir: mostra a idade de AGORA, não a do último poll.
+    marker.bindTooltip(() => formatLiveAgo(liveAgeOf(e.last.ts)), { direction: 'top' });
     _personMarkers.set(p.id, e);
   } else {
     e.marker.setLatLng(ll);
-    e.marker.setIcon(icon);
   }
-  e.last = p;   // guardado p/ reaplicar na hora quando o popup muda um ajuste
-  e.marker.setOpacity(liveOpacityForAge(p.age) * opMul);
+  e.last = p; e.pts = pts; e.mine = mine;   // guardados p/ reaplicar ajustes na hora
+  const st = livePersonStyle(e);
+  const { color, opMul, showHistory } = st;
+  // Incerteza da posição ATUAL como círculo de verdade, em metros: um fix
+  // grosseiro (Wi-Fi/antena, ±1 km) não pode parecer um ponto nítido.
+  const accM = Number.isFinite(p.accuracy) && p.accuracy > 0 ? Math.min(p.accuracy, 5000) : 0;
+  if (accM) {
+    if (!e.acc) {
+      e.acc = L.circle(ll, { pane: liveTrailsPane(), radius: accM, color, fillColor: color,
+        weight: 1, interactive: false }).addTo(map);
+    } else {
+      e.acc.setLatLng(ll);
+      e.acc.setRadius(accM);
+      e.acc.setStyle({ color, fillColor: color });
+    }
+  } else if (e.acc) {
+    map.removeLayer(e.acc); e.acc = null;
+  }
+  applyPersonAge(e, st);
 
   // Trajetória = uma LINHA conectando os fixes + um PONTO em cada fix cujo raio
-  // reflete a incerteza (precisão) daquele ponto. (Substitui a antiga faixa de
-  // incerteza, que era um polígono problemático.) `showHistory` (toggle no
-  // popup) esconde tudo, deixando só o dot atual. `p.trail` vem como
-  // [lat,lng,acc,age]; passamos só [lat,lng] pra linha — L.toLatLng() devolve
-  // null pra arrays de 4 elementos e estoura o _projectLatlngs no zoom.
-  const pts = showHistory && Array.isArray(p.trail) ? p.trail : [];
-  const line = pts.map((q) => [q[0], q[1]]);
+  // reflete a incerteza (precisão) daquele ponto. `showHistory` (toggle no
+  // popup) esconde tudo, deixando só o dot atual. Passamos só [lat,lng] pra
+  // linha — L.toLatLng() devolve null pra arrays de 4 elementos e estoura o
+  // _projectLatlngs no zoom.
+  const line = showHistory ? pts.map((q) => [q[0], q[1]]) : [];
   if (line.length >= 2) {
     if (!e.trail) {
       e.trail = L.polyline(line, { pane: liveTrailsPane(), color,
@@ -5214,48 +5343,45 @@ function upsertPersonMarker(p, mine) {
     map.removeLayer(e.trail); e.trail = null;
   }
   // Pontos do rastro: raio cresce com a incerteza (px); hover/toque mostra "há
-  // quanto tempo" (q[3] = idade em s). Downsample p/ ~40 por pessoa. Reusa os
-  // circleMarkers entre polls (setLatLng/setStyle), em vez de destruir+recriar
-  // ~40 layers a cada poll — mesmo padrão do marcador-cabeça e da linha.
+  // quanto tempo". ~40 por pessoa, espaçados no TEMPO (o rastro local mistura a
+  // 1ª carga emagrecida com os pontos densos dos deltas — amostrar por índice
+  // amontoaria os pontos no fim). Reusa os circleMarkers entre polls
+  // (setLatLng/setStyle) em vez de destruir+recriar ~40 layers a cada poll.
   if (!e.ticks) { e.ticks = L.layerGroup().addTo(map); e.tickDots = []; }
   const sampled = [];
   if (showHistory && pts.length) {
-    const tstep = Math.max(1, Math.ceil(pts.length / 40));
-    for (let k = 0; k < pts.length; k += tstep) {
-      const q = pts[k];
-      if (Number.isFinite(q[0]) && Number.isFinite(q[1])) sampled.push(q);
+    const span = pts[pts.length - 1][3] - pts[0][3];
+    const step = span > 0 ? span / 40 : Infinity;
+    let next = -Infinity;
+    for (const q of pts) {
+      if (q[3] >= next) { sampled.push(q); next = q[3] + step; }
     }
   }
   for (let k = 0; k < sampled.length; k++) {
     const q = sampled[k];
     const acc = Number.isFinite(q[2]) && q[2] > 0 ? q[2] : 0;
     const radius = Math.max(2.5, Math.min(14, 2 + acc / 5));   // px ~ incerteza
-    const ago = formatLiveAgo(q[3]);
     let dot = e.tickDots[k];
     if (!dot) {
       // Sem borda (stroke:false) — assim opacidade 0 some de vez.
       dot = L.circleMarker([q[0], q[1]], { pane: liveTrailsPane(), radius,
         stroke: false, fillColor: color, fillOpacity: _liveBandOpacity * opMul });
       dot.on('click', () => dot.openTooltip());   // suporte a toque
-      dot.bindTooltip(ago, { direction: 'top', sticky: true });
+      dot.bindTooltip(() => formatLiveAgo(liveAgeOf(dot._liveTs)), { direction: 'top', sticky: true });
       dot.addTo(e.ticks);
       e.tickDots[k] = dot;
     } else {
       dot.setLatLng([q[0], q[1]]);
       dot.setRadius(radius);
       dot.setStyle({ fillColor: color, fillOpacity: _liveBandOpacity * opMul });
-      dot.setTooltipContent(ago);
     }
+    dot._liveTs = q[3];
   }
   // Remove o excedente (rastro encolheu ou histórico foi escondido).
   for (let k = sampled.length; k < e.tickDots.length; k++) {
     if (e.tickDots[k]) e.ticks.removeLayer(e.tickDots[k]);
   }
   e.tickDots.length = sampled.length;
-  // Tempo da posição atual no próprio dot (hover/toque).
-  const ago = formatLiveAgo(p.age);
-  if (e.marker.getTooltip()) e.marker.setTooltipContent(ago);
-  else e.marker.bindTooltip(ago, { direction: 'top' });
 }
 
 // Popup de ajustes por pessoa — aberto ao clicar no dot. Cor, opacidade e
@@ -5281,13 +5407,13 @@ function openLivePersonControls(token) {
     .setLatLng(e.marker.getLatLng()).setContent(html).openOn(map);
   const root = popup.getElement();
   if (!root) return;
-  const reapply = () => { ov.ts = Date.now(); saveLiveOverrides(); if (e.last) upsertPersonMarker(e.last, mine); };
+  const reapply = () => { ov.ts = Date.now(); saveLiveOverrides(); if (e.last) upsertPersonMarker(e.last, e.pts, mine); };
   root.querySelector('.lc-color').addEventListener('input', (ev) => { ov.color = ev.target.value; reapply(); });
   root.querySelector('.lc-op').addEventListener('input', (ev) => { ov.opacity = Number(ev.target.value) / 100; reapply(); });
   root.querySelector('.lc-hist').addEventListener('change', (ev) => { ov.hideHistory = !ev.target.checked; reapply(); });
   root.querySelector('.lc-reset').addEventListener('click', () => {
     delete _personOverrides[token]; saveLiveOverrides();
-    if (e.last) upsertPersonMarker(e.last, mine);
+    if (e.last) upsertPersonMarker(e.last, e.pts, mine);
     map.closePopup(popup);
   });
 }
@@ -5296,6 +5422,7 @@ function removePersonMarker(token) {
   const e = _personMarkers.get(token);
   if (!e) return;
   if (e.marker) map.removeLayer(e.marker);
+  if (e.acc) map.removeLayer(e.acc);
   if (e.trail) map.removeLayer(e.trail);
   if (e.ticks) map.removeLayer(e.ticks);
   _personMarkers.delete(token);
@@ -5304,49 +5431,353 @@ function clearPersonMarkers() {
   for (const token of [..._personMarkers.keys()]) removePersonMarker(token);
 }
 
-// Envio (throttled) da minha posição. Chamado tanto pelo watchPosition do
-// browser quanto pelo bridge nativo (window.phidroLivePush).
-function sendLivePosition(lat, lng, accuracy, heading) {
+// ── Envio: fila de fixes, um POST por vez ──────────────────────────────────
+// Cada fix aceito (throttle de shareMs + filtro de precisão) entra na fila; o
+// POST leva a fila inteira — o mais novo vira a posição atual e os anteriores
+// vão em `points` com a idade (o servidor os retrodata no rastro). Sem
+// conexão, a fila cresce (acima de LIVE_OUTBOX_MAX a metade mais velha é
+// rarefeita) e sai no próximo envio que der certo: o rastro volta sem buraco,
+// em vez de uma reta. Parar de transmitir descarta a fila.
+const LIVE_OUTBOX_MAX = 120;
+const LIVE_POST_TIMEOUT_MS = 10000;
+const LIVE_ACC_GOOD_M = 150;       // precisão pior que isto: só se nada melhor vier em…
+const LIVE_ACC_GRACE_MS = 30000;   // …30 s (o 1º fix do iPhone costuma ser Wi-Fi/antena, 65–1400 m)
+const LIVE_ACC_COARSE_M = 1000;    // ≥ 1 km: "Localização Precisa" desligada — avisa uma vez
+const LIVE_STALL_MS = 60000;       // sem envio confirmado há mais que isto → avisa
+let _liveOutbox = [];              // [{lat, lng, acc, hdg, t(ms do fix)}] ainda não confirmados
+let _livePostCtl = null;           // AbortController do POST em voo
+let _livePostFails = 0;            // falhas seguidas (backoff do reenvio + chip)
+let _livePostRetryAt = 0;          // antes disto não tenta de novo (Date.now())
+let _liveLastFixMs = 0;            // último fix aceito na fila (throttle de shareMs)
+let _liveLastGoodFixMs = 0;        // último fix com precisão boa
+let _liveLastOkMs = 0;             // último POST confirmado pelo servidor
+let _liveShareStartMs = 0;         // início desta sessão de envio
+let _liveCoarseWarned = false;     // já avisou de localização aproximada nesta sessão?
+let _liveStallWarned = false;      // já avisou desta parada (reseta no próximo envio ok)
+
+// Chamado tanto pelo watchPosition do browser quanto pelo bridge nativo
+// (window.phidroLivePush). `fixTimeMs` = quando o aparelho obteve o fix.
+function sendLivePosition(lat, lng, accuracy, heading, fixTimeMs) {
   if (!settings.liveLocation?.enabled) return;
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
   const now = Date.now();
+  const acc = Number.isFinite(accuracy) && accuracy > 0 ? accuracy : null;
+  // Filtro de precisão: fix grosseiro só vai se nada melhor chegou nos últimos
+  // 30 s — senão um fix de 1,4 km vira um ponto nítido longe do grupo (e antes
+  // ainda travava o throttle, barrando o fix bom que vinha logo depois).
+  if (acc == null || acc <= LIVE_ACC_GOOD_M) _liveLastGoodFixMs = now;
+  else if (now - _liveLastGoodFixMs < LIVE_ACC_GRACE_MS) return;
+  else if (acc >= LIVE_ACC_COARSE_M && !_liveCoarseWarned) {
+    _liveCoarseWarned = true;
+    const km = (acc / 1000).toFixed(1).replace('.', ',');
+    showToast(`Sua localização está aproximada (±${km} km). Pra transmitir a posição exata, ative a “Localização Precisa” nos ajustes de localização do aparelho.`, 9000);
+  }
   const minGap = Math.max(1000, settings.liveLocation?.shareMs || 5000);
-  if (now - _liveLastSentMs < minGap) return;
-  _liveLastSentMs = now;
+  if (now - _liveLastFixMs < minGap) return;
+  _liveLastFixMs = now;
+  const t = Number.isFinite(fixTimeMs) && fixTimeMs > 0 ? Math.min(now, fixTimeMs) : now;
+  _liveOutbox.push({ lat, lng, acc, hdg: Number.isFinite(heading) ? heading : null, t });
+  if (_liveOutbox.length > LIVE_OUTBOX_MAX) {
+    const half = Math.floor(_liveOutbox.length / 2);
+    _liveOutbox = _liveOutbox.filter((_, i) => i >= half || i % 2 === 0);
+  }
+  noteLiveBeat();
+  flushLiveOutbox();
+  if (_livePostFails) renderLiveChip();   // contagem da fila em dia no chip
+}
+function flushLiveOutbox() {
+  if (_livePostCtl || !_liveOutbox.length || Date.now() < _livePostRetryAt) return;
+  const batch = _liveOutbox.slice();
+  const nowMs = Date.now();
+  const ageOf = (f) => Math.max(0, Math.round((nowMs - f.t) / 100) / 10);
+  const last = batch[batch.length - 1];
   const body = { id: liveId(), name: (settings.liveLocation?.displayName || '').trim().slice(0, 40),
-    lat, lng, ttl: settings.liveLocation?.ttlSec ?? 10800 };
-  if (Number.isFinite(accuracy)) body.accuracy = accuracy;
-  if (Number.isFinite(heading)) body.heading = heading;
+    lat: last.lat, lng: last.lng, ttl: settings.liveLocation?.ttlSec ?? 10800 };
+  if (last.acc != null) body.accuracy = last.acc;
+  if (last.hdg != null) body.heading = last.hdg;
+  if (ageOf(last) >= 1) body.age = ageOf(last);
+  if (batch.length > 1) {
+    body.points = batch.slice(0, -1).map((f) => {
+      const q = { lat: f.lat, lng: f.lng, age: ageOf(f) };
+      if (f.acc != null) q.accuracy = f.acc;
+      if (f.hdg != null) q.heading = f.hdg;
+      return q;
+    });
+  }
+  const json = JSON.stringify(body);
+  const ctl = new AbortController();
+  _livePostCtl = ctl;
+  const timer = setTimeout(() => ctl.abort(), LIVE_POST_TIMEOUT_MS);
   fetch(liveApiUrl('/live-location'), {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body), keepalive: true,
-  }).catch(() => {});
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: json,
+    // keepalive: o último envio sobrevive à aba indo pro fundo (teto de 64 KB).
+    keepalive: json.length < 60000, signal: ctl.signal,
+  }).then((r) => {
+    if (r.status >= 500) throw new Error('HTTP ' + r.status);
+    // 2xx: entregue. 4xx: o servidor recusou o dado — reenviar não resolve.
+    const sent = new Set(batch);
+    _liveOutbox = _liveOutbox.filter((f) => !sent.has(f));
+    _livePostFails = 0;
+    _livePostRetryAt = 0;
+    if (r.ok) { _liveLastOkMs = Date.now(); _liveStallWarned = false; }
+  }).catch(() => {
+    _livePostFails++;
+    _livePostRetryAt = Date.now() + Math.min(30000, 2000 * 2 ** Math.min(4, _livePostFails - 1));
+  }).finally(() => {
+    clearTimeout(timer);
+    if (_livePostCtl === ctl) _livePostCtl = null;
+    renderLiveChip();
+    // Chegou fix novo enquanto este ia: manda já (só se o envio deu certo).
+    if (!_livePostFails && _liveOutbox.length) flushLiveOutbox();
+  });
 }
 // Hook pro shell nativo: o plugin de background-geolocation chama isto a cada
-// fix (inclusive com a tela apagada). { latitude, longitude, accuracy, bearing }.
+// fix (inclusive com a tela apagada). { latitude, longitude, accuracy, bearing, time }.
 window.phidroLivePush = (c) => {
   if (!c) return;
   sendLivePosition(c.latitude ?? c.lat, c.longitude ?? c.lng,
-    c.accuracy, c.bearing ?? c.heading);
+    c.accuracy, c.bearing ?? c.heading, c.time);
 };
+// Sem envio confirmado há mais de 1 min com a página à vista (GPS sem sinal ou
+// sem conexão): avisa UMA vez por parada — antes o 📍 seguia "ligado" calado.
+function checkLiveSendHealth() {
+  if (!_liveSharing || _liveStallWarned) return;
+  const ref = Math.max(_liveLastOkMs, _liveShareStartMs);
+  if (!ref || Date.now() - ref < LIVE_STALL_MS) return;
+  _liveStallWarned = true;
+  showToast(_liveOutbox.length
+    ? 'Sua posição não chega ao servidor há mais de 1 min (sem conexão). Ela fica guardada e vai quando o sinal voltar.'
+    : 'Sua posição não é enviada há mais de 1 min — sem sinal de GPS.', 8000);
+}
+// Volta pra página (tela desbloqueada, voltou de outro app) depois de mais de
+// 1 min sem envio: diz que a transmissão ficou parada — no navegador o iPhone
+// congela o watch com a tela apagada, e quem via o marcador o viu parado.
+function noteLiveVisible() {
+  if (document.hidden || !settings.liveLocation?.enabled || !_liveLastOkMs) return;
+  const gap = Date.now() - _liveLastOkMs;
+  if (gap < LIVE_STALL_MS) return;
+  _liveStallWarned = true;   // este aviso já cobre a parada
+  showToast(`Sua transmissão ficou parada por ${formatLiveDur(gap / 1000)}`
+    + (liveIsNative() ? '' : ' (tela apagada ou outro app)') + ' — retomando.', 7000);
+}
 
-function pollLivePositions() {
-  fetch(liveApiUrl('/live-locations'), { cache: 'no-store' })
-    .then((r) => r.ok ? r.json() : null)
-    .then((data) => {
-      if (!data || !Array.isArray(data.positions)) return;
-      const mine = liveId();
-      const seen = new Set();
-      for (const p of data.positions) {
-        if (!p || typeof p.id !== 'string') continue;
-        if (!Number.isFinite(p.lat) || !Number.isFinite(p.lng)) continue;
-        seen.add(p.id);
-        upsertPersonMarker(p, p.id === mine);
+// ── Leitura: poll incremental (GET /live-locations?since=<cursor>) ─────────
+// Um pedido por vez, com timeout; o cursor é o `now` do servidor no poll
+// anterior (0 = carga inicial, que já vem emagrecida). O intervalo cresce
+// quando ninguém MAIS está transmitindo e quando o poll falha (a volta da rede
+// reseta); a aba oculta pausa SEM perder o estado — ao voltar, só o delta.
+const LIVE_POLL_TIMEOUT_MS = 8000;
+const LIVE_IDLE_STEP_MS = 15000;     // ninguém transmitindo: 15 → 30 → 45 → 60 s
+const LIVE_MAX_BACKOFF_MS = 60000;
+let _livePollTimer = null;     // setTimeout do próximo poll
+let _livePollCtl = null;       // AbortController do poll em voo (um por vez)
+let _livePollGen = 0;          // muda ao ligar/desligar o ver: resposta de ciclo velho é descartada
+let _livePollBase = 0;         // pollMs com que o próximo poll foi agendado
+let _liveCursor = 0;           // `now` do servidor no último poll aplicado
+let _livePollFails = 0;        // falhas seguidas (backoff + chip "sem conexão")
+let _livePollIdle = 0;         // polls seguidos sem mais ninguém transmitindo
+let _livePollOkAt = 0;         // Date.now() do último poll bem-sucedido
+
+function livePollDelay() {
+  const base = Math.max(1500, settings.liveLocation?.pollMs || 4000);
+  if (_livePollFails) return Math.min(LIVE_MAX_BACKOFF_MS, base * 2 ** Math.min(4, _livePollFails));
+  if (_livePollIdle) return Math.min(LIVE_MAX_BACKOFF_MS, Math.max(base, LIVE_IDLE_STEP_MS * _livePollIdle));
+  return base;
+}
+function scheduleLivePoll() {
+  clearTimeout(_livePollTimer);
+  _livePollTimer = null;
+  if (!_liveViewing) return;
+  _livePollBase = Math.max(1500, settings.liveLocation?.pollMs || 4000);
+  _livePollTimer = setTimeout(pollLivePositions, livePollDelay());
+}
+async function pollLivePositions() {
+  clearTimeout(_livePollTimer);
+  _livePollTimer = null;
+  if (!_liveViewing || _livePollCtl) return;
+  const gen = _livePollGen;
+  const ctl = new AbortController();
+  _livePollCtl = ctl;
+  const timer = setTimeout(() => ctl.abort(), LIVE_POLL_TIMEOUT_MS);
+  const since = _liveCursor;
+  let ok = false;
+  try {
+    const r = await fetch(liveApiUrl('/live-locations?since=' + since), { cache: 'no-store', signal: ctl.signal });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    if (gen === _livePollGen) ok = applyLiveResponse(data);
+  } catch { /* offline, timeout, 5xx: conta como falha */ } finally {
+    clearTimeout(timer);
+    if (_livePollCtl === ctl) _livePollCtl = null;
+  }
+  if (gen !== _livePollGen) return;   // o ver foi desligado/religado no meio
+  if (ok) { _livePollFails = 0; _livePollOkAt = Date.now(); } else _livePollFails++;
+  refreshLiveAges();
+  renderLiveChip();
+  scheduleLivePoll();
+}
+// Aplica uma resposta do GET: carga completa (since=0) substitui os rastros,
+// delta anexa. Servidor antigo (sem `now`/`since`: rastro inteiro com idades)
+// continua funcionando como antes — tudo como carga completa.
+function applyLiveResponse(data) {
+  if (!data || !Array.isArray(data.positions)) return false;
+  const nowS = Number(data.now);
+  const legacy = !Number.isFinite(nowS) || data.since === undefined;
+  const refNow = Number.isFinite(nowS) ? nowS : Date.now() / 1000;
+  _liveSkewS = refNow - Date.now() / 1000;
+  const full = legacy || !(Number(data.since) > 0);
+  _liveCursor = legacy ? 0 : nowS;
+  const mine = liveId();
+  const seen = new Set();
+  let others = 0;
+  for (const p of data.positions) {
+    if (!p || typeof p.id !== 'string') continue;
+    if (!Number.isFinite(p.lat) || !Number.isFinite(p.lng)) continue;
+    seen.add(p.id);
+    if (p.id !== mine) others++;
+    const head = {
+      id: p.id, name: typeof p.name === 'string' ? p.name : '', lat: p.lat, lng: p.lng,
+      ts: Number.isFinite(p.ts) ? p.ts : refNow - (Number(p.age) || 0),
+      accuracy: Number.isFinite(p.accuracy) ? p.accuracy : null,
+      heading: Number.isFinite(p.heading) ? p.heading : null,
+    };
+    const e = _personMarkers.get(p.id);
+    const pts = (!full && e?.pts) ? e.pts : [];
+    const before = pts.length;
+    for (const q of Array.isArray(p.trail) ? p.trail : []) {
+      if (!Array.isArray(q) || !Number.isFinite(q[0]) || !Number.isFinite(q[1])) continue;
+      const ts = legacy ? refNow - (Number(q[3]) || 0) : Number(q[3]);
+      pts.push([q[0], q[1], Number.isFinite(q[2]) ? q[2] : null, ts]);
+    }
+    // Um lote retrodatado (a fila de alguém que voltou a ter sinal) pode cair
+    // antes do fim do rastro local: reordena só nesse caso.
+    if (before && pts.length > before && pts[before][3] < pts[before - 1][3]) pts.sort((a, b) => a[3] - b[3]);
+    // Poda espelhando o servidor: nada antes do ponto mais antigo que ele guarda.
+    let kept = pts;
+    if (!legacy) {
+      if (p.t0 == null) kept = [];
+      else if (pts.length && pts[0][3] < p.t0) kept = pts.filter((q) => q[3] >= p.t0);
+    }
+    upsertPersonMarker(head, kept, p.id === mine);
+  }
+  for (const token of [..._personMarkers.keys()]) {
+    if (!seen.has(token)) removePersonMarker(token);
+  }
+  _livePollIdle = others ? 0 : _livePollIdle + 1;
+  return true;
+}
+
+// ── Chip de estado (canto inferior esquerdo, junto dos outros .map-chip) ────
+// Oferta de retomar a transmissão depois de um recarregamento, permissão
+// negada no app nativo, ou "sem conexão" (poll falhando e/ou posições minhas
+// na fila). Some sozinho quando o problema passa.
+let _liveResumeOffer = false;  // transmitia até pouco antes da página recarregar
+let _liveNativeDenied = false; // o shell nativo recebeu NOT_AUTHORIZED
+function renderLiveChip() {
+  const acts = [];
+  let msg = '';
+  if (_liveResumeOffer && !settings.liveLocation?.enabled) {
+    msg = '📍 Sua transmissão parou quando a página recarregou.';
+    acts.push(['resume', 'Retomar'], ['dismiss', '✕', 'Dispensar']);
+  } else if (_liveNativeDenied && !settings.liveLocation?.enabled) {
+    msg = '📍 O app está sem permissão de localização.';
+    acts.push(['settings', 'Abrir ajustes'], ['dismiss', '✕', 'Dispensar']);
+  } else {
+    const recvDown = _liveViewing && _livePollFails > 0;
+    const pending = _liveSharing && _livePostFails > 0 ? _liveOutbox.length : 0;
+    if (recvDown || pending) {
+      const parts = [];
+      if (recvDown) {
+        parts.push('Ao vivo sem conexão' + (_livePollOkAt
+          ? ` · atualizado ${formatLiveAgo((Date.now() - _livePollOkAt) / 1000)}` : ''));
       }
-      for (const token of [..._personMarkers.keys()]) {
-        if (!seen.has(token)) removePersonMarker(token);
-      }
-    })
-    .catch(() => {});
+      if (pending) parts.push(pending === 1 ? '1 posição sua na fila' : `${pending} posições suas na fila`);
+      msg = '📡 ' + parts.join(' · ');
+      acts.push(['retry', 'Tentar agora']);
+    }
+  }
+  let chip = document.getElementById('live-status-chip');
+  if (!msg) { chip?.remove(); return; }
+  if (!chip) {
+    chip = document.createElement('div');
+    chip.id = 'live-status-chip';
+    chip.className = 'map-chip';
+    chip.setAttribute('role', 'status');
+    // O chip mora dentro do #map: sem isto o toque viraria clique no mapa
+    // (e, no editor de traçado, um ponto novo).
+    L.DomEvent.disableClickPropagation(chip);
+    L.DomEvent.disableScrollPropagation(chip);
+    chip.addEventListener('click', onLiveChipClick);
+    document.getElementById('map').appendChild(chip);
+  }
+  const html = `<span>${escapeHtml(msg)}</span>` + acts.map(([act, label, aria]) =>
+    `<button type="button" data-act="${act}"${aria ? ` aria-label="${aria}" title="${aria}"` : ''}>${escapeHtml(label)}</button>`).join('');
+  if (chip.innerHTML !== html) chip.innerHTML = html;
+}
+function onLiveChipClick(ev) {
+  const act = ev.target.closest('button')?.dataset.act;
+  if (!act) return;
+  if (act === 'resume') {
+    _liveResumeOffer = false;
+    if (!settings.liveLocation) settings.liveLocation = {};
+    settings.liveLocation.enabled = true;   // mesmo apelido/retenção de antes
+    saveSettings(); applyLiveLocation(); _syncShareCheckbox();
+  } else if (act === 'settings') {
+    _liveNativeDenied = false;
+    window.Capacitor?.Plugins?.BackgroundGeolocation?.openSettings?.()?.catch?.(() => {});
+  } else if (act === 'dismiss') {
+    _liveResumeOffer = false;
+    _liveNativeDenied = false;
+  } else if (act === 'retry') {
+    _livePostRetryAt = 0;
+    flushLiveOutbox();
+    if (_liveViewing && !_livePollCtl) pollLivePositions();
+  }
+  renderLiveChip();
+}
+
+// ── Retomar depois de um recarregamento ─────────────────────────────────────
+// Enquanto transmite, um carimbo em localStorage (no máx. 1 gravação/30 s). Se
+// a página recarrega no meio (o iOS descartou a aba pesada, o WebContent do app
+// caiu, um download navegou a página), o boot volta com `enabled` desligado —
+// de propósito, por privacidade — mas OFERECE retomar num toque.
+const LIVE_SESSION_KEY = 'phidro:liveShareSession';
+const LIVE_RESUME_WINDOW_MS = 20 * 60 * 1000;
+let _liveBeatAt = 0;
+function noteLiveBeat(force) {
+  const now = Date.now();
+  if (!force && now - _liveBeatAt < 30000) return;
+  _liveBeatAt = now;
+  storage.set(LIVE_SESSION_KEY, String(now));
+}
+{
+  const beat = Number(storage.get(LIVE_SESSION_KEY));
+  storage.remove(LIVE_SESSION_KEY);
+  if (beat > 0 && Date.now() - beat < LIVE_RESUME_WINDOW_MS) _liveResumeOffer = true;
+}
+
+// ── Wake lock (browser): com o celular no guidão, a tela acesa mantém a
+// transmissão viva — no iPhone o watchPosition congela com a tela apagada. O
+// navegador solta o lock ao ocultar a página; religamos na volta (o WebKit só
+// exige gesto do usuário no PRIMEIRO pedido, que sai do toque em Compartilhar).
+// Opt-out no modal (no bolso, tela acesa só gasta bateria). O app nativo não
+// precisa: ele transmite com a tela apagada.
+let _liveWakeLock = null;
+let _liveWakeLockPending = false;
+function acquireLiveWakeLock() {
+  if (_liveWakeLock || _liveWakeLockPending || !_liveSharing || liveIsNative()) return;
+  if (settings.liveLocation?.keepAwake === false || document.hidden || !navigator.wakeLock?.request) return;
+  _liveWakeLockPending = true;
+  navigator.wakeLock.request('screen').then((s) => {
+    if (!_liveSharing || document.hidden) { s.release().catch(() => {}); return; }
+    _liveWakeLock = s;
+    s.addEventListener('release', () => { if (_liveWakeLock === s) _liveWakeLock = null; });
+  }).catch(() => {}).finally(() => { _liveWakeLockPending = false; });
+}
+function releaseLiveWakeLock() {
+  const s = _liveWakeLock;
+  _liveWakeLock = null;
+  if (s) s.release().catch(() => {});
 }
 
 // Detecta o shell nativo (Capacitor). Aí o plugin de background-geolocation
@@ -5356,77 +5787,144 @@ function liveIsNative() {
     && window.Capacitor.isNativePlatform());
 }
 let _liveNativeWatcher = null;
+let _liveNativeStarting = null;   // Promise do addWatcher em voo
 // Guarda um pedido de "parar" que chegou enquanto addWatcher() ainda estava em
-// voo (janela em que _liveNativeWatcher segue null/undefined) — sem isto, o
-// watcher nativo ficava rodando mesmo depois do usuário desligar o
-// compartilhamento (ver startNativeBackgroundWatch/stopNativeBackgroundWatch).
+// voo (janela em que _liveNativeWatcher segue null) — sem isto, o watcher
+// nativo ficava rodando mesmo depois do usuário desligar o compartilhamento.
 let _liveWatchStopRequested = false;
+let _liveNativeLastCbMs = 0;      // último callback do watcher (watchdog)
+let _liveNativeRestarting = false;
+// O id do watcher fica guardado: uma recarga da página (WebContent que caiu,
+// download que navegou a página) zera as chamadas guardadas do bridge — o
+// watcher segue ligado no lado nativo (GPS + o aviso azul de localização) sem
+// ninguém que o escute nem o desligue. No boot, removemos o órfão.
+const LIVE_NATIVE_WATCHER_KEY = 'phidro:liveNativeWatcherId';
+{
+  const stale = storage.get(LIVE_NATIVE_WATCHER_KEY);
+  if (stale) {
+    storage.remove(LIVE_NATIVE_WATCHER_KEY);
+    const BG = window.Capacitor?.Plugins?.BackgroundGeolocation;
+    if (BG && liveIsNative()) {
+      try { Promise.resolve(BG.removeWatcher({ id: stale })).catch(() => {}); } catch {}
+    }
+  }
+}
 // Liga o watcher de background do @capacitor-community/background-geolocation.
 // O plugin é registrado pelo lado nativo do shell; aqui o acessamos pelo
 // global injetado (window.Capacitor.Plugins) — sem import, então este mesmo
 // código roda inalterado num browser comum (onde o plugin simplesmente não
 // existe e caímos no watchPosition). Cada fix chama window.phidroLivePush.
-async function startNativeBackgroundWatch() {
+function startNativeBackgroundWatch() {
   const BG = window.Capacitor?.Plugins?.BackgroundGeolocation;
-  if (!BG || _liveNativeWatcher) return !!BG;
+  if (!BG) return Promise.resolve(false);
+  if (_liveNativeWatcher) return Promise.resolve(true);
+  if (_liveNativeStarting) return _liveNativeStarting;
   _liveWatchStopRequested = false; // descarta pedido de parada de um ciclo anterior
-  try {
-    _liveNativeWatcher = await BG.addWatcher({
-      backgroundTitle: 'Pedal Hidrográfico',
-      backgroundMessage: 'Compartilhando sua localização ao vivo',
-      requestPermissions: true,
-      stale: false,
-      distanceFilter: 10,
-    }, (location, error) => {
-      if (error || !location) return;
-      window.phidroLivePush(location);   // {latitude, longitude, accuracy, bearing}
-    });
-    if (_liveWatchStopRequested) {
-      // Usuário desligou o compartilhamento enquanto o addWatcher estava em
-      // voo — stopNativeBackgroundWatch não tinha o id ainda pra chamar
-      // removeWatcher. Desliga agora que o id existe.
-      _liveWatchStopRequested = false;
-      try { await BG.removeWatcher({ id: _liveNativeWatcher }); } catch {}
-      _liveNativeWatcher = null;
-      return false;
-    }
-    return true;
-  } catch { _liveNativeWatcher = null; return false; }
+  _liveNativeLastCbMs = Date.now();
+  _liveNativeStarting = (async () => {
+    try {
+      const id = await BG.addWatcher({
+        backgroundTitle: 'Pedal Hidrográfico',
+        backgroundMessage: 'Compartilhando sua localização ao vivo',
+        requestPermissions: true,
+        stale: false,
+        distanceFilter: 10,
+      }, (location, error) => {
+        if (error) { onNativeWatchError(error); return; }
+        if (!location) return;
+        _liveNativeLastCbMs = Date.now();
+        _liveGeoErrShown = false;
+        window.phidroLivePush(location);   // {latitude, longitude, accuracy, bearing, time}
+      });
+      if (_liveWatchStopRequested) {
+        // Usuário desligou o compartilhamento enquanto o addWatcher estava em
+        // voo — stopNativeBackgroundWatch não tinha o id ainda pra chamar
+        // removeWatcher. Desliga agora que o id existe.
+        _liveWatchStopRequested = false;
+        try { await BG.removeWatcher({ id }); } catch {}
+        return false;
+      }
+      _liveNativeWatcher = id;
+      storage.set(LIVE_NATIVE_WATCHER_KEY, String(id));
+      return true;
+    } catch { return false; } finally { _liveNativeStarting = null; }
+  })();
+  return _liveNativeStarting;
 }
 async function stopNativeBackgroundWatch() {
   const BG = window.Capacitor?.Plugins?.BackgroundGeolocation;
-  if (BG && _liveNativeWatcher) {
-    try { await BG.removeWatcher({ id: _liveNativeWatcher }); } catch {}
-  } else {
-    // BG existe mas o watcher ainda não foi atribuído (addWatcher em voo) —
-    // sinaliza pro startNativeBackgroundWatch desligar assim que resolver.
+  const id = _liveNativeWatcher;
+  _liveNativeWatcher = null;
+  storage.remove(LIVE_NATIVE_WATCHER_KEY);
+  if (BG && id) {
+    try { await BG.removeWatcher({ id }); } catch {}
+  } else if (_liveNativeStarting) {
+    // addWatcher em voo — sinaliza pro startNativeBackgroundWatch desligar
+    // assim que resolver.
     _liveWatchStopRequested = true;
   }
-  _liveNativeWatcher = null;
+}
+// Erros chegam no MESMO callback dos fixes. NOT_AUTHORIZED (tocou "Não
+// permitir" ou rebaixou a permissão em Ajustes) desliga de verdade, como o
+// code 1 do browser — antes era ignorado e o 📍 seguia "transmitindo" calado.
+function onNativeWatchError(error) {
+  if (error?.code === 'NOT_AUTHORIZED') {
+    _liveNativeDenied = true;
+    if (settings.liveLocation?.enabled) disableLiveSharing();
+    showToast(geoDeniedHelp(), 10000);
+    renderLiveChip();
+  } else if (!_liveGeoErrShown) {
+    _liveGeoErrShown = true;
+    showToast('Não foi possível obter sua localização — tentando de novo.');
+  }
+}
+// Watchdog: transmitindo pelo shell e nenhum callback há 90 s → refaz o
+// watcher. Cobre o watcher que perdeu o canal com a página (chamadas do bridge
+// zeradas) e, parado num sinal com o distanceFilter, renova a posição.
+const LIVE_NATIVE_WATCHDOG_MS = 90000;
+function nativeLiveWatchdog() {
+  if (!_liveSharing || !liveIsNative() || _liveNativeRestarting || _liveNativeStarting) return;
+  if (Date.now() - _liveNativeLastCbMs < LIVE_NATIVE_WATCHDOG_MS) return;
+  _liveNativeRestarting = true;
+  (async () => {
+    await stopNativeBackgroundWatch();
+    if (!_liveSharing) return;
+    const ok = await startNativeBackgroundWatch();
+    if (!ok && _liveSharing && settings.liveLocation?.enabled) {
+      disableLiveSharing();
+      showToast('A transmissão ao vivo parou e não voltou — ligue de novo no 📍.', 8000);
+    }
+  })().finally(() => { _liveNativeRestarting = false; });
 }
 
 function startLiveShare() {
+  _liveShareStartMs = Date.now();
+  _liveLastGoodFixMs = Date.now();   // janela de 30 s p/ um fix preciso antes de aceitar um grosseiro
+  _liveCoarseWarned = false;
+  _liveStallWarned = false;
+  _liveResumeOffer = false;
+  _liveNativeDenied = false;
+  noteLiveBeat(true);
   // No shell nativo devolve a Promise<boolean> do watcher pra applyLiveLocation
   // poder desfazer o estado se o background-geolocation não subir (permissão
   // negada / erro do plugin). No browser retorna undefined (erros são tratados
   // no callback de watchPosition).
   if (liveIsNative()) return startNativeBackgroundWatch();
-  if (_liveWatchId != null || !navigator.geolocation) return;
+  if (!navigator.geolocation) return false;   // → rollback + aviso em applyLiveLocation
+  acquireLiveWakeLock();   // síncrono no toque de Compartilhar (gesto p/ o WebKit)
+  if (_liveWatchId != null) return;
   _liveGeoErrShown = false;
   _liveWatchId = navigator.geolocation.watchPosition(
     (pos) => {
       _liveGeoErrShown = false;   // recuperou o sinal — pode avisar de novo se cair
       const c = pos.coords;
       sendLivePosition(c.latitude, c.longitude, c.accuracy,
-        Number.isFinite(c.heading) ? c.heading : NaN);
+        Number.isFinite(c.heading) ? c.heading : NaN, pos.timestamp);
     },
     (err) => {
       if (err && err.code === 1) {   // PERMISSION_DENIED
-        showToast('Sem permissão de localização — compartilhamento desligado.');
-        settings.liveLocation.enabled = false; saveSettings();
-        applyLiveLocation();
-        const cb = document.querySelector('[data-setting="liveLocation.enabled"]');
-        if (cb) cb.checked = false;
+        disableLiveSharing();
+        showToast(geoDeniedHelp(), 10000);
       } else if (err && (err.code === 2 || err.code === 3) && !_liveGeoErrShown) {
         // POSITION_UNAVAILABLE / TIMEOUT: o watch segue tentando (perder o GPS
         // por um tempo é comum pedalando), mas avisa UMA vez pra não mentir
@@ -5438,15 +5936,35 @@ function startLiveShare() {
     { enableHighAccuracy: true, maximumAge: 3000, timeout: 20000 },
   );
 }
-function stopLiveShare() {
+// `explicit` = a pessoa desligou (📍, Ajustes, permissão negada). Sem ele é só
+// a página indo pro fundo (pagehide): encerra o watch local mas guarda a fila
+// e o carimbo, e tenta um último envio.
+function stopLiveShare(explicit) {
   if (liveIsNative()) stopNativeBackgroundWatch();
   if (_liveWatchId != null && navigator.geolocation) {
     navigator.geolocation.clearWatch(_liveWatchId);
   }
   _liveWatchId = null;
-  _liveLastSentMs = 0;
+  _liveLastFixMs = 0;
+  releaseLiveWakeLock();
+  if (explicit) {
+    _liveOutbox = [];
+    _livePostFails = 0;
+    _livePostRetryAt = 0;
+    _liveLastOkMs = 0;   // a próxima sessão conta a parada do zero
+    storage.remove(LIVE_SESSION_KEY);
+  } else {
+    flushLiveOutbox();
+  }
   // NÃO chama /live-location/stop: o rastro fica visível até expirar da janela
   // de 3h (decisão de produto). Parar só interrompe novos envios.
+}
+function disableLiveSharing() {
+  if (!settings.liveLocation) settings.liveLocation = {};
+  settings.liveLocation.enabled = false;
+  saveSettings();
+  applyLiveLocation();
+  _syncShareCheckbox();
 }
 
 // Opacidade dos pontos do rastro (slider da camada Pessoas ao vivo). Atualiza
@@ -5473,34 +5991,56 @@ function setLiveViewEnabled(v) {
   applyLiveLocation();
 }
 
+// Tick de 10 s enquanto vê ou transmite: idades/esmaecimento entre polls,
+// reenvio da fila, aviso de transmissão parada, chip e o watchdog nativo.
+const LIVE_TICK_MS = 10000;
+let _liveTickTimer = null;
+function syncLiveTick() {
+  const want = _liveViewing || _liveSharing;
+  if (want && !_liveTickTimer) _liveTickTimer = setInterval(liveTick, LIVE_TICK_MS);
+  else if (!want && _liveTickTimer) { clearInterval(_liveTickTimer); _liveTickTimer = null; }
+}
+function liveTick() {
+  if (_liveSharing) {
+    nativeLiveWatchdog();
+    flushLiveOutbox();
+  }
+  if (document.hidden) return;
+  refreshLiveAges();
+  checkLiveSendHealth();
+  renderLiveChip();
+}
+
 // Reconcilia o subsistema com as configurações. Idempotente (chamado por
 // applyAllSettings a cada mudança e por visibilitychange). Ver e transmitir
 // são independentes.
 function applyLiveLocation() {
-  // ── Ver (poll + render): ligado se `view` E a aba está visível. Pausa em
-  // background pra não consumir rede à toa.
-  const wantView = !!settings.liveLocation?.view && !document.hidden;
+  // ── Ver (poll + render): ligado se `view` E a aba está visível. Aba oculta
+  // só PAUSA (marcadores e cursor ficam; a volta pede o delta e o tick
+  // reenvelhece os marcadores na hora); desligar a camada esquece tudo.
+  const viewOn = !!settings.liveLocation?.view;
+  const wantView = viewOn && !document.hidden;
+  if (!viewOn && (_personMarkers.size || _liveCursor)) {
+    clearPersonMarkers();
+    _liveCursor = 0;
+    _livePollFails = 0;
+  }
   if (wantView !== _liveViewing) {
     _liveViewing = wantView;
+    _livePollGen++;
+    if (_livePollCtl) { _livePollCtl.abort(); _livePollCtl = null; }
+    clearTimeout(_livePollTimer);
+    _livePollTimer = null;
     if (wantView) {
+      _livePollIdle = 0;
+      refreshLiveAges();
       pollLivePositions();
-      _livePollMs = Math.max(1500, settings.liveLocation?.pollMs || 4000);
-      _livePollTimer = setInterval(pollLivePositions, _livePollMs);
-    } else {
-      if (_livePollTimer != null) { clearInterval(_livePollTimer); _livePollTimer = null; }
-      _livePollMs = null;
-      clearPersonMarkers();
     }
-  } else if (wantView && _livePollTimer != null) {
-    // Sem transição: só recria o timer se pollMs mudou de verdade. Antes,
-    // qualquer mudança de Ajustes/visibilidade reiniciava a cadência (o próximo
-    // fetch escorregava até um intervalo inteiro pra frente).
-    const ms = Math.max(1500, settings.liveLocation?.pollMs || 4000);
-    if (ms !== _livePollMs) {
-      clearInterval(_livePollTimer);
-      _livePollMs = ms;
-      _livePollTimer = setInterval(pollLivePositions, ms);
-    }
+  } else if (wantView && _livePollTimer != null
+      && _livePollBase !== Math.max(1500, settings.liveLocation?.pollMs || 4000)) {
+    // Sem transição: só reagenda se pollMs mudou de verdade (Ajustes mexe em
+    // tudo a cada input — não pode escorregar a cadência à toa).
+    scheduleLivePoll();
   }
 
   // ── Transmitir (independente do ver): ligado se `enabled`.
@@ -5513,19 +6053,25 @@ function applyLiveLocation() {
       // plugin), desfaz o estado pra não mentir "transmitindo" e permitir nova
       // tentativa, espelhando o tratamento de PERMISSION_DENIED do browser. No
       // browser startLiveShare devolve undefined (≠ false), então sem rollback.
+      // Se a pessoa desligou enquanto subia, não há o que desfazer (nem avisar).
       Promise.resolve(startLiveShare()).then((ok) => {
-        if (ok === false) {
+        if (ok === false && settings.liveLocation?.enabled) {
           _liveSharing = false;
           settings.liveLocation.enabled = false;
           saveSettings();
           _syncShareCheckbox();
           updateShareLocBtn();
+          syncLiveTick();
           showToast('Não foi possível iniciar o compartilhamento ao vivo.');
         }
       });
-    } else stopLiveShare();
+    } else stopLiveShare(true);
+  } else if (wantShare && !document.hidden) {
+    acquireLiveWakeLock();   // voltou a ficar visível: o navegador soltou o lock ao ocultar
   }
   updateShareLocBtn();   // mantém o botão do topbar em sincronia com `enabled`
+  syncLiveTick();
+  renderLiveChip();
 }
 
 // Ícone 📍 (linha "Pessoas ao vivo") — liga/desliga a transmissão da própria
@@ -5540,13 +6086,15 @@ function _syncShareCheckbox() {
   const cb = document.querySelector('[data-setting="liveLocation.enabled"]');
   if (cb) cb.checked = !!settings.liveLocation?.enabled;
 }
-// Clique no 📍 (wired em makeRow): se já transmite, para; senão abre o modal
-// pra escolher apelido + por quanto tempo guardar o rastro.
+// Clique no 📍 (wired em makeRow; também o item do ☰ Ações): se já transmite,
+// confirma antes de parar — o botão é pequeno e fica colado nos ▲▼ da camada,
+// e um toque errado no meio do pedal cortava a posição de quem vem atrás.
+// Senão abre o modal pra escolher apelido + por quanto tempo guardar o rastro.
 function onShareLocClick() {
   if (!settings.liveLocation) settings.liveLocation = {};
   if (settings.liveLocation.enabled) {
-    settings.liveLocation.enabled = false;
-    saveSettings(); applyLiveLocation(); _syncShareCheckbox();
+    if (!confirm('Parar de compartilhar sua localização ao vivo?\n\nQuem está no mapa continua vendo o seu rastro até ele expirar.')) return;
+    disableLiveSharing();
   } else {
     openShareNameModal();
   }
@@ -5564,6 +6112,17 @@ function openShareNameModal() {
   if (nameEl) nameEl.value = settings.liveLocation?.displayName || '';
   if (hEl) hEl.value = String(Math.floor(sec / 3600));
   if (mEl) mEl.value = String(Math.floor((sec % 3600) / 60));
+  // Aviso da tela apagada + "manter a tela acesa": só no navegador (o app
+  // nativo transmite em segundo plano); a opção só aparece com Wake Lock.
+  const native = liveIsNative();
+  const webNote = document.getElementById('share-name-web-note');
+  const nativeNote = document.getElementById('share-name-native-note');
+  const awakeRow = document.getElementById('share-name-awake-row');
+  const awakeEl = document.getElementById('share-name-awake');
+  if (webNote) webNote.hidden = native;
+  if (nativeNote) nativeNote.hidden = !native;
+  if (awakeRow) awakeRow.hidden = native || !navigator.wakeLock?.request;
+  if (awakeEl) awakeEl.checked = settings.liveLocation?.keepAwake !== false;
   if (typeof closeOtherMobileDialogs === 'function') closeOtherMobileDialogs('share');
   modal.hidden = false;
   setTimeout(() => nameEl?.focus(), 0);
@@ -5579,9 +6138,13 @@ function confirmShareName() {
   const m = Math.max(0, Math.min(59, Math.floor(Number(document.getElementById('share-name-ttl-m')?.value) || 0)));
   settings.liveLocation.displayName = (nameEl?.value || '').trim().slice(0, 40);
   settings.liveLocation.ttlSec = Math.max(60, Math.min(24 * 3600, h * 3600 + m * 60));
+  const awakeRow = document.getElementById('share-name-awake-row');
+  if (awakeRow && !awakeRow.hidden) {
+    settings.liveLocation.keepAwake = !!document.getElementById('share-name-awake')?.checked;
+  }
   settings.liveLocation.enabled = true;
   saveSettings();
-  applyLiveLocation();
+  applyLiveLocation();   // síncrono: o pedido de wake lock sai dentro deste toque
   _syncShareCheckbox();
   const dn = document.querySelector('[data-setting="liveLocation.displayName"]');
   if (dn) dn.value = settings.liveLocation.displayName;
@@ -5596,17 +6159,24 @@ document.getElementById('share-name-input')?.addEventListener('keydown', (e) => 
   if (e.key === 'Enter') { e.preventDefault(); confirmShareName(); }
 });
 
-// Pausa/retoma o poll quando a aba some/volta (só afeta o ver).
-document.addEventListener('visibilitychange', applyLiveLocation);
+// Pausa/retoma o poll quando a aba some/volta (e avisa se a transmissão ficou
+// parada enquanto a tela estava apagada).
+document.addEventListener('visibilitychange', () => { noteLiveVisible(); applyLiveLocation(); });
 // Ao fechar/ocultar a aba, só encerra o watch local — o rastro permanece no
 // servidor até expirar (3h). Zera _liveSharing pra que o próximo reconcile
 // (visibilitychange/pageshow) veja a transição e religue: pagehide também
 // dispara ao entrar no bfcache (trocar de app / bloquear a tela), onde a página
 // segue viva — sem isso o watch morria mas o estado dizia "ainda transmitindo".
-window.addEventListener('pagehide', () => { if (_liveSharing) { stopLiveShare(); _liveSharing = false; } });
+window.addEventListener('pagehide', () => { if (_liveSharing) { stopLiveShare(false); _liveSharing = false; } });
 // Volta do bfcache (pageshow persisted): a página continua com enabled=true mas
 // o watch foi encerrado no pagehide — reconcilia pra religar a transmissão.
 window.addEventListener('pageshow', (e) => { if (e.persisted) applyLiveLocation(); });
+// A rede voltou: reenvia a fila e atualiza já, sem esperar o backoff.
+window.addEventListener('online', () => {
+  _livePostRetryAt = 0;
+  if (_liveSharing) flushLiveOutbox();
+  if (_liveViewing && !_livePollCtl) pollLivePositions();
+});
 // Boot: liga o "ver pessoas ao vivo" já no load (default on), sem depender de
 // abrir Ajustes — mesmo padrão dos outros apply*() chamados na inicialização.
 applyLiveLocation();

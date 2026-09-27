@@ -1419,6 +1419,12 @@
               <input type="number" id="share-name-ttl-h" min="0" max="23" step="1" value="3" aria-label="horas"><span class="ttl-sep">h</span>
               <input type="number" id="share-name-ttl-m" min="0" max="59" step="1" value="0" aria-label="minutos"><span class="ttl-sep">min</span>
             </span></label>
+          <!-- Limite do navegador: o iPhone congela o GPS da página com a tela
+               apagada. O app mostra um ou outro aviso (liveIsNative). -->
+          <p class="muted share-name-note" id="share-name-web-note">No navegador a transmissão <strong>pausa com a tela apagada</strong> ou em outro app, e volta quando você reabre o amora. Celular no guidão? Deixe a tela acesa:</p>
+          <label class="settings-row" id="share-name-awake-row"><span>Manter a tela acesa enquanto transmito</span>
+            <input type="checkbox" id="share-name-awake" checked></label>
+          <p class="muted share-name-note" id="share-name-native-note" hidden>No app a transmissão continua com a tela apagada.</p>
           <div class="settings-actions">
             <button type="button" id="share-name-confirm">📍 Compartilhar</button>
           </div>

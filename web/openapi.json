@@ -151,8 +151,12 @@
       "get": {
         "tags": ["dados"],
         "summary": "Posições ao vivo (opt-in, pseudônimas, efêmeras) + rastro de cada pessoa",
-        "description": "Estado em memória, janela de 3 h, `Cache-Control: no-store`. `{positions: [{id, name, lat, lng, ts, age, accuracy?, heading?, trail: [[lat, lng, accuracy|null, ageSeconds], …]}]}`.",
-        "responses": {"200": {"description": "Posições.", "content": {"application/json": {"schema": {"type": "object", "properties": {"positions": {"type": "array", "items": {"type": "object"}}}}}}}}
+        "description": "Estado em memória, janela de 3 h, `Cache-Control: no-store`. Instantes em segundos desde a época, no relógio do servidor.\n\n- **Sem parâmetro** (formato original, rastro inteiro): `{now, positions: [{id, name, lat, lng, ts, age, accuracy?, heading?, trail: [[lat, lng, accuracy|null, ageSeconds], …]}]}`.\n- **`?since=<cursor>`** (leitura incremental — o que o app usa): `{now, since, positions: [{id, name, lat, lng, ts, age, accuracy?, heading?, t0, trail: [[lat, lng, accuracy|null, ts], …]}]}`. Vêm as posições atuais de todo mundo, mas só os pontos de rastro que o servidor RECEBEU depois do cursor (emagrecidos por Douglas-Peucker, no máx. 200 por pessoa), com o instante absoluto do fix — um ponto retrodatado (fila de quem estava sem conexão) também chega. `t0` = instante do ponto mais antigo que o servidor ainda guarda: descarte localmente o que for anterior. Passe o `now` de cada resposta como `since` da próxima; `since=0` = carga inicial. Quem sumiu de `positions` expirou.",
+        "parameters": [{"name": "since", "in": "query", "required": false, "description": "Cursor da leitura incremental: o `now` da resposta anterior (0 = carga inicial). Ausente = formato original.", "schema": {"type": "number", "minimum": 0}}],
+        "responses": {
+          "200": {"description": "Posições.", "content": {"application/json": {"schema": {"type": "object", "properties": {"now": {"type": "number", "description": "Relógio do servidor nesta resposta — o próximo `since`."}, "since": {"type": "number", "description": "Cursor aplicado (só com `?since=`; 0 = carga completa)."}, "positions": {"type": "array", "items": {"type": "object", "properties": {"id": {"type": "string"}, "name": {"type": "string"}, "lat": {"type": "number"}, "lng": {"type": "number"}, "ts": {"type": "number"}, "age": {"type": "number"}, "accuracy": {"type": "number"}, "heading": {"type": "number"}, "t0": {"type": ["number", "null"]}, "trail": {"type": "array", "items": {"type": "array", "prefixItems": [{"type": "number"}, {"type": "number"}, {"type": ["number", "null"]}, {"type": "number"}]}}}}}}}}}},
+          "400": {"description": "`since` inválido (não numérico, negativo)."}
+        }
       }
     },
     "/health": {
