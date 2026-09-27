@@ -23,6 +23,7 @@ import {
   formatHMS,
   mapConcurrent,
   haversineMeters as haversine,
+  saveFile,
   showToast,
   storage,
 } from './lib/utils.js';
@@ -8066,6 +8067,74 @@ L.DomEvent.disableScrollPropagation(traceControls);
 const traceRoutingMode = document.getElementById('trace-routing-mode');
 const traceMetrics = document.getElementById('trace-metrics');
 
+// ⓘ da barra de edição: legenda dos botões/gestos + o detalhamento da
+// simulação. Os dois viviam só em `title` (tooltip de mouse), que o iOS nunca
+// mostra — no celular os ícones da barra eram adivinhação e o detalhamento
+// (energia por termo, tempo por terreno, SUV) era inalcançável.
+const traceInfoBtn = document.createElement('button');
+traceInfoBtn.type = 'button';
+traceInfoBtn.id = 'trace-info-btn';
+traceInfoBtn.className = 'trace-info-btn';
+traceInfoBtn.textContent = 'ⓘ';
+traceInfoBtn.title = 'Como usar o editor + detalhes da simulação';
+traceInfoBtn.setAttribute('aria-label', 'Como usar o editor e detalhes da simulação');
+traceInfoBtn.setAttribute('aria-expanded', 'false');
+traceInfoBtn.setAttribute('aria-controls', 'trace-info');
+const traceInfo = document.createElement('div');
+traceInfo.id = 'trace-info';
+traceInfo.className = 'trace-info';
+traceInfo.hidden = true;
+traceInfo.setAttribute('role', 'region');
+traceInfo.setAttribute('aria-label', 'Como usar o editor');
+traceControls.append(traceInfoBtn, traceInfo);
+
+function traceLegendHtml() {
+  const t = isCoarsePointer();
+  const tap = t ? 'Toque' : 'Clique';
+  const rows = [
+    [`${tap} no mapa`, 'novo ponto no fim da rota'],
+    [t ? 'Segure na linha' : 'Clique na linha', 'insere um ponto no meio (arraste pra posicionar)'],
+    ['Arraste um ponto', 'move; ' + (t ? 'toque' : 'clique') + ' nele: nome, POI, remover'],
+    ['↶ ↷', 'desfazer / refazer'],
+    ['Seletor', 'como ligar os pontos: reta, OSM, menor energia'],
+    ['⚙', 'parâmetros da simulação'],
+    ['🗑', 'descarta o traçado (e o rascunho guardado)'],
+    ['⇄', 'inverte o sentido'],
+    ['📂', 'carregar rota (servidor ou .gpx)'],
+    ['⤓🗺︎', 'salvar no servidor, link, QR, exportar GPX'],
+    ['👁', 'ver o traçado limpo, sem os pontos'],
+    ['🗺︎ cancelar', 'fecha o editor — o rascunho fica guardado'],
+  ];
+  return '<div class="trace-info-head"><strong>Editor de traçado</strong>' +
+    '<button type="button" class="trace-info-close" aria-label="Fechar">✕</button></div>' +
+    '<dl class="trace-legend">' +
+    rows.map(([k, v]) => `<dt>${escapeHtml(k)}</dt><dd>${escapeHtml(v)}</dd>`).join('') +
+    '</dl><p class="trace-info-sub">Simulação</p><pre class="trace-metrics-detail"></pre>';
+}
+function refreshTraceInfoDetail() {
+  if (traceInfo.hidden) return;
+  const pre = traceInfo.querySelector('.trace-metrics-detail');
+  if (pre) pre.textContent = traceMetrics.title || 'Adicione pontos pra simular.';
+}
+function openTraceInfo() {
+  traceInfo.innerHTML = traceLegendHtml();
+  traceInfo.hidden = false;
+  traceInfoBtn.setAttribute('aria-expanded', 'true');
+  refreshTraceInfoDetail();
+}
+function closeTraceInfo() {
+  traceInfo.hidden = true;
+  traceInfoBtn.setAttribute('aria-expanded', 'false');
+}
+traceInfoBtn.addEventListener('click', () => (traceInfo.hidden ? openTraceInfo() : closeTraceInfo()));
+traceInfo.addEventListener('click', (e) => { if (e.target.closest('.trace-info-close')) closeTraceInfo(); });
+// No toque, a legenda abre sozinha na 1ª vez que o editor abre neste aparelho.
+function maybeShowTraceLegendOnce() {
+  if (!isCoarsePointer() || storage.get('phidro:traceLegendSeen')) return;
+  storage.set('phidro:traceLegendSeen', '1');
+  openTraceInfo();
+}
+
 // ─── Physics + simulation parameters ─────────────────────────────────────────
 // Per-segment forces:
 //   F_roll = Crr × m × g
@@ -8197,13 +8266,36 @@ let trackpoints = [];
 // `history` sombrearia window.history e quebraria history.replaceState().
 let drawHistory = [[]];      // snapshots of [{ lat, lng, pathFromPrev }, ...]
 let historyIndex = 0;
+// Teto do desfazer: cada snapshot compartilha os arrays de geometria (ver
+// snapshot()), mas uma sessão longa ainda acumularia centenas de entradas.
+const HISTORY_MAX = 100;
+// "Linhagem" do rascunho: cada carregamento que SUBSTITUI o traçado (link,
+// rota salva, GPX, Editar este traçado) abre uma nova. O vínculo com o
+// servidor (id/nome) é da linhagem — desfazer até o rascunho de antes de um
+// carregamento devolve o id/nome DELE, senão um "Salvar no servidor" depois
+// do desfazer sobrescreveria a rota carregada com o traçado antigo.
+let _draftLineage = 0;
+let _lineageCounter = 0;
+const _lineageMeta = new Map();   // linhagem → { sid, n, rm }
 let draftPolyline = null;
 let draftCasing = null;
 let pointIdCounter = 0;
 // 'straight' | 'cycling' | 'foot' — controls how new segments are computed.
 // 'straight' just connects waypoints with a line (the absolute shortest distance).
 let routingMode = 'straight';
-let pendingRouteSeq = 0;     // increments per OSRM call; lets us discard stale results
+// Roteamento é POR SEGMENTO: cada um (o caminho que CHEGA em tp) leva o
+// próprio carimbo (tp._routeSeq) e um resultado só entra se o carimbo ainda é
+// o dele e as duas pontas não mudaram desde o pedido — ver refetchPath. Um
+// contador global único descartava o resultado dos OUTROS segmentos a cada
+// toque/arraste durante um roteamento em voo, e eles ficavam na reta pra
+// sempre. `pendingRouteSeq` sobrou como ÉPOCA do rascunho: operações em bloco
+// (desfazer, descartar, inverter, carregar) incrementam e invalidam tudo que
+// está em voo.
+let pendingRouteSeq = 0;
+let _segRouteSeq = 0;        // fonte dos carimbos por segmento
+let _routesInFlight = 0;     // roteamentos em voo (a varredura espera zerar)
+let _markerDragActive = 0;   // arraste de waypoint em andamento
+let _markerDragEndAt = 0;    // fim do último arraste (ver onMapClickInDrawing)
 
 traceBtn.addEventListener('click', () => {
   if (previewMode) { exitPreviewMode(); return; }  // "Editar" volta pra edição
@@ -8212,6 +8304,7 @@ traceBtn.addEventListener('click', () => {
     // Rascunho persistido (fechou o navegador / Cancelar sem descartar)
     // volta pra tela — o descarte explícito é o 🗑 da barra.
     restoreTraceDraft();
+    maybeShowTraceLegendOnce();
   } else {
     exitDrawingMode();
   }
@@ -8280,6 +8373,8 @@ function enterDrawingMode() {
   trackpoints = [];
   drawHistory = [[]];
   historyIndex = 0;
+  _lineageMeta.clear();
+  _draftLineage = ++_lineageCounter;
   if (draftPolyline) { map.removeLayer(draftPolyline); draftPolyline = null; }
   if (draftCasing)   { map.removeLayer(draftCasing);   draftCasing = null; }
 
@@ -8358,7 +8453,18 @@ function exitDrawingMode() {
   // volta no próximo Traçar (o descarte explícito é o 🗑 da barra). Uma
   // gravação debounced ainda pendente precisa ser descarregada AGORA — senão
   // o timer dispararia depois do wipe abaixo e salvaria um rascunho vazio.
-  if (_traceDraftTimer) { clearTimeout(_traceDraftTimer); saveTraceDraft(); }
+  // (O popup de ponto fecha ANTES: fechar pode registrar o nome digitado,
+  // que agenda outra gravação.)
+  if (_tpPopup) map.closePopup(_tpPopup);
+  flushTraceDraft();
+  // O rascunho vive só neste navegador (e o Safari fora da tela de início
+  // apaga o armazenamento de sites sem visita há 7 dias) — uma vez por
+  // sessão, lembra que o servidor é o lugar seguro.
+  if (trackpoints.length >= 2 && !currentSavedRouteId && !_draftNudgeShown) {
+    _draftNudgeShown = true;
+    showToast('Rascunho guardado só neste aparelho — pra não perder, use ⤓ Salvar → ☁ Salvar no servidor.', 6000);
+  }
+  closeTraceInfo();
   drawingMode = false;
   previewMode = false;
   document.body.classList.remove('drawing', 'trace-preview');
@@ -8419,6 +8525,18 @@ async function onMapClickInDrawing(e) {
   // Também engole o ghost click do toque e um duplo-clique no painel recém-
   // encolhido. Ver geoSearchPickTs em pickGeoSearchResult.
   if (Date.now() - geoSearchPickTs < 700) return;
+  // Soltar um waypoint arrastado (mouse) em cima de outro marcador (uma
+  // foto): o click vai pro ancestral comum, que o Leaflet entrega como
+  // clique no MAPA — virava um ponto extra no fim da rota.
+  if (Date.now() - _markerDragEndAt < 400) return;
+  // Toque no mapa com o popup de um ponto aberto: só FECHA o popup. Tocar
+  // fora é o jeito natural de fechar (o ✕ é pequeno) e de baixar o teclado
+  // do nome — e cada fechamento virava um waypoint novo, re-roteado. (O
+  // popup tem closeOnClick:false justamente pra ainda estar aberto aqui.)
+  if (_tpPopup && map.hasLayer(_tpPopup)) {
+    map.closePopup(_tpPopup);
+    return;
+  }
   const tp = createTrackpoint(e.latlng);
   trackpoints.push(tp);
 
@@ -8430,12 +8548,16 @@ async function onMapClickInDrawing(e) {
   redrawAndMetrics();
   updateTraceControls();
 
-  if (routingMode !== 'straight' && trackpoints.length > 1) {
-    const idx = trackpoints.length - 1;
-    await refetchPath(idx);
+  // O histórico registra a edição NA HORA (com o segmento marcado pendente —
+  // o roteamento completa o snapshot quando chega, ver patchPendingHistory).
+  // Empilhar depois do await deixava um desfazer feito no meio do voo pular
+  // um passo e perder o refazer quando a resposta chegava.
+  const job = routingMode !== 'straight' && trackpoints.length > 1 ? refetchPath(tp) : null;
+  pushHistory();
+  if (job) {
+    await job;
     redrawAndMetrics();
   }
-  pushHistory();
 }
 
 // Initial state for the new trackpoint can be passed in (used by snapshot
@@ -8453,8 +8575,16 @@ function createTrackpoint(latlng, init = {}) {
     zIndexOffset: 1000,
   });
   marker._tpId = id;
-  marker.on('drag', () => redrawAndMetrics());
-  marker.on('dragend', () => onMarkerDragEnd(id));
+  // Durante o arraste só a LINHA acompanha (1× por quadro); física/métricas e
+  // elevação recalculam no dragend — numa rota longa, a simulação inteira a
+  // cada evento de toque (60 Hz) deixava o marcador atrás do dedo.
+  marker.on('dragstart', () => { _markerDragActive++; });
+  marker.on('drag', scheduleDragRedraw);
+  marker.on('dragend', () => {
+    _markerDragActive = Math.max(0, _markerDragActive - 1);
+    _markerDragEndAt = Date.now();
+    onMarkerDragEnd(id);
+  });
   marker.on('click', () => openTpPopup(id));
   marker.addTo(map);
   if (name) {
@@ -8618,20 +8748,33 @@ const GARMIN_SYMS = [
   ['Crossing',       'Travessia'],
 ];
 
+// Ponteiro grosso (dedo) como entrada principal — gestos e alvos do editor
+// mudam de forma (segurar pra inserir, alvos de 40 px, Enter só busca…).
+function isCoarsePointer() {
+  try { return window.matchMedia('(pointer: coarse)').matches; } catch { return false; }
+}
+
+// No toque a CAIXA do marcador (transparente) vira a área de toque de 40 px;
+// o ponto visível segue do mesmo tamanho, centralizado (CSS). 16 px era um
+// terço do alvo mínimo: quem errava por pouco pegava a linha (inseria ponto)
+// ou o mapa (acrescentava ponto no fim).
 function tpIcon(isPoi, sym) {
+  const coarse = isCoarsePointer();
   if (isPoi) {
+    const s = coarse ? 40 : 26;
     return L.divIcon({
       className: 'trackpoint-marker poi',
       html: `<span class="poi-emoji" title="${symLabel(sym)}">${symEmoji(sym)}</span>`,
-      iconSize: [26, 26],
-      iconAnchor: [13, 13],
+      iconSize: [s, s],
+      iconAnchor: [s / 2, s / 2],
     });
   }
+  const s = coarse ? 40 : 16;
   return L.divIcon({
     className: 'trackpoint-marker',
     html: '<div class="trackpoint-dot"></div>',
-    iconSize: [16, 16],
-    iconAnchor: [8, 8],
+    iconSize: [s, s],
+    iconAnchor: [s / 2, s / 2],
   });
 }
 
@@ -8654,6 +8797,8 @@ function refreshMarker(tp) {
   }
 }
 
+let _tpPopup = null;   // popup de edição de ponto aberto (no máx. um)
+
 function openTpPopup(id) {
   const tp = trackpoints.find((t) => t.id === id);
   if (!tp) return;
@@ -8663,7 +8808,7 @@ function openTpPopup(id) {
   root.innerHTML = `
     <label class="tp-row">
       <span>Nome</span>
-      <input type="text" class="tp-name" placeholder="ex.: Mirante do Pacaembu" />
+      <input type="text" class="tp-name" placeholder="ex.: Mirante do Pacaembu" enterkeyhint="done" />
     </label>
     <label class="tp-row tp-checkbox">
       <input type="checkbox" class="tp-poi" />
@@ -8710,7 +8855,27 @@ function openTpPopup(id) {
     tp.name = nameInput.value;
     refreshMarker(tp);
   });
-  nameInput.addEventListener('change', pushHistory);
+  // O nome entra no histórico quando "assenta": change (blur) OU o popup
+  // fechando com o campo ainda focado (remover um input focado não dispara
+  // change — o nome ficava fora do desfazer/rascunho).
+  let committedName = tp.name || '';
+  const commitName = () => {
+    if ((tp.name || '') === committedName) return;
+    committedName = tp.name || '';
+    pushHistory();
+  };
+  nameInput.addEventListener('change', commitName);
+  nameInput.addEventListener('keydown', (e) => {
+    // Nada daqui vaza pro keydown global (Esc sairia do editor, Cmd+Z
+    // desfaria um waypoint em vez do texto). Enter/"OK" do teclado: confirma
+    // e fecha o popup.
+    e.stopPropagation();
+    if (e.key === 'Enter' || e.key === 'Escape') {
+      e.preventDefault();
+      nameInput.blur();
+      map.closePopup(popup);
+    }
+  });
   poiCheck.addEventListener('change', () => {
     tp.isPoi = poiCheck.checked;
     symRow.style.display = tp.isPoi ? '' : 'none';
@@ -8723,14 +8888,25 @@ function openTpPopup(id) {
     pushHistory();
   });
   deleteBtn.addEventListener('click', () => {
-    map.closePopup();
+    map.closePopup(popup);
     removeTrackpoint(id);
   });
 
-  L.popup({ closeButton: true, autoClose: false, className: 'tp-popup' })
+  // closeOnClick:false — um toque no mapa NÃO fecha sozinho: quem fecha é o
+  // onMapClickInDrawing, que assim sabe que o toque era pra fechar o popup e
+  // não pra criar ponto.
+  const popup = L.popup({ closeButton: true, autoClose: false, closeOnClick: false, className: 'tp-popup' })
     .setLatLng(tp.marker.getLatLng())
-    .setContent(root)
-    .openOn(map);
+    .setContent(root);
+  popup.on('remove', () => {
+    // Fechado por um desfazer/refazer: o snapshot restaurado vence — empilhar
+    // o nome aqui truncaria o refazer no meio da restauração.
+    if (!popup._discard) commitName();
+    if (_tpPopup === popup) _tpPopup = null;
+  });
+  if (_tpPopup && _tpPopup !== popup) map.closePopup(_tpPopup);
+  _tpPopup = popup;
+  popup.openOn(map);
 }
 
 async function removeTrackpoint(id) {
@@ -8753,39 +8929,50 @@ async function removeTrackpoint(id) {
   }
   redrawAndMetrics();
   updateTraceControls();
-  if (routingMode !== 'straight' && idx > 0 && idx < trackpoints.length) {
-    await refetchPath(idx);
+  const job = routingMode !== 'straight' && idx > 0 && idx < trackpoints.length
+    ? refetchPath(trackpoints[idx]) : null;
+  pushHistory();   // na hora — ver onMapClickInDrawing
+  if (job) {
+    await job;
     redrawAndMetrics();
   }
-  pushHistory();
 }
 
 async function onMarkerDragEnd(id) {
   const idx = trackpoints.findIndex((t) => t.id === id);
   if (idx === -1) return;
+  const tp = trackpoints[idx];
+  const next = trackpoints[idx + 1] || null;
 
   // Always update incoming/outgoing straight fallback first so the line snaps
   // to the new waypoint position immediately.
   if (idx > 0) {
-    trackpoints[idx].pathFromPrev = straightPath(
-      trackpoints[idx - 1].marker.getLatLng(),
-      trackpoints[idx].marker.getLatLng(),
-    );
+    tp.pathFromPrev = straightPath(trackpoints[idx - 1].marker.getLatLng(), tp.marker.getLatLng());
   }
-  if (idx < trackpoints.length - 1) {
-    trackpoints[idx + 1].pathFromPrev = straightPath(
-      trackpoints[idx].marker.getLatLng(),
-      trackpoints[idx + 1].marker.getLatLng(),
-    );
+  if (next) {
+    next.pathFromPrev = straightPath(tp.marker.getLatLng(), next.marker.getLatLng());
   }
   redrawAndMetrics();
 
-  if (routingMode !== 'straight') {
-    if (idx > 0) await refetchPath(idx);
-    if (idx < trackpoints.length - 1) await refetchPath(idx + 1);
+  // Os dois lados em paralelo e POR REFERÊNCIA — um índice capturado antes
+  // do await apontaria pro ponto errado se outro fosse inserido no meio.
+  const jobs = routingMode !== 'straight'
+    ? [idx > 0 ? refetchPath(tp) : null, next ? refetchPath(next) : null] : [];
+  pushHistory();   // na hora — ver onMapClickInDrawing
+  if (jobs.length) {
+    await Promise.all(jobs);
     redrawAndMetrics();
   }
-  pushHistory();
+}
+
+// Redesenho da linha durante o arraste de um waypoint: no máximo 1× por quadro.
+let _dragRedrawRaf = 0;
+function scheduleDragRedraw() {
+  if (_dragRedrawRaf) return;
+  _dragRedrawRaf = requestAnimationFrame(() => {
+    _dragRedrawRaf = 0;
+    if (drawingMode) updateDraftPolyline();
+  });
 }
 
 function straightPath(fromLatLng, toLatLng) {
@@ -8795,44 +8982,126 @@ function straightPath(fromLatLng, toLatLng) {
   ];
 }
 
-// Re-fetch the routed path arriving at trackpoints[idx] from trackpoints[idx-1].
-// Falls back to a straight line on any failure.
-// `seqOverride`: as chamadas em lote (restaurar rota salva/compartilhada via
-// mapConcurrent) DEVEM compartilhar UM único seq, senão cada chamada
-// concorrente incrementa o contador global e invalida as irmãs — só o último
-// segmento commitava e o resto ficava na reta. Sem override, cada chamada
-// (edição interativa) pega seu próprio seq pra invalidar in-flight antigos.
-async function refetchPath(idx, seqOverride) {
-  const tp = trackpoints[idx];
+// (Re)roteia o segmento que CHEGA em `target` — o trackpoint (ou, por
+// compatibilidade, o índice dele, resolvido NA HORA da chamada) — a partir do
+// waypoint anterior. Falha mantém a reta provisória. Devolve true se o
+// resultado entrou. O 2º argumento das chamadas em lote antigas (um seq
+// compartilhado) é ignorado: cada segmento se carimba sozinho, então lote e
+// edição interativa não se invalidam mais.
+async function refetchPath(target) {
+  const tp = typeof target === 'number' ? trackpoints[target] : target;
+  const idx = tp ? trackpoints.indexOf(tp) : -1;
+  if (idx < 1) return false;
   const prev = trackpoints[idx - 1];
-  if (!tp || !prev) return;
-
-  const seq = seqOverride !== undefined ? seqOverride : ++pendingRouteSeq;
-  const tpId = tp.id;
+  const epoch = pendingRouteSeq;
+  const seq = ++_segRouteSeq;
+  const mode = routingMode;
+  tp._routeSeq = seq;
+  tp._routePending = mode;   // reta provisória até a resposta (ver sweepPendingRoutes)
+  const a = prev.marker.getLatLng();
+  const b = tp.marker.getLatLng();
+  const from = L.latLng(a.lat, a.lng);
+  const to = L.latLng(b.lat, b.lng);
+  let path = null;
+  _routesInFlight++;
   try {
-    let path;
-    if (routingMode === 'energy' || routingMode === 'energy_road') {
-      const subMode = routingMode === 'energy_road' ? 'road' : 'free';
-      path = await energyRoute(prev.marker.getLatLng(), tp.marker.getLatLng(), subMode);
+    if (mode === 'energy' || mode === 'energy_road') {
+      path = await energyRoute(from, to, mode === 'energy_road' ? 'road' : 'free');
     } else {
-      path = await osrmRoute(
-        prev.marker.getLatLng(),
-        tp.marker.getLatLng(),
-        routingMode === 'foot' ? 'foot' : 'cycling',
-      );
+      path = await osrmRoute(from, to, mode === 'foot' ? 'foot' : 'cycling');
     }
-    const stillExists = trackpoints.find((t) => t.id === tpId);
-    if (!stillExists || seq !== pendingRouteSeq) return;
-    // Proveniência do segmento: o modo que produziu ESTA geometria. Viaja no
-    // snapshot/undo, no rascunho persistido e no GPX exportado (userWaypoints)
-    // — reabrir o arquivo devolve a opção de roteamento de cada waypoint.
-    if (path) path.mode = routingMode;
-    stillExists.pathFromPrev = path;
-    scheduleTraceDraftSave();
   } catch (err) {
-    console.warn(`Route failed (mode=${routingMode}, idx=${idx}):`, err.message);
-    // Keep the straight fallback that was already set.
+    console.warn(`Route failed (mode=${mode}):`, err.message);
+    path = null;
+  } finally {
+    _routesInFlight--;
   }
+  // Só vale se NADA mudou no segmento desde o pedido: mesma época, carimbo
+  // ainda deste pedido (um mais novo pro mesmo segmento vence), mesmo vizinho
+  // anterior (inserir/remover/inverter trocam o par) e as duas pontas paradas.
+  const i = trackpoints.indexOf(tp);
+  const fresh = epoch === pendingRouteSeq && tp._routeSeq === seq && i >= 1 &&
+    trackpoints[i - 1] === prev &&
+    prev.marker.getLatLng().equals(from) && tp.marker.getLatLng().equals(to);
+  const ok = Array.isArray(path) && path.length >= 2;
+  // Proveniência do segmento: o modo que produziu ESTA geometria (o do
+  // PEDIDO, não o do seletor agora). Viaja no snapshot/undo, no rascunho
+  // persistido e no GPX exportado (userWaypoints) — reabrir o arquivo
+  // devolve a opção de roteamento de cada waypoint.
+  if (ok) path.mode = mode;
+  let committed = false;
+  if (fresh) {
+    tp._routePending = null;
+    if (ok) { tp.pathFromPrev = path; committed = true; }
+    else noteRouteFailure();   // fica a reta provisória
+  } else if (ok && epoch !== pendingRouteSeq) {
+    // Desfazer/refazer recriou os pontos durante o voo: um segmento ainda
+    // pendente com as MESMAS pontas no mesmo modo recebe o resultado (é a
+    // mesma rota) — poupa a varredura de pedir de novo.
+    for (let j = 1; j < trackpoints.length; j++) {
+      const t = trackpoints[j];
+      if (t._routePending !== mode || !t.marker.getLatLng().equals(to) ||
+          !trackpoints[j - 1].marker.getLatLng().equals(from)) continue;
+      t._routePending = null;
+      t.pathFromPrev = path;
+      committed = true;
+    }
+  }
+  if (ok) patchPendingHistory(from, to, mode, path);
+  if (committed) scheduleTraceDraftSave();
+  if (!_routesInFlight) scheduleRouteSweep();
+  return committed;
+}
+
+// Os snapshots do desfazer tirados enquanto o segmento estava na reta
+// provisória (marcados `pending`) recebem a geometria que acabou de chegar —
+// senão desfazer/refazer até eles devolveria a reta (e re-rotearia).
+function patchPendingHistory(from, to, mode, path) {
+  for (const snap of drawHistory) {
+    for (let j = 1; j < snap.length; j++) {
+      const s = snap[j];
+      if (s.pending !== mode || s.lat !== to.lat || s.lng !== to.lng) continue;
+      const p = snap[j - 1];
+      if (p.lat !== from.lat || p.lng !== from.lng) continue;
+      s.path = path;
+      s.deckFlag = path.deckFlag || null;
+      s.routedEnergyJ = Number.isFinite(path.routedEnergyJ) ? path.routedEnergyJ : null;
+      s.mode = mode;
+      s.pending = null;
+    }
+  }
+}
+
+// Varredura: quando não há roteamento em voo, re-pede todo segmento que
+// ainda está na reta provisória (a resposta dele chegou "velha" — o ponto foi
+// mexido, um desfazer restaurou um estado pendente — e ninguém mais é dono).
+// Garante que, quando o usuário para, nenhum trecho fica reto por corrida.
+// Falha de verdade (roteador fora) NÃO fica pendente: não re-tenta sozinho.
+let _routeSweepTimer = null;
+function scheduleRouteSweep() {
+  if (_routeSweepTimer) return;
+  _routeSweepTimer = setTimeout(sweepPendingRoutes, 0);
+}
+async function sweepPendingRoutes() {
+  _routeSweepTimer = null;
+  if (!drawingMode || routingMode === 'straight') return;
+  // Arraste/inserção em curso: o dragend/pointerup deles pede o próprio
+  // roteamento — varrer agora rotearia a posição do meio do gesto à toa.
+  if (_routesInFlight > 0 || _markerDragActive > 0 || lineInsertActive) return;
+  const todo = trackpoints.filter((t, i) => i > 0 && t._routePending);
+  if (!todo.length) return;
+  const results = await mapConcurrent(todo, 4, (t) => refetchPath(t));
+  if (results.some(Boolean)) redrawAndMetrics();
+}
+
+// Roteador não respondeu: o trecho fica na reta. Avisa (no máx. 1× a cada
+// poucos segundos) em vez de deixar km/kJ/GPX cortando quarteirão em silêncio.
+let _routeFailToastAt = 0;
+function noteRouteFailure() {
+  const now = Date.now();
+  if (now - _routeFailToastAt < 8000) return;
+  _routeFailToastAt = now;
+  showToast('O roteador não respondeu — um trecho ficou em linha reta. Arraste um dos pontos pra tentar de novo.', 5000);
 }
 
 // ─── Roteamento por menor energia (FABDEM + Dijkstra) ────────────────────
@@ -10529,6 +10798,10 @@ function updateDraftPolyline() {
     for (const layer of [draftPolyline, draftCasing]) {
       const el = layer.getElement();
       if (el) L.DomEvent.on(el, 'pointerdown', onLinePointerDown);
+      // O Leaflet só considera a linha ALVO do click se ela escuta 'click' —
+      // sem isto o `bubblingMouseEvents: false` nunca valia e o click de um
+      // toque/clique na linha caía no onMapClickInDrawing (ponto extra no fim).
+      layer.on('click', () => {});
     }
   } else {
     if (draftCasing) draftCasing.setLatLngs(latlngs);
@@ -10537,27 +10810,85 @@ function updateDraftPolyline() {
 }
 
 // ─── Press the draft line → insert an intermediate waypoint ─────────────────
-// A plain tap/click drops the new waypoint where you pressed; holding and
+// A plain click drops the new waypoint where you pressed; holding and
 // dragging places it wherever you release. The segment it lands in is fixed at
 // press time (the segment grabbed); only the position follows the pointer. A
 // dashed ghost previews the result during the drag. Pointer Events + pointer
 // capture make this work identically for mouse and touch — capture routes
 // every move/up to the original <path> even when the finger leaves the line.
+// NO TOQUE o gesto só é tomado depois de SEGURAR parado (LINE_HOLD_MS dentro
+// de LINE_HOLD_SLOP_PX): pan e pinça começam na linha o tempo todo (a faixa
+// de 7 px cruza a tela) e antes viravam um ponto extra onde o dedo soltava,
+// com o mapa travado. Mexeu antes do tempo = é pan, fica com o Leaflet; um
+// segundo dedo cancela.
+const LINE_HOLD_MS = 300;
+const LINE_HOLD_SLOP_PX = 8;
 let lineInsertActive = false; // set while a press-to-insert gesture is in flight
+let _lineTapHintShown = false;
 function onLinePointerDown(e) {
   if (!drawingMode || previewMode || trackpoints.length < 2) return;
   if (e.button != null && e.button > 0) return; // ignore right/middle click
   if (e.isPrimary === false) return;            // ignore extra touch points
+  if (e.pointerType === 'touch') { armLineHold(e); return; }
   L.DomEvent.stop(e);
+  startLineInsert(e, e.currentTarget, e.pointerId);
+}
 
+// Toque na linha: arma o "segurar". Não para o evento nem trava o mapa — se o
+// dedo andar, o Leaflet já está com o pan.
+function armLineHold(e) {
+  const target = e.currentTarget;
+  const pointerId = e.pointerId;
+  const x0 = e.clientX, y0 = e.clientY;
+  let last = e;
+  const container = map.getContainer();
+  let timer = 0;
+  const disarm = () => {
+    clearTimeout(timer);
+    target.removeEventListener('pointermove', onMove);
+    target.removeEventListener('pointerup', onUp);
+    target.removeEventListener('pointercancel', disarm);
+    container.removeEventListener('touchstart', onTouch, true);
+  };
+  const onMove = (ev) => {
+    if (ev.pointerId !== pointerId) return;
+    last = ev;
+    if (Math.hypot(ev.clientX - x0, ev.clientY - y0) > LINE_HOLD_SLOP_PX) disarm();
+  };
+  const onUp = (ev) => {
+    if (ev.pointerId !== pointerId) return;
+    disarm();
+    // Toque rápido na linha não insere mais — ensina o gesto, uma vez.
+    if (!_lineTapHintShown) {
+      _lineTapHintShown = true;
+      showToast('Pra inserir um ponto na linha, segure o dedo nela (e arraste pra posicionar).', 4500);
+    }
+  };
+  const onTouch = (ev) => { if (ev.touches && ev.touches.length > 1) disarm(); };
+  timer = setTimeout(() => {
+    disarm();
+    if (!drawingMode || previewMode || trackpoints.length < 2) return;
+    try { navigator.vibrate?.(12); } catch (_) { /* sem vibração */ }
+    startLineInsert(last, target, pointerId);
+  }, LINE_HOLD_MS);
+  target.addEventListener('pointermove', onMove);
+  target.addEventListener('pointerup', onUp);
+  target.addEventListener('pointercancel', disarm);
+  container.addEventListener('touchstart', onTouch, true);
+}
+
+function startLineInsert(e, target, pointerId) {
   const startLatLng = map.mouseEventToLatLng(e);
   const idx = findInsertIndex(startLatLng);
+  // Vizinhos por REFERÊNCIA: o índice é resolvido de novo ao soltar.
+  const prevTp = trackpoints[idx - 1] || null;
+  const nextTp = trackpoints[idx] || null;
   lineInsertActive = true;
   // Suspend map panning so the drag moves the ghost, not the map.
   map.dragging.disable();
+  const isTouch = e.pointerType === 'touch';
+  const container = map.getContainer();
 
-  const target = e.currentTarget; // the <path> that was pressed
-  const pointerId = e.pointerId;
   try { target.setPointerCapture(pointerId); } catch (_) { /* ok without it */ }
 
   const ghost = L.marker(startLatLng, {
@@ -10574,8 +10905,8 @@ function onLinePointerDown(e) {
     interactive: false,
   }).addTo(map);
 
-  const prevLatLng = trackpoints[idx - 1]?.marker.getLatLng();
-  const nextLatLng = trackpoints[idx]?.marker.getLatLng();
+  const prevLatLng = prevTp?.marker.getLatLng();
+  const nextLatLng = nextTp?.marker.getLatLng();
   const drawPreview = (latlng) => {
     const segs = [];
     if (prevLatLng) segs.push([prevLatLng, latlng]);
@@ -10586,6 +10917,7 @@ function onLinePointerDown(e) {
 
   let lastLatLng = startLatLng;
   const onMove = (ev) => {
+    if (ev.pointerId !== pointerId) return;
     L.DomEvent.preventDefault(ev); // stop the page from scrolling under a touch
     lastLatLng = map.mouseEventToLatLng(ev);
     ghost.setLatLng(lastLatLng);
@@ -10595,38 +10927,59 @@ function onLinePointerDown(e) {
     L.DomEvent.off(target, 'pointermove', onMove);
     L.DomEvent.off(target, 'pointerup', onUp);
     L.DomEvent.off(target, 'pointercancel', onCancel);
+    container.removeEventListener('touchstart', onTouch, true);
     try { target.releasePointerCapture(pointerId); } catch (_) { /* already gone */ }
     map.removeLayer(ghost);
     map.removeLayer(preview);
     map.dragging.enable();
     // The trailing `click` from a mouse press lands on the map container (the
     // common ancestor when released off the line); swallow it next tick so
-    // onMapClickInDrawing doesn't append a point at the end.
-    setTimeout(() => { lineInsertActive = false; }, 0);
+    // onMapClickInDrawing doesn't append a point at the end. (No toque o
+    // click sintetizado vem mais tarde — janela maior.)
+    setTimeout(() => { lineInsertActive = false; if (!_routesInFlight) scheduleRouteSweep(); }, isTouch ? 400 : 0);
   };
   const onUp = (ev) => {
+    if (ev.pointerId !== pointerId) return;
     L.DomEvent.preventDefault(ev);
     const dropLatLng = map.mouseEventToLatLng(ev);
     cleanup();
-    insertWaypointAt(idx, dropLatLng);
+    // Índice de agora (a lista pode ter mudado durante o gesto); se o par
+    // agarrado deixou de ser vizinho, recalcula pelo ponto de soltura.
+    let at = nextTp ? trackpoints.indexOf(nextTp) : trackpoints.length;
+    if (at < 0 || (prevTp && trackpoints[at - 1] !== prevTp)) at = findInsertIndex(dropLatLng);
+    insertWaypointAt(at, dropLatLng);
   };
-  const onCancel = () => cleanup();
+  const onCancel = (ev) => { if (!ev || ev.pointerId === pointerId) cleanup(); };
+  // Segundo dedo = pinça: cancela a inserção (o zoom segue com o Leaflet).
+  const onTouch = (ev) => { if (ev.touches && ev.touches.length > 1) cleanup(); };
   L.DomEvent.on(target, 'pointermove', onMove);
   L.DomEvent.on(target, 'pointerup', onUp);
   L.DomEvent.on(target, 'pointercancel', onCancel);
+  if (isTouch) container.addEventListener('touchstart', onTouch, true);
 }
 
-// Find the index where a new waypoint should be inserted: between the two
-// consecutive user waypoints whose great-circle segment is closest to the
-// click location. Uses a simple flat-Earth approximation — fine at the
-// scales the editor works at.
+// Find the index where a new waypoint should be inserted: the segment whose
+// drawn geometry (o caminho roteado/denso, não só a corda entre waypoints)
+// passes closest to the press. Uses a simple flat-Earth approximation — fine
+// at the scales the editor works at.
 function findInsertIndex(latlng) {
   let bestIdx = trackpoints.length;
   let bestDist = Infinity;
   for (let i = 0; i < trackpoints.length - 1; i++) {
     const a = trackpoints[i].marker.getLatLng();
     const b = trackpoints[i + 1].marker.getLatLng();
-    const d = pointToSegmentDistance(latlng, a, b);
+    const path = trackpoints[i + 1].pathFromPrev;
+    let d;
+    if (Array.isArray(path) && path.length > 2) {
+      d = Infinity;
+      for (let k = 1; k < path.length; k++) {
+        const dk = pointToSegmentDistance(latlng,
+          { lat: path[k - 1][0], lng: path[k - 1][1] }, { lat: path[k][0], lng: path[k][1] });
+        if (dk < d) d = dk;
+      }
+    } else {
+      d = pointToSegmentDistance(latlng, a, b);
+    }
     if (d < bestDist) {
       bestDist = d;
       bestIdx = i + 1;
@@ -10671,8 +11024,8 @@ async function insertWaypointAt(idx, latlng, init = {}) {
   } else {
     tp.pathFromPrev = null;
   }
-  if (idx + 1 < trackpoints.length) {
-    const next = trackpoints[idx + 1];
+  const next = trackpoints[idx + 1] || null;
+  if (next) {
     next.pathFromPrev = straightPath(
       tp.marker.getLatLng(),
       next.marker.getLatLng(),
@@ -10681,12 +11034,14 @@ async function insertWaypointAt(idx, latlng, init = {}) {
   redrawAndMetrics();
   updateTraceControls();
 
-  if (routingMode !== 'straight') {
-    if (idx > 0) await refetchPath(idx);
-    if (idx + 1 < trackpoints.length) await refetchPath(idx + 1);
+  // Os dois segmentos novos em paralelo, por referência (ver onMarkerDragEnd).
+  const jobs = routingMode !== 'straight'
+    ? [idx > 0 ? refetchPath(tp) : null, next ? refetchPath(next) : null] : [];
+  pushHistory();   // na hora — ver onMapClickInDrawing
+  if (jobs.length) {
+    await Promise.all(jobs);
     redrawAndMetrics();
   }
-  pushHistory();
 }
 
 // ─── Busca de endereços (geocoding) ──────────────────────────────────────────
@@ -10766,9 +11121,11 @@ function positionGeoSearchPanel() {
   const mapRect = map.getContainer().getBoundingClientRect();
   const btnRect = geoSearchBtn.getBoundingClientRect();
   if (window.innerWidth <= 600) {
-    // Tela estreita: largura (quase) toda, abaixo do botão. width:auto
-    // libera o esticamento left+right (o CSS fixa 320px pro desktop).
-    geoSearchPanel.style.top = `${Math.round(btnRect.bottom - mapRect.top + 6)}px`;
+    // Tela estreita: largura (quase) toda, no TOPO do mapa (cobre os botões
+    // da coluna — o "Fechar" do painel fecha). Abaixo do 🔍 a lista caía atrás do
+    // teclado do celular: sobravam ~2 resultados visíveis. width:auto libera
+    // o esticamento left+right (o CSS fixa 320px pro desktop).
+    geoSearchPanel.style.top = '8px';
     geoSearchPanel.style.left = '8px';
     geoSearchPanel.style.right = '8px';
     geoSearchPanel.style.width = 'auto';
@@ -10778,7 +11135,21 @@ function positionGeoSearchPanel() {
     geoSearchPanel.style.right = 'auto';
     geoSearchPanel.style.width = '';
   }
+  fitGeoSearchList();
 }
+
+// A lista cabe no que SOBRA da tela visível (visualViewport encolhe com o
+// teclado virtual) — rolando dentro dela, em vez de continuar atrás do
+// teclado.
+function fitGeoSearchList() {
+  if (!geoSearchList || geoSearchPanel.hidden) return;
+  const vv = window.visualViewport;
+  const visibleBottom = vv ? vv.offsetTop + vv.height : window.innerHeight;
+  const top = geoSearchList.getBoundingClientRect().top;
+  const avail = Math.floor(visibleBottom - top - 60);   // status + atribuição + folga
+  geoSearchList.style.maxHeight = `${Math.max(96, avail)}px`;
+}
+window.visualViewport?.addEventListener('resize', () => fitGeoSearchList());
 
 function setGeoSearchStatus(msg) {
   geoSearchStatus.textContent = msg;
@@ -10786,8 +11157,8 @@ function setGeoSearchStatus(msg) {
 }
 
 function openGeoSearch() {
-  positionGeoSearchPanel();
   geoSearchPanel.hidden = false;
+  positionGeoSearchPanel();
   geoSearchBtn.setAttribute('aria-pressed', 'true');
   geoSearchInput.focus();
   geoSearchInput.select();
@@ -10824,6 +11195,7 @@ function renderGeoSearchResults(items) {
     li.addEventListener('click', () => pickGeoSearchResult(item));
     geoSearchList.appendChild(li);
   });
+  fitGeoSearchList();
 }
 
 function setGeoSearchActive(idx) {
@@ -10911,10 +11283,13 @@ function dropGeoSearchPin(item, latlng) {
   traceHere.addEventListener('click', async () => {
     geoSearchPickTs = Date.now(); // o popup some sob o cursor — mesmo guard
     removeGeoSearchPin();
-    // Entrar no editor zera o rascunho — o endereço vira o ponto de PARTIDA.
-    if (!drawingMode) enterDrawingMode();
+    // Entrar no editor começa um traçado NOVO — o endereço vira o ponto de
+    // PARTIDA. O rascunho que havia fica guardado (↶ / Restaurar).
+    let stashed = null;
+    if (!drawingMode) stashed = prepareEditorReplace();
     else if (previewMode) exitPreviewMode();
     await insertWaypointAt(trackpoints.length, latlng, { name: item.label });
+    if (stashed) announceStashedDraft('Traçado novo a partir daqui', stashed);
   });
   div.appendChild(traceHere);
   const remove = document.createElement('button');
@@ -10953,7 +11328,17 @@ geoSearchInput?.addEventListener('keydown', (e) => {
   } else if (e.key === 'Enter') {
     e.preventDefault();
     const q = geoSearchInput.value.trim();
-    if (geoSearchActiveIdx >= 0 && geoSearchResults[geoSearchActiveIdx]) {
+    if (isCoarsePointer()) {
+      // No celular o "Buscar" do teclado é também o jeito de BAIXAR o
+      // teclado — ele só busca (se precisar) e libera a tela pros
+      // resultados; escolher é tocar num deles. (Escolher o 1º de cara
+      // acrescentava um waypoint no editor sem o usuário ver a lista.)
+      if (!(geoSearchResults.length && q === geoSearchLastQuery)) {
+        clearTimeout(geoSearchTimer);
+        runGeoSearch();
+      }
+      geoSearchInput.blur();
+    } else if (geoSearchActiveIdx >= 0 && geoSearchResults[geoSearchActiveIdx]) {
       pickGeoSearchResult(geoSearchResults[geoSearchActiveIdx]);
     } else if (geoSearchResults.length && q === geoSearchLastQuery) {
       pickGeoSearchResult(geoSearchResults[0]);
@@ -10965,6 +11350,14 @@ geoSearchInput?.addEventListener('keydown', (e) => {
     e.preventDefault();
     closeGeoSearch();
   }
+});
+document.getElementById('geo-search-close')?.addEventListener('click', () => closeGeoSearch());
+// Fora do editor, tocar no mapa fecha a busca (no editor o toque vira ponto
+// e o painel segue aberto pro loop buscar → adicionar).
+map.on('click', () => {
+  if (drawingMode || !geoSearchPanel || geoSearchPanel.hidden) return;
+  if (Date.now() - geoSearchPickTs < 700) return;
+  closeGeoSearch();
 });
 
 function totalDistanceMeters() {
@@ -11894,6 +12287,7 @@ function updateMetrics() {
   if (!sim) {
     traceMetrics.textContent = `0m · 0 kJ`;
     traceMetrics.title = '';
+    refreshTraceInfoDetail();
     return;
   }
 
@@ -12004,6 +12398,7 @@ function updateMetrics() {
         `  SUV usa ${fmt(bikeVsCarRatio, 0)}× mais energia que a bike (combustível vs. energia metabólica)`
       : '') +
     (sim.elevMissing > 0 ? `\n\n${sim.elevMissing} ponto(s) ainda sem elevação.` : '');
+  refreshTraceInfoDetail();
 }
 
 // formatHMS() now imported from lib/utils.js
@@ -12068,6 +12463,37 @@ paramsBtn.addEventListener('click', () => {
   fillParamInputs();
   paramsModal.hidden = false;
 });
+
+// Explicações dos parâmetros: o texto vivia só no `title` de cada linha
+// (tooltip de mouse — o iOS nunca mostra). Vira texto visível sob a linha,
+// atrás de um "ⓘ Mostrar explicações" no topo de cada modal do editor.
+function setupParamHelp(modal) {
+  const body = modal?.querySelector('.params-body');
+  if (!body) return;
+  const rows = [...body.querySelectorAll('.param-row[title], .ds-open-btn[title]')];
+  if (!rows.length) return;
+  for (const row of rows) {
+    const help = document.createElement('small');
+    help.className = 'param-help';
+    help.textContent = row.title;
+    row.after(help);
+  }
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'param-help-toggle';
+  toggle.setAttribute('aria-expanded', 'false');
+  toggle.textContent = 'ⓘ Mostrar explicações';
+  toggle.addEventListener('click', () => {
+    const on = !body.classList.contains('show-param-help');
+    body.classList.toggle('show-param-help', on);
+    toggle.setAttribute('aria-expanded', String(on));
+    toggle.textContent = on ? 'ⓘ Ocultar explicações' : 'ⓘ Mostrar explicações';
+  });
+  body.prepend(toggle);
+}
+for (const id of ['params-modal', 'datasources-modal', 'suv-compare-modal', 'camera-topo-modal']) {
+  setupParamHelp(document.getElementById(id));
+}
 paramsClose.addEventListener('click', () => (paramsModal.hidden = true));
 paramsModal.addEventListener('click', (e) => {
   if (e.target === paramsModal) paramsModal.hidden = true;
@@ -12342,6 +12768,7 @@ function ctopoReadNum(input) {
 }
 function applyCameraTopoInputs() {
   const c = settings.cameraTopo;
+  const before = JSON.stringify([c.minElev, c.maxElev, c.maxSlope, c.slopeGamma, c.cycles]);
   c.minElev = ctopoReadNum(ctopoMinElev);
   c.maxElev = ctopoReadNum(ctopoMaxElev);
   const sl = ctopoReadNum(ctopoMaxSlope);
@@ -12350,12 +12777,18 @@ function applyCameraTopoInputs() {
   c.slopeGamma = g != null && g > 0 ? g : 1.2;
   const cyc = ctopoReadNum(ctopoCycles);
   c.cycles = cyc != null && cyc >= 1 ? Math.min(16, Math.round(cyc)) : 1;
+  // Nada mudou (campo re-confirmado) → não recarrega os tiles.
+  if (JSON.stringify([c.minElev, c.maxElev, c.maxSlope, c.slopeGamma, c.cycles]) === before) return;
   saveSettings();
   refreshCameraTopo();
 }
 if (ctopoModal) {
+  // `change` (Enter/OK/sair do campo, ou as setinhas no desktop), não `input`:
+  // cada tecla virava uma URL de tiles nova — digitar "720" recarregava a
+  // tela inteira de relevo pra 7, 72 e 720.
   for (const el of [ctopoMinElev, ctopoMaxElev, ctopoMaxSlope, ctopoGamma, ctopoCycles]) {
-    el.addEventListener('input', applyCameraTopoInputs);
+    el.addEventListener('change', applyCameraTopoInputs);
+    el.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); el.blur(); } });
   }
   document.getElementById('ctopo-close')?.addEventListener('click', closeCameraTopoModal);
   ctopoModal.addEventListener('click', (e) => { if (e.target === ctopoModal) closeCameraTopoModal(); });
@@ -12425,6 +12858,7 @@ const QUDT_PROFILE = {
   kEff:               { iri: 'transmissionEfficiency',         kind: 'kind:DimensionlessRatio',   unit: 'unit:UNITLESS' },
   deadbandM:          { iri: 'elevationDeadband',               kind: 'kind:Length',                unit: 'unit:M' },
   demSmoothSigmaM:    { iri: 'demSmoothingSigma',               kind: 'kind:Length',                unit: 'unit:M' },
+  nDirs:              { iri: 'gridMoveDirections',              kind: 'kind:Count',                 unit: 'unit:NUM' },
   energySearchMarginPct: { iri: 'energySearchMargin',           kind: 'kind:DimensionlessRatio',   unit: 'unit:PERCENT' },
   // Comparação com carro (SUV)
   carMass:            { iri: 'carTotalMass',                    kind: 'kind:Mass',                 unit: 'unit:KiloGM' },
@@ -12473,43 +12907,48 @@ function paramsToJsonLd(p) {
 }
 
 // Accept either a JSON-LD doc (detected by `@context`) or our older plain JSON.
-function paramsFromAnyJson(obj) {
+// O que o arquivo traz é MESCLADO sobre `base` (os parâmetros atuais): antes
+// partia dos padrões, então tudo que o arquivo não carrega — os liga/desliga
+// de fontes de dados (DEM de SP, viário, água, portais), a comparação com SUV
+// — voltava pro padrão em silêncio e era persistido (religava downloads que a
+// pessoa tinha desligado no 4G).
+function paramsFromAnyJson(obj, base = params) {
   if (!obj || typeof obj !== 'object') throw new Error('JSON inválido');
-  const out = { ...DEFAULT_PARAMS };
+  const out = { ...DEFAULT_PARAMS, ...base };
+  const accept = (key, v) => {
+    if (!Number.isFinite(v)) return;
+    if (key === 'nDirs' && ![4, 8, 16, 32, 64, 128].includes(v)) return;
+    out[key] = v;
+  };
   if (obj['@context']) {
     for (const [key, prof] of Object.entries(QUDT_PROFILE)) {
       const node = obj[prof.iri];
-      if (node && typeof node === 'object' && Number.isFinite(node.value)) {
-        out[key] = node.value;
-      }
+      if (node && typeof node === 'object') accept(key, node.value);
     }
     return out;
   }
   // JSON simples (formato antigo): aceita só chaves conhecidas com número
   // finito. O spread cru `{...obj}` deixava string/NaN escorrer pro
   // energyRoute e pro worker de energia.
-  for (const key of Object.keys(DEFAULT_PARAMS)) {
-    if (Number.isFinite(obj[key])) out[key] = obj[key];
-  }
+  for (const key of Object.keys(DEFAULT_PARAMS)) accept(key, obj[key]);
   return out;
+}
+
+// Parâmetros físicos que diferem entre dois conjuntos (pro aviso do GPX).
+function paramsDiffKeys(a, b) {
+  return Object.keys(QUDT_PROFILE).filter((k) => Number.isFinite(a[k]) && Number.isFinite(b[k]) && Math.abs(a[k] - b[k]) > 1e-9);
 }
 
 const paramsExport = document.getElementById('params-export');
 const paramsLoad = document.getElementById('params-load');
 const paramsImport = document.getElementById('params-import');
 
-paramsExport.addEventListener('click', () => {
+paramsExport.addEventListener('click', async () => {
   const blob = new Blob([JSON.stringify(paramsToJsonLd(params), null, 2)], {
     type: 'application/ld+json',
   });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `parametros-${new Date().toISOString().slice(0, 10)}.jsonld`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  const r = await saveFile(blob, `parametros-${new Date().toISOString().slice(0, 10)}.jsonld`);
+  if (r === 'shared' || r === 'downloaded') showToast('Parâmetros exportados.');
 });
 
 paramsLoad.addEventListener('click', () => paramsImport.click());
@@ -12538,17 +12977,24 @@ function snapshot() {
   return trackpoints.map((t) => ({
     lat: t.marker.getLatLng().lat,
     lng: t.marker.getLatLng().lng,
-    // Clone the path so future mutations don't bleed into history.
-    path: t.pathFromPrev ? t.pathFromPrev.map((p) => [p[0], p[1]]) : null,
+    // O array é COMPARTILHADO com o traçado vivo e os outros snapshots: os
+    // caminhos são sempre SUBSTITUÍDOS (roteamento, reta, inverter criam
+    // arrays novos), nunca mutados no lugar — então o desfazer não precisa de
+    // uma cópia profunda da rota inteira a cada edição (com um GPX denso,
+    // eram megabytes por toque e centenas de MB numa sessão).
+    path: t.pathFromPrev || null,
     // deckFlag marca trechos de ponte/túnel (viarioGraphRoute) p/ o flattening
     // de elevação — precisa sobreviver ao undo/redo (não é reconstruído).
-    deckFlag: t.pathFromPrev?.deckFlag ? [...t.pathFromPrev.deckFlag] : null,
+    deckFlag: t.pathFromPrev?.deckFlag || null,
     // Objetivo do roteador do segmento (J) — idem: capturado no roteamento,
     // não é reconstruível depois.
     routedEnergyJ: Number.isFinite(t.pathFromPrev?.routedEnergyJ) ? t.pathFromPrev.routedEnergyJ : null,
     // Modo de roteamento que produziu a geometria deste segmento
     // (proveniência; ver refetchPath) — sobrevive a undo/rascunho/GPX.
     mode: t.pathFromPrev?.mode || null,
+    // Segmento ainda na reta provisória, esperando o roteamento neste modo
+    // (restaurar um estado assim re-pede — ver sweepPendingRoutes).
+    pending: t._routePending || null,
     name: t.name || '',
     isPoi: !!t.isPoi,
     sym: t.sym || 'Flag, Blue',
@@ -12556,8 +13002,15 @@ function snapshot() {
 }
 
 function pushHistory() {
+  // Um handler assíncrono (roteamento) que termina depois de o editor fechar
+  // não empilha nada — nem agenda uma gravação que apagaria o rascunho.
+  if (!drawingMode) return;
   drawHistory = drawHistory.slice(0, historyIndex + 1);
-  drawHistory.push(snapshot());
+  const snap = snapshot();
+  snap.lineage = _draftLineage;
+  _lineageMeta.set(_draftLineage, { sid: currentSavedRouteId || null, n: defaultSaveName || '', rm: routingMode });
+  drawHistory.push(snap);
+  if (drawHistory.length > HISTORY_MAX) drawHistory.splice(0, drawHistory.length - HISTORY_MAX);
   historyIndex = drawHistory.length - 1;
   updateTraceControls();
   scheduleTraceDraftSave();
@@ -12614,24 +13067,50 @@ function reverseTraceDirection() {
 }
 
 function restoreSnapshot(snap) {
+  if (_tpPopup) { _tpPopup._discard = true; map.closePopup(_tpPopup); }
   for (const t of trackpoints) map.removeLayer(t.marker);
   trackpoints = [];
   pendingRouteSeq++; // invalidate any in-flight OSRM calls
-  for (const s of snap) {
+  const validModes = ['cycling', 'foot', 'energy', 'energy_road'];
+  for (let k = 0; k < snap.length; k++) {
+    const s = snap[k];
     const tp = createTrackpoint(L.latLng(s.lat, s.lng), {
       name: s.name || '',
       isPoi: !!s.isPoi,
       sym: s.sym || 'Flag, Blue',
     });
-    tp.pathFromPrev = s.path ? s.path.map((p) => [p[0], p[1]]) : null;
-    if (s.deckFlag && tp.pathFromPrev) tp.pathFromPrev.deckFlag = s.deckFlag;
-    if (Number.isFinite(s.routedEnergyJ) && tp.pathFromPrev) tp.pathFromPrev.routedEnergyJ = s.routedEnergyJ;
-    if (s.mode && tp.pathFromPrev) tp.pathFromPrev.mode = s.mode;
+    // Array compartilhado (ver snapshot()); as propriedades só são postas
+    // quando faltam — caso do rascunho/GPX vindo de JSON, onde o array não
+    // carrega deckFlag/modo.
+    const path = Array.isArray(s.path) && s.path.length >= 2 ? s.path : null;
+    if (path) {
+      if (s.deckFlag && !path.deckFlag && s.deckFlag.length === path.length) path.deckFlag = s.deckFlag;
+      if (Number.isFinite(s.routedEnergyJ) && !Number.isFinite(path.routedEnergyJ)) path.routedEnergyJ = s.routedEnergyJ;
+      if (s.mode && !path.mode) path.mode = s.mode;
+    }
+    tp.pathFromPrev = k > 0
+      ? (path || straightPath(trackpoints[k - 1].marker.getLatLng(), tp.marker.getLatLng()))
+      : null;
+    if (k > 0 && validModes.includes(s.pending)) tp._routePending = s.pending;
     trackpoints.push(tp);
+  }
+  // Vínculo com o servidor + modo da linhagem deste snapshot (ver _lineageMeta).
+  if (snap.lineage != null) {
+    _draftLineage = snap.lineage;
+    const meta = _lineageMeta.get(snap.lineage);
+    if (meta) {
+      currentSavedRouteId = meta.sid;
+      defaultSaveName = meta.n;
+      if (meta.rm && meta.rm !== routingMode) {
+        routingMode = meta.rm;
+        traceRoutingMode.value = meta.rm;
+      }
+    }
   }
   redrawAndMetrics();
   updateTraceControls();
   scheduleTraceDraftSave();
+  scheduleRouteSweep();
 }
 
 function updateTraceControls() {
@@ -12654,17 +13133,43 @@ function updateTraceControls() {
 // segmento inclusos), mais o modo global, o nome e o vínculo com a rota
 // salva no servidor.
 const TRACE_DRAFT_KEY = 'phidro:traceDraft:v1';
+// O rascunho que um carregamento tirou do caminho (link #st=/#rt=, rota
+// salva, GPX, "Editar este traçado", "Traçar a partir daqui") — antes ele era
+// sobrescrito sem aviso nem desfazer. Uma vaga; "Restaurar" troca os dois.
+const TRACE_DRAFT_PREV_KEY = 'phidro:traceDraft:prev';
+const ROUTED_MODES = ['cycling', 'foot', 'energy', 'energy_road'];
 let _traceDraftTimer = null;
+let _draftNudgeShown = false;
+let _draftPersistAsked = false;
 
 function scheduleTraceDraftSave() {
   if (_traceDraftTimer) clearTimeout(_traceDraftTimer);
   _traceDraftTimer = setTimeout(saveTraceDraft, 400);
 }
 
+// Grava AGORA a gravação debounced pendente (se houver).
+function flushTraceDraft() {
+  if (!_traceDraftTimer) return;
+  clearTimeout(_traceDraftTimer);
+  saveTraceDraft();
+}
+// Aba indo pro fundo (troca de app, tela bloqueada, descarte pelo iOS): o
+// debounce de 400 ms perderia a última edição se a aba morresse no meio.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') flushTraceDraft();
+});
+window.addEventListener('pagehide', flushTraceDraft);
+
 function saveTraceDraft() {
   _traceDraftTimer = null;
+  // Fora do editor o rascunho não muda — e `trackpoints` vazio aqui (um
+  // roteamento que terminou depois do Cancelar) APAGARIA o rascunho guardado.
+  if (!drawingMode) return;
+  // Tela vazia (desfazer até o começo, remover ponto a ponto) NÃO apaga o
+  // rascunho guardado: o descarte de verdade é só o 🗑 (clearTraceDraft) — um
+  // ↶ a mais e fechar o editor perdia a rota.
+  if (!trackpoints.length) return;
   try {
-    if (!trackpoints.length) { localStorage.removeItem(TRACE_DRAFT_KEY); return; }
     localStorage.setItem(TRACE_DRAFT_KEY, JSON.stringify({
       v: 1,
       rm: routingMode,
@@ -12672,10 +13177,25 @@ function saveTraceDraft() {
       sid: currentSavedRouteId || null,
       wp: snapshot(),
     }));
+    askPersistentStorageOnce();
   } catch (err) {
     // Quota cheia (rota gigante) ou storage indisponível — segue sem persistir.
     console.warn('[draft] não persistiu:', err.message);
   }
+}
+
+// Pede armazenamento persistente uma vez por sessão, quando já há um
+// rascunho que valha guardar. Chrome/Safari decidem em silêncio (o Safari
+// fora da tela de início ainda pode apagar após 7 dias sem visita — daí o
+// lembrete de salvar no servidor em exitDrawingMode). O Firefox abriria um
+// pedido de permissão do nada, então fica de fora.
+function askPersistentStorageOnce() {
+  if (_draftPersistAsked || trackpoints.length < 2) return;
+  _draftPersistAsked = true;
+  try {
+    if (/firefox/i.test(navigator.userAgent) || !navigator.storage?.persist) return;
+    navigator.storage.persisted().then((p) => { if (!p) return navigator.storage.persist(); }).catch(() => {});
+  } catch (_) { /* sem StorageManager */ }
 }
 
 function clearTraceDraft() {
@@ -12683,19 +13203,130 @@ function clearTraceDraft() {
   try { localStorage.removeItem(TRACE_DRAFT_KEY); } catch {}
 }
 
+// Lê um rascunho guardado (formato do saveTraceDraft); null se não houver.
+function readStoredDraft(key) {
+  let d = null;
+  try { d = JSON.parse(localStorage.getItem(key) || 'null'); } catch {}
+  if (!d || !Array.isArray(d.wp)) return null;
+  const wp = d.wp.filter((s) => s && Number.isFinite(s.lat) && Number.isFinite(s.lng));
+  return wp.length ? { ...d, wp } : null;
+}
+
+// Vínculo com o servidor da linhagem atual (ver _lineageMeta) — chamado
+// quando o id/nome mudam FORA de um pushHistory (salvar, adotar a rota de um
+// link), senão um desfazer dentro da mesma linhagem desvincularia a rota.
+function syncLineageMeta() {
+  _lineageMeta.set(_draftLineage, { sid: currentSavedRouteId || null, n: defaultSaveName || '', rm: routingMode });
+}
+
+// Rota densa (GPX de 1 Hz importado em Reta: milhares de waypoints, um
+// marcador DOM arrastável cada — ~10 mil travavam a aba por segundos e cada
+// pan depois) → no máximo `target` waypoints editáveis, com a geometria
+// EXATA entre eles no pathFromPrev de cada um (o formato que os segmentos
+// roteados já usam). Pontas e pontos com nome/POI sempre ficam; os demais
+// entram por importância (Douglas–Peucker: o que mais desvia da corda entre
+// os já escolhidos entra primeiro). `wps` no formato do snapshot().
+const DENSE_WAYPOINT_TARGET = 150;
+function compactDenseWaypoints(wps, target = DENSE_WAYPOINT_TARGET) {
+  const n = wps.length;
+  if (n <= target || n < 3) return wps;
+  const lat0 = wps[0].lat * Math.PI / 180;
+  const kx = Math.cos(lat0);
+  const xs = new Float64Array(n), ys = new Float64Array(n);
+  for (let i = 0; i < n; i++) { xs[i] = wps[i].lng * kx; ys[i] = wps[i].lat; }
+  const keep = new Uint8Array(n);
+  keep[0] = 1; keep[n - 1] = 1;
+  let count = 2;
+  for (let i = 1; i < n - 1; i++) {
+    if (wps[i].isPoi || wps[i].name) { keep[i] = 1; count++; }
+  }
+  // Maior desvio da corda a→b entre os waypoints estritamente dentro.
+  const best = (a, b) => {
+    let idx = -1, d = -1;
+    const ax = xs[a], ay = ys[a], dx = xs[b] - ax, dy = ys[b] - ay;
+    const len = Math.hypot(dx, dy);
+    for (let i = a + 1; i < b; i++) {
+      const di = len > 0
+        ? Math.abs(dx * (ys[i] - ay) - dy * (xs[i] - ax)) / len
+        : Math.hypot(xs[i] - ax, ys[i] - ay);
+      if (di > d) { d = di; idx = i; }
+    }
+    return { a, b, idx, d };
+  };
+  const intervals = [];
+  let prevKept = 0;
+  for (let i = 1; i < n; i++) {
+    if (!keep[i]) continue;
+    intervals.push(best(prevKept, i));
+    prevKept = i;
+  }
+  while (count < target) {
+    let bi = -1, bd = 0;
+    for (let k = 0; k < intervals.length; k++) {
+      if (intervals[k].d > bd) { bd = intervals[k].d; bi = k; }
+    }
+    if (bi < 0) break;   // o resto é colinear — nada a ganhar
+    const { a, b, idx } = intervals[bi];
+    keep[idx] = 1; count++;
+    intervals.splice(bi, 1, best(a, idx), best(idx, b));
+  }
+  // Remonta: cada waypoint mantido recebe a geometria concatenada desde o
+  // mantido anterior (interiores dos caminhos + os waypoints descartados).
+  const out = [];
+  let acc = null, modes = null, energy = 0, energyOk = true, flags = [], flagsOk = true;
+  for (let i = 0; i < n; i++) {
+    const w = wps[i];
+    if (i > 0) {
+      const p = Array.isArray(w.path) && w.path.length >= 2 ? w.path : null;
+      if (p) { for (let k = 1; k < p.length - 1; k++) acc.push([p[k][0], p[k][1]]); }
+      acc.push([w.lat, w.lng]);
+      modes.add(w.mode || null);
+      if (Number.isFinite(w.routedEnergyJ)) energy += w.routedEnergyJ; else energyOk = false;
+      if (p && Array.isArray(w.deckFlag) && w.deckFlag.length === p.length) {
+        for (let k = 1; k < p.length; k++) flags.push(w.deckFlag[k] ? 1 : 0);
+      } else flagsOk = false;
+    }
+    if (!keep[i]) continue;
+    const entry = { lat: w.lat, lng: w.lng, name: w.name || '', isPoi: !!w.isPoi, sym: w.sym || 'Flag, Blue',
+      path: null, deckFlag: null, routedEnergyJ: null, mode: null, pending: null };
+    if (i > 0) {
+      entry.path = acc;
+      entry.mode = modes.size === 1 ? [...modes][0] : null;
+      entry.routedEnergyJ = energyOk ? energy : null;
+      entry.deckFlag = flagsOk && flags.length === acc.length - 1 ? [0, ...flags] : null;
+    }
+    out.push(entry);
+    acc = [[w.lat, w.lng]]; modes = new Set(); energy = 0; energyOk = true; flags = []; flagsOk = true;
+  }
+  return out;
+}
+const DENSE_DRAFT_MAX = 1000;   // acima disso um rascunho é importação, não desenho à mão
+
 // Restaura o rascunho persistido (se houver) na sessão de desenho recém-
 // aberta pelo botão Traçar. Retorna true se restaurou. Os DEMAIS caminhos de
 // entrada (carregar GPX/rota salva/link) NÃO restauram — eles trazem a
-// própria rota, que vira o novo rascunho no pushHistory deles.
+// própria rota, que vira o novo rascunho no pushHistory deles (o rascunho
+// que sai do caminho vai pra TRACE_DRAFT_PREV_KEY — ver prepareEditorReplace).
 function restoreTraceDraft() {
-  let draft = null;
-  try { draft = JSON.parse(localStorage.getItem(TRACE_DRAFT_KEY) || 'null'); } catch {}
-  if (!draft || !Array.isArray(draft.wp)) return false;
-  const wp = draft.wp.filter((s) => s && Number.isFinite(s.lat) && Number.isFinite(s.lng));
-  if (!wp.length) return false;
-  if (draft.rm && ['straight', 'cycling', 'foot', 'energy', 'energy_road'].includes(draft.rm)) {
+  const draft = readStoredDraft(TRACE_DRAFT_KEY);
+  if (!draft) return false;
+  let wp = draft.wp;
+  const routed = ROUTED_MODES.includes(draft.rm);
+  if (draft.rm && (routed || draft.rm === 'straight')) {
     routingMode = draft.rm;
     traceRoutingMode.value = draft.rm;
+  }
+  // Rascunho de uma importação densa antiga (milhares de marcadores): compacta.
+  const dense = wp.length > DENSE_DRAFT_MAX;
+  if (dense) wp = compactDenseWaypoints(wp);
+  // Segmento reto sem proveniência num rascunho roteado = sobra de um
+  // roteamento que se perdeu (a corrida do contador global, ou o roteador
+  // fora do ar): vira pendente e a varredura roteia de novo.
+  if (routed) {
+    for (let k = 1; k < wp.length; k++) {
+      const s = wp[k];
+      if (!s.mode && !s.pending && (!Array.isArray(s.path) || s.path.length <= 2)) s.pending = draft.rm;
+    }
   }
   restoreSnapshot(wp);
   defaultSaveName = draft.n || '';
@@ -12703,8 +13334,99 @@ function restoreTraceDraft() {
   pushHistory();   // baseline do undo: [vazio, rascunho] — desfazer limpa a tela
   const bounds = L.latLngBounds(trackpoints.map((t) => t.marker.getLatLng()));
   if (bounds.isValid()) map.fitBounds(bounds, { padding: [40, 40] });
-  showToast(`Rascunho restaurado · ${trackpoints.length} pontos`);
+  showToast(dense
+    ? `Rascunho restaurado · ${draft.wp.length} pontos viraram ${trackpoints.length} editáveis (o traçado completo continua)`
+    : `Rascunho restaurado · ${trackpoints.length} pontos`);
   return true;
+}
+
+// Antes de um carregamento SUBSTITUIR o traçado: guarda o rascunho que vai
+// sair do caminho (o do editor aberto ou, com ele fechado, o persistido) em
+// TRACE_DRAFT_PREV_KEY, entra no editor e — se ele estava fechado — semeia o
+// desfazer com esse rascunho (↶ volta pra ele). Abre uma linhagem nova (o que
+// entra é outra rota, com outro vínculo no servidor). Devolve o rascunho
+// guardado (ou null) pro chamador mencioná-lo no aviso.
+function prepareEditorReplace() {
+  const wasDrawing = drawingMode;
+  let prev = null;
+  if (wasDrawing) {
+    syncLineageMeta();   // o histórico que fica pra trás leva o vínculo atual
+    if (trackpoints.length >= 2) {
+      prev = { v: 1, rm: routingMode, n: defaultSaveName || '', sid: currentSavedRouteId || null, wp: snapshot() };
+    }
+  } else {
+    prev = readStoredDraft(TRACE_DRAFT_KEY);
+  }
+  if (prev && prev.wp.length >= 2) {
+    try {
+      localStorage.setItem(TRACE_DRAFT_PREV_KEY, JSON.stringify({ ...prev, at: Date.now() }));
+    } catch (err) {
+      console.warn('[draft] não guardou o rascunho anterior:', err.message);
+    }
+  } else {
+    prev = null;
+  }
+  if (!drawingMode) enterDrawingMode();
+  if (!wasDrawing && prev) {
+    const seed = prev.wp.slice();
+    seed.lineage = _draftLineage;
+    _lineageMeta.set(_draftLineage, { sid: prev.sid || null, n: prev.n || '', rm: prev.rm || routingMode });
+    drawHistory = [seed];
+    historyIndex = 0;
+  }
+  if (_tpPopup) map.closePopup(_tpPopup);
+  _draftLineage = ++_lineageCounter;
+  return prev;
+}
+
+// Aviso depois do carregamento: o que entrou + botão pra trazer o anterior.
+function announceStashedDraft(msg, prev) {
+  if (!prev) { showToast(msg); return; }
+  showToastWithAction(
+    `${msg} — seu rascunho anterior (${prev.wp.length} pontos${prev.n ? ` · ${prev.n}` : ''}) ficou guardado.`,
+    '↺ Restaurar', restorePrevDraft, 9000,
+  );
+}
+
+// Toast com um botão de ação (o #toast é pointer-events:none; o botão não).
+function showToastWithAction(msg, label, onAction, ms = 8000) {
+  showToast(msg, ms);
+  const el = document.getElementById('toast');
+  if (!el) return;
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'toast-action';
+  btn.textContent = label;
+  btn.addEventListener('click', () => { el.hidden = true; onAction(); });
+  el.append(' ', btn);
+}
+
+// "Restaurar": traz o rascunho guardado em TRACE_DRAFT_PREV_KEY pro editor —
+// e o que estava no editor passa a ocupar a vaga (troca), então nada se perde.
+function restorePrevDraft() {
+  const prev = readStoredDraft(TRACE_DRAFT_PREV_KEY);
+  if (!prev) { showToast('Não há rascunho anterior guardado.'); return; }
+  const cur = drawingMode && trackpoints.length >= 2
+    ? { v: 1, rm: routingMode, n: defaultSaveName || '', sid: currentSavedRouteId || null, wp: snapshot() }
+    : readStoredDraft(TRACE_DRAFT_KEY);
+  if (!drawingMode) enterDrawingMode();
+  else if (previewMode) exitPreviewMode();
+  _draftLineage = ++_lineageCounter;
+  if (ROUTED_MODES.includes(prev.rm) || prev.rm === 'straight') {
+    routingMode = prev.rm;
+    traceRoutingMode.value = prev.rm;
+  }
+  restoreSnapshot(prev.wp.length > DENSE_DRAFT_MAX ? compactDenseWaypoints(prev.wp) : prev.wp);
+  defaultSaveName = prev.n || '';
+  currentSavedRouteId = prev.sid || null;
+  pushHistory();
+  try {
+    if (cur && cur.wp.length >= 2) localStorage.setItem(TRACE_DRAFT_PREV_KEY, JSON.stringify({ ...cur, at: Date.now() }));
+    else localStorage.removeItem(TRACE_DRAFT_PREV_KEY);
+  } catch (_) { /* segue */ }
+  const bounds = L.latLngBounds(trackpoints.map((t) => t.marker.getLatLng()));
+  if (bounds.isValid()) map.fitBounds(bounds, { padding: [40, 40] });
+  showToast(`Rascunho anterior restaurado · ${trackpoints.length} pontos${cur ? ' (o que estava aberto ficou guardado no lugar dele)' : ''}`);
 }
 
 // 🗑 Descartar: joga fora o traçado atual E o rascunho persistido — o único
@@ -12782,19 +13504,19 @@ function performSave(name) {
     routingMode,
   });
   const blob = new Blob([gpx], { type: 'application/gpx+xml' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filenameFromName(name, ts);
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
   // Exportar é um checkpoint, não um fim: o traçado continua aberto pra
   // seguir editando (era exitDrawingMode() aqui — a rota "sumia do mapa"
   // na hora que era salva). Esc ou ✕ Cancelar saem quando o usuário quiser.
   defaultSaveName = name;
-  showToast('GPX salvo — o traçado segue aberto pra edição (Esc sai).');
+  syncLineageMeta();
+  // saveFile chama o navigator.share AINDA dentro do toque (o Blob acima é
+  // síncrono) — no iPhone é a folha de compartilhar (Garmin, Komoot,
+  // WhatsApp, Salvar em Arquivos). O aviso só sai depois que deu certo.
+  const hint = isCoarsePointer() ? '' : ' (Esc sai)';
+  saveFile(blob, filenameFromName(name, ts)).then((r) => {
+    if (r === 'shared') showToast(`GPX pronto — o traçado segue aberto pra edição${hint}.`);
+    else if (r === 'downloaded') showToast(`GPX salvo — o traçado segue aberto pra edição${hint}.`);
+  });
 }
 
 function filenameFromName(name, ts) {
@@ -12953,12 +13675,13 @@ async function gzipB64UrlDecode(b64url) {
   return new Response(stream).text();
 }
 
-async function buildShareUrl(name) {
+// `maxChars`: teto do hash — o QR usa um bem menor (ver QR_MAX_HASH_CHARS).
+async function buildShareUrl(name, maxChars = SHARE_HASH_MAX_CHARS) {
   const state = snapshotForShare(name);
   let compressed = await gzipB64Url(JSON.stringify(state));
   // Rota muito longa → hash gigante: refaz sem a geometria embutida (vira um
   // link estilo v1 — quem abrir re-roteia via OSRM, como antes).
-  if (state.sg && compressed.length > SHARE_HASH_MAX_CHARS) {
+  if (state.sg && compressed.length > maxChars) {
     delete state.sg;
     compressed = await gzipB64Url(JSON.stringify(state));
   }
@@ -12970,7 +13693,9 @@ async function buildShareUrl(name) {
 // ao editor: restaura waypoints, geometria roteada por segmento (sg), modo de
 // roteamento e nome. Reusado pelo link `#st=` E pelas rotas salvas no servidor
 // (mesmo formato persistido). Retorna false se o estado não tem waypoints
-// válidos. NÃO mexe na URL/toast — quem chama cuida disso.
+// válidos; senão `{ stashed }` — o rascunho que saiu do caminho (guardado em
+// TRACE_DRAFT_PREV_KEY, ou null). NÃO mexe na URL/toast — quem chama cuida
+// disso (announceStashedDraft).
 async function applyShareState(state) {
   if (!state || !Array.isArray(state.wp) || state.wp.length === 0) return false;
   // Valida ANTES de desmontar o traçado atual — sem isto, um estado
@@ -12980,7 +13705,7 @@ async function applyShareState(state) {
     return false;
   }
 
-  if (!drawingMode) enterDrawingMode();
+  const stashed = prepareEditorReplace();
   for (const t of trackpoints) map.removeLayer(t.marker);
   trackpoints = [];
   pendingRouteSeq++;
@@ -13032,21 +13757,26 @@ async function applyShareState(state) {
   const bounds = L.latLngBounds(trackpoints.map((t) => t.marker.getLatLng()));
   if (bounds.isValid()) map.fitBounds(bounds, { padding: [40, 40] });
 
-  // Só re-roteia quando NÃO há geometria embutida (formato v1) — com sg os
-  // caminhos já foram restaurados acima.
-  if (routingMode !== 'straight' && !segs) {
-    // Up to 4 OSRM requests in flight at once — keeps within the FOSSGIS
-    // server's fair use while cutting end-to-end load by ~4× on long routes.
-    const indices = Array.from({ length: trackpoints.length - 1 }, (_, i) => i + 1);
-    const routeSeq = ++pendingRouteSeq;
-    await mapConcurrent(indices, 4, (idx) => refetchPath(idx, routeSeq));
-    redrawAndMetrics();
-  }
   // Todos os waypoints podem ter sido pulados por coords inválidas (lat/lng
   // não-numérico) — sem trackpoints não há o que desfazer/compartilhar.
   if (!trackpoints.length) return false;
+  // Só re-roteia quando NÃO há geometria embutida (formato v1) — com sg os
+  // caminhos já foram restaurados acima.
+  if (routingMode !== 'straight' && !segs) await routeSegmentsBatch(trackpoints.slice(1));
+  else pushHistory();
+  return { stashed };
+}
+
+// Lote de roteamento (link v1, GPX sem geometria): marca os segmentos como
+// pendentes JÁ — o snapshot empilhado agora fica coerente e o
+// patchPendingHistory o completa conforme as rotas chegam — e roteia até 4
+// por vez (fair use do FOSSGIS), POR REFERÊNCIA: um índice resolvido tarde
+// apontaria pro segmento errado se o usuário inserir um ponto no meio do lote.
+async function routeSegmentsBatch(tps) {
+  for (const t of tps) t._routePending = routingMode;
   pushHistory();
-  return true;
+  await mapConcurrent(tps, 4, (t) => refetchPath(t));
+  redrawAndMetrics();
 }
 
 async function tryLoadFromShareHash() {
@@ -13058,12 +13788,13 @@ async function tryLoadFromShareHash() {
   try {
     const json = await gzipB64UrlDecode(encoded);
     const state = JSON.parse(json);
-    if (!(await applyShareState(state))) return false;
+    const applied = await applyShareState(state);
+    if (!applied) return false;
     // Strip the #st=… so a later page reload doesn't clobber edits with the
     // original shared route. The state lives in localStorage / drawing
     // session memory now; the URL has done its job.
     window.history.replaceState(null, '', location.pathname + location.search);
-    showToast(`Link compartilhado carregado · ${trackpoints.length} pontos`);
+    announceStashedDraft(`Link compartilhado carregado · ${trackpoints.length} pontos`, applied.stashed);
     return true;
   } catch (err) {
     console.warn('Share hash decode failed:', err);
@@ -13090,10 +13821,12 @@ async function tryLoadSavedRouteFromHash() {
       throw new Error(res.status === 404 ? 'rota não encontrada no servidor' : `HTTP ${res.status}`);
     }
     const state = await res.json();
-    if (!(await applyShareState(state))) throw new Error('estado sem waypoints');
+    const applied = await applyShareState(state);
+    if (!applied) throw new Error('estado sem waypoints');
     if (state.id) currentSavedRouteId = state.id;
+    syncLineageMeta();
     window.history.replaceState(null, '', location.pathname + location.search);
-    showToast(`Rota "${state.n || slug}" carregada · ${trackpoints.length} pontos`);
+    announceStashedDraft(`Rota "${state.n || slug}" carregada · ${trackpoints.length} pontos`, applied.stashed);
     return true;
   } catch (err) {
     console.warn(`[route] deep link /route/${slug} falhou:`, err);
@@ -13238,8 +13971,8 @@ async function downloadAllRoutesGpx() {
 
   showToast('Compactando…', 4000);
   const blob = await zip.generateAsync({ type: 'blob' });
-  downloadBlob(blob, `pedal-hidrografico-rotas-${isoNow.slice(0, 10)}.zip`);
-  showToast(`${entries.length} rotas baixadas.`);
+  const r = await saveFile(blob, `pedal-hidrografico-rotas-${isoNow.slice(0, 10)}.zip`);
+  if (r === 'shared' || r === 'downloaded') showToast(`${entries.length} rotas exportadas.`);
 }
 
 // Envelope GPX 1.1 em volta de um ou mais <trk> + <wpt> já montados.
@@ -13438,15 +14171,26 @@ const saveConfirm = document.getElementById('save-confirm');
 const saveNameInput = document.getElementById('save-name');
 const saveFilenamePreview = document.getElementById('save-filename-preview');
 
+let _saveNameSelectOnFocus = false;
 function openSaveModal() {
   const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ');
   saveNameInput.value = defaultSaveName || `Traçado ${stamp}`;
   updateFilenamePreview();
+  // Desktop: o nome já vem focado e selecionado — `autofocus` porque o
+  // controlador de a11y dos modais foca o [autofocus] (senão focava o título
+  // por cima deste foco e o nome padrão ficava sem seleção). No toque NÃO: o
+  // teclado subiria cobrindo os botões da folha; tocar no campo seleciona o
+  // nome inteiro pra trocar.
+  const coarse = isCoarsePointer();
+  saveNameInput.toggleAttribute('autofocus', !coarse);
+  _saveNameSelectOnFocus = coarse;
   saveModal.hidden = false;
-  setTimeout(() => {
-    saveNameInput.focus();
-    saveNameInput.select();
-  }, 0);
+  if (!coarse) {
+    setTimeout(() => {
+      saveNameInput.focus();
+      saveNameInput.select();
+    }, 0);
+  }
 }
 function closeSaveModal() { saveModal.hidden = true; }
 
@@ -13456,8 +14200,20 @@ saveModal.addEventListener('click', (e) => {
   if (e.target === saveModal) closeSaveModal();
 });
 saveNameInput.addEventListener('input', updateFilenamePreview);
+saveNameInput.addEventListener('focus', () => {
+  if (!_saveNameSelectOnFocus) return;
+  _saveNameSelectOnFocus = false;
+  setTimeout(() => { try { saveNameInput.setSelectionRange(0, saveNameInput.value.length); } catch (_) {} }, 0);
+});
 saveNameInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') { e.preventDefault(); doSave(); }
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    // No celular o return/"OK" do teclado é o jeito de BAIXAR o teclado — só
+    // isso (antes exportava um GPX e fechava a folha). No desktop, Enter
+    // segue exportando (é o botão primário).
+    if (isCoarsePointer()) saveNameInput.blur();
+    else doSave();
+  }
   if (e.key === 'Escape') closeSaveModal();
 });
 saveConfirm.addEventListener('click', doSave);
@@ -13469,9 +14225,47 @@ saveConfirm.addEventListener('click', doSave);
 const saveCopyLink = document.getElementById('save-copy-link');
 const saveQrBtn = document.getElementById('save-qr');
 
+// Enquanto o POST do servidor roda, os três botões que salvam ficam
+// travados (e o tocado diz "Salvando…"): um segundo toque mandava outro POST
+// sem id, que batia no nome recém-criado e voltava 409 ("Já existe uma rota
+// chamada…" sobre a própria rota).
+let _saveBusy = false;
+function setSaveBusy(btn) {
+  _saveBusy = !!btn;
+  for (const id of ['save-copy-link', 'save-qr', 'save-server']) {
+    const b = document.getElementById(id);
+    if (!b) continue;
+    b.disabled = !!btn;
+    if (btn === b) { b.dataset.label = b.textContent; b.textContent = 'Salvando…'; }
+    else if (!btn && b.dataset.label) { b.textContent = b.dataset.label; delete b.dataset.label; }
+  }
+}
+async function withSaveBusy(btn, job) {
+  setSaveBusy(btn);
+  try { return await job(); } finally { setSaveBusy(null); }
+}
+
+// Checagens síncronas antes de começar (e antes de pedir o clipboard).
+function checkShareable() {
+  if (trackpoints.length < 2) {
+    alert('Adicione pelo menos 2 pontos antes de gerar o link.');
+    return false;
+  }
+  if (!saveNameInput.value.trim()) {
+    alert('Dê um nome à rota antes de salvar — é ele que vira o endereço.');
+    return false;
+  }
+  return true;
+}
+
+// Teto do hash #st= pro QR: acima de ~1,1 mil caracteres o QR fica denso
+// demais pra escanear de outro celular — o link sai sem a geometria embutida
+// (quem abrir re-roteia).
+const QR_MAX_HASH_CHARS = 1000;
+
 // Devolve { url, server } — ou null quando não dá pra compartilhar agora
 // (sem pontos, sem nome, nome já usado: o usuário já foi avisado).
-async function shareableRouteUrl() {
+async function shareableRouteUrl({ forQr = false } = {}) {
   if (trackpoints.length < 2) {
     alert('Adicione pelo menos 2 pontos antes de gerar o link.');
     return null;
@@ -13487,27 +14281,49 @@ async function shareableRouteUrl() {
     alert('Servidor indisponível, e o navegador não suporta o link #st= (precisa de CompressionStream).');
     return null;
   }
-  return { url: await buildShareUrl(saveNameInput.value.trim()), server: false };
+  const name = saveNameInput.value.trim();
+  return { url: await buildShareUrl(name, forQr ? QR_MAX_HASH_CHARS : SHARE_HASH_MAX_CHARS), server: false };
 }
 
-saveCopyLink?.addEventListener('click', async () => {
-  let share = null;
-  try {
-    share = await shareableRouteUrl();
-  } catch (err) {
-    alert(`Falha ao gerar link: ${err.message}`);
-    return;
+saveCopyLink?.addEventListener('click', () => {
+  if (_saveBusy || !checkShareable()) return;
+  const job = withSaveBusy(saveCopyLink, () => shareableRouteUrl());
+  // O link só existe depois do POST, mas o WebKit só deixa escrever no
+  // clipboard DENTRO do gesto — que se perde depois de um await de rede (o
+  // writeText caía SEMPRE no prompt() no iPhone). Então o pedido de cópia sai
+  // AGORA, no toque, com um ClipboardItem cujo conteúdo é a promessa do link.
+  let clipWrite = null;
+  if (navigator.clipboard?.write && typeof ClipboardItem === 'function') {
+    try {
+      const item = new ClipboardItem({
+        'text/plain': job.then((s) => {
+          if (!s) throw new Error('sem link');
+          return new Blob([s.url], { type: 'text/plain' });
+        }),
+      });
+      clipWrite = navigator.clipboard.write([item]);
+      clipWrite.catch(() => {});   // tratado abaixo
+    } catch (_) { clipWrite = null; }
   }
-  if (!share) return;
-  const note = share.server ? 'rota salva no servidor' : 'servidor fora — estado embutido no link';
-  try {
-    if (!navigator.clipboard) throw new Error('sem clipboard');
-    await navigator.clipboard.writeText(share.url);
-    showToast(`Link copiado · ${note}`);
-  } catch {
+  (async () => {
+    let share = null;
+    try {
+      share = await job;
+    } catch (err) {
+      alert(`Falha ao gerar link: ${err.message}`);
+      return;
+    }
+    if (!share) return;
+    const note = share.server ? 'rota salva no servidor' : 'servidor fora — estado embutido no link';
+    let copied = false;
+    if (clipWrite) { try { await clipWrite; copied = true; } catch (_) { /* cai no writeText */ } }
+    if (!copied && navigator.clipboard?.writeText) {
+      try { await navigator.clipboard.writeText(share.url); copied = true; } catch (_) { /* prompt */ }
+    }
+    if (copied) showToast(`Link copiado · ${note}`);
     // Fallback: prompt window with the URL pre-selected for manual copy.
-    window.prompt(`Copie o link (${note}):`, share.url);
-  }
+    else window.prompt(`Copie o link (${note}):`, share.url);
+  })();
 });
 
 // ─── QR-code modal ───────────────────────────────────────────────────────────
@@ -13522,22 +14338,30 @@ const qrDownloadPngBtn = document.getElementById('qr-download-png');
 
 let qrCurrentSvg = null;
 let qrCurrentUrl = '';
+let qrPngBlob = null;       // PNG pré-renderizado ao abrir o QR (ver showQrModal)
+let qrPngPromise = null;
 
 saveQrBtn?.addEventListener('click', async () => {
   if (typeof qrcode === 'undefined') {
     alert('Biblioteca de QR não carregou — verifique conexão.');
     return;
   }
+  if (_saveBusy || !checkShareable()) return;
   let share = null;
   try {
-    share = await shareableRouteUrl();
+    share = await withSaveBusy(saveQrBtn, () => shareableRouteUrl({ forQr: true }));
   } catch (err) {
     alert(`Falha ao gerar link: ${err.message}`);
     return;
   }
   if (!share) return;
   if (share.server) showToast('Rota salva no servidor');
-  showQrModal(share.url);
+  if (!showQrModal(share.url)) {
+    alert(
+      `O link desta rota é grande demais pra caber num QR (${share.url.length} caracteres).\n` +
+      'Com conexão, "☁ Salvar no servidor" gera um link curto — ou use "Copiar link".',
+    );
+  }
 });
 
 qrClose?.addEventListener('click', () => (qrModal.hidden = true));
@@ -13558,24 +14382,27 @@ qrCopyBtn?.addEventListener('click', async () => {
     window.prompt('Copie o URL:', qrCurrentUrl);
   }
 });
+const saveQrFile = (blob, ext) => saveFile(blob, `qr-${qrFilenameSlug()}.${ext}`).then((r) => {
+  if (r === 'shared' || r === 'downloaded') showToast('QR salvo.');
+});
 qrDownloadSvgBtn?.addEventListener('click', () => {
   if (!qrCurrentSvg) return;
-  downloadBlob(
-    new Blob([qrCurrentSvg], { type: 'image/svg+xml' }),
-    `qr-${qrFilenameSlug()}.svg`,
-  );
+  saveQrFile(new Blob([qrCurrentSvg], { type: 'image/svg+xml' }), 'svg');
 });
 qrDownloadPngBtn?.addEventListener('click', () => {
   if (!qrCurrentSvg) return;
-  svgToPngBlob(qrCurrentSvg, 1024).then((blob) => {
-    downloadBlob(blob, `qr-${qrFilenameSlug()}.png`);
-  });
+  // O PNG já foi rasterizado ao abrir o modal: com ele pronto, o compartilhar
+  // sai ainda DENTRO do toque (o iOS exige o gesto — é o caminho pro
+  // Instagram/Fotos). Se ainda não ficou pronto (raro), espera.
+  if (qrPngBlob) saveQrFile(qrPngBlob, 'png');
+  else (qrPngPromise || svgToPngBlob(qrCurrentSvg, 1024)).then((b) => saveQrFile(b, 'png'))
+    .catch((err) => showToast(`Não deu pra gerar o PNG: ${err.message}`));
 });
 
+// Monta o QR e abre o modal. Devolve false (sem abrir) se o link não cabe
+// num QR — o qrcode.js lança "code length overflow" acima de ~2,9 mil
+// caracteres, e antes isso virava uma rejeição silenciosa no meio do toque.
 function showQrModal(url) {
-  qrCurrentUrl = url;
-  qrUrlInput.value = url;
-
   // Pick error correction by URL length: shorter URLs can afford H (more
   // robust to camera blur), longer ones need L just to fit.
   let ec = 'H';
@@ -13584,13 +14411,28 @@ function showQrModal(url) {
   if (url.length > 1100) ec = 'L';
 
   // typeNumber=0 → auto-pick smallest version that fits.
-  const qr = qrcode(0, ec);
-  qr.addData(url);
-  qr.make();
+  let qr;
+  try {
+    qr = qrcode(0, ec);
+    qr.addData(url);
+    qr.make();
+  } catch (err) {
+    console.warn('[qr] não coube:', err.message || err);
+    return false;
+  }
+  qrCurrentUrl = url;
+  qrUrlInput.value = url;
 
   // 4-px cells with 4-cell quiet zone, scalable so the SVG fills the box.
   qrCurrentSvg = qr.createSvgTag({ cellSize: 4, margin: 4, scalable: true });
   qrImage.innerHTML = qrCurrentSvg;
+  qrPngBlob = null;
+  const svgForPng = qrCurrentSvg;
+  qrPngPromise = svgToPngBlob(svgForPng, 1024).then((b) => {
+    if (qrCurrentSvg === svgForPng) qrPngBlob = b;
+    return b;
+  });
+  qrPngPromise.catch(() => {});
 
   if (url.length > 1500) {
     qrWarning.textContent =
@@ -13601,6 +14443,7 @@ function showQrModal(url) {
   }
 
   qrModal.hidden = false;
+  return true;
 }
 
 function qrFilenameSlug() {
@@ -13611,16 +14454,7 @@ function qrFilenameSlug() {
     .slice(0, 50) || 'rota';
 }
 
-function downloadBlob(blob, filename) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
+// (O antigo downloadBlob() virou saveFile() em lib/utils.js — compartilhado.)
 
 // SVG string → PNG blob via Canvas. Used for the "Baixar PNG" button so the
 // QR can be pasted into apps that don't render SVG (some chat clients, IG).
@@ -13684,13 +14518,23 @@ const editGpxInput = document.getElementById('edit-gpx-input');
 // ("Carregar GPX do computador"). Carregar com a edição já aberta só troca o
 // traçado (os caminhos de load fazem `if (!drawingMode) enterDrawingMode()`).
 document.getElementById('trace-load')?.addEventListener('click', () => openSavedRoutesModal());
+// O `accept` do input inclui application/octet-stream (sem ele o seletor do
+// iOS deixava o .gpx cinza — o iOS não tem tipo de sistema pra GPX), então
+// qualquer arquivo pode chegar aqui: o tamanho barra antes de ler, e o
+// loadGpxIntoEditor já recusa XML inválido / sem pontos.
+const GPX_MAX_BYTES = 60 * 1024 * 1024;
 editGpxInput.addEventListener('change', () => {
   const file = editGpxInput.files?.[0];
   editGpxInput.value = '';
   if (!file) return;
+  if (file.size > GPX_MAX_BYTES) {
+    alert(`"${file.name}" tem ${(file.size / 1048576).toFixed(0)} MB — grande demais pra um GPX. Escolha o arquivo .gpx da rota.`);
+    return;
+  }
   closeSavedRoutesModal();
   const reader = new FileReader();
-  reader.onload = () => loadGpxIntoEditor(String(reader.result));
+  reader.onload = () => loadGpxIntoEditor(String(reader.result), file.name);
+  reader.onerror = () => alert('Não foi possível ler o arquivo.');
   reader.readAsText(file);
 });
 
@@ -13790,6 +14634,9 @@ async function saveRouteToServer() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, state, stats, id: id || undefined }),
+      // No 4G fraco o POST podia pendurar até o timeout do sistema, com os
+      // botões travados; estourou → erro de rede → quem chama cai no #st=.
+      signal: typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(15000) : undefined,
     });
     return { res, data: await res.json().catch(() => ({})) };
   };
@@ -13809,6 +14656,7 @@ async function saveRouteToServer() {
   if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
   currentSavedRouteId = data.id;
   defaultSaveName = name;
+  syncLineageMeta();          // desfazer na mesma linhagem mantém o vínculo
   scheduleTraceDraftSave();   // o rascunho passa a apontar pra rota salva
   return data;
 }
@@ -13816,12 +14664,13 @@ async function saveRouteToServer() {
 // "☁ Salvar no servidor" — salva/atualiza sem copiar link nem abrir QR.
 const saveServerBtn = document.getElementById('save-server');
 saveServerBtn?.addEventListener('click', async () => {
+  if (_saveBusy) return;
   if (trackpoints.length < 2) {
     alert('Adicione pelo menos 2 pontos antes de salvar.');
     return;
   }
   try {
-    const saved = await saveRouteToServer();
+    const saved = await withSaveBusy(saveServerBtn, () => saveRouteToServer());
     if (!saved) return;
     showToast(`Rota salva no servidor · /route/${saved.slug}`);
   } catch (err) {
@@ -13838,21 +14687,58 @@ const savedRoutesLocal = document.getElementById('saved-routes-local');
 // Botão "Carregar GPX do computador" — dispara o mesmo picker do antigo Editar.
 savedRoutesLocal?.addEventListener('click', () => editGpxInput.click());
 
+// "↺ Rascunho anterior": o rascunho que um carregamento tirou do caminho
+// (TRACE_DRAFT_PREV_KEY) — sobrevive a recarregar a página, ao contrário do
+// desfazer.
+const savedRoutesPrev = document.createElement('button');
+savedRoutesPrev.type = 'button';
+savedRoutesPrev.id = 'saved-routes-prev';
+savedRoutesPrev.className = 'secondary-btn';
+savedRoutesPrev.hidden = true;
+savedRoutesLocal?.after(savedRoutesPrev);
+savedRoutesPrev.addEventListener('click', () => { closeSavedRoutesModal(); restorePrevDraft(); });
+function refreshPrevDraftButton() {
+  const prev = readStoredDraft(TRACE_DRAFT_PREV_KEY);
+  savedRoutesPrev.hidden = !prev;
+  if (!prev) return;
+  let when = '';
+  try {
+    if (prev.at) when = new Date(prev.at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  } catch (_) { /* sem data */ }
+  savedRoutesPrev.textContent =
+    `↺ Restaurar rascunho anterior (${prev.wp.length} pontos${prev.n ? ` · ${prev.n}` : ''}${when ? ` · ${when}` : ''})`;
+}
+
+// Geração da grade: cada abertura/fechamento incrementa — o que estava em
+// voo de uma geração velha (a listagem, as miniaturas) não pinta nem começa
+// mais nada.
+let _savedRoutesGen = 0;
+let _thumbObserver = null;
+
 async function openSavedRoutesModal() {
+  const gen = ++_savedRoutesGen;
   savedRoutesModal.hidden = false;
   savedRoutesEmpty.hidden = true;
+  refreshPrevDraftButton();
   savedRoutesList.innerHTML = '<li class="muted">Carregando…</li>';
   try {
     const res = await fetch('./saved-routes', { cache: 'no-store' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
+    if (gen !== _savedRoutesGen) return;
     renderSavedRoutes(data.routes || []);
   } catch (err) {
+    if (gen !== _savedRoutesGen) return;
     savedRoutesList.innerHTML =
       `<li class="muted">Indisponível: ${escapeHtml(err.message)} (requer o backend same-origin).</li>`;
   }
 }
-function closeSavedRoutesModal() { savedRoutesModal.hidden = true; }
+function closeSavedRoutesModal() {
+  savedRoutesModal.hidden = true;
+  _savedRoutesGen++;
+  _thumbObserver?.disconnect();
+  _thumbObserver = null;
+}
 
 // Faixas fixas de intensidade por kJ — espelho do intensityFor do censo.html
 // (fonte canônica; o backend repete as mesmas faixas no badge do card OG).
@@ -13929,13 +14815,16 @@ const THUMB_HIDRO_MAIN_KM2 = 150;   // acima disso, só rio/canal/crista (legibi
 const THUMB_HIDRO_MAX_LINES = 400;  // teto de <polyline> por miniatura
 const THUMB_STROKE_SCALE = 0.33;    // pesos da camada (px de mapa) → unidades da viewBox
 
-async function fillThumbHidro(svgEl, proj, cacheKey) {
+async function fillThumbHidro(svgEl, proj, cacheKey, gen = _savedRoutesGen) {
   const g = svgEl?.querySelector('.thumb-hidro');
   if (!g) return;
   if (_thumbHidroCache.has(cacheKey)) {
     g.innerHTML = _thumbHidroCache.get(cacheKey);
     return;
   }
+  // Modal fechado/re-renderizado enquanto esta miniatura esperava a vez.
+  const stale = () => gen !== _savedRoutesGen || !g.isConnected;
+  if (stale()) return;
   const bb = proj.bb;
   const areaKm2 = bboxAreaKm2(bb);
   if (areaKm2 > OSM_FGB_MAX_BBOX_KM2) return;   // rota continental — sem fundo
@@ -13944,10 +14833,14 @@ async function fillThumbHidro(svgEl, proj, cacheKey) {
   // `null` = fetch FALHOU (timeout/offline) — diferente de lista vazia
   // ("não há água aqui"): falha desenha o que deu e NÃO entra no cache da
   // sessão, senão um timeout envenenaria a miniatura até recarregar a página.
+  // O 4º argumento ({isStale, maxParts}, a convenção do streamFgbPackedLines)
+  // corta o DOWNLOAD quando o modal fecha — no-op enquanto a leitura FGB não
+  // o aceitar.
   const [hidro, network] = await Promise.all([
-    streamFgbFeatures(HIDRO_FGB_URL, bb, false).catch(() => null),
+    streamFgbFeatures(HIDRO_FGB_URL, bb, false, { isStale: stale, maxParts: THUMB_HIDRO_MAX_LINES * 5 }).catch(() => null),
     loadPhCycleNetwork().catch(() => []),
   ]);
+  if (stale()) return;   // nem pinta nem guarda (pode ter vindo cortado)
   const lines = [];
   const pushFeature = (f, style) => {
     if (!style) return;
@@ -13977,9 +14870,11 @@ async function fillThumbHidro(svgEl, proj, cacheKey) {
 
 function renderSavedRoutes(routes) {
   savedRoutesList.innerHTML = '';
+  _thumbObserver?.disconnect();
+  _thumbObserver = null;
   if (!routes.length) { savedRoutesEmpty.hidden = false; return; }
   savedRoutesEmpty.hidden = true;
-  const hidroFills = [];   // (svg, proj, key) — preenchidos em lote no final
+  const hidroFills = [];   // (svg, proj, key) — preenchidos conforme aparecem
   for (const r of routes) {
     const li = document.createElement('li');
     li.className = 'saved-route-card';
@@ -14051,11 +14946,38 @@ function renderSavedRoutes(routes) {
     li.append(thumb, nameEl, statsEl, actions);
     savedRoutesList.appendChild(li);
   }
-  // Fundos "Morros e Águas" em lote, 3 por vez — best-effort (offline/timeout
-  // deixam o card só com o traçado, que já está na tela).
-  mapConcurrent(hidroFills, 3, ([svg, proj, key]) =>
-    fillThumbHidro(svg, proj, key).catch((e) => console.warn('[thumb-hidro]', e.message)),
-  );
+  // Fundos "Morros e Águas" só das miniaturas que APARECEM (a lista não tem
+  // paginação e cada fundo são range requests no FGB de 1,7 GB), 3 por vez
+  // — best-effort (offline/timeout deixam o card só com o traçado). Fechar o
+  // modal muda a geração: nada novo começa, nada velho pinta.
+  const gen = _savedRoutesGen;
+  const queue = [];
+  let running = 0;
+  const pump = () => {
+    while (running < 3 && queue.length && gen === _savedRoutesGen) {
+      const [svg, proj, key] = queue.shift();
+      running++;
+      fillThumbHidro(svg, proj, key, gen)
+        .catch((e) => console.warn('[thumb-hidro]', e.message))
+        .finally(() => { running--; pump(); });
+    }
+  };
+  const byThumb = new Map(hidroFills.map((f) => [f[0].closest('.saved-route-thumb'), f]));
+  if (typeof IntersectionObserver !== 'function') {
+    queue.push(...hidroFills);
+    pump();
+    return;
+  }
+  _thumbObserver = new IntersectionObserver((entries, obs) => {
+    for (const en of entries) {
+      if (!en.isIntersecting) continue;
+      obs.unobserve(en.target);
+      const f = byThumb.get(en.target);
+      if (f) queue.push(f);
+    }
+    pump();
+  }, { rootMargin: '120px 0px' });   // raiz = viewport, recortada pelos contêineres de rolagem
+  for (const el of byThumb.keys()) if (el) _thumbObserver.observe(el);
 }
 
 async function loadSavedRoute(id, name) {
@@ -14063,11 +14985,13 @@ async function loadSavedRoute(id, name) {
     const res = await fetch(`./saved-route/${encodeURIComponent(id)}`, { cache: 'no-store' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const state = await res.json();
-    if (!(await applyShareState(state))) throw new Error('estado sem waypoints');
+    const applied = await applyShareState(state);
+    if (!applied) throw new Error('estado sem waypoints');
     currentSavedRouteId = id;
     if (name) defaultSaveName = name;
+    syncLineageMeta();
     closeSavedRoutesModal();
-    showToast(`Rota carregada · ${trackpoints.length} pontos`);
+    announceStashedDraft(`Rota carregada · ${trackpoints.length} pontos`, applied.stashed);
   } catch (err) {
     alert(`Falha ao carregar a rota: ${err.message}`);
   }
@@ -14102,7 +15026,7 @@ async function editEntryInDrawingTool(entry) {
     return;
   }
 
-  if (!drawingMode) enterDrawingMode();
+  const stashed = prepareEditorReplace();
   for (const t of trackpoints) map.removeLayer(t.marker);
   trackpoints = [];
   pendingRouteSeq++;
@@ -14178,16 +15102,23 @@ async function editEntryInDrawingTool(entry) {
   const poiTag = poiCount
     ? ` (${poiCount} POI${poiCount === 1 ? '' : 's'})`
     : ' · sem POIs no routes.json — rode `python scripts/build-routes.py`';
-  showToast(
+  announceStashedDraft(
     `Editando "${entry.name || entry.date || `Route ${entry.id}`}" ` +
       `· ${trackpoints.length} pontos${poiTag}`,
+    stashed,
   );
 }
 
 // Distance between two lat/lng pairs in meters (haversine, no Leaflet dep).
 // haversine() now imported from lib/utils.js
 
-async function loadGpxIntoEditor(gpxText) {
+// Rótulos dos parâmetros físicos pro aviso de "GPX traz outros parâmetros".
+const PARAM_DIFF_LABELS = {
+  mass: ['massa', 'kg'], powerAscent: ['potência na subida', 'W'], powerFlat: ['potência no plano', 'W'],
+  powerDescent: ['potência na descida', 'W'], crr: ['Crr', ''], cda: ['CdA', 'm²'], rho: ['ρ', 'kg/m³'],
+};
+
+async function loadGpxIntoEditor(gpxText, fileName = '') {
   let doc;
   try {
     doc = new DOMParser().parseFromString(gpxText, 'application/xml');
@@ -14197,13 +15128,11 @@ async function loadGpxIntoEditor(gpxText) {
     return;
   }
 
-  // GPX de arquivo é uma rota nova — desvincula de qualquer rota do servidor
-  // pra um "Salvar no servidor" seguinte não sobrescrever a errada.
-  currentSavedRouteId = null;
-
-  // 0) Default save name from <metadata><name> if present.
-  const metaName = doc.querySelector('metadata > name')?.textContent;
-  if (metaName) defaultSaveName = metaName.trim();
+  // 0) Default save name from <metadata><name> if present (senão, o nome do
+  //    arquivo). Só é aplicado depois de guardar o rascunho atual (o nome
+  //    dele vai junto pro "anterior").
+  const metaName = (doc.querySelector('metadata > name')?.textContent || '').trim() ||
+    String(fileName || '').replace(/\.[^.]+$/, '').trim();
 
   // 1) Extensions (our own format) — restores user waypoints + params
   //    cleanly when the file came from this app.
@@ -14211,6 +15140,7 @@ async function loadGpxIntoEditor(gpxText) {
   let savedUserWaypoints = null;
   let savedRoutingMode = null;
   let chosenConnectMode = null;   // modo escolhido no modal p/ GPX de terceiros
+  let embeddedParams = null;
   let appliedParams = false;
   if (metaEls.length > 0) {
     const meta = metaEls[0];
@@ -14223,12 +15153,8 @@ async function loadGpxIntoEditor(gpxText) {
     try {
       if (paramsEl) {
         const obj = JSON.parse(paramsEl.textContent || 'null');
-        if (obj) {
-          params = paramsFromAnyJson(obj);
-          saveParams();
-          fillParamInputs();
-          appliedParams = true;
-        }
+        // Mesclado sobre os SEUS parâmetros (as fontes de dados e o SUV ficam).
+        if (obj) embeddedParams = paramsFromAnyJson(obj);
       }
     } catch (e) { console.warn('embedded params parse failed:', e); }
     if (rmEl) savedRoutingMode = (rmEl.textContent || '').trim();
@@ -14238,7 +15164,9 @@ async function loadGpxIntoEditor(gpxText) {
   //    the trkpt list (capped) for third-party GPX files.
   let waypointsToCreate;
   if (savedUserWaypoints && Array.isArray(savedUserWaypoints) && savedUserWaypoints.length > 0) {
-    waypointsToCreate = savedUserWaypoints;
+    waypointsToCreate = savedUserWaypoints.filter((w) => w && Number.isFinite(w.lat) && Number.isFinite(w.lng));
+    // GPX exportado de um rascunho denso antigo (um waypoint por trkpt).
+    if (waypointsToCreate.length > DENSE_DRAFT_MAX) waypointsToCreate = compactDenseWaypoints(waypointsToCreate);
   } else {
     const coords = [];
     for (const tag of ['trkpt', 'rtept']) {
@@ -14295,6 +15223,13 @@ async function loadGpxIntoEditor(gpxText) {
         waypointsToCreate.push({ lat: wlat, lng: wlng, name: nm, isPoi: true, sym: sm });
       }
     }
+    // Reta com traço denso (GPX de 1 Hz: milhares de pontos) → ~150 pontos
+    // editáveis e a geometria EXATA entre eles no pathFromPrev — um marcador
+    // DOM arrastável por trkpt travava a aba (~10 mil: 6,6 s de tarefa longa
+    // e cada pan/zoom depois).
+    if (chosenConnectMode === 'straight' && waypointsToCreate.length > 200) {
+      waypointsToCreate = compactDenseWaypoints(waypointsToCreate);
+    }
   }
 
   if (waypointsToCreate.length === 0) {
@@ -14302,11 +15237,43 @@ async function loadGpxIntoEditor(gpxText) {
     return;
   }
 
-  // 3) Enter drawing mode and instantiate the loaded waypoints.
-  if (!drawingMode) enterDrawingMode();
-  // Wipe any existing draft from the freshly entered drawing session.
+  // Parâmetros embutidos (GPX exportado pelo amora, talvez por OUTRA pessoa):
+  // aplicar troca a SUA massa/potência — pergunta quando diferem.
+  if (embeddedParams) {
+    const diff = paramsDiffKeys(embeddedParams, params);
+    if (diff.length) {
+      const fmtV = (k, v) => {
+        const [label, unit] = PARAM_DIFF_LABELS[k] || [k, ''];
+        return `${label} ${String(+(+v).toFixed(3)).replace('.', ',')}${unit ? ` ${unit}` : ''}`;
+      };
+      const shown = diff.filter((k) => PARAM_DIFF_LABELS[k]).slice(0, 4);
+      const lines = shown.map((k) => `• ${fmtV(k, embeddedParams[k])} (o seu: ${String(+(+params[k]).toFixed(3)).replace('.', ',')})`);
+      const more = diff.length - shown.length;
+      if (confirm(
+        'Este GPX traz parâmetros de simulação diferentes dos seus:\n' +
+        (lines.length ? lines.join('\n') + '\n' : '') +
+        (more > 0 ? `• e mais ${more} parâmetro(s)\n` : '') +
+        '\nAplicar os parâmetros do arquivo? (Cancelar mantém os seus.)',
+      )) {
+        params = embeddedParams;
+        saveParams();
+        fillParamInputs();
+        appliedParams = true;
+      }
+    }
+  }
+
+  // 3) Enter drawing mode and instantiate the loaded waypoints. O rascunho
+  //    atual sai do caminho guardado (↶ / Restaurar).
+  const stashed = prepareEditorReplace();
   for (const t of trackpoints) map.removeLayer(t.marker);
   trackpoints = [];
+  pendingRouteSeq++;
+  // GPX de arquivo é uma rota nova — desvincula de qualquer rota do servidor
+  // pra um "Salvar no servidor" seguinte não sobrescrever a errada (e o nome
+  // do rascunho anterior não vaza pra ela).
+  currentSavedRouteId = null;
+  defaultSaveName = metaName;
 
   if (savedRoutingMode && ['straight', 'cycling', 'foot', 'energy', 'energy_road'].includes(savedRoutingMode)) {
     routingMode = savedRoutingMode;
@@ -14351,24 +15318,20 @@ async function loadGpxIntoEditor(gpxText) {
   // Re-route em segundo plano só os segmentos SEM geometria salva (GPX de
   // terceiros / antigos). Segmentos com path restaurado ficam intactos — não
   // re-roteamos por cima da rota exata que o usuário salvou.
+  const todo = [];
   if (routingMode !== 'straight') {
-    const indices = [];
     for (let i = 1; i < trackpoints.length; i++) {
       const wp = waypointsToCreate[i];
-      if (!(wp.path && wp.path.length >= 2)) indices.push(i);
-    }
-    if (indices.length) {
-      const routeSeq = ++pendingRouteSeq;
-      await mapConcurrent(indices, 4, (idx) => refetchPath(idx, routeSeq));
-      redrawAndMetrics();
+      if (!(wp.path && wp.path.length >= 2)) todo.push(trackpoints[i]);
     }
   }
-  pushHistory();
+  if (todo.length) await routeSegmentsBatch(todo);
+  else pushHistory();
 
   const bits = [`${trackpoints.length} pontos`];
-  if (appliedParams) bits.push('parâmetros aplicados');
+  if (appliedParams) bits.push('parâmetros do arquivo aplicados');
   if (savedUserWaypoints) bits.push('waypoints originais restaurados');
-  showToast(`GPX carregado · ${bits.join(' · ')}`);
+  announceStashedDraft(`GPX carregado · ${bits.join(' · ')}`, stashed);
 }
 
 // ─── Acessibilidade centralizada dos modais ─────────────────────────────────

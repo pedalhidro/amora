@@ -75,6 +75,55 @@ export function showToast(msg, ms = 3500) {
   }, ms);
 }
 
+// Salva/compartilha um arquivo gerado no cliente (GPX, QR, ZIP, JSON…) — o
+// ÚNICO caminho de download do app. No celular (ponteiro grosso) e no shell
+// nativo, com Web Share nível 2, abre a folha de compartilhar do sistema: no
+// iPhone é por ela que o arquivo chega no WhatsApp, Garmin/Komoot, Instagram,
+// Fotos ou "Salvar em Arquivos" (o <a download> caía em Arquivos › Downloads,
+// e no shell Capacitor não salvava NADA — o WKWebView do Capacitor não trata
+// download). No desktop (e sem Web Share) segue o <a download> de sempre.
+// Chame DENTRO do gesto do usuário e sem await antes: o navigator.share
+// consome a ativação transitória (5 s no WebKit) — sem ela cai no download.
+// Devolve 'shared' | 'downloaded' | 'cancelled' (o usuário fechou a folha);
+// quem chama só mostra o aviso de sucesso depois disso.
+export async function saveFile(blob, filename, { type } = {}) {
+  const mime = type || blob.type || 'application/octet-stream';
+  let coarse = false;
+  try { coarse = window.matchMedia('(pointer: coarse)').matches; } catch (_) { /* sem matchMedia */ }
+  const cap = window.Capacitor;
+  const native = !!(cap && typeof cap.isNativePlatform === 'function' && cap.isNativePlatform());
+  if ((coarse || native) && typeof navigator.share === 'function' && typeof File === 'function') {
+    let data = null;
+    try { data = { files: [new File([blob], filename, { type: mime })] }; } catch (_) { data = null; }
+    // Sem ativação (o arquivo levou mais que a janela do gesto pra ficar
+    // pronto), o share rejeitaria — vai direto pro download.
+    const active = !navigator.userActivation || navigator.userActivation.isActive;
+    let shareable = false;
+    try { shareable = !!data && active && (!navigator.canShare || navigator.canShare(data)); } catch (_) { shareable = false; }
+    if (shareable) {
+      try {
+        await navigator.share(data);
+        return 'shared';
+      } catch (err) {
+        if (err && err.name === 'AbortError') return 'cancelled';
+        // NotAllowedError (gesto perdido), TypeError (tipo recusado)… → download
+      }
+    }
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.rel = 'noopener';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  // Revogar cedo é seguro (o WebKit estende a vida do blob: durante a checagem
+  // de navegação do download), mas não há pressa.
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  return 'downloaded';
+}
+
 // localStorage with try/catch so private-mode / quota-exceeded errors don't
 // crash flow. Returns null on read failure, false on write failure, true on
 // successful write.

@@ -157,7 +157,7 @@
       </div>
       <nav class="topbar-actions">
       <input type="file" id="photos-import-input" accept=".ttl,.zip,text/turtle,application/zip" hidden />
-      <input type="file" id="edit-gpx-input" accept=".gpx,application/gpx+xml" hidden />
+      <input type="file" id="edit-gpx-input" accept=".gpx,application/gpx+xml,application/octet-stream" hidden />
       <button id="subir-btn" type="button" class="secondary-btn" title="Ações" aria-label="Ações">☰ ações</button>
       <button id="subir-imagens-btn" type="button" class="secondary-btn" title="Enviar imagens (envio simplificado)" aria-label="Enviar imagens" aria-pressed="false">📤 enviar imgs</button>
       <button id="trace-btn" type="button" class="secondary-btn" title="Traçar GPX" aria-label="Traçar GPX">🗺︎ traçar</button>
@@ -196,7 +196,10 @@
            coluna de controles top-left do Leaflet, abaixo do zoom. -->
       <button id="geo-search-btn" type="button" class="geo-search-btn leaflet-bar leaflet-control" title="Buscar endereço" aria-label="Buscar endereço" aria-pressed="false">🔍</button>
       <div id="geo-search-panel" class="geo-search-panel" hidden>
-        <input type="search" id="geo-search-input" placeholder="Buscar endereço ou lugar…" autocomplete="off" enterkeyhint="search" aria-label="Buscar endereço" />
+        <div class="geo-search-row">
+          <input type="search" id="geo-search-input" placeholder="Buscar endereço ou lugar…" autocomplete="off" enterkeyhint="search" aria-label="Buscar endereço" />
+          <button type="button" id="geo-search-close" class="geo-search-close" aria-label="Fechar a busca" title="Fechar a busca">Fechar</button>
+        </div>
         <ul id="geo-search-results" role="listbox" aria-label="Resultados da busca"></ul>
         <p id="geo-search-status" class="geo-search-status" hidden></p>
         <p class="geo-search-attrib">busca <a href="https://photon.komoot.io/" target="_blank" rel="noopener">Photon</a> · dados © colaboradores do <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a></p>
@@ -1285,6 +1288,7 @@
           <h3>Traçar um GPX novo</h3>
           <ul>
             <li><strong>Traçar GPX</strong> abre o modo de edição: clique no mapa para adicionar pontos, arraste-os para mover.</li>
+            <li>No celular: toque no mapa acrescenta um ponto; pra inserir um no meio, <strong>segure o dedo na linha</strong> (e arraste pra posicionar) — pan e pinça na linha só movem o mapa. O <strong>ⓘ</strong> da barra explica cada botão e mostra o detalhamento da simulação.</li>
             <li>O seletor à direita escolhe como conectar pontos consecutivos: <em>Reta</em> (linha entre pontos, menor distância), <em>OSM ciclismo / a pé</em> (rota via OpenStreetMap) ou <em>Menor energia</em> (terreno ou viário).</li>
             <li><strong>Undo / Redo</strong> (também ⌘/Ctrl+Z e ⌘/Ctrl+Shift+Z), <strong>Cancelar</strong> (Esc) — fecha o editor <em>sem perder o traçado</em>: ele fica guardado no navegador e volta no próximo Traçar. Pra descartar de verdade, use o <strong>🗑</strong> da barra.</li>
             <li><strong>Salvar</strong> pede um nome — que vira o endereço da rota no servidor. <strong>Exportar GPX</strong> baixa o <code>.gpx</code>, que inclui os parâmetros de simulação, a lista de waypoints e o modo de roteamento de cada trecho como extensões — invisíveis para Garmin/Strava/RWGPS, mas usados ao reabrir aqui. <strong>☁ Salvar no servidor</strong> grava/atualiza a rota; <strong>Copiar link</strong>/<strong>QR</strong> também salvam e compartilham o link por nome (<code>/route/&lt;nome&gt;</code>).</li>
@@ -1355,7 +1359,7 @@
         <div class="save-body">
           <label class="save-row">
             <span>Nome da rota</span>
-            <input type="text" id="save-name" maxlength="120" />
+            <input type="text" id="save-name" maxlength="120" enterkeyhint="done" autocomplete="off" />
           </label>
           <p class="muted">O nome vira o endereço da rota no servidor (<code>/route/…</code>) — <strong>Salvar no servidor</strong>, <strong>Copiar link</strong> e <strong>QR</strong> salvam com esse nome (se já existir uma rota homônima, perguntamos se é pra atualizá-la). <strong>Exportar GPX</strong> baixa <code id="save-filename-preview">tracado.gpx</code>.</p>
           <div class="save-actions">
@@ -1377,7 +1381,7 @@
           <button class="close" id="saved-routes-close" type="button" aria-label="Fechar">&times;</button>
         </header>
         <div class="save-body">
-          <button type="button" id="saved-routes-local" class="secondary-btn" title="Carregar um arquivo .gpx do computador">📂🗺︎ Carregar GPX do computador…</button>
+          <button type="button" id="saved-routes-local" class="secondary-btn" title="Carregar um arquivo .gpx deste aparelho">📂🗺︎ Carregar arquivo GPX…</button>
           <p class="muted saved-routes-server-head">Rotas salvas no servidor</p>
           <p class="muted" id="saved-routes-empty" hidden>Nenhuma rota salva no servidor ainda.</p>
           <ul id="saved-routes-list" class="saved-routes-list"></ul>
@@ -1396,14 +1400,14 @@
           <p class="muted">Este GPX tem <strong><span id="gpx-connect-count">0</span> pontos</strong>.</p>
           <label class="settings-row"><span>Conectar com</span>
             <select id="gpx-connect-mode" aria-label="Modo de conexão">
-              <option value="straight">Reta (menor distância) — mantém todos os pontos</option>
+              <option value="straight">Reta (menor distância) — mantém o traço exato</option>
               <option value="cycling">OSM ciclismo</option>
               <option value="foot">OSM a pé</option>
               <option value="energy">Menor energia pelo terreno</option>
               <option value="energy_road">Menor energia pelo viário</option>
             </select>
           </label>
-          <p class="muted">Em <strong>Reta</strong>, todos os pontos do traço são preservados (geometria exata). Os modos roteados reamostram para ~100 pontos e recalculam o caminho entre eles, usando os mesmos parâmetros da barra de edição (⚙).</p>
+          <p class="muted">Em <strong>Reta</strong>, o traço inteiro é preservado (geometria exata) — num GPX denso, ~150 dos pontos viram pontos editáveis e o resto segue como o desenho entre eles. Os modos roteados reamostram para ~100 pontos e recalculam o caminho entre eles, usando os mesmos parâmetros da barra de edição (⚙).</p>
           <div class="settings-actions">
             <button type="button" id="gpx-connect-confirm">Carregar</button>
           </div>

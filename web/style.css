@@ -1400,6 +1400,10 @@ body.layers-hidden .layer-panel { display: none; }
 
 /* QR-code modal */
 .qr-modal-content { width: min(380px, 92vw); }
+/* O QR abre POR CIMA da folha Salvar (que continua aberta): os modais têm o
+   mesmo z-index e o #qr-modal vem antes no HTML — ficava por baixo, sem
+   receber toque/clique. */
+#qr-modal { z-index: 5001; }
 .qr-body {
   padding: 14px 16px 16px;
   display: grid;
@@ -1458,9 +1462,13 @@ body.layers-hidden .layer-panel { display: none; }
   border-color: var(--accent);
 }
 
-/* Save GPX modal */
-.save-modal-content { width: min(420px, 92vw); }
-.save-body { padding: 14px 16px 16px; display: grid; gap: 12px; }
+/* Save GPX modal — largura fixa só no desktop: no celular vale a folha de
+   largura total dos outros modais (esta regra vinha depois da mobile e
+   ganhava; a 390 px a linha de 5 botões estourava pro lado). */
+@media (min-width: 761px) {
+  .save-modal-content { width: min(420px, 92vw); }
+}
+.save-body { padding: 14px 16px 16px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
 .save-row { display: grid; gap: 6px; font-size: 13px; }
 .save-row span { color: var(--muted); font-size: 12px; }
 .save-row input[type="text"] {
@@ -1470,6 +1478,9 @@ body.layers-hidden .layer-panel { display: none; }
   border-radius: 5px;
   padding: 8px 10px;
   font: inherit;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
 }
 .save-body .muted { color: var(--muted); font-size: 12px; margin: 0; }
 .save-body .muted code {
@@ -1478,12 +1489,22 @@ body.layers-hidden .layer-panel { display: none; }
   border-radius: 3px;
   padding: 1px 5px;
   font-size: 11px;
+  overflow-wrap: anywhere;
 }
 .save-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
   margin-top: 4px;
+}
+.save-actions button:disabled { opacity: 0.55; cursor: progress; }
+/* Celular: duas linhas de alvos ≥ 40 px — Cancelar/Copiar link/QR em cima,
+   ☁ Salvar no servidor + ⤓ Exportar GPX (as ações principais) embaixo. */
+@media (max-width: 600px) {
+  .save-actions button { flex: 1 1 26%; min-height: 40px; white-space: normal; line-height: 1.2; }
+  .save-actions #save-server,
+  .save-actions #save-confirm { flex: 1 1 40%; }
 }
 .save-actions button:not(.primary-btn) {
   background: transparent;
@@ -1498,7 +1519,24 @@ body.layers-hidden .layer-panel { display: none; }
 .save-actions button:not(.primary-btn):hover { color: var(--text); }
 
 /* Modal "Carregar rota": botão de arquivo local + lista do servidor. */
-#saved-routes-local { width: 100%; justify-content: center; }
+#saved-routes-local,
+#saved-routes-prev { width: 100%; justify-content: center; }
+#saved-routes-prev { margin-top: -4px; white-space: normal; }
+/* Botão de ação dentro do toast (ex.: "↺ Restaurar" o rascunho anterior) —
+   o .toast é pointer-events:none; só o botão recebe o toque. */
+.toast .toast-action {
+  pointer-events: auto;
+  margin-left: 6px;
+  min-height: 36px;
+  padding: 6px 12px;
+  border: none;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
 .saved-routes-server-head { margin-top: 12px !important; font-weight: 600; }
 
 /* Rotas salvas no servidor — grade de cards com miniatura do traçado,
@@ -1597,11 +1635,30 @@ body.drawing .leaflet-container {
 /* But keep the move-cursor on draggable trackpoint markers. */
 body.drawing .trackpoint-marker { cursor: grab !important; }
 body.drawing .trackpoint-marker:active { cursor: grabbing !important; }
+/* A caixa do marcador é a área de toque (40 px no toque — tpIcon); o ponto
+   visível fica centralizado nela. */
+.trackpoint-marker { display: flex; align-items: center; justify-content: center; }
 /* The draft line invites a press to insert an intermediate waypoint.
    touch-action:none keeps a touch-drag on the line from scrolling the page
-   so the press-to-insert gesture gets the move events. */
+   so the press-to-insert gesture gets the move events. (No toque o gesto só
+   começa depois de SEGURAR — ver onLinePointerDown; pan/pinça seguem com o
+   Leaflet.) */
 body.drawing .draft-line { cursor: copy; touch-action: none; }
 body.drawing .draft-line:active { cursor: grabbing; }
+/* Popup do ponto no toque: fechar e "Remover ponto" viram alvos de verdade
+   (eram 24 px e 90×18). body.drawing sobe a especificidade sobre as regras
+   base do .tp-popup, que vêm depois neste arquivo. */
+@media (pointer: coarse) {
+  body.drawing .leaflet-container .tp-popup a.leaflet-popup-close-button {
+    width: 40px;
+    height: 40px;
+    font: 24px/40px Tahoma, Verdana, sans-serif;
+  }
+  body.drawing .tp-popup .leaflet-popup-content { margin: 34px 12px 10px; }
+  body.drawing .tp-popup-body input[type="text"],
+  body.drawing .tp-popup-body select { min-height: 40px; }
+  body.drawing .tp-popup-body .tp-delete { min-height: 40px; padding: 8px 10px; font-size: 14px; }
+}
 
 #map { position: relative; } /* anchor for floating trace controls */
 
@@ -1665,6 +1722,12 @@ body.drawing .draft-line:active { cursor: grabbing; }
 @media (orientation: portrait) and (max-width: 600px) {
   .trace-controls .tb-label { display: none; }
   body .trace-controls { justify-content: center; }
+  /* Seletor de modo numa linha própria, no topo da barra: espremido entre os
+     botões ele virava "Menor…" pros DOIS modos de energia (e só a setinha a
+     320 px). Os botões dividem a linha de baixo por igual, com alvo de 40 px. */
+  body #trace-controls > .trace-toggle { order: -1; flex: 1 1 100%; }
+  body #trace-controls > button { flex: 1 1 0; min-width: 0; min-height: 40px; padding: 2px 0; font-size: 15px; }
+  body #trace-controls > .trace-info-btn { flex: 0 0 40px; }
 }
 /* Celular PAISAGEM (altura baixa): só ícones + TUDO numa linha só (botões +
    métricas juntos) — sem a quebra que joga as métricas pra baixo. */
@@ -1673,6 +1736,48 @@ body.drawing .draft-line:active { cursor: grabbing; }
   body .trace-controls { flex-wrap: nowrap; justify-content: center; }
   body .trace-controls .trace-break { display: none; }
 }
+/* Celular PAISAGEM no toque: com o seletor legível (16 px) e alvos de 36 px
+   a barra não cabe numa linha — as métricas descem pra 2ª. O painel de
+   camadas some no editor, então a barra pode usar quase a largura toda. */
+@media (pointer: coarse) and (orientation: landscape) and (max-height: 500px) {
+  body .trace-controls { flex-wrap: wrap; max-width: calc(100vw - 120px); }
+  body .trace-controls .trace-break { display: block; flex-basis: 100%; height: 0; }
+  .trace-controls button { min-height: 36px; min-width: 36px; }
+  body .trace-controls .trace-metrics { flex: 1 1 0; min-width: 0; }
+}
+/* ⓘ da barra: legenda dos botões/gestos + detalhamento da simulação (antes
+   só em `title`, que o toque nunca mostra). Abre pra baixo no desktop (barra
+   no topo) e pra cima no celular (barra no rodapé). */
+.trace-info {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 6px);
+  max-height: min(60vh, 440px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 8px 10px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  box-shadow: var(--shadow);
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: left;
+}
+.trace-info[hidden] { display: none; }
+@media (max-width: 760px) {
+  /* left: livra a coluna de controles do Leaflet (zoom, localizar, 🔍), que
+     pinta por cima de tudo que tem o mesmo z-index. */
+  body .trace-controls .trace-info { top: auto; bottom: calc(100% + 6px); left: 46px; max-height: 52vh; }
+}
+.trace-info-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; }
+.trace-info .trace-info-close { min-width: 36px; min-height: 36px; }
+.trace-legend { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 3px 10px; margin: 0; }
+.trace-legend dt { font-weight: 600; white-space: nowrap; }
+.trace-legend dd { margin: 0; color: var(--muted); }
+.trace-info-sub { margin: 10px 0 4px; font-weight: 600; }
+.trace-metrics-detail { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: 11px; color: var(--text); }
 /* iPad RETRATO: mantém os rótulos, mas joga as MÉTRICAS pra 2ª linha (na 1ª
    linha elas estouravam a barra). */
 @media (orientation: portrait) and (min-width: 601px) and (max-width: 1024px) {
@@ -1720,6 +1825,28 @@ body.trace-preview .tp-label { display: none !important; }
   font-size: 12px;
 }
 .geo-search-panel[hidden] { display: none; }
+.geo-search-row { display: flex; align-items: center; gap: 6px; }
+.geo-search-row input[type='search'] { flex: 1 1 0; min-width: 0; }
+.geo-search-close {
+  flex: 0 0 auto;
+  height: 28px;
+  padding: 0 8px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+/* Toque: alvos de 44 px (resultados, Fechar e os botões do pino). */
+@media (pointer: coarse) {
+  .geo-search-panel input[type='search'] { min-height: 44px; }
+  .geo-search-close { height: 44px; padding: 0 12px; font-size: 14px; }
+  #geo-search-results li { min-height: 44px; justify-content: center; }
+  .geo-search-popup button { min-height: 44px; font-size: 14px; }
+}
 .geo-search-panel input[type='search'] {
   width: 100%;
   box-sizing: border-box;
@@ -1816,6 +1943,10 @@ body.trace-preview .tp-label { display: none !important; }
   font: inherit;
   font-size: 8px;
 }
+/* No toque, 8 px era ilegível (e < 16 px faz o iOS dar zoom ao focar). */
+@media (pointer: coarse) {
+  .trace-toggle select { font-size: 16px; min-height: 36px; }
+}
 
 .params-btn {
   background: var(--surface);
@@ -1843,6 +1974,25 @@ body.trace-preview .tp-label { display: none !important; }
   font-size: 12px;
   margin: 0 0 8px 0;
   line-height: 1.45;
+}
+/* "ⓘ Mostrar explicações": o texto que vivia só no `title` das linhas. */
+.param-help-toggle {
+  justify-self: start;
+  background: none;
+  border: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 12px;
+  padding: 8px 0;
+  cursor: pointer;
+}
+.param-help { display: none; }
+.show-param-help .param-help {
+  display: block;
+  margin: -4px 0 4px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
 }
 .param-row {
   display: grid;
