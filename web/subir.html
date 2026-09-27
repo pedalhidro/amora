@@ -16,6 +16,10 @@
     --ok: #1a7f4b; --warn: #9c6a10; --err: #b3261e;
   }
   html { color-scheme: light; }
+  /* Rolagem não escapa da página: dentro da folha do app, puxar pra baixo no
+     topo não vira pull-to-refresh (que recarregava o app no meio do envio). */
+  html, body { overscroll-behavior: contain; }
+  html.editor-open, html.editor-open body { overflow: hidden; }
   body {
     font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
     max-width: 640px; margin: 0 auto; padding: 1rem 1rem 3rem;
@@ -34,20 +38,36 @@
   input::placeholder { color: var(--muted); }
   input:focus { outline: none; border-color: var(--accent); }
   /* O seletor é o botão principal: grande, laranja, alvo de toque confortável
-     — a página existe pra ser usada no celular, direto do grupo. */
+     — a página existe pra ser usada no celular, direto do grupo. O iOS só
+     respeita o user-select com prefixo; sem ele (e sem o callout), segurar o
+     botão selecionava o texto em vez de abrir o seletor. */
   .picker {
     display: flex; align-items: center; justify-content: center; gap: .5rem;
     width: 100%; box-sizing: border-box; padding: 1.1rem 1rem; margin: 0 0 .75rem;
     font-size: 1.1rem; font-weight: 600; cursor: pointer;
     background: var(--accent); color: #201206; border: 1px solid var(--accent); border-radius: 8px;
-    user-select: none;
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
   }
   .picker:hover, .picker:focus-within { background: var(--accent-hover); border-color: var(--accent-hover); }
-  .picker.busy { opacity: .6; cursor: progress; }
+  .picker.busy { cursor: progress; }
   .picker input { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
-  #status { min-height: 1.2em; font-size: .85rem; color: var(--muted); margin: 0 0 .75rem; }
+  /* Status GRUDADO no topo: num lote de 100 fotos a grade passa de 5.000 px e
+     o progresso (k/N) sumia lá em cima. */
+  #status {
+    position: sticky; top: 0; z-index: 5; min-height: 1.2em; font-size: .85rem; color: var(--muted);
+    margin: 0 0 .75rem; padding: .5rem 0; background: var(--bg); line-height: 1.4;
+  }
+  #status.running { color: var(--text); border-bottom: 1px solid var(--border); }
   #ios-video-note { font-size: .8rem; line-height: 1.4; color: var(--muted); margin: 0 0 .75rem; }
   .ok { color: var(--ok); } .warn { color: var(--warn); } .err { color: var(--err); }
+  /* Foto tirada agora sem GPS: oferece a localização do aparelho (só no toque). */
+  #geo-note { margin: 0 0 .75rem; padding: .6rem .75rem; font-size: .8rem; line-height: 1.4;
+    border: 1px solid var(--border); border-radius: 6px; background: var(--panel); }
+  #geo-note p { margin: 0 0 .4rem; }
+  #geo-note button { min-height: 40px; padding: .4rem .8rem; font: inherit; font-size: .85rem; cursor: pointer;
+    background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 6px; }
+  #geo-note button:hover { border-color: var(--accent); color: var(--accent); }
+  #geo-note small { display: block; margin-top: .3rem; color: var(--muted); }
   /* Grade de miniaturas: uma célula por imagem, com o estado embaixo. */
   #grid { list-style: none; margin: 0; padding: 0; display: grid; gap: .5rem;
     grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); }
@@ -65,8 +85,12 @@
   #grid li.is-dup img { border-color: var(--warn); opacity: .6; }
   #grid li.is-busy img { border-color: var(--accent); }
   #grid .st { font-size: .7rem; line-height: 1.25; color: var(--muted); overflow-wrap: anywhere; }
+  #grid .fl { font-size: .65rem; line-height: 1.25; color: var(--muted); overflow-wrap: anywhere; }
+  #grid .fl:empty { display: none; }
+  #grid .fl .warn { color: var(--warn); }
   #grid .nm { font-size: .65rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  /* ✎ editar / 🗑 excluir — só depois do envio (como no popup do mapa e na galeria). */
+  /* ✎ editar / 🗑 excluir depois do envio (como no popup do mapa e na galeria);
+     ↻ tentar de novo quando o envio falhou. */
   #grid .acts { display: flex; gap: .25rem; }
   #grid .acts button {
     flex: 1; padding: .2rem 0; font: inherit; font-size: .75rem; cursor: pointer;
@@ -74,13 +98,25 @@
   }
   #grid .acts button:hover { border-color: var(--accent); color: var(--accent); }
   #grid .acts button.danger:hover { border-color: var(--err); color: var(--err); }
+  #grid .acts button.retry { border-color: var(--err); color: var(--err); font-weight: 600; }
   #grid .acts button[disabled] { opacity: .45; cursor: not-allowed; }
+  /* No toque: alvos de ~40 px e mais afastados (o 🗑 colado no ✎ era mira fina). */
+  @media (pointer: coarse) {
+    #grid .acts { gap: .5rem; }
+    #grid .acts button { min-height: 40px; font-size: .85rem; }
+  }
   /* Compartilhar: link do álbum + colagem (9:16, ≤ 500 kB) — aparece depois
      do 1º envio da sessão e acompanha os envios seguintes. */
-  #share { margin: 1.25rem 0 0; padding: 1rem; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); }
+  #share { margin: 1.25rem 0 0; padding: 1rem; border: 1px solid var(--border); border-radius: 8px; background: var(--panel);
+    scroll-margin-top: 4rem; }
   #share h2 { font-size: 1rem; margin: 0 0 .5rem; }
   #share .album { font-size: .85rem; overflow-wrap: anywhere; margin: 0 0 .75rem; }
   #share .album a { font-weight: 600; }
+  #share .album small { color: var(--muted); }
+  #share .albums { font-size: .75rem; margin: -.25rem 0 .75rem; color: var(--muted); }
+  #share .albums button { margin: .25rem .25rem 0 0; padding: .3rem .5rem; min-height: 32px; font: inherit; font-size: .75rem;
+    cursor: pointer; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 999px; }
+  #share .albums button:hover { border-color: var(--accent); color: var(--accent); }
   #share .collage { display: flex; gap: .75rem; align-items: flex-start; }
   #share .collage img { width: 40%; max-width: 180px; aspect-ratio: 9 / 16; object-fit: cover;
     border: 1px solid var(--border); border-radius: 6px; background: var(--surface); }
@@ -97,13 +133,25 @@
   #share .btns small.hint { text-align: left; line-height: 1.35; }
   #share .btns [hidden] { display: none; }
   .foot { margin-top: 2rem; font-size: .8rem; color: var(--muted); }
+  /* ✎ editar abre o formulário completo AQUI DENTRO, por cima da grade — sem
+     sair da página: o lote continua subindo, o álbum e a colagem ficam. */
+  #editor { position: fixed; inset: 0; z-index: 20; display: flex; flex-direction: column; background: var(--bg); }
+  #editor[hidden] { display: none; }
+  #editor .bar { display: flex; align-items: center; justify-content: space-between; gap: .5rem;
+    padding: .4rem .75rem; border-bottom: 1px solid var(--border); background: var(--panel); font-size: .9rem; }
+  #editor .bar > span { min-width: 0; }
+  #editor .bar small { color: var(--muted); font-size: .75rem; }
+  #editor-close { flex: none; white-space: nowrap; min-height: 44px; padding: 0 1rem; font: inherit; font-size: .9rem; font-weight: 600; cursor: pointer;
+    background: var(--accent); color: #201206; border: 1px solid var(--accent); border-radius: 6px; }
+  #editor iframe { flex: 1 1 auto; min-height: 0; width: 100%; border: 0; background: var(--bg); }
 </style>
 </head>
 <body>
 
 <h1>Subir imagens</h1>
 <p class="lede">Fotos, vídeos ou artes: escolha e pronto — sobem sozinhas. Data, lugar
-e passeio saem do próprio arquivo. Licença CC BY-SA 4.0, original preservado.</p>
+e passeio saem do próprio arquivo (sem a localização no arquivo, a imagem não aparece
+no mapa). Licença CC BY-SA 4.0, original preservado.</p>
 
 <label class="field" for="author">
   <span>Autora <small>(opcional — quem fez a imagem)</small></span>
@@ -133,14 +181,29 @@ paciência) ou por um computador.</p>
     document.getElementById('files').accept = 'image/*';
     document.getElementById('ios-video-note').hidden = false;
   }
+  // Escolha feita ANTES do módulo carregar (ele espera o import do pipeline):
+  // guarda aqui e o módulo processa ao subir (mesmo padrão do form completo).
+  window._phidroEarlyPicks = [];
+  document.getElementById('files').addEventListener('change', function (e) {
+    if (!window._phidroEarlyPicks) return;   // módulo no ar — o listener dele assume
+    var files = Array.prototype.slice.call(e.target.files);
+    e.target.value = '';
+    if (files.length) window._phidroEarlyPicks.push(files);
+  });
 </script>
 <p id="status">carregando catálogo…</p>
+<div id="geo-note" hidden>
+  <p id="geo-text"></p>
+  <button type="button" id="geo-btn">📍 Usar minha localização atual</button>
+  <small id="geo-msg"></small>
+</div>
 
 <ul id="grid"></ul>
 
 <section id="share" hidden>
   <h2>Compartilhar</h2>
-  <p class="album">Álbum: <a id="album-link" href="#" target="_blank" rel="noopener"></a></p>
+  <p class="album">Álbum: <a id="album-link" href="#" target="_blank" rel="noopener"></a> <small id="album-n"></small></p>
+  <p class="albums" id="albums" hidden>Outros álbuns desta sessão: <span id="album-chips"></span></p>
   <div class="collage">
     <img id="collage-img" alt="Colagem das imagens enviadas">
     <div class="btns">
@@ -156,7 +219,15 @@ paciência) ou por um computador.</p>
 </section>
 
 <p class="foot">Precisa ajustar passeio, data, lugar ou recortar um vídeo?
-  Use o <a href="./upload_images.html">formulário completo</a>. · <a href="./">Voltar ao mapa</a></p>
+  Use o <a href="./upload_images.html">formulário completo</a><span class="back"> · <a href="./">Voltar ao mapa</a></span></p>
+
+<div id="editor" hidden role="dialog" aria-modal="true" aria-labelledby="editor-title">
+  <div class="bar">
+    <span><strong id="editor-title">Editar imagem</strong> <small>os envios seguem por baixo</small></span>
+    <button type="button" id="editor-close">✕ Fechar</button>
+  </div>
+  <iframe id="editor-frame" title="Editar imagem"></iframe>
+</div>
 
 <script type="module">
 // ============================================================================
@@ -172,49 +243,71 @@ paciência) ou por um computador.</p>
 //           (/stage-video) — o POST /upload-video vai com os blobs. No
 //           iOS/iPadOS o seletor só oferece imagens (stopgap — ver o <script>
 //           junto do seletor).
-// Dedup por pHash/vHash (Hamming ≤ 5) contra o lote, a sessão E o servidor.
-// Cada sessão mint um ÁLBUM (lst:, schema:Collection) que toda mídia enviada
-// integra; depois do lote a página oferece o link do álbum (/imagens/lista/<slug>)
-// e uma COLAGEM 9:16 ≤ 500 kB pra story/WhatsApp (share sheet, download).
-// O pipeline (pHash, variantes, transcodificação…) vem de lib/media-pipeline.js,
-// cópia verbatim do formulário completo.
+// Dedup por pHash/vHash (Hamming ≤ 5) contra a sessão E o servidor; foto com
+// a MESMA data (ao segundo) e o MESMO lugar (~1 m) de uma do acervo também é
+// duplicada (o pHash muda de motor pra motor — ver SAME_SHOT_MAX_HAMMING).
+//
+// Cada item SOBE ASSIM QUE É LIDO (streaming): lê → dedup → passeio → álbum →
+// variantes → POST, com no máx. 3 fotos em voo e 1 decode full-res por vez no
+// toque (2 no desktop) — e a large/thumb saem do MESMO decode do pHash. Uma
+// foto que falha ganha "↻ tentar de novo" e, se foi rede/tempo/5xx, é
+// reenviada sozinha quando a página volta a ficar visível ou online (e com
+// backoff enquanto está); o wake lock é repedido na volta.
+//
+// ÁLBUM (lst:, schema:Collection): um POR PASSEIO (e autora) na sessão,
+// mintado quando o 1º item daquele passeio é aceito — nome "passeio · autora ·
+// data do passeio" (slug como o slugifyList do form completo: reabrir a
+// página com o mesmo passeio/autora cai no MESMO álbum, de propósito); sem
+// passeio → "Envio · autora · data". Troca de antes: o lote era lido INTEIRO
+// antes do 1º envio só pra batizar UM álbum do lote ("N passeios" quando
+// misturava) — com streaming o nome tem que existir no 1º POST (vai baked no
+// IRI de cada TTL), então lote misto vira um álbum por passeio (cada um com o
+// nome certo) e a seção Compartilhar alterna entre eles. A sessão (álbuns +
+// enviados) fica no sessionStorage: recarregar/voltar mantém o álbum e a
+// colagem; o app fechar o modal com a página ociosa zera tudo.
+//
+// ✎ editar abre o formulário completo num overlay AQUI DENTRO (o lote segue);
+// embutida no app, a página avisa o estado (phidro-form-state: ocupada / com
+// pendência) pra o app não fechar/navegar o iframe no meio do envio.
+// O pipeline (pHash, variantes, transcodificação…) vem de lib/media-pipeline.js
+// (cópia verbatim do formulário completo + variantes enxutas no fim).
 // ============================================================================
+// `?api=N` no import: esta página chega sempre fresca (no-cache), mas o .js
+// fica até 4 h no cache HTTP (TTL de navegador da Cloudflare) — com um
+// export NOVO importado daqui, HTML novo + módulo velho = erro de link e a
+// página inteira morta. Suba o N quando passar a importar um nome novo.
 import {
-  localToXsdDateTime, computePHash, computeVideoPHash, compressToTarget, makeThumbnail,
-  copyExifSegment, hammingDistance, isHeicFile, isVideoFile,
+  localToXsdDateTime, dateToLocalInput, computePHash, computeVideoPHash,
+  hammingDistance, isHeicFile, isVideoFile,
   tryExtractVideoGps, tryExtractVideoCreationDate, videoFirstFrameBlob,
   probeVideoDuration, processClipFile, isAbortError, makeLimiter,
-} from './lib/media-pipeline.js';
+  scaledJpeg, compressToTargetLean, copyExifSegmentFromHead,
+} from './lib/media-pipeline.js?api=2';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
 // Embutido no iframe do app: o título vive na faixa do header do modal —
-// esconde o <h1> pra não duplicar (mesmo padrão do upload_images.html). O app
-// avisa ao fechar o modal (phidro-upload-modal-closed): limpa a grade, pra
-// não acumular imagens já enviadas entre uma abertura e outra.
+// esconde o <h1> pra não duplicar (mesmo padrão do upload_images.html), e o
+// "Voltar ao mapa" (o mapa está logo atrás; o link carregaria o app DENTRO
+// do iframe).
 const EMBEDDED = window.self !== window.top;
-let pickerBusy = false;   // lote em curso (declarado cedo: o listener abaixo lê)
-if (EMBEDDED) $('h1')?.style.setProperty('display', 'none');
-window.addEventListener('message', (e) => {
-  if (e.origin !== location.origin || e.data?.type !== 'phidro-upload-modal-closed') return;
-  if (!pickerBusy) { $('#grid').innerHTML = ''; }
-});
-
-// Seleção feita antes do boot terminar (imports + catálogo) — guarda e o
-// listener real processa quando estiver pronto (mesmo padrão do form completo).
-window._phidroEarlyPicks = [];
-$('#files').addEventListener('change', (e) => {
-  if (!window._phidroEarlyPicks) return;
-  const files = [...e.target.files];
-  e.target.value = '';
-  if (files.length) window._phidroEarlyPicks.push(files);
-});
+const COARSE = (() => { try { return matchMedia('(pointer: coarse)').matches; } catch (_) { return false; } })();
+const IS_IOS = /iP(hone|ad|od)/.test(navigator.userAgent) ||
+  (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+if (EMBEDDED) {
+  $('h1')?.style.setProperty('display', 'none');
+  $('.foot .back')?.remove();
+  // Pinça dentro da folha do app não pode deixar o app inteiro com zoom (o
+  // Safari ignora user-scalable=no; estes são os eventos do WebKit). Só
+  // embutida — standalone mantém o zoom (acessibilidade).
+  for (const t of ['gesturestart', 'gesturechange']) document.addEventListener(t, (e) => e.preventDefault(), { passive: false });
+}
 
 // ===================== Dependências =====================================
-let exifr = null;
-try {
-  exifr = await import('./lib/exifr.esm.js').then(m => m.default || m);
-} catch (e) { console.warn('exifr indisponível:', e); }
+// exifr por promise (sem top-level await: o módulo registra os listeners na
+// hora e só a leitura do EXIF espera o import).
+const exifrP = import('./lib/exifr.esm.js').then((m) => m.default || m)
+  .catch((e) => { console.warn('exifr indisponível:', e); return null; });
 
 function _loadScript(src) {
   return new Promise((resolve, reject) => {
@@ -249,11 +342,18 @@ function escapeHtml(s) {
   }[c]));
 }
 function pad(n) { return String(n).padStart(2, '0'); }
-function dateToLocalInput(d) {
-  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}` +
-         `T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-}
 function plural(n, one, many) { return `${n} ${n === 1 ? one : many}`; }
+// Sinal de tempo-limite pros POSTs: sem ele um envio que o iOS suspendeu (ou
+// um 4G que caiu calado) ficava "enviando…" pra sempre e o lote nunca acabava.
+function timeoutSignal(ms) {
+  if (AbortSignal.timeout) return AbortSignal.timeout(ms);
+  const c = new AbortController();
+  setTimeout(() => c.abort(new DOMException('tempo esgotado', 'TimeoutError')), ms);
+  return c.signal;
+}
+// Generoso (piso de 45 s + ~48 kB/s de subida); é rede de segurança contra
+// envio pendurado, não contra rede lenta.
+function postTimeoutMs(bytes) { return Math.min(600e3, 45e3 + (bytes || 0) / 48); }
 
 // ===================== Catálogo (passeios + pessoas + hashes) ============
 const PH_NS    = 'https://id.pedalhidrografi.co/terms#';
@@ -272,20 +372,43 @@ const DCT_TITLE = 'http://purl.org/dc/terms/title';
 const TOUR_WINDOW_BEFORE_MS =  2 * 3600 * 1000;
 const TOUR_WINDOW_AFTER_MS  = 12 * 3600 * 1000;
 const COMPRESS_TARGET_BYTES = 500 * 1024;
+// Degrau de qualidade JPEG da última large (ver compressToTargetLean): as
+// fotos de um lote costumam cair no mesmo — a busca começa nele.
+const LARGE_Q_HINT = {};
 const PHASH_DUP_THRESHOLD   = 5;
+// Dedup secundária (mesma data ao segundo + mesmo lugar ~1 m): o pHash muda
+// com o motor do navegador (o mesmo original deu 14 bits de distância entre
+// o iPhone e um Chrome em produção), então a mesma foto enviada de dois
+// aparelhos virava dois marcadores. A trava de Hamming ≤ 16 poupa a rajada
+// (burst): quadros do mesmo segundo/lugar com conteúdo diferente (o par de
+// produção estava a 30 bits).
+const SAME_SHOT_MAX_HAMMING = 16;
+const SAME_SHOT_MAX_M       = 1.5;
 const LICENSE = 'https://creativecommons.org/licenses/by-sa/4.0/';
 const AUTHOR_KEY = 'phidro:subirAutora';
+const SESSION_KEY = 'phidro:subirSessao';
+const SESSION_MAX_AGE_MS = 12 * 3600 * 1000;
 // 720p só em aparelho sem toque — o mesmo default do checkbox HD do form
 // completo (celular transcoda devagar e quase nunca precisa do HD).
-const WANT_HD = (() => { try { return !matchMedia('(pointer: coarse)').matches; } catch (_) { return true; } })();
+const WANT_HD = !COARSE;
 
 const tourCatalog = [];         // { iri, ms, title }
 const personByName = new Map(); // nome normalizado → iri (apelido E nome real)
 const existingPhashes = [];     // fotos no servidor + as que subiram nesta sessão
 const existingVhashes = [];     // vídeos idem
+const shots = new Map();        // 'AAAA-MM-DDTHH:MM:SS' (relógio da câmera) → [{ lat, lon, h }] — fotos do acervo
+let catalogOk = false;          // catálogo carregou (dedup/passeio valem)
+let catalogDone = false;        // terminou de tentar (carregou ou falhou)
+let jobs = 0;                   // itens em processamento agora (ver startJob)
+let _statusLocked = false;      // #status mostra progresso/resumo — o do catálogo não sobrescreve
+let _restoredNote = '';
 
 function normName(s) {
   return s.normalize('NFKD').replace(/\p{Diacritic}/gu, '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+function addShot(when, lat, lon, h) {
+  if (!shots.has(when)) shots.set(when, []);
+  shots.get(when).push({ lat, lon, h });
 }
 
 async function loadCatalog() {
@@ -295,6 +418,7 @@ async function loadCatalog() {
     fetch(url).then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.text(); })
       .catch(e => { console.warn(`Catálogo: ${url} indisponível —`, e.message); return null; })));
   const types = new Map(), titles = new Map(), dts = new Map(), names = new Map();
+  const locOf = new Map(), latOf = new Map(), lonOf = new Map();
   for (const text of texts) {
     if (text == null) continue;
     try {
@@ -302,7 +426,10 @@ async function loadCatalog() {
         const s = q.subject.value, p = q.predicate.value, o = q.object.value;
         if (p === RDF_TYPE) { if (!types.has(s)) types.set(s, new Set()); types.get(s).add(o); }
         else if (p === DCT_TITLE) titles.set(s, o);
-        else if (p === DCT_DATE)  dts.set(s, o.slice(0, 16));
+        else if (p === DCT_DATE)  dts.set(s, o);
+        else if (p === SCHEMA + 'locationCreated') locOf.set(s, o);
+        else if (p === SCHEMA + 'latitude')  latOf.set(s, parseFloat(o));
+        else if (p === SCHEMA + 'longitude') lonOf.set(s, parseFloat(o));
         else if (p === SCHEMA + 'alternateName' || p === SCHEMA + 'name') {
           if (!names.has(s)) names.set(s, []);
           names.get(s).push(o);
@@ -310,19 +437,24 @@ async function loadCatalog() {
       }
     } catch (e) { console.warn('Catálogo: parse falhou —', e.message); }
   }
-  let nPersons = 0, nTours = 0;
+  let nPersons = 0, nTours = 0, nImages = 0, nVideos = 0;
   const datalist = $('#people');
   const seenLabels = new Set();
   for (const [s, ts] of types) {
     if (s.startsWith(MED_NS)) {
       const h = s.slice(MED_NS.length).toLowerCase();
       if (/^[0-9a-f]{16}$/.test(h)) {
-        if (ts.has(PH_NS + 'StillImage')) existingPhashes.push(h);
-        else if (ts.has(PH_NS + 'MotionImage')) existingVhashes.push(h);
+        if (ts.has(PH_NS + 'StillImage')) {
+          existingPhashes.push(h); nImages++;
+          // Relógio da câmera (o que o EXIF traz; o fuso gravado já variou)
+          const when = (dts.get(s) || '').slice(0, 19), loc = locOf.get(s);
+          if (when.length === 19 && loc && Number.isFinite(latOf.get(loc)) && Number.isFinite(lonOf.get(loc)))
+            addShot(when, latOf.get(loc), lonOf.get(loc), h);
+        } else if (ts.has(PH_NS + 'MotionImage')) { existingVhashes.push(h); nVideos++; }
       }
     }
     if (ts.has(PH_NS + 'Tour')) {
-      const ms = new Date(dts.get(s) || '').getTime();
+      const ms = new Date((dts.get(s) || '').slice(0, 16)).getTime();
       if (!isNaN(ms)) tourCatalog.push({ iri: s, ms, title: titles.get(s) || s });
       nTours++;
     }
@@ -340,23 +472,33 @@ async function loadCatalog() {
       }
     }
   }
-  return { nTours, nPersons, nImages: existingPhashes.length, nVideos: existingVhashes.length };
+  return { nTours, nPersons, nImages, nVideos };
 }
 
 // Boot do catálogo NÃO bloqueia o seletor: quem já escolheu imagens espera
 // aqui (dedup e auto-detecção precisam dele).
+let _catalogSummary = '';
 const catalogReady = loadCatalog().then((n) => {
-  $('#status').innerHTML = `<span class="ok">Pronto.</span> ${n.nTours} passeios, ${n.nPersons} pessoas, ${n.nImages} fotos e ${n.nVideos} vídeos no acervo.`;
+  catalogOk = true;
+  _catalogSummary = `<span class="ok">Pronto.</span> ${n.nTours} passeios, ${n.nPersons} pessoas, ${n.nImages} fotos e ${n.nVideos} vídeos no acervo.`;
   return true;
 }).catch((e) => {
-  $('#status').innerHTML = `<span class="warn">Catálogo indisponível (${escapeHtml(e.message)}) — envio segue sem dedup/passeio.</span>`;
+  _catalogSummary = `<span class="warn">Catálogo indisponível (${escapeHtml(e.message)}) — envio segue sem dedup/passeio.</span>`;
   return false;
+}).then((ok) => {
+  catalogDone = true;
+  if (!jobs && !_statusLocked) $('#status').innerHTML = _catalogSummary + (_restoredNote ? ' ' + _restoredNote : '');
+  scheduleUi();
+  return ok;
 });
 
 // ===================== Autora ===========================================
 // Nome digitado → pessoa do catálogo (casando apelido OU nome real, sem
 // acento/caixa) ou pessoa NOVA, mintada UMA vez por nome nesta sessão (todas
-// as imagens do lote apontam pro mesmo IRI). Lembrada no localStorage.
+// as imagens do lote apontam pro mesmo IRI). Lembrada no localStorage. O nome
+// é lido na ESCOLHA (o campo pode mudar no meio do lote) e resolvido no
+// aceite do item — depois do catálogo, senão uma pessoa já cadastrada, com
+// o catálogo ainda carregando, virava pessoa nova.
 const mintedByName = new Map();   // nome normalizado → { iri, name }
 function randPersonSlug(n = 8) {
   const A = '0123456789abcdefghjkmnpqrstvwxyz';
@@ -365,59 +507,141 @@ function randPersonSlug(n = 8) {
   for (let i = 0; i < n; i++) s += A[b[i] & 31];
   return s;
 }
-function resolveAuthor() {
+function readAuthorName() {
   const name = $('#author').value.trim();
   try { localStorage.setItem(AUTHOR_KEY, name); } catch (_) {}
+  return name;
+}
+function resolveAuthor(name) {
   if (!name) return null;
   const k = normName(name);
   const known = personByName.get(k);
-  if (known) return { iri: known, decl: '' };
+  if (known) return { iri: known, decl: '', name };
   let minted = mintedByName.get(k);
   if (!minted) {
     minted = { iri: PES_NS + randPersonSlug(), name };
     mintedByName.set(k, minted);
   }
   return {
-    iri: minted.iri,
+    iri: minted.iri, name,
     decl: `<${minted.iri}> a schema:Person ;\n    schema:alternateName "${turtle_escape(minted.name)}" .\n`,
   };
 }
 try { $('#author').value = localStorage.getItem(AUTHOR_KEY) || ''; } catch (_) {}
 
+// ===================== Estado da sessão =================================
+// Um item = uma célula da grade. Estados: queued (na fila) → preparing (lendo
+// / preparando / transcodando) → sending → ok | dup | err (| deleted |
+// replaced — foi escolhido de novo depois de falhar).
+const ACTIVE = new Set(['queued', 'preparing', 'sending']);
+const DONE   = new Set(['ok', 'dup', 'err', 'deleted']);
+const items = [];          // todos os itens da sessão, na ordem da escolha
+const sentItems = [];      // enviados (colagem e álbuns) — inclui os restaurados
+const batchHashes = [];    // hashes ACEITOS nesta sessão (em curso ou enviados); falha devolve
+const albums = new Map();  // chave passeio|autora → { key, slug, iri, name, who, url, tour }
+let curAlbum = null;       // álbum mostrado em Compartilhar
+let runItems = new Set();  // a "rodada" (de ocioso a ocioso): progresso k/N e resumo
+let runSkip = 0;           // arquivos que não eram imagem nesta rodada
+let gen = 0;               // geração da sessão (reset invalida trabalho assíncrono velho)
+
+const activeCount = () => items.filter((i) => ACTIVE.has(i.state)).length;
+const failedCount = () => items.filter((i) => i.state === 'err').length;
+const hasGeo = (i) => (i.restored ? !!i.hasGeo : !!(i.hasExifGeo || i.sentGeo));
+const hasDate = (i) => (i.restored ? !!i.hasDate : !!i.dateLocal);
+
 // ===================== Pré-processamento ================================
-// Foto: decode → pHash → (miniatura ∥ EXIF). Vídeo: vHash → (GPS ∥ data ∥
-// duração ∥ miniatura). Nenhum dos dois toca o DOM — falha vira exceção e o
-// consumidor sequencial marca a célula.
-const heicLimit = makeLimiter(2);
-async function preprocessImageFile(file) {
-  const originalFile = file;
-  let bitmap;
-  try {
-    bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
-  } catch (nativeErr) {
-    if (!isHeicFile(file)) throw new Error(`não consegui ler (${nativeErr.message})`);
+// Data/hora + GPS + frescor. Foto: EXIF (DateTimeOriginal/GPS). Sem EXIF, se
+// for captura da câmera AGORA (o "Tirar Foto" do seletor do iOS entrega um
+// image.jpg recém-gravado e SEM metadado nenhum — WKFileUploadPanel.mm,
+// _uploadItemForJPEGRepresentationOfImage), a hora vem do lastModified do
+// arquivo (é a hora da foto). Qualquer outro arquivo sem EXIF fica sem data:
+// o lastModified de uma imagem velha é a hora da cópia, não da foto.
+function isCameraCapture(f) {
+  return /^image\.jpe?g$/i.test(f?.name || '') && Number.isFinite(f.lastModified) &&
+    Math.abs(Date.now() - f.lastModified) < 10 * 60e3;
+}
+function fillImageMeta(item) {
+  const ex = item.exif;
+  const raw = ex?.DateTimeOriginal;
+  const d = raw ? new Date(raw) : null;
+  if (d && !isNaN(d)) {
+    item.dateLocal = dateToLocalInput(d);
+    item.tz = ex?.OffsetTimeOriginal || null;
+    item.shotWhen = item.dateLocal;   // chave da dedup secundária (relógio da câmera)
+  } else if (isCameraCapture(item.srcFile)) {
+    item.dateLocal = dateToLocalInput(new Date(item.srcFile.lastModified));
+    item.tz = null;
+    item.dateFromFile = true;
+  }
+  item.dateMs = item.dateLocal ? new Date(item.dateLocal).getTime() : NaN;
+  const lat = ex?.latitude, lon = ex?.longitude;
+  // 0/0 é "sem GPS" gravado por câmera/app ruim, não um lugar no Atlântico.
+  item.hasExifGeo = Number.isFinite(lat) && Number.isFinite(lon) && !(lat === 0 && lon === 0);
+  if (item.hasExifGeo) { item.lat = lat; item.lon = lon; }
+}
+// Foto "tirada agora" (≤ 20 min) sem GPS: a localização ATUAL do aparelho é
+// uma boa aproximação do lugar — mas só com um toque explícito (nunca pede
+// permissão de localização sozinho).
+function isFresh(item) {
+  const now = Date.now();
+  return Number.isFinite(item.dateMs) && now - item.dateMs <= 20 * 60e3 && item.dateMs - now <= 5 * 60e3;
+}
+
+async function decodeImage(item) {
+  // imageOrientation 'from-image' + decode full-res: EXATAMENTE a entrada do
+  // pHash do formulário completo — a dedup entre os dois forms depende disso.
+  try { return await createImageBitmap(item.file, { imageOrientation: 'from-image' }); }
+  catch (nativeErr) {
+    if (!isHeicFile(item.file)) throw new Error(`não consegui ler (${nativeErr.message})`);
     if (!heic2any) await heic2anyReady();
     if (!heic2any) throw new Error('HEIC precisa do heic2any (indisponível) — tente pelo Safari');
-    const out = await heicLimit(() => heic2any({ blob: file, toType: 'image/jpeg', quality: 0.92 }));
+    const out = await heicLimit(() => heic2any({ blob: item.file, toType: 'image/jpeg', quality: 0.92 }));
     const blob = Array.isArray(out) ? out[0] : out;
-    file = new File([blob], file.name.replace(/\.(heic|heif)$/i, '.jpg'), { type: 'image/jpeg' });
-    bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+    item.file = new File([blob], item.file.name.replace(/\.(heic|heif)$/i, '.jpg'), { type: 'image/jpeg' });
+    return await createImageBitmap(item.file, { imageOrientation: 'from-image' });
   }
+}
+const heicLimit = makeLimiter(2);
+
+// UM decode full-res por foto (antes eram dois — pHash na leitura, variantes
+// no envio — mais o da colagem): pHash, miniatura, dedup e, se aceita, a
+// large (≤ 500 kB) e a miniatura média da colagem saem do mesmo bitmap, que
+// fecha no fim. No toque só 1 foto por vez chega aqui (PREP_POOL): cada 12 MP
+// decodificado são ~48 MB, e o WebKit decodifica/encoda no main thread de
+// qualquer jeito (paralelo só multiplicava o pico de memória).
+async function preparePhoto(item) {
+  await catalogReady;
+  setState(item, 'preparing', 'lendo…');
+  const exifP = exifrP.then(async (exifr) => {
+    if (!exifr) return null;
+    try { return await exifr.parse(item.srcFile, { gps: true }); }   // leitura em pedaços (chunked), não o arquivo todo
+    catch (e) { console.warn('EXIF parse:', e); return null; }
+  });
+  let bitmap;
+  try { bitmap = await decodeImage(item); }
+  catch (e) { await exifP; return fail(item, e, { kind: 'read' }); }
   try {
-    const phash = computePHash(bitmap);
-    const [thumbBlob, exif] = await Promise.all([
-      makeThumbnail(bitmap),
-      (async () => {
-        if (!exifr) return null;
-        try { return await exifr.parse(originalFile, { gps: true }); }
-        catch (e) { console.warn('EXIF parse:', e); return null; }
-      })(),
-    ]);
-    return { kind: 'image', file, phash, thumbBlob, exif };
+    item.phash = computePHash(bitmap);
+    item.exif = await exifP;
+    item.thumbBlob = await scaledJpeg(bitmap, 256, 0.75);   // = makeThumbnail, zerando o canvas
+    setThumb(item, item.thumbBlob);
+    fillImageMeta(item);
+    const dup = findDup(item);
+    if (dup) { setState(item, 'dup', escapeHtml(dup)); return 'dup'; }
+    accept(item);
+    setState(item, 'preparing', `preparando…${tourSuffix(item)}`);
+    item.midBlob = await scaledJpeg(bitmap, 640, 0.8);   // célula grande da colagem (sem novo decode)
+    const large = await compressToTargetLean(bitmap, COMPRESS_TARGET_BYTES, 2400, LARGE_Q_HINT);
+    item.largeBlob = await copyExifSegmentFromHead(item.file, large);
+    item.prepared = true;
+    return 'ok';
+  } catch (e) {
+    return fail(item, e, { kind: 'read' });
   } finally {
     try { bitmap.close?.(); } catch (_) {}
   }
 }
+
 async function preprocessVideoFile(file) {
   const phash = await computeVideoPHash(file, 8);
   const [gps, dateLocal, duration, thumbBlob] = await Promise.all([
@@ -428,16 +652,28 @@ async function preprocessVideoFile(file) {
   ]);
   if (duration <= 0.1) throw new Error('vídeo curto demais (ou sem duração)');
   if (duration > 600.5) throw new Error('vídeo > 10 min — recorte no formulário completo');
-  return { kind: 'video', file, phash, thumbBlob, gps, dateLocal, duration };
+  return { phash, thumbBlob, gps, dateLocal, duration };
+}
+// Vídeo pré-processa UM por vez: o pipeline seeka <video>s escondidos e é
+// sensível a concorrência (mesma razão do form completo).
+const videoPre = makeLimiter(1);
+async function prepareVideo(item) {
+  await catalogReady;
+  setState(item, 'preparing', 'lendo vídeo…');
+  let r;
+  try { r = await videoPre(() => preprocessVideoFile(item.file)); }
+  catch (e) { return fail(item, e, { kind: 'read' }); }
+  Object.assign(item, r);
+  setThumb(item, item.thumbBlob);
+  item.dateMs = item.dateLocal ? new Date(item.dateLocal).getTime() : NaN;
+  item.hasExifGeo = !!item.gps;
+  const dup = findDup(item);
+  if (dup) { setState(item, 'dup', escapeHtml(dup)); return 'dup'; }
+  accept(item);
+  item.prepared = true;
+  return 'ok';
 }
 
-// Data/hora da mídia em ms (EXIF DateTimeOriginal na foto; moov no vídeo).
-function itemDateMs(item) {
-  const raw = item.kind === 'video' ? item.dateLocal : item.exif?.DateTimeOriginal;
-  if (!raw) return NaN;
-  const ms = new Date(raw).getTime();
-  return Number.isFinite(ms) ? ms : NaN;
-}
 function detectTour(ms) {
   if (!Number.isFinite(ms) || !tourCatalog.length) return null;
   const matches = tourCatalog.filter(t =>
@@ -446,15 +682,69 @@ function detectTour(ms) {
   matches.sort((a, b) => Math.abs(ms - a.ms) - Math.abs(ms - b.ms));
   return matches[0];
 }
+function tourSuffix(item) { return item.tour ? ` · ${escapeHtml(item.tour.title)}` : ''; }
 
-// ===================== Álbum da sessão ==================================
-// Um álbum (schema:Collection, lst:<slug>) por sessão da página, mintado no
-// 1º envio: nome = passeio detectado (ou "Envio") · autora · data; slug
-// derivado do nome como no form completo (slugifyList) — reabrir a página no
-// mesmo dia com a mesma autora/passeio cai no MESMO álbum, de propósito.
-// Toda mídia da sessão leva schema:isPartOf + a declaração inline (união
-// idempotente no servidor; _route_new_collections a desvia pra lists.ttl).
-let album = null;   // { slug, iri, name }
+// ===================== Dedup ===========================================
+// Sessão primeiro (hashes aceitos — em curso ou enviados), depois o servidor
+// (Hamming ≤ 5, foto↔foto e vídeo↔vídeo), depois a mesma data+lugar.
+function distM(a, b) {
+  const k = 111320, dy = (a.lat - b.lat) * k, dx = (a.lon - b.lon) * k * Math.cos(a.lat * Math.PI / 180);
+  return Math.hypot(dx, dy);
+}
+function sameShot(item) {
+  if (item.kind !== 'image' || !item.shotWhen || !item.hasExifGeo) return null;
+  for (const s of shots.get(item.shotWhen) || []) {
+    if (distM(s, item) <= SAME_SHOT_MAX_M && hammingDistance(s.h, item.phash) <= SAME_SHOT_MAX_HAMMING) return s;
+  }
+  return null;
+}
+function findDup(item) {
+  const near = (arr) => arr.find((h) => hammingDistance(item.phash, h) <= PHASH_DUP_THRESHOLD);
+  if (near(batchHashes)) return 'duplicada (já no lote)';
+  if (!catalogOk) return null;
+  if (near(item.kind === 'video' ? existingVhashes : existingPhashes)) return 'já está no acervo';
+  if (sameShot(item)) return 'já está no acervo (mesma data e lugar)';
+  return null;
+}
+// Aceite: registra o hash (SÍNCRONO logo depois do findDup — dois preparos em
+// paralelo não aceitam a mesma foto), passeio e álbum. Um item que tinha
+// falhado com o mesmo hash (a pessoa escolheu a foto de novo) sai da grade.
+function accept(item) {
+  batchHashes.push(item.phash); item.accepted = true;
+  for (const old of items) {
+    if (old !== item && old.state === 'err' && old.phash && hammingDistance(old.phash, item.phash) <= PHASH_DUP_THRESHOLD) {
+      old.state = 'replaced'; old.li.remove(); runItems.delete(old);
+      old.largeBlob = old.midBlob = old.thumbBlob = old.clip = null;
+    }
+  }
+  if (!item.album) {   // re-tentativa mantém autora, passeio e álbum do 1º aceite
+    item.author = resolveAuthor(item.authorName);
+    item.tour = catalogOk ? detectTour(item.dateMs) : null;
+    item.album = albumFor(item);
+  }
+  renderFlags(item);
+  if (item.kind === 'image' && !item.hasExifGeo && isFresh(item)) renderGeoNote();
+}
+function unaccept(item) {
+  if (!item.accepted) return;
+  item.accepted = false;
+  const i = batchHashes.indexOf(item.phash); if (i >= 0) batchHashes.splice(i, 1);
+}
+// Re-tentativa de um item já preparado (falhou no POST): refaz a dedup — ele
+// pode ter sido escolhido de novo e aceito nesse meio-tempo.
+function reaccept(item) {
+  const dup = findDup(item);
+  if (dup) { setState(item, 'dup', escapeHtml(dup)); return false; }
+  accept(item);
+  return true;
+}
+
+// ===================== Álbuns ==========================================
+// Um álbum (schema:Collection, lst:<slug>) por passeio+autora na sessão,
+// mintado quando o 1º item dele é aceito. Nome = passeio · autora · data do
+// passeio (sem passeio: "Envio" · autora · data da 1ª imagem, ou agora com a
+// hora se ela não tem data). Toda mídia leva schema:isPartOf + a declaração
+// inline (upsert no servidor; _route_new_collections a desvia pra lists.ttl).
 function slugifyList(name) {
   return (name || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'lista';
@@ -466,11 +756,31 @@ function fmtRange(msA, msB) {
   if (a === b) return a;
   return new Date(msA).getFullYear() === new Date(msB).getFullYear() ? `${fmtDay(msA)}–${b}` : `${a}–${b}`;
 }
-// Resumo de um conjunto de itens — os passeios DISTINTOS detectados (em ordem
-// de data), o título (1 passeio → o título dele; vários → "N passeios"; nenhum
-// → "Envio") e a data: a DO PASSEIO (ou o intervalo entre o primeiro e o
-// último), senão a das mídias, senão agora. Alimenta o nome do álbum e o
-// cabeçalho da colagem.
+function albumFor(item) {
+  const who = (item.author?.name || '').trim();
+  const key = `${item.tour?.iri || '-'}|${normName(who)}`;
+  let a = albums.get(key);
+  if (!a) {
+    let title, dateText;
+    if (item.tour) { title = item.tour.title; dateText = fmtDate(item.tour.ms); }
+    else {
+      title = 'Envio';
+      if (Number.isFinite(item.dateMs)) dateText = fmtDate(item.dateMs);
+      else { const now = new Date(); dateText = `${fmtDate(now.getTime())} ${pad(now.getHours())}:${pad(now.getMinutes())}`; }
+    }
+    const name = [title, who, dateText].filter(Boolean).join(' · ');
+    const slug = slugifyList(name);
+    a = { key, slug, iri: LST_NS + slug, name, who, tour: item.tour || null,
+          url: `${SHARE_ORIGIN}/imagens/lista/${encodeURIComponent(slug)}` };
+    albums.set(key, a);
+    saveSession();
+  }
+  return a;
+}
+// Resumo de um conjunto de itens — os passeios DISTINTOS (em ordem de data),
+// o título (1 passeio → o título dele; vários → "N passeios"; nenhum →
+// "Envio") e a data (a do passeio, senão a das mídias, senão agora).
+// Alimenta o cabeçalho da colagem.
 function describeItems(items) {
   const byIri = new Map();
   for (const it of items) if (it.tour && !byIri.has(it.tour.iri)) byIri.set(it.tour.iri, it.tour);
@@ -486,17 +796,48 @@ function describeItems(items) {
   }
   return { tours, title, dateText };
 }
-function ensureAlbum(items) {
-  if (album) return album;
-  const { title, dateText } = describeItems(items);
-  const who = $('#author').value.trim();
-  const name = [title, who, dateText].filter(Boolean).join(' · ');
-  const slug = slugifyList(name);
-  album = { slug, iri: LST_NS + slug, name, url: `${SHARE_ORIGIN}/imagens/lista/${encodeURIComponent(slug)}` };
-  return album;
-}
 function albumTtl(a) {
   return `<${a.iri}> a schema:Collection ;\n    schema:name "${turtle_escape(a.name)}" .\n`;
+}
+
+// ===================== Sessão no sessionStorage ========================
+// Álbuns + o que já subiu (hash, tipo, passeio, álbum) — recarregar a página
+// (o iOS descarta a aba em segundo plano; o app pode trocar o iframe) volta
+// com o álbum, a colagem e as células enviadas; escolher de novo o lote
+// inteiro sobe só o que faltou (o resto é "já está no acervo").
+function saveSession() {
+  try {
+    const sent = sentItems.map((i) => ({
+      h: i.phash, k: i.kind, n: i.name, a: i.album?.key || null, m: Number.isFinite(i.dateMs) ? i.dateMs : null,
+      g: hasGeo(i), d: hasDate(i), t: i.tour ? { iri: i.tour.iri, ms: i.tour.ms, title: i.tour.title } : null,
+    }));
+    const data = { v: 1, t: Date.now(), cur: curAlbum?.key || null, albums: [...albums.values()], sent };
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(data));
+  } catch (_) {}
+}
+function clearSession() { try { sessionStorage.removeItem(SESSION_KEY); } catch (_) {} }
+function restoreSession() {
+  let data = null;
+  try { data = JSON.parse(sessionStorage.getItem(SESSION_KEY) || 'null'); } catch (_) {}
+  if (!data || data.v !== 1 || !(Date.now() - data.t < SESSION_MAX_AGE_MS)) { clearSession(); return 0; }
+  for (const a of data.albums || []) if (a?.key && a.iri) albums.set(a.key, a);
+  for (const s of data.sent || []) {
+    if (!/^[0-9a-f]{16}$/.test(s?.h || '')) continue;
+    const item = {
+      kind: s.k === 'video' ? 'video' : 'image', phash: s.h, name: s.n || s.h, restored: true,
+      album: albums.get(s.a) || null, tour: s.t || null, dateMs: Number.isFinite(s.m) ? s.m : NaN,
+      hasGeo: !!s.g, hasDate: !!s.d,
+    };
+    item.li = makeCell(item.name);
+    setThumbUrl(item, item.kind === 'video' ? `./clips/${item.phash}.thumb.jpg` : `./photos/${item.phash}/thumb.jpg`);
+    items.push(item);
+    // Já está no servidor: re-escolher = "já está no acervo" (mesmo se o
+    // catálogo baixado agora vier de um cache antigo).
+    (item.kind === 'video' ? existingVhashes : existingPhashes).push(item.phash);
+    showSent(item);
+  }
+  curAlbum = albums.get(data.cur) || null;
+  return sentItems.length;
 }
 
 // ===================== TTL ==============================================
@@ -531,10 +872,7 @@ function commonProps(item, author, { dateLocal, tzOverride, lat, lon }) {
   if (dateXsd)  props.push(`dcterms:date "${dateXsd}"^^xsd:dateTime`);
   if (hasGeo) {
     props.push(`schema:locationCreated ${id}_geo`);
-    derived.push(
-      `${id}_geo a schema:GeoCoordinates ;\n` +
-      `    schema:latitude "${lat.toFixed(6)}"^^xsd:decimal ;\n` +
-      `    schema:longitude "${lon.toFixed(6)}"^^xsd:decimal .`);
+    derived.push(geoNodeTtl(id, lat, lon));
   }
   if (item.tour) props.push(`ph:capturedDuring <${item.tour.iri}>`);
   if (author) {
@@ -543,19 +881,29 @@ function commonProps(item, author, { dateLocal, tzOverride, lat, lon }) {
   }
   return { id, hasGeo, props, derived };
 }
+function geoNodeTtl(id, lat, lon) {
+  return `${id}_geo a schema:GeoCoordinates ;\n` +
+    `    schema:latitude "${lat.toFixed(6)}"^^xsd:decimal ;\n` +
+    `    schema:longitude "${lon.toFixed(6)}"^^xsd:decimal .`;
+}
 function assembleTtl(item, id, typeLine, props, derived, author) {
-  const a = ensureAlbum([item]);   // normalmente já mintado pro lote inteiro (ver handlePickedFiles)
+  const a = item.album;
   const body = [typeLine, ...props, `schema:isPartOf <${a.iri}>`].map(p => `    ${p}`).join(' ;\n');
   const decls = (author?.decl ? `\n# Pessoa nova\n${author.decl}` : '') + `\n# Álbum da sessão\n${albumTtl(a)}`;
   return `${PREFIXES}\n${decls}\n${id}\n${body} .\n\n${derived.join('\n\n')}\n`;
 }
+// GPS do EXIF; sem ele, a localização do aparelho que a pessoa pediu (foto
+// tirada agora).
+function photoGeo(item) {
+  if (item.hasExifGeo) return { lat: item.lat, lon: item.lon };
+  if (item.devGeo) return { lat: item.devGeo.lat, lon: item.devGeo.lon };
+  return { lat: NaN, lon: NaN };
+}
 function buildImageTtl(item, author) {
   const { exif, file, phash } = item;
-  const d = exif?.DateTimeOriginal ? new Date(exif.DateTimeOriginal) : null;
+  const g = photoGeo(item);
   const { id, hasGeo, props, derived } = commonProps(item, author, {
-    dateLocal: d && !isNaN(d) ? dateToLocalInput(d) : null,
-    tzOverride: exif?.OffsetTimeOriginal,
-    lat: exif?.latitude, lon: exif?.longitude,
+    dateLocal: item.dateLocal || null, tzOverride: item.tz, lat: g.lat, lon: g.lon,
   });
   const own = [`nfo:hasHash ${id}_hash`, `dcterms:license <${LICENSE}>`];
   if (exif?.GPSImgDirection != null && Number.isFinite(+exif.GPSImgDirection))
@@ -568,7 +916,7 @@ function buildImageTtl(item, author) {
     `${id}_hash a nfo:FileHash ;\n` +
     `    nfo:hashAlgorithm "pHash" ;\n` +
     `    nfo:hashValue "${phash}" .`);
-  return assembleTtl(item, id, `a ph:StillImage${hasGeo ? ', ph:GeoreferencedImage' : ''}`, [...own, ...props], derived, author);
+  return { ttl: assembleTtl(item, id, `a ph:StillImage${hasGeo ? ', ph:GeoreferencedImage' : ''}`, [...own, ...props], derived, author), hasGeo };
 }
 // Espelha buildClipBlock do form completo: clipe inteiro, 360p sempre, 720p
 // só se o blob existe (HD ligado E o motor produziu), áudio à parte.
@@ -591,37 +939,21 @@ function buildVideoTtl(item, author, result) {
   return assembleTtl(item, id, `a ph:MotionImage${hasGeo ? ', ph:GeoreferencedImage' : ''}`, [...own, ...props], derived, author);
 }
 
-// Original preservado bit a bit; large = ≤500 kB com o EXIF copiado; thumb.
-async function buildVariants(item) {
-  const bitmap = await createImageBitmap(item.file, { imageOrientation: 'from-image' });
-  try {
-    let largeBlob = await compressToTarget(bitmap, COMPRESS_TARGET_BYTES);
-    largeBlob = await copyExifSegment(item.file, largeBlob);
-    return {
-      original: { blob: item.file, name: `original.${originalFormat(item.file).ext}` },
-      large:    { blob: largeBlob, name: 'large.jpg' },
-      thumb:    { blob: item.thumbBlob ?? await makeThumbnail(bitmap), name: 'thumb.jpg' },
-    };
-  } finally {
-    try { bitmap.close(); } catch (_) {}
-  }
-}
-
 // ===================== UI por imagem ====================================
-function addItem(file) {
+function makeCell(name) {
   const li = document.createElement('li');
   li.className = 'is-busy';
-  li.innerHTML = `<div class="th"><div class="noimg"></div></div><span class="st">lendo…</span><span class="nm"></span>`;
-  $('.nm', li).textContent = file.name;
+  li.innerHTML = `<div class="th"><div class="noimg"></div></div><span class="st"></span><span class="fl"></span><span class="nm"></span>`;
+  $('.nm', li).textContent = name;
   $('#grid').appendChild(li);
-  return { file, li };
+  return li;
 }
 function setThumb(item, blob) {
-  if (!blob) return;
+  if (!blob || $('img', item.li)) return;
   const img = document.createElement('img');
   img.alt = '';
   img.src = URL.createObjectURL(blob);
-  img.onload = () => URL.revokeObjectURL(img.src);
+  img.onload = img.onerror = () => URL.revokeObjectURL(img.src);
   $('.noimg', item.li)?.replaceWith(img);
   if (item.kind === 'video') {
     const b = document.createElement('span');
@@ -629,10 +961,69 @@ function setThumb(item, blob) {
     $('.th', item.li).appendChild(b);
   }
 }
-function setState(item, cls, html) {
-  item.li.classList.remove('is-busy', 'is-ok', 'is-err', 'is-dup');
-  if (cls) item.li.classList.add(cls);
-  $('.st', item.li).innerHTML = html;
+function setThumbUrl(item, url) {
+  const img = document.createElement('img');
+  img.alt = ''; img.src = url; img.decoding = 'async';
+  img.onerror = () => { const d = document.createElement('div'); d.className = 'noimg'; img.replaceWith(d); };
+  $('.noimg', item.li)?.replaceWith(img);
+}
+const CLS = { queued: 'is-busy', preparing: 'is-busy', sending: 'is-busy', ok: 'is-ok', err: 'is-err', dup: 'is-dup', deleted: 'is-dup' };
+function setState(item, state, html) {
+  item.state = state;
+  const li = item.li;
+  li.classList.remove('is-busy', 'is-ok', 'is-err', 'is-dup');
+  if (CLS[state]) li.classList.add(CLS[state]);
+  $('.st', li).innerHTML = html;
+  if (state !== 'ok' && state !== 'err') $('.acts', li)?.remove();
+  if (state === 'dup' || state === 'deleted') $('.fl', li).textContent = '';
+  scheduleUi();
+}
+// Avisos da célula: o que tira a imagem do mapa (sem localização) ou do
+// passeio (sem data) — antes subia com "✓ enviada" e sumia calada.
+function renderFlags(item) {
+  const fl = $('.fl', item.li);
+  if (!fl) return;
+  const out = [];
+  if (!hasGeo(item)) {
+    if (item.devGeo) out.push([item.geoPatching || item.state !== 'ok' ? '📍 local do aparelho…' : '⚠ localização não gravada', item.geoPatching || item.state !== 'ok' ? '' : 'warn']);
+    else out.push(['⚠ sem localização (fora do mapa)', 'warn']);
+  } else if (item.sentGeo) out.push(['📍 local do aparelho', '']);
+  if (!hasDate(item)) out.push(['⚠ sem data', 'warn']);
+  else if (item.dateFromFile) out.push(['🕒 hora do arquivo', '']);
+  fl.innerHTML = out.map(([t, c]) => `<span class="${c}">${escapeHtml(t)}</span>`).join(' ');
+}
+function renderActs(item) {
+  $('.acts', item.li)?.remove();
+  const mk = (text, title, cls = '') => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.textContent = text; b.title = title; b.setAttribute('aria-label', `${title}: ${item.name}`);
+    if (cls) b.className = cls;
+    return b;
+  };
+  const acts = document.createElement('div');
+  acts.className = 'acts';
+  if (item.state === 'err') {
+    const retry = mk('↻ tentar de novo', 'Tentar enviar de novo', 'retry');
+    retry.addEventListener('click', () => retryItem(item));
+    acts.append(retry);
+  } else if (item.state === 'ok') {
+    // ✎ editar / 🗑 excluir — os mesmos caminhos do popup do mapa e da
+    // galeria: edição no formulário completo (?edit=<iri>, aqui num overlay),
+    // exclusão via POST /delete-image|/delete-video (apaga triples E arquivos).
+    const edit = mk('✎', 'Editar (formulário completo)');
+    const del = mk('🗑', 'Excluir', 'danger');
+    edit.addEventListener('click', () => openEditor(item));
+    del.addEventListener('click', () => deleteItem(item, edit, del));
+    acts.append(edit, del);
+  } else return;
+  item.li.appendChild(acts);
+}
+function showSent(item, extra = '') {
+  const where = item.tour ? escapeHtml(item.tour.title) : 'sem passeio';
+  setState(item, 'ok', `✓ enviada · ${where}${extra}${item.edited ? ' · editada' : ''}`);
+  renderFlags(item);
+  renderActs(item);
+  if (!sentItems.includes(item)) sentItems.push(item);
 }
 function notifyParent(kind, hash) {
   try {
@@ -641,96 +1032,105 @@ function notifyParent(kind, hash) {
   } catch (_) {}
 }
 
+// ===================== Falha e re-tentativa ============================
+// Falha devolve o hash (escolher a foto de novo NÃO é mais "duplicada") e a
+// célula ganha "↻ tentar de novo". Rede/tempo/5xx = transitória: tenta
+// sozinha quando a página volta a ficar visível ou online, e com backoff
+// enquanto está (até AUTO_RETRY_MAX por volta à página).
+const AUTO_RETRY_MAX = 4;
+const AUTO_RETRY_DELAYS = [4000, 12000, 30000, 60000];
+let _retryTimer = 0;
+function fail(item, e, { kind = 'read', status = 0 } = {}) {
+  unaccept(item);
+  item.errKind = kind;
+  item.transient = kind === 'net' || kind === 'timeout' || kind === 'http5xx';
+  const msg = e?.message || String(e || 'erro');
+  let html;
+  if (kind === 'timeout') html = 'erro: o envio demorou demais (sem resposta)';
+  else if (kind === 'net') html = `erro de rede: ${escapeHtml(msg)}`;
+  else if (status === 413) html = 'erro: arquivo grande demais pro servidor (HTTP 413)';
+  else html = `erro: ${escapeHtml(msg)}`;
+  if (item.transient) html += ' — tentamos de novo sozinhos';
+  setState(item, 'err', html);
+  renderActs(item);
+  if (item.transient) scheduleAutoRetry();
+  return 'err';
+}
+function retryItem(item, { auto = false } = {}) {
+  if (item.state !== 'err') return;
+  if (auto) item.autoTries = (item.autoTries || 0) + 1;
+  else item.autoTries = 0;
+  setState(item, 'queued', auto ? 'tentando de novo…' : 'na fila…');
+  startJob(item);
+}
+function scheduleAutoRetry() {
+  if (_retryTimer) return;
+  const pending = items.filter((i) => i.state === 'err' && i.transient && (i.autoTries || 0) < AUTO_RETRY_MAX);
+  if (!pending.length) return;
+  const tries = Math.min(...pending.map((i) => i.autoTries || 0));
+  _retryTimer = setTimeout(() => { _retryTimer = 0; autoRetry(); }, AUTO_RETRY_DELAYS[Math.min(tries, AUTO_RETRY_DELAYS.length - 1)]);
+}
+function autoRetry({ fresh = false } = {}) {
+  // Escondida ou offline não adianta — o visibilitychange/online chama de novo.
+  if (document.visibilityState !== 'visible' || navigator.onLine === false) return;
+  clearTimeout(_retryTimer); _retryTimer = 0;
+  for (const it of items) {
+    if (it.state !== 'err' || !it.transient) continue;
+    if (fresh) it.autoTries = 0;   // voltou pra página / pra rede: nova série de tentativas
+    if ((it.autoTries || 0) < AUTO_RETRY_MAX) retryItem(it, { auto: true });
+  }
+}
+
 // ===================== Envio =============================================
-async function postMedia(item, url, fd) {
-  setState(item, 'is-busy', 'enviando…');
+async function postMedia(item, url, fd, bytes) {
+  setState(item, 'sending', `enviando…${tourSuffix(item)}`);
+  let res, data;
   try {
-    const res = await fetch(url, { method: 'POST', body: fd });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      const detail = (data.details || []).join('; ') || data.error || `HTTP ${res.status}`;
-      setState(item, 'is-err', `erro: ${escapeHtml(detail)}`);
-      return 'err';
-    }
-    return 'ok';
+    res = await fetch(url, { method: 'POST', body: fd, signal: timeoutSignal(postTimeoutMs(bytes)) });
+    data = await res.json().catch(() => ({}));
   } catch (e) {
-    setState(item, 'is-err', `erro de rede: ${escapeHtml(e.message)}`);
-    return 'err';
+    return fail(item, e, { kind: e?.name === 'TimeoutError' || e?.name === 'AbortError' ? 'timeout' : 'net' });
   }
-}
-const sentItems = [];   // enviados nesta sessão (alimentam a colagem e o álbum)
-function markSent(item, extra = '') {
-  const where = item.tour ? escapeHtml(item.tour.title) : 'sem passeio';
-  setState(item, 'is-ok', `✓ enviada · ${where}${extra}`);
-  addItemActions(item);
-  sentItems.push(item);
+  if (!res.ok) {
+    const detail = (data.details || []).join('; ') || data.error || `HTTP ${res.status}`;
+    const transient = res.status >= 500 || res.status === 408 || res.status === 429;
+    return fail(item, new Error(detail), { kind: transient ? 'http5xx' : 'http4xx', status: res.status });
+  }
+  return 'ok';
 }
 
-// ✎ editar / 🗑 excluir por imagem enviada — os mesmos caminhos do popup do
-// mapa e da galeria: edição no formulário completo (?edit=<iri>), exclusão
-// via POST /delete-image|/delete-video (apaga triples E arquivos).
-function addItemActions(item) {
-  const acts = document.createElement('div');
-  acts.className = 'acts';
-  const edit = document.createElement('button');
-  edit.type = 'button'; edit.textContent = '✎'; edit.title = 'Editar (formulário completo)';
-  const del = document.createElement('button');
-  del.type = 'button'; del.className = 'danger'; del.textContent = '🗑'; del.title = 'Excluir';
-  acts.append(edit, del);
-  item.li.appendChild(acts);
-  const iri = MED_NS + item.phash;
-  edit.addEventListener('click', () => {
-    const url = `./upload_images.html?edit=${encodeURIComponent(iri)}`;
-    // No modal do app o iframe navega pro form de edição (o app já trata
-    // esse caminho); standalone abre em aba nova pra não perder a grade.
-    if (EMBEDDED) location.href = url; else window.open(url, '_blank', 'noopener');
-  });
-  del.addEventListener('click', async () => {
-    if (!confirm(`Excluir ${item.file.name} do acervo? Isso remove arquivos e triples e não pode ser desfeito.`)) return;
-    edit.disabled = del.disabled = true;
-    const url = item.kind === 'video' ? `./delete-video/${item.phash}` : `./delete-image/${item.phash}`;
-    try {
-      const res = await fetch(url, { method: 'POST' });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    } catch (e) {
-      edit.disabled = del.disabled = false;
-      setState(item, 'is-err', `exclusão falhou: ${escapeHtml(e.message)}`);
-      item.li.appendChild(acts);   // setState não mexe nos botões; mantém
-      return;
-    }
-    // Some das listas de dedup: pode ser reenviada nesta mesma sessão.
-    for (const arr of [existingPhashes, existingVhashes, batchHashes]) {
-      const i = arr.indexOf(item.phash); if (i >= 0) arr.splice(i, 1);
-    }
-    acts.remove();
-    setState(item, 'is-dup', 'excluída');
-    notifyParent(item.kind === 'video' ? 'delete-video' : 'delete-image', item.phash);
-    const si = sentItems.indexOf(item); if (si >= 0) sentItems.splice(si, 1);
-    updateShare();
+// Foto: no máx. 3 em voo (preparo + POST — contrapressão: nunca há mais que 3
+// larges prontas esperando a rede), e dentro delas 1 preparo por vez no toque.
+const PREP_POOL = COARSE ? 1 : Math.min(2, navigator.hardwareConcurrency || 2);
+const prepLimit = makeLimiter(PREP_POOL);
+const photoSlots = makeLimiter(3);
+function runPhoto(item) {
+  return photoSlots(async () => {
+    if (!item.prepared) {
+      const r = await prepLimit(() => preparePhoto(item));
+      if (r !== 'ok') return r;
+    } else if (!reaccept(item)) return 'dup';
+    return postPhoto(item);
   });
 }
-
-const uploadLimit = makeLimiter(3);
-async function uploadImageItem(item, author) {
-  setState(item, 'is-busy', 'preparando…');
-  let ttl, variants;
-  try {
-    ttl = buildImageTtl(item, author);
-    variants = await buildVariants(item);
-  } catch (e) {
-    setState(item, 'is-err', `erro: ${escapeHtml(e.message)}`);
-    return 'err';
-  }
+async function postPhoto(item) {
+  const { ttl, hasGeo: ttlGeo } = buildImageTtl(item, item.author);
   const fd = new FormData();
   fd.append('ttl', ttl);
-  fd.append('original', variants.original.blob, variants.original.name);
-  fd.append('large',    variants.large.blob,    variants.large.name);
-  fd.append('thumb',    variants.thumb.blob,    variants.thumb.name);
-  const r = await postMedia(item, './upload-image', fd);
+  fd.append('original', item.file, `original.${originalFormat(item.file).ext}`);
+  fd.append('large', item.largeBlob, 'large.jpg');
+  fd.append('thumb', item.thumbBlob, 'thumb.jpg');
+  const r = await postMedia(item, './upload-image', fd, item.file.size + item.largeBlob.size + item.thumbBlob.size);
   if (r === 'ok') {
     existingPhashes.push(item.phash);   // re-escolher nesta sessão = duplicada
-    markSent(item);
+    if (item.shotWhen && item.hasExifGeo) addShot(item.shotWhen, item.lat, item.lon, item.phash);
+    item.sentGeo = ttlGeo && !item.hasExifGeo;
+    item.largeBlob = null;   // já subiu: solta os ~500 kB
+    showSent(item);
+    saveSession();
     notifyParent('upload-image', item.phash);
+    // A localização do aparelho chegou com o POST já em voo: grava agora.
+    if (item.devGeo && !hasGeo(item)) patchGeo(item);
   }
   return r;
 }
@@ -738,50 +1138,378 @@ async function uploadImageItem(item, author) {
 // Um transcode por vez (dois em máquinas com ≥ 8 threads) — mesmo teto do
 // form completo: cada um é um decoder de hardware + 2 encoders.
 const TRANSCODE_POOL = makeLimiter((navigator.hardwareConcurrency || 2) >= 8 ? 2 : 1);
-async function uploadVideoItem(item, author) {
-  let result;
-  try {
-    setState(item, 'is-busy', 'na fila pra transcodar…');
-    let engine = '';
-    result = await TRANSCODE_POOL(() => processClipFile(item.file,
-      { tStart: 0, tEnd: item.duration, audioOnly: false, hd: WANT_HD },
-      { onEngine: (l) => { engine = l; setState(item, 'is-busy', `transcodando (${l})…`); },
-        onProgress: (f) => setState(item, 'is-busy', `transcodando (${engine})… ${Math.round(f * 100)}%`) }));
-  } catch (e) {
-    setState(item, 'is-err', isAbortError(e) ? 'cancelado' : `erro: ${escapeHtml(e.message)}`);
-    return 'err';
+async function runVideo(item) {
+  if (!item.prepared) {
+    const r = await prepareVideo(item);
+    if (r !== 'ok') return r;
+  } else if (!reaccept(item)) return 'dup';
+  if (!item.clip) {
+    try {
+      setState(item, 'queued', `na fila pra transcodar…${tourSuffix(item)}`);
+      let engine = '';
+      item.clip = await TRANSCODE_POOL(() => processClipFile(item.file,
+        { tStart: 0, tEnd: item.duration, audioOnly: false, hd: WANT_HD },
+        { onEngine: (l) => { engine = l; setState(item, 'preparing', `transcodando (${l})…`); },
+          onProgress: (f) => setState(item, 'preparing', `transcodando (${engine})… ${Math.round(f * 100)}%`) }));
+    } catch (e) {
+      return fail(item, isAbortError(e) ? new Error('cancelado') : e, { kind: 'read' });
+    }
   }
+  return postVideo(item);
+}
+async function postVideo(item) {
+  const result = item.clip;
   const vid = item.phash;
   const fd = new FormData();
-  fd.append('ttl', buildVideoTtl(item, author, result));
+  fd.append('ttl', buildVideoTtl(item, item.author, result));
   fd.append('id', vid);
   fd.append('audio', result.audio, `${vid}.audio.webm`);
   const thumb = result.thumb || item.thumbBlob;
   if (thumb) { fd.append('thumb', thumb, `${vid}.thumb.jpg`); item.thumbBlob = thumb; }
   if (result.blob360) fd.append('video360', result.blob360, `${vid}.360p.webm`);
   if (result.blob720) fd.append('video720', result.blob720, `${vid}.720p.webm`);
-  const r = await postMedia(item, './upload-video', fd);
+  const bytes = [result.audio, thumb, result.blob360, result.blob720].reduce((s, b) => s + (b?.size || 0), 0);
+  const r = await postMedia(item, './upload-video', fd, bytes);
   if (r === 'ok') {
     existingVhashes.push(vid);
-    markSent(item, ` (${result.engine})`);
+    item.clip = null;   // já subiu: solta os webms
+    showSent(item, ` (${result.engine})`);
+    saveSession();
     notifyParent('upload-video', vid);
   }
   return r;
 }
 
+async function deleteItem(item, edit, del) {
+  if (!confirm(`Excluir ${item.name} do acervo? Isso remove arquivos e triples e não pode ser desfeito.`)) return;
+  edit.disabled = del.disabled = true;
+  const url = item.kind === 'video' ? `./delete-video/${item.phash}` : `./delete-image/${item.phash}`;
+  try {
+    const res = await fetch(url, { method: 'POST', signal: timeoutSignal(30000) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  } catch (e) {
+    edit.disabled = del.disabled = false;
+    $('.st', item.li).innerHTML = `exclusão falhou: ${escapeHtml(e.message)}`;
+    return;
+  }
+  // Some das listas de dedup: pode ser reenviada nesta mesma sessão.
+  for (const arr of [existingPhashes, existingVhashes, batchHashes]) {
+    const i = arr.indexOf(item.phash); if (i >= 0) arr.splice(i, 1);
+  }
+  for (const list of shots.values()) {
+    for (let i = list.length - 1; i >= 0; i--) if (list[i].h === item.phash) list.splice(i, 1);
+  }
+  item.accepted = false;
+  setState(item, 'deleted', 'excluída');
+  notifyParent(item.kind === 'video' ? 'delete-video' : 'delete-image', item.phash);
+  const si = sentItems.indexOf(item); if (si >= 0) sentItems.splice(si, 1);
+  saveSession();
+  updateShare();
+}
+
+// ===================== Localização do aparelho (foto tirada agora) =====
+// Só no toque explícito — nunca pede permissão sozinha. Vale pras fotos
+// "frescas" (≤ 20 min) sem GPS: as que ainda vão subir levam no TTL; as já
+// enviadas ganham um patch em /update-image (só o nó de GPS, sem reenviar
+// arquivo).
+function geoCandidates() {
+  return items.filter((i) => i.kind === 'image' && !i.restored && !i.hasExifGeo && !i.sentGeo && !i.geoPatching &&
+    (ACTIVE.has(i.state) || i.state === 'ok' || i.state === 'err') && isFresh(i) &&
+    !(i.devGeo && i.state !== 'ok'));
+}
+function renderGeoNote(msg = '') {
+  const box = $('#geo-note');
+  const c = navigator.geolocation ? geoCandidates() : [];
+  if (c.length) {
+    $('#geo-text').textContent = `📷 ${c.length === 1 ? '1 foto tirada agora está' : `${c.length} fotos tiradas agora estão`} sem localização — sem ela, não ${c.length === 1 ? 'aparece' : 'aparecem'} no mapa.`;
+    $('#geo-btn').hidden = false;
+  } else if (msg) {
+    $('#geo-text').textContent = '';
+    $('#geo-btn').hidden = true;
+  } else if (IS_IOS && sentItems.some((i) => !hasGeo(i) && !i.devGeo)) {
+    $('#geo-text').innerHTML = 'Dica: pras próximas fotos saírem com o lugar, no iPhone ative <strong>Ajustes › Privacidade e Segurança › Serviços de Localização › Câmera › Durante o Uso do App</strong>. As que já subiram sem lugar: ✎ na foto.';
+    $('#geo-btn').hidden = true;
+  } else { box.hidden = true; return; }
+  $('#geo-msg').textContent = msg;
+  box.hidden = false;
+}
+$('#geo-btn').addEventListener('click', () => {
+  const btn = $('#geo-btn');
+  if (!geoCandidates().length) { renderGeoNote(); return; }
+  btn.disabled = true;
+  $('#geo-msg').textContent = 'localizando…';
+  const g0 = gen;
+  navigator.geolocation.getCurrentPosition((pos) => {
+    btn.disabled = false;
+    if (g0 !== gen) return;
+    const g = { lat: pos.coords.latitude, lon: pos.coords.longitude, acc: pos.coords.accuracy };
+    const c = geoCandidates();
+    for (const it of c) {
+      it.devGeo = g;
+      if (it.state === 'ok') patchGeo(it); else renderFlags(it);
+    }
+    renderGeoNote(`📍 Localização atual (± ${Math.round(g.acc)} m) aplicada a ${plural(c.length, 'foto', 'fotos')}.`);
+  }, (err) => {
+    btn.disabled = false;
+    $('#geo-msg').textContent = err.code === 1
+      ? 'Localização negada. No iPhone: Ajustes › Privacidade e Segurança › Serviços de Localização › Sites do Safari (ou o app) › Durante o Uso do App.'
+      : `Não consegui a localização agora (${err.message || 'sem sinal'}) — tente de novo.`;
+  }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 60000 });
+});
+async function patchGeo(item) {
+  if (item.geoPatching || !item.devGeo) return;
+  item.geoPatching = true;
+  renderFlags(item);
+  const id = `med:${item.phash}`, g = item.devGeo;
+  const cls = item.kind === 'video' ? 'ph:MotionImage' : 'ph:StillImage';
+  // rdf:type afirmado: o patch substitui o conjunto de tipos inteiro (o form
+  // completo faz igual) — ph:GeoreferencedImage entra junto com o GPS.
+  const ttl = `${PREFIXES}\n\n${id}\n    a ${cls}, ph:GeoreferencedImage ;\n    schema:locationCreated ${id}_geo .\n\n${geoNodeTtl(id, g.lat, g.lon)}\n`;
+  const fd = new FormData();
+  fd.append('ttl', ttl);
+  fd.append('remove', '');
+  try {
+    const res = await fetch(`./update-${item.kind === 'video' ? 'video' : 'image'}/${item.phash}`,
+      { method: 'POST', body: fd, signal: timeoutSignal(30000) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    item.sentGeo = true;
+    notifyParent(item.kind === 'video' ? 'update-video' : 'update-image', item.phash);
+    saveSession();
+  } catch (e) {
+    console.warn('localização não gravada:', e);
+  } finally {
+    item.geoPatching = false;
+    renderFlags(item);
+    if (!item.sentGeo) renderGeoNote('Não gravou a localização de uma foto — toque de novo pra tentar.');
+  }
+}
+
+// ===================== ✎ Editar (overlay com o form completo) ==========
+// Antes, embutida, o ✎ navegava o iframe pro form: o resto do lote morria
+// calado e o álbum/colagem sumiam (e standalone abria outra aba, o que no
+// iPhone suspende esta). Agora o form de edição abre num iframe AQUI DENTRO;
+// o que ele avisa (phidro-media-changed) é repassado pro app.
+const editor = $('#editor'), editorFrame = $('#editor-frame');
+let editorItem = null, editorState = { busy: false, dirty: false, label: '' };
+function openEditor(item) {
+  editorItem = item;
+  editorState = { busy: false, dirty: false, label: '' };
+  $('#editor-title').textContent = `Editar ${item.kind === 'video' ? 'vídeo' : 'imagem'}`;
+  $('#editor-close').textContent = '✕ Fechar';
+  editorFrame.src = `./upload_images.html?edit=${encodeURIComponent(MED_NS + item.phash)}`;
+  editor.hidden = false;
+  document.documentElement.classList.add('editor-open');
+  $('#editor-close').focus();
+  scheduleUi();
+}
+function closeEditor(force = false) {
+  if (editor.hidden) return true;
+  if (!force && (editorState.dirty || editorState.busy) &&
+      !confirm(`${editorState.label || 'A edição não foi salva'} — fechar mesmo assim?`)) return false;
+  editor.hidden = true;
+  document.documentElement.classList.remove('editor-open');
+  editorFrame.src = 'about:blank';   // solta o form (catálogo, Tom Select…)
+  editorState = { busy: false, dirty: false, label: '' };
+  editorItem = null;
+  scheduleUi();
+  return true;
+}
+$('#editor-close').addEventListener('click', () => closeEditor());
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !editor.hidden) closeEditor(); });
+
+// ===================== Mensagens (app ⇄ página ⇄ editor) ==============
+window.addEventListener('message', (e) => {
+  if (e.origin !== location.origin || !e.data?.type) return;
+  if (e.source && e.source === editorFrame.contentWindow) {
+    if (e.data.type === 'phidro-media-changed') {
+      notifyParent(e.data.kind, e.data.hash);   // repassa pro app (recarrega o mapa ao fechar)
+      $('#editor-close').textContent = '✓ Concluir';
+      if (editorItem && editorItem.state === 'ok') { editorItem.edited = true; showSent(editorItem); }
+    } else if (e.data.type === 'phidro-form-state') {
+      editorState = { busy: !!e.data.busy, dirty: !!e.data.dirty, label: String(e.data.label || '') };
+      scheduleUi();
+    }
+    return;
+  }
+  // O app fechou o modal: com a página OCIOSA, zera a sessão (grade, álbuns,
+  // colagem) — a próxima abertura é um envio novo, sem cair no álbum do
+  // passeio anterior. Ocupada, não mexe: o lote segue e o resultado fica.
+  if (e.data.type === 'phidro-upload-modal-closed' && !jobs) resetSession();
+});
+function resetSession() {
+  gen++;
+  closeEditor(true);
+  clearTimeout(_retryTimer); _retryTimer = 0;
+  items.length = 0; sentItems.length = 0; batchHashes.length = 0;
+  albums.clear(); curAlbum = null; runItems = new Set(); runSkip = 0;
+  collageMode = 'all'; collageSample = [];
+  if (_collageUrl) URL.revokeObjectURL(_collageUrl);
+  _collageUrl = null; _collageBlob = null; _shareAgain = false;
+  $('#grid').innerHTML = '';
+  $('#share').hidden = true;
+  $('#geo-note').hidden = true;
+  _statusLocked = false; _restoredNote = '';
+  $('#status').className = '';
+  $('#status').innerHTML = _catalogSummary || 'carregando catálogo…';
+  clearSession();
+  scheduleUi();
+}
+
+// Estado pro app (contrato phidro-form-state): ocupada = envio em curso (ou
+// o editor salvando); pendência = foto que falhou e não subiu (ou edição não
+// salva). O app confirma antes de fechar/navegar o iframe nesses casos.
+let _lastFormState = '';
+function postFormState() {
+  if (!EMBEDDED) return;
+  const active = activeCount(), failed = failedCount();
+  const busy = active > 0 || editorState.busy;
+  const dirty = failed > 0 || editorState.dirty;
+  const parts = [];
+  if (active) parts.push(plural(active, 'imagem ainda enviando', 'imagens ainda enviando'));
+  if (failed) parts.push(`${plural(failed, 'imagem com erro', 'imagens com erro')}, não ${failed === 1 ? 'enviada' : 'enviadas'}`);
+  if (editorState.busy || editorState.dirty) parts.push(editorState.label || 'edição não salva');
+  const msg = { type: 'phidro-form-state', busy, dirty, label: parts.join(' · ') };
+  const key = JSON.stringify(msg);
+  if (key === _lastFormState) return;
+  _lastFormState = key;
+  try { window.parent.postMessage(msg, location.origin); } catch (_) {}
+}
+
+// ===================== Progresso e resumo ==============================
+let _uiQueued = false;
+function scheduleUi() {
+  if (_uiQueued) return;
+  _uiQueued = true;
+  queueMicrotask(() => { _uiQueued = false; renderProgress(); postFormState(); });
+}
+function runList() { return [...runItems].filter((i) => i.state !== 'replaced'); }
+function renderProgress() {
+  if (!jobs) return;
+  const run = runList();
+  const done = run.filter((i) => DONE.has(i.state)).length;
+  const err = run.filter((i) => i.state === 'err').length;
+  const st = $('#status');
+  st.className = 'running';
+  st.innerHTML = `⏳ enviando — <strong>mantenha esta tela aberta</strong> · ${done}/${run.length}` +
+    (err ? ` · <span class="err">${err} com erro</span>` : '') +
+    (catalogDone ? '' : ' · carregando catálogo…');
+  _statusLocked = true;
+}
+function beginRun() {
+  $('#picker').classList.add('busy');
+  acquireWakeLock();
+}
+function finishRun() {
+  $('#picker').classList.remove('busy');
+  releaseWakeLock();
+  const run = runList();
+  runItems = new Set();
+  const count = (st) => run.filter((i) => i.state === st).length;
+  const ok = count('ok'), dup = count('dup');
+  // Erros: TODOS os pendentes da sessão, não só os desta rodada — senão a
+  // rodada da re-tentativa automática ("2 enviadas") escondia as que seguem
+  // com erro de uma rodada anterior.
+  const errItems = items.filter((i) => i.state === 'err'), err = errItems.length;
+  const sentRun = run.filter((i) => i.state === 'ok');
+  const noGeo = sentRun.filter((i) => !hasGeo(i)).length;
+  const noDate = sentRun.filter((i) => !hasDate(i)).length;
+  const skip = runSkip; runSkip = 0;
+  const parts = [];
+  if (ok)     parts.push(`<span class="ok">${plural(ok, 'imagem enviada', 'imagens enviadas')}</span>`);
+  if (dup)    parts.push(`<span class="warn">${plural(dup, 'duplicada', 'duplicadas')}</span>`);
+  if (err)    parts.push(`<span class="err">${err} com erro — toque ↻ na imagem${errItems.some((i) => i.transient) ? ' (ou espere: tentamos de novo quando a conexão voltar)' : ''}</span>`);
+  if (noGeo)  parts.push(`<span class="warn">${noGeo} sem localização (fora do mapa — ✎ marca o lugar)</span>`);
+  if (noDate) parts.push(`<span class="warn">${noDate} sem data</span>`);
+  if (skip)   parts.push(`<span class="warn">${plural(skip, 'arquivo ignorado', 'arquivos ignorados')} (só imagens e vídeos)</span>`);
+  let html = parts.length ? parts.join(' · ') + '.' : 'nada a enviar.';
+  if (sentItems.length) html += ' <a href="#share">álbum e colagem ↓</a>';
+  const st = $('#status');
+  st.className = '';
+  st.innerHTML = html;
+  _statusLocked = true;
+  // Álbum em destaque: o que mais recebeu nesta rodada.
+  if (sentRun.length) {
+    const byAlbum = new Map();
+    for (const i of sentRun) if (i.album) byAlbum.set(i.album, (byAlbum.get(i.album) || 0) + 1);
+    const top = [...byAlbum.entries()].sort((a, b) => b[1] - a[1])[0];
+    if (top) { curAlbum = top[0]; saveSession(); }
+  }
+  if (sentItems.length) updateShare({ reveal: sentRun.length > 0 });
+  renderGeoNote();
+  scheduleUi();
+}
+function startJob(item) {
+  if (jobs === 0) beginRun();
+  jobs++;
+  runItems.add(item);
+  scheduleUi();
+  (async () => {
+    try { await (item.kind === 'video' ? runVideo(item) : runPhoto(item)); }
+    catch (e) {
+      console.warn('subir:', e);
+      if (ACTIVE.has(item.state)) fail(item, e, { kind: 'read' });
+    }
+  })().finally(() => {
+    jobs--;
+    scheduleUi();
+    if (jobs === 0) finishRun();
+  });
+}
+
+// ===================== Wake lock ========================================
+// Pedido no começo da rodada e REPEDIDO quando a página volta a ficar
+// visível: o navegador solta o lock sempre que a página esconde (troca de
+// app), e antes o resto do lote seguia sem ele — a tela apagava sozinha e o
+// iOS suspendia o envio.
+let _wakeLock = null, _wakeReq = null;
+function acquireWakeLock() {
+  if (_wakeLock || _wakeReq || document.visibilityState !== 'visible' || !navigator.wakeLock?.request) return;
+  _wakeReq = navigator.wakeLock.request('screen').then((l) => {
+    _wakeReq = null;
+    if (!jobs) { l.release().catch(() => {}); return; }   // a rodada acabou enquanto pedia
+    _wakeLock = l;
+    l.addEventListener('release', () => { if (_wakeLock === l) _wakeLock = null; });
+  }).catch(() => { _wakeReq = null; });
+}
+function releaseWakeLock() {
+  const l = _wakeLock; _wakeLock = null;
+  l?.release?.().catch(() => {});
+}
+function onVisible() {
+  if (jobs) acquireWakeLock();
+  autoRetry({ fresh: true });
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') onVisible(); });
+window.addEventListener('pageshow', (e) => { if (e.persisted) onVisible(); });
+window.addEventListener('online', () => autoRetry({ fresh: true }));
+// Standalone no desktop: fechar/recarregar a aba no meio do envio pergunta
+// antes (o iOS ignora beforeunload — lá quem protege é o wake lock + a
+// re-tentativa). Embutida, quem pergunta é o app (phidro-form-state) — aqui
+// seria um 2º diálogo.
+if (!EMBEDDED) window.addEventListener('beforeunload', (e) => { if (jobs) { e.preventDefault(); e.returnValue = ''; } });
+// Link que sai da página no meio do envio (formulário completo, voltar ao
+// mapa) cancelaria o resto do lote: confirma antes.
+document.addEventListener('click', (e) => {
+  const a = e.target.closest?.('a[href]');
+  if (!a || a.target === '_blank' || a.hasAttribute('download') || (a.getAttribute('href') || '').startsWith('#')) return;
+  const n = activeCount();
+  if (n && !confirm(`${plural(n, 'imagem ainda enviando', 'imagens ainda enviando')} — sair desta página cancela o resto. Sair mesmo assim?`)) e.preventDefault();
+}, true);
+
 // ===================== Compartilhar: álbum + colagem ====================
-// Depois de cada lote (e a cada exclusão) refaz a colagem com o que subiu
-// nesta sessão (todas, ou um SORTEIO de 6): tela 1080×1920 (9:16 — story do
+// Depois de cada rodada (e a cada exclusão) refaz a colagem do álbum em
+// destaque (todas, ou um SORTEIO de 6): tela 1080×1920 (9:16 — story do
 // WhatsApp/Instagram), com TODO o conteúdo dentro da área segura do story
 // (o Instagram cobre ~250 px no topo e ~340 px embaixo com a UI dele):
 // cabeçalho, grade de células quadradas (cover) com o melhor encaixe de
 // colunas, e o link do álbum no pé. Com mais de um passeio no conjunto,
-// cada célula ganha a legenda "dd/mm · passeio". JPEG ≤ 500 kB via o mesmo
-// compressToTarget das variantes (mantém a proporção).
+// cada célula ganha a legenda "dd/mm · passeio". JPEG ≤ 500 kB. As células
+// vêm das miniaturas já em memória (256 px; 640 px nas células grandes) —
+// nunca mais do original (eram N decodes full-res a cada rodada/exclusão).
 const COLLAGE_W = 1080, COLLAGE_H = 1920, COLLAGE_MAX_BYTES = 500 * 1024;
 const SAFE_TOP = 270, SAFE_BOTTOM = 1570, PAD = 48, GAP = 12;
 const SAMPLE_N = 6;
-let _collageBlob = null, _collageUrl = null, _shareBusy = false, _shareAgain = false;
+let _collageBlob = null, _collageUrl = null, _shareBusy = false, _shareAgain = false, _revealAgain = false;
 let collageMode = 'all', collageSample = [];
 const FONT_MONO = "'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace";
 
@@ -791,13 +1519,23 @@ function fitText(ctx, text, maxW) {
   while (t.length > 1 && ctx.measureText(t + '…').width > maxW) t = t.slice(0, -1);
   return t + '…';
 }
-async function itemBitmap(item) {
-  // Foto: o próprio arquivo (já JPEG se veio de HEIC convertido), reduzido
-  // no decode; vídeo: a miniatura do passe (320 px — sobe na célula).
-  const src = item.kind === 'video' ? item.thumbBlob : item.file;
+async function collageSource(item, cell) {
+  if (item.kind !== 'video' && cell > 280 && item.midBlob) return item.midBlob;
+  if (item.thumbBlob) return item.thumbBlob;
+  if (item.midBlob) return item.midBlob;
+  if (item.restored) {   // sessão retomada: a miniatura do servidor
+    try {
+      const url = item.kind === 'video' ? `./clips/${item.phash}.thumb.jpg` : `./photos/${item.phash}/thumb.jpg`;
+      const r = await fetch(url, { signal: timeoutSignal(20000) });
+      if (r.ok) item.thumbBlob = await r.blob();
+    } catch (_) {}
+  }
+  return item.thumbBlob || null;
+}
+async function itemBitmap(item, cell) {
+  const src = await collageSource(item, cell);
   if (!src) return null;
-  try { return await createImageBitmap(src, { imageOrientation: 'from-image', resizeWidth: 1080, resizeQuality: 'medium' }); }
-  catch (_) { try { return await createImageBitmap(src, { imageOrientation: 'from-image' }); } catch (_) { return null; } }
+  try { return await createImageBitmap(src, { imageOrientation: 'from-image' }); } catch (_) { return null; }
 }
 // Colunas que dão a MAIOR célula quadrada pro número de itens na área útil.
 function bestGrid(n, availW, availH) {
@@ -809,102 +1547,130 @@ function bestGrid(n, availW, availH) {
   }
   return { cols: best.cols, rows: Math.ceil(n / best.cols), cell: Math.floor(best.cell) };
 }
-function collageItems() {
-  if (collageMode !== 'sample') return sentItems;
-  const alive = collageSample.filter(i => sentItems.includes(i));
-  if (alive.length < Math.min(SAMPLE_N, sentItems.length)) return resample();
+function albumItems(a) { return sentItems.filter((i) => i.album === a); }
+function albumsWithItems() { return [...albums.values()].filter((a) => sentItems.some((i) => i.album === a)); }
+function collageItems(pool) {
+  if (collageMode !== 'sample') return pool;
+  const alive = collageSample.filter((i) => pool.includes(i));
+  if (alive.length < Math.min(SAMPLE_N, pool.length)) return resample(pool);
   return alive;
 }
-function resample() {
-  const pool = sentItems.slice();
-  for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
-  collageSample = pool.slice(0, SAMPLE_N).sort((a, b) => sentItems.indexOf(a) - sentItems.indexOf(b));
+function resample(pool) {
+  const p = pool.slice();
+  for (let i = p.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [p[i], p[j]] = [p[j], p[i]]; }
+  collageSample = p.slice(0, SAMPLE_N).sort((a, b) => pool.indexOf(a) - pool.indexOf(b));
   return collageSample;
 }
-async function buildCollage(items, a) {
+async function buildCollage(items, a, total) {
   try { await document.fonts.load(`600 48px ${FONT_MONO}`); } catch (_) {}
   const c = document.createElement('canvas');
   c.width = COLLAGE_W; c.height = COLLAGE_H;
-  const ctx = c.getContext('2d');
-  ctx.fillStyle = '#101820'; ctx.fillRect(0, 0, COLLAGE_W, COLLAGE_H);
-  const maxW = COLLAGE_W - 2 * PAD;
-  const { tours, title, dateText } = describeItems(items);
-  const who = $('#author').value.trim();
-  // Cabeçalho (dentro da área segura)
-  ctx.textBaseline = 'top';
-  let y = SAFE_TOP + 10;
-  ctx.fillStyle = '#ff8c2e'; ctx.font = `600 36px ${FONT_MONO}`;
-  ctx.fillText('Pedal Hidrográfico', PAD, y); y += 52;
-  ctx.fillStyle = '#fafbfc'; ctx.font = `600 40px ${FONT_MONO}`;
-  ctx.fillText(fitText(ctx, title, maxW), PAD, y); y += 58;
-  ctx.fillStyle = '#c6ced6'; ctx.font = `400 28px ${FONT_MONO}`;
-  const sub = [dateText, who, `${items.length} ${items.length === 1 ? 'imagem' : 'imagens'}${collageMode === 'sample' && sentItems.length > items.length ? ` de ${sentItems.length}` : ''}`].filter(Boolean).join(' · ');
-  ctx.fillText(fitText(ctx, sub, maxW), PAD, y); y += 40;
-  if (tours.length > 1) {
-    ctx.fillStyle = '#8fa1b3'; ctx.font = `400 24px ${FONT_MONO}`;
-    ctx.fillText(fitText(ctx, tours.map(t => `${fmtDay(t.ms)} ${t.title}`).join(' / '), maxW), PAD, y); y += 36;
+  try {
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#101820'; ctx.fillRect(0, 0, COLLAGE_W, COLLAGE_H);
+    const maxW = COLLAGE_W - 2 * PAD;
+    const { tours, title, dateText } = describeItems(items);
+    const who = a.who || '';
+    // Cabeçalho (dentro da área segura)
+    ctx.textBaseline = 'top';
+    let y = SAFE_TOP + 10;
+    ctx.fillStyle = '#ff8c2e'; ctx.font = `600 36px ${FONT_MONO}`;
+    ctx.fillText('Pedal Hidrográfico', PAD, y); y += 52;
+    ctx.fillStyle = '#fafbfc'; ctx.font = `600 40px ${FONT_MONO}`;
+    ctx.fillText(fitText(ctx, title, maxW), PAD, y); y += 58;
+    ctx.fillStyle = '#c6ced6'; ctx.font = `400 28px ${FONT_MONO}`;
+    const sub = [dateText, who, `${items.length} ${items.length === 1 ? 'imagem' : 'imagens'}${collageMode === 'sample' && total > items.length ? ` de ${total}` : ''}`].filter(Boolean).join(' · ');
+    ctx.fillText(fitText(ctx, sub, maxW), PAD, y); y += 40;
+    if (tours.length > 1) {
+      ctx.fillStyle = '#8fa1b3'; ctx.font = `400 24px ${FONT_MONO}`;
+      ctx.fillText(fitText(ctx, tours.map(t => `${fmtDay(t.ms)} ${t.title}`).join(' / '), maxW), PAD, y); y += 36;
+    }
+    // Rodapé: o link do álbum (sem o esquema), ainda dentro da área segura
+    ctx.fillStyle = '#ff8c2e'; ctx.font = `600 30px ${FONT_MONO}`;
+    ctx.fillText(fitText(ctx, a.url.replace(/^https?:\/\//, ''), maxW), PAD, SAFE_BOTTOM - 78);
+    ctx.fillStyle = '#c6ced6'; ctx.font = `400 24px ${FONT_MONO}`;
+    ctx.fillText('álbum · CC BY-SA 4.0', PAD, SAFE_BOTTOM - 34);
+    // Grade
+    const n = items.length;
+    const top = y + 28, bottom = SAFE_BOTTOM - 110;
+    const { cols, rows, cell } = bestGrid(n, maxW, bottom - top);
+    const gridW = cols * cell + GAP * (cols - 1), gridH = rows * cell + GAP * (rows - 1);
+    const x0 = Math.round((COLLAGE_W - gridW) / 2), y0 = Math.round(top + (bottom - top - gridH) / 2);
+    const captions = tours.length > 1;
+    for (let i = 0; i < n; i++) {
+      const it = items[i];
+      const x = x0 + (i % cols) * (cell + GAP), yy = y0 + Math.floor(i / cols) * (cell + GAP);
+      ctx.fillStyle = '#1f2a36'; ctx.fillRect(x, yy, cell, cell);
+      const bm = await itemBitmap(it, cell);
+      if (bm) {
+        const sz = Math.min(bm.width, bm.height);   // cover: recorta o centro
+        ctx.drawImage(bm, (bm.width - sz) / 2, (bm.height - sz) / 2, sz, sz, x, yy, cell, cell);
+        try { bm.close?.(); } catch (_) {}
+      }
+      if (it.kind === 'video') {
+        const r = Math.max(22, cell * 0.11), cx = x + cell / 2, cy = yy + cell / 2;
+        ctx.fillStyle = 'rgba(16,24,32,.75)';
+        ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.beginPath(); ctx.moveTo(cx - r * .35, cy - r * .5); ctx.lineTo(cx + r * .55, cy); ctx.lineTo(cx - r * .35, cy + r * .5); ctx.closePath(); ctx.fill();
+      }
+      if (captions) {
+        const h = Math.max(30, Math.round(cell * 0.12)), fs = Math.max(18, Math.round(h * 0.6));
+        ctx.fillStyle = 'rgba(16,24,32,.72)'; ctx.fillRect(x, yy + cell - h, cell, h);
+        ctx.fillStyle = '#fafbfc'; ctx.font = `500 ${fs}px ${FONT_MONO}`;
+        const label = it.tour ? `${fmtDay(it.tour.ms)} · ${it.tour.title}` : 'sem passeio';
+        ctx.fillText(fitText(ctx, label, cell - 16), x + 8, yy + cell - h + Math.round((h - fs) / 2));
+      }
+    }
+    return await compressToTargetLean(c, COLLAGE_MAX_BYTES, COLLAGE_H);
+  } finally {
+    c.width = c.height = 0;
   }
-  // Rodapé: o link do álbum (sem o esquema), ainda dentro da área segura
-  ctx.fillStyle = '#ff8c2e'; ctx.font = `600 30px ${FONT_MONO}`;
-  ctx.fillText(fitText(ctx, a.url.replace(/^https?:\/\//, ''), maxW), PAD, SAFE_BOTTOM - 78);
-  ctx.fillStyle = '#c6ced6'; ctx.font = `400 24px ${FONT_MONO}`;
-  ctx.fillText('álbum · CC BY-SA 4.0', PAD, SAFE_BOTTOM - 34);
-  // Grade
-  const n = items.length;
-  const top = y + 28, bottom = SAFE_BOTTOM - 110;
-  const { cols, rows, cell } = bestGrid(n, maxW, bottom - top);
-  const gridW = cols * cell + GAP * (cols - 1), gridH = rows * cell + GAP * (rows - 1);
-  const x0 = Math.round((COLLAGE_W - gridW) / 2), y0 = Math.round(top + (bottom - top - gridH) / 2);
-  const captions = tours.length > 1;
-  for (let i = 0; i < n; i++) {
-    const it = items[i];
-    const x = x0 + (i % cols) * (cell + GAP), yy = y0 + Math.floor(i / cols) * (cell + GAP);
-    ctx.fillStyle = '#1f2a36'; ctx.fillRect(x, yy, cell, cell);
-    const bm = await itemBitmap(it);
-    if (bm) {
-      const sz = Math.min(bm.width, bm.height);   // cover: recorta o centro
-      ctx.drawImage(bm, (bm.width - sz) / 2, (bm.height - sz) / 2, sz, sz, x, yy, cell, cell);
-      try { bm.close?.(); } catch (_) {}
-    }
-    if (it.kind === 'video') {
-      const r = Math.max(22, cell * 0.11), cx = x + cell / 2, cy = yy + cell / 2;
-      ctx.fillStyle = 'rgba(16,24,32,.75)';
-      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#fff';
-      ctx.beginPath(); ctx.moveTo(cx - r * .35, cy - r * .5); ctx.lineTo(cx + r * .55, cy); ctx.lineTo(cx - r * .35, cy + r * .5); ctx.closePath(); ctx.fill();
-    }
-    if (captions) {
-      const h = Math.max(30, Math.round(cell * 0.12)), fs = Math.max(18, Math.round(h * 0.6));
-      ctx.fillStyle = 'rgba(16,24,32,.72)'; ctx.fillRect(x, yy + cell - h, cell, h);
-      ctx.fillStyle = '#fafbfc'; ctx.font = `500 ${fs}px ${FONT_MONO}`;
-      const label = it.tour ? `${fmtDay(it.tour.ms)} · ${it.tour.title}` : 'sem passeio';
-      ctx.fillText(fitText(ctx, label, cell - 16), x + 8, yy + cell - h + Math.round((h - fs) / 2));
-    }
-  }
-  const bm = await createImageBitmap(c);
-  try { return await compressToTarget(bm, COLLAGE_MAX_BYTES, COLLAGE_H); }
-  finally { try { bm.close?.(); } catch (_) {} }
 }
-async function updateShare() {
-  if (_shareBusy) { _shareAgain = true; return; }
+async function updateShare({ reveal = false } = {}) {
+  if (_shareBusy) { _shareAgain = true; _revealAgain ||= reveal; return; }
   _shareBusy = true;
+  const g = gen;
   try {
     const sec = $('#share');
-    if (!sentItems.length || !album) { sec.hidden = true; return; }
-    const a = album;
+    const withItems = albumsWithItems();
+    if (!curAlbum || !withItems.includes(curAlbum)) curAlbum = withItems[withItems.length - 1] || null;
+    if (!curAlbum) { sec.hidden = true; return; }
+    const a = curAlbum;
+    const pool = albumItems(a);
     const link = $('#album-link'); link.href = a.url; link.textContent = a.url.replace(/^https?:\/\//, '');
+    $('#album-n').textContent = `(${plural(pool.length, 'imagem', 'imagens')} nesta sessão)`;
+    const others = withItems.filter((x) => x !== a);
+    $('#albums').hidden = !others.length;
+    const chips = $('#album-chips');
+    chips.innerHTML = '';
+    for (const o of others) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = `${o.name} (${albumItems(o).length})`;
+      b.addEventListener('click', () => { curAlbum = o; collageMode = 'all'; saveSession(); updateShare(); });
+      chips.append(b);
+    }
+    const wasHidden = sec.hidden;
     sec.hidden = false;
-    $('#sample-btn').hidden = sentItems.length <= SAMPLE_N;
-    $('#all-btn').hidden = collageMode !== 'sample' || sentItems.length <= SAMPLE_N;
-    $('#all-btn').textContent = `Mostrar todas (${sentItems.length})`;
+    $('#sample-btn').hidden = pool.length <= SAMPLE_N;
+    $('#all-btn').hidden = collageMode !== 'sample' || pool.length <= SAMPLE_N;
+    $('#all-btn').textContent = `Mostrar todas (${pool.length})`;
     $('#collage-info').textContent = 'montando a colagem…';
-    const items = collageItems();
-    const blob = await buildCollage(items, a);
+    // Apareceu agora (fim de rodada): leva até ela — ficava muito abaixo de
+    // uma grade longa, sem aviso. Só rola esta página (não o app por fora).
+    if (wasHidden && reveal) {
+      const top = sec.getBoundingClientRect().top + window.scrollY - ($('#status').offsetHeight || 0) - 8;
+      window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+    }
+    const items = collageItems(pool);
+    const blob = await buildCollage(items, a, pool.length);
+    if (g !== gen) return;
     if (_collageUrl) URL.revokeObjectURL(_collageUrl);
     _collageBlob = blob; _collageUrl = URL.createObjectURL(blob);
     $('#collage-img').src = _collageUrl;
     const dl = $('#collage-dl'); dl.href = _collageUrl; dl.download = `colagem-${a.slug}.jpg`;
-    const which = items.length < sentItems.length ? `${items.length} de ${sentItems.length} imagens` : `${items.length} ${items.length === 1 ? 'imagem' : 'imagens'}`;
+    const which = items.length < pool.length ? `${items.length} de ${pool.length} imagens` : `${items.length} ${items.length === 1 ? 'imagem' : 'imagens'}`;
     $('#collage-info').textContent = `${Math.round(blob.size / 1024)} kB · 9:16 (story) · ${which}`;
     $('#collage-info').dataset.bytes = blob.size;
     const file = new File([blob], dl.download, { type: 'image/jpeg' });
@@ -914,110 +1680,49 @@ async function updateShare() {
     $('#collage-info').textContent = `colagem falhou: ${e.message}`;
   } finally {
     _shareBusy = false;
-    if (_shareAgain) { _shareAgain = false; updateShare(); }
+    if (_shareAgain) { _shareAgain = false; const r = _revealAgain; _revealAgain = false; updateShare({ reveal: r }); }
   }
 }
 $('#share-btn').addEventListener('click', async () => {
-  if (!_collageBlob || !album) return;
-  const file = new File([_collageBlob], `colagem-${album.slug}.jpg`, { type: 'image/jpeg' });
-  try { await navigator.share({ files: [file], title: album.name, text: `${album.name} — ${album.url}` }); }
+  if (!_collageBlob || !curAlbum) return;
+  const a = curAlbum;
+  const file = new File([_collageBlob], `colagem-${a.slug}.jpg`, { type: 'image/jpeg' });
+  try { await navigator.share({ files: [file], title: a.name, text: `${a.name} — ${a.url}` }); }
   catch (e) { if (e?.name !== 'AbortError') console.warn('share:', e); }
 });
 $('#copy-link').addEventListener('click', async () => {
-  if (!album) return;
-  try { await navigator.clipboard.writeText(album.url); $('#copy-link').textContent = '✓ Link copiado'; }
-  catch (_) { prompt('Copie o link:', album.url); }
+  if (!curAlbum) return;
+  try { await navigator.clipboard.writeText(curAlbum.url); $('#copy-link').textContent = '✓ Link copiado'; }
+  catch (_) { prompt('Copie o link:', curAlbum.url); }
   setTimeout(() => { $('#copy-link').textContent = '🔗 Copiar link do álbum'; }, 2000);
 });
-$('#sample-btn').addEventListener('click', () => { collageMode = 'sample'; resample(); updateShare(); });
+$('#sample-btn').addEventListener('click', () => { collageMode = 'sample'; resample(albumItems(curAlbum)); updateShare(); });
 $('#all-btn').addEventListener('click', () => { collageMode = 'all'; updateShare(); });
 
-// ===================== Wake lock (lotes grandes / vídeo) =================
-let _wakeLock = null;
-async function withWakeLock(fn) {
-  try { _wakeLock = await navigator.wakeLock?.request?.('screen'); } catch (_) {}
-  try { return await fn(); }
-  finally { try { await _wakeLock?.release(); } catch (_) {} _wakeLock = null; }
-}
-
 // ===================== Seleção = envio ===================================
-const PREPROCESS_POOL = Math.min(4, navigator.hardwareConcurrency || 2);
-// Vídeo pré-processa UM por vez: o pipeline seeka <video>s escondidos e é
-// sensível a concorrência (mesma razão do form completo).
-const videoPre = makeLimiter(1);
-const _pickQueue = [];
-const batchHashes = [];   // pHash/vHash já aceitos nesta sessão (dedup intra-lote, espaço comum)
-
-async function handlePickedFiles(files) {
-  if (pickerBusy) { _pickQueue.push(files); return; }
-  pickerBusy = true;
-  $('#picker').classList.add('busy');
-  try {
-    const tally = { ok: 0, dup: 0, err: 0, skip: 0 };
-    const media = files.filter(f => isVideoFile(f) || (f.type || '').startsWith('image/') || isHeicFile(f));
-    tally.skip = files.length - media.length;
-    const items = media.map(addItem);
-    const hasVideo = media.some(isVideoFile);
-    const author0 = resolveAuthor();   // lido UMA vez por lote (o campo pode mudar no meio)
-    const run = async () => {
-      const catalogOk = await catalogReady;
-      const limit = makeLimiter(PREPROCESS_POOL);
-      const pre = items.map(it => isVideoFile(it.file)
-        ? videoPre(() => preprocessVideoFile(it.file))
-        : limit(() => preprocessImageFile(it.file)));
-      // Fase 1: lê/deduplica TUDO e detecta o passeio de cada item. Só então
-      // o álbum é mintado (fase 2) — o nome dele depende do CONJUNTO de
-      // passeios do lote (1 passeio → título dele; vários → "N passeios"),
-      // e vai baked no slug/IRI de cada TTL. Custo: os envios só começam
-      // depois da leitura do lote inteiro (o pool de leitura segue paralelo).
-      const accepted = [];
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        $('#status').textContent = `lendo ${i + 1}/${items.length}…`;
-        let r;
-        try { r = await pre[i]; }
-        catch (e) { setState(item, 'is-err', `erro: ${escapeHtml(e.message)}`); tally.err++; continue; }
-        Object.assign(item, r);
-        setThumb(item, r.thumbBlob);
-        // Dedup: lote/sessão primeiro, depois servidor (Hamming ≤ 5), no
-        // espaço de hashes da mesma classe (foto↔foto, vídeo↔vídeo).
-        const dupIn = (arr) => arr.find(h => hammingDistance(r.phash, h) <= PHASH_DUP_THRESHOLD);
-        const server = item.kind === 'video' ? existingVhashes : existingPhashes;
-        if (dupIn(batchHashes)) { setState(item, 'is-dup', 'duplicada (já no lote)'); tally.dup++; continue; }
-        if (catalogOk && dupIn(server)) { setState(item, 'is-dup', 'já está no acervo'); tally.dup++; continue; }
-        batchHashes.push(r.phash);
-        item.dateMs = itemDateMs(item);
-        item.tour = catalogOk ? detectTour(item.dateMs) : null;
-        setState(item, 'is-busy', item.tour ? `na fila · ${escapeHtml(item.tour.title)}` : 'na fila…');
-        accepted.push(item);
-        await new Promise(res => setTimeout(res));   // deixa o navegador pintar
-      }
-      if (!accepted.length) return;
-      ensureAlbum(accepted);
-      // Fase 2: envios. Autora: se a pessoa foi MINTADA, o 1º envio do lote a
-      // declara e os demais repetem a mesma declaração (união idempotente).
-      $('#status').textContent = `enviando…`;
-      await Promise.all(accepted.map(item => (item.kind === 'video'
-        ? uploadVideoItem(item, author0)
-        : uploadLimit(() => uploadImageItem(item, author0))).then(k => { tally[k]++; })));
-    };
-    if (media.length > 5 || hasVideo) await withWakeLock(run); else await run();
-    const parts = [];
-    if (tally.ok)   parts.push(`<span class="ok">${plural(tally.ok, 'imagem enviada', 'imagens enviadas')}</span>`);
-    if (tally.dup)  parts.push(`<span class="warn">${plural(tally.dup, 'duplicada', 'duplicadas')}</span>`);
-    if (tally.err)  parts.push(`<span class="err">${tally.err} com erro</span>`);
-    if (tally.skip) parts.push(`<span class="warn">${plural(tally.skip, 'arquivo ignorado', 'arquivos ignorados')} (só imagens e vídeos)</span>`);
-    $('#status').innerHTML = parts.length ? parts.join(' · ') + '.' : 'nada a enviar.';
-    if (sentItems.length) updateShare();   // álbum + colagem (assíncrono, serializado)
-  } finally {
-    pickerBusy = false;
-    $('#picker').classList.remove('busy');
-    const next = _pickQueue.shift();
-    if (next) handlePickedFiles(next);
+function handlePickedFiles(files) {
+  const media = files.filter(f => isVideoFile(f) || (f.type || '').startsWith('image/') || isHeicFile(f));
+  const skipped = files.length - media.length;
+  if (!media.length) {
+    if (skipped && !jobs) {
+      $('#status').innerHTML = `<span class="warn">${plural(skipped, 'arquivo ignorado', 'arquivos ignorados')} (só imagens e vídeos).</span>`;
+      _statusLocked = true;
+    } else runSkip += skipped;
+    return;
+  }
+  runSkip += skipped;
+  const authorName = readAuthorName();   // lido UMA vez por escolha (o campo pode mudar no meio)
+  for (const f of media) {
+    const item = { kind: isVideoFile(f) ? 'video' : 'image', file: f, srcFile: f, name: f.name, authorName };
+    item.li = makeCell(f.name);
+    items.push(item);
+    setState(item, 'queued', 'na fila…');
+    startJob(item);
   }
 }
 
-// Listener real (substitui o provisório do topo) + seleções feitas antes do boot.
+// Listener real (o provisório do <script> clássico desliga ao ver
+// _phidroEarlyPicks = null) + seleções feitas antes do módulo subir.
 $('#files').addEventListener('change', (e) => {
   const files = [...e.target.files];
   e.target.value = '';
@@ -1026,7 +1731,15 @@ $('#files').addEventListener('change', (e) => {
 {
   const early = (window._phidroEarlyPicks || []).splice(0);
   window._phidroEarlyPicks = null;
+  const restored = restoreSession();
+  if (restored) {
+    _restoredNote = `Sessão retomada: ${plural(restored, 'imagem já enviada', 'imagens já enviadas')} — escolher de novo sobe só o que faltou.`;
+    $('#status').innerHTML = _restoredNote;
+    updateShare();
+    renderGeoNote();
+  }
   for (const files of early) handlePickedFiles(files);
+  scheduleUi();   // estado inicial pro app (ociosa, sem pendência)
 }
 </script>
 </body>

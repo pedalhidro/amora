@@ -978,3 +978,86 @@ export {
   transcodeAtShortSide, transcodeClip, loadMediabunny, fastTranscodeCodec,
   abortError, isAbortError, transcodeClipFast, extractAudio, makeLimiter,
 };
+
+// ===================== Variantes enxutas (subir.html) ===================
+// NÃO são cópias do formulário completo: helpers novos, só do envio
+// simplificado, pra caber no orçamento de memória de um iPhone ao lado do mapa.
+// Os de cima continuam VERBATIM — em especial o caminho do pHash (decode
+// full-res + computePHash), do qual a dedup depende nos dois forms.
+
+// Desenha reduzido (lado maior ≤ maxDim), encoda JPEG e ZERA o canvas na hora
+// (width = height = 0 solta o backing store sem esperar o GC). Mesmo resultado
+// de encodeJpeg(drawToCanvas(bitmap, maxDim), q) — ex.: a miniatura de 256 px.
+export async function scaledJpeg(bitmap, maxDim, q) {
+  const c = drawToCanvas(bitmap, maxDim);
+  try { return await encodeJpeg(c, q); }
+  finally { c.width = c.height = 0; }
+}
+
+// Mesma escada do compressToTarget (lados 2400 → 500, qualidades 0.85 → 0.3) e
+// o MESMO resultado — a maior qualidade da escada que cabe em maxBytes, no
+// maior lado que tem alguma que cabe —, com menos encodes (cada toBlob é um
+// encode síncrono no main thread do WebKit, e a foto típica de iPhone só cabe
+// em q ≤ 0.55, i.e. 3–5 encodes na escada linear) e zerando cada canvas logo
+// depois de usar (o de 2400 px tem ~17 MB). `hint` (objeto do chamador,
+// opcional) guarda o degrau de qualidade da foto anterior: fotos do mesmo
+// celular/lote costumam cair no mesmo degrau, então a busca começa nele e só
+// confirma o de cima (2 encodes no caso típico) — sem hint, é a escada linear.
+// Pressupõe tamanho monotônico na qualidade (vale pro JPEG na prática); se não
+// valer num caso raro, só sai outra qualidade que TAMBÉM cabe.
+export async function compressToTargetLean(bitmap, maxBytes, startDim = 2400, hint = null) {
+  const QS = [0.85, 0.7, 0.55, 0.4, 0.3];
+  const dims = [startDim, 1800, 1400, 1100, 900, 700, 500];
+  for (let d = 0; d < dims.length; d++) {
+    const canvas = drawToCanvas(bitmap, dims[d]);
+    try {
+      const got = new Map();   // índice → blob que cabe | null
+      const fits = async (i) => {
+        if (!got.has(i)) {
+          const b = await encodeJpeg(canvas, QS[i]);
+          got.set(i, b && b.size <= maxBytes ? b : null);
+        }
+        return got.get(i);
+      };
+      const learn = d === 0 && hint;   // o hint vale pro lado maior (o caso comum)
+      let i = learn && Number.isInteger(hint.q) ? Math.min(Math.max(hint.q, 0), QS.length - 1) : 0;
+      if (await fits(i)) {
+        while (i > 0 && await fits(i - 1)) i--;   // sobe até a maior qualidade que cabe
+        if (learn) hint.q = i;
+        return got.get(i);
+      }
+      while (i < QS.length - 1) {                 // desce até a 1ª que cabe
+        if (await fits(++i)) { if (learn) hint.q = i; return got.get(i); }
+      }
+      if (learn) hint.q = QS.length - 1;          // nem 0.3 coube no lado maior
+    } finally {
+      canvas.width = canvas.height = 0;
+    }
+  }
+  return await scaledJpeg(bitmap, 500, 0.3);
+}
+
+// copyExifSegment lê o arquivo INTEIRO (e ainda faz mais duas cópias do
+// buffer) pra achar um segmento que mora nos primeiros KB — num original de
+// 5–10 MB isso é memória à toa, 3 envios em paralelo. Aqui só a cabeça: o
+// mesmo passeio de segmentos do copyExifSegment decide se a fatia basta (o
+// APP1/Exif, ou o fim do cabeçalho, cabe nela); se basta, a própria fatia vai
+// pro copyExifSegment VERBATIM (resultado idêntico ao do arquivo todo); senão
+// (cabeçalho gigante, raro) cai no arquivo todo.
+export async function copyExifSegmentFromHead(sourceFile, targetBlob, headBytes = 256 * 1024) {
+  if (!(sourceFile.size > headBytes)) return copyExifSegment(sourceFile, targetBlob);
+  const head = sourceFile.slice(0, headBytes);
+  const b = new Uint8Array(await head.arrayBuffer());
+  let enough = b.length < 4 || b[0] !== 0xFF || b[1] !== 0xD8;   // não-JPEG: nem olha o resto
+  for (let i = 2; !enough && i + 4 <= b.length; ) {
+    const marker = b[i + 1];
+    if (b[i] !== 0xFF || marker === 0xDA || marker === 0xD9) { enough = true; break; }
+    const segLen = (b[i + 2] << 8) | b[i + 3];
+    if (segLen < 2) { enough = true; break; }
+    if (i + 2 + segLen > b.length) break;              // o segmento passa do fim da fatia
+    if (marker === 0xE1 && b[i + 4] === 0x45 && b[i + 5] === 0x78 && b[i + 6] === 0x69 &&
+        b[i + 7] === 0x66 && b[i + 8] === 0x00 && b[i + 9] === 0x00) { enough = true; break; }
+    i += 2 + segLen;
+  }
+  return copyExifSegment(enough ? head : sourceFile, targetBlob);
+}
