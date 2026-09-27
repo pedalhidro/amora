@@ -347,6 +347,7 @@ body.header-hidden .leaflet-top {
 #routes-list li:hover { background: rgba(45, 169, 255, 0.08); }
 #routes-list li.active { background: rgba(45, 169, 255, 0.16); }
 #routes-list li.failed { opacity: 0.45; }
+#routes-list li:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 #routes-list li.failed .route-fail-reason { display: block; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
 
 .swatch {
@@ -532,6 +533,18 @@ body.modal-open { overflow: hidden; }
   }
   .modal-content:not(.upload-modal-content) > .close-dot:first-child + .maximize-dot {
     margin-left: 54px;
+  }
+  /* Sidebar de rotas: ela mesma rola (lista comprida) — a bolinha gruda no
+     topo em vez de sumir junto. Em fluxo, puxada pra faixa de 40px do topo. */
+  .sidebar > .close-dot:first-child {
+    position: sticky;
+    display: block;
+    /* O sticky conta a partir da borda do CONTEÚDO do contêiner que rola (os
+       40px de padding de cima entram na conta, no Blink e no WebKit): -32px
+       deixa a bolinha a 8px da borda, como antes. */
+    top: -32px;
+    left: auto;
+    margin: -32px 0 8px -6px;
   }
 }
 
@@ -2406,6 +2419,18 @@ body.trace-preview .tp-label { display: none !important; }
 @media (pointer: coarse) and (max-width: 760px) {
   body .layer-panel { max-height: 55vh; }
 }
+/* No toque só as LINHAS rolam: o painel inteiro rolava e levava junto a
+   bolinha de fechar, o título e o "☰ Rotas" (absolutos na faixa de cima) — pra
+   fechar depois de ligar "Pessoas ao vivo", lá no fim, era rolar tudo de volta.
+   Os botões de ordem ficam fixos embaixo. */
+@media (pointer: coarse) {
+  body .layer-panel { display: flex; flex-direction: column; overflow: hidden; }
+  body .layer-panel > .layer-rows {
+    flex: 1 1 auto; min-height: 0;
+    overflow-y: auto; overscroll-behavior: contain;
+  }
+  body .layer-panel > :not(.layer-rows) { flex: none; }
+}
 
 /* Instructions modal */
 .help-modal-content { width: min(640px, 94vw); }
@@ -2700,12 +2725,10 @@ body.trace-preview .tp-label { display: none !important; }
   max-width: min(440px, 92vw);
   max-height: 85vh;
   overflow: hidden;
-  padding: 0;   /* senão o padding:1px padrão do Leaflet desalinha a bolinha
-                   verde (ancorada no .photo-popup, dentro do wrapper) 1px
-                   abaixo da vermelha (ancorada no wrapper) */
+  padding: 0;   /* sem o padding:1px padrão do Leaflet em volta do popup */
 }
 /* Botão de fechar do popup do Leaflet: mesma bolinha vermelha (.close-dot) dos
-   modais — completa o par vermelho/verde com a .maximize-dot de "Ver grande".
+   modais ("Ver grande" é um botão com rótulo na fila de ações).
    O × nativo do Leaflet (texto dentro do <a>) é escondido via font-size:0; o
    × branco no hover vem do ::after, igual ao .close-dot. !important nos
    campos de posicionamento/forma pra anular os defaults do Leaflet. */
@@ -2740,19 +2763,10 @@ body.trace-preview .tp-label { display: none !important; }
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
   align-items: stretch;
-  position: relative;   /* âncora pra bolinha .maximize-dot ("Ver grande") */
+  position: relative;
 }
-/* "Ver grande": mesma bolinha verde de maximizar dos outros modais, ao lado
-   do × do Leaflet (que já foi reposicionado pro canto superior esquerdo,
-   ver .leaflet-popup-close-button acima) — completa o par vermelho/verde. */
-.photo-popup > .maximize-dot {
-  position: absolute;
-  top: 4px;
-  left: 32px;
-  z-index: 10;
-}
-/* No toque: o mesmo par das folhas (ver "Bolinhas no toque") — × visível,
-   área de 44px, 44px entre os centros da vermelha e da verde ("Ver grande"). */
+/* No toque: a mesma bolinha das folhas (ver "Bolinhas no toque") — × visível,
+   área de 44px. */
 @media (pointer: coarse) {
   .photo-popup-wrap .leaflet-popup-close-button {
     width: 24px !important;
@@ -2764,7 +2778,6 @@ body.trace-preview .tp-label { display: none !important; }
   .photo-popup-wrap .leaflet-popup-close-button::before {
     content: ""; position: absolute; inset: -10px; border-radius: 50%;
   }
-  .photo-popup > .maximize-dot { top: 6px; left: 54px; }
 }
 .photo-popup > img {
   grid-column: 2;   /* foto à direita — deixa o canto sup. esq. (×/verde) sobre o painel de texto */
@@ -3628,6 +3641,25 @@ body:has(#media-lists-editor:not([hidden])) .photo-nav-arrow { display: none; }
 .share-name-body [hidden] { display: none; }
 .share-name-body .share-name-note { font-size: 12px; line-height: 1.4; }
 .share-name-body .settings-actions { display: flex; justify-content: flex-end; margin-top: 2px; }
+/* No toque, a fila de ação fica colada no pé da folha enquanto o conteúdo
+   rola: numa tela de 320px o "📍 Compartilhar" (e, na ficha da foto, Ver
+   grande/Compartilhar/Baixar…) ficava abaixo do corte, sem pista de que havia
+   mais embaixo. */
+@media (pointer: coarse) {
+  .share-name-body .settings-actions,
+  .photo-fallback-content .photo-actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 5;
+    background: var(--panel);
+    box-shadow: 0 -1px 0 var(--border);
+  }
+  .share-name-body .settings-actions { padding: 8px 0; }
+  /* O "mais ↓" também gruda no pé e cobriria os botões — aqui a própria fila
+     colada (com o filete em cima) já mostra que o conteúdo rola por trás. */
+  .share-name-content.has-more::after,
+  .photo-fallback-content.has-more::after { display: none; }
+}
 .share-name-body #share-name-confirm {
   background: var(--accent); color: #fff; border: none;
   border-radius: 6px; padding: 7px 14px; font-weight: 600; cursor: pointer;

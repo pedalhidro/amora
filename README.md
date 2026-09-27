@@ -143,4 +143,4 @@ people over a network, you must offer them its source.
 
 Bundled third-party code keeps its own license: Leaflet and flatgeobuf
 (BSD-2-Clause), leaflet-rotate (GPL-3.0), N3.js, exifr, qrcode.js and
-leaflet.locatecontrol (MIT), Tom Select (Apache-2.0), mediabunny (MPL-2.0).
+leaflet.locatecontrol and geotiff.js (MIT), Tom Select (Apache-2.0), mediabunny (MPL-2.0).
