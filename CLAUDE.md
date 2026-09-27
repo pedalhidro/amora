@@ -21,8 +21,13 @@ one optional hosted deploy target, not a dependency.
   road network, though amora's own "Menor energia pelo viário" mode
   routes in app.js instead: primary source is the PRE-BAKED binary graph
   `sampa-viario-graph.bin` from `build-viario.py --graph` (per-node elevations
-  already sampled at bake time — no DEM/network download per route; see
-  `bakedViarioRoute`/`decodeViarioGraph`), falling back to the inline
+  already sampled at bake time — no DEM/network download per route; decode +
+  Dijkstra run in `lib/viario-graph-worker.js` (the buffer is TRANSFERRED to
+  it; it prices edges with `GraphEngine.stepCost`, so a `graph-engine.js`
+  re-sync from simujaules must keep `stepCost(dist, dh, cost)`), and
+  `bakedViarioRoute` in app.js posts to it; `VIARIO_GRAPH_BBOX` in app.js
+  must equal `build-viario.py`'s `GRAPH_BBOX` — a segment outside it never
+  downloads the graph), falling back to the inline
   `viarioGraphRoute` over the South-America FlatGeobuf (range-request
   bbox reads via the vendored `flatgeobuf-geojson.min.js` —
   `streamFgbFeatures`), then that same FGB's lines rasterized into a
@@ -479,7 +484,8 @@ Key flows:
     ways); packed is ~55 MB and redraws in ~40 ms. Density (Sé): ~300 ways
     and ~80 kB per km², ~50× the hidro — zoom 12 on a laptop = 37 MB, full
     HD = 62 MB — hence its own limits (`maxKm2` 3200 = full-HD zoom 12,
-    `maxFeatures` 400k) and no `DETAIL_MAIN` (that FGB has no `highway`
+    `maxFeatures` 400k; on touch 800 km² / 120k — the iPhone opens it from
+    zoom 12) and no `DETAIL_MAIN` (that FGB has no `highway`
     column). The driver hands `load(bb, {maxParts, isStale})` so a
     superseded pan or the cap stops the DOWNLOAD, not just the result.
   - The driver's `show()` defers the first `refresh` to a microtask:
@@ -1122,6 +1128,39 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
   Leaflet: `bubblingMouseEvents:false` só vale em layer que ESCUTA o evento —
   por isso a linha do rascunho tem um listener de click vazio (sem ele o
   clique na linha vazava pro mapa e criava ponto no fim).
+- **Memória e rede do roteamento (Traçar).** `touchRoutingMemory` /
+  `releaseRoutingMemory` soltam o worker do grafo, os tiles de DEM, o LRU do
+  FGB e os produtos do viário 30 s depois de sair do editor (ou 5 min parado
+  dentro dele). DEM (SP, FABDEM, custom) SÓ pela seção "Leitura de COGs":
+  `openCogHandle` (4xx = definitivo; rede/5xx/timeout = toast + nova
+  tentativa em 30 s, e os pontos de uma fonte pior são refeitos quando a
+  boa volta), `demTile` (LRU de tiles 512² com orçamento em bytes — 24 MB no
+  toque, 64 MB no desktop — e abort contado por referência),
+  `sampleDemPoints` (perfis: resolução cheia, só os tiles com pontos) e
+  `loadDemHandleMosaic` (terreno e "Estimar" da Câmera: o overview mais
+  grosso ainda ≤ 1″ — no DEM de SP, o IFD2 de ~21 m). Não voltar a ler
+  janelas do IFD0 sobre a bbox inteira (34 MB e 30 s de long tasks por trecho
+  de 9 km). O grafo baixa por `fetch` simples (o SW é quem o guarda —
+  `phidro-graph-v1`), com timeout de INATIVIDADE de 20 s e progresso.
+  `energyRoute(from, to, mode, superseded)` devolve null quando cancelado —
+  quem chama não grava esse null. **Gotcha do FGB:** o flatgeobuf 4.4 pede
+  todos os lotes de feições de uma vez depois do índice e não aceita
+  AbortSignal; o cancelamento marca os range requests de cada consulta com
+  o header `x-phidro-fgb-query` (5º argumento do `deserialize`) e
+  `installFgbFetchAbort` (wrapper do `window.fetch`) troca o marcador pelo
+  signal da consulta e o remove antes da rede — numa atualização do
+  flatgeobuf, confira que ele ainda chama o `fetch` global com esses
+  headers. `streamFgbFeatures(url, bb, useCache, {isStale, signal, maxParts,
+  keep})`: no teto devolve o parcial com `.capped`; stale rejeita com
+  AbortError. `makeOsmFgbLayer` reaproveita a última carga completa enquanto
+  a vista couber nela (`padFrac`/`density0`; limites podem ser função). Viário
+  OSM: 800 km² / 120 mil vias no toque (abre a partir do zoom 12), 3200 / 400
+  mil no desktop; `PackedLinesLayer` cobre o quadrado da diagonal com o mapa
+  girado (redesenha só quando um canto sai dele), acompanha a pinça pelo
+  evento `zoom` e limita o DPR do canvas a 2. Trocar uma fonte de dados só
+  re-roteia os trechos que dependem dela (proveniência `path.mode`): parâmetro
+  novo que afete o roteamento entra em `routingSettingsNow()` e em
+  `segmentDependsOn()`.
 - **Campos de formulário no iPhone.** `showPicker()` não faz nada no iOS em
   input de data (e não lança): no toque o padrão é um input transparente
   POR CIMA do controle (`.dt-overlay` nos forms de passeio,
