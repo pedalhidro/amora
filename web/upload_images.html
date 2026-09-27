@@ -1006,7 +1006,9 @@ function computeFormState() {
   } else if (pickerBusy) label = 'arquivos escolhidos ainda sendo lidos';
   else if (_editSaving) label = 'salvando a edição';
   else if (_editDirty) label = 'alterações não salvas';
-  return { busy, dirty, label };
+  // keepsOnClose: fechar a folha não perde nada daqui (ver o handler de
+  // phidro-upload-modal-closed) — o app fecha sem perguntar.
+  return { busy, dirty, label, keepsOnClose: true };
 }
 
 // ===================== Bootstrap catálogo ==============================

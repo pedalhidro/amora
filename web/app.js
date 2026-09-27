@@ -3911,6 +3911,8 @@ function renderUploadChip() {
 // { type: 'phidro-form-state', busy, dirty, label }: `busy` = trabalho em
 // andamento que se perderia (envios, transcodificações, fila), `dirty` = entrada
 // ainda não enviada, `label` = o que se perderia ("3 imagens ainda enviando").
+// `keepsOnClose` (opcional) = o form guarda tudo quando a folha fecha (o
+// upload_images.html mantém os cards e o lote segue): fechar não pergunta.
 // O app NÃO fecha nem navega um form com pendência sem perguntar, e nunca
 // limpa/apaga um que está ocupado. O aviso vale só pro DOCUMENTO que o mandou:
 // se o iframe navegou depois (outra página, ou src=''), o estado é velho.
@@ -3924,6 +3926,7 @@ function _noteFormState(e) {
     doc,
     busy: !!e.data.busy,
     dirty: !!e.data.dirty,
+    keepsOnClose: !!e.data.keepsOnClose,
     label: String(e.data.label || '').slice(0, 160),
   });
 }
@@ -3938,14 +3941,15 @@ function formPending(f) {
 function _formPendingLabel(s) {
   return s.label || (s.busy ? 'Envio em andamento' : 'Há dados ainda não enviados');
 }
-// Antes de FECHAR a folha. Ocupado: fechar só esconde — o envio segue em
-// segundo plano (e as fotos aparecem no mapa quando chegam). Só com entrada
-// não enviada: fechar descarta.
+// Antes de FECHAR a folha. Form que guarda tudo ao fechar (keepsOnClose):
+// fecha sem perguntar — reabrir mostra os cards. Ocupado: fechar só esconde —
+// o que está em andamento segue em segundo plano (e as fotos aparecem no mapa
+// quando chegam). Só com entrada não enviada: fechar descarta.
 function confirmFormClose(f) {
   const s = formPending(f);
-  if (!s) return true;
+  if (!s || s.keepsOnClose) return true;
   return window.confirm(s.busy
-    ? `${_formPendingLabel(s)}.\n\nFechar a janela? O envio continua em segundo plano.`
+    ? `${_formPendingLabel(s)}.\n\nFechar a janela? O que está em andamento continua em segundo plano.`
     : `${_formPendingLabel(s)}.\n\nFechar e descartar o que não foi enviado?`);
 }
 // Antes de NAVEGAR o iframe pra outra página (trocar de form, abrir o editor).
