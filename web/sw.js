@@ -105,7 +105,8 @@ const PAGE_ASSETS = [
   './lib/tom-select.complete.min.js',
   './lib/tom-select.min.css',
   './lib/energy-worker.js',
-  './lib/graph-engine.js',          // importScripts()'d pelo energy-worker
+  './lib/graph-engine.js',          // importScripts()'d pelo energy-worker e pelo viario-graph-worker
+  './lib/viario-graph-worker.js',   // decode + Dijkstra do grafo do viário (Traçar "pelo viário")
 ];
 // Dados pro PRIMEIRO boot offline: na 1ª visita a página carrega antes de o SW
 // existir, então nada disso passou por ele. Só entram se faltarem no DATA_CACHE

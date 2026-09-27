@@ -10180,7 +10180,11 @@ async function refetchPath(target) {
   _routesInFlight++;
   try {
     if (mode === 'energy' || mode === 'energy_road') {
-      path = await energyRoute(from, to, mode === 'energy_road' ? 'road' : 'free');
+      // Cancela as leituras (DEM/FGB/grafo) quando um pedido mais novo pro
+      // MESMO segmento o supera — devolve null, e `fresh` abaixo já é falso.
+      // Sem a época no predicado: desfazer/refazer reaproveita o resultado.
+      path = await energyRoute(from, to, mode === 'energy_road' ? 'road' : 'free',
+        () => tp._routeSeq !== seq);
     } else {
       path = await osrmRoute(from, to, mode === 'foot' ? 'foot' : 'cycling');
     }
