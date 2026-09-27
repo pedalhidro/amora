@@ -687,6 +687,30 @@ body.modal-open { overflow: hidden; }
   padding: 0;
   border: 0;
 }
+/* Toque (e todo iOS, onde showPicker() não abre nada): o input de data REAL,
+   transparente, cobre o rótulo e recebe o toque — a roda nativa abre sem
+   depender de JS. O alvo passa 8 px acima/abaixo do texto sem mexer no
+   layout; 16 px de fonte evitam o zoom de foco do iOS. (.date-pick-* vêm do
+   setupDateFilter.) */
+.date-pick-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.date-pick-wrap > .date-picker-hidden.date-pick-overlay {
+  top: -8px;
+  left: -2px;
+  width: calc(100% + 4px);
+  height: calc(100% + 16px);
+  min-width: 0;
+  pointer-events: auto;
+  cursor: pointer;
+  font-size: 16px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  color: transparent;
+}
 /* Dual-range: dois `<input type="range">` empilhados sobre o mesmo eixo;
    o track real fica invisível e a barra cinza atrás vem do ::before. Só os
    thumbs são interativos (pointer-events: auto) — clicar no track não move

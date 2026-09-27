@@ -7057,19 +7057,49 @@ function setupDateFilter(entries) {
     onRangeChange();
   });
 
-  // Clicar nos rótulos `from`/`to` abre um date-picker nativo. Mantemos um
-  // <input type="date"> oculto por par só pra invocar `showPicker()`; o span
-  // continua sendo o que o usuário lê.
+  // Clicar nos rótulos `from`/`to` abre um date-picker nativo — um
+  // <input type="date"> por rótulo; o span continua sendo o que se lê.
+  // Mouse: o input fica oculto e o clique no rótulo chama showPicker().
+  // Toque (e todo iOS): showPicker() NÃO abre nada no iOS (WebKit bug 261703
+  // — e nem lança, então nenhum fallback rodava: os rótulos eram mortos no
+  // iPhone). Lá o input REAL, transparente, cobre o rótulo e o próprio toque
+  // abre a roda nativa. iPadOS se anuncia como Mac: denuncia-o o toque.
+  const dateIsIOS = /iP(hone|ad|od)/.test(navigator.userAgent)
+    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const dateOverlay = dateIsIOS || !!window.matchMedia?.('(pointer: coarse)').matches;
+  // O slider anda em passos de 1 dia ancorados no HORÁRIO do 1º passeio; a
+  // meia-noite do dia escolhido caía entre dois passos e o range arredondava
+  // pro vizinho (escolher 01/jan mostrava 31/dez). Encaixa no passo DO dia.
+  const snapToDay = (dayStartMs) => dateMin + Math.ceil((dayStartMs - dateMin) / DAY_MS) * DAY_MS;
   const fromPicker = makeHiddenDatePicker(dateMin, dateMax, (ms) => {
-    rangeFrom.value = String(Math.max(dateMin, Math.min(ms, Number(rangeTo.value))));
+    rangeFrom.value = String(Math.max(dateMin, Math.min(snapToDay(ms), Number(rangeTo.value))));
     onRangeChange();
   });
   const toPicker = makeHiddenDatePicker(dateMin, dateMax, (ms) => {
-    rangeTo.value = String(Math.max(Number(rangeFrom.value), Math.min(ms, dateMax)));
+    rangeTo.value = String(Math.max(Number(rangeFrom.value), Math.min(snapToDay(ms), dateMax)));
     onRangeChange();
   });
-  dateFilter.appendChild(fromPicker);
-  dateFilter.appendChild(toPicker);
+  const mountPicker = (label, picker, currentMs) => {
+    if (!dateOverlay || label.parentElement?.classList.contains('date-pick-wrap')) {
+      dateFilter.appendChild(picker);
+      return;
+    }
+    // O input fica POR CIMA do rótulo, num wrapper (applyDateWindow reescreve
+    // o textContent do span — o input não pode morar dentro dele).
+    const wrap = document.createElement('span');
+    wrap.className = 'date-pick-wrap';
+    label.replaceWith(wrap);
+    wrap.append(label, picker);
+    picker.classList.add('date-pick-overlay');
+    picker.tabIndex = -1;                      // teclado/leitor usam o rótulo
+    picker.setAttribute('aria-hidden', 'true');
+    // O toque vai direto pro input: semeia com a data atual antes de a roda abrir.
+    const seed = () => { picker.value = toIsoDate(currentMs()); };
+    picker.addEventListener('pointerdown', seed);
+    picker.addEventListener('focus', seed);
+  };
+  mountPicker(rangeFromValue, fromPicker, () => Number(rangeFrom.value));
+  mountPicker(rangeToValue, toPicker, () => Number(rangeTo.value));
   rangeFromValue.classList.add('clickable-date');
   rangeFromValue.setAttribute('role', 'button');
   rangeFromValue.setAttribute('tabindex', '0');
@@ -7078,13 +7108,22 @@ function setupDateFilter(entries) {
   rangeToValue.setAttribute('tabindex', '0');
   const triggerPicker = (picker, currentMs) => {
     picker.value = toIsoDate(currentMs);
-    if (typeof picker.showPicker === 'function') picker.showPicker();
-    else picker.focus();   // fallback navegadores antigos: o input fica focável
+    // showPicker() pede gesto (é um click/tecla) e pode lançar; no iOS ele é
+    // mudo — lá quem abre a roda é o foco dentro do gesto.
+    try {
+      if (!dateIsIOS && typeof picker.showPicker === 'function') picker.showPicker();
+      else picker.focus();
+    } catch (_) { picker.focus(); }
   };
-  rangeFromValue.addEventListener('click', () =>
-    triggerPicker(fromPicker, Number(rangeFrom.value)));
-  rangeToValue.addEventListener('click', () =>
-    triggerPicker(toPicker, Number(rangeTo.value)));
+  for (const [label, picker, range] of [[rangeFromValue, fromPicker, rangeFrom], [rangeToValue, toPicker, rangeTo]]) {
+    label.addEventListener('click', () => triggerPicker(picker, Number(range.value)));
+    // role=button: Enter/Espaço também abrem (antes só o clique).
+    label.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      e.preventDefault();
+      triggerPicker(picker, Number(range.value));
+    });
+  }
 
   dateFilter.hidden = false;
   applyDateWindow(dateMin, dateMax);
