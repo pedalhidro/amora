@@ -3289,7 +3289,10 @@ def get_tour_asset(p):
     local = WEB / "tour_assets" / p
     if local.is_file():
         resp = send_from_directory(WEB / "tour_assets", p)
-        resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        # 1 h, como o objeto no bucket: o /upload-tour reescreve a arte NA
+        # MESMA chave (announcement.<ext>) — com 1 ano immutable, quem já tinha
+        # a arte antiga nunca via a nova (só no modo local/auto-hospedado).
+        resp.headers["Cache-Control"] = "public, max-age=3600"
         return resp
     abort(404)
 
