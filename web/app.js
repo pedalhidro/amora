@@ -362,11 +362,16 @@ function showPhotoFallbackModal(innerHtml) {
     '<div class="modal-content photo-fallback-content">' +
       innerHtml +
     '</div>';
-  modal.querySelector('.photo-fallback-content').appendChild(makeCloseDot(() => {
+  // 1º filho (prepend): gruda no topo quando a ficha rola (ver "Folhas que
+  // ROLAM" no CSS) e é o 1º controle pro VoiceOver.
+  modal.querySelector('.photo-fallback-content').prepend(makeCloseDot(() => {
     pauseMediaIn(modal);
     modal.hidden = true;
     clearPhotoPreview();
   }));
+  // Nome do diálogo (a ficha não tem <h2> pro aria-labelledby do controlador
+  // de modais).
+  modal.setAttribute('aria-label', /video-popup/.test(innerHtml) ? 'Vídeo' : 'Foto');
   modal.hidden = false;
   // Navegação também no modal promovido: arrastar ↔ + manter as setas visíveis.
   attachPhotoSwipe(modal.querySelector('.photo-fallback-content'));
@@ -2423,10 +2428,10 @@ function renderClipPopupHtml(c) {
   const listsBtn = c.vhash
     ? `<button type="button" class="media-lists-edit" data-kind="video" data-hash="${escapeHtml(c.vhash)}">📁 Listas</button>`
     : '';
-  // Mesma bolinha verde de maximizar usada nos outros modais — fica no
-  // canto, ao lado do × do Leaflet, não dentro de .photo-actions.
-  const viewDot = c.vhash
-    ? `<button type="button" class="maximize-dot media-view-full" data-hash="${escapeHtml(c.vhash)}" title="Ver grande" aria-label="Ver grande"></button>`
+  // "Ver grande" com rótulo, na fila de ações (era uma bolinha verde sem
+  // texto ao lado do ×: 13 px, glifo só no hover — invisível no toque).
+  const viewBtn = c.vhash
+    ? `<button type="button" class="media-view-full" data-hash="${escapeHtml(c.vhash)}">🔍 Ver grande</button>`
     : '';
   const shareBtn = c.vhash
     ? `<button type="button" class="media-share" data-hash="${escapeHtml(c.vhash)}">🔗 Compartilhar</button>`
@@ -2449,10 +2454,9 @@ function renderClipPopupHtml(c) {
   if (videoSrc) dlChips.push(`<a class="photo-dl" href="${videoSrc}" ${dlLinkAttrs(c.file)}>Vídeo 360p ↓</a>`);
   if (v720Src)  dlChips.push(`<a class="photo-dl" href="${v720Src}" ${dlLinkAttrs(c.file720)}>Vídeo 720p ↓</a>`);
   if (audioSrc) dlChips.push(`<a class="photo-dl" href="${audioSrc}" ${dlLinkAttrs((c.audio || '').split('/').pop())}>Áudio ↓</a>`);
-  const actions = [shareBtn, ...dlChips, listsBtn, delBtn].filter(Boolean).join('');
+  const actions = [viewBtn, shareBtn, ...dlChips, listsBtn, delBtn].filter(Boolean).join('');
   return (
     `<div class="photo-popup video-popup">` +
-      viewDot +
       playerHtml +
       `<dl class="photo-details">` +
         `<dt>Quando</dt><dd>${whenHuman}</dd>` +
@@ -2499,6 +2503,7 @@ function makeClipMarkers(clips) {
     });
     const m = L.marker([c.lat, c.lng], { icon, interactive: true, pane: 'clipMarkers' });
     m._clip = c;
+    m.on('add', () => m.getElement()?.setAttribute('aria-label', mediaA11yLabel('video', c)));
     // Popup gerado lazy via callback — `tourCatalog` pode ainda não ter
     // sido populado pelo loadPhotos() quando o marker é criado (boot race
     // entre loadClipsCatalog e loadPhotos). Adiando até o popupopen, o
@@ -3421,6 +3426,9 @@ function buildPhotoMarkers(photos) {
     );
     const m = L.marker([ph.lat, ph.lng], { icon, opacity: photosOpacity });
     m._photo = ph;
+    // O Leaflet faz do ícone um role=button SEM nome — o VoiceOver lia "botão"
+    // ~65 vezes. O elemento é recriado a cada add (filtros), daí o 'add'.
+    m.on('add', () => m.getElement()?.setAttribute('aria-label', mediaA11yLabel('photo', ph)));
     const rows = _photoDetailRows(ph)
       .map(([k, v]) => `<dt>${escapeHtml(k)}</dt><dd>${v}</dd>`).join('');
     // Baixar original: usa `download` no <a> — o backend é same-origin então
@@ -3445,20 +3453,19 @@ function buildPhotoMarkers(photos) {
     // "Ver grande": abre a MESMA foto na galeria (iframe já maximizável, com
     // painel de metadados) — mais robusto que tentar caber um popup do
     // Leaflet na tela inteira (a árvore de panes usa transform, o que
-    // quebraria um position:fixed ingênuo). Estilizado como a bolinha verde
-    // de maximizar dos outros modais (mesma classe .maximize-dot), ao lado
-    // do × do Leaflet — não faz parte de .photo-actions.
-    const viewDot = (ph.phash && photoSource === 'server')
-      ? `<button type="button" class="maximize-dot media-view-full" data-hash="${escapeHtml(ph.phash)}" title="Ver grande" aria-label="Ver grande"></button>`
+    // quebraria um position:fixed ingênuo). Botão com rótulo, 1º da fila de
+    // ações (era uma bolinha verde sem texto ao lado do ×: 13 px, glifo só
+    // no hover — invisível no toque).
+    const viewBtn = (ph.phash && photoSource === 'server')
+      ? `<button type="button" class="media-view-full" data-hash="${escapeHtml(ph.phash)}">🔍 Ver grande</button>`
       : '';
     const shareBtn = (ph.phash && photoSource === 'server')
       ? `<button type="button" class="media-share" data-hash="${escapeHtml(ph.phash)}">🔗 Compartilhar</button>`
       : '';
-    const actions = [shareBtn, dlBtn, listsBtn, editBtn, delBtn].filter(Boolean).join('');
+    const actions = [viewBtn, shareBtn, dlBtn, listsBtn, editBtn, delBtn].filter(Boolean).join('');
     m.bindPopup(
       `<div class="photo-popup">` +
-        viewDot +
-        `<img src="${escapeHtml(ph.file)}" loading="lazy" alt="${escapeHtml(ph.orig)}" />` +
+        `<img src="${escapeHtml(ph.file)}" loading="lazy" alt="${escapeHtml(mediaA11yLabel('photo', ph))}" />` +
         `<dl class="photo-details">${rows}</dl>` +
         (actions ? `<div class="photo-actions">${actions}</div>` : '') +
       `</div>`,
@@ -4074,6 +4081,26 @@ function openMediaListsEditor(kind, hash, currentLists) {
 // sheet mostra 28–40 tiles de uma vez — um passeio grande (PH 113, 87 fotos)
 // passava de meio GB e o Safari do iPhone matava a aba. O large fica pro
 // popup/visualizador. Mesma regra da galeria (imagens.html, wantLargeTiles).
+// Nome acessível (VoiceOver) de uma mídia: "Foto · PH 113: Jurubatuba… ·
+// 25/09/2026 · por Dandan". Sem ele as ~65 bolinhas do mapa eram lidas como
+// "botão" (sem nome) antes de qualquer controle, e as miniaturas pelo hash.
+// `ride: false` omite o passeio (na tira do próprio passeio ele é redundante).
+function mediaA11yLabel(kind, m, { ride = true } = {}) {
+  const parts = [kind === 'video' ? 'Vídeo' : 'Foto'];
+  if (ride) {
+    const r = m.ride || (m.tourIri ? tourCatalog.get(m.tourIri) : null);
+    const code = r?.code || null;
+    const name = r?.name || r?.title || null;
+    if (code || name) parts.push(code && name ? `${code}: ${name}` : (code || name));
+  }
+  if (m.datetime) {
+    const d = new Date(m.datetime);
+    if (!isNaN(d)) parts.push(ride ? d.toLocaleDateString('pt-BR')
+      : d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }));
+  }
+  if (m.authors?.length) parts.push(`por ${m.authors.join(', ')}`);
+  return parts.join(' · ');
+}
 function makeStripThumb(src, alt) {
   const img = document.createElement('img');
   img.width = 72;
@@ -4129,7 +4156,7 @@ function renderRouteClipStrip(box, entry) {
     wrap.className = 'route-clip';
     const img = makeStripThumb(
       clip.thumb ? CLIPS_DIR + clip.thumb.split('/').map(encodeURIComponent).join('/') : '',
-      'Vídeo deste pedal');
+      mediaA11yLabel('video', clip, { ride: false }));
     img.addEventListener('click', () => openStripMarker(marker));
     wrap.appendChild(img);
     strip.appendChild(wrap);
@@ -4164,7 +4191,7 @@ function renderRoutePhotoStrip(box, entry, label) {
   const strip = document.createElement('div');
   strip.className = 'route-photos-strip';
   for (const m of ms) {
-    const img = makeStripThumb(m._photo.thumb || m._photo.file, m._photo.orig || '');
+    const img = makeStripThumb(m._photo.thumb || m._photo.file, mediaA11yLabel('photo', m._photo, { ride: false }));
     // Só abre a foto no mapa — SEM filtrar (era um efeito colateral
     // surpreendente do clique; filtrar agora é explícito, via o botão
     // "Filtrar imagens para esta rota" no cabeçalho do modal).
@@ -4263,11 +4290,26 @@ async function bulkDownloadPhotos(photos, variant, label, btn) {
     const out = buildStoreZip(entries);
     const safe = (label || 'pedal').replace(/[\\/:*?"<>|\s]+/g, '_');
     const fname = `${safe}_${variant}.zip`;
-    // O .zip fica pronto muito depois do toque: sem ativação, o saveFile baixa
-    // direto (no iPhone, vai pra Arquivos → Downloads).
+    const summary = `${ok} ${ok > 1 ? 'imagens compactadas' : 'imagem compactada'} (${fmtMB(bytes)})${fail ? ` · ${fail} com erro` : ''}`;
+    // No celular o .zip fica pronto muito depois do toque, e o WebKit só abre
+    // a folha de compartilhar DENTRO de um toque (~5 s de ativação): sem ela o
+    // saveFile cairia no download direto (Arquivos → Downloads, sem WhatsApp,
+    // AirDrop…). Um 2º toque em "💾 Salvar .zip" abre a folha.
+    if (needsShareTap(out, fname, 'application/zip')) {
+      showActionToast({
+        id: 'zip',
+        text: `${summary}.`,
+        action: '💾 Salvar .zip',
+        onAction: () => {
+          hideActionToast('zip');
+          saveFile(out, fname, { type: 'application/zip' });   // síncrono no toque
+        },
+      });
+      return;
+    }
     const r = await saveFile(out, fname, { type: 'application/zip' });
     if (r === 'cancelled') return;
-    showToast(`${ok} ${ok > 1 ? 'imagens compactadas' : 'imagem compactada'} (${fmtMB(bytes)})${fail ? ` · ${fail} com erro` : ''}`);
+    showToast(summary);
   } catch (e) {
     if (e.name === 'AbortError') showToast('Download cancelado.');
     else showToast(`Falha no download: ${e.message}`);
@@ -4275,6 +4317,16 @@ async function bulkDownloadPhotos(photos, variant, label, btn) {
     _bulkDl = null;
     if (btn) { btn.textContent = origLabel; btn.title = ''; }
   }
+}
+// Arquivo que ficou pronto DEPOIS do toque e que o saveFile mandaria pra folha
+// de compartilhar (toque ou shell nativo, share de arquivos) — mas a ativação
+// do toque já expirou: precisa de um 2º toque.
+function needsShareTap(blob, fname, type) {
+  const native = !!window.Capacitor?.isNativePlatform?.();
+  if (!(COARSE_POINTER || native) || typeof navigator.share !== 'function' || typeof File !== 'function') return false;
+  if (navigator.userActivation?.isActive) return false;
+  try { return !navigator.canShare || navigator.canShare({ files: [new File([blob], fname, { type })] }); }
+  catch (_) { return false; }
 }
 // Nome da entrada no .zip: `orig` (título dcterms), senão o phash, senão o fim
 // da URL; sem caracteres proibidos, com extensão, e ÚNICO — duas fotos com o
@@ -8258,6 +8310,15 @@ function addRouteToSidebar(entry) {
     </div>
   `;
   li.addEventListener('click', () => openRouteModal(key));
+  // Linha acionável também pro VoiceOver/teclado: era um <li> com clique, que
+  // o leitor de tela não anunciava como botão.
+  li.setAttribute('role', 'button');
+  li.tabIndex = 0;
+  li.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    openRouteModal(key);
+  });
   // Só mouse: no iOS o toque emula mouseenter e o mouseleave só vem no toque
   // seguinte em outro lugar — a rota ficava laranja/grossa e o tooltip boiava
   // sobre o modal.
@@ -8546,6 +8607,9 @@ let _photoWindowTimer = null;
 function applyDateWindow(from, to, photosNow = true) {
   rangeFromValue.textContent = formatDay(from);
   rangeToValue.textContent = formatDay(to);
+  // Sem isto o VoiceOver lia o valor cru do slider (milissegundos desde 1970).
+  rangeFrom.setAttribute('aria-valuetext', formatDay(from));
+  rangeTo.setAttribute('aria-valuetext', formatDay(to));
 
   let visible = 0;
   for (const r of routes.values()) {
@@ -13003,14 +13067,16 @@ function totalDistanceMeters() {
 }
 
 // ─── FABDEM (1°×1° COG tiles hospedadas no R2, fabdem.pedalhidrografi.co) ────
-// Range-fetch só dos tiles (512²) que cobrem cada ponto/bbox. geotiff.js é
-// carregado sob demanda do CDN; window.GeoTIFF expõe a API. Os tiles ficam na
+// Range-fetch só dos tiles (512²) que cobrem cada ponto/bbox. geotiff.js
+// (3.0.5, MIT) é VENDORADO em lib/geotiff/ e carregado sob demanda — do CDN,
+// uma falha do jsdelivr (ou um bloqueador) deixava o relevo inteiro de fora;
+// window.GeoTIFF expõe a API. Os tiles ficam na
 // RAIZ do bucket (sem segmento /fabdem/) — nomes Bristol direto na base.
 // A abertura/leitura de TODO DEM passa pela seção "Leitura de COGs" abaixo.
 const FABDEM_BASE_URL = 'https://fabdem.pedalhidrografi.co/';
 const FABDEM_TILE_DEG = 1;
 const FABDEM_ARCSEC   = 1 / 3600;            // ~30 m no equador
-const GEOTIFF_URL     = 'https://cdn.jsdelivr.net/npm/geotiff@3.0.5/dist-browser/geotiff.js';
+const GEOTIFF_URL     = './lib/geotiff/geotiff.js';
 
 let _geoTiffPromise = null;
 async function ensureGeoTIFF() {

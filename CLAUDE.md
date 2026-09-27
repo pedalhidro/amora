@@ -36,13 +36,16 @@ one optional hosted deploy target, not a dependency.
   `media-pipeline.js` (módulo ES com o pipeline de mídia do `upload_images.html`,
   consumido por `subir.html` — ver acima),
   `flatgeobuf-geojson.min.js` (FGB reader, flatgeobuf 4.4.0),
+  `geotiff/` (geotiff.js 3.0.5 dist-browser, MIT — the COG/DEM reader, loaded
+  lazily by `ensureGeoTIFF`; was jsdelivr, and a CDN failure took out all
+  relief; not precached — the SW caches it on first use),
   `tom-select.complete.min.js`,
   `tom-select.min.css`, `qrcode.js`, `leaflet/` (js+css+images),
   `leaflet-rotate/` (map rotation, GPL-3.0, vendored VERBATIM as the readable
   `-src` build — see "The map rotates" under Conventions),
   `locatecontrol/` — Leaflet & friends were vendored off unpkg/jsdelivr;
-  only app.js's lazy loads (exifr/heic2any/jszip/geotiff) still hit
-  jsdelivr; `upload_images.html`/`upload_tour.html` load N3 from the
+  only app.js's lazy loads of heic2any, jszip, sql.js and proj4 still hit
+  jsdelivr (exifr and geotiff.js are vendored); `upload_images.html`/`upload_tour.html` load N3 from the
   vendored `lib/n3.min.js` too — `upload_images.html`'s only remaining CDN
   import is heic2any, prefetched WITHOUT blocking the boot and memoized by
   promise). Leaflet-based map. Also hosts `upload_images.html` (per-photo upload
@@ -975,7 +978,19 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
   módulo passa por `storage.get` (com "Bloquear todos os cookies" o Safari
   lança no getter e o app não abria). Toque × hover: as regras de hover de
   bolinhas de foto, cone, tira e `.secondary-btn` ficam dentro de
-  `@media (hover: hover)` — o iOS aplica :hover no toque e ele gruda.
+  `@media (hover: hover)` — o iOS aplica :hover no toque e ele gruda. A
+  bolinha de fechar NÃO sai de vista ao rolar: nas folhas é sticky (1º
+  filho); no painel de Camadas, no toque, só `.layer-rows` rola (flex column —
+  bolinha, título e "☰ Rotas" ficam); na sidebar de rotas é sticky com
+  `top: -32px` (o sticky conta a partir da borda do CONTEÚDO do contêiner que
+  rola — o padding de cima entra na conta, no Blink e no WebKit). Filas de
+  ação no pé de folha que rola (compartilhar localização, ficha da foto) são
+  sticky `bottom: 0` no toque, e ali o "mais ↓" some (cobriria os botões).
+  "🔍 Ver grande" é um botão com rótulo em `.photo-actions` (era a bolinha
+  verde sem texto). VoiceOver: marcadores de foto/vídeo ganham `aria-label`
+  (`mediaA11yLabel` — tipo · passeio · data · autoria) no `'add'` (o Leaflet
+  recria o ícone a cada add), as linhas da lista de rotas são role=button
+  (Enter/Espaço) e o slider de datas tem `aria-valuetext`.
 - **Contrato `phidro-form-state` (forms embutidos → app).** Cada form que roda
   numa folha manda, só embutido, a cada mudança e uma vez no load,
   `{type:'phidro-form-state', busy, dirty, label, keepsOnClose?}` (`busy` =
@@ -996,7 +1011,9 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
   `<a download>`; devolve `'shared'|'downloaded'|'cancelled'` — toast só nos
   dois primeiros. Chame DENTRO do toque, sem `await` antes: o `share()` do
   WebKit consome a ativação transitória (~5 s); arquivo que fica pronto
-  depois (o .zip de fotos) cai no download. Chips de download em popups usam
+  depois (o .zip de fotos) cairia no download — no toque, `needsShareTap`
+  detecta isso e oferece uma faixa "💾 Salvar .zip" (`showActionToast`) cujo
+  toque chama o `saveFile` dentro do gesto. Chips de download em popups usam
   `dlLinkAttrs()` (sem `download` no Capacitor). .zip grande no celular:
   `buildStoreZip` (STORE + CRC-32, ~1× o payload na memória), não JSZip
   (~3×). A fonte de fotos `'local'` (kit) nunca persiste.
