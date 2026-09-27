@@ -34,11 +34,22 @@ fi
 
 TARGET="${1:-${ANDROID_SERIAL:-}}"
 
-# Copia web assets + config/plugins nativos pro projeto android/.
+# A tela "sem conexão" (server.errorPath) mora no webDir e o `cap sync` a copia
+# pro projeto nativo (assets/public). Se o arquivo faltar, o Capacitor entra
+# em laço: a falha ao carregar a própria página de erro dispara outro load dela.
+ERROR_PAGE="$(node -e "const c = JSON.parse(require('fs').readFileSync('capacitor.config.json', 'utf8')); const p = (c.server || {}).errorPath; if (p) process.stdout.write((c.webDir || 'www') + '/' + p);")"
+if [[ -n "$ERROR_PAGE" && ! -f "$ERROR_PAGE" ]]; then
+  echo "server.errorPath aponta pra $ERROR_PAGE, que não existe." >&2
+  exit 1
+fi
+
+# Copia web assets (a tela sem conexão do www/) + config/plugins nativos pro
+# projeto android/.
 npx cap sync android
 
+# --no-sync: o sync acabou de rodar.
 if [[ -n "$TARGET" ]]; then
-  npx cap run android --target "$TARGET"
+  npx cap run android --no-sync --target "$TARGET"
 else
-  npx cap run android
+  npx cap run android --no-sync
 fi

@@ -84,6 +84,11 @@
     background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
     padding: 3px 9px; font-size: 12px; font-weight: 600; text-decoration: none; }
   .edit-btn:hover { border-color: var(--accent); }
+  /* Sem arte, o texto ocupa a largura toda: título longo corria por baixo das
+     ações (entre ~720 e ~900 px). Reserva o canto delas. */
+  @media (min-width: 721px) {
+    li.tm:has(> .tm-grid.sem-arte) .texto h2 { padding-right: 200px; }
+  }
 
   /* Grid do TourMemory — compacto: a galeria vai pra coluna que tem espaço
      sobrando (medido em placeGalleries()); se não couber em nenhuma, ganha a
@@ -108,6 +113,20 @@
     .tm-grid { grid-template-columns: 1fr; }
     .tm-grid .texto, .tm-grid .arte, .tm-grid .galeria {
       grid-column: 1 !important; grid-row: auto !important; }
+    /* Numa coluna só, as ações ancoradas no canto cobriam a série (o número
+       da edição sumia) e a 1ª linha do título — e um toque no fim do título
+       abria o form de edição. Aqui elas viram uma linha própria, no fluxo. */
+    .tm-actions { position: static; justify-content: flex-end; flex-wrap: wrap;
+      margin: 0 0 8px; }
+  }
+  /* Toque: nav, ações, "ordem" e o summary da galeria com 44 px de altura
+     (eram 13–25 px). */
+  @media (pointer: coarse) {
+    header nav { display: flex; flex-wrap: wrap; gap: 0 14px; }
+    header nav a, .toolbar button, .edit-btn {
+      display: inline-flex; align-items: center; min-height: 44px; }
+    .edit-btn { padding: 0 12px; }
+    details.galeria summary { padding: 15px 0; min-height: 44px; }
   }
 
   .texto .serie { margin: 0; color: var(--muted); font-size: 11px;
@@ -151,7 +170,7 @@
      padrao (só a lista Padrão) → all (todas) → closed → padrao … */
   details.galeria { margin-top: 8px; }
   details.galeria summary { cursor: pointer; color: var(--muted); font-size: 12px;
-    user-select: none; }
+    -webkit-user-select: none; user-select: none; }
   details.galeria summary:hover { color: var(--accent); }
   details.galeria[open] summary { margin-bottom: 6px; }
   .tm-grid[data-gal="padrao"] .g-tiles a[data-extra] { display: none; }
@@ -456,6 +475,23 @@ function statsHtml(t) {
   return rows.length ? `<dl class="stats">${rows.join('')}</dl>` : '';
 }
 
+// Variante leve da arte do anúncio (backend: GET /tour_assets/<dir>/
+// announcement.<web|thumb>.jpg, gerada no 1º pedido): a URL do original
+// (…/tour_assets/<dir>/announcement.<ext>, em qualquer host) vira a dela;
+// null = arte externa (fica o original).
+function artVariant(url, name) {
+  const m = /\/tour_assets\/([A-Za-z0-9_-]+)\/announcement\.(?:jpe?g|png|webp|gif)$/i.exec(url || '');
+  return m ? `./tour_assets/${m[1]}/announcement.${name}.jpg` : null;
+}
+// Variante que não carregou (host sem o backend, rede): cai no original.
+// `error` de <img> não borbulha — captura na lista (sobrevive aos re-renders).
+$('#linha').addEventListener('error', (e) => {
+  const img = e.target;
+  if (img.tagName === 'IMG' && img.dataset.orig && img.getAttribute('src') !== img.dataset.orig) {
+    img.src = img.dataset.orig;
+  }
+}, true);
+
 function tourMemoryHtml(t, medias) {
   const serie = t.edicoes.length
     ? `<p class="serie">${escapeHtml(t.edicoes.join(' & '))}</p>` : '';
@@ -466,8 +502,12 @@ function tourMemoryHtml(t, medias) {
       `<div class="desc">${t.description.split(/\r?\n\s*\r?\n/)
         .map((p) => `<p>${linkify(escapeHtml(p.trim()))}</p>`).join('')}</div>`
     : '';
+  // Variante web da arte (≤ 1350 px, ~300 KB — o original chega a 10 MB);
+  // se ela não carregar, o listener de 'error' em #linha cai no original.
   const arte = t.announcement
-    ? `<div class="arte"><img loading="lazy" src="${escapeHtml(t.announcement)}" alt="Arte do anúncio"></div>`
+    ? `<div class="arte"><img loading="lazy" decoding="async" ` +
+      `src="${escapeHtml(artVariant(t.announcement, 'web') || t.announcement)}" ` +
+      `data-orig="${escapeHtml(t.announcement)}" alt="Arte do anúncio"></div>`
     : '';
   // Lista Padrão primeiro; as demais só aparecem no estado "todas" e são
   // marcadas com data-extra (o CSS as esconde no estado padrão).
@@ -621,6 +661,31 @@ function placeGalleries(force) {
   }
 }
 
+// Deep link #<slug8>: as artes são lazy e sem altura até carregar — cada uma
+// que carrega ACIMA do alvo o empurra pra baixo (~375 px por arte a 390 px de
+// largura) e o Safari não tem scroll anchoring: o link caía no passeio errado.
+// Re-ancora a cada mudança de altura da lista (o ResizeObserver entrega antes
+// da pintura: sem salto visível) até a pessoa mexer (toque/roda/tecla) ou 15 s.
+// O `li.tm:target` do CSS não acende aqui (o alvo do fragmento era o <article>
+// do SSR, que já saiu) — o destaque vai inline.
+function anchorDeepLink(alvo) {
+  alvo.style.borderColor = 'var(--accent)';
+  const go = () => alvo.scrollIntoView({ block: 'start' });
+  go();
+  if (typeof ResizeObserver !== 'function') return;
+  const EVENTS = ['wheel', 'touchstart', 'pointerdown', 'keydown'];
+  let timer = 0;
+  const ro = new ResizeObserver(go);
+  const stop = () => {
+    ro.disconnect();
+    clearTimeout(timer);
+    for (const t of EVENTS) removeEventListener(t, stop, true);
+  };
+  ro.observe($('#linha'));
+  for (const t of EVENTS) addEventListener(t, stop, { capture: true, passive: true });
+  timer = setTimeout(stop, 15000);
+}
+
 (async () => {
   try {
     const store = MQ.makeStore(await loadQuads());
@@ -646,8 +711,8 @@ function placeGalleries(force) {
     document.getElementById('memoria-ssr')?.remove();
     // Deep link #<slug> só funciona depois do render.
     if (location.hash.length > 1) {
-      document.getElementById(decodeURIComponent(location.hash.slice(1)))
-        ?.scrollIntoView({ block: 'start' });
+      const alvo = document.getElementById(decodeURIComponent(location.hash.slice(1)));
+      if (alvo) anchorDeepLink(alvo);
     }
   } catch (e) {
     $('#status').innerHTML = `<span class="err">Falha ao carregar: ${escapeHtml(e.message)}</span>`;

@@ -20,8 +20,8 @@ host local  (ou Cloud Run — mesmo main.py, STORAGE_BACKEND escolhe storage)
         │                                 → blobs (302 pro bucket em modo gcs)
         ├─ POST /upload-image           → multipart: ttl + variantes;
         │                                 valida com pyshacl, grava em web/
-        ├─ POST /upload-video           → multipart: ttl + audio.webm +
-        │                                 (opcional) video360/720.webm +
+        ├─ POST /upload-video           → multipart: ttl + audio.webm|.m4a +
+        │                                 (opcional) video360/720.webm|.mp4 +
         │                                 thumb.jpg; valida via VideoShape
         ├─ POST /upload-tour            → upsert de 1 ph:Tour em tours.ttl
         │                                 (+ anúncio opcional em tour_assets/)
@@ -71,8 +71,10 @@ web/                            (no container do Cloud Run: só o que NÃO está
     ├─ <stem>.thumb.jpg         miniatura pro marker no mapa
     ├─ audio/<stem>.m4a         trilha de áudio extraída (loop ambiente)
     ├─ <vhash>.{360p,720p}.webm transcodes do upload form (browser-side,
-    │                           áudio opus EMBUTIDO no webm de vídeo)
-    ├─ <vhash>.audio.webm       opus avulso pro audio loop (não baixa o vídeo)
+    │                           áudio opus EMBUTIDO no webm de vídeo; .mp4
+    │                           H.264+AAC onde o navegador não grava WebM)
+    ├─ <vhash>.audio.webm       opus avulso pro audio loop (não baixa o vídeo;
+    │                           .m4a no caminho MP4)
     └─ <vhash>.thumb.jpg
 ```
 

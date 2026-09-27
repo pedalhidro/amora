@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "amora — API HTTP do Pedal Hidrográfico",
-    "version": "2026-09-04",
+    "version": "2026-09-27",
     "summary": "Leitura do acervo do Pedal Hidrográfico (passeios, pessoas, mídias, séries, listas) e dos dumps RDF, com content negotiation HTML | Markdown | Turtle nas mesmas URLs.",
     "description": "amora é o mapa-PWA do Pedal Hidrográfico, coletivo de ciclismo urbano da Grande São Paulo. Este documento descreve a API HTTP de LEITURA que o backend Flask expõe — é o que um agente precisa. Convenções:\n\n- **Content negotiation** nas páginas de recurso: `Accept: text/markdown` devolve a página em Markdown limpo (com `x-markdown-tokens` e `Content-Signal`); `Accept: text/turtle` devolve as triples RDF do recurso; qualquer outro Accept (`*/*`, `text/html`) devolve HTML. `?format=md|ttl|html` força a representação.\n- **IRIs dereferenciáveis**: as coisas moram em `https://id.pedalhidrografi.co/<tipo>/<slug>`; a Cloudflare faz 303 (preservando o path) pra este host, onde os handlers `/passeio`, `/pessoas`, `/serie`, `/midia`, `/listas`, `/terms` respondem.\n- **Dados abertos**: os catálogos inteiros estão em `/data/*.ttl` (manifesto VoID em `/data/data_graphs.ttl`); mídia em geral CC BY-SA 4.0 (cada item carrega sua licença).\n- Os endpoints de escrita (upload/edição/exclusão) existem, sem autenticação por desenho (acesso confiável), mas são das ferramentas do próprio coletivo e ficam fora deste documento.\n- Servidores: a instância pública em `https://amora.pedalhidrografi.co`; o mesmo backend roda self-hosted em qualquer origem (`servers[1]`).",
     "contact": {"name": "Pedal Hidrográfico", "url": "https://pedalhidrografi.co/"},
@@ -16,7 +16,7 @@
   "tags": [
     {"name": "páginas", "description": "Páginas do site (HTML por padrão; Markdown com Accept: text/markdown)."},
     {"name": "recursos", "description": "Coisas com IRI dereferenciável (HTML | Markdown | Turtle)."},
-    {"name": "dados", "description": "Dumps RDF, geometria das rotas e feeds."},
+    {"name": "dados", "description": "Dumps RDF, geometria das rotas, feeds e as artes dos passeios em tamanho de exibição."},
     {"name": "rotas salvas", "description": "Biblioteca de traçados do editor de rotas."},
     {"name": "descoberta", "description": "Catálogo de APIs, OpenAPI, llms.txt, saúde."}
   ],
@@ -118,6 +118,15 @@
         "responses": {"200": {"description": "Objeto com uma entrada por passeio com rota, chaveada por `tourIri`.", "content": {"application/json": {"schema": {"type": "object"}}}}}
       }
     },
+    "/tour_assets/{dir}/announcement.{variant}.jpg": {
+      "get": {
+        "tags": ["dados"],
+        "summary": "Arte do anúncio de um passeio em tamanho de exibição (JPEG leve)",
+        "description": "O `schema:image` de um passeio aponta pro ORIGINAL (`…/tour_assets/<dir>/announcement.<ext>`, PNG/JPEG de até ~10 MB). Esta rota serve uma derivada JPEG dele: `web` (lado maior ≤ 1350 px, ~300 KB) ou `thumb` (lado menor 256 px, maior ≤ 512, ~25 KB). Troque o nome do arquivo na URL do original — `announcement.<ext>` → `announcement.web.jpg` — e use o host desta API. Gerada no primeiro pedido e guardada ao lado do original (só pra arte que algum passeio do catálogo referencia). Na instância pública responde 302 pro objeto no bucket (o redirect vale 7 dias; o objeto, 1 h com ETag); num servidor sem bucket, 200 com o JPEG. Arte que não deriva (formato que o servidor não abre, arquivo corrompido) → 302 pro original, sem cache.",
+        "parameters": [{"name": "dir", "in": "path", "required": true, "description": "Diretório da arte — o segmento antes de `/announcement.<ext>` na URL do `schema:image` (o slug8 do passeio, ou o id numérico antigo nos passeios migrados).", "schema": {"type": "string", "pattern": "^[A-Za-z0-9_-]+$"}}, {"name": "variant", "in": "path", "required": true, "schema": {"type": "string", "enum": ["web", "thumb"]}}],
+        "responses": {"200": {"description": "O JPEG (servidor sem bucket).", "content": {"image/jpeg": {"schema": {"type": "string", "format": "binary"}}}}, "302": {"description": "→ o objeto da variante no bucket (ou o original, quando ele não deriva)."}, "404": {"description": "Nenhum passeio do catálogo tem arte nesse diretório."}}
+      }
+    },
     "/feed.xml": {
       "get": {"tags": ["dados"], "summary": "RSS 2.0 dos passeios (mais recentes primeiro)", "responses": {"200": {"description": "RSS.", "content": {"application/rss+xml": {"schema": {"type": "string"}}}}}}
     },
@@ -151,8 +160,12 @@
       "get": {
         "tags": ["dados"],
         "summary": "Posições ao vivo (opt-in, pseudônimas, efêmeras) + rastro de cada pessoa",
-        "description": "Estado em memória, janela de 3 h, `Cache-Control: no-store`. `{positions: [{id, name, lat, lng, ts, age, accuracy?, heading?, trail: [[lat, lng, accuracy|null, ageSeconds], …]}]}`.",
-        "responses": {"200": {"description": "Posições.", "content": {"application/json": {"schema": {"type": "object", "properties": {"positions": {"type": "array", "items": {"type": "object"}}}}}}}}
+        "description": "Estado em memória, janela de 3 h, `Cache-Control: no-store`. Instantes em segundos desde a época, no relógio do servidor.\n\n- **Sem parâmetro** (formato original, rastro inteiro): `{now, positions: [{id, name, lat, lng, ts, age, accuracy?, heading?, trail: [[lat, lng, accuracy|null, ageSeconds], …]}]}`.\n- **`?since=<cursor>`** (leitura incremental — o que o app usa): `{now, since, positions: [{id, name, lat, lng, ts, age, accuracy?, heading?, t0, trail: [[lat, lng, accuracy|null, ts], …]}]}`. Vêm as posições atuais de todo mundo, mas só os pontos de rastro que o servidor RECEBEU depois do cursor (emagrecidos por Douglas-Peucker, no máx. 200 por pessoa), com o instante absoluto do fix — um ponto retrodatado (fila de quem estava sem conexão) também chega. `t0` = instante do ponto mais antigo que o servidor ainda guarda: descarte localmente o que for anterior. Passe o `now` de cada resposta como `since` da próxima; `since=0` = carga inicial. Quem sumiu de `positions` expirou.",
+        "parameters": [{"name": "since", "in": "query", "required": false, "description": "Cursor da leitura incremental: o `now` da resposta anterior (0 = carga inicial). Ausente = formato original.", "schema": {"type": "number", "minimum": 0}}],
+        "responses": {
+          "200": {"description": "Posições.", "content": {"application/json": {"schema": {"type": "object", "properties": {"now": {"type": "number", "description": "Relógio do servidor nesta resposta — o próximo `since`."}, "since": {"type": "number", "description": "Cursor aplicado (só com `?since=`; 0 = carga completa)."}, "positions": {"type": "array", "items": {"type": "object", "properties": {"id": {"type": "string"}, "name": {"type": "string"}, "lat": {"type": "number"}, "lng": {"type": "number"}, "ts": {"type": "number"}, "age": {"type": "number"}, "accuracy": {"type": "number"}, "heading": {"type": "number"}, "t0": {"type": ["number", "null"]}, "trail": {"type": "array", "items": {"type": "array", "prefixItems": [{"type": "number"}, {"type": "number"}, {"type": ["number", "null"]}, {"type": "number"}]}}}}}}}}}},
+          "400": {"description": "`since` inválido (não numérico, negativo)."}
+        }
       }
     },
     "/health": {

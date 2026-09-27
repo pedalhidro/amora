@@ -23,6 +23,7 @@ import {
   formatHMS,
   mapConcurrent,
   haversineMeters as haversine,
+  saveFile,
   showToast,
   storage,
 } from './lib/utils.js';
@@ -160,8 +161,11 @@ function _migratePhotoSourceValue(v) {
 }
 const settings = loadSettings();
 // Migração: fonte de imagens ficava em chave separada — preserva valor antigo.
+// Leituras de localStorage no nível do módulo passam pelo `storage` (try/catch):
+// com o "Bloquear todos os cookies" do Safari o getter LANÇA SecurityError, e
+// um throw aqui abortava o módulo antes do L.map — o app nem subia.
 {
-  const legacy = localStorage.getItem('phidro:photoSource');
+  const legacy = storage.get('phidro:photoSource');
   if (legacy && settings.photoSource === SETTINGS_DEFAULTS.photoSource) {
     settings.photoSource = legacy;
   }
@@ -179,6 +183,28 @@ if (settings.liveLocation) settings.liveLocation.enabled = false;
 // mapa está girado. Os controles de rotação DO PLUGIN ficam desligados — o
 // amora põe os seus (ver setupMapRotation, que explica o porquê de cada um).
 // Sem o plugin carregado, as opções extras são ignoradas e o mapa segue fixo.
+//
+// Pinça na interface: o Safari ignora o user-scalable=no — pinçar uma folha,
+// o overlay transparente de um modal ou a barra de cima dava zoom na PÁGINA
+// inteira, e com a folha fechada o mapa (touch-action:none) engolia todo gesto:
+// a interface ficava ampliada sem volta. gesturestart/gesturechange são os
+// eventos de pinça do WebKit; o zoom do MAPA vem dos pointer/touch events do
+// Leaflet e segue funcionando. (As páginas embutidas nas folhas — galeria,
+// formulários, censo — fazem o mesmo quando estão num iframe.)
+for (const t of ['gesturestart', 'gesturechange']) {
+  document.addEventListener(t, (e) => e.preventDefault(), { passive: false });
+}
+// O <article id="tour-article"> que o backend injeta em /passeio/<slug> (pra
+// crawlers/no-JS) entra no grid do body como uma 3ª linha implícita e espreme
+// o mapa a ~0 px. O Leaflet mede o contêiner UMA vez aqui no L.map: o passeio
+// abria sobre um mapa cinza, sem rota, em zoom 19. Com JS ele sai do fluxo
+// ANTES de criar o mapa (fica no DOM, oculto): passeio com rota abre no modal
+// da rota (_openTourBySlug o remove); sem rota, vira uma folha
+// (showSsrTourArticle).
+{
+  const art = document.getElementById('tour-article');
+  if (art) art.hidden = true;
+}
 const map = L.map('map', {
   zoomControl: true,
   rotate: true,
@@ -186,6 +212,13 @@ const map = L.map('map', {
   shiftKeyRotate: false,
   rotateControl: false,
 }).setView(SP, settings.mapDefaults.startZoom);
+// O Leaflet só re-mede o contêiner no resize da JANELA. Qualquer outra mudança
+// de tamanho do #map (cabeçalho oculto/visível, sidebar, o artigo SSR acima…)
+// deixava o tamanho velho — tiles só na área antiga, fitBounds errado. Um
+// ResizeObserver re-mede sempre (invalidateSize é no-op se nada mudou).
+if (window.ResizeObserver) {
+  new ResizeObserver(() => map.invalidateSize()).observe(map.getContainer());
+}
 
 // ─── Ordem de empilhamento das camadas (z-index por pane) ────────────────────
 // Cada camada de mapa reordenável vive no seu próprio pane, numa faixa de
@@ -298,10 +331,15 @@ function highlightPhotoMarker(marker) {
 }
 
 // continua tocando antes do GC. Pausa explícita no popupclose.
+// `_photoPopupPromoting`: o popup está sendo fechado só porque virou o sheet
+// (promoteIfNeeded) — aí o destaque do marcador FICA (no iPhone todo preview é
+// promovido, e o anel sumia antes de aparecer); quem limpa é o fechamento real
+// do sheet (clearPhotoPreview).
+let _photoPopupPromoting = false;
 map.on('popupclose', (e) => {
   const el = e.popup?.getElement?.();
   if (el) pauseMediaIn(el);
-  clearPhotoMarkerHighlight();
+  if (!_photoPopupPromoting) clearPhotoMarkerHighlight();
 });
 
 function showPhotoFallbackModal(innerHtml) {
@@ -385,7 +423,10 @@ map.on('popupopen', (e) => {
     if (!inner) return;
     el.style.visibility = 'hidden';
     showPhotoFallbackModal(inner.outerHTML);
-    setTimeout(() => map.closePopup(popup), 0);
+    setTimeout(() => {
+      _photoPopupPromoting = true;
+      try { map.closePopup(popup); } finally { _photoPopupPromoting = false; }
+    }, 0);
     const latlng = popup.getLatLng?.();
     const modal = document.getElementById('photo-fallback-modal');
     requestAnimationFrame(() => panMapAbovePhotoSheet(latlng, modal));
@@ -466,6 +507,7 @@ function updatePhotoNavArrows() {
 }
 function clearPhotoPreview() {
   photoPreviewMarker = null;
+  clearPhotoMarkerHighlight();   // o sheet promovido fechou (o popup já tinha ido)
   updatePhotoNavArrows();
 }
 // Arrasta ↔ pra navegar (toque): arrastar pra ESQUERDA → próxima; pra DIREITA → anterior.
@@ -504,8 +546,18 @@ map.on('popupclose', (e) => {
   }, 0);
 });
 
+// crossOrigin: '' (CORS anônimo) nas camadas cujo host manda
+// Access-Control-Allow-Origin: * em TODA resposta — conferido com curl
+// (com/sem Origin, cache HIT/MISS) em OSM a/b/c, arcgisonline e telhas
+// (rmsampa-v2, mtpi ×2, 1850). Resposta CORS é legível: o SW guarda os tiles
+// (TILE_CACHE) pro mapa offline; <img> no-cors dava resposta OPACA, que o SW
+// não guarda. NÃO ligar num host sem ACAO — o tile deixaria de carregar
+// (o WMS do GeoSampa só manda ACAO quando há Origin e sem Vary: Origin — fica
+// sem). Os preconnects do index.html levam crossorigin pelo mesmo motivo.
+const TILE_CORS = '';
 const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 19,
+  crossOrigin: TILE_CORS,
   pane: LAYER_PANE('osm'),
   attribution: '&copy; OpenStreetMap contributors',
 });
@@ -513,6 +565,7 @@ const satellite = L.tileLayer(
   'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
   {
     maxZoom: 19,
+    crossOrigin: TILE_CORS,
     pane: LAYER_PANE('satellite'),
     attribution:
       'Imagery © Esri, Maxar, Earthstar Geographics, and the GIS User Community',
@@ -539,6 +592,7 @@ const rmsampa = L.tileLayer('https://telhas.pedalhidrografi.co/rmsampa-v2/{z}/{x
   tileSize: rmsampaRetina ? 128 : 256,
   zoomOffset: rmsampaRetina ? 1 : 0,
   opacity: 0.85,
+  crossOrigin: TILE_CORS,
   pane: LAYER_PANE('rmsampa'),
   attribution: 'Topografia: Pedal Hidrográfico',
 }).addTo(map);
@@ -568,12 +622,14 @@ const sara1930 = L.tileLayer.wms(
 const mtpiPindorama = L.tileLayer('https://telhas.pedalhidrografi.co/mtpi_cop90_sa_full/{z}/{x}/{y}.png', {
   maxZoom: 19,
   maxNativeZoom: 10,
+  crossOrigin: TILE_CORS,
   pane: LAYER_PANE('mtpi-pindorama'),
   attribution: 'MTPI COP90 · Pedal Hidrográfico',
 });
 const mtpiParana = L.tileLayer('https://telhas.pedalhidrografi.co/mtpi_bacia_parana_30/{z}/{x}/{y}.png', {
   maxZoom: 19,
   maxNativeZoom: 12,
+  crossOrigin: TILE_CORS,
   pane: LAYER_PANE('mtpi-parana'),
   attribution: 'MTPI Bacia do Paraná 30 m · Pedal Hidrográfico',
 });
@@ -584,6 +640,7 @@ const mapa1850 = L.tileLayer('https://telhas.pedalhidrografi.co/1850/{z}/{x}/{y}
   maxZoom: 19,
   maxNativeZoom: 18,
   opacity: 0.85,
+  crossOrigin: TILE_CORS,
   pane: LAYER_PANE('mapa1850'),
   attribution: 'Mapa de 1850 · Pedal Hidrográfico',
 });
@@ -810,6 +867,15 @@ const OSM_FGB_FULL_BBOX_KM2 = 1200;
 // densidade local desminta a estimativa acima.
 const OSM_FGB_MAX_FEATURES = 20000;
 
+// Aparelho de toque (celular/tablet): tela pequena, DPR alto, pouca memória
+// por aba (o iOS recarrega a aba perto de ~1 GB) e dados móveis — as camadas
+// e caches pesados (viário OSM, tiles de DEM, feições FGB) usam orçamentos
+// menores nele. Avaliado a cada uso: um tablet pode ganhar mouse no meio da
+// sessão.
+function dataBudgetCoarse() {
+  try { return window.matchMedia('(pointer: coarse)').matches; } catch { return false; }
+}
+
 // Nível de detalhe derivado da área: em bbox grande desenha só o que ainda
 // significa alguma coisa naquela escala (rios e cristas; ciclovias
 // segregadas), em vez de recusar a camada ou travar a aba.
@@ -845,10 +911,21 @@ function mercY(lat) {
 // Linhas EMPACOTADAS num <canvas> próprio — pras camadas densas demais pra
 // L.polyline. No Leaflet cada vértice vira um LatLng + um Point (medido: as
 // 164 mil vias de um zoom 12 em SP custavam ~400 MB de heap). Aqui os vértices
-// já chegam projetados num Float64Array (`streamFgbPackedLines`) e o desenho é
+// já chegam projetados em Float64Arrays (`streamFgbPackedLines`) e o desenho é
 // um laço de lineTo e UM stroke — com opacidade < 1, os cruzamentos não
-// acumulam alfa. Redesenha no moveend; na animação de zoom só escala via CSS.
-// A largura é em METROS (`widthM`): o lineWidth sai do zoom a cada desenho.
+// acumulam alfa. Os vértices vêm em pedaços com a caixa das suas linhas: o
+// desenho pula os pedaços fora do canvas (a bbox carregada tem folga — ver
+// makeOsmFgbLayer). Redesenha no moveend/resize; na animação de zoom e na
+// PINÇA (evento `zoom`: o leaflet-rotate move o mapa a cada toque com
+// `_move(…, {pinch})`, que não dispara zoomanim) só reposiciona/escala via CSS,
+// como os renderers do Leaflet. No GIRO não redesenha: o canvas está no
+// rotatePane e gira junto; com o mapa girado ele cobre o quadrado da DIAGONAL
+// da tela (qualquer rumo cabe), então só o primeiro passo de um giro a partir
+// do norte redesenha — antes era um desenho completo + realocação do canvas a
+// cada quadro do gesto. A largura é em METROS (`widthM`): o lineWidth sai do
+// zoom a cada desenho. DPR limitado a PACKED_MAX_DPR: é um véu fino, e em DPR 3
+// o backing store custava 9× a área da tela.
+const PACKED_MAX_DPR = 2;
 const PackedLinesLayer = L.Layer.extend({
   initialize(lines, { pane, color = '#fff', widthM = 1, opacity = 1 } = {}) {
     this._lines = lines;
@@ -868,17 +945,29 @@ const PackedLinesLayer = L.Layer.extend({
     cancelAnimationFrame(this._raf);
     L.DomUtil.remove(this._canvas);
     this._canvas = null;
+    this._box = null;
   },
   getEvents() {
-    const ev = { moveend: this._draw, resize: this._draw, rotate: this._drawSoon };
+    const ev = { moveend: this._draw, resize: this._draw, rotate: this._onRotate, zoom: this._onZoom };
     if (this._map.options.zoomAnimation && L.Browser.any3d) ev.zoomanim = this._animateZoom;
     return ev;
   },
-  // Girar dispara `rotate` a cada passo do gesto: no máximo um desenho por
-  // quadro.
-  _drawSoon() {
+  // Giro: só redesenha se algum canto da tela saiu do canvas (no máximo um
+  // desenho por quadro).
+  _onRotate() {
+    if (this._covers()) return;
     cancelAnimationFrame(this._raf);
     this._raf = requestAnimationFrame(() => this._draw());
+  },
+  _covers() {
+    const map = this._map, box = this._box;
+    if (!map || !box) return false;
+    const size = map.getSize();
+    for (const p of [[0, 0], [size.x, 0], [0, size.y], [size.x, size.y]]) {
+      const lp = map.containerPointToLayerPoint(p);
+      if (lp.x < box.min.x || lp.y < box.min.y || lp.x > box.max.x || lp.y > box.max.y) return false;
+    }
+    return true;
   },
   setOpacity(frac) {
     this.options.opacity = frac;
@@ -886,25 +975,39 @@ const PackedLinesLayer = L.Layer.extend({
   },
   // Mesmo padrão dos overlays do Leaflet: o canto do canvas é um latlng fixo;
   // durante a animação ele vai pro ponto novo e o canvas escala a partir dali.
-  _animateZoom(e) {
-    const scale = this._map.getZoomScale(e.zoom, this._zoom);
-    const offset = this._map._latLngToNewLayerPoint(this._topLeft, e.zoom, e.center);
-    L.DomUtil.setTransform(this._canvas, offset, scale);
+  _animateZoom(e) { this._transform(e.center, e.zoom); },
+  _onZoom() {
+    // Na animação normal quem posiciona é o _animateZoom (e o moveend redesenha).
+    if (!this._canvas || !this._topLeft || this._map._animatingZoom) return;
+    this._transform(this._map.getCenter(), this._map.getZoom());
+  },
+  _transform(center, zoom) {
+    const map = this._map;
+    L.DomUtil.setTransform(this._canvas,
+      map._latLngToNewLayerPoint(this._topLeft, zoom, center), map.getZoomScale(zoom, this._zoom));
   },
   _draw() {
     const map = this._map, c = this._canvas;
     if (!map || !c) return;
-    const size = map.getSize(), dpr = window.devicePixelRatio || 1;
-    // O canvas vive no referencial das CAMADAS. Com o mapa girado, o canvas
-    // está no rotatePane e a tela vira um losango nesse referencial: cobre a
-    // caixa dos quatro cantos (sem rotação ela é exatamente a tela).
-    const box = L.bounds([[0, 0], [size.x, 0], [0, size.y], [size.x, size.y]]
-      .map((p) => map.containerPointToLayerPoint(p)));
+    const size = map.getSize(), dpr = Math.min(PACKED_MAX_DPR, window.devicePixelRatio || 1);
+    // O canvas vive no referencial das CAMADAS. Sem giro, é exatamente a tela.
+    // Girado, a tela vira um losango nesse referencial: o canvas cobre o
+    // quadrado da diagonal centrado nela, que contém a tela em QUALQUER rumo.
+    let box;
+    if (map.getBearing && map.getBearing() % 360) {
+      const half = Math.ceil(Math.hypot(size.x, size.y) / 2) + 1;
+      const mid = map.containerPointToLayerPoint(size.divideBy(2));
+      box = L.bounds(mid.subtract([half, half]), mid.add([half, half]));
+    } else {
+      box = L.bounds([[0, 0], [size.x, 0], [0, size.y], [size.x, size.y]]
+        .map((p) => map.containerPointToLayerPoint(p)));
+    }
     const topLeft = box.min.floor();
     const cssW = Math.ceil(box.max.x) - topLeft.x, cssH = Math.ceil(box.max.y) - topLeft.y;
     L.DomUtil.setPosition(c, topLeft);           // e zera a escala da animação
     this._topLeft = map.layerPointToLatLng(topLeft);
     this._zoom = map.getZoom();
+    this._box = L.bounds(topLeft, topLeft.add([cssW, cssH]));
     const w = Math.round(cssW * dpr), h = Math.round(cssH * dpr);
     if (c.width !== w || c.height !== h) {
       c.width = w; c.height = h;
@@ -913,18 +1016,26 @@ const PackedLinesLayer = L.Layer.extend({
     const ctx = c.getContext('2d');
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, w, h);
-    const { xy, starts, parts } = this._lines;
-    if (!parts) return;
+    const { chunks } = this._lines;
+    if (!chunks || !chunks.length) return;
     // Pixel global do canto do canvas; vértice → xy·scale − origem.
     const scale = 256 * 2 ** this._zoom;
     const o = topLeft.add(map.getPixelOrigin());
+    // Caixa do canvas em Mercator normalizado (a unidade dos vértices).
+    const mx0 = o.x / scale, my0 = o.y / scale;
+    const mx1 = (o.x + cssW) / scale, my1 = (o.y + cssH) / scale;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.beginPath();
-    for (let p = 0; p < parts; p++) {
-      let i = starts[p] * 2;
-      const end = starts[p + 1] * 2;
-      ctx.moveTo(xy[i] * scale - o.x, xy[i + 1] * scale - o.y);
-      for (i += 2; i < end; i += 2) ctx.lineTo(xy[i] * scale - o.x, xy[i + 1] * scale - o.y);
+    for (const ch of chunks) {
+      const b = ch.box;
+      if (b[2] < mx0 || b[0] > mx1 || b[3] < my0 || b[1] > my1) continue;
+      const { xy, starts, parts } = ch;
+      for (let p = 0; p < parts; p++) {
+        let i = starts[p] * 2;
+        const end = starts[p + 1] * 2;
+        ctx.moveTo(xy[i] * scale - o.x, xy[i + 1] * scale - o.y);
+        for (i += 2; i < end; i += 2) ctx.lineTo(xy[i] * scale - o.x, xy[i + 1] * scale - o.y);
+      }
     }
     ctx.strokeStyle = this.options.color;
     ctx.lineWidth = metersToPixels(this.options.widthM);
@@ -954,20 +1065,34 @@ async function loadPhCycleNetwork() {
 // bbox e como estilizar/rotular — é só isso que distingue Morros e Águas de
 // Cicloinfra. A ordem das sources é a ordem de desenho (a última fica por cima).
 // Os limites de área/feições têm default nas constantes acima; o viário, muito
-// mais denso, passa os seus.
+// mais denso, passa os seus — número OU função (avaliada a cada consulta: o
+// viário usa tetos menores em aparelho de toque, ver dataBudgetCoarse).
 //
 // Uma source `packed: true` (o viário) troca styleFor/tipFor por um `style`
 // fixo ({color, widthM}) e o seu `load` devolve linhas empacotadas
-// ({xy, starts, parts, capped} — ver streamFgbPackedLines), desenhadas por uma
+// ({chunks, parts, capped} — ver streamFgbPackedLines), desenhadas por uma
 // PackedLinesLayer em vez de um L.polyline por feição. O `load` recebe
-// {maxParts, isStale} pra parar o download no teto ou quando um pan mais novo
-// já saiu na frente.
+// {maxParts, isStale, keep} pra parar o download no teto ou quando um pan mais
+// novo (ou esconder a camada) já saiu na frente, e pra descartar na hora o que
+// o nível de detalhe não desenha.
+//
+// REUSO: guarda a bbox da última carga COMPLETA (sem teto, sem fonte falhando).
+// Enquanto a viewport couber nela no mesmo nível de detalhe — aproximar o
+// zoom, pan curto, ir pra uma foto perto, girar pouco — nada é rebaixado nem
+// reparseado (as camadas se redesenham sozinhas). `padFrac` > 0 carrega com
+// essa folga de cada lado, limitada pelo teto de área e pela densidade (a da
+// carga anterior; antes da primeira, `density0` — a folga não pode empurrar a
+// carga pro teto de feições).
 function makeOsmFgbLayer({ id, label, sources,
                            maxKm2 = OSM_FGB_MAX_BBOX_KM2,
                            fullKm2 = OSM_FGB_FULL_BBOX_KM2,
-                           maxFeatures = OSM_FGB_MAX_FEATURES }) {
+                           maxFeatures = OSM_FGB_MAX_FEATURES,
+                           padFrac = 0, density0 = 0 }) {
   const drawn = [];
+  const lim = (v) => (typeof v === 'function' ? v() : v);
   let active = false, opacity = 1, debounce = null, seq = 0, nDrawn = 0;
+  let loaded = null;      // { bb, detail, complete }
+  let density = density0; // feições/km² da última carga completa (0 = desconhecida)
 
   function clear() {
     for (const l of drawn) map.removeLayer(l);
@@ -975,7 +1100,23 @@ function makeOsmFgbLayer({ id, label, sources,
     nDrawn = 0;
   }
 
-  function render(perSource, detail) {
+  const contains = (o, i) => i.west >= o.west && i.east <= o.east && i.south >= o.south && i.north <= o.north;
+
+  // Folga f de cada lado: (1+2f)² × área ≤ teto de área e, com a densidade
+  // conhecida, ≤ 80% do teto de feições.
+  function padded(view, areaKm2, maxA, maxF) {
+    if (!(padFrac > 0) || !(areaKm2 > 0) || !(density > 0)) return view;
+    const cap = Math.min(maxA, 0.8 * maxF / density);
+    const f = Math.max(0, Math.min(padFrac, (Math.sqrt(cap / areaKm2) - 1) / 2));
+    if (!f) return view;
+    const dx = (view.east - view.west) * f, dy = (view.north - view.south) * f;
+    return {
+      west: view.west - dx, east: view.east + dx,
+      south: Math.max(-MERC_MAX_LAT, view.south - dy), north: Math.min(MERC_MAX_LAT, view.north + dy),
+    };
+  }
+
+  function render(perSource, detail, maxF) {
     clear();
     const pane = LAYER_PANE(id);
     let capped = false;
@@ -995,7 +1136,9 @@ function makeOsmFgbLayer({ id, label, sources,
         drawn.push(layer);
         continue;
       }
-      for (const f of perSource[s] || []) {
+      const feats = perSource[s] || [];
+      if (feats.capped && !alwaysDraw) capped = true;
+      for (const f of feats) {
         const g = f && f.geometry; if (!g) continue;
         const props = f.properties || {};
         // styleFor devolve null pro que não vale a pena nesta escala.
@@ -1009,7 +1152,7 @@ function makeOsmFgbLayer({ id, label, sources,
           // rede do coletivo é a ÚLTIMA source (pra ficar por cima), então sem
           // isto ela sumiria justo onde a hidrografia é densa o bastante pra
           // estourar o limite.
-          if (!alwaysDraw && nDrawn >= maxFeatures) { capped = true; break; }
+          if (!alwaysDraw && nDrawn >= maxF) { capped = true; break; }
           nDrawn++;
           // O FGB guarda [lng,lat]; o Leaflet quer [lat,lng].
           const layer = L.polyline(coords.map((c) => [c[1], c[0]]),
@@ -1028,17 +1171,25 @@ function makeOsmFgbLayer({ id, label, sources,
   async function refresh() {
     if (!active) return;
     const b = map.getBounds();
-    const bb = {
+    const view = {
       west: b.getWest(), south: b.getSouth(),
       east: b.getEast(), north: b.getNorth(),
     };
-    const areaKm2 = bboxAreaKm2(bb);
-    if (areaKm2 > maxKm2) {
+    const areaKm2 = bboxAreaKm2(view);
+    const maxA = lim(maxKm2), fullA = lim(fullKm2), maxF = lim(maxFeatures);
+    if (areaKm2 > maxA) {
+      ++seq;   // uma carga em voo (de uma área menor) fica obsoleta
       clear();
+      loaded = null;
       showToast(`Área grande demais para carregar ${label} — aproxime o mapa`);
       return;
     }
-    const detail = areaKm2 > fullKm2 ? DETAIL_MAIN : DETAIL_FULL;
+    const detail = areaKm2 > fullA ? DETAIL_MAIN : DETAIL_FULL;
+    if (loaded && loaded.complete && loaded.detail === detail && contains(loaded.bb, view)) {
+      ++seq;   // idem: já temos esta área desenhada
+      return;
+    }
+    const bb = padded(view, areaKm2, maxA, maxF);
     const mySeq = ++seq;
     showToast(`Buscando ${label}…`, 1500);
     try {
@@ -1047,22 +1198,31 @@ function makeOsmFgbLayer({ id, label, sources,
       // conselhos opostos (aproximar vs tentar de novo), e sem isso um 404 no
       // FGB aparecia pro usuário como área vazia.
       let failed = 0;
-      const opts = { maxParts: maxFeatures, isStale: () => mySeq !== seq || !active };
-      const perSource = await Promise.all(sources.map((s) => s.load(bb, opts).catch((e) => {
-        failed++;
-        console.warn(`[${id}] fonte indisponível:`, e.message);
+      const isStale = () => mySeq !== seq || !active;
+      const perSource = await Promise.all(sources.map((s) => s.load(bb, {
+        maxParts: maxF,
+        isStale,
+        keep: s.styleFor ? (p) => s.styleFor(p, detail) != null : null,
+      }).catch((e) => {
+        if (!(e && e.name === 'AbortError')) {
+          failed++;
+          console.warn(`[${id}] fonte indisponível:`, e.message);
+        }
         return [];
       })));
-      if (mySeq !== seq || !active) return;   // um pan mais novo já saiu na frente
+      if (isStale()) return;   // um pan mais novo já saiu na frente
       const total = perSource.reduce((n, r) => n + (r.parts ?? r.length), 0);
       if (!total) {
         clear();
+        loaded = { bb, detail, complete: !failed };
         showToast(failed === sources.length
           ? `${label}: fonte indisponível`
           : `${label}: nada nesta área`, 1800);
         return;
       }
-      const capped = render(perSource, detail);
+      const capped = render(perSource, detail, maxF);
+      loaded = { bb, detail, complete: !failed && !capped };
+      if (loaded.complete) density = total / Math.max(1e-6, bboxAreaKm2(bb));
       // `failed` PRECISA aparecer também no caminho de sucesso. A rede do
       // coletivo não é filtrada por bbox e fica memoizada, então ela sozinha
       // mantém `total > 0` mesmo com o FGB da hidrografia fora do ar — sem
@@ -1099,10 +1259,11 @@ function makeOsmFgbLayer({ id, label, sources,
       queueMicrotask(refresh);
     },
     hide() {
-      active = false;
+      active = false;   // isStale() → a carga em voo para de baixar
       map.off('moveend rotate', onMoveEnd);
       clearTimeout(debounce);
       clear();
+      loaded = null;
     },
     setOpacity(frac) {
       opacity = frac;
@@ -1160,8 +1321,10 @@ const hidroLayer = makeOsmFgbLayer({
   sources: [
     {
       // `false` = fora do LRU do viário: a camada reconsulta a cada pan e
-      // encheria o cache (10 slots) com viewports inteiras de feições.
-      load: (bb) => streamFgbFeatures(HIDRO_FGB_URL, bb, false),
+      // encheria o cache com viewports inteiras de feições. `opts` (teto,
+      // isStale, filtro do nível de detalhe) corta o download de um pan
+      // superado ou da camada escondida.
+      load: (bb, opts) => streamFgbFeatures(HIDRO_FGB_URL, bb, false, opts),
       styleFor: hidroStyleFor,
       tipFor: hidroTipFor,
     },
@@ -1184,7 +1347,7 @@ const cicloinfraLayer = makeOsmFgbLayer({
   id: 'osm-cicloinfra',
   label: 'cicloinfra OSM',
   sources: [{
-    load: (bb) => streamFgbFeatures(CICLOINFRA_FGB_URL, bb, false),
+    load: (bb, opts) => streamFgbFeatures(CICLOINFRA_FGB_URL, bb, false, opts),
     styleFor: styleForCycloinfra,
     tipFor: cicloinfraTipFor,
   }],
@@ -1206,13 +1369,21 @@ const cicloinfraLayer = makeOsmFgbLayer({
 // (sw.js) — a primeira visita a uma área paga o download, as seguintes (pan de
 // volta, zoom pra dentro, outra sessão) saem do disco. O teto de 3.200 km²
 // cobre o zoom 12 de uma tela full HD em qualquer latitude da América do Sul.
+// Em aparelho de toque o teto cai pra 800 km² / 120 mil vias: um iPhone no
+// zoom 11 (~1.300 km², ~250 mil vias, ~56 MB) passava no teto de desktop e
+// segurava 150–230 MB de arrays numa aba que o iOS recarrega perto de 1 GB;
+// no celular a camada abre a partir do zoom 12. A carga leva 20% de folga de
+// cada lado (dentro dos tetos): pan curto, zoom pra dentro e ir pra uma foto
+// perto não rebaixam nada.
 const VIARIO_LAYER_WIDTH_M = 3;
 const viarioLayer = makeOsmFgbLayer({
   id: 'osm-viario',
   label: 'viário OSM',
-  maxKm2: 3200,
-  fullKm2: 3200,         // sem nível "só o principal": o FGB não traz `highway`
-  maxFeatures: 400000,
+  maxKm2: () => (dataBudgetCoarse() ? 800 : 3200),
+  fullKm2: () => (dataBudgetCoarse() ? 800 : 3200),   // sem nível "só o principal": o FGB não traz `highway`
+  maxFeatures: () => (dataBudgetCoarse() ? 120000 : 400000),
+  padFrac: 0.2,
+  density0: 300,         // vias/km² no centro de SP — estimativa da 1ª carga
   sources: [{
     packed: true,
     load: (bb, opts) => streamFgbPackedLines(VIARIO_FGB_URL, bb, opts),
@@ -1230,9 +1401,15 @@ const viarioLayer = makeOsmFgbLayer({
 const PHOTOS_DIR_REL    = 'photos/';                       // <phash>/{original,large,thumb}.jpg
 const TOURS_TTL_REL     = 'data/tours.ttl';                // catálogo de passeios (opcional)
 
-// Origem persistida em localStorage: 'server' | 'local'.
-// Default 'server' (mesma origem — o backend serve/redireciona as fotos).
-// 'local' usa um kit .zip/.ttl importado. O usuário troca via 🗂 Fonte….
+// Origem: 'server' | 'local'. Default 'server' (mesma origem — o backend
+// serve/redireciona as fotos). 'local' usa um kit .zip importado e vale só na
+// sessão: o kit mora em memória, então um 'local' salvo por versões antigas
+// abria o app sem nenhuma foto — no boot volta pro servidor.
+if (settings.photoSource === 'local') {
+  settings.photoSource = 'server';
+  try { localStorage.removeItem('phidro:photoSource'); } catch {}
+  saveSettings();
+}
 let photoSource = settings.photoSource;
 // Quando local: kit ZIP descompactado em memória, com blob URLs por arquivo.
 let localKit = null;   // { ttlText, files: Map<path,blob URL> }
@@ -1352,12 +1529,13 @@ document.addEventListener('click', (ev) => {
   const me = ev.target.closest?.('.photo-popup button.media-edit[data-hash]');
   if (me) {
     ev.preventDefault();
-    const kind = me.getAttribute('data-kind');
     const hash = me.getAttribute('data-hash');
     const iri = MED_NS + hash;   // IRI opaco (tipo é a classe, não o prefixo)
-    const ifr = document.getElementById('upload-iframe');
-    if (ifr) ifr.src = './upload_images.html?edit=' + encodeURIComponent(iri);
-    if (typeof openUploadModal === 'function') openUploadModal();
+    // openUploadModal navega o iframe pro editor — e PERGUNTA antes se o form
+    // que está lá (ex.: um lote do /subir ainda enviando) avisou pendência.
+    if (typeof openUploadModal === 'function') {
+      openUploadModal('upload_images.html?edit=' + encodeURIComponent(iri));
+    }
     return;
   }
   // Botão "🔍 Ver grande" no popup: fecha o popup e abre a MESMA mídia na
@@ -1539,10 +1717,16 @@ function photoDivIcon(thumbUrl, bearing, fov, extraClass, largeUrl) {
 
 // Encolhe os círculos/cones de foto fora do zoom 16+ via custom property
 // CSS (--photo-scale). 2/3 a cada tick a partir do 15.
+// A variável mora no CONTAINER do mapa, não no <body>: mudar uma custom
+// property no body invalida o estilo do documento inteiro (sidebar, modais…),
+// e só os marcadores a leem. E só escreve quando o valor muda.
+let photoZoomScale = 1;
 function updatePhotoScale() {
   const reductions = Math.max(0, 12 - map.getZoom());
-  const scale = Math.pow(2 / 3, reductions);
-  document.body.style.setProperty('--photo-scale', scale.toFixed(3));
+  const scale = +Math.pow(2 / 3, reductions).toFixed(3);
+  if (scale === photoZoomScale && map.getContainer().style.getPropertyValue('--photo-scale')) return;
+  photoZoomScale = scale;
+  map.getContainer().style.setProperty('--photo-scale', scale.toFixed(3));
 }
 
 // Encolhe + nudge por densidade local: marcadores em vizinhanças com muitas
@@ -1563,9 +1747,41 @@ function photoMinScaleForZoom(z) {
   return Math.max(minScaleFloor, Math.min(minScaleCeil, ramp));
 }
 
-function relaxPhotoMarkers() {
-  const zoomScale = parseFloat(
-    document.body.style.getPropertyValue('--photo-scale')) || 1;
+// O layout tem duas partes com custos e gatilhos diferentes:
+//  • a BASE — posições de tela, escala por densidade e pré-dispersão dos
+//    co-localizados — só muda com pan/zoom/giro ou com o conjunto de
+//    marcadores no mapa; é refeita nesses momentos (_relaxBase = null);
+//  • a RELAXAÇÃO — depende também do boost da Animação, que muda 5×/s; os
+//    ticks reusam a base e refazem só esta parte.
+// Vizinhança por grade (hash espacial) em vez de todas as duplas: antes eram
+// n² comparações × 8 passadas (~30 ms por chamada com ~600 fotos, e a Animação
+// chamava 5×/s; o zoom, 2× por passo). E só escreve no ícone o que mudou —
+// cada setProperty invalida o estilo do marcador e reinicia a transição.
+let _relaxBase = null;
+let _relaxRaf = 0;
+function relaxGridKey(cx, cy) { return cx * 1e6 + cy; }
+function buildRelaxGrid(items, cell, displaced) {
+  const grid = new Map();
+  for (const it of items) {
+    const x = displaced ? it.x + it.dx : it.x;
+    const y = displaced ? it.y + it.dy : it.y;
+    const k = relaxGridKey(Math.floor(x / cell), Math.floor(y / cell));
+    const bucket = grid.get(k);
+    if (bucket) bucket.push(it); else grid.set(k, [it]);
+  }
+  return grid;
+}
+function forEachGridNeighbor(grid, x, y, cell, fn) {
+  const cx = Math.floor(x / cell), cy = Math.floor(y / cell);
+  for (let gx = cx - 1; gx <= cx + 1; gx++) {
+    for (let gy = cy - 1; gy <= cy + 1; gy++) {
+      const bucket = grid.get(relaxGridKey(gx, gy));
+      if (bucket) for (const b of bucket) fn(b);
+    }
+  }
+}
+
+function computeRelaxBase() {
   const bounds = map.getBounds();
   const items = [];
   // Combina fotos + clipes na mesma relaxação: vídeos clusterizam com
@@ -1575,36 +1791,38 @@ function relaxPhotoMarkers() {
   for (const m of photoMarkers) allMarkers.push(m);
   for (const e of clipsMarkers) { if (e) allMarkers.push(e.marker); }
   for (const m of allMarkers) {
-    if (!m._icon) continue;                     // ainda não adicionado ao mapa
+    const el = m._icon;
+    if (!el) continue;                          // ainda não adicionado ao mapa
     if (!bounds.contains(m.getLatLng())) {
       // Limpa override em quem caiu da viewport, evita herdar valor stale.
-      m._icon.style.removeProperty('--photo-density-scale');
-      m._icon.style.removeProperty('--photo-dx');
-      m._icon.style.removeProperty('--photo-dy');
+      if (el._relaxS !== undefined) {
+        el.style.removeProperty('--photo-density-scale');
+        el.style.removeProperty('--photo-dx');
+        el.style.removeProperty('--photo-dy');
+        el._relaxS = el._relaxDx = el._relaxDy = undefined;
+      }
       continue;
     }
     const pt = map.latLngToContainerPoint(m.getLatLng());
-    items.push({ marker: m, x: pt.x, y: pt.y, dx: 0, dy: 0, scale: 1 });
+    items.push({ marker: m, idx: items.length, x: pt.x, y: pt.y,
+                 dx0: 0, dy0: 0, dx: 0, dy: 0, base: 1, scale: 1 });
   }
 
-  const baseR = PHOTO_BASE_RADIUS * zoomScale;
-  const neighborWindow2 = (2 * baseR) ** 2;
+  const baseR = PHOTO_BASE_RADIUS * photoZoomScale;
+  const cell = Math.max(1e-3, 2 * baseR);   // janela de vizinhança = 2 raios
+  const neighborWindow2 = cell * cell;
   const minScale = photoMinScaleForZoom(map.getZoom());
 
-  // 1) escala por densidade local
+  // 1) escala por densidade local (vizinhos a menos de 2 raios)
+  const grid = buildRelaxGrid(items, cell, false);
   for (const a of items) {
     let n = 0;
-    for (const b of items) {
-      if (a === b) continue;
+    forEachGridNeighbor(grid, a.x, a.y, cell, (b) => {
+      if (b === a) return;
       const dx = a.x - b.x, dy = a.y - b.y;
       if (dx * dx + dy * dy < neighborWindow2) n++;
-    }
-    a.scale = Math.max(minScale, 1 / Math.sqrt(1 + n));
-    // 1.1) spotlight contínuo: intensidade por marcador (0..1, atualizada
-    // pelo loop em photoSpotlightTick) modula um boost no scale. Raio
-    // efetivo cresce junto, então a relaxação empurra vizinhos suavemente.
-    const intensity = a.marker._spotIntensity || 0;
-    a.scale *= 1 + (settings.spotlight.boost - 1) * intensity;
+    });
+    a.base = Math.max(minScale, 1 / Math.sqrt(1 + n));
   }
 
   // 1.5) pré-dispersão de fotos exatamente co-localizadas (mesmo GPS).
@@ -1620,57 +1838,164 @@ function relaxPhotoMarkers() {
     if (group.length < 2) continue;
     for (let k = 0; k < group.length; k++) {
       const angle = (k / group.length) * Math.PI * 2;
-      group[k].dx = Math.cos(angle) * baseR;
-      group[k].dy = Math.sin(angle) * baseR;
+      group[k].dx0 = Math.cos(angle) * baseR;
+      group[k].dy0 = Math.sin(angle) * baseR;
     }
+  }
+  return { items, baseR };
+}
+
+function relaxFromBase({ items, baseR }) {
+  // 1.1) spotlight contínuo: intensidade por marcador (0..1, atualizada
+  // pelo loop em photoSpotlightTick) modula um boost no scale. Raio
+  // efetivo cresce junto, então a relaxação empurra vizinhos suavemente.
+  const boost = settings.spotlight.boost;
+  const big = [];   // escala > 1 (só quem está no pico da Animação)
+  for (const a of items) {
+    a.scale = a.base * (1 + (boost - 1) * (a.marker._spotIntensity || 0));
+    a.dx = a.dx0; a.dy = a.dy0;
+    if (a.scale > 1) big.push(a);
   }
 
   // 2) relaxação iterativa: empurra pares que ainda colidem; cap maior para
   //    grupos co-localizados (até 2 raios) para deixar espaço para espalhar.
+  //    Dois dots de escala ≤ 1 só colidem a menos de 2 raios → células
+  //    vizinhas da grade (refeita a cada passada, com as posições deslocadas);
+  //    os poucos "grandes" testam contra todos.
+  //    (Laço quente — ~5×/s na Animação: distância ao quadrado antes da raiz e
+  //    nada de closure por vizinho.)
   const maxJitter = baseR * 2;
+  const clampJ = (v) => (v > maxJitter ? maxJitter : (v < -maxJitter ? -maxJitter : v));
+  const cell = Math.max(1e-3, 2 * baseR);
+  let moved = false;
+  const push = (a, b) => {
+    const minDist = baseR * (a.scale + b.scale);
+    const dx = (b.x + b.dx) - (a.x + a.dx);
+    const dy = (b.y + b.dy) - (a.y + a.dy);
+    const d2 = dx * dx + dy * dy;
+    if (d2 >= minDist * minDist || d2 <= 1e-6) return;
+    const dist = Math.sqrt(d2);
+    const p = (minDist - dist) / 2;
+    const nx = dx / dist, ny = dy / dist;
+    a.dx = clampJ(a.dx - nx * p); a.dy = clampJ(a.dy - ny * p);
+    b.dx = clampJ(b.dx + nx * p); b.dy = clampJ(b.dy + ny * p);
+    moved = true;
+  };
   for (let iter = 0; iter < PHOTO_RELAX_ITERS; iter++) {
-    let moved = false;
-    for (let i = 0; i < items.length; i++) {
-      for (let j = i + 1; j < items.length; j++) {
-        const a = items[i], b = items[j];
-        const ra = baseR * a.scale, rb = baseR * b.scale;
-        const minDist = ra + rb;
-        const dx = (b.x + b.dx) - (a.x + a.dx);
-        const dy = (b.y + b.dy) - (a.y + a.dy);
-        const dist = Math.hypot(dx, dy);
-        if (dist < minDist && dist > 1e-3) {
-          const push = (minDist - dist) / 2;
-          const nx = dx / dist, ny = dy / dist;
-          a.dx -= nx * push; a.dy -= ny * push;
-          b.dx += nx * push; b.dy += ny * push;
-          a.dx = Math.max(-maxJitter, Math.min(maxJitter, a.dx));
-          a.dy = Math.max(-maxJitter, Math.min(maxJitter, a.dy));
-          b.dx = Math.max(-maxJitter, Math.min(maxJitter, b.dx));
-          b.dy = Math.max(-maxJitter, Math.min(maxJitter, b.dy));
-          moved = true;
+    moved = false;
+    const grid = buildRelaxGrid(items, cell, true);
+    for (const a of items) {
+      if (a.scale > 1) continue;
+      const cx = Math.floor((a.x + a.dx) / cell), cy = Math.floor((a.y + a.dy) / cell);
+      for (let gx = cx - 1; gx <= cx + 1; gx++) {
+        for (let gy = cy - 1; gy <= cy + 1; gy++) {
+          const bucket = grid.get(relaxGridKey(gx, gy));
+          if (!bucket) continue;
+          for (let k = 0; k < bucket.length; k++) {
+            const b = bucket[k];
+            if (b.idx > a.idx && b.scale <= 1) push(a, b);
+          }
         }
+      }
+    }
+    for (const a of big) {
+      for (const b of items) {
+        if (b !== a && !(b.scale > 1 && b.idx < a.idx)) push(a, b);
       }
     }
     if (!moved) break;
   }
+}
 
-  // 3) commit nas custom properties do ícone
+// 3) commit nas custom properties do ícone — só o que mudou. Quantizado (px
+//    inteiro, escala em 1 %): na Animação o empurrão num vizinho distante é de
+//    frações de pixel a cada tick, e cada escrita dessas reestilizava o
+//    marcador à toa (as transições CSS suavizam o resto).
+function commitRelax(items) {
   for (const a of items) {
     const el = a.marker._icon;
-    el.style.setProperty('--photo-density-scale', a.scale.toFixed(3));
-    el.style.setProperty('--photo-dx', a.dx.toFixed(1) + 'px');
-    el.style.setProperty('--photo-dy', a.dy.toFixed(1) + 'px');
+    if (!el) continue;
+    const s = a.scale.toFixed(2);
+    const dx = Math.round(a.dx) + 'px';
+    const dy = Math.round(a.dy) + 'px';
+    if (el._relaxS !== s)   { el.style.setProperty('--photo-density-scale', s); el._relaxS = s; }
+    if (el._relaxDx !== dx) { el.style.setProperty('--photo-dx', dx); el._relaxDx = dx; }
+    if (el._relaxDy !== dy) { el.style.setProperty('--photo-dy', dy); el._relaxDy = dy; }
   }
+}
+
+// Síncrono e com base nova — pra quem mudou parâmetros do layout (Ajustes).
+function relaxPhotoMarkers() {
+  if (_relaxRaf) { cancelAnimationFrame(_relaxRaf); _relaxRaf = 0; }
+  _relaxBase = computeRelaxBase();
+  relaxFromBase(_relaxBase);
+  commitRelax(_relaxBase.items);
+}
+// Coalescido num rAF: zoomend+moveend do mesmo zoom, rajadas de visibilidade e
+// os ticks da Animação viram UMA relaxação por quadro. `rebuild` = a base
+// mudou (pan/zoom/giro, marcadores entraram/saíram); os ticks passam false.
+function scheduleRelax(rebuild = true) {
+  if (rebuild) _relaxBase = null;
+  if (_relaxRaf) return;
+  _relaxRaf = requestAnimationFrame(() => {
+    _relaxRaf = 0;
+    if (!_relaxBase) _relaxBase = computeRelaxBase();
+    relaxFromBase(_relaxBase);
+    commitRelax(_relaxBase.items);
+  });
 }
 
 function refreshPhotoLayout() {
   updatePhotoScale();
-  relaxPhotoMarkers();
+  scheduleRelax(true);
 }
 // rotateend: disparado por setupMapRotation quando o giro assenta — girar
 // muda as posições na TELA, e a relaxação é em pixels de tela.
 map.on('zoomend moveend rotateend', refreshPhotoLayout);
 updatePhotoScale();
+
+// ── Toque perto de um dot (celular) ──────────────────────────────────────────
+// Os dots encolhem a 16–23 px em áreas densas e o dedo cobre ~44 pt. Um toque
+// que erra o dot por pouco (caiu no mapa, ou na faixa de toque de uma rota)
+// abre o marcador mais próximo num raio de PHOTO_TAP_SLOP_PX além da borda.
+// Não usamos uma área de toque maior no próprio dot: num cluster ela cobriria
+// o vizinho, e o toque no vizinho abriria o de cima.
+const COARSE_POINTER = !!window.matchMedia?.('(pointer: coarse)').matches;
+const PHOTO_TAP_SLOP_PX = 16;
+function nearestMediaMarkerAt(pt, slop = PHOTO_TAP_SLOP_PX) {
+  if (!COARSE_POINTER || !pt) return null;
+  let best = null, bestD = slop;
+  const test = (m) => {
+    const el = m?._icon;
+    if (!el || !m._map || el.classList.contains('clip-dot-hidden')) return;
+    const p = map.latLngToContainerPoint(m.getLatLng());
+    const dx = parseFloat(el._relaxDx) || 0, dy = parseFloat(el._relaxDy) || 0;
+    const s = Math.min(1, parseFloat(el._relaxS) || 1);
+    const d = Math.hypot(p.x + dx - pt.x, p.y + dy - pt.y) - PHOTO_BASE_RADIUS * photoZoomScale * s;
+    if (d < bestD) { bestD = d; best = m; }
+  };
+  for (const m of photoMarkers) test(m);
+  for (const e of clipsMarkers) if (e) test(e.marker);
+  return best;
+}
+// Mesmo caminho de um clique no marcador (popup; clipe na Animação toca).
+function openMediaMarker(m) {
+  m.fire('click', { latlng: m.getLatLng() });
+}
+// Um toque no mapa pra FECHAR um popup não pode abrir o vizinho — nem, pelas
+// faixas de toque das rotas, um passeio (onRouteHitClick). O 'preclick' do
+// mapa corre antes do close do próprio popup.
+let _popupOpenAtPreclick = false;
+map.on('preclick', () => { _popupOpenAtPreclick = !!(map._popup && map.hasLayer(map._popup)); });
+{
+  map.on('click', (e) => {
+    if (!COARSE_POINTER || _popupOpenAtPreclick || drawingMode) return;
+    const t = e.originalEvent?.target;
+    if (t?.closest?.('.leaflet-marker-icon, .leaflet-popup, .leaflet-control')) return;
+    const m = nearestMediaMarkerAt(e.containerPoint);
+    if (m) openMediaMarker(m);
+  });
+}
 
 // ── Spotlight contínuo ───────────────────────────────────────────────────
 // Cada marcador tem uma fase φ ∈ [0,1) constante; ao longo do tempo, sua
@@ -1685,9 +2010,19 @@ updatePhotoScale();
 let photoSpotlightPaused = false;
 map.on('movestart', () => { photoSpotlightPaused = true; });
 map.on('moveend',   () => { photoSpotlightPaused = false; });
+// Modais em iframe (galeria, censo, envio, passeio) cobrem o mapa e dividem a
+// thread principal com ele — enquanto um está aberto a Animação espera.
+const MEDIA_MODAL_IDS = ['imagens-modal', 'censo-modal', 'upload-modal', 'tour-modal'];
+function mapCoveredByModal() {
+  for (const id of MEDIA_MODAL_IDS) {
+    const el = document.getElementById(id);
+    if (el && !el.hidden) return true;
+  }
+  return false;
+}
 
 function photoSpotlightTick() {
-  if (photoSpotlightPaused) return;
+  if (photoSpotlightPaused || document.hidden || mapCoveredByModal()) return;
   const bounds = map.getBounds();
   const visible = [];
   for (const m of photoMarkers) {
@@ -1721,7 +2056,7 @@ function photoSpotlightTick() {
       Math.exp(-Math.pow(dEcho / halfWidth, sp.pulseShape));
     m._spotIntensity = Math.max(main, echo);
   }
-  relaxPhotoMarkers();
+  scheduleRelax(false);   // posições não mudaram — só o boost
 }
 
 // Toggle persistente no topbar ✨ + interruptor pro modal de Configurações.
@@ -1740,7 +2075,7 @@ function applyPhotoAnim() {
       photoSpotlightTimer = null;
     }
     for (const m of photoMarkers) m._spotIntensity = 0;
-    relaxPhotoMarkers();
+    scheduleRelax(false);
   }
   // Mantém os ícones ✨ (linhas "Imagens contribuídas" / "Vídeo fantasma" do
   // painel de camadas) em sincronia.
@@ -1754,6 +2089,10 @@ function applyPhotoAnim() {
 // pelos ícones ✨ no painel de camadas (ver makeRow).
 async function toggleAnimation() {
   const enabling = !settings.spotlight.enabled;
+  // AINDA dentro do toque, antes de qualquer await: o iOS só libera áudio de
+  // mídia (e o AudioContext) num gesto — o play() de verdade roda depois, no
+  // loadedmetadata do 1º clipe, e podia perder a janela e falhar calado.
+  if (enabling) unlockClipsAudio();
   settings.spotlight.enabled = enabling;
   saveSettings();
   applyPhotoAnim();
@@ -1870,31 +2209,93 @@ function ensureClipsGhostVideo() {
 // Plugamos o <video> num AudioContext via MediaElementSource e medimos o
 // RMS do sinal a cada frame. O valor (0..1) vira CSS custom property no
 // marker ativo (`--clip-intensity`), que escala o círculo laranja.
+// UM AudioContext pro app (fantasma + loop de áudio). O volume/fade mora num
+// GainNode: no iPhone `HTMLMediaElement.volume` é travado em 1 (o WebKit
+// reverte a escrita), então os fades por `.volume` não aconteciam — o clipe
+// entrava e saía no talo e as trilhas do loop se sobrepunham no máximo.
 let clipsAudioCtx = null;
 let clipsAnalyser = null;
+let clipsGain = null;          // ganho do vídeo fantasma (ver fadeClipVolume)
 let clipsAudioBuf = null;
 let clipsAudioRaf = null;
+// iOS/iPadOS: vídeo com som não toca junto de outra mídia com som (o WebKit
+// pausa a outra). Usado pra silenciar o fantasma enquanto o loop de áudio toca.
+const IS_IOS = /iP(hone|od|ad)/.test(navigator.userAgent)
+  || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+function getClipsAudioCtx() {
+  if (clipsAudioCtx) return clipsAudioCtx;
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return null;
+  try { clipsAudioCtx = new AC(); } catch (_) { return null; }
+  return clipsAudioCtx;
+}
+// Chamado DENTRO de um gesto (toque/clique/tecla). No iOS o AudioContext só
+// roda se retomado num gesto, e a trava de áudio é POR ELEMENTO: só cai com um
+// play() dentro do gesto. Os play() de verdade vêm depois, de timers (o loop
+// alterna dois <audio>; o fantasma troca de clipe) — sem destravar os três
+// aqui, o 2º elemento do loop ficava mudo em slots alternados.
+function unlockClipsAudio() {
+  const ctx = getClipsAudioCtx();
+  if (ctx && ctx.state !== 'running') ctx.resume().catch(() => {});
+  for (const el of [ensureClipsGhostVideo(), audioLoopA, audioLoopB]) {
+    if (!el || !el.paused) continue;
+    try { const p = el.play(); if (p && p.catch) p.catch(() => {}); } catch (_) {}
+    try { el.pause(); } catch (_) {}
+  }
+}
+// Categoria da sessão de áudio (Safari 16.4+): 'ambient' MISTURA com a música
+// / o podcast / a navegação de quem pedala (o padrão interrompia) e respeita a
+// chave de silêncio. Só enquanto fantasma ou loop tocam — vídeo aberto pela
+// pessoa (galeria, popup) volta pro padrão.
+function updateAudioSessionType() {
+  const s = navigator.audioSession;
+  if (!s) return;
+  const want = (clipsGhostActive || audioLoopActive) ? 'ambient' : 'auto';
+  try { if (s.type !== want) s.type = want; } catch (_) {}
+}
 
 function ensureClipsAudioGraph(video) {
   if (clipsAnalyser) return clipsAnalyser;
+  const ctx = getClipsAudioCtx();
+  if (!ctx) return null;
   try {
-    const AC = window.AudioContext || window.webkitAudioContext;
-    if (!AC) return null;
-    clipsAudioCtx = new AC();
-    const src = clipsAudioCtx.createMediaElementSource(video);
-    clipsAnalyser = clipsAudioCtx.createAnalyser();
+    const src = ctx.createMediaElementSource(video);
+    clipsAnalyser = ctx.createAnalyser();
     clipsAnalyser.fftSize = 256;
     clipsAnalyser.smoothingTimeConstant = 0.5;
     clipsAudioBuf = new Uint8Array(clipsAnalyser.fftSize);
-    // Em série: source → analyser → destination. Sem o destination o vídeo
-    // ficaria mudo (MediaElementSource desconecta o output direto do elemento).
+    clipsGain = ctx.createGain();
+    clipsGain.gain.value = 0;
+    // Em série: source → analyser → ganho → destination. O analyser fica ANTES
+    // do ganho (o anel pulsa com o som do clipe mesmo durante o fade). Sem o
+    // destination o vídeo ficaria mudo (MediaElementSource desconecta o
+    // output direto do elemento). Com o grafo no ar, o volume do elemento
+    // fica em 1 e só o ganho manda.
     src.connect(clipsAnalyser);
-    clipsAnalyser.connect(clipsAudioCtx.destination);
+    clipsAnalyser.connect(clipsGain);
+    clipsGain.connect(ctx.destination);
+    video.volume = 1;
   } catch (err) {
     console.warn('[clips audio] init falhou:', err.message);
+    clipsAnalyser = clipsGain = null;
     return null;
   }
   return clipsAnalyser;
+}
+// Rampa de um GainNode a partir do valor atual (cancela a rampa anterior).
+function rampGain(gainNode, target, durationMs) {
+  const ctx = clipsAudioCtx;
+  const g = gainNode.gain;
+  const now = ctx.currentTime;
+  g.cancelScheduledValues(now);
+  g.setValueAtTime(g.value, now);
+  g.linearRampToValueAtTime(Math.max(0, Math.min(1, target)), now + Math.max(0.01, durationMs / 1000));
+}
+function setGainNow(gainNode, value) {
+  const g = gainNode.gain;
+  g.cancelScheduledValues(clipsAudioCtx.currentTime);
+  g.setValueAtTime(value, clipsAudioCtx.currentTime);
 }
 
 function setActiveMarkerIntensity(level) {
@@ -1919,7 +2320,9 @@ function startClipsIntensityLoop() {
     const rms = Math.sqrt(sum / clipsAudioBuf.length);
     // Voz típica fica ~0.1-0.3 RMS; multiplica pra esticar a faixa visual.
     const gain = settings.clipMarker?.intensityGain ?? 4;
-    const level = Math.min(1, rms * gain);
+    // Fantasma mudo (iOS com o loop de áudio no ar): o analyser só ouve
+    // silêncio — o anel fica num tamanho fixo em vez de sumir.
+    const level = clipsGhostVideo?.muted ? 0.3 : Math.min(1, rms * gain);
     setActiveMarkerIntensity(level);
     clipsAudioRaf = requestAnimationFrame(tick);
   };
@@ -1959,114 +2362,32 @@ function fadeProp(v, prop, target, durationMs, rafSlot) {
 const _opacitySlot = { id: null };
 const _volumeSlot  = { id: null };
 function fadeClipOpacity(v, target, durationMs) { return fadeProp(v, 'opacity', target, durationMs, _opacitySlot); }
-function fadeClipVolume(v, target, durationMs)  { return fadeProp(v, 'volume',  target, durationMs, _volumeSlot); }
-
-async function loadClipsCatalog() {
-  if (clipsCatalog) return clipsCatalog;
-  // Fonte única: ph:MotionImage em web/data/images.ttl. Clipes processados por
-  // scripts/build-clips.py vivem em web/clips/ — o próprio build-clips.py
-  // escreve as triples no uploads.ttl com autoria/licença default.
-  try {
-    clipsCatalog = await loadClipsFromUploadsTtl();
-  } catch (err) {
-    console.warn('[clips] falha ao carregar vídeos de uploads.ttl:', err.message);
-    clipsCatalog = [];
+// Com o grafo de áudio no ar o fade é no GainNode (funciona no iPhone); sem
+// Web Audio, cai no `.volume` do elemento como antes.
+function fadeClipVolume(v, target, durationMs) {
+  if (clipsGain && clipsAudioCtx) {
+    if (_volumeSlot.id) { cancelAnimationFrame(_volumeSlot.id); _volumeSlot.id = null; }
+    rampGain(clipsGain, target, durationMs);
+    return Promise.resolve();
   }
-  return clipsCatalog;
+  return fadeProp(v, 'volume', target, durationMs, _volumeSlot);
 }
 
-// Lê `web/data/images.ttl` e extrai ph:MotionImage → entradas no formato
-// {file, file720, audio, thumb, lat, lng, duration, datetime, vhash, …}.
-// Arquivos vivem em `web/clips/<id>.{360p.mp4,720p.mp4,audio.webm,thumb.jpg}`
-// (clipes locais de build-clips.py usam stem original; uploads do form
-// usam o vhash de 16 hex). Quando o vídeo é audio-only, ph:video360p/720p
-// ficam ausentes — o app renderiza só como fonte sonora (audio loop), não
-// como ghost-video no mapa.
-async function loadClipsFromUploadsTtl() {
-  // images-geo.ttl = só a mídia com coordenada (view derivada do backend) —
-  // clipes sem geo nunca entram no mapa (ver o filtro abaixo), então o dump
-  // completo, que cresce com o acervo do WhatsApp, não precisa vir aqui.
-  const res = await fetch('./data/images-geo.ttl', { cache: 'no-cache' });
-  if (!res.ok) return [];
-  const text = await res.text();
-  if (!text.trim()) return [];
-  await ensureN3();
-  return new Promise((resolve) => {
-    const parser = new window.N3.Parser({ format: 'text/turtle' });
-    const PH_ = 'https://id.pedalhidrografi.co/terms#';
-    const SCHEMA_ = 'https://schema.org/';
-    const RDF_TYPE = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
-    const subs = new Map();
-    const geos = new Map();
-    parser.parse(text, (err, quad, done) => {
-      if (err) { console.warn('[uploads-video] parse:', err.message); resolve([]); return; }
-      if (done) {
-        const clips = [];
-        for (const [_s, props] of subs) {
-          if (!props.types?.has(PH_ + 'MotionImage')) continue;
-          const geo = props.locationCreated ? geos.get(props.locationCreated) : null;
-          if (!geo || !Number.isFinite(geo.lat) || !Number.isFinite(geo.lng)) continue;
-          // Sem áudio = não tem o que tocar; ignora.
-          if (!props.audio) continue;
-          // Paths relativos a ./clips/ (sem prefixo) — playClipAt() e o
-          // popup builder prepende CLIPS_DIR antes de usar.
-          const file360 = props.video360p;
-          const file720 = props.video720p;
-          const audio   = props.audio;
-          const file    = file360 || file720 || audio;
-          let duration = null;
-          if (props.duration) {
-            const m = /^PT([\d.]+)S$/.exec(props.duration);
-            if (m) duration = parseFloat(m[1]);
-          }
-          // Date como YYYY-MM-DD pra bater com `ride.date` das fotos no
-          // gallery de passeio. Vem do dcterms:date (xsd:dateTime ISO 8601).
-          // `datetime` preserva a string completa pro popup ("Quando?").
-          const date = props.dateXsd ? props.dateXsd.slice(0, 10) : null;
-          clips.push({
-            iri: _s,
-            vhash: _s.startsWith(MED_NS) ? _s.slice(MED_NS.length) : null,
-            file,
-            file720: file720 || file360 || audio,
-            audio,
-            thumb: props.thumbnail || null,
-            lat: geo.lat,
-            lng: geo.lng,
-            duration,
-            date,
-            datetime: props.dateXsd || null,
-            tourIri: props.capturedDuring,
-            license: props.license,
-            lists: props.lists || [],
-            audioOnly: !file360 && !file720,
-          });
-        }
-        resolve(clips);
-        return;
-      }
-      const s = quad.subject.value;
-      const p = quad.predicate.value;
-      const o = quad.object;
-      const sub = subs.get(s) || {};
-      // Set, não valor único: mídia georreferenciada carrega DOIS tipos
-      // (ph:MotionImage + ph:GeoreferencedImage) — o último quad não pode
-      // "vencer" e esconder o MotionImage.
-      if (p === RDF_TYPE) (sub.types = sub.types || new Set()).add(o.value);
-      else if (p === SCHEMA_ + 'latitude')   { const g = geos.get(s) || {}; g.lat = parseFloat(o.value); geos.set(s, g); }
-      else if (p === SCHEMA_ + 'longitude')  { const g = geos.get(s) || {}; g.lng = parseFloat(o.value); geos.set(s, g); }
-      else if (p === SCHEMA_ + 'duration')       sub.duration = o.value;
-      else if (p === 'http://purl.org/dc/terms/license') sub.license = o.value;
-      else if (p === SCHEMA_ + 'locationCreated') sub.locationCreated = o.value;
-      else if (p === PH_ + 'capturedDuring')     sub.capturedDuring = o.value;
-      else if (p === PH_ + 'video360p')          sub.video360p = o.value;
-      else if (p === PH_ + 'video720p')          sub.video720p = o.value;
-      else if (p === PH_ + 'audio')              sub.audio = o.value;
-      else if (p === SCHEMA_ + 'thumbnail')      sub.thumbnail = o.value;
-      else if (p === SCHEMA_ + 'isPartOf')       { (sub.lists = sub.lists || []).push(o.value); }
-      else if (p === 'http://purl.org/dc/terms/date') sub.dateXsd = o.value;
-      subs.set(s, sub);
-    });
-  });
+// Os clipes (ph:MotionImage) saem do MESMO parse que monta as fotos
+// (buildModelFromQuads, a partir do images-geo.ttl que o loadAllGraphs já
+// baixou) — antes o catálogo de clipes baixava e parseava o images-geo.ttl de
+// novo (2–3× por boot, ~700 KB cada no main thread) e guardava uma falha como
+// lista vazia pro resto da sessão. Aqui só espera a carga das fotos; falhou,
+// a próxima chamada tenta de novo (loadPhotos não memoiza erro).
+async function loadClipsCatalog() {
+  try {
+    // `clipsCatalog = null` com as fotos já carregadas = quem chamou quer
+    // RELER (excluiu um vídeo, mexeu nas listas dele, a galeria avisou):
+    // recarrega o catálogo inteiro, que traz fotos e clipes juntos.
+    if (clipsCatalog === null && photosLoaded) await reloadPhotos();
+    else await loadPhotos();
+  } catch (_) { /* loadPhotos já avisa */ }
+  return clipsCatalog || [];
 }
 
 // Render do popup de clipe — chamado lazy no popupopen pra ver `tourCatalog`
@@ -2123,10 +2444,11 @@ function renderClipPopupHtml(c) {
   const playerHtml = c.audioOnly
     ? (audioSrc ? `<audio controls preload="metadata" src="${audioSrc}"></audio>` : '')
     : (videoSrc ? `<video controls playsinline webkit-playsinline preload="metadata" src="${videoSrc}"></video>` : '');
+  // dlLinkAttrs: no shell nativo sai sem `download` (ver lá o porquê).
   const dlChips = [];
-  if (videoSrc) dlChips.push(`<a class="photo-dl" href="${videoSrc}" download="${escapeHtml(c.file)}">Vídeo 360p ↓</a>`);
-  if (v720Src)  dlChips.push(`<a class="photo-dl" href="${v720Src}"  download="${escapeHtml(c.file720)}">Vídeo 720p ↓</a>`);
-  if (audioSrc) dlChips.push(`<a class="photo-dl" href="${audioSrc}" download="${escapeHtml((c.audio || '').split('/').pop())}">Áudio ↓</a>`);
+  if (videoSrc) dlChips.push(`<a class="photo-dl" href="${videoSrc}" ${dlLinkAttrs(c.file)}>Vídeo 360p ↓</a>`);
+  if (v720Src)  dlChips.push(`<a class="photo-dl" href="${v720Src}" ${dlLinkAttrs(c.file720)}>Vídeo 720p ↓</a>`);
+  if (audioSrc) dlChips.push(`<a class="photo-dl" href="${audioSrc}" ${dlLinkAttrs((c.audio || '').split('/').pop())}>Áudio ↓</a>`);
   const actions = [shareBtn, ...dlChips, listsBtn, delBtn].filter(Boolean).join('');
   return (
     `<div class="photo-popup video-popup">` +
@@ -2204,7 +2526,7 @@ function makeClipMarkers(clips) {
     // Indexado pelo índice de `clipsCatalog` (não `push`) pra manter
     // clipsMarkers[i] alinhado com clipsCatalog[i] — setActiveMarkerIntensity
     // e getMarkerEl indexam por índice de catálogo. Hoje nenhum clipe é
-    // pulado (loadClipsFromUploadsTtl já filtra geo-less/audio-less), mas se
+    // pulado (buildModelFromQuads já filtra geo-less/audio-less), mas se
     // o `continue` acima disparar, a entrada vira um buraco e os consumidores
     // tratam com guarda em vez de desalinhar silenciosamente.
     clipsMarkers[i] = { clip: c, marker: m };
@@ -2225,7 +2547,7 @@ function pickNextClipIndex() {
   if (!clipsCatalog || clipsCatalog.length === 0) return -1;
   // O ghost-video player só toca clipes com trilha de vídeo de fato.
   // Clipes `audioOnly` (sem ph:video360p/ph:video720p) vão pro audio loop, não
-  // pra ele — ver loadClipsFromUploadsTtl. Filtro idempotente: se nenhum
+  // pra ele — ver buildModelFromQuads. Filtro idempotente: se nenhum
   // clipe tiver vídeo, devolve -1 (animação simplesmente não roda).
   const videoIndices = [];
   for (let i = 0; i < clipsCatalog.length; i++) {
@@ -2321,7 +2643,7 @@ function playClipAt(index) {
   const wantHd = settings.clipsGhost?.useHd === true;
   const fileName = wantHd && c.file720 ? c.file720 : c.file;
   const src = CLIPS_DIR + encodeURIComponent(fileName);
-  if (v.src !== new URL(src, location.href).href) {
+  if (v.src !== new URL(src, document.baseURI).href) {   // baseURI: o <base href="/">, como o v.src
     v.src = src;
   }
   v.hidden = false;
@@ -2329,7 +2651,13 @@ function playClipAt(index) {
   // segmento. Se o usuário desligou o painel Camadas → opacity 0, o
   // efeito segue invisível mesmo após o fade.
   v.style.opacity = '0';
-  v.volume = 0;
+  if (clipsGain && clipsAudioCtx) setGainNow(clipsGain, 0);
+  else v.volume = 0;
+  // iOS: com o loop de áudio tocando, o fantasma vai MUDO — vídeo com som
+  // pausaria as trilhas do loop a cada clipe novo (o WebKit não deixa duas
+  // mídias com som tocarem juntas); mudo, os dois convivem.
+  v.muted = IS_IOS && audioLoopActive;
+  updateAudioSessionType();
 
   const startAt = () => {
     // O listener foi consumido (once) — solta a referência pendente.
@@ -2383,19 +2711,69 @@ function advanceClip() {
   if (next >= 0) playClipAt(next);
 }
 
+// Fantasma rodando (ou carregando pra rodar) — vale pra sessão de áudio e pra
+// suspensão por outra mídia.
+let clipsGhostActive = false;
 async function startClipsGhost() {
   if (!settings.clipsGhost?.enabled) return;
+  if (ghostShouldSuspend()) { ghostSuspended = true; return; }   // volta quando liberar
   await loadClipsCatalog();
+  // A carga é assíncrona: a Animação pode ter desligado (ou outra mídia
+  // começado) no meio — não liga o fantasma à revelia.
+  if (!settings.spotlight?.enabled || settings.clipsGhost?.enabled === false) return;
+  if (ghostShouldSuspend()) { ghostSuspended = true; return; }
   if (!clipsCatalog || clipsCatalog.length === 0) return;
   if (clipsMarkers.length === 0) makeClipMarkers(clipsCatalog);
   // Animação acabou de ligar: traz os markers pro mapa mesmo se "Imagens
   // contribuídas" estiver desligada, pra que o anel pulsante apareça.
   applyClipMarkersVisibility();
   const start = pickNextClipIndex();
-  if (start >= 0) playClipAt(start);
+  if (start >= 0) { clipsGhostActive = true; playClipAt(start); }
 }
 
+// ── Fantasma cede a vez pra outra mídia ─────────────────────────────────────
+// No iOS um vídeo com som não toca junto de outro: cada clipe novo do fantasma
+// pausava o vídeo que a pessoa tinha dado play (popup, galeria, form de envio),
+// e o timer do fantasma voltava em ≤10 s. Enquanto um modal em iframe cobre o
+// mapa ou outra mídia da página toca, o fantasma PARA (timers inclusive) e
+// volta sozinho depois, se a Animação seguir ligada.
+let ghostSuspended = false;
+const _otherMediaPlaying = new Set();
+function ghostShouldSuspend() {
+  for (const el of _otherMediaPlaying) {
+    if (!el.isConnected || el.paused) _otherMediaPlaying.delete(el);
+  }
+  return _otherMediaPlaying.size > 0 || mapCoveredByModal();
+}
+function reconcileGhostSuspension() {
+  const want = ghostShouldSuspend();
+  if (want === ghostSuspended) return;
+  ghostSuspended = want;
+  if (want) {
+    if (clipsGhostActive) stopClipsGhost();
+    ghostSuspended = true;   // stopClipsGhost não mexe nisto; explícito por clareza
+  } else if (settings.spotlight?.enabled && settings.clipsGhost?.enabled !== false) {
+    startClipsGhost();
+  }
+}
+document.addEventListener('play', (e) => {
+  const el = e.target;
+  if (!(el instanceof HTMLMediaElement) || el === clipsGhostVideo) return;
+  _otherMediaPlaying.add(el);
+  reconcileGhostSuspension();
+}, true);
+for (const type of ['pause', 'ended', 'emptied']) {
+  document.addEventListener(type, (e) => {
+    if (_otherMediaPlaying.delete(e.target)) reconcileGhostSuspension();
+  }, true);
+}
+// Abrir/fechar modal é `hidden` num elemento — observa o atributo em vez de
+// mexer em cada open/close (o preview de vídeo promovido some do mesmo jeito).
+new MutationObserver(() => reconcileGhostSuspension())
+  .observe(document.body, { subtree: true, attributes: true, attributeFilter: ['hidden'] });
+
 function stopClipsGhost() {
+  clipsGhostActive = false;
   // Invalida sessões de playback em voo e remove o `loadedmetadata` pendente
   // — sem isto um startAt atrasado tocaria áudio com o vídeo já escondido.
   clipsPlaySession++;
@@ -2421,14 +2799,13 @@ function stopClipsGhost() {
   // Animação desligou: se "Imagens contribuídas" também estiver off, retira
   // os markers do mapa (não há mais nada pra mostrar).
   applyClipMarkersVisibility();
+  updateAudioSessionType();
 }
 
-// Carrega marcadores na boot pra mostrar onde existem clipes mesmo com
-// Animação desligada. (`spotlight.enabled` é forçado pra false no boot,
-// então não tentamos auto-iniciar o ghost aqui — fica só na ação do usuário.)
-loadClipsCatalog().then((clips) => {
-  if (clips && clips.length) makeClipMarkers(clips);
-});
+// Os marcadores de clipe nascem junto com os de foto (loadPhotos →
+// makeClipMarkers), da mesma carga do catálogo — não há mais uma carga
+// própria no boot. (`spotlight.enabled` é forçado pra false no boot, então o
+// fantasma nunca auto-inicia — fica só na ação do usuário.)
 
 // ── Detecção automática do pedal de uma foto ─────────────────────────────
 // Usa as rotas já carregadas na barra lateral: casa pela data (chave quase
@@ -2552,6 +2929,10 @@ function resolvePhotoUrl(phash, variant /* 'large' | 'thumb' | 'original' */, or
     return '';
   }
   const ext = variant === 'original' ? origExt : 'jpg';
+  // Same-origin de propósito (funciona em qualquer backend, local ou bucket):
+  // em modo GCS o backend 302a pro bucket com Cache-Control longo (o destino
+  // só depende da chave), e o SW guarda a MINIATURA sob esta URL (MEDIA_CACHE,
+  // buscada em CORS) — marcadores e galeria com foto também offline.
   return `./${PHOTOS_DIR_REL}${phash}/${variant}.${ext}`;
 }
 
@@ -2585,10 +2966,18 @@ function buildModelFromQuads(quads) {
   // Activity (ph:Upload) → { startedAt, generated: imageIri }
   const uploadProps    = new Map();
   const uploadByImage  = new Map();   // image IRI → activity props
+  // Vídeos (ph:MotionImage): arquivos das variantes, duração e miniatura.
+  const clipV360 = new Map(), clipV720 = new Map(), clipAudio = new Map();
+  const clipDur = new Map(), clipThumb = new Map();
 
   for (const q of quads) {
     const s = q.subject.value, p = q.predicate.value, ov = q.object.value;
     if      (p === RDFT) { if (!types.has(s)) types.set(s, new Set()); types.get(s).add(ov); }
+    else if (p === PH_NS + 'video360p')     clipV360.set(s, ov);
+    else if (p === PH_NS + 'video720p')     clipV720.set(s, ov);
+    else if (p === PH_NS + 'audio')         clipAudio.set(s, ov);
+    else if (p === SCHEMA + 'duration')     clipDur.set(s, ov);
+    else if (p === SCHEMA + 'thumbnail')    clipThumb.set(s, ov);
     else if (p === DCT + 'title')           titles.set(s, ov);
     else if (p === DCT + 'date')            dates.set(s, ov);
     else if (p === DCT + 'license')         licenses.set(s, ov);
@@ -2742,14 +3131,96 @@ function buildModelFromQuads(quads) {
       full:      resolvePhotoUrl(phash, 'original', origExt),
     });
   }
-  // Store N3 com TODOS os quads (fotos+vídeos+tours+listas) pro filtro SPARQL
-  // avançado do mapa (via Comunica, lazy). Guardado em módulo; reconstruído a
-  // cada reload de fotos.
-  try {
-    if (window.PhidroMediaQuery) mediaStore = window.PhidroMediaQuery.makeStore(quads);
-    else if (window.N3 && window.N3.Store) mediaStore = new window.N3.Store(quads);
-  } catch (e) { console.warn('[media-store] falhou:', e); }
+
+  // Vídeos → {file, file720, audio, thumb, lat, lng, duration, datetime, vhash, …}.
+  // Arquivos vivem em `web/clips/<id>.{360p,720p,audio}.webm|thumb.jpg` (clipes
+  // de build-clips.py usam o stem original; uploads do form, o vhash). Sem
+  // ph:video360p/720p = audio-only: só toca no loop de áudio, nunca como
+  // fantasma. Paths relativos a ./clips/ — quem usa prepende CLIPS_DIR.
+  const clips = [];
+  for (const [s, ts] of types) {
+    if (!ts.has(PH_NS + 'MotionImage')) continue;
+    const locNode = locOf.get(s);
+    const lat = locNode != null ? locLat.get(locNode) : undefined;
+    const lng = locNode != null ? locLng.get(locNode) : undefined;
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+    const audio = clipAudio.get(s);
+    if (!audio) continue;                 // sem áudio = não tem o que tocar
+    const file360 = clipV360.get(s);
+    const file720 = clipV720.get(s);
+    let duration = null;
+    const m = /^PT([\d.]+)S$/.exec(clipDur.get(s) || '');
+    if (m) duration = parseFloat(m[1]);
+    // `date` (AAAA-MM-DD) casa com o `ride.date` das fotos na tira do passeio;
+    // `datetime` guarda o xsd:dateTime inteiro pro popup ("Quando").
+    const dateXsd = dates.get(s) || null;
+    clips.push({
+      iri: s,
+      vhash: s.startsWith(MED_NS) ? s.slice(MED_NS.length) : null,
+      file: file360 || file720 || audio,
+      file720: file720 || file360 || audio,
+      audio,
+      thumb: clipThumb.get(s) || null,
+      lat, lng,
+      duration,
+      date: dateXsd ? dateXsd.slice(0, 10) : null,
+      datetime: dateXsd,
+      tourIri: tours.get(s),
+      license: licenses.get(s),
+      lists: [...(listsOf.get(s) || [])],
+      audioOnly: !file360 && !file720,
+    });
+  }
+  lastModelClips = clips;
+  // O store N3 do filtro SPARQL avançado NÃO é montado aqui: custava ~95 ms e
+  // ~40 MB de heap a cada carga pra um modo que quase ninguém usa — agora sai
+  // sob demanda (ensureMediaStore), do mesmo texto.
+  invalidateMediaStore();
   return photos;
+}
+// Clipes do último buildModelFromQuads — loadPhotos os promove a clipsCatalog.
+let lastModelClips = [];
+
+// Store N3 (fotos+vídeos+tours+listas) pro filtro SPARQL avançado do mapa,
+// montado na 1ª consulta a partir do texto já baixado (lastTtlText).
+let _mediaStorePromise = null;
+let _mediaStoreGen = 0;
+function invalidateMediaStore() {
+  mediaStore = null;
+  _mediaStorePromise = null;
+  _mediaStoreGen++;
+}
+function ensureMediaStore() {
+  if (mediaStore) return Promise.resolve(mediaStore);
+  if (!_mediaStorePromise) {
+    const gen = _mediaStoreGen;
+    const text = lastTtlText;
+    _mediaStorePromise = (async () => {
+      if (!text) return null;
+      const quads = await parseTtlToQuads(text);
+      if (window.PhidroMediaQuery) return window.PhidroMediaQuery.makeStore(quads);
+      if (window.N3 && window.N3.Store) return new window.N3.Store(quads);
+      return null;
+    })().then((store) => {
+      if (gen === _mediaStoreGen) mediaStore = store;
+      return store;
+    }, (err) => {
+      if (gen === _mediaStoreGen) _mediaStorePromise = null;
+      throw err;
+    });
+  }
+  return _mediaStorePromise;
+}
+
+// Store N3 SÓ de tours.ttl + identities.ttl (alguns milhares de quads, ms pra
+// montar) pro resumo do modal do passeio — os quads já vieram parseados no
+// boot. Não usar o ensureMediaStore aqui: todo link /passeio/ abre o modal, e
+// o store completo (~95 ms, ~40 MB com a mídia) voltaria em quase toda visita.
+let lastTourQuads = null;
+let _tourStore = null;
+function ensureTourStore() {
+  if (!_tourStore && lastTourQuads?.length && window.N3?.Store) _tourStore = new window.N3.Store(lastTourQuads);
+  return _tourStore;
 }
 
 // Tenta carregar o manifesto `data/data_graphs.ttl` de uma fonte; devolve
@@ -2760,8 +3231,11 @@ const MANIFEST_REL = 'data/data_graphs.ttl';
 async function fetchManifest(originBase, originLabel) {
   // Resolve para URL absoluta — `new URL(rel, base)` exige base absoluta,
   // então `./data/data_graphs.ttl` (modo servidor) precisa virar
-  // `http://host/.../data/data_graphs.ttl` primeiro.
-  const url = new URL(originBase + MANIFEST_REL, location.href).href;
+  // `http://host/.../data/data_graphs.ttl` primeiro. Contra document.baseURI
+  // (o <base href="/">), NÃO location.href: em /passeio/<slug> (link
+  // compartilhado, ou a barra depois de abrir um passeio) a URL relativa virava
+  // /passeio/data/data_graphs.ttl → 404, e o mapa ficava sem nenhuma foto.
+  const url = new URL(originBase + MANIFEST_REL, document.baseURI).href;
   const res = await fetch(url, { cache: 'no-cache' });
   if (!res.ok) throw new Error(`${originLabel}: HTTP ${res.status}`);
   const text = await res.text();
@@ -2803,6 +3277,7 @@ async function loadAllGraphs() {
     // ~10× com o acervo do WhatsApp e tudo isso seria parseado e descartado.
     m.urls = m.urls.map((u) => u.replace(/\/data\/images\.ttl$/, '/data/images-geo.ttl'));
     const allQuads = [];
+    const tourQuads = [];   // tours.ttl + identities.ttl — o resumo do passeio (ensureTourStore)
     const parts    = [];
     const texts = await Promise.all(m.urls.map((u) =>
       fetch(u, { cache: 'no-cache' })
@@ -2813,11 +3288,14 @@ async function loadAllGraphs() {
       const u = m.urls[i];
       try {
         parts.push(`# ─── ${u} ───\n${t}`);
-        allQuads.push(...await parseTtlToQuads(t));
+        const q = await parseTtlToQuads(t);
+        allQuads.push(...q);
+        if (/\/data\/(tours|identities)\.ttl$/.test(u)) tourQuads.push(...q);
       } catch (e) { console.warn(`[manifest] ${u}: ${e.message}`); }
     }
     return {
       quads:   allQuads,
+      tourQuads,
       text:    parts.join('\n\n'),
       origin:  b.label,
       sources: m.urls,
@@ -2838,8 +3316,11 @@ async function loadPhotos() {
       if (seq !== photosFetchSeq) return;
       lastTtlText  = r.text;
       lastTtlOrigin = `${r.origin} · ${r.sources.length} grafo(s)`;
+      lastTourQuads = r.tourQuads || null;
+      _tourStore = null;
       const photos = buildModelFromQuads(r.quads);
       buildPhotoMarkers(photos);
+      setClipsFromModel();
       photosLoaded = true;
       updatePhotoSourceStatus(`${photos.length} foto(s), ${r.sources.length} grafo(s).`);
     } catch (err) {
@@ -2851,6 +3332,12 @@ async function loadPhotos() {
     }
   })();
   await photosLoading;
+}
+// Promove os clipes do último modelo a catálogo e (re)cria os marcadores —
+// fotos e vídeos saem da mesma carga (ver loadClipsCatalog).
+function setClipsFromModel() {
+  clipsCatalog = lastModelClips;
+  makeClipMarkers(clipsCatalog);
 }
 
 // Dado curto: { rótulo, conteúdo HTML }. Vira <dl>.
@@ -2938,10 +3425,11 @@ function buildPhotoMarkers(photos) {
       .map(([k, v]) => `<dt>${escapeHtml(k)}</dt><dd>${v}</dd>`).join('');
     // Baixar original: usa `download` no <a> — o backend é same-origin então
     // o browser respeita o atributo e abre o save-as direto. O nome do
-    // arquivo herda o `orig` (título dcterms) quando disponível.
+    // arquivo herda o `orig` (título dcterms) quando disponível. No shell
+    // nativo o link sai sem `download` (ver dlLinkAttrs).
     const dlName = (ph.orig || (ph.phash ? `image_${ph.phash}` : 'image')).replace(/[\s/]+/g, '_');
     const dlBtn = ph.full
-      ? `<a class="photo-dl" href="${escapeHtml(ph.full)}" download="${escapeHtml(dlName)}" target="_blank" rel="noopener">Baixar original ↓</a>`
+      ? `<a class="photo-dl" href="${escapeHtml(ph.full)}" ${dlLinkAttrs(dlName)}>Baixar original ↓</a>`
       : '';
     // Botão de excluir: bate em POST /delete-image/<phash> (backend).
     // Requer phash e fonte same-origin; em modo local só mostra "Baixar".
@@ -2981,6 +3469,17 @@ function buildPhotoMarkers(photos) {
   console.log(`[photos] ${photoMarkers.length} marcador(es)`);
 }
 
+// Atributos do link de download das mídias (chips "Baixar …" dos popups). No
+// shell nativo (Capacitor) um <a download> same-origin vira navegação do frame
+// principal no WKWebView (o `download` faz o WebKit ignorar o target), e o
+// Capacitor zera as chamadas guardadas dos plugins nessa navegação — a
+// transmissão ao vivo morria calada. Lá o link abre fora (target _blank, sem
+// download), e o frame do app fica intacto.
+function dlLinkAttrs(fileName) {
+  if (window.Capacitor?.isNativePlatform?.()) return 'target="_blank" rel="noopener"';
+  return `download="${escapeHtml(fileName)}" target="_blank" rel="noopener"`;
+}
+
 async function reloadPhotos() {
   photosLoaded = false;
   photosLoading = null;
@@ -2989,8 +3488,19 @@ async function reloadPhotos() {
 }
 
 // ─── Fonte (Servidor / Local) ─────────────────────────────────────────────
+// 'local' NUNCA persiste: o kit vive só em memória, então um 'local' salvo
+// deixava a camada de fotos vazia em todo boot seguinte ("sem kit local
+// importado"). A fonte Local vale da importação do kit até o fim da sessão.
 function setPhotoSource(src) {
   if (!['server', 'local'].includes(src)) return;
+  if (src === 'local' && !localKit) {
+    // Sem kit: não troca (ficaria sem fotos) — abre o seletor; a troca
+    // acontece quando o kit chega (importPhotosLocal).
+    syncPhotoSourceRadios();
+    updatePhotoSourceStatus('Escolha um kit .zip pra usar a fonte Local.');
+    document.getElementById('photos-import-input')?.click();
+    return;
+  }
   // Saindo do modo `local`: revoga as blob URLs do kit pra não vazar memória
   // (só eram revogadas ao importar um novo kit).
   if (src !== 'local' && localKit) {
@@ -2998,11 +3508,17 @@ function setPhotoSource(src) {
     localKit = null;
   }
   photoSource = src;
-  try { localStorage.setItem('phidro:photoSource', src); } catch {}
-  settings.photoSource = src;
+  try { localStorage.removeItem('phidro:photoSource'); } catch {}   // chave legada
+  settings.photoSource = 'server';
   saveSettings();
+  syncPhotoSourceRadios();
   updatePhotoSourceStatus(`Fonte: ${src}.`);
   reloadPhotos();
+}
+function syncPhotoSourceRadios() {
+  for (const r of document.querySelectorAll('input[name="photos-source"]')) {
+    r.checked = (r.value === photoSource);
+  }
 }
 
 function updatePhotoSourceStatus(msg) {
@@ -3019,6 +3535,7 @@ async function importPhotosLocal(file) {
     const photos = buildModelFromQuads(await parseTtlToQuads(lastTtlText));
     photosFetchSeq++; // invalida qualquer loadPhotos em voo — o import vence
     buildPhotoMarkers(photos);
+    setClipsFromModel();
     photosLoaded = true;
     applyPhotoVisibility();
     updatePhotoSourceStatus(`Importado ${photos.length} foto(s) de ${file.name}.`);
@@ -3046,11 +3563,13 @@ async function importPhotosLocal(file) {
     localKit = { ttlText, files };
     lastTtlText = ttlText;
     lastTtlOrigin = `local kit: ${file.name}`;
+    // Só nesta sessão — 'local' não persiste (ver setPhotoSource).
     photoSource = 'local';
-    try { localStorage.setItem('phidro:photoSource', 'local'); } catch {}
+    syncPhotoSourceRadios();
     const photos = buildModelFromQuads(await parseTtlToQuads(ttlText));
     photosFetchSeq++; // invalida qualquer loadPhotos em voo — o import vence
     buildPhotoMarkers(photos);
+    setClipsFromModel();
     photosLoaded = true;
     applyPhotoVisibility();
     updatePhotoSourceStatus(`Importado kit com ${photos.length} foto(s).`);
@@ -3062,17 +3581,21 @@ async function importPhotosLocal(file) {
 function downloadTtl() {
   if (!lastTtlText) { showToast('Carregue um catálogo primeiro.'); return; }
   const blob = new Blob([lastTtlText], { type: 'text/turtle;charset=utf-8' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
   const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-  a.download = `photos-${stamp}.ttl`;
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  // Dentro do toque: no celular abre a folha de compartilhar (lib/utils.js).
+  saveFile(blob, `photos-${stamp}.ttl`);
 }
 
+// O kit leva as 3 variantes de TODAS as fotos com GPS (~600 × ~3,5 MB ≈ 2 GB),
+// montado inteiro na memória pelo JSZip: num celular a aba morre bem antes do
+// fim (e depois de minutos de 4G). No toque o botão some; no desktop pede
+// confirmação com a estimativa antes de começar.
+if (COARSE_POINTER) document.getElementById('photos-export-kit-btn')?.setAttribute('hidden', '');
 async function downloadKit() {
   if (!photoMarkers.length) { showToast('Carregue um catálogo primeiro.'); return; }
   if (!lastTtlText) { showToast('TTL não disponível para o kit.'); return; }
+  const n = photoMarkers.filter((m) => m._photo?.phash).length;
+  if (!confirm(`O kit leva as 3 variantes de ${n} fotos (≈ ${fmtMB(n * 3.5 * 1048576)}) e demora. Continuar?`)) return;
   const JSZip = await ensureJSZip();
   const zip = new JSZip();
   zip.file('update.ttl', lastTtlText);
@@ -3096,40 +3619,60 @@ async function downloadKit() {
   }
   const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
   const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `phidro-kit-${stamp}.zip`;
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  await saveFile(blob, `phidro-kit-${stamp}.zip`);
   showToast(`Kit pronto: ${added} arquivo(s)${missing ? `, ${missing} indisponível(is)` : ''}.`);
 }
 
 // Visibilidade efetiva: camada ligada E (sem filtro OU foto do pedal filtrado).
+// O filtro de PEDAL ("Filtrar imagens para esta rota") é o pedido mais
+// específico e passa por cima do filtro de listas e da janela de datas: o chip
+// diz "Fotos: PH 113 (87)" e o mapa tem que mostrar as 87 — com a lista Padrão
+// (default) sobravam 0 no mapa. O marcador com preview aberto (aberto pela tira
+// do passeio ou pela galeria mesmo fora do filtro) fica enquanto o preview durar.
 function applyPhotoVisibility() {
   for (const m of photoMarkers) {
     const ph = m._photo;
-    const matchesRide =
-      !photoRideFilter ||
-      (ph.ride && ph.ride.date === photoRideFilter.date);
-    // Foto com datetime ausente é tratada como "sempre visível" (mesma
-    // política que routes sem dateMs), pra não esconder fotos antigas
-    // sem metadado por causa do filtro.
-    let matchesDate = true;
-    if (photoDateWindow && ph.datetime) {
-      const t = Date.parse(ph.datetime);
-      if (Number.isFinite(t)) {
-        matchesDate = t >= photoDateWindow.from && t <= photoDateWindow.to;
+    let shouldShow;
+    if (photoRideFilter) {
+      shouldShow = photosVisible && !!ph.ride && ph.ride.date === photoRideFilter.date;
+    } else {
+      // Foto com datetime ausente é tratada como "sempre visível" (mesma
+      // política que routes sem dateMs), pra não esconder fotos antigas
+      // sem metadado por causa do filtro.
+      let matchesDate = true;
+      if (photoDateWindow && ph.datetime) {
+        if (ph._t === undefined) ph._t = Date.parse(ph.datetime);
+        if (Number.isFinite(ph._t)) {
+          matchesDate = ph._t >= photoDateWindow.from && ph._t <= photoDateWindow.to;
+        }
       }
+      shouldShow = photosVisible && matchesDate && mediaMatchesFilter(ph.id, ph.lists);
     }
-    const matchesList = mediaMatchesFilter(ph.id, ph.lists);
-    const shouldShow = photosVisible && matchesRide && matchesDate && matchesList;
+    if (!shouldShow && m === photoPreviewMarker) continue;
     if (shouldShow && !map.hasLayer(m)) m.addTo(map);
     else if (!shouldShow && map.hasLayer(m)) map.removeLayer(m);
   }
   applyClipMarkersVisibility();
   renderPhotoFilterChip();
   renderMediaFilterChip();
-  relaxPhotoMarkers();
+  scheduleRelax(true);
+}
+
+// Põe o marcador NO MAPA antes de abrir o popup — o Leaflet ignora calado o
+// openPopup de marcador fora do mapa, e o filtro de listas (Padrão, o default),
+// a janela de datas ou o filtro de pedal escondem a maioria das fotos de um
+// passeio: tocar numa miniatura da tira não abria nada em ~90% dos casos.
+function revealMediaMarker(marker) {
+  if (!marker) return;
+  if (!photosVisible) {
+    photosVisible = true;
+    syncLayerCheckbox('photos', true);
+    applyPhotoVisibility();
+  }
+  if (!map.hasLayer(marker)) {
+    marker.addTo(map);
+    scheduleRelax(true);
+  }
 }
 
 // Cada marcador de clipe carrega DUAS camadas visuais no mesmo Leaflet
@@ -3152,7 +3695,7 @@ function applyClipMarkersVisibility() {
     // O dot estático respeita o filtro de listas; a animação (ghost-video)
     // ignora o filtro e toca todos os clipes.
     const matchesList = mediaMatchesFilter(e.clip.iri, e.clip.lists);
-    const showStatic = photosVisible && matchesList;
+    const showStatic = photosVisible && (matchesList || m === photoPreviewMarker);
     const onMap = showStatic || animOn;
     if (onMap && !map.hasLayer(m)) m.addTo(map);
     else if (!onMap && map.hasLayer(m)) map.removeLayer(m);
@@ -3163,6 +3706,7 @@ function applyClipMarkersVisibility() {
     // animação no ar, o anel pulsa em opacidade cheia.
     m.setOpacity(showStatic ? photosOpacity : 1);
   }
+  scheduleRelax(true);   // clipes entram na mesma relaxação das fotos
 }
 
 function showPhotos() {
@@ -3287,28 +3831,36 @@ function openMediaFilterPopover() {
         `${mediaFilter.lists.has(iri) ? ' checked' : ''}${isAll || isSparql ? ' disabled' : ''}>` +
         `<span>${escapeHtml(o.name || iri.split(/[/#]/).pop())}</span></label>`).join('')
     : '<div class="mf-empty">Nenhuma lista ainda. Suba imagens com listas ou rode a migração da Padrão.</div>';
-  const defaultQuery = mediaFilter.query
+  // Rascunho da consulta (ainda não aplicada) sobrevive a fechar e reabrir.
+  const defaultQuery = _sparqlDraft ?? (mediaFilter.query
     || (window.PhidroMediaQuery
         ? window.PhidroMediaQuery.listMembershipQuery(PADRAO_LIST_IRI)
-        : `SELECT ?m WHERE { ?m <${SCHEMA}isPartOf> <${PADRAO_LIST_IRI}> }`);
+        : `SELECT ?m WHERE { ?m <${SCHEMA}isPartOf> <${PADRAO_LIST_IRI}> }`));
+  // autocapitalize/autocorrect off: o iOS capitalizava o começo de cada linha
+  // (`schema:` → `Schema:`, prefixo inexistente) e "corrigia" os termos.
   pop.innerHTML =
     `<div class="mf-head">Filtro de imagens<button type="button" class="mf-close" title="Fechar">✕</button></div>` +
     `<label class="mf-row mf-todas"><input type="checkbox" id="mf-all"${isAll ? ' checked' : ''}>` +
     `<span><b>Todas</b> (ignora listas)</span></label>` +
     `<div class="mf-lists">${rows}</div>` +
-    `<details class="mf-adv"${isSparql ? ' open' : ''}><summary>Avançado (SPARQL)</summary>` +
-    `<textarea id="mf-sparql" rows="6" spellcheck="false">${escapeHtml(defaultQuery)}</textarea>` +
+    `<details class="mf-adv"${isSparql || _sparqlDraft != null ? ' open' : ''}><summary>Avançado (SPARQL)</summary>` +
+    `<textarea id="mf-sparql" rows="6" spellcheck="false" autocapitalize="off" autocorrect="off" autocomplete="off">${escapeHtml(defaultQuery)}</textarea>` +
     `<div class="mf-adv-actions"><button type="button" id="mf-run" class="mf-btn">Aplicar consulta</button></div>` +
     `<div id="mf-err" class="mf-err"></div></details>`;
   document.body.appendChild(pop);
   L.DomEvent.disableClickPropagation(pop);
   L.DomEvent.disableScrollPropagation(pop);
+  const sparqlBox = pop.querySelector('#mf-sparql');
+  sparqlBox.addEventListener('input', () => { _sparqlDraft = sparqlBox.value; });
 
   // Fecha ao clicar fora (captura no pointerdown → pega mesmo com o
   // disableClickPropagation) ou com Esc. O setTimeout evita fechar no próprio
-  // clique de abertura.
+  // clique de abertura. Com a consulta em edição, o 1º toque fora só baixa o
+  // teclado (no iPhone o textarea não tem outro jeito de sair) — fechar ali
+  // jogava fora o que foi digitado.
   const onDocPointer = (e) => {
     if (pop.contains(e.target) || e.target.closest?.('.layer-filter-toggle')) return;
+    if (COARSE_POINTER && document.activeElement === sparqlBox) { sparqlBox.blur(); return; }
     closeMediaFilterPopover();
   };
   const onKey = (e) => { if (e.key === 'Escape') closeMediaFilterPopover(); };
@@ -3332,11 +3884,13 @@ function openMediaFilterPopover() {
     };
   });
   pop.querySelector('#mf-run').onclick = () => {
-    const q = pop.querySelector('#mf-sparql').value.trim();
+    const q = sparqlBox.value.trim();
+    _sparqlDraft = null;   // aplicada: vira o mediaFilter.query
     applyMediaFilter({ mode: 'sparql', query: q });
   };
   updateMediaFilterButton();   // acende o laranja de "aberto"
 }
+let _sparqlDraft = null;   // texto do SPARQL digitado e ainda não aplicado
 
 // Aplica uma mudança de estado do filtro: persiste, recomputa (async no modo
 // SPARQL) e reprojeta a visibilidade das mídias.
@@ -3348,12 +3902,16 @@ function applyMediaFilter(patch) {
   const errBox = document.getElementById('mf-err');
   if (errBox) errBox.textContent = '';
   if (mediaFilter.mode === 'sparql') {
-    if (!window.PhidroMediaQuery || !mediaStore) {
+    if (!window.PhidroMediaQuery || !lastTtlText) {
       if (errBox) errBox.textContent = 'Carregue as imagens primeiro (ligue a camada).';
       return;
     }
     if (errBox) errBox.textContent = 'Consultando…';
-    window.PhidroMediaQuery.queryMediaIris(mediaStore, mediaFilter.query)
+    ensureMediaStore()
+      .then((store) => {
+        if (!store) throw new Error('catálogo indisponível');
+        return window.PhidroMediaQuery.queryMediaIris(store, mediaFilter.query);
+      })
       .then((set) => {
         mediaFilterResultSet = set;
         if (errBox) errBox.textContent = `${set.size} mídia(s) no mapa.`;
@@ -3376,8 +3934,12 @@ function applyMediaFilter(patch) {
 // filtro SPARQL persistido, ou reload após mutação). No-op nos outros modos.
 function recomputeSparqlFilterIfNeeded() {
   if (mediaFilter.mode !== 'sparql') return;
-  if (!window.PhidroMediaQuery || !mediaStore) return;
-  window.PhidroMediaQuery.queryMediaIris(mediaStore, mediaFilter.query)
+  if (!window.PhidroMediaQuery || !lastTtlText) return;
+  ensureMediaStore()
+    .then((store) => {
+      if (!store) throw new Error('catálogo indisponível');
+      return window.PhidroMediaQuery.queryMediaIris(store, mediaFilter.query);
+    })
     .then((set) => { mediaFilterResultSet = set; applyPhotoVisibility(); })
     .catch((e) => {
       console.warn('[media-filter] SPARQL:', e.message || e);
@@ -3420,8 +3982,18 @@ async function saveMediaLists(kind, hash, listIris, pendingNew) {
   return res.json();
 }
 
+// Fecha o editor ESCONDENDO antes de remover: o controlador de acessibilidade
+// dos modais reage ao atributo `hidden` — um remove() direto deixava o modal
+// na pilha dele e o fundo (mapa, barra, popups) inerte até recarregar a página.
+function closeMediaListsEditor() {
+  const modal = document.getElementById('media-lists-editor');
+  if (!modal) return;
+  modal.hidden = true;
+  modal.remove();
+}
+
 function openMediaListsEditor(kind, hash, currentLists) {
-  document.getElementById('media-lists-editor')?.remove();
+  closeMediaListsEditor();
   const modal = document.createElement('div');
   modal.id = 'media-lists-editor';
   modal.className = 'modal media-lists-modal';
@@ -3437,23 +4009,31 @@ function openMediaListsEditor(kind, hash, currentLists) {
     `<div class="modal-content media-lists-content">` +
     `<header><h3>Listas da mídia</h3><button class="close" title="Fechar" aria-label="Fechar">✕</button></header>` +
     `<div class="mle-lists">${rows}</div>` +
-    `<div class="mle-new"><input type="text" id="mle-newname" placeholder="Nova lista (álbum)…" maxlength="60">` +
+    `<div class="mle-new"><input type="text" id="mle-newname" placeholder="Nova lista (álbum)…" maxlength="60" enterkeyhint="done" autocomplete="off">` +
     `<button type="button" id="mle-add" class="mle-btn">+ criar</button></div>` +
     `<div class="mle-actions"><button type="button" id="mle-save" class="mle-save">Salvar</button></div>` +
     `<div id="mle-err" class="mle-err"></div></div>`;
+  const close = closeMediaListsEditor;
+  // Bolinha de fechar visível (o ✕ do cabeçalho é display:none como nos outros
+  // modais) — antes o único jeito de sair era tocar fora.
+  modal.querySelector('.media-lists-content').prepend(makeCloseDot(close));
   document.body.appendChild(modal);
   modal.hidden = false;
-  const close = () => modal.remove();
   modal.querySelector('.close').onclick = close;
   modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
   const pendingNew = [];
-  modal.querySelector('#mle-add').onclick = () => {
-    const inp = modal.querySelector('#mle-newname');
+  const inp = modal.querySelector('#mle-newname');
+  // Cria (ou marca, se já existe) a lista digitada. Usado pelo "+ criar", pelo
+  // Enter do campo e pelo Salvar — antes o Salvar ignorava o nome digitado sem
+  // "+ criar" e ainda mostrava "Listas atualizadas".
+  const addTyped = () => {
     const nm = inp.value.trim();
     if (!nm) return;
     const li = LST_NS + slugifyList(nm);
-    const exists = [...modal.querySelectorAll('.mle-list')].some((c) => c.value === li);
-    if (!exists) {
+    const existing = [...modal.querySelectorAll('.mle-list')].find((c) => c.value === li);
+    if (existing) {
+      existing.checked = true;
+    } else {
       pendingNew.push({ iri: li, name: nm });
       const lab = document.createElement('label');
       lab.className = 'mle-row';
@@ -3464,10 +4044,17 @@ function openMediaListsEditor(kind, hash, currentLists) {
     }
     inp.value = '';
   };
-  modal.querySelector('#mle-save').onclick = async () => {
+  modal.querySelector('#mle-add').onclick = addTyped;
+  inp.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); addTyped(); }
+  });
+  const saveBtn = modal.querySelector('#mle-save');
+  saveBtn.onclick = async () => {
+    addTyped();
     const chosen = [...modal.querySelectorAll('.mle-list:checked')].map((c) => c.value);
     const errBox = modal.querySelector('#mle-err');
     errBox.textContent = 'Salvando…';
+    saveBtn.disabled = true;
     try {
       await saveMediaLists(kind, hash, chosen, pendingNew);
       close();
@@ -3476,146 +4063,303 @@ function openMediaListsEditor(kind, hash, currentLists) {
       else { clipsCatalog = null; loadClipsCatalog().then((clips) => makeClipMarkers(clips)); }
     } catch (e) {
       errBox.textContent = 'Erro: ' + (e.message || e);
+      saveBtn.disabled = false;
     }
   };
 }
 
+// Miniatura da tira do passeio: SEMPRE o thumb (256 px) com decode assíncrono e
+// caixa explícita. Era o large.jpg (2400×1800): o WebKit decodifica em tamanho
+// cheio o que está visível (sem subamostrar abaixo de 5 MP, ~17 MB cada) e o
+// sheet mostra 28–40 tiles de uma vez — um passeio grande (PH 113, 87 fotos)
+// passava de meio GB e o Safari do iPhone matava a aba. O large fica pro
+// popup/visualizador. Mesma regra da galeria (imagens.html, wantLargeTiles).
+function makeStripThumb(src, alt) {
+  const img = document.createElement('img');
+  img.width = 72;
+  img.height = 72;
+  img.decoding = 'async';
+  img.loading = 'lazy';
+  img.src = src;
+  img.alt = alt;
+  img.title = 'Ver no mapa';
+  return img;
+}
+// Fecha o modal, põe o marcador no mapa (o filtro pode tê-lo escondido) e
+// abre o preview nele.
+function openStripMarker(marker) {
+  closeRouteModal();
+  revealMediaMarker(marker);
+  map.setView(marker.getLatLng(), Math.max(map.getZoom(), 15));
+  marker.openPopup();
+}
+
 // Tira de miniaturas das fotos do pedal, exibida no modal da rota.
+// `_routePhotosReq`: com o catálogo ainda carregando (boot lento no 4G), fechar
+// um passeio e abrir outro despejava a tira do ANTERIOR no modal do novo.
+let _routePhotosReq = 0;
 function renderRoutePhotos(entry) {
   const box = document.getElementById('route-modal-photos');
   box.innerHTML = '';
+  const req = ++_routePhotosReq;
   if (!entry.date) return;
   const label = entry.number?.value
     ? `${entry.number.source} ${entry.number.value}`
     : buildLabel(entry);
-  // Carrega o catálogo de clipes em paralelo com photos pra renderizar a
-  // tira de vídeos junto. Falha silenciosamente se uploads.ttl não tiver
-  // ph:MotionImage — apenas o strip de fotos sai.
-  loadClipsCatalog().then(() => {
-    const cms = rideClips(entry.date, entry.tourIri);
-    if (!cms.length) return;
-    const head = document.createElement('div');
-    head.className = 'route-photos-head';
-    const count = document.createElement('span');
-    count.textContent = `${cms.length} vídeo${cms.length > 1 ? 's' : ''} deste pedal`;
-    head.appendChild(count);
-    const strip = document.createElement('div');
-    strip.className = 'route-photos-strip';
-    for (const { clip, marker } of cms) {
-      const wrap = document.createElement('div');
-      wrap.className = 'route-clip';
-      const img = document.createElement('img');
-      img.src = clip.thumb ? CLIPS_DIR + clip.thumb : '';
-      img.loading = 'lazy';
-      img.alt = clip.iri || 'vídeo';
-      img.title = 'Ver no mapa';
-      img.addEventListener('click', () => {
-        closeRouteModal();
-        map.setView(marker.getLatLng(), Math.max(map.getZoom(), 15));
-        marker.openPopup();
-      });
-      wrap.appendChild(img);
-      strip.appendChild(wrap);
-    }
-    box.appendChild(head);
-    box.appendChild(strip);
-  });
+  // Fotos e clipes saem da mesma carga do catálogo (loadPhotos): primeiro a
+  // tira de vídeos (se houver), depois a de fotos.
   loadPhotos().then(() => {
-    const ms = ridePhotos(entry.date);
-    if (ms.length === 0) return;
-    const head = document.createElement('div');
-    head.className = 'route-photos-head';
-    const count = document.createElement('span');
-    count.textContent = `${ms.length} imagem${ms.length > 1 ? 'ns' : ''} deste pedal`;
-    head.appendChild(count);
-    // Botões de download em lote — empacotam todas as fotos do pedal num .zip.
-    const dlActions = document.createElement('span');
-    dlActions.className = 'route-photos-dl';
-    const bigBtn   = document.createElement('button');
-    bigBtn.type = 'button'; bigBtn.className = 'linkbtn';
-    bigBtn.textContent = 'Baixar originais ↓';
-    const largeBtn = document.createElement('button');
-    largeBtn.type = 'button'; largeBtn.className = 'linkbtn';
-    largeBtn.textContent = 'Baixar grandes ↓';
-    bigBtn.addEventListener('click',
-      () => bulkDownloadPhotos(ms.map((m) => m._photo), 'original', label, bigBtn));
-    largeBtn.addEventListener('click',
-      () => bulkDownloadPhotos(ms.map((m) => m._photo), 'large', label, largeBtn));
-    dlActions.appendChild(bigBtn);
-    dlActions.appendChild(largeBtn);
-    head.appendChild(dlActions);
-    const strip = document.createElement('div');
-    strip.className = 'route-photos-strip';
-    for (const m of ms) {
-      const img = document.createElement('img');
-      img.src = m._photo.file;
-      img.loading = 'lazy';
-      img.alt = m._photo.orig || '';
-      img.title = 'Ver no mapa';
-      img.addEventListener('click', () => {
-        // Só abre a foto no mapa — SEM filtrar (era um efeito colateral
-        // surpreendente do clique; filtrar agora é explícito, via o botão
-        // "Filtrar imagens para esta rota" no cabeçalho do modal).
-        closeRouteModal();
-        map.setView(m.getLatLng(), Math.max(map.getZoom(), 15));
-        m.openPopup();
-      });
-      strip.appendChild(img);
-    }
-    box.appendChild(head);
-    box.appendChild(strip);
+    if (req !== _routePhotosReq) return;   // outro passeio abriu (ou o modal fechou)
+    renderRouteClipStrip(box, entry);
+    renderRoutePhotoStrip(box, entry, label);
   });
+}
+function renderRouteClipStrip(box, entry) {
+  const cms = rideClips(entry.date, entry.tourIri);
+  if (!cms.length) return;
+  const head = document.createElement('div');
+  head.className = 'route-photos-head';
+  const count = document.createElement('span');
+  count.textContent = `${cms.length} vídeo${cms.length > 1 ? 's' : ''} deste pedal`;
+  head.appendChild(count);
+  const strip = document.createElement('div');
+  strip.className = 'route-photos-strip';
+  for (const { clip, marker } of cms) {
+    const wrap = document.createElement('div');
+    wrap.className = 'route-clip';
+    const img = makeStripThumb(
+      clip.thumb ? CLIPS_DIR + clip.thumb.split('/').map(encodeURIComponent).join('/') : '',
+      'Vídeo deste pedal');
+    img.addEventListener('click', () => openStripMarker(marker));
+    wrap.appendChild(img);
+    strip.appendChild(wrap);
+  }
+  box.appendChild(head);
+  box.appendChild(strip);
+}
+function renderRoutePhotoStrip(box, entry, label) {
+  const ms = ridePhotos(entry.date);
+  if (ms.length === 0) return;
+  const head = document.createElement('div');
+  head.className = 'route-photos-head';
+  const count = document.createElement('span');
+  count.textContent = `${ms.length} ${ms.length > 1 ? 'imagens' : 'imagem'} deste pedal`;
+  head.appendChild(count);
+  // Botões de download em lote — empacotam todas as fotos do pedal num .zip.
+  const dlActions = document.createElement('span');
+  dlActions.className = 'route-photos-dl';
+  const bigBtn   = document.createElement('button');
+  bigBtn.type = 'button'; bigBtn.className = 'linkbtn';
+  bigBtn.textContent = 'Baixar originais ↓';
+  const largeBtn = document.createElement('button');
+  largeBtn.type = 'button'; largeBtn.className = 'linkbtn';
+  largeBtn.textContent = 'Baixar grandes ↓';
+  bigBtn.addEventListener('click',
+    () => bulkDownloadPhotos(ms.map((m) => m._photo), 'original', label, bigBtn));
+  largeBtn.addEventListener('click',
+    () => bulkDownloadPhotos(ms.map((m) => m._photo), 'large', label, largeBtn));
+  dlActions.appendChild(bigBtn);
+  dlActions.appendChild(largeBtn);
+  head.appendChild(dlActions);
+  const strip = document.createElement('div');
+  strip.className = 'route-photos-strip';
+  for (const m of ms) {
+    const img = makeStripThumb(m._photo.thumb || m._photo.file, m._photo.orig || '');
+    // Só abre a foto no mapa — SEM filtrar (era um efeito colateral
+    // surpreendente do clique; filtrar agora é explícito, via o botão
+    // "Filtrar imagens para esta rota" no cabeçalho do modal).
+    img.addEventListener('click', () => openStripMarker(m));
+    strip.appendChild(img);
+  }
+  box.appendChild(head);
+  box.appendChild(strip);
 }
 
 // Baixa todas as fotos de um pedal num .zip (variant = 'original' | 'large').
-// Usa o JSZip que já carregamos pra outros fluxos. Em caso de erro num
-// arquivo, segue baixando os outros — o .zip sai com o que conseguiu.
+// Antes de começar mostra o TAMANHO e pede confirmação (os originais de um
+// passeio grande passam de 100 MB — era no 4G, sem aviso); o botão vira
+// progresso e um 2º toque cancela. O .zip sai de buildStoreZip, sem as cópias
+// do JSZip (que lia cada arquivo pra ArrayBuffer, concatenava tudo e copiava
+// de novo no Blob: ~3× o tamanho no processo da aba — no iPhone, jetsam). Em
+// caso de erro num arquivo, segue baixando os outros — o .zip sai com o que
+// conseguiu.
+const BULK_DL_TOUCH_WARN_BYTES = 80 * 1048576;
+let _bulkDl = null;   // { ctrl, btn } do download em andamento
+function fmtMB(bytes) {
+  if (bytes >= 1073741824) return `${(bytes / 1073741824).toFixed(1).replace('.', ',')} GB`;
+  return `${(bytes / 1048576).toFixed(bytes < 10 * 1048576 ? 1 : 0).replace('.', ',')} MB`;
+}
 async function bulkDownloadPhotos(photos, variant, label, btn) {
   if (!photos || !photos.length) return;
+  if (_bulkDl) {
+    if (_bulkDl.btn === btn) _bulkDl.ctrl.abort();   // 2º toque = cancelar
+    else showToast('Já tem um download de imagens em andamento.');
+    return;
+  }
+  const ctrl = new AbortController();
+  _bulkDl = { ctrl, btn };
   const origLabel = btn?.textContent;
-  if (btn) { btn.disabled = true; btn.textContent = 'Empacotando…'; }
+  const setLabel = (t) => { if (btn) btn.textContent = t; };
+  const aborted = () => ctrl.signal.aborted;
   try {
-    const JSZip = await ensureJSZip();
-    const zip = new JSZip();
-    let ok = 0, fail = 0;
-    for (let i = 0; i < photos.length; i++) {
-      const ph = photos[i];
-      const url = variant === 'original' ? ph.full : ph.file;
-      if (!url) { fail++; continue; }
-      if (btn) btn.textContent = `Baixando ${i + 1}/${photos.length}…`;
+    const urls = photos.map((ph) => (variant === 'original' ? ph.full : ph.file));
+    // 1) Tamanho: HEAD em paralelo (≤ 6 s); o que não responder entra pela média.
+    setLabel('Calculando tamanho…');
+    const headCtrl = new AbortController();
+    const onAbort = () => headCtrl.abort();
+    ctrl.signal.addEventListener('abort', onAbort);
+    const headTimer = setTimeout(() => headCtrl.abort(), 6000);
+    const sizes = await mapConcurrent(urls, 6, async (u) => {
+      if (!u || headCtrl.signal.aborted) return null;
       try {
-        const r = await fetch(url, { cache: 'no-cache' });
+        const r = await fetch(u, { method: 'HEAD', signal: headCtrl.signal });
+        const n = r.ok ? Number(r.headers.get('content-length')) : NaN;
+        return n > 0 ? n : null;
+      } catch (_) { return null; }
+    });
+    clearTimeout(headTimer);
+    ctrl.signal.removeEventListener('abort', onAbort);
+    if (aborted()) throw new DOMException('cancelado', 'AbortError');
+    const known = sizes.filter((n) => n > 0);
+    const avg = known.length
+      ? known.reduce((a, b) => a + b, 0) / known.length
+      : (variant === 'original' ? 3 * 1048576 : 0.45 * 1048576);
+    const total = sizes.reduce((a, n) => a + (n > 0 ? n : avg), 0);
+    const what = variant === 'original' ? 'originais' : 'imagens grandes';
+    let msg = `Baixar ${photos.length} ${what} (${known.length === sizes.length ? '' : '≈ '}${fmtMB(total)}) num .zip?`;
+    if (COARSE_POINTER && total > BULK_DL_TOUCH_WARN_BYTES) {
+      msg += '\n\nNo celular um .zip desse tamanho gasta muitos dados e pode travar a aba.'
+        + (variant === 'original' ? ' "Baixar grandes" é bem mais leve.' : '');
+    }
+    if (!confirm(msg)) return;
+
+    // 2) Download, um por vez (o CRC lê os bytes de UM arquivo e solta).
+    const entries = [];
+    const usedNames = new Set();
+    let ok = 0, fail = 0, bytes = 0;
+    if (btn) btn.title = 'Toque de novo pra cancelar';
+    for (let i = 0; i < photos.length; i++) {
+      if (aborted()) throw new DOMException('cancelado', 'AbortError');
+      const ph = photos[i];
+      const url = urls[i];
+      if (!url) { fail++; continue; }
+      setLabel(`Baixando ${i + 1}/${photos.length} (${fmtMB(bytes)}) ✕`);
+      try {
+        const r = await fetch(url, { signal: ctrl.signal });
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const blob = await r.blob();
-        // Nome no zip: tenta `orig`, cai pro phash, depois pro fim da URL.
-        let name = (ph.orig || (ph.phash ? `image_${ph.phash}` : '')) || url.split('/').pop();
-        name = name.replace(/[\\/:*?"<>|]+/g, '_');
-        // Garante extensão razoável quando `orig` não traz.
-        if (!/\.[a-z0-9]{1,5}$/i.test(name)) {
-          const ext = (blob.type.split('/')[1] || 'jpg').replace('jpeg', 'jpg');
-          name = `${name}.${ext}`;
-        }
-        zip.file(name, blob);
+        const crc = crc32(new Uint8Array(await blob.arrayBuffer()));
+        entries.push({ name: zipEntryName(ph, url, blob, usedNames), blob, crc });
+        bytes += blob.size;
         ok++;
       } catch (e) {
+        if (e.name === 'AbortError') throw e;
         console.warn(`[bulk-dl] ${url}: ${e.message}`);
         fail++;
       }
     }
     if (!ok) { showToast(`Falha ao baixar (${fail} erros)`); return; }
-    if (btn) btn.textContent = 'Compactando…';
-    const out = await zip.generateAsync({ type: 'blob' });
+    setLabel('Montando .zip…');
+    const out = buildStoreZip(entries);
     const safe = (label || 'pedal').replace(/[\\/:*?"<>|\s]+/g, '_');
     const fname = `${safe}_${variant}.zip`;
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(out);
-    a.download = fname;
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 60_000);
-    showToast(`${ok} imagem(ns) compactada(s)${fail ? ` · ${fail} com erro` : ''}`);
+    // O .zip fica pronto muito depois do toque: sem ativação, o saveFile baixa
+    // direto (no iPhone, vai pra Arquivos → Downloads).
+    const r = await saveFile(out, fname, { type: 'application/zip' });
+    if (r === 'cancelled') return;
+    showToast(`${ok} ${ok > 1 ? 'imagens compactadas' : 'imagem compactada'} (${fmtMB(bytes)})${fail ? ` · ${fail} com erro` : ''}`);
+  } catch (e) {
+    if (e.name === 'AbortError') showToast('Download cancelado.');
+    else showToast(`Falha no download: ${e.message}`);
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = origLabel; }
+    _bulkDl = null;
+    if (btn) { btn.textContent = origLabel; btn.title = ''; }
   }
+}
+// Nome da entrada no .zip: `orig` (título dcterms), senão o phash, senão o fim
+// da URL; sem caracteres proibidos, com extensão, e ÚNICO — duas fotos com o
+// mesmo IMG_0001.JPG (celulares diferentes) viravam uma só.
+function zipEntryName(ph, url, blob, used) {
+  let name = (ph.orig || (ph.phash ? `image_${ph.phash}` : '')) || url.split('/').pop();
+  name = name.replace(/[\\/:*?"<>|]+/g, '_');
+  if (!/\.[a-z0-9]{1,5}$/i.test(name)) {
+    const ext = (blob.type.split('/')[1] || 'jpg').replace('jpeg', 'jpg');
+    name = `${name}.${ext}`;
+  }
+  let out = name;
+  for (let k = 2; used.has(out.toLowerCase()); k++) out = name.replace(/(\.[^.]*)?$/, `-${k}$1`);
+  used.add(out.toLowerCase());
+  return out;
+}
+
+// .zip STORE (sem compressão — JPEG não comprime) montado como Blob de
+// pedaços: cabeçalhos pequenos + os próprios Blobs baixados, sem copiar os
+// dados (o Blob final só referencia as partes). Formato ZIP clássico (sem
+// ZIP64: até 4 GB / 65535 arquivos — um passeio fica muito abaixo), nomes em
+// UTF-8 (bit 11).
+let _crcTable = null;
+function crc32(bytes) {
+  if (!_crcTable) {
+    _crcTable = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+      _crcTable[n] = c >>> 0;
+    }
+  }
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < bytes.length; i++) c = _crcTable[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+function buildStoreZip(entries /* [{ name, blob, crc }] */) {
+  const enc = new TextEncoder();
+  const now = new Date();
+  const dosTime = (now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1);
+  const dosDate = ((Math.max(1980, now.getFullYear()) - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate();
+  const parts = [];
+  const central = [];
+  let offset = 0;
+  for (const e of entries) {
+    const name = enc.encode(e.name);
+    const size = e.blob.size;
+    const lh = new DataView(new ArrayBuffer(30));   // cabeçalho local
+    lh.setUint32(0, 0x04034b50, true);
+    lh.setUint16(4, 20, true);          // versão mínima pra extrair
+    lh.setUint16(6, 0x0800, true);      // nome em UTF-8
+    lh.setUint16(8, 0, true);           // STORE
+    lh.setUint16(10, dosTime, true);
+    lh.setUint16(12, dosDate, true);
+    lh.setUint32(14, e.crc, true);
+    lh.setUint32(18, size, true);
+    lh.setUint32(22, size, true);
+    lh.setUint16(26, name.length, true);
+    lh.setUint16(28, 0, true);
+    parts.push(lh.buffer, name, e.blob);
+    const ch = new DataView(new ArrayBuffer(46));   // entrada do diretório central
+    ch.setUint32(0, 0x02014b50, true);
+    ch.setUint16(4, 20, true);
+    ch.setUint16(6, 20, true);
+    ch.setUint16(8, 0x0800, true);
+    ch.setUint16(10, 0, true);
+    ch.setUint16(12, dosTime, true);
+    ch.setUint16(14, dosDate, true);
+    ch.setUint32(16, e.crc, true);
+    ch.setUint32(20, size, true);
+    ch.setUint32(24, size, true);
+    ch.setUint16(28, name.length, true);
+    ch.setUint32(42, offset, true);     // (extra/comentário/atributos = 0)
+    central.push(ch.buffer, name);
+    offset += 30 + name.length + size;
+  }
+  if (offset > 0xFFFFFFFF || entries.length > 0xFFFF) throw new Error('grande demais pra um .zip');
+  const cdSize = central.reduce((a, p) => a + p.byteLength, 0);
+  const eocd = new DataView(new ArrayBuffer(22));
+  eocd.setUint32(0, 0x06054b50, true);
+  eocd.setUint16(8, entries.length, true);
+  eocd.setUint16(10, entries.length, true);
+  eocd.setUint32(12, cdSize, true);
+  eocd.setUint32(16, offset, true);
+  return new Blob([...parts, ...central, eocd.buffer], { type: 'application/zip' });
 }
 
 // ─── Envio de fotos pelo usuário (apenas na sessão) ──────────────────────────
@@ -3818,11 +4562,7 @@ function exportUploadedPhotos() {
   const blob = new Blob([JSON.stringify(payload, null, 2)], {
     type: 'application/json',
   });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'photos-upload.json';
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  saveFile(blob, 'photos-upload.json');
 }
 
 function renderUploadChip() {
@@ -3845,6 +4585,82 @@ function renderUploadChip() {
   chip.querySelector('[data-act="clear"]').onclick = clearUploadedPhotos;
 }
 
+// ─── Estado dos formulários embutidos (contrato phidro-form-state) ─────────
+// Os forms que rodam nas folhas (subir.html, upload_images.html,
+// upload_tour.html) avisam o app a cada mudança — e uma vez no load — com
+// { type: 'phidro-form-state', busy, dirty, label }: `busy` = trabalho em
+// andamento que se perderia (envios, transcodificações, fila), `dirty` = entrada
+// ainda não enviada, `label` = o que se perderia ("3 imagens ainda enviando").
+// `keepsOnClose` (opcional) = o form guarda tudo quando a folha fecha (o
+// upload_images.html mantém os cards e o lote segue): fechar não pergunta.
+// O app NÃO fecha nem navega um form com pendência sem perguntar, e nunca
+// limpa/apaga um que está ocupado. O aviso vale só pro DOCUMENTO que o mandou:
+// se o iframe navegou depois (outra página, ou src=''), o estado é velho.
+const _formStates = new Map();   // <iframe> → { doc, busy, dirty, label }
+function _noteFormState(e) {
+  const f = [uploadIframe, tourIframe, censoIframe].find((x) => x && x.contentWindow === e.source);
+  if (!f) return;
+  let doc = null;
+  try { doc = e.source.document; } catch (_) {}
+  _formStates.set(f, {
+    doc,
+    busy: !!e.data.busy,
+    dirty: !!e.data.dirty,
+    keepsOnClose: !!e.data.keepsOnClose,
+    label: String(e.data.label || '').slice(0, 160),
+  });
+}
+// Pendência atual do form no iframe `f` ({busy, dirty, label}) — ou null.
+function formPending(f) {
+  const s = f && _formStates.get(f);
+  if (!s || !(s.busy || s.dirty)) return null;
+  let doc = null;
+  try { doc = f.contentDocument; } catch (_) {}
+  return doc && doc === s.doc ? s : null;
+}
+function _formPendingLabel(s) {
+  return s.label || (s.busy ? 'Envio em andamento' : 'Há dados ainda não enviados');
+}
+// Antes de FECHAR a folha. Form que guarda tudo ao fechar (keepsOnClose):
+// fecha sem perguntar — reabrir mostra os cards. Ocupado: fechar só esconde —
+// o que está em andamento segue em segundo plano (e as fotos aparecem no mapa
+// quando chegam). Só com entrada não enviada: fechar descarta.
+function confirmFormClose(f) {
+  const s = formPending(f);
+  if (!s || s.keepsOnClose) return true;
+  return window.confirm(s.busy
+    ? `${_formPendingLabel(s)}.\n\nFechar a janela? O que está em andamento continua em segundo plano.`
+    : `${_formPendingLabel(s)}.\n\nFechar e descartar o que não foi enviado?`);
+}
+// Antes de NAVEGAR o iframe pra outra página (trocar de form, abrir o editor).
+function confirmFormNavigate(f) {
+  const s = formPending(f);
+  if (!s) return true;
+  return window.confirm(s.busy
+    ? `${_formPendingLabel(s)}.\n\nSair deste formulário cancela o que falta enviar. Continuar?`
+    : `${_formPendingLabel(s)}.\n\nSair deste formulário descarta o que não foi enviado. Continuar?`);
+}
+// Fechar pela bolinha / Esc passa por aqui (ver makeCloseDot mais abaixo):
+// modal → função que fecha com a limpeza e as perguntas certas.
+const _modalClosers = new WeakMap();
+// Toque: o toque na faixa acima de uma folha de FORMULÁRIO não fecha — era o
+// gesto de esconder o teclado e apagava o formulário inteiro. Fecha pela
+// bolinha. No desktop, clicar fora fecha (perguntando se há pendência).
+const _isCoarsePointer = () => window.matchMedia('(pointer: coarse)').matches;
+// Envios que terminam com a folha FECHADA (lote em segundo plano, ou um save
+// feito pelo Censo) também atualizam o mapa — antes só o próximo fechar-a-
+// folha recarregava. Com debounce: um lote de 30 fotos vira um reload só.
+let _bgReloadTimer = 0;
+function scheduleBackgroundReload() {
+  clearTimeout(_bgReloadTimer);
+  _bgReloadTimer = setTimeout(() => {
+    let reload = false;
+    if (_uploadDirty && uploadModal?.hidden) { _uploadDirty = false; reload = true; }
+    if (_tourDirty && tourModal?.hidden) { _tourDirty = false; reload = true; }
+    if (reload) reloadPhotos();
+  }, 2000);
+}
+
 // "Enviar imagens" abre o upload_images.html dentro de um iframe modal:
 // isola o estado da página (CDN imports, Tom Select, etc.) e devolve um
 // uploadModal limpo a cada abertura.
@@ -3853,57 +4669,85 @@ const uploadModal      = document.getElementById('upload-modal');
 const uploadIframe     = document.getElementById('upload-iframe');
 let _uploadDirty = false;   // o form avisou (phidro-media-changed) que salvou/editou algo
 // `page` escolhe o form dentro do MESMO iframe/modal: o completo
-// (upload_images.html, default — menu Ações e ✎ Editar dos popups) ou o
-// simplificado (`subir`, botão ⬆ da barra). Os dois avisam o app por
-// postMessage (phidro-media-changed), então o reload ao fechar é o mesmo.
+// (upload_images.html, default — menu Ações; com ?edit=<iri> é o ✎ Editar dos
+// popups) ou o simplificado (`subir`, botão 📤 da barra). Os dois avisam o app
+// por postMessage (phidro-media-changed), então o reload ao fechar é o mesmo.
 function openUploadModal(page = 'upload_images.html') {
   if (!uploadModal) return;
   closeOtherMobileDialogs('upload');
-  // Lazy-load: só seta o src na 1ª abertura (depois mantém o estado do form).
-  // NB: `iframe.src` (IDL) é truthy mesmo quando o atributo está vazio
-  // (devolve a URL da página pai/`about:blank`). Checamos o atributo cru.
-  // Trocar de form (completo ↔ simplificado) recarrega o iframe — o estado do
-  // outro form se perde, por construção.
-  const cur = uploadIframe.getAttribute('src') || '';
-  const want = './' + page;
-  if (!cur || cur.split('?')[0] !== want) {
-    uploadIframe.src = want;
+  // Lazy-load: só navega o iframe quando a página pedida não é a que ele JÁ
+  // mostra (senão mantém o estado do form). Compara com a página DE FATO
+  // carregada (contentWindow.location, como o Censo), não com o atributo src:
+  // o /subir navega por dentro (✎ editar → upload_images.html?edit=…) e o
+  // atributo ficava velho — o 📤 seguia abrindo o form completo. Sem query
+  // vale só o caminho; com query (✎ Editar), a URL inteira.
+  const want = new URL('./' + page, document.baseURI);
+  const norm = (p) => p.replace(/\.html$/, '');
+  let cur = null;
+  try { cur = uploadIframe.contentWindow?.location || null; } catch (_) {}
+  const curPath = cur && cur.protocol !== 'about:' ? norm(cur.pathname) : '';
+  let shown = curPath;
+  if (curPath !== norm(want.pathname) || (want.search && cur.search !== want.search)) {
+    // Trocar de página descarta o form atual — pergunta se ele avisou
+    // pendência (um lote do /subir ainda enviando, cards não enviados).
+    // Cancelou: mostra o que já está lá.
+    if (confirmFormNavigate(uploadIframe)) {
+      uploadIframe.src = './' + page;
+      shown = norm(want.pathname);
+    }
   }
   uploadModal.hidden = false;
   uploadBtn?.setAttribute('aria-pressed', 'true');
-  subirImagensBtn?.setAttribute('aria-pressed', String(page === 'subir'));
+  subirImagensBtn?.setAttribute('aria-pressed', String(shown === '/subir'));
 }
 function closeUploadModal() {
   if (uploadModal) uploadModal.hidden = true;
   uploadBtn?.setAttribute('aria-pressed', 'false');
   subirImagensBtn?.setAttribute('aria-pressed', 'false');
-  // Pede pro upload_images.html limpar os cards — evita acumular fotos já
-  // enviadas (ou abandonadas) entre uma abertura e outra do modal.
-  try {
-    uploadIframe?.contentWindow?.postMessage({ type: 'phidro-upload-modal-closed' }, window.location.origin);
-  } catch (_) {}
+  // Pede pro form limpar os cards — evita acumular fotos já enviadas (ou
+  // abandonadas) entre uma abertura e outra do modal. NUNCA com envio em
+  // andamento: o lote segue em segundo plano (limpar abortaria transcodificação
+  // e pré-envio).
+  if (!formPending(uploadIframe)?.busy) {
+    try {
+      uploadIframe?.contentWindow?.postMessage({ type: 'phidro-upload-modal-closed' }, window.location.origin);
+    } catch (_) {}
+  }
   // Recarrega o catálogo SÓ se o form avisou que salvou algo
   // (phidro-media-changed): fechar sem enviar não custa mais 4 dumps + um
   // rebuild de todos os marcadores.
   if (_uploadDirty) { _uploadDirty = false; reloadPhotos(); }
 }
+// Fechar pedido pela pessoa (bolinha, Esc, clique fora, 📤 de novo): pergunta
+// antes se o form avisou pendência.
+function requestCloseUploadModal() {
+  if (!uploadModal || uploadModal.hidden) return;
+  if (!confirmFormClose(uploadIframe)) return;
+  closeUploadModal();
+}
+if (uploadModal) _modalClosers.set(uploadModal, requestCloseUploadModal);
 uploadBtn?.addEventListener('click', () => openUploadModal());
-// ⬆ subir imagens (barra): o envio simplificado (/subir) no mesmo modal.
+// 📤 enviar imgs (barra): o envio simplificado (/subir) no mesmo modal.
 const subirImagensBtn = document.getElementById('subir-imagens-btn');
 subirImagensBtn?.addEventListener('click', () => {
   if (uploadModal && !uploadModal.hidden && subirImagensBtn.getAttribute('aria-pressed') === 'true') {
-    closeUploadModal();
+    requestCloseUploadModal();
     return;
   }
   openUploadModal('subir');
 });
-// Clique no overlay (fora do conteúdo) fecha.
+// Clique no overlay (fora do conteúdo) fecha — menos no toque (ver acima).
 uploadModal?.addEventListener('click', (e) => {
-  if (e.target === uploadModal) closeUploadModal();
+  if (e.target !== uploadModal || _isCoarsePointer()) return;
+  requestCloseUploadModal();
 });
-// Esc também fecha.
+// Esc também fecha. preventDefault: o Esc genérico do controlador de
+// acessibilidade não fecha por cima se a pessoa cancelou a pergunta.
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && uploadModal && !uploadModal.hidden) closeUploadModal();
+  if (e.key === 'Escape' && uploadModal && !uploadModal.hidden) {
+    e.preventDefault();
+    requestCloseUploadModal();
+  }
 });
 
 // Cadastro/edição de passeio em iframe — o src é remontado a cada abertura
@@ -3920,26 +4764,50 @@ function openTourModal(tourId) {
     : './upload_tour.html';
   // Título da faixa reflete o modo (criar vs editar).
   const tourTitle = document.getElementById('tour-modal-title');
-  if (tourTitle) tourTitle.textContent = tourId ? 'Editar passeio' : 'Subir passeio';
-  // Forçar reload mesmo quando o ?id é o mesmo: substitui o src.
-  tourIframe.src = src;
+  // Forçar reload mesmo quando o ?id é o mesmo: substitui o src. EXCETO se o
+  // form que ficou lá (folha escondida com save em curso ou dados não
+  // salvos) avisou pendência: o MESMO passeio reabre como está; outro pergunta
+  // antes (Cancelar → mostra o que estava lá).
+  const pending = formPending(tourIframe);
+  let reload = true;
+  if (pending) {
+    let cur = '';
+    try { cur = tourIframe.contentWindow.location.pathname + tourIframe.contentWindow.location.search; } catch (_) {}
+    const want = new URL(src, document.baseURI);
+    reload = cur !== want.pathname + want.search && confirmFormNavigate(tourIframe);
+  }
+  if (reload) {
+    if (tourTitle) tourTitle.textContent = tourId ? 'Editar passeio' : 'Subir passeio';
+    tourIframe.src = src;
+  }
   tourModal.hidden = false;
 }
 function closeTourModal() {
   if (tourModal) tourModal.hidden = true;
-  // Libera o iframe (e seu state) — próxima abertura monta limpo.
-  if (tourIframe) tourIframe.src = '';
+  // Libera o iframe (e seu state) — próxima abertura monta limpo. Menos com um
+  // save em andamento: aí só esconde (apagar o src cancelaria o envio).
+  if (tourIframe && !formPending(tourIframe)?.busy) tourIframe.src = '';
   // Tour criado/editado/deletado (o form avisa via phidro-tour-changed) →
   // recarrega catálogos; fechar sem salvar não recarrega nada. O resumo no
-  // route-modal re-fetch'a tours.ttl com no-cache na próxima abertura, então
-  // mudanças aparecem sem refresh.
+  // route-modal lê os passeios da última carga (ensureTourStore), que o
+  // reloadPhotos refaz — mudanças aparecem na próxima abertura, sem refresh.
   if (_tourDirty) { _tourDirty = false; reloadPhotos(); }
 }
+function requestCloseTourModal() {
+  if (!tourModal || tourModal.hidden) return;
+  if (!confirmFormClose(tourIframe)) return;
+  closeTourModal();
+}
+if (tourModal) _modalClosers.set(tourModal, requestCloseTourModal);
 tourModal?.addEventListener('click', (e) => {
-  if (e.target === tourModal) closeTourModal();
+  if (e.target !== tourModal || _isCoarsePointer()) return;
+  requestCloseTourModal();
 });
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && tourModal && !tourModal.hidden) closeTourModal();
+  if (e.key === 'Escape' && tourModal && !tourModal.hidden) {
+    e.preventDefault();
+    requestCloseTourModal();
+  }
 });
 
 // Censo em iframe — re-aponta pra censo.html toda vez que abre. Sem isto,
@@ -3964,7 +4832,10 @@ function openCensoModal() {
     // Cross-origin protection — não devia rolar em same-origin, mas seguro.
     needsReset = !censoIframe.getAttribute('src');
   }
-  if (needsReset) censoIframe.src = CENSO_URL;
+  // O Censo navega por dentro pro form de passeio (Editar/Cadastrar): se ele
+  // avisou pendência (phidro-form-state), pergunta antes de voltar pro censo —
+  // Cancelar reabre o form como estava.
+  if (needsReset && confirmFormNavigate(censoIframe)) censoIframe.src = CENSO_URL;
   censoModal.hidden = false;
 }
 function closeCensoModal() {
@@ -3990,14 +4861,21 @@ window.addEventListener('message', (e) => {
   switch (e.data.type) {
     case 'phidro-censo-back':     closeCensoModal(); break;
     case 'phidro-gallery-back':   closeImagensModal(); break;
-    case 'phidro-gallery-reload':
-      reloadPhotos();
-      clipsCatalog = null;
-      loadClipsCatalog().then((clips) => makeClipMarkers(clips));
-      break;
+    // reloadPhotos relê o catálogo inteiro — fotos E clipes (setClipsFromModel).
+    case 'phidro-gallery-reload': reloadPhotos(); break;
     case 'phidro-gallery-show':   galleryShowMedia(e.data.iri); break;
-    case 'phidro-media-changed':  _uploadDirty = true; break;   // form de upload salvou/editou
-    case 'phidro-tour-changed':   _tourDirty = true; break;     // form de passeio salvou/apagou
+    // Form de upload salvou/editou / form de passeio salvou/apagou: recarrega ao
+    // fechar a folha — ou já, se ela está fechada (lote em segundo plano).
+    // Save feito DENTRO do Censo: quem recarrega é o fechar do Censo
+    // (_censoDirty) — daqui sairia um 2º reload do catálogo inteiro, com o
+    // Censo ainda cobrindo o mapa.
+    case 'phidro-media-changed':
+      if (censoIframe && e.source === censoIframe.contentWindow) break;
+      _uploadDirty = true; scheduleBackgroundReload(); break;
+    case 'phidro-tour-changed':
+      if (censoIframe && e.source === censoIframe.contentWindow) break;
+      _tourDirty = true; scheduleBackgroundReload(); break;
+    case 'phidro-form-state':     _noteFormState(e); break;
     default: break;
   }
 });
@@ -4026,26 +4904,47 @@ function closeImagensModal() {
   imagensBtn?.setAttribute('aria-pressed', 'false');
 }
 // Abre a galeria já navegada + focada numa mídia específica (usado pelo
-// "🔍 Ver grande" do popup de foto/vídeo). Sempre reseta o src (diferente de
-// openImagensModal, que reusa a página se já estiver na galeria) — é uma
-// navegação deliberada pro item, não só "abrir o que já tava aberto".
+// "🔍 Ver grande" do popup de foto/vídeo). Com a galeria já carregada no
+// iframe, só pede a mídia por mensagem (`phidro-gallery-pick` — a galeria
+// enfileira até terminar o boot); recarregar o iframe a cada "Ver grande"
+// custava ~15 requests, o re-parse do catálogo e a galeria inteira de novo.
+// Fora dela (iframe vazio, esvaziado por ociosidade ou noutra página), navega.
 function openImagensModalToMedia(hash) {
   if (!imagensModal || !hash) return;
   closeOtherMobileDialogs('imagens');
-  imagensIframe.src = `${IMAGENS_URL}?pick=${encodeURIComponent(hash)}`;
+  let onGallery = false;
+  try { onGallery = /\/imagens\.html$/.test(imagensIframe.contentWindow?.location?.pathname || ''); } catch (_) {}
+  if (onGallery) {
+    imagensIframe.contentWindow.postMessage({ type: 'phidro-gallery-pick', hash }, location.origin);
+  } else {
+    imagensIframe.src = `${IMAGENS_URL}?pick=${encodeURIComponent(hash)}`;
+  }
   imagensModal.hidden = false;
   imagensBtn?.setAttribute('aria-pressed', 'true');
 }
-// Copia um link pro clipboard (fallback: prompt, pra quem bloqueia a
-// Clipboard API — ex.: contexto não-https ou permissão negada).
-function shareLink(url, label = 'Link') {
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(url).then(
-      () => showToast(`✓ ${label} copiado`),
-      () => prompt('Copie o link:', url));
-  } else {
-    prompt('Copie o link:', url);
+// Compartilha um link. No toque abre a folha de compartilhar do sistema (é o
+// caminho pro WhatsApp no iPhone) — navigator.share tem que ser chamado AINDA
+// dentro do toque, por isso nada de await antes. Sem Web Share (ou no
+// desktop), copia pro clipboard; fallback final: prompt, pra quem bloqueia a
+// Clipboard API (contexto não-https ou permissão negada).
+function shareLink(url, label = 'Link', title = '') {
+  const copy = () => {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(
+        () => showToast(`✓ ${label} copiado`),
+        () => prompt('Copie o link:', url));
+    } else {
+      prompt('Copie o link:', url);
+    }
+  };
+  if (typeof navigator.share === 'function' && window.matchMedia?.('(pointer: coarse)').matches) {
+    navigator.share(title ? { title, url } : { url }).catch((err) => {
+      // AbortError = a pessoa fechou a folha — não é falha, não copia.
+      if (err?.name !== 'AbortError') copy();
+    });
+    return;
   }
+  copy();
 }
 imagensBtn?.addEventListener('click', openImagensModal);
 imagensModal?.addEventListener('click', (e) => {
@@ -4096,6 +4995,48 @@ async function galleryShowMedia(iri) {
   guard = setTimeout(finish, 5000);   // rede de segurança se o moveend não vier
   map.flyTo(ll, target);
 }
+
+// ── Iframes da galeria e do Censo: mapa em dia e memória devolvida ───────────
+// (1) Salvar pelo Censo (Editar passeio / Subir imagens abrem DENTRO do iframe
+//     dele) não atualizava o mapa: as flags de "sujo" só eram consumidas ao
+//     fechar os modais de envio e de passeio. O Censo ganha a sua.
+// (2) Galeria e Censo fechados seguem vivos de propósito (reabrem onde
+//     estavam), cada um com a sua cópia parseada do catálogo — dezenas de MB no
+//     mesmo processo do mapa, que no iPhone é o que faz o iOS descartar a aba.
+//     Depois de 3 min fechados, ou assim que a aba vai pro fundo, o iframe é
+//     esvaziado (about:blank) — só nas páginas de consulta, nunca num form
+//     aberto dentro do Censo; reabrir recarrega a página (o open* já trata).
+let _censoDirty = false;
+window.addEventListener('message', (e) => {
+  if (e.origin !== window.location.origin || !e.data) return;
+  if (e.data.type !== 'phidro-media-changed' && e.data.type !== 'phidro-tour-changed') return;
+  if (censoIframe && e.source === censoIframe.contentWindow) _censoDirty = true;
+});
+const IFRAME_IDLE_BLANK_MS = 3 * 60 * 1000;
+const _idleIframes = [
+  { modal: imagensModal, iframe: imagensIframe, timer: null },
+  { modal: censoModal,   iframe: censoIframe,   timer: null },
+];
+function blankIdleIframe(slot) {
+  clearTimeout(slot.timer);
+  slot.timer = null;
+  if (!slot.modal || !slot.iframe || !slot.modal.hidden) return;
+  let path = '';
+  try { path = slot.iframe.contentWindow?.location?.pathname || ''; } catch (_) {}
+  if (!/\/(imagens|censo)\.html$/.test(path)) return;
+  slot.iframe.src = 'about:blank';
+}
+new MutationObserver(() => {
+  for (const slot of _idleIframes) {
+    if (!slot.modal) continue;
+    if (!slot.modal.hidden) { clearTimeout(slot.timer); slot.timer = null; }
+    else if (!slot.timer) slot.timer = setTimeout(() => blankIdleIframe(slot), IFRAME_IDLE_BLANK_MS);
+  }
+  if (_censoDirty && censoModal?.hidden) { _censoDirty = false; reloadPhotos(); }
+}).observe(document.body, { subtree: true, attributes: true, attributeFilter: ['hidden'] });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) for (const slot of _idleIframes) blankIdleIframe(slot);
+});
 
 // Menu "Subir" — atalho no topbar que abre um mini-modal com as duas ações
 // de contribuição (enviar mídia / cadastrar passeio), cada uma delegando pro
@@ -4176,21 +5117,33 @@ function makeCloseDot(onClose, title = 'Fechar') {
   return dot;
 }
 
-// Modais: a bolinha dispara o clique-no-overlay (`modal.click()`), reusando o
-// handler de clique-fora que cada modal já tem (e.target === modal → fecha
-// corretamente, com toda a limpeza: reloadPhotos, reset de iframe, aria, etc.).
+// Modais: a bolinha fecha pelo "fechador" registrado do modal (_modalClosers —
+// os de formulário perguntam antes se há pendência) ou, sem registro, dispara
+// o clique-no-overlay (`modal.click()`), reusando o handler de clique-fora que
+// cada modal já tem (e.target === modal → fecha com toda a limpeza:
+// reloadPhotos, reset de iframe, aria, etc.). Entra como 1º FILHO: é o
+// primeiro controle que o leitor de tela encontra (antes vinha depois de todo o
+// conteúdo — ~130 miniaturas num passeio grande) e, no toque, gruda no topo da
+// folha ao rolar (CSS: position sticky).
 for (const content of document.querySelectorAll('.modal > .modal-content')) {
   const modal = content.closest('.modal');
   if (!modal) continue;
-  content.appendChild(makeCloseDot(() => modal.click()));
+  content.prepend(makeCloseDot(() => {
+    const close = _modalClosers.get(modal);
+    if (close) close(); else modal.click();
+  }));
 }
 
-// Bolinha verde de maximizar (estilo macOS) nos modais em iframe: alterna entre
-// janela e tela cheia (classe .maximized no .modal-content), persistido por
-// chave. Usada na galeria e no censo.
+// Bolinha verde de maximizar (estilo macOS) nos modais em iframe e no da rota:
+// alterna entre janela e tela cheia (classe .maximized no .modal-content),
+// persistida por chave — mas só no desktop. No celular (layout de folhas,
+// ≤760px) sempre começa em janela e a escolha NÃO persiste: a verde fica
+// grudada na vermelha, um toque torto maximizava a folha pra sempre, e a
+// galeria já abria maximizada.
 function addMaximizeDot(modalEl, key, defaultOn = false) {
   const content = modalEl?.querySelector('.modal-content');
   if (!content) return;
+  const phone = () => window.matchMedia('(max-width: 760px)').matches;
   const dot = document.createElement('button');
   dot.type = 'button';
   dot.className = 'maximize-dot';
@@ -4199,31 +5152,34 @@ function addMaximizeDot(modalEl, key, defaultOn = false) {
     dot.setAttribute('aria-pressed', String(on));
     dot.title = on ? 'Restaurar' : 'Maximizar';
     dot.setAttribute('aria-label', dot.title);
-    if (persist) { try { localStorage.setItem(key, on ? '1' : '0'); } catch (_) {} }
+    if (persist && !phone()) { try { localStorage.setItem(key, on ? '1' : '0'); } catch (_) {} }
   };
   dot.addEventListener('click', (e) => {
     e.stopPropagation();   // não borbulha pro overlay (que fecharia o modal)
     setMax(!content.classList.contains('maximized'), true);
   });
-  content.appendChild(dot);
-  // Sem preferência salva ainda, usa `defaultOn` (ex.: galeria já maximizada
-  // por padrão no celular); uma vez que a pessoa mexe na bolinha, a escolha
-  // dela persiste e passa a valer sempre.
+  // Logo depois da vermelha (ordem de leitura/Tab: fechar, maximizar, título).
+  const closeDot = content.querySelector(':scope > .close-dot');
+  if (closeDot) closeDot.after(dot); else content.prepend(dot);
+  // Sem preferência salva ainda, usa `defaultOn`; uma vez que a pessoa mexe na
+  // bolinha (no desktop), a escolha dela persiste e passa a valer sempre.
   let saved = defaultOn;
-  try {
-    const stored = localStorage.getItem(key);
-    if (stored !== null) saved = stored === '1';
-  } catch (_) {}
+  if (!phone()) {
+    try {
+      const stored = localStorage.getItem(key);
+      if (stored !== null) saved = stored === '1';
+    } catch (_) {}
+  }
   setMax(saved, false);
 }
-addMaximizeDot(imagensModal, 'phidro:galleryMaximized', window.matchMedia('(max-width: 760px)').matches);
+addMaximizeDot(imagensModal, 'phidro:galleryMaximized');
 addMaximizeDot(censoModal, 'phidro:censoMaximized');
 addMaximizeDot(uploadModal, 'phidro:uploadModalMaximized');
 addMaximizeDot(tourModal, 'phidro:tourModalMaximized');
 
 // Sidebar de Rotas: a bolinha fecha o painel (mesmo caminho do ☰/toggle). Como
 // só é clicável com a sidebar aberta, o toggle sempre fecha.
-document.getElementById('sidebar')?.appendChild(
+document.getElementById('sidebar')?.prepend(
   makeCloseDot(() => toggleRoutesSidebar(), 'Fechar rotas'),
 );
 
@@ -4309,6 +5265,7 @@ function applyClipsGhostSettings() {
   const wantClips = settings.clipsGhost?.enabled !== false;
   const isPlaying = clipsGhostVideo && !clipsGhostVideo.paused;
   if (animOn && wantClips && !isPlaying) {
+    unlockClipsAudio();   // quem chega aqui ligando é um gesto (Ajustes / Camadas)
     startClipsGhost();
   } else if (isPlaying && (!animOn || !wantClips)) {
     stopClipsGhost();
@@ -4331,10 +5288,14 @@ function syncLayerCheckbox(layerId, checked) {
 // trocam de papel.
 const audioLoopA = new Audio();
 const audioLoopB = new Audio();
-audioLoopA.preload = 'auto';
-audioLoopB.preload = 'auto';
-audioLoopA.volume = 0;
-audioLoopB.volume = 0;
+for (const el of [audioLoopA, audioLoopB]) {
+  el.preload = 'auto';
+  // /clips/<x> redireciona pro bucket (outra origem): sem CORS a mídia fica
+  // "tainted" e o MediaElementSource do Web Audio sai mudo. O bucket já manda
+  // Access-Control-Allow-Origin (o vídeo fantasma depende disso também).
+  el.crossOrigin = 'anonymous';
+  el.volume = 0;
+}
 let audioLoopCurrent = audioLoopA;
 let audioLoopNext    = audioLoopB;
 let audioLoopActive  = false;
@@ -4343,11 +5304,40 @@ let audioLoopActive  = false;
 let audioLoopUserVolume = (
   (OVERLAY_LAYERS.find((l) => l.id === 'audio-loop')?.defaultPct ?? 80) / 100
 );
+// Ganho por elemento, no AudioContext único (getClipsAudioCtx): no iPhone o
+// `.volume` é travado em 1 — o crossfade e o slider do loop não faziam nada e
+// as duas trilhas se sobrepunham no máximo. Montado na 1ª vez que o elemento
+// toca; null = sem Web Audio (cai no `.volume`, que funciona fora do iPhone).
+const audioLoopGains = new Map();
+function audioLoopGain(el) {
+  if (audioLoopGains.has(el)) return audioLoopGains.get(el);
+  let g = null;
+  const ctx = getClipsAudioCtx();
+  if (ctx) {
+    try {
+      const src = ctx.createMediaElementSource(el);
+      g = ctx.createGain();
+      g.gain.value = 0;
+      src.connect(g);
+      g.connect(ctx.destination);
+      el.volume = 1;   // com o grafo, quem manda é o ganho
+    } catch (err) {
+      console.warn('[audio loop] Web Audio indisponível:', err.message);
+      g = null;
+    }
+  }
+  audioLoopGains.set(el, g);
+  return g;
+}
 function setAudioLoopUserVolume(frac) {
   audioLoopUserVolume = Math.max(0, Math.min(1, frac));
-  // Clampa o volume das trilhas em curso pra não estourar o novo teto.
   for (const el of [audioLoopA, audioLoopB]) {
-    if (el && !el.paused) el.volume = Math.min(el.volume, audioLoopUserVolume);
+    if (!el || el.paused) continue;
+    const g = audioLoopGains.get(el);
+    // A trilha no ar (a que entrou por último) vai pro teto novo; a que está
+    // saindo segue o fade dela.
+    if (g && clipsAudioCtx) { if (el === audioLoopCurrent) rampGain(g, audioLoopUserVolume, 150); }
+    else el.volume = Math.min(el.volume, audioLoopUserVolume);
   }
 }
 let audioLoopTimer   = null;
@@ -4356,7 +5346,9 @@ let audioLoopFadeRafs = new WeakMap();   // raf id por elemento
 
 function fadeAudioElement(el, targetVol, durationMs) {
   const prev = audioLoopFadeRafs.get(el);
-  if (prev) cancelAnimationFrame(prev);
+  if (prev) { cancelAnimationFrame(prev); audioLoopFadeRafs.delete(el); }
+  const g = audioLoopGains.get(el);
+  if (g && clipsAudioCtx) { rampGain(g, targetVol, durationMs); return; }
   const startVol = el.volume;
   const t0 = performance.now();
   const step = (now) => {
@@ -4386,8 +5378,13 @@ async function startAudioLoop() {
   if (audioLoopActive) return;
   if (!settings.audioLoop?.enabled) return;
   await loadClipsCatalog();
+  if (audioLoopActive || !settings.audioLoop?.enabled) return;   // mudou durante a carga
   if (!clipsCatalog || clipsCatalog.length === 0) return;
   audioLoopActive = true;
+  // iOS: o fantasma no ar passa a tocar mudo (ver playClipAt) — com som ele
+  // pausaria as trilhas do loop a cada clipe novo.
+  if (IS_IOS && clipsGhostVideo && clipsGhostActive) clipsGhostVideo.muted = true;
+  updateAudioSessionType();
   audioLoopAdvance();
 }
 
@@ -4398,9 +5395,14 @@ function stopAudioLoop() {
     const r = audioLoopFadeRafs.get(el);
     if (r) cancelAnimationFrame(r);
     audioLoopFadeRafs.delete(el);
+    el._loopTok = (el._loopTok || 0) + 1;   // anula a pausa agendada de fim de fade
     try { el.pause(); } catch {}
-    el.volume = 0;
+    const g = audioLoopGains.get(el);
+    if (g && clipsAudioCtx) setGainNow(g, 0);
+    else el.volume = 0;
   }
+  if (IS_IOS && clipsGhostVideo && clipsGhostActive) clipsGhostVideo.muted = false;
+  updateAudioSessionType();
 }
 
 function audioLoopAdvance() {
@@ -4412,19 +5414,41 @@ function audioLoopAdvance() {
   const segS  = Math.max(2, settings.audioLoop?.segmentSec ?? 12);
   const xfS   = Math.max(0.5, Math.min(settings.audioLoop?.crossfadeSec ?? 3, segS / 2));
 
-  // Próxima trilha carrega no elemento "next" e sobe de 0 até 1; current
-  // desce simultaneamente. Depois trocamos papel.
-  audioLoopNext.src = CLIPS_DIR + c.audio.split('/').map(encodeURIComponent).join('/');
-  audioLoopNext.currentTime = 0;
-  audioLoopNext.volume = 0;
-  audioLoopNext.play().catch(() => {});
-  fadeAudioElement(audioLoopNext, audioLoopUserVolume, xfS * 1000);
-  fadeAudioElement(audioLoopCurrent, 0, xfS * 1000);
+  // Próxima trilha carrega no elemento "next" e sobe de 0 até o teto; a
+  // atual desce simultaneamente. Depois trocamos papel.
+  const incoming = audioLoopNext;
+  const outgoing = audioLoopCurrent;
+  incoming._loopTok = (incoming._loopTok || 0) + 1;   // anula uma pausa pendente dele
+  incoming.src = CLIPS_DIR + c.audio.split('/').map(encodeURIComponent).join('/');
+  incoming.currentTime = 0;
+  const g = audioLoopGain(incoming);
+  if (g && clipsAudioCtx) {
+    setGainNow(g, 0);
+    if (clipsAudioCtx.state === 'suspended') clipsAudioCtx.resume().catch(() => {});
+  } else {
+    incoming.volume = 0;
+  }
+  incoming.play().catch((err) => {
+    // Sem gesto válido (loop restaurado no boot, elemento nunca destravado):
+    // para e espera o próximo toque pra recomeçar — antes seguia "ativo",
+    // ciclando mudo pra sempre.
+    if (err?.name === 'NotAllowedError' && audioLoopActive) {
+      stopAudioLoop();
+      armAudioLoopGestureUnlock();
+    }
+  });
+  fadeAudioElement(incoming, audioLoopUserVolume, xfS * 1000);
+  fadeAudioElement(outgoing, 0, xfS * 1000);
+  // A que saiu PARA no fim do fade — antes seguia tocando até a troca de src
+  // no ciclo seguinte (no iPhone, sem fade, no volume máximo).
+  const tok = outgoing._loopTok = (outgoing._loopTok || 0) + 1;
+  setTimeout(() => {
+    if (outgoing._loopTok === tok) { try { outgoing.pause(); } catch (_) {} }
+  }, xfS * 1000 + 100);
 
   // Swap roles pro próximo ciclo.
-  const justStarted = audioLoopNext;
-  audioLoopNext = audioLoopCurrent;
-  audioLoopCurrent = justStarted;
+  audioLoopNext = outgoing;
+  audioLoopCurrent = incoming;
 
   // Agenda próxima troca pra `segS - xfS` (assim o crossfade encavala bonito
   // no fim do segmento, não depois).
@@ -4438,24 +5462,27 @@ function applyAudioLoopSettings() {
     // Browsers bloqueiam play() de áudio sem gesto do usuário. No boot
     // (sem cliques ainda) o `audio.play()` rejeita silencioso. Em vez de
     // tentar e falhar, esperamos o primeiro gesto na página e só então
-    // iniciamos. Se o usuário trocou o setting via Ajustes (que JÁ é um
-    // gesto), o `audioGestureUnlocked` flag pula a espera.
-    if (audioGestureUnlocked) startAudioLoop();
+    // iniciamos. Se o usuário trocou o setting via Ajustes / Camadas (que JÁ
+    // é um gesto), o `audioGestureUnlocked` pula a espera — e destrava os
+    // elementos AGORA, ainda dentro do gesto.
+    if (audioGestureUnlocked) { unlockClipsAudio(); startAudioLoop(); }
     else armAudioLoopGestureUnlock();
-  } else if (!want && audioLoopActive) {
-    stopAudioLoop();
+  } else if (!want) {
+    if (audioLoopActive) stopAudioLoop();
     disarmAudioLoopGestureUnlock();
   }
   syncLayerCheckbox('audio-loop', want);
 }
 
-// Marca uma vez que o usuário interagiu — qualquer pointerdown/keydown
-// libera autoplay pelo resto da sessão.
+// Só eventos que CONTAM como gesto pro áudio (ativação do usuário): click,
+// touchend, keydown. pointerdown/touchstart de toque não contam no iOS — o
+// loop restaurado no boot "começava" num touchstart e o play() era recusado.
+const AUDIO_UNLOCK_EVENTS = ['click', 'touchend', 'keydown'];
+// Marca uma vez que o usuário interagiu — libera autoplay pelo resto da sessão.
 let audioGestureUnlocked = false;
-document.addEventListener('pointerdown', () => { audioGestureUnlocked = true; },
-  { capture: true, once: true });
-document.addEventListener('keydown', () => { audioGestureUnlocked = true; },
-  { capture: true, once: true });
+for (const t of AUDIO_UNLOCK_EVENTS) {
+  document.addEventListener(t, () => { audioGestureUnlocked = true; }, { capture: true, once: true });
+}
 
 let audioLoopGestureHandler = null;
 function armAudioLoopGestureUnlock() {
@@ -4463,17 +5490,18 @@ function armAudioLoopGestureUnlock() {
   audioLoopGestureHandler = () => {
     disarmAudioLoopGestureUnlock();
     audioGestureUnlocked = true;
-    if (settings.audioLoop?.enabled && !audioLoopActive) startAudioLoop();
+    if (settings.audioLoop?.enabled && !audioLoopActive) {
+      unlockClipsAudio();   // ainda no gesto: AudioContext + os dois <audio>
+      startAudioLoop();
+    }
   };
-  document.addEventListener('pointerdown', audioLoopGestureHandler, { capture: true, once: true });
-  document.addEventListener('keydown', audioLoopGestureHandler, { capture: true, once: true });
-  document.addEventListener('touchstart', audioLoopGestureHandler, { capture: true, once: true });
+  for (const t of AUDIO_UNLOCK_EVENTS) {
+    document.addEventListener(t, audioLoopGestureHandler, { capture: true, once: true });
+  }
 }
 function disarmAudioLoopGestureUnlock() {
   if (!audioLoopGestureHandler) return;
-  document.removeEventListener('pointerdown', audioLoopGestureHandler, true);
-  document.removeEventListener('keydown', audioLoopGestureHandler, true);
-  document.removeEventListener('touchstart', audioLoopGestureHandler, true);
+  for (const t of AUDIO_UNLOCK_EVENTS) document.removeEventListener(t, audioLoopGestureHandler, true);
   audioLoopGestureHandler = null;
 }
 applyPhotoHoverScale();
@@ -4483,6 +5511,13 @@ applyPhotoHoverScale();
 // interação manual.
 applyClipsGhostSettings();
 applyAudioLoopSettings();
+// …mas o painel de Camadas ainda não existe neste ponto (nasce mais abaixo):
+// o checkbox do loop ficava DESLIGADO com o loop armado (e religar pedia três
+// toques). Re-sincroniza quando o módulo terminar de montar tudo.
+setTimeout(() => {
+  syncLayerCheckbox('audio-loop', settings.audioLoop?.enabled === true);
+  syncLayerCheckbox('clips-ghost', settings.clipsGhost?.enabled !== false);
+}, 0);
 
 // Lê/escreve em settings por caminho "a.b.c".
 function getSettingPath(path) {
@@ -4661,12 +5696,9 @@ function downloadSettingsJsonLd() {
   const blob = new Blob([JSON.stringify(doc, null, 2)],
     { type: 'application/ld+json' });
   const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `phidro-settings-${stamp}.jsonld`;
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-  showToast('Configurações exportadas.');
+  saveFile(blob, `phidro-settings-${stamp}.jsonld`).then((r) => {
+    if (r === 'shared' || r === 'downloaded') showToast('Configurações exportadas.');
+  });
 }
 async function importSettingsJsonLd(file) {
   const text = await file.text();
@@ -4771,7 +5803,7 @@ function cicloinfraTipFor(p) {
 }
 
 // ─── Custom XYZ / WMS layers ─────────────────────────────────────────────────
-let customXyzUrl = localStorage.getItem('phidro:customXyz') || '';
+let customXyzUrl = storage.get('phidro:customXyz') || '';   // storage: não lança sem cookies
 let customXyzLayer = null;
 let customWmsConfig = (() => {
   try { return JSON.parse(localStorage.getItem('phidro:customWms') || 'null'); }
@@ -4902,9 +5934,42 @@ function promptCustomWmsConfig() {
 // "Where am I" control (leaflet-locatecontrol). Adds the small target icon
 // in the top-left of the map AND wires the topbar "📍 Localização" button
 // to trigger it programmatically — same control instance, two affordances.
+//
+// Subclasse do controle: o original desliga e dá um alert() em inglês em
+// QUALQUER erro que não seja timeout — e o iPhone manda "sem fix por enquanto"
+// (túnel, viaduto, dentro de prédio, copa de árvore) como POSITION_UNAVAILABLE
+// (code 2): o ponto azul sumia de vez no meio do pedal atrás de um alerta
+// bloqueante. Aqui: code 2/3 → o watch do navegador segue vivo (o erro não é
+// fatal), UM aviso por queda e o ponto esmaece até o próximo fix; code 1
+// (permissão negada) → para e diz onde liberar. Nunca alert().
 let locateControl = null;
-if (L.control.locate) {
-  locateControl = L.control.locate({
+const LocateBase = L.Control.Locate?.LocateControl;
+if (LocateBase && L.control.locate) {
+  const PhLocate = LocateBase.extend({
+    _onLocationError(err) {
+      if (err && err.code === 1) {
+        this.stop();
+        showToast(geoDeniedHelp(), 10000);
+        return;
+      }
+      map.getContainer().classList.add('locate-no-fix');
+      if (!this._phNoFixWarned) {
+        this._phNoFixWarned = true;
+        showToast('Sem sinal de GPS agora — continuo tentando.');
+      }
+    },
+    _onLocationFound(e) {
+      this._phNoFixWarned = false;
+      map.getContainer().classList.remove('locate-no-fix');
+      return LocateBase.prototype._onLocationFound.call(this, e);
+    },
+    stop() {
+      this._phNoFixWarned = false;
+      map.getContainer().classList.remove('locate-no-fix');
+      return LocateBase.prototype.stop.call(this);
+    },
+  });
+  locateControl = new PhLocate({
     position: 'topleft',
     // 'once': centraliza/zooma só no PRIMEIRO fix; depois disso o mapa não se
     // mexe mais (cada update do watchPosition reposicionava + re-zoomava pra
@@ -4915,7 +5980,15 @@ if (L.control.locate) {
     drawCircle: true,
     showPopup: false,
     keepCurrentZoomLevel: false,
+    // Sem o cone de bússola: ele ignorava a rotação do mapa (apontava errado
+    // com o mapa girado) e redesenhava o marcador a cada deviceorientation
+    // (~60 Hz no iPhone, a pedalada inteira).
+    showCompass: false,
     locateOptions: { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 },
+    // Redes de segurança — os caminhos acima já tratam tudo, mas nenhum erro
+    // deste controle pode cair no alert() padrão da biblioteca.
+    onLocationError: () => {},
+    onLocationOutsideMapBounds: (ctl) => { ctl.stop(); showToast('Fora dos limites do mapa'); },
     strings: {
       title: 'Mostrar minha localização',
       metersUnit: 'm',
@@ -4924,6 +5997,15 @@ if (L.control.locate) {
       outsideMapBoundsMsg: 'Fora dos limites do mapa',
     },
   }).addTo(map);
+}
+// Onde liberar a localização quando ela foi negada (code 1 / NOT_AUTHORIZED).
+// "Ajustes" aqui é o app de Ajustes do aparelho, não o ⚙ do amora.
+function geoDeniedHelp() {
+  if (liveIsNative()) return 'Localização bloqueada para o app — libere em Ajustes do aparelho › Amora › Localização.';
+  const ios = /iP(hone|ad|od)/.test(navigator.userAgent)
+    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  if (ios) return 'Localização bloqueada — libere em Ajustes do iPhone › Privacidade e Segurança › Serviços de Localização › Sites do Safari (“Durante o Uso”) e tente de novo.';
+  return 'Localização bloqueada — permita a localização deste site nas configurações do navegador (ícone ao lado do endereço) e tente de novo.';
 }
 // ─── Rotação do mapa (leaflet-rotate) ───────────────────────────────────────
 // O plugin gira; aqui moram os ajustes do amora por cima dele:
@@ -4940,7 +6022,16 @@ if (L.control.locate) {
 //     ROTATE_DEADZONE_DEG de torção — e desconta esses graus, pra não pular.
 //  4. `rotateend`: o plugin só dispara `rotate`, a cada passo do gesto; quem
 //     precisa esperar o giro assentar (a relaxação das fotos) ouve este.
-// O rumo NÃO persiste entre sessões: o app sempre abre com o norte pra cima.
+//  5. Toque de dois dedos PARADO: o `_onTouchEnd` do plugin, quando os dedos
+//     não se mexeram, zera `_zooming` mas esquece `_rotating` e deixa os
+//     listeners de documento presos — a pinça seguinte era ignorada (voltava
+//     pro fim da pinça anterior) ou, na 1ª da sessão, jogava o mapa pra zoom
+//     NaN no polo sul. Remendado na INSTÂNCIA (não no arquivo vendorado).
+//  6. TouchZoom órfão: o init hook do Leaflet já tinha criado e ligado o
+//     TouchZoom do core antes de o plugin re-registrar o seu — os dois
+//     moviam o mapa a cada quadro da pinça. Desligamos o do core.
+// O rumo NÃO persiste entre sessões: o app sempre abre com o norte pra cima
+// (um reload/descarte da MESMA aba restaura a vista — ver restoreSessionView).
 const ROTATE_DEADZONE_DEG = 15;
 if (typeof map.setBearing === 'function' && map.options.rotate) setupMapRotation();
 
@@ -4976,6 +6067,35 @@ function setupMapRotation() {
     }
     return rawSetBearing(deg - pinch.offset);
   };
+
+  // 5) toque de dois dedos parado. O plugin prende os listeners de documento
+  //    com a referência `this._onTouchEnd` lida no touchstart — trocar o método
+  //    da instância aqui (antes do 1º gesto) faz o bind pegar este embrulho.
+  const tg = map.touchGestures;
+  if (tg && typeof tg._onTouchEnd === 'function') {
+    const pluginTouchEnd = tg._onTouchEnd;
+    tg._onTouchEnd = function (e) {
+      if (!this._moved) {
+        this._zooming = false;
+        this._rotating = false;
+        L.DomEvent
+          .off(document, 'touchmove', this._onTouchMove, this)
+          .off(document, 'touchend touchcancel', this._onTouchEnd, this);
+        return;
+      }
+      return pluginTouchEnd.call(this, e);
+    };
+  }
+  // 6) TouchZoom órfão do core: é o handler com _onTouchStart que não é o
+  //    touchGestures do plugin (map.touchZoom já aponta pro do plugin). O
+  //    removeHooks do core tira a classe leaflet-touch-zoom, que o do plugin
+  //    também usa (é ela que dá o touch-action: none) — devolvemos.
+  for (const h of map._handlers || []) {
+    if (h === tg || h === map.touchZoom || typeof h._onTouchStart !== 'function') continue;
+    if (h._map !== map || !h.enabled?.()) continue;
+    h.disable();
+    if (map.touchZoom?.enabled?.()) L.DomUtil.addClass(container, 'leaflet-touch-zoom');
+  }
 
   // 2) Shift+roda. Captura no container + stopImmediatePropagation: o
   //    scrollWheelZoom do Leaflet escuta a roda no MESMO container e daria zoom
@@ -5040,7 +6160,7 @@ function setupMapRotation() {
 const locateBtn = document.getElementById('locate-btn');
 locateBtn?.addEventListener('click', () => {
   if (!locateControl) {
-    alert('Geolocalização não disponível neste navegador.');
+    showToast('Geolocalização não disponível neste navegador.');
     return;
   }
   // Toggle behavior: tap once to start tracking, tap again to stop.
@@ -5052,10 +6172,18 @@ locateBtn?.addEventListener('click', () => {
 // Compartilhamento de posição em tempo (quase) real: opt-in, pseudônimo,
 // efêmero. O mesmo substrato roda em três cenários: (a) browser com tela
 // ligada/app em foco → watchPosition; (b) browser em segundo plano → pausa
-// (limite da plataforma); (c) shell nativo (Capacitor) → o plugin de
-// background-geolocation chama `window.phidroLivePush(coords)` mesmo com a
-// tela apagada. Ver o plano de implementação. Toda a visualização é idêntica
-// independente da fonte do fix.
+// (limite da plataforma: o iPhone congela o watch com a tela apagada — o
+// modal avisa, e com o celular no guidão um wake lock segura a tela acesa);
+// (c) shell nativo (Capacitor) → o plugin de background-geolocation chama
+// `window.phidroLivePush(coords)` mesmo com a tela apagada. Toda a
+// visualização é idêntica independente da fonte do fix.
+//
+// Rede (pedal em grupo, 4G): o poll é INCREMENTAL (GET /live-locations?since=
+// → as posições atuais + só os pontos novos de cada rastro; a 1ª carga vem
+// emagrecida pelo servidor), um pedido por vez, com timeout e backoff; a idade
+// dos marcadores corre no cliente (sem conexão ninguém fica "agora" pra
+// sempre) e um chip avisa "sem conexão". Os meus fixes que não saíram ficam
+// numa fila e vão no próximo envio que der certo.
 const LIVE_ID_KEY = 'phidro:liveId';
 // Único ponto que monta a URL dos endpoints /live-*: no browser fica
 // same-origin (base vazia); o shell nativo seta window.PHIDRO_API_BASE
@@ -5080,9 +6208,6 @@ function liveColorForId(id) {
 }
 
 let _liveWatchId = null;       // id do navigator.geolocation.watchPosition
-let _livePollTimer = null;     // setInterval da leitura
-let _livePollMs = null;        // intervalo (ms) atualmente aplicado — só recria o timer se mudar
-let _liveLastSentMs = 0;       // throttle do envio (settings.liveLocation.shareMs)
 let _liveGeoErrShown = false;  // já avisei de falha de GPS (code 2/3) nesta sessão de envio?
 // Ver e transmitir são independentes: dá pra ver as pessoas no mapa sem
 // transmitir a própria posição (e vice-versa). Cada um tem seu flag de
@@ -5090,7 +6215,11 @@ let _liveGeoErrShown = false;  // já avisei de falha de GPS (code 2/3) nesta se
 let _liveViewing = false;      // poll + render ligado
 let _liveSharing = false;      // transmissão da minha posição ligada
 let _liveBandOpacity = 0.7;    // opacidade dos pontos do rastro (slider em Pessoas ao vivo)
-const _personMarkers = new Map();   // token -> { marker, trail, ticks, tickDots, last }
+// token -> { marker, trail, ticks, tickDots, acc, last, pts, mine, iconKey }
+//   last = posição atual {id, name, lat, lng, ts, accuracy, heading}
+//   pts  = rastro local [[lat, lng, acc|null, ts], …] em ordem de ts
+//   (ts = instante do fix no relógio do SERVIDOR, em s)
+const _personMarkers = new Map();
 // Ajustes por pessoa (clique no dot abre um popup): { token: {color?, opacity?, hideHistory?} }.
 // Persistido localmente, aplicado em upsertPersonMarker.
 const LIVE_OVERRIDES_KEY = 'phidro:livePersonOverrides';
@@ -5133,6 +6262,12 @@ function liveTrailsPane() {
   }
   return 'liveTrails';
 }
+// Seta de rumo: o marcador mora no norotatePane (fica "em pé" com o mapa
+// girado), então soma o rumo do mapa pra apontar pro rumo REAL — 0° = norte.
+function liveArrowTransform(heading) {
+  const b = typeof map.getBearing === 'function' ? (map.getBearing() || 0) : 0;
+  return `translate(-50%,-50%) rotate(${Math.round(heading + b)}deg) translateY(-20px)`;
+}
 // divIcon de uma pessoa ao vivo — anel colorido + inicial + (opcional) seta
 // de rumo. Classe própria (.live-person), distinta do .photo-dot. `stale`
 // (sem fix recente) tira o pulso "ao vivo" via .is-stale.
@@ -5141,7 +6276,7 @@ function personDivIcon(p, mine, stale, color) {
   const initial = (p.name || '').trim().charAt(0).toUpperCase() || '•';
   const heading = Number.isFinite(p.heading) ? p.heading : null;
   const arrow = heading != null
-    ? `<div class="live-person-arrow" style="transform:translate(-50%,-50%) rotate(${heading}deg) translateY(-20px)"></div>` : '';
+    ? `<div class="live-person-arrow" style="transform:${liveArrowTransform(heading)}"></div>` : '';
   const label = p.name
     ? `<div class="live-person-label">${escapeHtml(p.name)}</div>` : '';
   const cls = 'live-person' + (mine ? ' is-me' : '') + (stale ? ' is-stale' : '');
@@ -5154,6 +6289,15 @@ function personDivIcon(p, mine, stale, color) {
     popupAnchor: [0, -18],
   });
 }
+// Girar o mapa só mexe no transform das setas (sem refazer os ícones).
+function syncLiveArrows() {
+  for (const e of _personMarkers.values()) {
+    if (!Number.isFinite(e.last?.heading)) continue;
+    const el = e.marker.getElement()?.querySelector('.live-person-arrow');
+    if (el) el.style.transform = liveArrowTransform(e.last.heading);
+  }
+}
+if (typeof map.getBearing === 'function') map.on('rotate', syncLiveArrows);
 
 // Idade (s) → opacidade do marcador. Janela de 3h: fresco = 1, esmaece
 // gradualmente e estaciona em ~0.35 depois de ~20 min sem novo fix.
@@ -5170,38 +6314,93 @@ function formatLiveAgo(sec) {
   if (sec < 3600) return `há ${Math.round(sec / 60)} min`;
   return `há ${(sec / 3600).toFixed(1).replace('.', ',')} h`;
 }
+// Duração (s) → "45 s" / "3 min" / "1 h 5 min" (avisos de transmissão parada).
+function formatLiveDur(sec) {
+  if (sec < 90) return `${Math.round(sec)} s`;
+  if (sec < 3600) return `${Math.round(sec / 60)} min`;
+  const h = Math.floor(sec / 3600), m = Math.round((sec % 3600) / 60);
+  return m ? `${h} h ${m} min` : `${h} h`;
+}
+// Relógio: as idades são calculadas AQUI, do instante do fix (`ts`, relógio do
+// servidor) + a diferença de relógio medida a cada poll. Assim elas continuam
+// correndo com o poll falhando — antes vinham prontas do servidor e, sem
+// conexão, todo mundo ficava "agora" e opaco na última posição conhecida.
+let _liveSkewS = 0;            // relógio do servidor − Date.now(), em s
+function liveAgeOf(ts) {
+  return Number.isFinite(ts) ? Math.max(0, Date.now() / 1000 + _liveSkewS - ts) : NaN;
+}
 
-function upsertPersonMarker(p, mine) {
+// Aparência de uma pessoa: cor/opacidade (ajustes por pessoa) + idade agora.
+function livePersonStyle(e) {
+  const ov = _personOverrides[e.last.id] || {};
+  return {
+    color: ov.color || (e.mine ? '#1e88e5' : liveColorForId(e.last.id)),
+    opMul: Number.isFinite(ov.opacity) ? Math.max(0, Math.min(1, ov.opacity)) : 1,
+    showHistory: ov.hideHistory !== true,
+    age: liveAgeOf(e.last.ts),
+  };
+}
+// O que depende da IDADE (esmaecer, perder o pulso, o círculo de precisão) —
+// refeito também ENTRE polls pelo tick, sem mexer no rastro. O ícone só é
+// recriado quando algo dele mudou (antes: setIcon a cada poll).
+function applyPersonAge(e, st = livePersonStyle(e)) {
+  const p = e.last;
+  const stale = st.age > LIVE_STALE_AGE_S;
+  const hdg = Number.isFinite(p.heading) ? Math.round(p.heading) : '';
+  const key = `${p.name}|${hdg}|${stale ? 1 : 0}|${st.color}|${e.mine ? 1 : 0}`;
+  if (key !== e.iconKey) {
+    e.iconKey = key;
+    e.marker.setIcon(personDivIcon(p, e.mine, stale, st.color));
+  }
+  const fade = liveOpacityForAge(st.age);
+  e.marker.setOpacity(fade * st.opMul);
+  if (e.acc) e.acc.setStyle({ opacity: 0.55 * fade * st.opMul, fillOpacity: 0.1 * fade * st.opMul });
+}
+function refreshLiveAges() {
+  for (const e of _personMarkers.values()) applyPersonAge(e);
+}
+
+function upsertPersonMarker(p, pts, mine) {
   const ll = [p.lat, p.lng];
-  const stale = Number.isFinite(p.age) && p.age > LIVE_STALE_AGE_S;
-  // Ajustes por pessoa (clique no dot → popup): cor, opacidade, esconder histórico.
-  const ov = _personOverrides[p.id] || {};
-  const color = ov.color || (mine ? '#1e88e5' : liveColorForId(p.id));
-  const opMul = Number.isFinite(ov.opacity) ? Math.max(0, Math.min(1, ov.opacity)) : 1;
-  const showHistory = ov.hideHistory !== true;
   let e = _personMarkers.get(p.id);
-  const icon = personDivIcon(p, mine, stale, color);
   if (!e) {
-    const marker = L.marker(ll, { icon, pane: livePeoplePane(), zIndexOffset: 1000 });
+    const marker = L.marker(ll, { icon: personDivIcon(p, mine, false, null),
+      pane: livePeoplePane(), zIndexOffset: 1000 });
     marker.addTo(map);
     marker.on('click', () => openLivePersonControls(p.id));
-    e = { marker, trail: null, ticks: null, tickDots: [], last: null };
+    e = { marker, trail: null, ticks: null, tickDots: [], acc: null, last: p, pts, mine, iconKey: '' };
+    // Tooltip calculado ao abrir: mostra a idade de AGORA, não a do último poll.
+    marker.bindTooltip(() => formatLiveAgo(liveAgeOf(e.last.ts)), { direction: 'top' });
     _personMarkers.set(p.id, e);
   } else {
     e.marker.setLatLng(ll);
-    e.marker.setIcon(icon);
   }
-  e.last = p;   // guardado p/ reaplicar na hora quando o popup muda um ajuste
-  e.marker.setOpacity(liveOpacityForAge(p.age) * opMul);
+  e.last = p; e.pts = pts; e.mine = mine;   // guardados p/ reaplicar ajustes na hora
+  const st = livePersonStyle(e);
+  const { color, opMul, showHistory } = st;
+  // Incerteza da posição ATUAL como círculo de verdade, em metros: um fix
+  // grosseiro (Wi-Fi/antena, ±1 km) não pode parecer um ponto nítido.
+  const accM = Number.isFinite(p.accuracy) && p.accuracy > 0 ? Math.min(p.accuracy, 5000) : 0;
+  if (accM) {
+    if (!e.acc) {
+      e.acc = L.circle(ll, { pane: liveTrailsPane(), radius: accM, color, fillColor: color,
+        weight: 1, interactive: false }).addTo(map);
+    } else {
+      e.acc.setLatLng(ll);
+      e.acc.setRadius(accM);
+      e.acc.setStyle({ color, fillColor: color });
+    }
+  } else if (e.acc) {
+    map.removeLayer(e.acc); e.acc = null;
+  }
+  applyPersonAge(e, st);
 
   // Trajetória = uma LINHA conectando os fixes + um PONTO em cada fix cujo raio
-  // reflete a incerteza (precisão) daquele ponto. (Substitui a antiga faixa de
-  // incerteza, que era um polígono problemático.) `showHistory` (toggle no
-  // popup) esconde tudo, deixando só o dot atual. `p.trail` vem como
-  // [lat,lng,acc,age]; passamos só [lat,lng] pra linha — L.toLatLng() devolve
-  // null pra arrays de 4 elementos e estoura o _projectLatlngs no zoom.
-  const pts = showHistory && Array.isArray(p.trail) ? p.trail : [];
-  const line = pts.map((q) => [q[0], q[1]]);
+  // reflete a incerteza (precisão) daquele ponto. `showHistory` (toggle no
+  // popup) esconde tudo, deixando só o dot atual. Passamos só [lat,lng] pra
+  // linha — L.toLatLng() devolve null pra arrays de 4 elementos e estoura o
+  // _projectLatlngs no zoom.
+  const line = showHistory ? pts.map((q) => [q[0], q[1]]) : [];
   if (line.length >= 2) {
     if (!e.trail) {
       e.trail = L.polyline(line, { pane: liveTrailsPane(), color,
@@ -5214,48 +6413,45 @@ function upsertPersonMarker(p, mine) {
     map.removeLayer(e.trail); e.trail = null;
   }
   // Pontos do rastro: raio cresce com a incerteza (px); hover/toque mostra "há
-  // quanto tempo" (q[3] = idade em s). Downsample p/ ~40 por pessoa. Reusa os
-  // circleMarkers entre polls (setLatLng/setStyle), em vez de destruir+recriar
-  // ~40 layers a cada poll — mesmo padrão do marcador-cabeça e da linha.
+  // quanto tempo". ~40 por pessoa, espaçados no TEMPO (o rastro local mistura a
+  // 1ª carga emagrecida com os pontos densos dos deltas — amostrar por índice
+  // amontoaria os pontos no fim). Reusa os circleMarkers entre polls
+  // (setLatLng/setStyle) em vez de destruir+recriar ~40 layers a cada poll.
   if (!e.ticks) { e.ticks = L.layerGroup().addTo(map); e.tickDots = []; }
   const sampled = [];
   if (showHistory && pts.length) {
-    const tstep = Math.max(1, Math.ceil(pts.length / 40));
-    for (let k = 0; k < pts.length; k += tstep) {
-      const q = pts[k];
-      if (Number.isFinite(q[0]) && Number.isFinite(q[1])) sampled.push(q);
+    const span = pts[pts.length - 1][3] - pts[0][3];
+    const step = span > 0 ? span / 40 : Infinity;
+    let next = -Infinity;
+    for (const q of pts) {
+      if (q[3] >= next) { sampled.push(q); next = q[3] + step; }
     }
   }
   for (let k = 0; k < sampled.length; k++) {
     const q = sampled[k];
     const acc = Number.isFinite(q[2]) && q[2] > 0 ? q[2] : 0;
     const radius = Math.max(2.5, Math.min(14, 2 + acc / 5));   // px ~ incerteza
-    const ago = formatLiveAgo(q[3]);
     let dot = e.tickDots[k];
     if (!dot) {
       // Sem borda (stroke:false) — assim opacidade 0 some de vez.
       dot = L.circleMarker([q[0], q[1]], { pane: liveTrailsPane(), radius,
         stroke: false, fillColor: color, fillOpacity: _liveBandOpacity * opMul });
       dot.on('click', () => dot.openTooltip());   // suporte a toque
-      dot.bindTooltip(ago, { direction: 'top', sticky: true });
+      dot.bindTooltip(() => formatLiveAgo(liveAgeOf(dot._liveTs)), { direction: 'top', sticky: true });
       dot.addTo(e.ticks);
       e.tickDots[k] = dot;
     } else {
       dot.setLatLng([q[0], q[1]]);
       dot.setRadius(radius);
       dot.setStyle({ fillColor: color, fillOpacity: _liveBandOpacity * opMul });
-      dot.setTooltipContent(ago);
     }
+    dot._liveTs = q[3];
   }
   // Remove o excedente (rastro encolheu ou histórico foi escondido).
   for (let k = sampled.length; k < e.tickDots.length; k++) {
     if (e.tickDots[k]) e.ticks.removeLayer(e.tickDots[k]);
   }
   e.tickDots.length = sampled.length;
-  // Tempo da posição atual no próprio dot (hover/toque).
-  const ago = formatLiveAgo(p.age);
-  if (e.marker.getTooltip()) e.marker.setTooltipContent(ago);
-  else e.marker.bindTooltip(ago, { direction: 'top' });
 }
 
 // Popup de ajustes por pessoa — aberto ao clicar no dot. Cor, opacidade e
@@ -5281,13 +6477,13 @@ function openLivePersonControls(token) {
     .setLatLng(e.marker.getLatLng()).setContent(html).openOn(map);
   const root = popup.getElement();
   if (!root) return;
-  const reapply = () => { ov.ts = Date.now(); saveLiveOverrides(); if (e.last) upsertPersonMarker(e.last, mine); };
+  const reapply = () => { ov.ts = Date.now(); saveLiveOverrides(); if (e.last) upsertPersonMarker(e.last, e.pts, mine); };
   root.querySelector('.lc-color').addEventListener('input', (ev) => { ov.color = ev.target.value; reapply(); });
   root.querySelector('.lc-op').addEventListener('input', (ev) => { ov.opacity = Number(ev.target.value) / 100; reapply(); });
   root.querySelector('.lc-hist').addEventListener('change', (ev) => { ov.hideHistory = !ev.target.checked; reapply(); });
   root.querySelector('.lc-reset').addEventListener('click', () => {
     delete _personOverrides[token]; saveLiveOverrides();
-    if (e.last) upsertPersonMarker(e.last, mine);
+    if (e.last) upsertPersonMarker(e.last, e.pts, mine);
     map.closePopup(popup);
   });
 }
@@ -5296,6 +6492,7 @@ function removePersonMarker(token) {
   const e = _personMarkers.get(token);
   if (!e) return;
   if (e.marker) map.removeLayer(e.marker);
+  if (e.acc) map.removeLayer(e.acc);
   if (e.trail) map.removeLayer(e.trail);
   if (e.ticks) map.removeLayer(e.ticks);
   _personMarkers.delete(token);
@@ -5304,49 +6501,359 @@ function clearPersonMarkers() {
   for (const token of [..._personMarkers.keys()]) removePersonMarker(token);
 }
 
-// Envio (throttled) da minha posição. Chamado tanto pelo watchPosition do
-// browser quanto pelo bridge nativo (window.phidroLivePush).
-function sendLivePosition(lat, lng, accuracy, heading) {
+// ── Envio: fila de fixes, um POST por vez ──────────────────────────────────
+// Cada fix aceito (throttle de shareMs + filtro de precisão) entra na fila; o
+// POST leva a fila inteira — o mais novo vira a posição atual e os anteriores
+// vão em `points` com a idade (o servidor os retrodata no rastro). Sem
+// conexão, a fila cresce (acima de LIVE_OUTBOX_MAX a metade mais velha é
+// rarefeita) e sai no próximo envio que der certo: o rastro volta sem buraco,
+// em vez de uma reta. Parar de transmitir descarta a fila.
+const LIVE_OUTBOX_MAX = 120;
+const LIVE_POST_TIMEOUT_MS = 10000;
+const LIVE_ACC_GOOD_M = 150;       // precisão pior que isto: só se nada melhor vier em…
+const LIVE_ACC_GRACE_MS = 30000;   // …30 s (o 1º fix do iPhone costuma ser Wi-Fi/antena, 65–1400 m)
+const LIVE_ACC_COARSE_M = 1000;    // ≥ 1 km: "Localização Precisa" desligada — avisa uma vez
+const LIVE_STALL_MS = 60000;       // sem envio confirmado há mais que isto → avisa
+let _liveOutbox = [];              // [{lat, lng, acc, hdg, t(ms do fix)}] ainda não confirmados
+let _livePostCtl = null;           // AbortController do POST em voo
+let _livePostFails = 0;            // falhas seguidas (backoff do reenvio + chip)
+let _livePostRetryAt = 0;          // antes disto não tenta de novo (Date.now())
+let _liveLastFixMs = 0;            // último fix aceito na fila (throttle de shareMs)
+let _liveLastGoodFixMs = 0;        // último fix com precisão boa
+let _liveLastOkMs = 0;             // último POST confirmado pelo servidor
+let _liveShareStartMs = 0;         // início desta sessão de envio
+let _liveCoarseWarned = false;     // já avisou de localização aproximada nesta sessão?
+let _liveStallWarned = false;      // já avisou desta parada (reseta no próximo envio ok)
+
+// Chamado tanto pelo watchPosition do browser quanto pelo bridge nativo
+// (window.phidroLivePush). `fixTimeMs` = quando o aparelho obteve o fix.
+function sendLivePosition(lat, lng, accuracy, heading, fixTimeMs) {
   if (!settings.liveLocation?.enabled) return;
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
   const now = Date.now();
+  const acc = Number.isFinite(accuracy) && accuracy > 0 ? accuracy : null;
+  // Filtro de precisão: fix grosseiro só vai se nada melhor chegou nos últimos
+  // 30 s — senão um fix de 1,4 km vira um ponto nítido longe do grupo (e antes
+  // ainda travava o throttle, barrando o fix bom que vinha logo depois).
+  if (acc == null || acc <= LIVE_ACC_GOOD_M) _liveLastGoodFixMs = now;
+  else if (now - _liveLastGoodFixMs < LIVE_ACC_GRACE_MS) return;
+  else if (acc >= LIVE_ACC_COARSE_M && !_liveCoarseWarned) {
+    _liveCoarseWarned = true;
+    const km = (acc / 1000).toFixed(1).replace('.', ',');
+    showToast(`Sua localização está aproximada (±${km} km). Pra transmitir a posição exata, ative a “Localização Precisa” nos ajustes de localização do aparelho.`, 9000);
+  }
   const minGap = Math.max(1000, settings.liveLocation?.shareMs || 5000);
-  if (now - _liveLastSentMs < minGap) return;
-  _liveLastSentMs = now;
+  if (now - _liveLastFixMs < minGap) return;
+  _liveLastFixMs = now;
+  const t = Number.isFinite(fixTimeMs) && fixTimeMs > 0 ? Math.min(now, fixTimeMs) : now;
+  _liveOutbox.push({ lat, lng, acc, hdg: Number.isFinite(heading) ? heading : null, t });
+  if (_liveOutbox.length > LIVE_OUTBOX_MAX) {
+    const half = Math.floor(_liveOutbox.length / 2);
+    _liveOutbox = _liveOutbox.filter((_, i) => i >= half || i % 2 === 0);
+  }
+  noteLiveBeat();
+  flushLiveOutbox();
+  if (_livePostFails) renderLiveChip();   // contagem da fila em dia no chip
+}
+function flushLiveOutbox() {
+  if (_livePostCtl || !_liveOutbox.length || Date.now() < _livePostRetryAt) return;
+  const batch = _liveOutbox.slice();
+  const nowMs = Date.now();
+  const ageOf = (f) => Math.max(0, Math.round((nowMs - f.t) / 100) / 10);
+  const last = batch[batch.length - 1];
   const body = { id: liveId(), name: (settings.liveLocation?.displayName || '').trim().slice(0, 40),
-    lat, lng, ttl: settings.liveLocation?.ttlSec ?? 10800 };
-  if (Number.isFinite(accuracy)) body.accuracy = accuracy;
-  if (Number.isFinite(heading)) body.heading = heading;
+    lat: last.lat, lng: last.lng, ttl: settings.liveLocation?.ttlSec ?? 10800 };
+  if (last.acc != null) body.accuracy = last.acc;
+  if (last.hdg != null) body.heading = last.hdg;
+  if (ageOf(last) >= 1) body.age = ageOf(last);
+  if (batch.length > 1) {
+    body.points = batch.slice(0, -1).map((f) => {
+      const q = { lat: f.lat, lng: f.lng, age: ageOf(f) };
+      if (f.acc != null) q.accuracy = f.acc;
+      if (f.hdg != null) q.heading = f.hdg;
+      return q;
+    });
+  }
+  const json = JSON.stringify(body);
+  const ctl = new AbortController();
+  _livePostCtl = ctl;
+  const timer = setTimeout(() => ctl.abort(), LIVE_POST_TIMEOUT_MS);
   fetch(liveApiUrl('/live-location'), {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body), keepalive: true,
-  }).catch(() => {});
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: json,
+    // keepalive: o último envio sobrevive à aba indo pro fundo (teto de 64 KB).
+    keepalive: json.length < 60000, signal: ctl.signal,
+  }).then((r) => {
+    if (r.status >= 500) throw new Error('HTTP ' + r.status);
+    // 2xx: entregue. 4xx: o servidor recusou o dado — reenviar não resolve.
+    const sent = new Set(batch);
+    _liveOutbox = _liveOutbox.filter((f) => !sent.has(f));
+    _livePostFails = 0;
+    _livePostRetryAt = 0;
+    if (r.ok) { _liveLastOkMs = Date.now(); _liveStallWarned = false; }
+  }).catch(() => {
+    _livePostFails++;
+    _livePostRetryAt = Date.now() + Math.min(30000, 2000 * 2 ** Math.min(4, _livePostFails - 1));
+  }).finally(() => {
+    clearTimeout(timer);
+    if (_livePostCtl === ctl) _livePostCtl = null;
+    renderLiveChip();
+    // Chegou fix novo enquanto este ia: manda já (só se o envio deu certo).
+    if (!_livePostFails && _liveOutbox.length) flushLiveOutbox();
+  });
 }
 // Hook pro shell nativo: o plugin de background-geolocation chama isto a cada
-// fix (inclusive com a tela apagada). { latitude, longitude, accuracy, bearing }.
+// fix (inclusive com a tela apagada). { latitude, longitude, accuracy, bearing, time }.
 window.phidroLivePush = (c) => {
   if (!c) return;
   sendLivePosition(c.latitude ?? c.lat, c.longitude ?? c.lng,
-    c.accuracy, c.bearing ?? c.heading);
+    c.accuracy, c.bearing ?? c.heading, c.time);
 };
+// Sem envio confirmado há mais de 1 min com a página à vista (GPS sem sinal ou
+// sem conexão): avisa UMA vez por parada — antes o 📍 seguia "ligado" calado.
+function checkLiveSendHealth() {
+  if (!_liveSharing || _liveStallWarned) return;
+  const ref = Math.max(_liveLastOkMs, _liveShareStartMs);
+  if (!ref || Date.now() - ref < LIVE_STALL_MS) return;
+  _liveStallWarned = true;
+  showToast(_liveOutbox.length
+    ? 'Sua posição não chega ao servidor há mais de 1 min (sem conexão). Ela fica guardada e vai quando o sinal voltar.'
+    : 'Sua posição não é enviada há mais de 1 min — sem sinal de GPS.', 8000);
+}
+// Volta pra página (tela desbloqueada, voltou de outro app) depois de mais de
+// 1 min sem envio: diz que a transmissão ficou parada — no navegador o iPhone
+// congela o watch com a tela apagada, e quem via o marcador o viu parado.
+function noteLiveVisible() {
+  if (document.hidden || !settings.liveLocation?.enabled || !_liveLastOkMs) return;
+  const gap = Date.now() - _liveLastOkMs;
+  if (gap < LIVE_STALL_MS) return;
+  _liveStallWarned = true;   // este aviso já cobre a parada
+  showToast(`Sua transmissão ficou parada por ${formatLiveDur(gap / 1000)}`
+    + (liveIsNative() ? '' : ' (tela apagada ou outro app)') + ' — retomando.', 7000);
+}
 
-function pollLivePositions() {
-  fetch(liveApiUrl('/live-locations'), { cache: 'no-store' })
-    .then((r) => r.ok ? r.json() : null)
-    .then((data) => {
-      if (!data || !Array.isArray(data.positions)) return;
-      const mine = liveId();
-      const seen = new Set();
-      for (const p of data.positions) {
-        if (!p || typeof p.id !== 'string') continue;
-        if (!Number.isFinite(p.lat) || !Number.isFinite(p.lng)) continue;
-        seen.add(p.id);
-        upsertPersonMarker(p, p.id === mine);
+// ── Leitura: poll incremental (GET /live-locations?since=<cursor>) ─────────
+// Um pedido por vez, com timeout; o cursor é o `now` do servidor no poll
+// anterior (0 = carga inicial, que já vem emagrecida). O intervalo cresce
+// quando ninguém MAIS está transmitindo e quando o poll falha (a volta da rede
+// reseta); a aba oculta pausa SEM perder o estado — ao voltar, só o delta.
+const LIVE_POLL_TIMEOUT_MS = 8000;
+const LIVE_IDLE_STEP_MS = 15000;     // ninguém transmitindo: 15 → 30 → 45 → 60 s
+const LIVE_MAX_BACKOFF_MS = 60000;
+let _livePollTimer = null;     // setTimeout do próximo poll
+let _livePollCtl = null;       // AbortController do poll em voo (um por vez)
+let _livePollGen = 0;          // muda ao ligar/desligar o ver: resposta de ciclo velho é descartada
+let _livePollBase = 0;         // pollMs com que o próximo poll foi agendado
+let _liveCursor = 0;           // `now` do servidor no último poll aplicado
+let _livePollFails = 0;        // falhas seguidas (backoff + chip "sem conexão")
+let _livePollIdle = 0;         // polls seguidos sem mais ninguém transmitindo
+let _livePollOkAt = 0;         // Date.now() do último poll bem-sucedido
+let _liveNoEndpoint = false;   // 404/405: servidor sem o endpoint (host estático) — não é "sem conexão"
+
+function livePollDelay() {
+  const base = Math.max(1500, settings.liveLocation?.pollMs || 4000);
+  if (_livePollFails) return Math.min(LIVE_MAX_BACKOFF_MS, base * 2 ** Math.min(4, _livePollFails));
+  if (_livePollIdle) return Math.min(LIVE_MAX_BACKOFF_MS, Math.max(base, LIVE_IDLE_STEP_MS * _livePollIdle));
+  return base;
+}
+function scheduleLivePoll() {
+  clearTimeout(_livePollTimer);
+  _livePollTimer = null;
+  if (!_liveViewing) return;
+  _livePollBase = Math.max(1500, settings.liveLocation?.pollMs || 4000);
+  _livePollTimer = setTimeout(pollLivePositions, livePollDelay());
+}
+async function pollLivePositions() {
+  clearTimeout(_livePollTimer);
+  _livePollTimer = null;
+  if (!_liveViewing || _livePollCtl) return;
+  const gen = _livePollGen;
+  const ctl = new AbortController();
+  _livePollCtl = ctl;
+  const timer = setTimeout(() => ctl.abort(), LIVE_POLL_TIMEOUT_MS);
+  const since = _liveCursor;
+  let ok = false;
+  try {
+    const r = await fetch(liveApiUrl('/live-locations?since=' + since), { cache: 'no-store', signal: ctl.signal });
+    _liveNoEndpoint = r.status === 404 || r.status === 405;
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    if (gen === _livePollGen) ok = applyLiveResponse(data);
+  } catch { /* offline, timeout, 5xx: conta como falha */ } finally {
+    clearTimeout(timer);
+    if (_livePollCtl === ctl) _livePollCtl = null;
+  }
+  if (gen !== _livePollGen) return;   // o ver foi desligado/religado no meio
+  if (ok) { _livePollFails = 0; _livePollOkAt = Date.now(); } else _livePollFails++;
+  refreshLiveAges();
+  renderLiveChip();
+  scheduleLivePoll();
+}
+// Aplica uma resposta do GET: carga completa (since=0) substitui os rastros,
+// delta anexa. Servidor antigo (sem `now`/`since`: rastro inteiro com idades)
+// continua funcionando como antes — tudo como carga completa.
+function applyLiveResponse(data) {
+  if (!data || !Array.isArray(data.positions)) return false;
+  const nowS = Number(data.now);
+  const legacy = !Number.isFinite(nowS) || data.since === undefined;
+  const refNow = Number.isFinite(nowS) ? nowS : Date.now() / 1000;
+  _liveSkewS = refNow - Date.now() / 1000;
+  const full = legacy || !(Number(data.since) > 0);
+  _liveCursor = legacy ? 0 : nowS;
+  const mine = liveId();
+  const seen = new Set();
+  let others = 0;
+  for (const p of data.positions) {
+    if (!p || typeof p.id !== 'string') continue;
+    if (!Number.isFinite(p.lat) || !Number.isFinite(p.lng)) continue;
+    seen.add(p.id);
+    if (p.id !== mine) others++;
+    const head = {
+      id: p.id, name: typeof p.name === 'string' ? p.name : '', lat: p.lat, lng: p.lng,
+      ts: Number.isFinite(p.ts) ? p.ts : refNow - (Number(p.age) || 0),
+      accuracy: Number.isFinite(p.accuracy) ? p.accuracy : null,
+      heading: Number.isFinite(p.heading) ? p.heading : null,
+    };
+    const e = _personMarkers.get(p.id);
+    const pts = (!full && e?.pts) ? e.pts : [];
+    const before = pts.length;
+    for (const q of Array.isArray(p.trail) ? p.trail : []) {
+      if (!Array.isArray(q) || !Number.isFinite(q[0]) || !Number.isFinite(q[1])) continue;
+      const ts = legacy ? refNow - (Number(q[3]) || 0) : Number(q[3]);
+      pts.push([q[0], q[1], Number.isFinite(q[2]) ? q[2] : null, ts]);
+    }
+    // Um lote retrodatado (a fila de alguém que voltou a ter sinal) pode cair
+    // antes do fim do rastro local: reordena só nesse caso.
+    if (before && pts.length > before && pts[before][3] < pts[before - 1][3]) pts.sort((a, b) => a[3] - b[3]);
+    // Poda espelhando o servidor: nada antes do ponto mais antigo que ele guarda.
+    let kept = pts;
+    if (!legacy) {
+      if (p.t0 == null) kept = [];
+      else if (pts.length && pts[0][3] < p.t0) kept = pts.filter((q) => q[3] >= p.t0);
+    }
+    upsertPersonMarker(head, kept, p.id === mine);
+  }
+  for (const token of [..._personMarkers.keys()]) {
+    if (!seen.has(token)) removePersonMarker(token);
+  }
+  _livePollIdle = others ? 0 : _livePollIdle + 1;
+  return true;
+}
+
+// ── Chip de estado (canto inferior esquerdo, junto dos outros .map-chip) ────
+// Oferta de retomar a transmissão depois de um recarregamento, permissão
+// negada no app nativo, ou "sem conexão" (poll falhando e/ou posições minhas
+// na fila). Some sozinho quando o problema passa.
+let _liveResumeOffer = false;  // transmitia até pouco antes da página recarregar
+let _liveNativeDenied = false; // o shell nativo recebeu NOT_AUTHORIZED
+function renderLiveChip() {
+  const acts = [];
+  let msg = '';
+  if (_liveResumeOffer && !settings.liveLocation?.enabled) {
+    msg = '📍 Sua transmissão parou quando a página recarregou.';
+    acts.push(['resume', 'Retomar'], ['dismiss', '✕', 'Dispensar']);
+  } else if (_liveNativeDenied && !settings.liveLocation?.enabled) {
+    msg = '📍 O app está sem permissão de localização.';
+    acts.push(['settings', 'Abrir ajustes'], ['dismiss', '✕', 'Dispensar']);
+  } else {
+    // "Sem conexão" só quando há o que ficar velho (gente no mapa, ou eu
+    // transmitindo) — o ver vem ligado por padrão e, sem ninguém ao vivo, o
+    // chip só cobria o pé do mapa em 4G ruim. Endpoint ausente não é conexão.
+    const recvDown = _liveViewing && _livePollFails > 0 && !_liveNoEndpoint &&
+      (_personMarkers.size > 0 || _liveSharing);
+    const pending = _liveSharing && _livePostFails > 0 ? _liveOutbox.length : 0;
+    if (recvDown || pending) {
+      const parts = [];
+      if (recvDown) {
+        parts.push('Ao vivo sem conexão' + (_livePollOkAt
+          ? ` · atualizado ${formatLiveAgo((Date.now() - _livePollOkAt) / 1000)}` : ''));
       }
-      for (const token of [..._personMarkers.keys()]) {
-        if (!seen.has(token)) removePersonMarker(token);
-      }
-    })
-    .catch(() => {});
+      if (pending) parts.push(pending === 1 ? '1 posição sua na fila' : `${pending} posições suas na fila`);
+      msg = '📡 ' + parts.join(' · ');
+      acts.push(['retry', 'Tentar agora']);
+    }
+  }
+  let chip = document.getElementById('live-status-chip');
+  if (!msg) { chip?.remove(); return; }
+  if (!chip) {
+    chip = document.createElement('div');
+    chip.id = 'live-status-chip';
+    chip.className = 'map-chip';
+    chip.setAttribute('role', 'status');
+    // O chip mora dentro do #map: sem isto o toque viraria clique no mapa
+    // (e, no editor de traçado, um ponto novo).
+    L.DomEvent.disableClickPropagation(chip);
+    L.DomEvent.disableScrollPropagation(chip);
+    chip.addEventListener('click', onLiveChipClick);
+    document.getElementById('map').appendChild(chip);
+  }
+  const html = `<span>${escapeHtml(msg)}</span>` + acts.map(([act, label, aria]) =>
+    `<button type="button" data-act="${act}"${aria ? ` aria-label="${aria}" title="${aria}"` : ''}>${escapeHtml(label)}</button>`).join('');
+  if (chip.innerHTML !== html) chip.innerHTML = html;
+}
+function onLiveChipClick(ev) {
+  const act = ev.target.closest('button')?.dataset.act;
+  if (!act) return;
+  if (act === 'resume') {
+    _liveResumeOffer = false;
+    if (!settings.liveLocation) settings.liveLocation = {};
+    settings.liveLocation.enabled = true;   // mesmo apelido/retenção de antes
+    saveSettings(); applyLiveLocation(); _syncShareCheckbox();
+  } else if (act === 'settings') {
+    _liveNativeDenied = false;
+    window.Capacitor?.Plugins?.BackgroundGeolocation?.openSettings?.()?.catch?.(() => {});
+  } else if (act === 'dismiss') {
+    _liveResumeOffer = false;
+    _liveNativeDenied = false;
+  } else if (act === 'retry') {
+    _livePostRetryAt = 0;
+    flushLiveOutbox();
+    if (_liveViewing && !_livePollCtl) pollLivePositions();
+  }
+  renderLiveChip();
+}
+
+// ── Retomar depois de um recarregamento ─────────────────────────────────────
+// Enquanto transmite, um carimbo em localStorage (no máx. 1 gravação/30 s). Se
+// a página recarrega no meio (o iOS descartou a aba pesada, o WebContent do app
+// caiu, um download navegou a página), o boot volta com `enabled` desligado —
+// de propósito, por privacidade — mas OFERECE retomar num toque.
+const LIVE_SESSION_KEY = 'phidro:liveShareSession';
+const LIVE_RESUME_WINDOW_MS = 20 * 60 * 1000;
+let _liveBeatAt = 0;
+function noteLiveBeat(force) {
+  const now = Date.now();
+  if (!force && now - _liveBeatAt < 30000) return;
+  _liveBeatAt = now;
+  storage.set(LIVE_SESSION_KEY, String(now));
+}
+{
+  const beat = Number(storage.get(LIVE_SESSION_KEY));
+  storage.remove(LIVE_SESSION_KEY);
+  if (beat > 0 && Date.now() - beat < LIVE_RESUME_WINDOW_MS) _liveResumeOffer = true;
+}
+
+// ── Wake lock (browser): com o celular no guidão, a tela acesa mantém a
+// transmissão viva — no iPhone o watchPosition congela com a tela apagada. O
+// navegador solta o lock ao ocultar a página; religamos na volta (o WebKit só
+// exige gesto do usuário no PRIMEIRO pedido, que sai do toque em Compartilhar).
+// Opt-out no modal (no bolso, tela acesa só gasta bateria). O app nativo não
+// precisa: ele transmite com a tela apagada.
+let _liveWakeLock = null;
+let _liveWakeLockPending = false;
+function acquireLiveWakeLock() {
+  if (_liveWakeLock || _liveWakeLockPending || !_liveSharing || liveIsNative()) return;
+  if (settings.liveLocation?.keepAwake === false || document.hidden || !navigator.wakeLock?.request) return;
+  _liveWakeLockPending = true;
+  navigator.wakeLock.request('screen').then((s) => {
+    if (!_liveSharing || document.hidden) { s.release().catch(() => {}); return; }
+    _liveWakeLock = s;
+    s.addEventListener('release', () => { if (_liveWakeLock === s) _liveWakeLock = null; });
+  }).catch(() => {}).finally(() => { _liveWakeLockPending = false; });
+}
+function releaseLiveWakeLock() {
+  const s = _liveWakeLock;
+  _liveWakeLock = null;
+  if (s) s.release().catch(() => {});
 }
 
 // Detecta o shell nativo (Capacitor). Aí o plugin de background-geolocation
@@ -5356,77 +6863,144 @@ function liveIsNative() {
     && window.Capacitor.isNativePlatform());
 }
 let _liveNativeWatcher = null;
+let _liveNativeStarting = null;   // Promise do addWatcher em voo
 // Guarda um pedido de "parar" que chegou enquanto addWatcher() ainda estava em
-// voo (janela em que _liveNativeWatcher segue null/undefined) — sem isto, o
-// watcher nativo ficava rodando mesmo depois do usuário desligar o
-// compartilhamento (ver startNativeBackgroundWatch/stopNativeBackgroundWatch).
+// voo (janela em que _liveNativeWatcher segue null) — sem isto, o watcher
+// nativo ficava rodando mesmo depois do usuário desligar o compartilhamento.
 let _liveWatchStopRequested = false;
+let _liveNativeLastCbMs = 0;      // último callback do watcher (watchdog)
+let _liveNativeRestarting = false;
+// O id do watcher fica guardado: uma recarga da página (WebContent que caiu,
+// download que navegou a página) zera as chamadas guardadas do bridge — o
+// watcher segue ligado no lado nativo (GPS + o aviso azul de localização) sem
+// ninguém que o escute nem o desligue. No boot, removemos o órfão.
+const LIVE_NATIVE_WATCHER_KEY = 'phidro:liveNativeWatcherId';
+{
+  const stale = storage.get(LIVE_NATIVE_WATCHER_KEY);
+  if (stale) {
+    storage.remove(LIVE_NATIVE_WATCHER_KEY);
+    const BG = window.Capacitor?.Plugins?.BackgroundGeolocation;
+    if (BG && liveIsNative()) {
+      try { Promise.resolve(BG.removeWatcher({ id: stale })).catch(() => {}); } catch {}
+    }
+  }
+}
 // Liga o watcher de background do @capacitor-community/background-geolocation.
 // O plugin é registrado pelo lado nativo do shell; aqui o acessamos pelo
 // global injetado (window.Capacitor.Plugins) — sem import, então este mesmo
 // código roda inalterado num browser comum (onde o plugin simplesmente não
 // existe e caímos no watchPosition). Cada fix chama window.phidroLivePush.
-async function startNativeBackgroundWatch() {
+function startNativeBackgroundWatch() {
   const BG = window.Capacitor?.Plugins?.BackgroundGeolocation;
-  if (!BG || _liveNativeWatcher) return !!BG;
+  if (!BG) return Promise.resolve(false);
+  if (_liveNativeWatcher) return Promise.resolve(true);
+  if (_liveNativeStarting) return _liveNativeStarting;
   _liveWatchStopRequested = false; // descarta pedido de parada de um ciclo anterior
-  try {
-    _liveNativeWatcher = await BG.addWatcher({
-      backgroundTitle: 'Pedal Hidrográfico',
-      backgroundMessage: 'Compartilhando sua localização ao vivo',
-      requestPermissions: true,
-      stale: false,
-      distanceFilter: 10,
-    }, (location, error) => {
-      if (error || !location) return;
-      window.phidroLivePush(location);   // {latitude, longitude, accuracy, bearing}
-    });
-    if (_liveWatchStopRequested) {
-      // Usuário desligou o compartilhamento enquanto o addWatcher estava em
-      // voo — stopNativeBackgroundWatch não tinha o id ainda pra chamar
-      // removeWatcher. Desliga agora que o id existe.
-      _liveWatchStopRequested = false;
-      try { await BG.removeWatcher({ id: _liveNativeWatcher }); } catch {}
-      _liveNativeWatcher = null;
-      return false;
-    }
-    return true;
-  } catch { _liveNativeWatcher = null; return false; }
+  _liveNativeLastCbMs = Date.now();
+  _liveNativeStarting = (async () => {
+    try {
+      const id = await BG.addWatcher({
+        backgroundTitle: 'Pedal Hidrográfico',
+        backgroundMessage: 'Compartilhando sua localização ao vivo',
+        requestPermissions: true,
+        stale: false,
+        distanceFilter: 10,
+      }, (location, error) => {
+        if (error) { onNativeWatchError(error); return; }
+        if (!location) return;
+        _liveNativeLastCbMs = Date.now();
+        _liveGeoErrShown = false;
+        window.phidroLivePush(location);   // {latitude, longitude, accuracy, bearing, time}
+      });
+      if (_liveWatchStopRequested) {
+        // Usuário desligou o compartilhamento enquanto o addWatcher estava em
+        // voo — stopNativeBackgroundWatch não tinha o id ainda pra chamar
+        // removeWatcher. Desliga agora que o id existe.
+        _liveWatchStopRequested = false;
+        try { await BG.removeWatcher({ id }); } catch {}
+        return false;
+      }
+      _liveNativeWatcher = id;
+      storage.set(LIVE_NATIVE_WATCHER_KEY, String(id));
+      return true;
+    } catch { return false; } finally { _liveNativeStarting = null; }
+  })();
+  return _liveNativeStarting;
 }
 async function stopNativeBackgroundWatch() {
   const BG = window.Capacitor?.Plugins?.BackgroundGeolocation;
-  if (BG && _liveNativeWatcher) {
-    try { await BG.removeWatcher({ id: _liveNativeWatcher }); } catch {}
-  } else {
-    // BG existe mas o watcher ainda não foi atribuído (addWatcher em voo) —
-    // sinaliza pro startNativeBackgroundWatch desligar assim que resolver.
+  const id = _liveNativeWatcher;
+  _liveNativeWatcher = null;
+  storage.remove(LIVE_NATIVE_WATCHER_KEY);
+  if (BG && id) {
+    try { await BG.removeWatcher({ id }); } catch {}
+  } else if (_liveNativeStarting) {
+    // addWatcher em voo — sinaliza pro startNativeBackgroundWatch desligar
+    // assim que resolver.
     _liveWatchStopRequested = true;
   }
-  _liveNativeWatcher = null;
+}
+// Erros chegam no MESMO callback dos fixes. NOT_AUTHORIZED (tocou "Não
+// permitir" ou rebaixou a permissão em Ajustes) desliga de verdade, como o
+// code 1 do browser — antes era ignorado e o 📍 seguia "transmitindo" calado.
+function onNativeWatchError(error) {
+  if (error?.code === 'NOT_AUTHORIZED') {
+    _liveNativeDenied = true;
+    if (settings.liveLocation?.enabled) disableLiveSharing();
+    showToast(geoDeniedHelp(), 10000);
+    renderLiveChip();
+  } else if (!_liveGeoErrShown) {
+    _liveGeoErrShown = true;
+    showToast('Não foi possível obter sua localização — tentando de novo.');
+  }
+}
+// Watchdog: transmitindo pelo shell e nenhum callback há 90 s → refaz o
+// watcher. Cobre o watcher que perdeu o canal com a página (chamadas do bridge
+// zeradas) e, parado num sinal com o distanceFilter, renova a posição.
+const LIVE_NATIVE_WATCHDOG_MS = 90000;
+function nativeLiveWatchdog() {
+  if (!_liveSharing || !liveIsNative() || _liveNativeRestarting || _liveNativeStarting) return;
+  if (Date.now() - _liveNativeLastCbMs < LIVE_NATIVE_WATCHDOG_MS) return;
+  _liveNativeRestarting = true;
+  (async () => {
+    await stopNativeBackgroundWatch();
+    if (!_liveSharing) return;
+    const ok = await startNativeBackgroundWatch();
+    if (!ok && _liveSharing && settings.liveLocation?.enabled) {
+      disableLiveSharing();
+      showToast('A transmissão ao vivo parou e não voltou — ligue de novo no 📍.', 8000);
+    }
+  })().finally(() => { _liveNativeRestarting = false; });
 }
 
 function startLiveShare() {
+  _liveShareStartMs = Date.now();
+  _liveLastGoodFixMs = Date.now();   // janela de 30 s p/ um fix preciso antes de aceitar um grosseiro
+  _liveCoarseWarned = false;
+  _liveStallWarned = false;
+  _liveResumeOffer = false;
+  _liveNativeDenied = false;
+  noteLiveBeat(true);
   // No shell nativo devolve a Promise<boolean> do watcher pra applyLiveLocation
   // poder desfazer o estado se o background-geolocation não subir (permissão
   // negada / erro do plugin). No browser retorna undefined (erros são tratados
   // no callback de watchPosition).
   if (liveIsNative()) return startNativeBackgroundWatch();
-  if (_liveWatchId != null || !navigator.geolocation) return;
+  if (!navigator.geolocation) return false;   // → rollback + aviso em applyLiveLocation
+  acquireLiveWakeLock();   // síncrono no toque de Compartilhar (gesto p/ o WebKit)
+  if (_liveWatchId != null) return;
   _liveGeoErrShown = false;
   _liveWatchId = navigator.geolocation.watchPosition(
     (pos) => {
       _liveGeoErrShown = false;   // recuperou o sinal — pode avisar de novo se cair
       const c = pos.coords;
       sendLivePosition(c.latitude, c.longitude, c.accuracy,
-        Number.isFinite(c.heading) ? c.heading : NaN);
+        Number.isFinite(c.heading) ? c.heading : NaN, pos.timestamp);
     },
     (err) => {
       if (err && err.code === 1) {   // PERMISSION_DENIED
-        showToast('Sem permissão de localização — compartilhamento desligado.');
-        settings.liveLocation.enabled = false; saveSettings();
-        applyLiveLocation();
-        const cb = document.querySelector('[data-setting="liveLocation.enabled"]');
-        if (cb) cb.checked = false;
+        disableLiveSharing();
+        showToast(geoDeniedHelp(), 10000);
       } else if (err && (err.code === 2 || err.code === 3) && !_liveGeoErrShown) {
         // POSITION_UNAVAILABLE / TIMEOUT: o watch segue tentando (perder o GPS
         // por um tempo é comum pedalando), mas avisa UMA vez pra não mentir
@@ -5438,15 +7012,35 @@ function startLiveShare() {
     { enableHighAccuracy: true, maximumAge: 3000, timeout: 20000 },
   );
 }
-function stopLiveShare() {
+// `explicit` = a pessoa desligou (📍, Ajustes, permissão negada). Sem ele é só
+// a página indo pro fundo (pagehide): encerra o watch local mas guarda a fila
+// e o carimbo, e tenta um último envio.
+function stopLiveShare(explicit) {
   if (liveIsNative()) stopNativeBackgroundWatch();
   if (_liveWatchId != null && navigator.geolocation) {
     navigator.geolocation.clearWatch(_liveWatchId);
   }
   _liveWatchId = null;
-  _liveLastSentMs = 0;
+  _liveLastFixMs = 0;
+  releaseLiveWakeLock();
+  if (explicit) {
+    _liveOutbox = [];
+    _livePostFails = 0;
+    _livePostRetryAt = 0;
+    _liveLastOkMs = 0;   // a próxima sessão conta a parada do zero
+    storage.remove(LIVE_SESSION_KEY);
+  } else {
+    flushLiveOutbox();
+  }
   // NÃO chama /live-location/stop: o rastro fica visível até expirar da janela
   // de 3h (decisão de produto). Parar só interrompe novos envios.
+}
+function disableLiveSharing() {
+  if (!settings.liveLocation) settings.liveLocation = {};
+  settings.liveLocation.enabled = false;
+  saveSettings();
+  applyLiveLocation();
+  _syncShareCheckbox();
 }
 
 // Opacidade dos pontos do rastro (slider da camada Pessoas ao vivo). Atualiza
@@ -5473,34 +7067,56 @@ function setLiveViewEnabled(v) {
   applyLiveLocation();
 }
 
+// Tick de 10 s enquanto vê ou transmite: idades/esmaecimento entre polls,
+// reenvio da fila, aviso de transmissão parada, chip e o watchdog nativo.
+const LIVE_TICK_MS = 10000;
+let _liveTickTimer = null;
+function syncLiveTick() {
+  const want = _liveViewing || _liveSharing;
+  if (want && !_liveTickTimer) _liveTickTimer = setInterval(liveTick, LIVE_TICK_MS);
+  else if (!want && _liveTickTimer) { clearInterval(_liveTickTimer); _liveTickTimer = null; }
+}
+function liveTick() {
+  if (_liveSharing) {
+    nativeLiveWatchdog();
+    flushLiveOutbox();
+  }
+  if (document.hidden) return;
+  refreshLiveAges();
+  checkLiveSendHealth();
+  renderLiveChip();
+}
+
 // Reconcilia o subsistema com as configurações. Idempotente (chamado por
 // applyAllSettings a cada mudança e por visibilitychange). Ver e transmitir
 // são independentes.
 function applyLiveLocation() {
-  // ── Ver (poll + render): ligado se `view` E a aba está visível. Pausa em
-  // background pra não consumir rede à toa.
-  const wantView = !!settings.liveLocation?.view && !document.hidden;
+  // ── Ver (poll + render): ligado se `view` E a aba está visível. Aba oculta
+  // só PAUSA (marcadores e cursor ficam; a volta pede o delta e o tick
+  // reenvelhece os marcadores na hora); desligar a camada esquece tudo.
+  const viewOn = !!settings.liveLocation?.view;
+  const wantView = viewOn && !document.hidden;
+  if (!viewOn && (_personMarkers.size || _liveCursor)) {
+    clearPersonMarkers();
+    _liveCursor = 0;
+    _livePollFails = 0;
+  }
   if (wantView !== _liveViewing) {
     _liveViewing = wantView;
+    _livePollGen++;
+    if (_livePollCtl) { _livePollCtl.abort(); _livePollCtl = null; }
+    clearTimeout(_livePollTimer);
+    _livePollTimer = null;
     if (wantView) {
+      _livePollIdle = 0;
+      refreshLiveAges();
       pollLivePositions();
-      _livePollMs = Math.max(1500, settings.liveLocation?.pollMs || 4000);
-      _livePollTimer = setInterval(pollLivePositions, _livePollMs);
-    } else {
-      if (_livePollTimer != null) { clearInterval(_livePollTimer); _livePollTimer = null; }
-      _livePollMs = null;
-      clearPersonMarkers();
     }
-  } else if (wantView && _livePollTimer != null) {
-    // Sem transição: só recria o timer se pollMs mudou de verdade. Antes,
-    // qualquer mudança de Ajustes/visibilidade reiniciava a cadência (o próximo
-    // fetch escorregava até um intervalo inteiro pra frente).
-    const ms = Math.max(1500, settings.liveLocation?.pollMs || 4000);
-    if (ms !== _livePollMs) {
-      clearInterval(_livePollTimer);
-      _livePollMs = ms;
-      _livePollTimer = setInterval(pollLivePositions, ms);
-    }
+  } else if (wantView && _livePollTimer != null
+      && _livePollBase !== Math.max(1500, settings.liveLocation?.pollMs || 4000)) {
+    // Sem transição: só reagenda se pollMs mudou de verdade (Ajustes mexe em
+    // tudo a cada input — não pode escorregar a cadência à toa).
+    scheduleLivePoll();
   }
 
   // ── Transmitir (independente do ver): ligado se `enabled`.
@@ -5513,19 +7129,25 @@ function applyLiveLocation() {
       // plugin), desfaz o estado pra não mentir "transmitindo" e permitir nova
       // tentativa, espelhando o tratamento de PERMISSION_DENIED do browser. No
       // browser startLiveShare devolve undefined (≠ false), então sem rollback.
+      // Se a pessoa desligou enquanto subia, não há o que desfazer (nem avisar).
       Promise.resolve(startLiveShare()).then((ok) => {
-        if (ok === false) {
+        if (ok === false && settings.liveLocation?.enabled) {
           _liveSharing = false;
           settings.liveLocation.enabled = false;
           saveSettings();
           _syncShareCheckbox();
           updateShareLocBtn();
+          syncLiveTick();
           showToast('Não foi possível iniciar o compartilhamento ao vivo.');
         }
       });
-    } else stopLiveShare();
+    } else stopLiveShare(true);
+  } else if (wantShare && !document.hidden) {
+    acquireLiveWakeLock();   // voltou a ficar visível: o navegador soltou o lock ao ocultar
   }
   updateShareLocBtn();   // mantém o botão do topbar em sincronia com `enabled`
+  syncLiveTick();
+  renderLiveChip();
 }
 
 // Ícone 📍 (linha "Pessoas ao vivo") — liga/desliga a transmissão da própria
@@ -5540,13 +7162,15 @@ function _syncShareCheckbox() {
   const cb = document.querySelector('[data-setting="liveLocation.enabled"]');
   if (cb) cb.checked = !!settings.liveLocation?.enabled;
 }
-// Clique no 📍 (wired em makeRow): se já transmite, para; senão abre o modal
-// pra escolher apelido + por quanto tempo guardar o rastro.
+// Clique no 📍 (wired em makeRow; também o item do ☰ Ações): se já transmite,
+// confirma antes de parar — o botão é pequeno e fica colado nos ▲▼ da camada,
+// e um toque errado no meio do pedal cortava a posição de quem vem atrás.
+// Senão abre o modal pra escolher apelido + por quanto tempo guardar o rastro.
 function onShareLocClick() {
   if (!settings.liveLocation) settings.liveLocation = {};
   if (settings.liveLocation.enabled) {
-    settings.liveLocation.enabled = false;
-    saveSettings(); applyLiveLocation(); _syncShareCheckbox();
+    if (!confirm('Parar de compartilhar sua localização ao vivo?\n\nQuem está no mapa continua vendo o seu rastro até ele expirar.')) return;
+    disableLiveSharing();
   } else {
     openShareNameModal();
   }
@@ -5564,6 +7188,17 @@ function openShareNameModal() {
   if (nameEl) nameEl.value = settings.liveLocation?.displayName || '';
   if (hEl) hEl.value = String(Math.floor(sec / 3600));
   if (mEl) mEl.value = String(Math.floor((sec % 3600) / 60));
+  // Aviso da tela apagada + "manter a tela acesa": só no navegador (o app
+  // nativo transmite em segundo plano); a opção só aparece com Wake Lock.
+  const native = liveIsNative();
+  const webNote = document.getElementById('share-name-web-note');
+  const nativeNote = document.getElementById('share-name-native-note');
+  const awakeRow = document.getElementById('share-name-awake-row');
+  const awakeEl = document.getElementById('share-name-awake');
+  if (webNote) webNote.hidden = native;
+  if (nativeNote) nativeNote.hidden = !native;
+  if (awakeRow) awakeRow.hidden = native || !navigator.wakeLock?.request;
+  if (awakeEl) awakeEl.checked = settings.liveLocation?.keepAwake !== false;
   if (typeof closeOtherMobileDialogs === 'function') closeOtherMobileDialogs('share');
   modal.hidden = false;
   setTimeout(() => nameEl?.focus(), 0);
@@ -5579,9 +7214,13 @@ function confirmShareName() {
   const m = Math.max(0, Math.min(59, Math.floor(Number(document.getElementById('share-name-ttl-m')?.value) || 0)));
   settings.liveLocation.displayName = (nameEl?.value || '').trim().slice(0, 40);
   settings.liveLocation.ttlSec = Math.max(60, Math.min(24 * 3600, h * 3600 + m * 60));
+  const awakeRow = document.getElementById('share-name-awake-row');
+  if (awakeRow && !awakeRow.hidden) {
+    settings.liveLocation.keepAwake = !!document.getElementById('share-name-awake')?.checked;
+  }
   settings.liveLocation.enabled = true;
   saveSettings();
-  applyLiveLocation();
+  applyLiveLocation();   // síncrono: o pedido de wake lock sai dentro deste toque
   _syncShareCheckbox();
   const dn = document.querySelector('[data-setting="liveLocation.displayName"]');
   if (dn) dn.value = settings.liveLocation.displayName;
@@ -5596,17 +7235,24 @@ document.getElementById('share-name-input')?.addEventListener('keydown', (e) => 
   if (e.key === 'Enter') { e.preventDefault(); confirmShareName(); }
 });
 
-// Pausa/retoma o poll quando a aba some/volta (só afeta o ver).
-document.addEventListener('visibilitychange', applyLiveLocation);
+// Pausa/retoma o poll quando a aba some/volta (e avisa se a transmissão ficou
+// parada enquanto a tela estava apagada).
+document.addEventListener('visibilitychange', () => { noteLiveVisible(); applyLiveLocation(); });
 // Ao fechar/ocultar a aba, só encerra o watch local — o rastro permanece no
 // servidor até expirar (3h). Zera _liveSharing pra que o próximo reconcile
 // (visibilitychange/pageshow) veja a transição e religue: pagehide também
 // dispara ao entrar no bfcache (trocar de app / bloquear a tela), onde a página
 // segue viva — sem isso o watch morria mas o estado dizia "ainda transmitindo".
-window.addEventListener('pagehide', () => { if (_liveSharing) { stopLiveShare(); _liveSharing = false; } });
+window.addEventListener('pagehide', () => { if (_liveSharing) { stopLiveShare(false); _liveSharing = false; } });
 // Volta do bfcache (pageshow persisted): a página continua com enabled=true mas
 // o watch foi encerrado no pagehide — reconcilia pra religar a transmissão.
 window.addEventListener('pageshow', (e) => { if (e.persisted) applyLiveLocation(); });
+// A rede voltou: reenvia a fila e atualiza já, sem esperar o backoff.
+window.addEventListener('online', () => {
+  _livePostRetryAt = 0;
+  if (_liveSharing) flushLiveOutbox();
+  if (_liveViewing && !_livePollCtl) pollLivePositions();
+});
 // Boot: liga o "ver pessoas ao vivo" já no load (default on), sem depender de
 // abrir Ajustes — mesmo padrão dos outros apply*() chamados na inicialização.
 applyLiveLocation();
@@ -5716,8 +7362,11 @@ layerPanel.onAdd = function () {
     //   setas)   col3=ação (☰/📍/✨/✎/⚙/🗑)
     const btns = [];
     if (reorderable) {
-      btns.push('<button type="button" class="layer-move-up btn-up" title="Empilhar acima" aria-label="Empilhar acima">▲</button>');
-      btns.push('<button type="button" class="layer-move-down btn-down" title="Empilhar abaixo" aria-label="Empilhar abaixo">▼</button>');
+      // O nome da camada no rótulo: o leitor de tela lia só "Empilhar acima"
+      // em todas as linhas. (No toque as setas só aparecem no modo ↕ Ordenar.)
+      const nm = escapeHtml(l.label);
+      btns.push(`<button type="button" class="layer-move-up btn-up" title="Empilhar acima" aria-label="Empilhar acima — ${nm}">▲</button>`);
+      btns.push(`<button type="button" class="layer-move-down btn-down" title="Empilhar abaixo" aria-label="Empilhar abaixo — ${nm}">▼</button>`);
     }
     // Ação secundária (col3): filtro de mídias na camada "Imagens contribuídas".
     if (l.id === 'photos')
@@ -5783,6 +7432,20 @@ layerPanel.onAdd = function () {
   for (const id of contentIds()) { const l = byId(id); if (l) rowEls[id] = makeRow(l, false); }
   layoutRows();
 
+  // No toque (CSS, pointer: coarse) as setas ▲▼ ficam escondidas até ligar
+  // "↕ Ordenar": a 2 px do ☰/📍, um toque torto reordenava (e persistia) a
+  // pilha. No mouse o botão não aparece e as setas seguem sempre visíveis.
+  const orderToggle = L.DomUtil.create('button', 'layer-order-toggle', div);
+  orderToggle.type = 'button';
+  orderToggle.textContent = '↕ Ordenar camadas';
+  orderToggle.setAttribute('aria-pressed', 'false');
+  orderToggle.addEventListener('click', () => {
+    const on = !div.classList.contains('is-ordering');
+    div.classList.toggle('is-ordering', on);
+    orderToggle.setAttribute('aria-pressed', String(on));
+    orderToggle.textContent = on ? '✓ Pronto' : '↕ Ordenar camadas';
+  });
+
   // Reset da ordem de empilhamento (substitui o botão "Restaurar padrão" do
   // antigo modal).
   const reset = L.DomUtil.create('button', 'layer-order-reset-inline', div);
@@ -5799,10 +7462,24 @@ layerPanel.onAdd = function () {
   const panelTitle = L.DomUtil.create('div', 'layer-panel-title', div);
   panelTitle.textContent = 'Camadas';
 
+  // "☰ Rotas" de tamanho de dedo na faixa do título (só no toque — CSS): no
+  // celular o ☰ de 18 px da linha "Rotas cadastradas" era o ÚNICO jeito de abrir
+  // a lista de rotas, colado nas setas de reordenar.
+  const routesBtn = L.DomUtil.create('button', 'layer-routes-btn', div);
+  routesBtn.type = 'button';
+  routesBtn.textContent = '☰ Rotas';
+  routesBtn.title = 'Mostrar a lista de rotas';
+  routesBtn.setAttribute('aria-pressed', 'false');
+  routesBtn.addEventListener('click', (e) => {
+    e.preventDefault(); e.stopPropagation();   // senão o clique-fora fecha a sidebar recém-aberta
+    toggleRoutesSidebar();
+  });
+
   // Bolinha de fechar (macOS) no canto do painel — fecha as camadas (mesmo
   // caminho do botão ⧉ Camadas: esconde + persiste). Absolute → não desloca
   // as linhas; a faixa superior reservada no CSS evita colisão com o conteúdo.
-  div.appendChild(makeCloseDot(() => {
+  // 1º filho: primeiro controle pro leitor de tela.
+  div.prepend(makeCloseDot(() => {
     closeOtherMobileDialogs('layers');
     applyLayersVisibility(true);
     try { localStorage.setItem(LAYERS_HIDDEN_KEY, '1'); } catch {}
@@ -5844,6 +7521,18 @@ const LAYERS_AUTO_HIDE_AREA_FRAC = 0.2; // se o painel cobriria >20% da tela, oc
 function applyLayersVisibility(hidden) {
   document.body.classList.toggle('layers-hidden', hidden);
   if (layersBtn) layersBtn.setAttribute('aria-pressed', String(!hidden));
+  syncSheetsInert();
+}
+// Folhas fechadas no celular (Camadas, Rotas) só saem da tela por transform —
+// o VoiceOver seguia lendo ~200 controles invisíveis e o cursor dele sumia
+// abaixo da tela. Fechadas, ficam `inert` (fora da leitura e do Tab). No
+// desktop o CSS já as tira com display:none.
+function syncSheetsInert() {
+  const mobile = window.matchMedia('(max-width: 760px)').matches;
+  const panel = document.querySelector('.layer-panel');
+  if (panel) panel.inert = mobile && document.body.classList.contains('layers-hidden');
+  const sb = document.getElementById('sidebar');
+  if (sb) sb.inert = mobile && !document.body.classList.contains('sidebar-open');
 }
 function defaultLayersHiddenByArea() {
   const el = document.querySelector('.layer-panel');
@@ -5855,7 +7544,7 @@ function defaultLayersHiddenByArea() {
   return panelArea > LAYERS_AUTO_HIDE_AREA_FRAC * viewportArea;
 }
 {
-  const persisted = localStorage.getItem(LAYERS_HIDDEN_KEY);
+  const persisted = storage.get(LAYERS_HIDDEN_KEY);
   const shouldHide = persisted !== null
     ? persisted === '1'
     : defaultLayersHiddenByArea();
@@ -5907,7 +7596,7 @@ function applyHeaderVisibility(hidden) {
     headerToggle.setAttribute('title', hidden ? 'Mostrar cabeçalho' : 'Ocultar cabeçalho');
   }
 }
-applyHeaderVisibility(localStorage.getItem(HEADER_HIDDEN_KEY) === '1');
+applyHeaderVisibility(storage.get(HEADER_HIDDEN_KEY) === '1');
 headerToggle?.addEventListener('click', () => {
   const nowHidden = !document.body.classList.contains('header-hidden');
   applyHeaderVisibility(nowHidden);
@@ -5926,6 +7615,14 @@ const isMobileViewport = () => window.matchMedia('(max-width: 760px)').matches;
 // pedimos pros outros se recolherem. (No desktop é no-op, pra não atrapalhar
 // quem quer ver dois painéis lado a lado.)
 function closeOtherMobileDialogs(except) {
+  // A folha da foto (o popup promovido a modal, anexado no FIM do body, com o
+  // mesmo z-index dos modais) ficava POR CIMA do que se abria pelos links dela
+  // (Passeio, ✎ Editar): o toque parecia não fazer nada. Sai antes — em
+  // qualquer viewport (no desktop estreito o popup também é promovido).
+  if (except !== 'photo') {
+    const pm = document.getElementById('photo-fallback-modal');
+    if (pm && !pm.hidden) closePhotoPreview();
+  }
   if (!isMobileViewport()) return;
   if (except !== 'sidebar' && document.body.classList.contains('sidebar-open')) {
     document.body.classList.remove('sidebar-open');
@@ -5949,7 +7646,9 @@ function closeOtherMobileDialogs(except) {
   }
   if (except !== 'tour' && tourModal && !tourModal.hidden) {
     tourModal.hidden = true;
-    if (tourIframe) tourIframe.src = '';
+    // Só libera o iframe se o form não avisou pendência — senão ele fica lá
+    // (escondido) e o próximo openTourModal pergunta antes de trocar.
+    if (tourIframe && !formPending(tourIframe)) tourIframe.src = '';
   }
   if (except !== 'censo' && censoModal && !censoModal.hidden) {
     censoModal.hidden = true;
@@ -5983,7 +7682,7 @@ function defaultDesktopSidebarHidden() {
   );
 }
 if (!isMobileViewport()) {
-  const persisted = localStorage.getItem(SIDEBAR_HIDDEN_KEY);
+  const persisted = storage.get(SIDEBAR_HIDDEN_KEY);
   const shouldHide = persisted !== null ? persisted === '1' : defaultDesktopSidebarHidden();
   if (shouldHide) {
     document.body.classList.add('sidebar-hidden');
@@ -6058,20 +7757,23 @@ function updateTitleAlignment() {
 updateTitleAlignment();
 
 function updateMenuBtnPressed() {
-  const btn = document.getElementById('routes-panel-toggle');
-  if (!btn) return;
   const visible = isMobileViewport()
     ? document.body.classList.contains('sidebar-open')
     : !document.body.classList.contains('sidebar-hidden');
-  btn.setAttribute('aria-pressed', String(visible));
+  for (const btn of document.querySelectorAll('#routes-panel-toggle, .layer-routes-btn')) {
+    btn.setAttribute('aria-pressed', String(visible));
+  }
+  // Todo abre/fecha da sidebar passa por aqui — mantém o `inert` das folhas.
+  syncSheetsInert();
 }
 
 // ─── PWA: register service worker ────────────────────────────────────────────
-// Em dev local (localhost / 127.0.0.1) o SW fica DESLIGADO: ele cacheia
-// app.js/style.css com stale-while-revalidate, o que obrigava a recarregar
-// duas vezes (ou limpar cache) pra ver cada edição. Aqui desregistramos
-// qualquer SW e limpamos os caches, então um reload normal sempre traz o
-// código mais novo. Em produção (amora) registra normalmente.
+// Em dev local (localhost / 127.0.0.1) o SW fica DESLIGADO: ele serve o app do
+// cache (o deploy inteiro, cache-first), o que obrigaria a mexer na VERSION pra
+// ver cada edição. Aqui desregistramos qualquer SW e limpamos os caches, então
+// um reload normal sempre traz o código mais novo. Em produção (amora) registra
+// normalmente. (Testar o SW local: http://amora.localhost:<porta> — o Chrome
+// trata *.localhost como contexto seguro e esta checagem não o pega.)
 const _isLocalDev = ['localhost', '127.0.0.1', '0.0.0.0', ''].includes(location.hostname);
 if ('serviceWorker' in navigator) {
   if (_isLocalDev) {
@@ -6086,7 +7788,96 @@ if ('serviceWorker' in navigator) {
         console.warn('[sw] registration failed:', err);
       });
     });
+    watchSwUpdates();
   }
+}
+
+// Versão nova do app. O SW novo só assume com o deploy INTEIRO já no cache
+// (instalação atômica — ver sw.js) e assume na hora (skipWaiting + claim), mas
+// a página aberta segue com o código que carregou até recarregar. Então: aviso
+// tocável, em vez de recarregar sozinho (perderia um envio ou o traçado em
+// curso). O app da tela inicial do iPhone volta do segundo plano SEM navegar —
+// e só navegação dispara a checagem automática do SW —, então checa também ao
+// voltar pro primeiro plano (no máx. a cada SW_UPDATE_CHECK_MS).
+const SW_UPDATE_CHECK_MS = 15 * 60 * 1000;
+function watchSwUpdates() {
+  const sw = navigator.serviceWorker;
+  // Sem controlador no load = 1ª visita (ou recarga forçada): o claim() do SW
+  // recém-instalado dispara um controllerchange que NÃO é versão nova.
+  let hadController = !!sw.controller;
+  sw.addEventListener('controllerchange', () => {
+    if (!hadController) { hadController = true; return; }
+    showActionToast({
+      id: 'sw-update',
+      text: 'Nova versão do amora disponível.',
+      action: '↻ Atualizar',
+      onAction: reloadForUpdate,
+    });
+  });
+  let lastCheck = Date.now();
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible' || Date.now() - lastCheck < SW_UPDATE_CHECK_MS) return;
+    lastCheck = Date.now();
+    sw.getRegistration().then((r) => r?.update()).catch(() => {});
+  });
+}
+
+// Recarregar com envio/edição em curso num form embutido perderia o trabalho
+// (mesmo num que guarda tudo ao fechar a folha): pergunta antes. O estado vem
+// do contrato phidro-form-state — formPending, junto dos modais de formulário.
+function pendingFormWork() {
+  for (const f of [uploadIframe, tourIframe, censoIframe]) {
+    const s = formPending(f);
+    if (s) return _formPendingLabel(s);
+  }
+  return null;
+}
+function reloadForUpdate() {
+  const pending = pendingFormWork();
+  if (pending && !confirm(`${pending} — atualizar agora interrompe. Atualizar mesmo assim?`)) return;
+  location.reload();
+}
+
+// Aviso COM ação (o #toast comum é só texto e não recebe toque): faixas fixas
+// empilhadas no rodapé, uma por id (reusar o id troca o texto) — "Nova
+// versão… ↻ Atualizar", "Sem conexão… ↻ Tentar de novo".
+function showActionToast({ id, text, action, onAction, dismissible = true }) {
+  let box = document.getElementById('action-toasts');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'action-toasts';
+    box.className = 'action-toasts';
+    document.body.appendChild(box);
+  }
+  let bar = document.getElementById(`action-toast-${id}`);
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = `action-toast-${id}`;
+    bar.className = 'action-toast';
+    bar.setAttribute('role', 'status');
+    box.appendChild(bar);
+  }
+  const msg = document.createElement('span');
+  msg.textContent = text;
+  const go = document.createElement('button');
+  go.type = 'button';
+  go.className = 'action-toast-go';
+  go.textContent = action;
+  go.addEventListener('click', () => onAction());
+  bar.replaceChildren(msg, go);
+  if (dismissible) {
+    const x = document.createElement('button');
+    x.type = 'button';
+    x.className = 'action-toast-close';
+    x.setAttribute('aria-label', 'Fechar aviso');
+    x.textContent = '×';
+    x.addEventListener('click', () => bar.remove());
+    bar.append(x);
+  }
+  return bar;
+}
+function hideActionToast(id) {
+  document.getElementById(`action-toast-${id}`)?.remove();
 }
 
 // ─── Boot ────────────────────────────────────────────────────────────────────
@@ -6131,14 +7922,49 @@ function _openTourBySlug(slug) {
     if (tourId !== slug && r.entry?.slug !== slug) continue;
     const canon = document.querySelector('link[rel="canonical"]');
     if (canon) canon.href = `https://amora.pedalhidrografi.co/passeio/${encodeURIComponent(r.entry?.slug || tourId)}`;
-    // O backend injeta um <article> SSR pra crawlers/no-JS; com o modal
-    // aberto ele é redundante — remove. Se o tour NÃO está em routes.json
-    // (sem rota), o article fica como conteúdo de fallback abaixo do mapa.
+    // O backend injeta um <article> SSR pra crawlers/no-JS (já oculto desde o
+    // boot — ver antes do L.map); com o modal aberto ele é redundante —
+    // remove. Se o tour NÃO está em routes.json (sem rota), o article vira uma
+    // folha (showSsrTourArticle). invalidateSize: o mapa re-mede depois da
+    // mudança de layout (o ResizeObserver também cobre).
     document.getElementById('tour-article')?.remove();
+    map.invalidateSize();
     openRouteModal(key);
     return true;
   }
   return false;
+}
+
+// Passeio SEM rota em routes.json (ou routes.json indisponível, ex. offline):
+// o <article> SSR do backend é o conteúdo — abre numa folha por cima do mapa em
+// vez de voltar pro grid do body (onde espremia o mapa). Fechar volta pra raiz,
+// como o modal da rota.
+function showSsrTourArticle() {
+  const art = document.getElementById('tour-article');
+  if (!art) return false;
+  let modal = document.getElementById('tour-article-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'tour-article-modal';
+    modal.className = 'modal tour-article-modal';
+    modal.hidden = true;
+    const content = document.createElement('div');
+    content.className = 'modal-content tour-article-content';
+    const title = art.querySelector('h1')?.textContent || 'Passeio';
+    content.innerHTML = `<header><h2>${escapeHtml(title)}</h2>`
+      + '<button class="close" type="button" aria-label="Fechar">&times;</button></header>';
+    const close = () => { modal.hidden = true; _clearTourUrl(); };
+    content.querySelector('.close').addEventListener('click', close);
+    content.prepend(makeCloseDot(close));
+    art.hidden = false;
+    content.appendChild(art);
+    modal.appendChild(content);
+    modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
+    document.body.appendChild(modal);
+  }
+  closeOtherMobileDialogs('tour-article');
+  modal.hidden = false;
+  return true;
 }
 
 // ── URL legível por passeio (/passeio/<slug>) ─────────────────────────────
@@ -6167,7 +7993,7 @@ function tryOpenTourFromPath() {
   if (!m) return false;
   if (_openTourBySlug(m[1])) return true;
   console.warn(`[tour] deep link /passeio/${m[1]} não encontrado em routes.json`);
-  return false;
+  return showSsrTourArticle();
 }
 
 // Deep link por query: /?tour=<slug> (forma antiga — segue viva; o backend
@@ -6214,25 +8040,56 @@ async function readBodyWithProgress(res, onProgress) {
   return new TextDecoder().decode(all);
 }
 
+// Sem routes.json (nem a cópia offline do SW): em vez de um erro de dev sem
+// saída, um aviso com "tentar de novo" — na lista E numa faixa tocável (no
+// celular a lista mora na gaveta fechada) —, e nova tentativa sozinha quando a
+// rede volta. O boot fica esperando aqui: os deep links (/passeio/<slug>) abrem
+// assim que as rotas chegarem.
+function waitForRoutesRetry() {
+  return new Promise((resolve) => {
+    const retry = () => {
+      window.removeEventListener('online', retry);
+      hideActionToast('routes');
+      resolve();
+    };
+    const text = 'Não foi possível carregar as rotas — verifique a conexão.';
+    routesStatus.hidden = false;
+    routesStatus.classList.add('error');
+    routesStatus.textContent = `${text} `;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'linkbtn';
+    btn.textContent = '↻ Tentar de novo';
+    btn.addEventListener('click', retry);
+    routesStatus.appendChild(btn);
+    showActionToast({ id: 'routes', text: 'As rotas não carregaram — sem conexão?',
+      action: '↻ Tentar de novo', onAction: retry });
+    window.addEventListener('online', retry);
+  });
+}
+
 async function boot() {
   routesStatus.textContent = 'Carregando rotas…';
   let data;
-  try {
-    // Sem `cache: 'no-cache'` de propósito: precisa casar com o
-    // <link rel="preload" as="fetch"> do index.html (modos de cache
-    // diferentes não casam e o download duplicaria). A revalidação fica
-    // por conta do Cache-Control: no-cache + ETag que o backend manda.
-    const res = await fetch(ROUTES_JSON_URL);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    data = JSON.parse(await readBodyWithProgress(res, (received) => {
-      routesStatus.textContent =
-        `Carregando rotas… ${(received / 1048576).toFixed(1).replace('.', ',')} MB`;
-    }));
-  } catch (err) {
-    throw new Error(
-      `Não foi possível carregar ${ROUTES_JSON_URL} (${err.message}). ` +
-        `Rode \`python scripts/build-routes.py\` para gerá-lo.`,
-    );
+  for (;;) {
+    try {
+      // Sem `cache: 'no-cache'` de propósito: precisa casar com o
+      // <link rel="preload" as="fetch"> do index.html (modos de cache
+      // diferentes não casam e o download duplicaria). A revalidação fica
+      // por conta do Cache-Control: no-cache + ETag que o backend manda.
+      const res = await fetch(ROUTES_JSON_URL);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      data = JSON.parse(await readBodyWithProgress(res, (received) => {
+        routesStatus.textContent =
+          `Carregando rotas… ${(received / 1048576).toFixed(1).replace('.', ',')} MB`;
+      }));
+      break;
+    } catch (err) {
+      console.warn(`[routes] ${ROUTES_JSON_URL}: ${err.message}`);
+      await waitForRoutesRetry();
+      routesStatus.classList.remove('error');
+      routesStatus.textContent = 'Carregando rotas…';
+    }
   }
 
   const all = Array.isArray(data?.routes) ? data.routes : [];
@@ -6250,6 +8107,14 @@ async function boot() {
     if (!entry.latlngs || entry.latlngs.length === 0) {
       li.classList.add('failed');
       li.title = entry.error || 'Sem traçado disponível';
+      // O motivo também VISÍVEL (o iOS nunca mostra o title): uma linha curta
+      // sob o nome da rota esmaecida.
+      const why = document.createElement('small');
+      why.className = 'route-fail-reason';
+      why.textContent = entry.error
+        ? `sem traçado — ${String(entry.error).slice(0, 90)}`
+        : 'sem traçado disponível';
+      li.querySelector('div')?.appendChild(why);
       routes.set(key, { entry, listEl: li, dateMs: entry.dateMs ?? null, visible: false });
       continue;
     }
@@ -6285,6 +8150,20 @@ async function boot() {
     layer.bindPopup(popupHtml);
     layer.on('click', () => openRouteModal(key));
     layer.on('popupopen', () => wireUpPopupLinks());
+    // Faixa de toque invisível por cima da linha: o traço branco tem 1,75 px e
+    // o SVG não dá folga nenhuma pro dedo (só o badge do número era alvo
+    // decente). opacity 0 segue clicável (pointer-events: visiblePainted conta
+    // o traço mesmo transparente). No Traçar o toque passa direto pro mapa
+    // (vira ponto), igual à linha branca sem handler.
+    const hit = L.polyline(entry.latlngs, {
+      color: '#000',
+      weight: ROUTE_HIT_WEIGHT,
+      opacity: 0,
+      lineCap: 'round',
+      lineJoin: 'round',
+      pane: LAYER_PANE('routes'),
+    });
+    hit.on('click', (e) => onRouteHitClick(key, e));
 
     // Plain-text number overlay (no background) at the route's midpoint.
     let badge = null;
@@ -6312,6 +8191,7 @@ async function boot() {
     if (routesGloballyVisible) {
       casing.addTo(map);
       layer.addTo(map);
+      hit.addTo(map);
       if (badge) badge.addTo(map);
     }
     allBounds.extend(layer.getBounds());
@@ -6324,6 +8204,7 @@ async function boot() {
       entry,
       layer,
       casing,
+      hit,
       badge,
       listEl: li,
       bounds: layer.getBounds(),
@@ -6336,10 +8217,32 @@ async function boot() {
   // Default view stays at São Paulo (set above) — don't auto-fit to all routes.
   // Click a sidebar entry to zoom to a specific route.
   setupDateFilter(all);
+  // Rota destacada antes de um reload/descarte da aba (sessionStorage).
+  restoreSessionHighlight();
   // Status oculto no sucesso — só aparece pra "Loading…" e mensagens de erro.
   routesStatus.classList.remove('error');
   routesStatus.textContent = '';
   routesStatus.hidden = true;
+}
+
+// ── Toque nas linhas das rotas ──────────────────────────────────────────────
+// Largura da faixa invisível de toque (px): um dedo cobre ~44 pt, o mouse é
+// preciso — no desktop uma faixa larga abriria a rota em cliques no mapa.
+const ROUTE_HIT_WEIGHT = window.matchMedia?.('(pointer: coarse)').matches ? 22 : 10;
+function onRouteHitClick(key, e) {
+  // No Traçar o clique segue pro mapa (onMapClickInDrawing adiciona o ponto).
+  if (drawingMode) return;
+  // Toque pra DISPENSAR (popup aberto no toque, busca de endereço aberta):
+  // segue pro mapa, cujos handlers fecham o que estiver aberto — no celular
+  // as faixas cobrem mais da metade do mapa, e esse toque abria um passeio
+  // de brinde por cima.
+  if ((COARSE_POINTER && _popupOpenAtPreclick) || (geoSearchPanel && !geoSearchPanel.hidden)) return;
+  // Fotos costumam estar EM CIMA da rota: um toque que errou o dot por pouco
+  // abre a foto, não o passeio (os dots encolhem a 16–23 px).
+  const near = nearestMediaMarkerAt(e.containerPoint);
+  L.DomEvent.stopPropagation(e);   // o toque já tem dono — não borbulha pro mapa
+  if (near) { openMediaMarker(near); return; }
+  openRouteModal(key);
 }
 
 // ─── Sidebar ─────────────────────────────────────────────────────────────────
@@ -6355,8 +8258,11 @@ function addRouteToSidebar(entry) {
     </div>
   `;
   li.addEventListener('click', () => openRouteModal(key));
-  li.addEventListener('mouseenter', () => onRouteRowHover(entry, li, true));
-  li.addEventListener('mouseleave', () => onRouteRowHover(entry, li, false));
+  // Só mouse: no iOS o toque emula mouseenter e o mouseleave só vem no toque
+  // seguinte em outro lugar — a rota ficava laranja/grossa e o tooltip boiava
+  // sobre o modal.
+  li.addEventListener('pointerenter', (e) => { if (e.pointerType === 'mouse') onRouteRowHover(entry, li, true); });
+  li.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse') onRouteRowHover(entry, li, false); });
   routesList.appendChild(li);
   return li;
 }
@@ -6364,6 +8270,7 @@ function addRouteToSidebar(entry) {
 // ─── Sidebar hover preview (highlight on map + floating stats tooltip) ───────
 const routeTooltip = document.getElementById('route-tooltip');
 
+let _hoveredRoute = null;   // rota acesa pelo hover da lista (apaga ao abrir o modal)
 function onRouteRowHover(entry, li, hovering) {
   const r = routes.get(entry.tourIri || entry.id);
   if (!r || drawingMode) {
@@ -6373,10 +8280,16 @@ function onRouteRowHover(entry, li, hovering) {
   if (hovering) {
     highlightRoute(r);
     showRouteTooltip(entry, li);
+    _hoveredRoute = r;
   } else {
     unhighlightRoute(r);
     hideRouteTooltip();
+    if (_hoveredRoute === r) _hoveredRoute = null;
   }
+}
+function clearRouteRowHover() {
+  if (_hoveredRoute) { unhighlightRoute(_hoveredRoute); _hoveredRoute = null; }
+  hideRouteTooltip();
 }
 
 function highlightRoute(r) {
@@ -6456,7 +8369,25 @@ function focusRoute(id) {
   if (!r || !r.bounds) return;
   document.querySelectorAll('#routes-list li.active').forEach((el) => el.classList.remove('active'));
   r.listEl.classList.add('active');
-  map.fitBounds(r.bounds, { padding: [40, 40] });
+  map.fitBounds(r.bounds, routeFitOptions());
+}
+// No celular o modal da rota é um bottom-sheet (até 70vh) POR CIMA do mapa: o
+// fit no container inteiro deixava a rota atrás dele, só o topo à mostra.
+// Reserva embaixo a altura que o sheet ocupa (a máxima — o conteúdo ainda está
+// carregando na hora do fit), limitada pra sobrar uma faixa útil de mapa.
+function routeFitOptions() {
+  if (!isMobileViewport()) return { padding: [40, 40] };
+  const mapRect = map.getContainer().getBoundingClientRect();
+  const content = routeModal?.querySelector('.modal-content');
+  let sheetH = window.innerHeight * 0.7;
+  if (content) {
+    const maxH = parseFloat(getComputedStyle(content).maxHeight);
+    if (Number.isFinite(maxH) && maxH > 0) sheetH = maxH;
+    if (!routeModal.hidden) sheetH = Math.max(sheetH, content.getBoundingClientRect().height);
+  }
+  const covered = Math.max(0, Math.min(mapRect.bottom, window.innerHeight) - (window.innerHeight - sheetH));
+  const bottom = Math.min(covered + 16, Math.max(0, mapRect.height - 120));
+  return { paddingTopLeft: [24, 24], paddingBottomRight: [24, bottom] };
 }
 
 // ─── Date filter ─────────────────────────────────────────────────────────────
@@ -6479,27 +8410,62 @@ function setupDateFilter(entries) {
   rangeFrom.value = String(dateMin);
   rangeTo.value = String(dateMax);
 
-  rangeFrom.addEventListener('input', onRangeChange);
-  rangeTo.addEventListener('input', onRangeChange);
+  // Arrastando (input), só a lista e as rotas acompanham o dedo; as fotos
+  // (visibilidade de centenas de marcadores + relaxação) vêm no `change` ao
+  // soltar — ou numa pausa do arrasto (ver applyDateWindow).
+  rangeFrom.addEventListener('input', () => onRangeChange(false));
+  rangeTo.addEventListener('input', () => onRangeChange(false));
+  rangeFrom.addEventListener('change', () => onRangeChange());
+  rangeTo.addEventListener('change', () => onRangeChange());
   dateReset.addEventListener('click', () => {
     rangeFrom.value = String(dateMin);
     rangeTo.value = String(dateMax);
     onRangeChange();
   });
 
-  // Clicar nos rótulos `from`/`to` abre um date-picker nativo. Mantemos um
-  // <input type="date"> oculto por par só pra invocar `showPicker()`; o span
-  // continua sendo o que o usuário lê.
+  // Clicar nos rótulos `from`/`to` abre um date-picker nativo — um
+  // <input type="date"> por rótulo; o span continua sendo o que se lê.
+  // Mouse: o input fica oculto e o clique no rótulo chama showPicker().
+  // Toque (e todo iOS): showPicker() NÃO abre nada no iOS (WebKit bug 261703
+  // — e nem lança, então nenhum fallback rodava: os rótulos eram mortos no
+  // iPhone). Lá o input REAL, transparente, cobre o rótulo e o próprio toque
+  // abre a roda nativa. iPadOS se anuncia como Mac: denuncia-o o toque.
+  const dateIsIOS = /iP(hone|ad|od)/.test(navigator.userAgent)
+    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const dateOverlay = dateIsIOS || !!window.matchMedia?.('(pointer: coarse)').matches;
+  // O slider anda em passos de 1 dia ancorados no HORÁRIO do 1º passeio; a
+  // meia-noite do dia escolhido caía entre dois passos e o range arredondava
+  // pro vizinho (escolher 01/jan mostrava 31/dez). Encaixa no passo DO dia.
+  const snapToDay = (dayStartMs) => dateMin + Math.ceil((dayStartMs - dateMin) / DAY_MS) * DAY_MS;
   const fromPicker = makeHiddenDatePicker(dateMin, dateMax, (ms) => {
-    rangeFrom.value = String(Math.max(dateMin, Math.min(ms, Number(rangeTo.value))));
+    rangeFrom.value = String(Math.max(dateMin, Math.min(snapToDay(ms), Number(rangeTo.value))));
     onRangeChange();
   });
   const toPicker = makeHiddenDatePicker(dateMin, dateMax, (ms) => {
-    rangeTo.value = String(Math.max(Number(rangeFrom.value), Math.min(ms, dateMax)));
+    rangeTo.value = String(Math.max(Number(rangeFrom.value), Math.min(snapToDay(ms), dateMax)));
     onRangeChange();
   });
-  dateFilter.appendChild(fromPicker);
-  dateFilter.appendChild(toPicker);
+  const mountPicker = (label, picker, currentMs) => {
+    if (!dateOverlay || label.parentElement?.classList.contains('date-pick-wrap')) {
+      dateFilter.appendChild(picker);
+      return;
+    }
+    // O input fica POR CIMA do rótulo, num wrapper (applyDateWindow reescreve
+    // o textContent do span — o input não pode morar dentro dele).
+    const wrap = document.createElement('span');
+    wrap.className = 'date-pick-wrap';
+    label.replaceWith(wrap);
+    wrap.append(label, picker);
+    picker.classList.add('date-pick-overlay');
+    picker.tabIndex = -1;                      // teclado/leitor usam o rótulo
+    picker.setAttribute('aria-hidden', 'true');
+    // O toque vai direto pro input: semeia com a data atual antes de a roda abrir.
+    const seed = () => { picker.value = toIsoDate(currentMs()); };
+    picker.addEventListener('pointerdown', seed);
+    picker.addEventListener('focus', seed);
+  };
+  mountPicker(rangeFromValue, fromPicker, () => Number(rangeFrom.value));
+  mountPicker(rangeToValue, toPicker, () => Number(rangeTo.value));
   rangeFromValue.classList.add('clickable-date');
   rangeFromValue.setAttribute('role', 'button');
   rangeFromValue.setAttribute('tabindex', '0');
@@ -6508,13 +8474,22 @@ function setupDateFilter(entries) {
   rangeToValue.setAttribute('tabindex', '0');
   const triggerPicker = (picker, currentMs) => {
     picker.value = toIsoDate(currentMs);
-    if (typeof picker.showPicker === 'function') picker.showPicker();
-    else picker.focus();   // fallback navegadores antigos: o input fica focável
+    // showPicker() pede gesto (é um click/tecla) e pode lançar; no iOS ele é
+    // mudo — lá quem abre a roda é o foco dentro do gesto.
+    try {
+      if (!dateIsIOS && typeof picker.showPicker === 'function') picker.showPicker();
+      else picker.focus();
+    } catch (_) { picker.focus(); }
   };
-  rangeFromValue.addEventListener('click', () =>
-    triggerPicker(fromPicker, Number(rangeFrom.value)));
-  rangeToValue.addEventListener('click', () =>
-    triggerPicker(toPicker, Number(rangeTo.value)));
+  for (const [label, picker, range] of [[rangeFromValue, fromPicker, rangeFrom], [rangeToValue, toPicker, rangeTo]]) {
+    label.addEventListener('click', () => triggerPicker(picker, Number(range.value)));
+    // role=button: Enter/Espaço também abrem (antes só o clique).
+    label.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      e.preventDefault();
+      triggerPicker(picker, Number(range.value));
+    });
+  }
 
   dateFilter.hidden = false;
   applyDateWindow(dateMin, dateMax);
@@ -6548,7 +8523,7 @@ function fromIsoDate(s) {
   return new Date(y, m - 1, d).getTime();
 }
 
-function onRangeChange() {
+function onRangeChange(photosNow = true) {
   let from = Number(rangeFrom.value);
   let to = Number(rangeTo.value);
   if (from > to) {
@@ -6561,10 +8536,14 @@ function onRangeChange() {
       rangeFrom.value = String(from);
     }
   }
-  applyDateWindow(from, to);
+  applyDateWindow(from, to, photosNow);
 }
 
-function applyDateWindow(from, to) {
+// `photosNow` false = arrasto em curso: a janela das fotos é aplicada numa
+// pausa de 250 ms (ou no `change` ao soltar), não a cada `input` — cada passada
+// custava dezenas de ms e o polegar ficava atrás do dedo.
+let _photoWindowTimer = null;
+function applyDateWindow(from, to, photosNow = true) {
   rangeFromValue.textContent = formatDay(from);
   rangeToValue.textContent = formatDay(to);
 
@@ -6595,8 +8574,9 @@ function applyDateWindow(from, to) {
   // Propaga a mesma janela pras fotos. `to + DAY_MS - 1` inclui o dia
   // inteiro do limite superior (mesma convenção das rotas).
   photoDateWindow = { from, to: to + DAY_MS - 1 };
-  applyPhotoVisibility();
-
+  clearTimeout(_photoWindowTimer);
+  if (photosNow) applyPhotoVisibility();
+  else _photoWindowTimer = setTimeout(applyPhotoVisibility, 250);
 }
 
 // ─── Loaded-routes pseudo-layer (visibility + opacity from layer panel) ──────
@@ -6630,9 +8610,9 @@ function applyRouteOnMap(r) {
   const add = (l) => l && !map.hasLayer(l) && l.addTo(map);
   const drop = (l) => l && map.hasLayer(l) && map.removeLayer(l);
   if (onMap) {
-    add(r.casing); add(r.layer); add(r.badge);
+    add(r.casing); add(r.layer); add(r.hit); add(r.badge);
   } else {
-    drop(r.casing); drop(r.layer); drop(r.badge);
+    drop(r.casing); drop(r.layer); drop(r.hit); drop(r.badge);
   }
 }
 
@@ -6670,11 +8650,16 @@ function addRouteHighlight(key) {
   }
   if (!map.hasLayer(routeHighlightGroup)) routeHighlightGroup.addTo(map);
   setRouteHighlightRow(true);
+  saveSessionState({ hl: highlightedRouteKeys() });
 }
 function clearRouteHighlight() {
   routeHighlightGroup.clearLayers();
   if (map.hasLayer(routeHighlightGroup)) map.removeLayer(routeHighlightGroup);
   setRouteHighlightRow(false);
+  saveSessionState({ hl: [] });
+}
+function highlightedRouteKeys() {
+  return [...new Set(routeHighlightGroup.getLayers().map((l) => l._phKey).filter(Boolean))];
 }
 // Mostra/esconde a linha "Rota destacada" no painel e sincroniza o checkbox.
 function setRouteHighlightRow(show) {
@@ -6682,6 +8667,64 @@ function setRouteHighlightRow(show) {
   if (row) row.classList.toggle('layer-row-hidden', !show);
   const cb = row?.querySelector('input[type="checkbox"]');
   if (cb) cb.checked = show;
+}
+
+// ─── Estado da sessão: sobreviver a um reload / descarte da aba ──────────────
+// No meio do pedal a pessoa troca pra Câmera/WhatsApp e o iOS descarta a aba;
+// a volta recarregava em SP zoom 12, norte pra cima, sem a localização e sem a
+// rota destacada. Guardamos vista (centro/zoom/rumo), localização ligada e
+// rotas destacadas no sessionStorage — que sobrevive ao reload/descarte da
+// MESMA aba e só dela (aba nova ou app relançado abrem do zero, e o rumo
+// continua não persistindo entre sessões). Deep link (/passeio/…, ?tour=,
+// #st= / #rt= / #midia=) manda na vista: aí só a rota destacada volta.
+const SESSION_STATE_KEY = 'phidro:session:v1';
+function readSessionState() {
+  try { return JSON.parse(sessionStorage.getItem(SESSION_STATE_KEY) || 'null') || {}; }
+  catch { return {}; }
+}
+function saveSessionState(patch) {
+  try {
+    sessionStorage.setItem(SESSION_STATE_KEY, JSON.stringify({ ...readSessionState(), ...patch }));
+  } catch { /* sem storage (bloqueio de cookies/aba privada) — segue sem */ }
+}
+// Calculado AGORA (avaliação do módulo): os tryOpen*FromHash do boot tiram o
+// fragmento da URL depois.
+const _bootHasDeepLink = /^\/passeio\//.test(location.pathname)
+  || new URLSearchParams(location.search).has('tour')
+  || /(^|[#&])(st|rt|midia)=/.test(location.hash);
+function restoreSessionView() {
+  if (_bootHasDeepLink) return;
+  const s = readSessionState();
+  const v = s.view;
+  if (v && Number.isFinite(v.lat) && Number.isFinite(v.lng) && Number.isFinite(v.z)) {
+    map.setView([v.lat, v.lng], v.z, { animate: false });
+    if (Number.isFinite(v.b) && v.b && typeof map.setBearing === 'function') map.setBearing(v.b);
+  }
+  // Localização: volta ligada (o ponto azul). O start() programático não
+  // recentra (o setView 'once' do controle só age depois de um clique) — a
+  // vista fica a restaurada, que é o que a pessoa via antes do descarte.
+  if (s.locate && locateControl && !locateControl._active) {
+    try { locateControl.start(); } catch (_) {}
+  }
+}
+function restoreSessionHighlight() {
+  for (const k of readSessionState().hl || []) addRouteHighlight(k);
+}
+restoreSessionView();
+{
+  let viewTimer = null;
+  map.on('moveend rotateend', () => {
+    clearTimeout(viewTimer);
+    viewTimer = setTimeout(() => {
+      const c = map.getCenter();
+      saveSessionState({ view: {
+        lat: +c.lat.toFixed(6), lng: +c.lng.toFixed(6), z: map.getZoom(),
+        b: typeof map.getBearing === 'function' ? +map.getBearing().toFixed(1) : 0,
+      } });
+    }, 400);
+  });
+  map.on('locateactivate', () => saveSessionState({ locate: true }));
+  map.on('locatedeactivate', () => saveSessionState({ locate: false }));
 }
 
 function formatDay(ms) {
@@ -6720,10 +8763,78 @@ function _tourIdFromIri(iri) {
   return null;
 }
 
-// Constrói uma view legível do passeio: lê tours.ttl + identities.ttl, resolve
-// o IRI alvo e seus blank nodes (route reference, energy values) e
-// dependentes (associações → série+edição), mapeia pessoas/séries pra nomes
-// via declarações nesses arquivos e devolve HTML pronto pra render no modal.
+// Quads do passeio + vizinhança (associação → série, pessoas, referência de
+// rota) tirados do grafo que o app JÁ parseou (ensureTourStore: os quads de
+// tours + identities do loadPhotos — que a tira de fotos do modal também espera).
+// Antes cada abertura do modal re-baixava tours.ttl + identities.ttl (network-
+// first) e reparseava ~300 KB: em 4G fraco o resumo ficava em "carregando…"
+// por dezenas de segundos com tudo em cache. Depois de um save no form de
+// passeio o closeTourModal recarrega o catálogo (reloadPhotos), e o
+// loadPhotos() abaixo espera essa recarga. O fetch direto fica pra fonte
+// "local" (o kit não traz passeios) e pra passeio que o grafo ainda não tem.
+async function _tourSummaryQuads(tourIri) {
+  if (photoSource === 'server') {
+    try { await loadPhotos(); } catch (_) { /* segue pro fetch */ }
+    const store = ensureTourStore();
+    if (store?.getQuads && window.N3?.DataFactory) {
+      const own = store.getQuads(window.N3.DataFactory.namedNode(tourIri), null, null, null);
+      if (own.length) {
+        // 2 saltos a partir do passeio cobrem o que o resumo lê: rótulos de
+        // pessoas/organização (1), séries via associação e provedor da rota (2).
+        const out = [...own];
+        const seen = new Set([`NamedNode ${tourIri}`]);
+        let frontier = own;
+        for (let hop = 0; hop < 2; hop++) {
+          const next = [];
+          for (const q of frontier) {
+            const o = q.object;
+            if (o.termType !== 'NamedNode' && o.termType !== 'BlankNode') continue;
+            const k = `${o.termType} ${o.value}`;
+            if (seen.has(k)) continue;
+            seen.add(k);
+            const qs = store.getQuads(o, null, null, null);
+            out.push(...qs);
+            next.push(...qs);
+          }
+          frontier = next;
+        }
+        return out;
+      }
+    }
+  }
+  const Parser = await ensureN3();
+  // Pessoas (schema:Person + nomes) vivem SÓ em identities.ttl desde o
+  // split dos catálogos — sem ela, autoras/quem-subiu/participantes caem
+  // no fallback de IRI crua (nameOf() nunca acha o label).
+  const [tRes, iRes] = await Promise.all([
+    fetch('./data/tours.ttl', { cache: 'no-cache' }),
+    fetch('./data/identities.ttl', { cache: 'no-cache' }),
+  ]);
+  if (!tRes.ok) throw new Error(`HTTP ${tRes.status}`);
+  const identitiesText = iRes.ok ? await iRes.text() : '';
+  return new Parser().parse((await tRes.text()) + '\n\n' + identitiesText);
+}
+
+// Falha ao montar o resumo (sem rede e sem cópia, parser que não carregou):
+// aviso pra gente + "tentar de novo" (tratado por delegação logo abaixo).
+function _tourSummaryRetryHtml(tourId) {
+  return `<p class="muted">Não foi possível carregar o resumo do passeio — verifique a conexão. ` +
+    `<button type="button" class="linkbtn tour-summary-retry" data-tour-id="${escapeHtml(tourId)}">↻ Tentar de novo</button></p>`;
+}
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest?.('.tour-summary-retry');
+  if (!btn || !routeModalSummary.contains(btn)) return;
+  routeModalSummary.innerHTML = `<p class="muted">carregando…</p>`;
+  const reqId = ++_routeModalReqId;
+  _renderTourSummary(btn.dataset.tourId).then((html) => {
+    if (reqId === _routeModalReqId) routeModalSummary.innerHTML = html;
+  });
+});
+
+// Constrói uma view legível do passeio a partir de tours.ttl + identities.ttl
+// (ver _tourSummaryQuads): resolve o IRI alvo e seus nós aninhados (route
+// reference) e dependentes (associações → série+edição), mapeia pessoas/séries
+// pra nomes e devolve HTML pronto pra render no modal.
 async function _renderTourSummary(tourId) {
   const PH    = 'https://id.pedalhidrografi.co/terms#';
   const PHD   = 'https://pedalhidrografi.co/data/';
@@ -6734,48 +8845,30 @@ async function _renderTourSummary(tourId) {
   const PROV  = 'http://www.w3.org/ns/prov#';
   const QUDT  = 'http://qudt.org/schema/qudt/';
 
-  let Parser;
+  const tourIri = `${PAS}${tourId}`;
+  let quads;
   try {
-    Parser = await ensureN3();
+    quads = await _tourSummaryQuads(tourIri);
   } catch (e) {
-    return `<p class="muted">Parser N3 indisponível: ${escapeHtml(e.message)}.</p>`;
-  }
-  let text;
-  try {
-    // Pessoas (schema:Person + nomes) vivem SÓ em identities.ttl desde o
-    // split dos catálogos — sem ela, autoras/quem-subiu/participantes caem
-    // no fallback de IRI crua (nameOf() nunca acha o label).
-    const [tRes, iRes] = await Promise.all([
-      fetch('./data/tours.ttl', { cache: 'no-cache' }),
-      fetch('./data/identities.ttl', { cache: 'no-cache' }),
-    ]);
-    if (!tRes.ok) throw new Error(`HTTP ${tRes.status}`);
-    const identitiesText = iRes.ok ? await iRes.text() : '';
-    text = (await tRes.text()) + '\n\n' + identitiesText;
-  } catch (e) {
-    return `<p class="muted">tours.ttl indisponível: ${escapeHtml(e.message)}.</p>`;
+    console.warn(`[tour] resumo de ${tourId}:`, e);
+    return _tourSummaryRetryHtml(tourId);
   }
 
-  const tourIri = `${PAS}${tourId}`;
   const subjBy = new Map();  // subject IRI/bnode-id → array of quads
   const types = new Map();   // subject → Set of types
   const labels = new Map();  // subject → human label (name/title/code)
-  try {
-    for (const q of new Parser().parse(text)) {
-      const s = q.subject.value, p = q.predicate.value, o = q.object.value;
-      if (!subjBy.has(s)) subjBy.set(s, []);
-      subjBy.get(s).push(q);
-      if (p === RDFT) {
-        if (!types.has(s)) types.set(s, new Set());
-        types.get(s).add(o);
-      } else if (p === SCHEMA + 'name') {
-        labels.set(s, o);   // nome real vence sobre apelido/título
-      } else if (p === SCHEMA + 'alternateName' || p === DCT + 'title') {
-        if (!labels.has(s)) labels.set(s, o);
-      }
+  for (const q of quads) {
+    const s = q.subject.value, p = q.predicate.value, o = q.object.value;
+    if (!subjBy.has(s)) subjBy.set(s, []);
+    subjBy.get(s).push(q);
+    if (p === RDFT) {
+      if (!types.has(s)) types.set(s, new Set());
+      types.get(s).add(o);
+    } else if (p === SCHEMA + 'name') {
+      labels.set(s, o);   // nome real vence sobre apelido/título
+    } else if (p === SCHEMA + 'alternateName' || p === DCT + 'title') {
+      if (!labels.has(s)) labels.set(s, o);
     }
-  } catch (e) {
-    return `<p class="muted">Parser falhou: ${escapeHtml(e.message)}.</p>`;
   }
   const own = subjBy.get(tourIri) || [];
   if (!own.length) {
@@ -6844,9 +8937,11 @@ async function _renderTourSummary(tourId) {
     }
   }
 
-  // Rota via blank node ph:linkRoute.
+  // Rota via ph:linkRoute — hoje um IRI derivado (`<passeio>_route`); blank
+  // node só em catálogo antigo. Só 'bn' aqui escondia a linha "Rota" de todo
+  // passeio desde a migração pra IRIs.
   let route = null;
-  const routeBn = first(PH + 'linkRoute', 'bn');
+  const routeBn = first(PH + 'linkRoute', 'iri') || first(PH + 'linkRoute', 'bn');
   if (routeBn) {
     const m = bnodeProps(routeBn);
     route = {
@@ -6982,15 +9077,40 @@ async function _renderTourSummary(tourId) {
   if (announceUrl && announceUrl.startsWith('file:///app/tour_assets/')) {
     announceUrl = './' + announceUrl.slice('file:///app/'.length);
   }
+  // A <img> mostra a variante web que o backend deriva da arte (≤ 1350 px,
+  // ~300 KB — as recentes são PNGs de 3–4 MB); o link "tamanho real" segue no
+  // original. Falhas: ver o listener de 'error' logo depois desta função.
   const heroHtml = announceUrl
     ? `<a class="tour-announce-hero" href="${escapeHtml(announceUrl)}" ` +
       `target="_blank" rel="noopener" title="Abrir imagem em tamanho real">` +
-      `<img src="${escapeHtml(announceUrl)}" alt="anúncio" ` +
-      `onerror="this.parentElement.style.display='none'"></a>`
+      `<img src="${escapeHtml(tourArtVariant(announceUrl, 'web') || announceUrl)}" ` +
+      `data-orig="${escapeHtml(announceUrl)}" alt="anúncio" decoding="async"></a>`
     : '';
 
   return heroHtml + `<dl class="tour-summary">${rows.join('')}</dl>`;
 }
+
+// Variante leve da arte do anúncio (backend: _serve_art_variant). A URL do
+// original (…/tour_assets/<dir>/announcement.<ext>, em qualquer host: bucket,
+// amora, localhost) vira ./tour_assets/<dir>/announcement.<web|thumb>.jpg,
+// gerada no 1º pedido. null = arte externa (fica o original).
+function tourArtVariant(url, name) {
+  const m = /\/tour_assets\/([A-Za-z0-9_-]+)\/announcement\.(?:jpe?g|png|webp|gif)$/i.exec(url || '');
+  return m ? `./tour_assets/${m[1]}/announcement.${name}.jpg` : null;
+}
+
+// Erro na arte do hero. O onerror INLINE que havia aqui é barrado pela CSP do
+// index.html (script-src sem 'unsafe-inline') — offline o modal mostrava a
+// caixa quebrada "anúncio". Variante falhou → tenta o original; o original
+// falhou → some o hero. `error` de <img> não borbulha: captura no contêiner.
+routeModalSummary?.addEventListener('error', (e) => {
+  const img = e.target;
+  const hero = img instanceof HTMLImageElement && img.closest('.tour-announce-hero');
+  if (!hero) return;
+  const orig = img.dataset.orig;
+  if (orig && img.getAttribute('src') !== orig) img.src = orig;
+  else hero.style.display = 'none';
+}, true);
 
 function openRouteModal(id) {
   const r = routes.get(id);
@@ -6998,6 +9118,7 @@ function openRouteModal(id) {
   // No mobile a sidebar (z 5500) fica ACIMA do modal de rota (z 5000); sem
   // fechá-la, tocar numa rota "abria" o modal atrás dela (parecia não abrir).
   if (typeof closeOtherMobileDialogs === 'function') closeOtherMobileDialogs('route');
+  clearRouteRowHover();   // tooltip do hover (z 6500) não pode boiar sobre o modal
   focusRoute(id);
 
   const entry = r.entry;
@@ -7054,7 +9175,8 @@ function openRouteModal(id) {
   // SSR e do sitemap — abre direto no modal certo pra quem recebe). Slug
   // legível quando o backend já o mintou; senão o slug8.
   routeModalMeta.querySelector('.share-tour-btn')?.addEventListener('click', () => {
-    shareLink(`https://amora.pedalhidrografi.co/passeio/${encodeURIComponent(entry.slug || tourId)}`, 'Link do passeio');
+    shareLink(`https://amora.pedalhidrografi.co/passeio/${encodeURIComponent(entry.slug || tourId)}`, 'Link do passeio',
+      entry.name || buildLabel(entry));
   });
   routeModalMeta.querySelector('.edit-tour-btn')?.addEventListener('click', () => {
     openTourModal(tourId);
@@ -7086,6 +9208,7 @@ function closeRouteModal() {
   routeModalSummary.innerHTML = '';
   document.getElementById('route-modal-photos').innerHTML = '';
   _routeModalReqId++;  // invalida qualquer _renderTourSummary pendente
+  _routePhotosReq++;   // …e a tira de fotos ainda esperando o catálogo
   _clearTourUrl();
 }
 
@@ -7137,6 +9260,74 @@ L.DomEvent.disableClickPropagation(traceControls);
 L.DomEvent.disableScrollPropagation(traceControls);
 const traceRoutingMode = document.getElementById('trace-routing-mode');
 const traceMetrics = document.getElementById('trace-metrics');
+
+// ⓘ da barra de edição: legenda dos botões/gestos + o detalhamento da
+// simulação. Os dois viviam só em `title` (tooltip de mouse), que o iOS nunca
+// mostra — no celular os ícones da barra eram adivinhação e o detalhamento
+// (energia por termo, tempo por terreno, SUV) era inalcançável.
+const traceInfoBtn = document.createElement('button');
+traceInfoBtn.type = 'button';
+traceInfoBtn.id = 'trace-info-btn';
+traceInfoBtn.className = 'trace-info-btn';
+traceInfoBtn.textContent = 'ⓘ';
+traceInfoBtn.title = 'Como usar o editor + detalhes da simulação';
+traceInfoBtn.setAttribute('aria-label', 'Como usar o editor e detalhes da simulação');
+traceInfoBtn.setAttribute('aria-expanded', 'false');
+traceInfoBtn.setAttribute('aria-controls', 'trace-info');
+const traceInfo = document.createElement('div');
+traceInfo.id = 'trace-info';
+traceInfo.className = 'trace-info';
+traceInfo.hidden = true;
+traceInfo.setAttribute('role', 'region');
+traceInfo.setAttribute('aria-label', 'Como usar o editor');
+traceControls.append(traceInfoBtn, traceInfo);
+
+function traceLegendHtml() {
+  const t = isCoarsePointer();
+  const tap = t ? 'Toque' : 'Clique';
+  const rows = [
+    [`${tap} no mapa`, 'novo ponto no fim da rota'],
+    [t ? 'Segure na linha' : 'Clique na linha', 'insere um ponto no meio (arraste pra posicionar)'],
+    ['Arraste um ponto', 'move; ' + (t ? 'toque' : 'clique') + ' nele: nome, POI, remover'],
+    ['↶ ↷', 'desfazer / refazer'],
+    ['Seletor', 'como ligar os pontos: reta, OSM, menor energia'],
+    ['⚙', 'parâmetros da simulação'],
+    ['🗑', 'descarta o traçado (e o rascunho guardado)'],
+    ['⇄', 'inverte o sentido'],
+    ['📂', 'carregar rota (servidor ou .gpx)'],
+    ['⤓🗺︎', 'salvar no servidor, link, QR, exportar GPX'],
+    ['👁', 'ver o traçado limpo, sem os pontos'],
+    ['🗺︎ cancelar', 'fecha o editor — o rascunho fica guardado'],
+  ];
+  return '<div class="trace-info-head"><strong>Editor de traçado</strong>' +
+    '<button type="button" class="trace-info-close" aria-label="Fechar">✕</button></div>' +
+    '<dl class="trace-legend">' +
+    rows.map(([k, v]) => `<dt>${escapeHtml(k)}</dt><dd>${escapeHtml(v)}</dd>`).join('') +
+    '</dl><p class="trace-info-sub">Simulação</p><pre class="trace-metrics-detail"></pre>';
+}
+function refreshTraceInfoDetail() {
+  if (traceInfo.hidden) return;
+  const pre = traceInfo.querySelector('.trace-metrics-detail');
+  if (pre) pre.textContent = traceMetrics.title || 'Adicione pontos pra simular.';
+}
+function openTraceInfo() {
+  traceInfo.innerHTML = traceLegendHtml();
+  traceInfo.hidden = false;
+  traceInfoBtn.setAttribute('aria-expanded', 'true');
+  refreshTraceInfoDetail();
+}
+function closeTraceInfo() {
+  traceInfo.hidden = true;
+  traceInfoBtn.setAttribute('aria-expanded', 'false');
+}
+traceInfoBtn.addEventListener('click', () => (traceInfo.hidden ? openTraceInfo() : closeTraceInfo()));
+traceInfo.addEventListener('click', (e) => { if (e.target.closest('.trace-info-close')) closeTraceInfo(); });
+// No toque, a legenda abre sozinha na 1ª vez que o editor abre neste aparelho.
+function maybeShowTraceLegendOnce() {
+  if (!isCoarsePointer() || storage.get('phidro:traceLegendSeen')) return;
+  storage.set('phidro:traceLegendSeen', '1');
+  openTraceInfo();
+}
 
 // ─── Physics + simulation parameters ─────────────────────────────────────────
 // Per-segment forces:
@@ -7269,13 +9460,36 @@ let trackpoints = [];
 // `history` sombrearia window.history e quebraria history.replaceState().
 let drawHistory = [[]];      // snapshots of [{ lat, lng, pathFromPrev }, ...]
 let historyIndex = 0;
+// Teto do desfazer: cada snapshot compartilha os arrays de geometria (ver
+// snapshot()), mas uma sessão longa ainda acumularia centenas de entradas.
+const HISTORY_MAX = 100;
+// "Linhagem" do rascunho: cada carregamento que SUBSTITUI o traçado (link,
+// rota salva, GPX, Editar este traçado) abre uma nova. O vínculo com o
+// servidor (id/nome) é da linhagem — desfazer até o rascunho de antes de um
+// carregamento devolve o id/nome DELE, senão um "Salvar no servidor" depois
+// do desfazer sobrescreveria a rota carregada com o traçado antigo.
+let _draftLineage = 0;
+let _lineageCounter = 0;
+const _lineageMeta = new Map();   // linhagem → { sid, n, rm }
 let draftPolyline = null;
 let draftCasing = null;
 let pointIdCounter = 0;
 // 'straight' | 'cycling' | 'foot' — controls how new segments are computed.
 // 'straight' just connects waypoints with a line (the absolute shortest distance).
 let routingMode = 'straight';
-let pendingRouteSeq = 0;     // increments per OSRM call; lets us discard stale results
+// Roteamento é POR SEGMENTO: cada um (o caminho que CHEGA em tp) leva o
+// próprio carimbo (tp._routeSeq) e um resultado só entra se o carimbo ainda é
+// o dele e as duas pontas não mudaram desde o pedido — ver refetchPath. Um
+// contador global único descartava o resultado dos OUTROS segmentos a cada
+// toque/arraste durante um roteamento em voo, e eles ficavam na reta pra
+// sempre. `pendingRouteSeq` sobrou como ÉPOCA do rascunho: operações em bloco
+// (desfazer, descartar, inverter, carregar) incrementam e invalidam tudo que
+// está em voo.
+let pendingRouteSeq = 0;
+let _segRouteSeq = 0;        // fonte dos carimbos por segmento
+let _routesInFlight = 0;     // roteamentos em voo (a varredura espera zerar)
+let _markerDragActive = 0;   // arraste de waypoint em andamento
+let _markerDragEndAt = 0;    // fim do último arraste (ver onMapClickInDrawing)
 
 traceBtn.addEventListener('click', () => {
   if (previewMode) { exitPreviewMode(); return; }  // "Editar" volta pra edição
@@ -7284,6 +9498,7 @@ traceBtn.addEventListener('click', () => {
     // Rascunho persistido (fechou o navegador / Cancelar sem descartar)
     // volta pra tela — o descarte explícito é o 🗑 da barra.
     restoreTraceDraft();
+    maybeShowTraceLegendOnce();
   } else {
     exitDrawingMode();
   }
@@ -7352,6 +9567,8 @@ function enterDrawingMode() {
   trackpoints = [];
   drawHistory = [[]];
   historyIndex = 0;
+  _lineageMeta.clear();
+  _draftLineage = ++_lineageCounter;
   if (draftPolyline) { map.removeLayer(draftPolyline); draftPolyline = null; }
   if (draftCasing)   { map.removeLayer(draftCasing);   draftCasing = null; }
 
@@ -7430,7 +9647,18 @@ function exitDrawingMode() {
   // volta no próximo Traçar (o descarte explícito é o 🗑 da barra). Uma
   // gravação debounced ainda pendente precisa ser descarregada AGORA — senão
   // o timer dispararia depois do wipe abaixo e salvaria um rascunho vazio.
-  if (_traceDraftTimer) { clearTimeout(_traceDraftTimer); saveTraceDraft(); }
+  // (O popup de ponto fecha ANTES: fechar pode registrar o nome digitado,
+  // que agenda outra gravação.)
+  if (_tpPopup) map.closePopup(_tpPopup);
+  flushTraceDraft();
+  // O rascunho vive só neste navegador (e o Safari fora da tela de início
+  // apaga o armazenamento de sites sem visita há 7 dias) — uma vez por
+  // sessão, lembra que o servidor é o lugar seguro.
+  if (trackpoints.length >= 2 && !currentSavedRouteId && !_draftNudgeShown) {
+    _draftNudgeShown = true;
+    showToast('Rascunho guardado só neste aparelho — pra não perder, use ⤓ Salvar → ☁ Salvar no servidor.', 6000);
+  }
+  closeTraceInfo();
   drawingMode = false;
   previewMode = false;
   document.body.classList.remove('drawing', 'trace-preview');
@@ -7491,6 +9719,18 @@ async function onMapClickInDrawing(e) {
   // Também engole o ghost click do toque e um duplo-clique no painel recém-
   // encolhido. Ver geoSearchPickTs em pickGeoSearchResult.
   if (Date.now() - geoSearchPickTs < 700) return;
+  // Soltar um waypoint arrastado (mouse) em cima de outro marcador (uma
+  // foto): o click vai pro ancestral comum, que o Leaflet entrega como
+  // clique no MAPA — virava um ponto extra no fim da rota.
+  if (Date.now() - _markerDragEndAt < 400) return;
+  // Toque no mapa com o popup de um ponto aberto: só FECHA o popup. Tocar
+  // fora é o jeito natural de fechar (o ✕ é pequeno) e de baixar o teclado
+  // do nome — e cada fechamento virava um waypoint novo, re-roteado. (O
+  // popup tem closeOnClick:false justamente pra ainda estar aberto aqui.)
+  if (_tpPopup && map.hasLayer(_tpPopup)) {
+    map.closePopup(_tpPopup);
+    return;
+  }
   const tp = createTrackpoint(e.latlng);
   trackpoints.push(tp);
 
@@ -7502,12 +9742,16 @@ async function onMapClickInDrawing(e) {
   redrawAndMetrics();
   updateTraceControls();
 
-  if (routingMode !== 'straight' && trackpoints.length > 1) {
-    const idx = trackpoints.length - 1;
-    await refetchPath(idx);
+  // O histórico registra a edição NA HORA (com o segmento marcado pendente —
+  // o roteamento completa o snapshot quando chega, ver patchPendingHistory).
+  // Empilhar depois do await deixava um desfazer feito no meio do voo pular
+  // um passo e perder o refazer quando a resposta chegava.
+  const job = routingMode !== 'straight' && trackpoints.length > 1 ? refetchPath(tp) : null;
+  pushHistory();
+  if (job) {
+    await job;
     redrawAndMetrics();
   }
-  pushHistory();
 }
 
 // Initial state for the new trackpoint can be passed in (used by snapshot
@@ -7525,8 +9769,16 @@ function createTrackpoint(latlng, init = {}) {
     zIndexOffset: 1000,
   });
   marker._tpId = id;
-  marker.on('drag', () => redrawAndMetrics());
-  marker.on('dragend', () => onMarkerDragEnd(id));
+  // Durante o arraste só a LINHA acompanha (1× por quadro); física/métricas e
+  // elevação recalculam no dragend — numa rota longa, a simulação inteira a
+  // cada evento de toque (60 Hz) deixava o marcador atrás do dedo.
+  marker.on('dragstart', () => { _markerDragActive++; });
+  marker.on('drag', scheduleDragRedraw);
+  marker.on('dragend', () => {
+    _markerDragActive = Math.max(0, _markerDragActive - 1);
+    _markerDragEndAt = Date.now();
+    onMarkerDragEnd(id);
+  });
   marker.on('click', () => openTpPopup(id));
   marker.addTo(map);
   if (name) {
@@ -7690,20 +9942,33 @@ const GARMIN_SYMS = [
   ['Crossing',       'Travessia'],
 ];
 
+// Ponteiro grosso (dedo) como entrada principal — gestos e alvos do editor
+// mudam de forma (segurar pra inserir, alvos de 40 px, Enter só busca…).
+function isCoarsePointer() {
+  try { return window.matchMedia('(pointer: coarse)').matches; } catch { return false; }
+}
+
+// No toque a CAIXA do marcador (transparente) vira a área de toque de 40 px;
+// o ponto visível segue do mesmo tamanho, centralizado (CSS). 16 px era um
+// terço do alvo mínimo: quem errava por pouco pegava a linha (inseria ponto)
+// ou o mapa (acrescentava ponto no fim).
 function tpIcon(isPoi, sym) {
+  const coarse = isCoarsePointer();
   if (isPoi) {
+    const s = coarse ? 40 : 26;
     return L.divIcon({
       className: 'trackpoint-marker poi',
       html: `<span class="poi-emoji" title="${symLabel(sym)}">${symEmoji(sym)}</span>`,
-      iconSize: [26, 26],
-      iconAnchor: [13, 13],
+      iconSize: [s, s],
+      iconAnchor: [s / 2, s / 2],
     });
   }
+  const s = coarse ? 40 : 16;
   return L.divIcon({
     className: 'trackpoint-marker',
     html: '<div class="trackpoint-dot"></div>',
-    iconSize: [16, 16],
-    iconAnchor: [8, 8],
+    iconSize: [s, s],
+    iconAnchor: [s / 2, s / 2],
   });
 }
 
@@ -7726,6 +9991,8 @@ function refreshMarker(tp) {
   }
 }
 
+let _tpPopup = null;   // popup de edição de ponto aberto (no máx. um)
+
 function openTpPopup(id) {
   const tp = trackpoints.find((t) => t.id === id);
   if (!tp) return;
@@ -7735,7 +10002,7 @@ function openTpPopup(id) {
   root.innerHTML = `
     <label class="tp-row">
       <span>Nome</span>
-      <input type="text" class="tp-name" placeholder="ex.: Mirante do Pacaembu" />
+      <input type="text" class="tp-name" placeholder="ex.: Mirante do Pacaembu" enterkeyhint="done" />
     </label>
     <label class="tp-row tp-checkbox">
       <input type="checkbox" class="tp-poi" />
@@ -7782,7 +10049,27 @@ function openTpPopup(id) {
     tp.name = nameInput.value;
     refreshMarker(tp);
   });
-  nameInput.addEventListener('change', pushHistory);
+  // O nome entra no histórico quando "assenta": change (blur) OU o popup
+  // fechando com o campo ainda focado (remover um input focado não dispara
+  // change — o nome ficava fora do desfazer/rascunho).
+  let committedName = tp.name || '';
+  const commitName = () => {
+    if ((tp.name || '') === committedName) return;
+    committedName = tp.name || '';
+    pushHistory();
+  };
+  nameInput.addEventListener('change', commitName);
+  nameInput.addEventListener('keydown', (e) => {
+    // Nada daqui vaza pro keydown global (Esc sairia do editor, Cmd+Z
+    // desfaria um waypoint em vez do texto). Enter/"OK" do teclado: confirma
+    // e fecha o popup.
+    e.stopPropagation();
+    if (e.key === 'Enter' || e.key === 'Escape') {
+      e.preventDefault();
+      nameInput.blur();
+      map.closePopup(popup);
+    }
+  });
   poiCheck.addEventListener('change', () => {
     tp.isPoi = poiCheck.checked;
     symRow.style.display = tp.isPoi ? '' : 'none';
@@ -7795,14 +10082,25 @@ function openTpPopup(id) {
     pushHistory();
   });
   deleteBtn.addEventListener('click', () => {
-    map.closePopup();
+    map.closePopup(popup);
     removeTrackpoint(id);
   });
 
-  L.popup({ closeButton: true, autoClose: false, className: 'tp-popup' })
+  // closeOnClick:false — um toque no mapa NÃO fecha sozinho: quem fecha é o
+  // onMapClickInDrawing, que assim sabe que o toque era pra fechar o popup e
+  // não pra criar ponto.
+  const popup = L.popup({ closeButton: true, autoClose: false, closeOnClick: false, className: 'tp-popup' })
     .setLatLng(tp.marker.getLatLng())
-    .setContent(root)
-    .openOn(map);
+    .setContent(root);
+  popup.on('remove', () => {
+    // Fechado por um desfazer/refazer: o snapshot restaurado vence — empilhar
+    // o nome aqui truncaria o refazer no meio da restauração.
+    if (!popup._discard) commitName();
+    if (_tpPopup === popup) _tpPopup = null;
+  });
+  if (_tpPopup && _tpPopup !== popup) map.closePopup(_tpPopup);
+  _tpPopup = popup;
+  popup.openOn(map);
 }
 
 async function removeTrackpoint(id) {
@@ -7825,39 +10123,50 @@ async function removeTrackpoint(id) {
   }
   redrawAndMetrics();
   updateTraceControls();
-  if (routingMode !== 'straight' && idx > 0 && idx < trackpoints.length) {
-    await refetchPath(idx);
+  const job = routingMode !== 'straight' && idx > 0 && idx < trackpoints.length
+    ? refetchPath(trackpoints[idx]) : null;
+  pushHistory();   // na hora — ver onMapClickInDrawing
+  if (job) {
+    await job;
     redrawAndMetrics();
   }
-  pushHistory();
 }
 
 async function onMarkerDragEnd(id) {
   const idx = trackpoints.findIndex((t) => t.id === id);
   if (idx === -1) return;
+  const tp = trackpoints[idx];
+  const next = trackpoints[idx + 1] || null;
 
   // Always update incoming/outgoing straight fallback first so the line snaps
   // to the new waypoint position immediately.
   if (idx > 0) {
-    trackpoints[idx].pathFromPrev = straightPath(
-      trackpoints[idx - 1].marker.getLatLng(),
-      trackpoints[idx].marker.getLatLng(),
-    );
+    tp.pathFromPrev = straightPath(trackpoints[idx - 1].marker.getLatLng(), tp.marker.getLatLng());
   }
-  if (idx < trackpoints.length - 1) {
-    trackpoints[idx + 1].pathFromPrev = straightPath(
-      trackpoints[idx].marker.getLatLng(),
-      trackpoints[idx + 1].marker.getLatLng(),
-    );
+  if (next) {
+    next.pathFromPrev = straightPath(tp.marker.getLatLng(), next.marker.getLatLng());
   }
   redrawAndMetrics();
 
-  if (routingMode !== 'straight') {
-    if (idx > 0) await refetchPath(idx);
-    if (idx < trackpoints.length - 1) await refetchPath(idx + 1);
+  // Os dois lados em paralelo e POR REFERÊNCIA — um índice capturado antes
+  // do await apontaria pro ponto errado se outro fosse inserido no meio.
+  const jobs = routingMode !== 'straight'
+    ? [idx > 0 ? refetchPath(tp) : null, next ? refetchPath(next) : null] : [];
+  pushHistory();   // na hora — ver onMapClickInDrawing
+  if (jobs.length) {
+    await Promise.all(jobs);
     redrawAndMetrics();
   }
-  pushHistory();
+}
+
+// Redesenho da linha durante o arraste de um waypoint: no máximo 1× por quadro.
+let _dragRedrawRaf = 0;
+function scheduleDragRedraw() {
+  if (_dragRedrawRaf) return;
+  _dragRedrawRaf = requestAnimationFrame(() => {
+    _dragRedrawRaf = 0;
+    if (drawingMode) updateDraftPolyline();
+  });
 }
 
 function straightPath(fromLatLng, toLatLng) {
@@ -7867,44 +10176,130 @@ function straightPath(fromLatLng, toLatLng) {
   ];
 }
 
-// Re-fetch the routed path arriving at trackpoints[idx] from trackpoints[idx-1].
-// Falls back to a straight line on any failure.
-// `seqOverride`: as chamadas em lote (restaurar rota salva/compartilhada via
-// mapConcurrent) DEVEM compartilhar UM único seq, senão cada chamada
-// concorrente incrementa o contador global e invalida as irmãs — só o último
-// segmento commitava e o resto ficava na reta. Sem override, cada chamada
-// (edição interativa) pega seu próprio seq pra invalidar in-flight antigos.
-async function refetchPath(idx, seqOverride) {
-  const tp = trackpoints[idx];
+// (Re)roteia o segmento que CHEGA em `target` — o trackpoint (ou, por
+// compatibilidade, o índice dele, resolvido NA HORA da chamada) — a partir do
+// waypoint anterior. Falha mantém a reta provisória. Devolve true se o
+// resultado entrou. O 2º argumento das chamadas em lote antigas (um seq
+// compartilhado) é ignorado: cada segmento se carimba sozinho, então lote e
+// edição interativa não se invalidam mais.
+async function refetchPath(target) {
+  const tp = typeof target === 'number' ? trackpoints[target] : target;
+  const idx = tp ? trackpoints.indexOf(tp) : -1;
+  if (idx < 1) return false;
   const prev = trackpoints[idx - 1];
-  if (!tp || !prev) return;
-
-  const seq = seqOverride !== undefined ? seqOverride : ++pendingRouteSeq;
-  const tpId = tp.id;
+  const epoch = pendingRouteSeq;
+  const seq = ++_segRouteSeq;
+  const mode = routingMode;
+  tp._routeSeq = seq;
+  tp._routePending = mode;   // reta provisória até a resposta (ver sweepPendingRoutes)
+  const a = prev.marker.getLatLng();
+  const b = tp.marker.getLatLng();
+  const from = L.latLng(a.lat, a.lng);
+  const to = L.latLng(b.lat, b.lng);
+  let path = null;
+  _routesInFlight++;
   try {
-    let path;
-    if (routingMode === 'energy' || routingMode === 'energy_road') {
-      const subMode = routingMode === 'energy_road' ? 'road' : 'free';
-      path = await energyRoute(prev.marker.getLatLng(), tp.marker.getLatLng(), subMode);
+    if (mode === 'energy' || mode === 'energy_road') {
+      // Cancela as leituras (DEM/FGB/grafo) quando um pedido mais novo pro
+      // MESMO segmento o supera — devolve null, e `fresh` abaixo já é falso.
+      // Sem a época no predicado: desfazer/refazer reaproveita o resultado.
+      path = await energyRoute(from, to, mode === 'energy_road' ? 'road' : 'free',
+        () => tp._routeSeq !== seq);
     } else {
-      path = await osrmRoute(
-        prev.marker.getLatLng(),
-        tp.marker.getLatLng(),
-        routingMode === 'foot' ? 'foot' : 'cycling',
-      );
+      path = await osrmRoute(from, to, mode === 'foot' ? 'foot' : 'cycling');
     }
-    const stillExists = trackpoints.find((t) => t.id === tpId);
-    if (!stillExists || seq !== pendingRouteSeq) return;
-    // Proveniência do segmento: o modo que produziu ESTA geometria. Viaja no
-    // snapshot/undo, no rascunho persistido e no GPX exportado (userWaypoints)
-    // — reabrir o arquivo devolve a opção de roteamento de cada waypoint.
-    if (path) path.mode = routingMode;
-    stillExists.pathFromPrev = path;
-    scheduleTraceDraftSave();
   } catch (err) {
-    console.warn(`Route failed (mode=${routingMode}, idx=${idx}):`, err.message);
-    // Keep the straight fallback that was already set.
+    console.warn(`Route failed (mode=${mode}):`, err.message);
+    path = null;
+  } finally {
+    _routesInFlight--;
   }
+  // Só vale se NADA mudou no segmento desde o pedido: mesma época, carimbo
+  // ainda deste pedido (um mais novo pro mesmo segmento vence), mesmo vizinho
+  // anterior (inserir/remover/inverter trocam o par) e as duas pontas paradas.
+  const i = trackpoints.indexOf(tp);
+  const fresh = epoch === pendingRouteSeq && tp._routeSeq === seq && i >= 1 &&
+    trackpoints[i - 1] === prev &&
+    prev.marker.getLatLng().equals(from) && tp.marker.getLatLng().equals(to);
+  const ok = Array.isArray(path) && path.length >= 2;
+  // Proveniência do segmento: o modo que produziu ESTA geometria (o do
+  // PEDIDO, não o do seletor agora). Viaja no snapshot/undo, no rascunho
+  // persistido e no GPX exportado (userWaypoints) — reabrir o arquivo
+  // devolve a opção de roteamento de cada waypoint.
+  if (ok) path.mode = mode;
+  let committed = false;
+  if (fresh) {
+    tp._routePending = null;
+    if (ok) { tp.pathFromPrev = path; committed = true; }
+    else noteRouteFailure();   // fica a reta provisória
+  } else if (ok && epoch !== pendingRouteSeq) {
+    // Desfazer/refazer recriou os pontos durante o voo: um segmento ainda
+    // pendente com as MESMAS pontas no mesmo modo recebe o resultado (é a
+    // mesma rota) — poupa a varredura de pedir de novo.
+    for (let j = 1; j < trackpoints.length; j++) {
+      const t = trackpoints[j];
+      if (t._routePending !== mode || !t.marker.getLatLng().equals(to) ||
+          !trackpoints[j - 1].marker.getLatLng().equals(from)) continue;
+      t._routePending = null;
+      t.pathFromPrev = path;
+      committed = true;
+    }
+  }
+  if (ok) patchPendingHistory(from, to, mode, path);
+  if (committed) scheduleTraceDraftSave();
+  if (!_routesInFlight) scheduleRouteSweep();
+  return committed;
+}
+
+// Os snapshots do desfazer tirados enquanto o segmento estava na reta
+// provisória (marcados `pending`) recebem a geometria que acabou de chegar —
+// senão desfazer/refazer até eles devolveria a reta (e re-rotearia).
+function patchPendingHistory(from, to, mode, path) {
+  for (const snap of drawHistory) {
+    for (let j = 1; j < snap.length; j++) {
+      const s = snap[j];
+      if (s.pending !== mode || s.lat !== to.lat || s.lng !== to.lng) continue;
+      const p = snap[j - 1];
+      if (p.lat !== from.lat || p.lng !== from.lng) continue;
+      s.path = path;
+      s.deckFlag = path.deckFlag || null;
+      s.routedEnergyJ = Number.isFinite(path.routedEnergyJ) ? path.routedEnergyJ : null;
+      s.mode = mode;
+      s.pending = null;
+    }
+  }
+}
+
+// Varredura: quando não há roteamento em voo, re-pede todo segmento que
+// ainda está na reta provisória (a resposta dele chegou "velha" — o ponto foi
+// mexido, um desfazer restaurou um estado pendente — e ninguém mais é dono).
+// Garante que, quando o usuário para, nenhum trecho fica reto por corrida.
+// Falha de verdade (roteador fora) NÃO fica pendente: não re-tenta sozinho.
+let _routeSweepTimer = null;
+function scheduleRouteSweep() {
+  if (_routeSweepTimer) return;
+  _routeSweepTimer = setTimeout(sweepPendingRoutes, 0);
+}
+async function sweepPendingRoutes() {
+  _routeSweepTimer = null;
+  if (!drawingMode || routingMode === 'straight') return;
+  // Arraste/inserção em curso: o dragend/pointerup deles pede o próprio
+  // roteamento — varrer agora rotearia a posição do meio do gesto à toa.
+  if (_routesInFlight > 0 || _markerDragActive > 0 || lineInsertActive) return;
+  const todo = trackpoints.filter((t, i) => i > 0 && t._routePending);
+  if (!todo.length) return;
+  const results = await mapConcurrent(todo, 4, (t) => refetchPath(t));
+  if (results.some(Boolean)) redrawAndMetrics();
+}
+
+// Roteador não respondeu: o trecho fica na reta. Avisa (no máx. 1× a cada
+// poucos segundos) em vez de deixar km/kJ/GPX cortando quarteirão em silêncio.
+let _routeFailToastAt = 0;
+function noteRouteFailure() {
+  const now = Date.now();
+  if (now - _routeFailToastAt < 8000) return;
+  _routeFailToastAt = now;
+  showToast('O roteador não respondeu — um trecho ficou em linha reta. Arraste um dos pontos pra tentar de novo.', 5000);
 }
 
 // ─── Roteamento por menor energia (FABDEM + Dijkstra) ────────────────────
@@ -7963,12 +10358,56 @@ function runEnergyWorker(payload) {
   });
 }
 
+// ─── Memória do roteamento: soltar quando o editor fecha ou fica ocioso ─────
+// O grafo do viário (worker, ~130 MB), os tiles de DEM decodificados, as
+// feições FGB em cache e os produtos do viário só valem enquanto se roteia —
+// antes ficavam presos até a página recarregar (num PWA, dias). Cada uso marca
+// o relógio; um temporizador solta tudo ROUTING_IDLE_OUTSIDE_MS depois de sair
+// do editor, ou após ROUTING_IDLE_INSIDE_MS parado dentro dele. Tudo volta sob
+// demanda (o grafo e os blocos FGB saem do cache do service worker). Não mexe
+// no rascunho nem nas elevações já amostradas.
+const ROUTING_IDLE_OUTSIDE_MS = 30 * 1000;
+const ROUTING_IDLE_INSIDE_MS = 5 * 60 * 1000;
+let _routingLastUse = 0;
+let _routingIdleTimer = null;
+let _routingInflight = 0;       // roteamentos/esperas em andamento (não solta no meio)
+
+function touchRoutingMemory() {
+  _routingLastUse = Date.now();
+  if (!_routingIdleTimer) _routingIdleTimer = setTimeout(checkRoutingIdle, ROUTING_IDLE_OUTSIDE_MS);
+}
+function checkRoutingIdle() {
+  _routingIdleTimer = null;
+  const idle = Date.now() - _routingLastUse;
+  const limit = drawingMode ? ROUTING_IDLE_INSIDE_MS : ROUTING_IDLE_OUTSIDE_MS;
+  const loading = !!_graphLoad && !_graphWorker;   // grafo ainda baixando
+  if (idle >= limit && !_routingInflight && !loading) { releaseRoutingMemory(); return; }
+  // Rechecagem curta: sair do editor solta em ≤ ROUTING_IDLE_OUTSIDE_MS.
+  _routingIdleTimer = setTimeout(checkRoutingIdle,
+    Math.max(5000, Math.min(Math.max(0, limit - idle), ROUTING_IDLE_OUTSIDE_MS)));
+}
+function releaseRoutingMemory() {
+  const had = { graph: !!_graphWorker, tiles: _demTiles.size, fgb: _fgbCache.size, road: _roadProductsCache.size };
+  if (_graphWorker) dropGraphWorker(new Error('grafo solto (editor ocioso)'));
+  _fgbCache.clear();
+  _fgbCacheBytes = 0;
+  _roadProductsCache.clear();
+  demTilesDrop();
+  if (had.graph || had.tiles || had.fgb || had.road) {
+    console.info(`[routing] memória solta — grafo ${had.graph ? 'sim' : 'não'} · ${had.tiles} tiles de DEM · ` +
+      `${had.fgb} consultas FGB · ${had.road} produtos do viário`);
+  }
+}
+
 // Costura tiles 1°×1° em um Float32Array sobre uma bbox dada. Cells fora
-// da cobertura → NaN/mask=0. Devolve { height, mask, H, W }.
-async function loadFabdemMosaic(bb) {
+// da cobertura → NaN/mask=0. Devolve { height, mask, H, W }. A grade é a do
+// próprio FABDEM (1″), então os pixels são copiados direto dos tiles 512² do
+// COG (cacheados — ver demTile), sem reamostrar.
+async function loadFabdemMosaic(bb, signal) {
   const A = FABDEM_ARCSEC;
   const W = Math.round((bb.east  - bb.west)  / A);
   const H = Math.round((bb.north - bb.south) / A);
+  if (W * H > DEM_MOSAIC_MAX_CELLS) throw new Error('área grande demais para o mosaico de relevo');
   const height = new Float32Array(W * H);
   const mask   = new Uint8Array(W * H);
   height.fill(NaN);
@@ -7996,19 +10435,21 @@ async function loadFabdemMosaic(bb) {
         Math.round((interEast  - oX) / rX),
         Math.round((interSouth - oY) / rY),
       ];
-      const raster = await t.image.readRasters({ window: wnd, interleave: true });
       const rW = wnd[2] - wnd[0];
       const rH = wnd[3] - wnd[1];
+      if (rW <= 0 || rH <= 0) continue;
       const colOffset = Math.round((interWest - bb.west)    / A);
       const rowOffset = Math.round((bb.north  - interNorth) / A);
+      const px = await demWindowReader(t, t.level0, wnd, signal);
+      if (!px) continue;
       for (let r = 0; r < rH; r++) {
         const mr = rowOffset + r;
         if (mr < 0 || mr >= H) continue;
         for (let c = 0; c < rW; c++) {
           const mc = colOffset + c;
           if (mc < 0 || mc >= W) continue;
-          const v = raster[r * rW + c];
-          if (Number.isFinite(v) && (t.nodata == null || v !== t.nodata)) {
+          const v = px(wnd[0] + c, wnd[1] + r);
+          if (v !== undefined && Number.isFinite(v) && (t.nodata == null || v !== t.nodata)) {
             const idx = mr * W + mc;
             height[idx] = v;
             mask[idx]   = 1;
@@ -8020,12 +10461,50 @@ async function loadFabdemMosaic(bb) {
   return { height, mask, H, W };
 }
 
-// Mosaico de elevação a partir do COG de SP, reamostrado pra MESMA grade do
-// FABDEM (A = FABDEM_ARCSEC) — assim o Dijkstra e o índice seed/goal seguem
-// idênticos, independente da fonte. Lê uma janela única do COG cobrindo a bbox
-// e amostra o vizinho mais próximo. Retorna null se a bbox não couber inteira
-// na extensão do DEM (aí o chamador cai pro FABDEM, evitando buracos).
-async function loadDemHandleMosaic(t, bb) {
+// Leitor de pixels de uma janela [c0,r0,c1,r1) de um nível do COG: busca (em
+// paralelo, pelo cache) os tiles que a cobrem e devolve px(c, r) → valor, ou
+// undefined fora da imagem. null se a janela pede tiles demais (DEM custom
+// muito fino sem overviews) — o chamador cai pra outra fonte.
+async function demWindowReader(h, lv, wnd, signal) {
+  const c0 = Math.max(0, wnd[0]), r0 = Math.max(0, wnd[1]);
+  const c1 = Math.min(lv.W, wnd[2]), r1 = Math.min(lv.H, wnd[3]);
+  if (c1 <= c0 || r1 <= r0) return () => undefined;
+  const tx0 = Math.floor(c0 / lv.tw), tx1 = Math.floor((c1 - 1) / lv.tw);
+  const ty0 = Math.floor(r0 / lv.th), ty1 = Math.floor((r1 - 1) / lv.th);
+  const ntx = tx1 - tx0 + 1, nty = ty1 - ty0 + 1;
+  if (ntx * nty > DEM_MOSAIC_MAX_TILES) {
+    console.warn(`[dem] janela pede ${ntx * nty} tiles (> ${DEM_MOSAIC_MAX_TILES}) — pulando esta fonte`);
+    return null;
+  }
+  const tiles = new Array(ntx * nty);
+  const jobs = [];
+  for (let ty = ty0; ty <= ty1; ty++) {
+    for (let tx = tx0; tx <= tx1; tx++) {
+      const slot = (ty - ty0) * ntx + (tx - tx0);
+      jobs.push(demTile(h, lv, tx, ty, signal).then((t) => { tiles[slot] = t; }));
+    }
+  }
+  await Promise.all(jobs);
+  const { W, H, tw, th } = lv;
+  return (c, r) => {
+    if (c < 0 || r < 0 || c >= W || r >= H) return undefined;
+    const tx = Math.floor(c / tw) - tx0, ty = Math.floor(r / th) - ty0;
+    if (tx < 0 || ty < 0 || tx >= ntx || ty >= nty) return undefined;
+    const t = tiles[ty * ntx + tx];
+    return t.data[(r - t.y0) * t.w + (c - t.x0)];
+  };
+}
+
+// Mosaico de elevação a partir de um DEM de COG único (SP ou custom),
+// reamostrado pra MESMA grade do FABDEM (A = FABDEM_ARCSEC) — assim o Dijkstra
+// e o índice seed/goal seguem idênticos, independente da fonte. Lê o OVERVIEW
+// mais grosso que ainda é ≤ a grade (no DEM de SP o IFD2, ~21 m, AVERAGE) e
+// amostra o pixel que CONTÉM o centro de cada célula (floor — com o round de
+// antes o erro de meia célula era 10 m nesse nível). Antes lia o IFD0 (~5 m)
+// sobre a bbox inteira: 16× os pixels, 10–45 MB por trecho. Retorna null se a
+// bbox não couber inteira na extensão do DEM (aí o chamador cai pro FABDEM,
+// evitando buracos).
+async function loadDemHandleMosaic(t, bb, signal) {
   if (!t) return null;
   // Só usa este DEM se a bbox do segmento cabe INTEIRA na extensão dele —
   // senão devolve null e o caller cai pra próxima fonte (sem costurar bordas).
@@ -8035,39 +10514,43 @@ async function loadDemHandleMosaic(t, bb) {
   const W = Math.round((bb.east  - bb.west)  / A);
   const H = Math.round((bb.north - bb.south) / A);
   if (!W || !H) return null;
-  const [oX, oY] = t.origin;
-  const [rX, rY] = t.resolution;   // rX>0, rY<0
-  // Janela de pixels do COG que cobre a bbox (com folga de 1).
-  const scMin = Math.max(0, Math.floor((bb.west  - oX) / rX) - 1);
-  const scMax = Math.min(t.W - 1, Math.ceil((bb.east  - oX) / rX) + 1);
-  const srMin = Math.max(0, Math.floor((bb.north - oY) / rY) - 1);
-  const srMax = Math.min(t.H - 1, Math.ceil((bb.south - oY) / rY) + 1);
-  if (scMax < scMin || srMax < srMin) return null;
-  let ras;
+  if (W * H > DEM_MOSAIC_MAX_CELLS) throw new Error('área grande demais para o mosaico de relevo');
+  let lv = t.level0;
   try {
-    ras = await t.image.readRasters({
-      window: [scMin, srMin, scMax + 1, srMax + 1],
-      interleave: true,
-    });
+    for (const L of await demLevels(t)) {
+      if (Math.abs(L.rX) <= A * 1.0001 && Math.abs(L.rY) <= A * 1.0001 && Math.abs(L.rX) > Math.abs(lv.rX)) lv = L;
+    }
   } catch (e) {
+    if (e && e.name === 'AbortError') throw e;
+    console.warn(`[dem] overviews indisponíveis, lendo a resolução cheia: ${e.message}`);
+  }
+  const [oX, oY] = t.origin;
+  const colPx = new Int32Array(W), rowPx = new Int32Array(H);
+  for (let mc = 0; mc < W; mc++) {
+    const c = Math.floor((bb.west + (mc + 0.5) * A - oX) / lv.rX);
+    colPx[mc] = c < 0 ? 0 : c >= lv.W ? lv.W - 1 : c;
+  }
+  for (let mr = 0; mr < H; mr++) {
+    const r = Math.floor((bb.north - (mr + 0.5) * A - oY) / lv.rY);
+    rowPx[mr] = r < 0 ? 0 : r >= lv.H ? lv.H - 1 : r;
+  }
+  let px;
+  try {
+    px = await demWindowReader(t, lv, [colPx[0], rowPx[0], colPx[W - 1] + 1, rowPx[H - 1] + 1], signal);
+  } catch (e) {
+    if (e && e.name === 'AbortError') throw e;
     console.warn(`[dem] mosaico falhou: ${e.message}`);
     return null;
   }
-  const wndW = scMax - scMin + 1;
-  const wndH = srMax - srMin + 1;
+  if (!px) return null;
   const height = new Float32Array(W * H);
   const mask   = new Uint8Array(W * H);
   height.fill(NaN);
   for (let mr = 0; mr < H; mr++) {
-    const lat = bb.north - (mr + 0.5) * A;
-    let sr = Math.round((lat - oY) / rY) - srMin;
-    if (sr < 0) sr = 0; else if (sr >= wndH) sr = wndH - 1;
+    const r = rowPx[mr];
     for (let mc = 0; mc < W; mc++) {
-      const lng = bb.west + (mc + 0.5) * A;
-      let sc = Math.round((lng - oX) / rX) - scMin;
-      if (sc < 0) sc = 0; else if (sc >= wndW) sc = wndW - 1;
-      const v = ras[sr * wndW + sc];
-      if (Number.isFinite(v) && (t.nodata == null || v !== t.nodata)) {
+      const v = px(colPx[mc], r);
+      if (v !== undefined && Number.isFinite(v) && (t.nodata == null || v !== t.nodata)) {
         const idx = mr * W + mc;
         height[idx] = v;
         mask[idx]   = 1;
@@ -8076,8 +10559,8 @@ async function loadDemHandleMosaic(t, bb) {
   }
   return { height, mask, H, W };
 }
-async function loadSampaDemMosaic(bb) { return loadDemHandleMosaic(await openSampaDem(), bb); }
-async function loadCustomDemMosaic(bb) { return loadDemHandleMosaic(_customDem, bb); }
+async function loadSampaDemMosaic(bb, signal) { return loadDemHandleMosaic(await openSampaDem(), bb, signal); }
+async function loadCustomDemMosaic(bb, signal) { return loadDemHandleMosaic(_customDem, bb, signal); }
 
 // Tratamento σ do mapa (Entry 74 do bicycling-energy-model): suavização
 // Gaussiana do mosaico DEM antes do roteamento por energia. CÓPIA MANTIDA À
@@ -8149,16 +10632,17 @@ function smoothHeightsInPlace(height, mask, H, W, dxM, dyM, sigmaM) {
 
 // Escolhe a fonte do mosaico: DEM custom (se carregado e a bbox cabe nele) →
 // DEM de SP (se ligado) → FABDEM. Cada fonte só vale onde cobre a bbox inteira.
-async function loadDemMosaic(bb) {
+// `signal` aborta as leituras de tile em voo (trecho superado — ver energyRoute).
+async function loadDemMosaic(bb, signal) {
   if (_customDem) {
-    const custom = await loadCustomDemMosaic(bb);
+    const custom = await loadCustomDemMosaic(bb, signal);
     if (custom) return custom;
   }
   if (params.useSampaDem) {
-    const sampa = await loadSampaDemMosaic(bb);
+    const sampa = await loadSampaDemMosaic(bb, signal);
     if (sampa) return sampa;
   }
-  return loadFabdemMosaic(bb);
+  return loadFabdemMosaic(bb, signal);
 }
 
 // Bresenham: pinta (r0,c0)→(r1,c1) na máscara.
@@ -8231,83 +10715,328 @@ async function ensureFlatgeobuf() {
 
 // Cache LRU das consultas FGB por (url, bbox arredondada), já PARSEADAS: o
 // cache de blocos do SW (sw.js) poupa a rede, mas cada consulta ainda refaria
-// o parse — este absorve a consulta dupla da mesma bbox (modo terreno consulta
-// viário e água pro mesmo trecho; rotas re-traçadas idem).
-const _fgbCache = new Map();
+// o parse — este absorve a consulta repetida da mesma bbox (água do modo
+// terreno, viário do fallback do "pelo viário", rotas re-traçadas). Com
+// orçamento em BYTES (estimado pelos vértices), não só em entradas: uma bbox
+// de viário são dezenas de MB de GeoJSON, e 10 delas passavam de 200 MB. O
+// modo terreno não guarda mais o viário aqui (ver viarioRoadProducts); o
+// cache é solto quando o editor fecha/fica ocioso (releaseRoutingMemory).
+const _fgbCache = new Map();   // chave → { feats, bytes }
+let _fgbCacheBytes = 0;
 const FGB_CACHE_MAX = 10;
-// `useCache=false` pras CAMADAS DE MAPA (Morros e Águas / Cicloinfra): elas
-// reconsultam a cada pan, então cada viewport viraria uma entrada nova e as 10
-// vagas do LRU acabariam segurando 10 viewports inteiras de feições na memória
-// — dezenas de milhares de linhas cada. Elas redesenham do zero de qualquer
-// jeito, e os BYTES já ficam no cache de blocos do SW.
-async function streamFgbFeatures(url, bb, useCache = true) {
-  const key = `${url}|${bb.west.toFixed(4)},${bb.south.toFixed(4)},${bb.east.toFixed(4)},${bb.north.toFixed(4)}`;
-  if (useCache && _fgbCache.has(key)) {
-    const v = _fgbCache.get(key);
-    _fgbCache.delete(key); _fgbCache.set(key, v);   // refresca a posição LRU
-    return v;
+function fgbCacheBudget() { return (dataBudgetCoarse() ? 32 : 128) * 1024 * 1024; }
+// ~56 B por vértice ([x,y] num array JS) + ~200 B por feição (objeto,
+// properties, geometry) — ordem de grandeza medida no heap do Chrome.
+const FGB_BYTES_PER_VERTEX = 56, FGB_BYTES_PER_FEATURE = 200;
+
+function geomVertexCount(g) {
+  if (!g || !g.coordinates) return 0;
+  const c = g.coordinates;
+  switch (g.type) {
+    case 'Point': return 1;
+    case 'LineString': case 'MultiPoint': return c.length;
+    case 'MultiLineString': case 'Polygon': { let n = 0; for (const p of c) n += p.length; return n; }
+    case 'MultiPolygon': { let n = 0; for (const poly of c) for (const r of poly) n += r.length; return n; }
+    default: return 0;
   }
+}
+
+function fgbCachePut(key, feats, bytes) {
+  const budget = fgbCacheBudget();
+  if (bytes > budget / 2) return;   // grande demais pra valer a pena segurar
+  _fgbCache.set(key, { feats, bytes });
+  _fgbCacheBytes += bytes;
+  for (const [k, v] of _fgbCache) {
+    if (_fgbCacheBytes <= budget && _fgbCache.size <= FGB_CACHE_MAX) break;
+    if (k === key) continue;
+    _fgbCache.delete(k);
+    _fgbCacheBytes -= v.bytes;
+  }
+}
+
+function fgbCancelError() { return new DOMException('consulta FGB cancelada', 'AbortError'); }
+
+// Cancelamento DE VERDADE dos range requests. O flatgeobuf 4.4 não aceita
+// AbortSignal e, depois de percorrer o índice, pede TODOS os lotes de feições
+// da bbox de uma vez (Repeater.merge, um GET por lote) — sair do for-await
+// parava o parse, mas os bytes já pedidos continuavam chegando (medido: os
+// ~3 MB inteiros da hidrografia de um z10 baixados DEPOIS de desligar a
+// camada), e o return() do gerador ainda esperava esses downloads acabarem. O
+// cliente HTTP dele chama o fetch GLOBAL com os headers que o deserialize
+// recebe (5º argumento): um header-marcador liga cada range request à sua
+// consulta, e este gancho troca o marcador pelo AbortSignal dela. O marcador
+// sai ANTES do request ir pra rede — o que o servidor/SW vê não muda (sem
+// header extra, sem preflight de CORS). Qualquer outro fetch passa direto.
+const FGB_QUERY_HEADER = 'x-phidro-fgb-query';
+const _fgbQuerySignals = new Map();   // id da consulta → AbortSignal
+let _fgbQuerySeq = 0;
+function installFgbFetchAbort() {
+  if (window.__phidroFgbFetchAbort) return;
+  window.__phidroFgbFetchAbort = true;
+  const orig = window.fetch;
+  window.fetch = function (input, init) {
+    const h = init && init.headers;
+    if (h instanceof Headers && h.has(FGB_QUERY_HEADER)) {
+      const signal = _fgbQuerySignals.get(h.get(FGB_QUERY_HEADER));
+      const headers = new Headers(h);
+      headers.delete(FGB_QUERY_HEADER);
+      init = { ...init, headers };
+      if (signal) init.signal = signal;
+    }
+    return orig.call(window, input, init);
+  };
+}
+
+// Devolve a vez pro event loop (uma macrotarefa). O gerador do flatgeobuf
+// entrega um LOTE inteiro de feições em microtarefas encadeadas — dezenas de
+// milhares de feições parseadas sem o navegador desenhar nem responder a toque
+// (medido: blocos de ~2 s com CPU×4 num trecho de 9 km). MessageChannel e não
+// setTimeout: aba em segundo plano estica o setTimeout pra ≥1 s.
+function yieldToEventLoop() {
+  return new Promise((resolve) => {
+    const ch = new MessageChannel();
+    ch.port1.onmessage = () => { ch.port1.close(); resolve(); };
+    ch.port2.postMessage(null);
+  });
+}
+const FGB_YIELD_EVERY_MS = 40;
+
+// Itera as feições do FGB na bbox (range requests), chamando onFeature(f) —
+// que devolve false pra parar (teto). Parar (teto, `isStale()`, `signal`,
+// timeout) ABORTA os range requests da consulta ainda em voo (ver
+// installFgbFetchAbort) e sai do for-await; cancelado rejeita com AbortError
+// (quem chamou não usa resultado parcial). `isStale()` é conferido a cada
+// feição e, enquanto nenhuma chega (a travessia do índice, os lotes em voo),
+// a cada 250 ms. O timeout é de INATIVIDADE — VIARIO_FETCH_TIMEOUT_MS sem
+// nenhuma feição: uma bbox grande num 4G lento pode passar disso no total sem
+// estar travada.
+async function forEachFgbFeature(url, bb, onFeature, { isStale = null, signal = null } = {}) {
+  const stale = () => (signal && signal.aborted) || (isStale && isStale());
+  if (stale()) throw fgbCancelError();
   const fgb = await ensureFlatgeobuf();
+  if (stale()) throw fgbCancelError();
+  installFgbFetchAbort();
   const rect = { minX: bb.west, minY: bb.south, maxX: bb.east, maxY: bb.north };
-  // O deserialize não aceita AbortSignal — o timeout corre por fora e rejeita
-  // a espera (as fetches órfãs morrem sozinhas quando o generator é solto).
+  const ctrl = new AbortController();
+  const qid = String(++_fgbQuerySeq);
+  _fgbQuerySignals.set(qid, ctrl.signal);
+  let timer = null, poll = null, expired = false, cancelled = false, stopping = false, fail = null;
+  let lastFeature = performance.now();
+  const timeout = new Promise((_, rej) => { fail = rej; });
+  // Aborta ANTES de sair do laço: o return() do gerador espera os lotes em voo.
+  const stop = () => { stopping = true; ctrl.abort(); };
+  // Um temporizador só, que se reagenda pelo tempo que falta — rearmar um
+  // setTimeout por feição custava ~150 ms num trecho de 56 mil vias.
+  const check = () => {
+    const idle = performance.now() - lastFeature;
+    if (idle >= VIARIO_FETCH_TIMEOUT_MS) { expired = true; stop(); fail(new Error('timeout FGB')); }
+    else timer = setTimeout(check, VIARIO_FETCH_TIMEOUT_MS - idle);
+  };
+  const loop = (async () => {
+    let slice = lastFeature;
+    try {
+      for await (const f of fgb.deserialize(url, rect, undefined, false, { [FGB_QUERY_HEADER]: qid })) {
+        if (expired || stopping) break;
+        if (stale()) { cancelled = true; stop(); break; }
+        const now = performance.now();
+        lastFeature = now;
+        if (onFeature(f) === false) { stop(); break; }
+        // A cada ~40 ms de parse, uma pausa pro navegador (ver yieldToEventLoop).
+        if (now - slice > FGB_YIELD_EVERY_MS) {
+          await yieldToEventLoop();
+          slice = lastFeature = performance.now();
+          if (expired || stopping) break;
+          if (stale()) { cancelled = true; stop(); break; }
+        }
+      }
+    } catch (e) {
+      // O abort que NÓS demos rejeita os ranges em voo, e o erro pode vazar
+      // pelo gerador (na travessia do índice) ou pelo return() dele — não é falha.
+      if (!stopping) throw e;
+    }
+  })();
+  // Se o timeout ganhou, um erro tardio do laço não fica órfão; e o marcador só
+  // sai do mapa quando o gerador acabou de vez (um range pedido depois do abort
+  // ainda pega o sinal já abortado).
+  loop.catch(() => {}).then(() => _fgbQuerySignals.delete(qid));
+  timer = setTimeout(check, VIARIO_FETCH_TIMEOUT_MS);
+  if (isStale || signal) poll = setInterval(() => { if (!stopping && stale()) { cancelled = true; stop(); } }, 250);
+  try {
+    await Promise.race([loop, timeout]);
+  } finally {
+    clearTimeout(timer);
+    if (poll) clearInterval(poll);
+  }
+  if (cancelled) throw fgbCancelError();
+}
+
+// `useCache=false` pras CAMADAS DE MAPA (Morros e Águas / Cicloinfra): elas
+// reconsultam a cada pan, então cada viewport viraria uma entrada nova e o LRU
+// acabaria segurando viewports inteiras de feições na memória — dezenas de
+// milhares de linhas cada. Elas redesenham do zero de qualquer jeito, e os
+// BYTES já ficam no cache de blocos do SW. `opts`: {isStale, signal} cortam o
+// download (AbortError); `maxParts` é o teto de feições guardadas (o array
+// volta com `.capped = true`, e resultado cortado não entra no cache);
+// `keep(props)` descarta na hora o que não vai ser desenhado.
+async function streamFgbFeatures(url, bb, useCache = true, { isStale = null, signal = null, maxParts = Infinity, keep = null } = {}) {
+  const key = `${url}|${bb.west.toFixed(4)},${bb.south.toFixed(4)},${bb.east.toFixed(4)},${bb.north.toFixed(4)}`;
+  const hit = useCache && _fgbCache.get(key);
+  if (hit) {
+    _fgbCache.delete(key); _fgbCache.set(key, hit);   // refresca a posição LRU
+    touchRoutingMemory();
+    return hit.feats;
+  }
   const feats = [];
-  await Promise.race([
-    (async () => { for await (const f of fgb.deserialize(url, rect)) feats.push(f); })(),
-    new Promise((_, rej) => setTimeout(() => rej(new Error('timeout FGB')), VIARIO_FETCH_TIMEOUT_MS)),
-  ]);
-  if (useCache) {
-    _fgbCache.set(key, feats);
-    while (_fgbCache.size > FGB_CACHE_MAX) _fgbCache.delete(_fgbCache.keys().next().value);
+  let verts = 0, capped = false;
+  await forEachFgbFeature(url, bb, (f) => {
+    if (keep && !keep(f.properties || {})) return true;
+    feats.push(f);
+    verts += geomVertexCount(f.geometry);
+    if (feats.length >= maxParts) { capped = true; return false; }
+    return true;
+  }, { isStale, signal });
+  if (capped) feats.capped = true;
+  else if (useCache) {
+    fgbCachePut(key, feats, verts * FGB_BYTES_PER_VERTEX + feats.length * FGB_BYTES_PER_FEATURE);
+    touchRoutingMemory();
   }
   return feats;
 }
 
 // Irmã da streamFgbFeatures pras camadas densas (o viário): em vez de juntar
-// feições GeoJSON, projeta cada vértice (mercX/mercY) direto num Float64Array
+// feições GeoJSON, projeta cada vértice (mercX/mercY) direto em Float64Arrays
 // enquanto o FGB ainda está chegando — a feição vira lixo na hora, e o pico de
-// memória fica no tamanho dos vértices. Devolve {xy, starts, parts, capped}:
-// a linha p ocupa os vértices [starts[p], starts[p+1]) de xy (x,y
-// intercalados). Sem LRU (camada de mapa, ver acima). Sair do for-await solta
-// o gerador, que para de pedir ranges: `isStale()` (um pan mais novo já saiu),
-// o teto `maxParts` ou o timeout cortam o DOWNLOAD, não só o resultado — no
-// zoom 12 são dezenas de MB que não devem continuar baixando à toa.
-async function streamFgbPackedLines(url, bb, { maxParts = Infinity, isStale = () => false } = {}) {
-  const fgb = await ensureFlatgeobuf();
-  const rect = { minX: bb.west, minY: bb.south, maxX: bb.east, maxY: bb.north };
-  let xy = new Float64Array(1 << 17), starts = new Uint32Array(1 << 14);
-  let nv = 0, parts = 0, capped = false, timedOut = false, timer;
+// memória fica no tamanho dos vértices. Os vértices vão em PEDAÇOS de até
+// PACKED_CHUNK_VERTS (1 MB cada), não num array que dobra e depois é copiado
+// inteiro (eram 2–3 cópias do maior array no pico); cada pedaço guarda a caixa
+// das suas linhas — como o FGB entrega em ordem Hilbert, um pedaço é uma região
+// compacta e o PackedLinesLayer pula os que estão fora da tela. Devolve
+// {chunks: [{xy, starts, parts, box}], parts, capped}: no pedaço, a linha p
+// ocupa os vértices [starts[p], starts[p+1]) de xy (x,y intercalados). Sem LRU
+// (camada de mapa, ver acima). `isStale()` (um pan mais novo já saiu), o teto
+// `maxParts` ou o timeout cortam o DOWNLOAD, não só o resultado — no zoom 12
+// são dezenas de MB que não devem continuar baixando à toa.
+const PACKED_CHUNK_VERTS = 1 << 16;
+async function streamFgbPackedLines(url, bb, { maxParts = Infinity, isStale = null } = {}) {
+  const chunks = [];
+  let cur = null, parts = 0, capped = false;
   const addLine = (coords) => {
     if (!Array.isArray(coords) || coords.length < 2) return;
-    const need = (nv + coords.length) * 2;
-    if (need > xy.length) {                  // cresce dobrando
-      const grown = new Float64Array(Math.max(xy.length * 2, need));
-      grown.set(xy); xy = grown;
+    const n = coords.length;
+    if (!cur || cur.nv + n > cur.xy.length / 2) {
+      cur = { xy: new Float64Array(Math.max(PACKED_CHUNK_VERTS, n) * 2), starts: new Uint32Array(1024),
+        parts: 0, nv: 0, box: [Infinity, Infinity, -Infinity, -Infinity] };
+      chunks.push(cur);
     }
-    if (parts + 2 > starts.length) {         // +1 da sentinela do fim
-      const grown = new Uint32Array(starts.length * 2);
-      grown.set(starts); starts = grown;
+    if (cur.parts + 2 > cur.starts.length) {   // +1 da sentinela do fim
+      const grown = new Uint32Array(cur.starts.length * 2);
+      grown.set(cur.starts); cur.starts = grown;
     }
-    starts[parts++] = nv;
-    for (const c of coords) { xy[nv * 2] = mercX(c[0]); xy[nv * 2 + 1] = mercY(c[1]); nv++; }
+    cur.starts[cur.parts++] = cur.nv;
+    const xy = cur.xy, box = cur.box;
+    let k = cur.nv * 2;
+    for (const c of coords) {
+      const x = mercX(c[0]), y = mercY(c[1]);
+      xy[k++] = x; xy[k++] = y;
+      if (x < box[0]) box[0] = x;
+      if (y < box[1]) box[1] = y;
+      if (x > box[2]) box[2] = x;
+      if (y > box[3]) box[3] = y;
+    }
+    cur.nv += n;
+    parts++;
   };
-  await Promise.race([
-    (async () => {
-      for await (const f of fgb.deserialize(url, rect)) {
-        if (timedOut || isStale()) break;
-        const g = f.geometry; if (!g) continue;
-        if (g.type === 'LineString') addLine(g.coordinates);
-        else if (g.type === 'MultiLineString') g.coordinates.forEach(addLine);
-        if (parts >= maxParts) { capped = true; break; }
-      }
-    })(),
-    new Promise((_, rej) => {
-      timer = setTimeout(() => { timedOut = true; rej(new Error('timeout FGB')); }, VIARIO_FETCH_TIMEOUT_MS);
-    }),
-  ]).finally(() => clearTimeout(timer));
-  starts[parts] = nv;                          // sentinela
-  // slice (não subarray): devolve a folga do crescimento por dobra.
-  return { xy: xy.slice(0, nv * 2), starts: starts.slice(0, parts + 1), parts, capped };
+  await forEachFgbFeature(url, bb, (f) => {
+    const g = f.geometry;
+    if (!g) return true;
+    if (g.type === 'LineString') addLine(g.coordinates);
+    else if (g.type === 'MultiLineString') g.coordinates.forEach(addLine);
+    if (parts >= maxParts) { capped = true; return false; }
+    return true;
+  }, { isStale });
+  for (const ch of chunks) {
+    ch.starts[ch.parts] = ch.nv;               // sentinela
+    // Só o último pedaço tem folga grande; devolve ela (os outros saem cheios).
+    if (ch === cur && ch.nv * 2 < ch.xy.length * 0.75) ch.xy = ch.xy.slice(0, ch.nv * 2);
+  }
+  return { chunks, parts, capped };
+}
+
+// Produtos do viário que o modo TERRENO usa — sem guardar as feições: a
+// máscara raster das vias (corredores passáveis sobre a água) e a lista de
+// tabuleiros de ponte/túnel (portais), [lng0, lat0, lng1, lat1, compr. m] das
+// pontas. Antes o terreno parseava e prendia o viário inteiro da bbox num LRU
+// (dezenas de MB por trecho, ~120–200 MB depois de uns trechos) só pra isto.
+// Um cache pequeno de produtos por bbox evita reler/reparsear no re-roteamento
+// do mesmo trecho.
+const _roadProductsCache = new Map();   // bbox → { road, decks, bytes }
+const ROAD_PRODUCTS_MAX = 4;
+
+function newRoadProducts(bb, W, H, A) {
+  const road = new Uint8Array(W * H), decks = [];
+  const toG = (lng, lat) => [(lng - bb.west) / A, (bb.north - lat) / A];
+  const M = 111320;
+  // Uma linha [[lng,lat],…] (com o recorte de bbox e a regra de tabuleiro de
+  // queryGeojsonLines) → pinta a máscara e, se for tabuleiro, anota o portal.
+  const addLine = (coords, isDeck) => {
+    if (!Array.isArray(coords) || coords.length < 2) return;
+    let loX = Infinity, hiX = -Infinity, loY = Infinity, hiY = -Infinity;
+    for (const c of coords) {
+      const x = c[0], y = c[1];
+      if (x < loX) loX = x; if (x > hiX) hiX = x;
+      if (y < loY) loY = y; if (y > hiY) hiY = y;
+    }
+    if (hiX < bb.west || loX > bb.east || hiY < bb.south || loY > bb.north) return;
+    rasterSupercover(coords.map((p) => toG(p[0], p[1])), road, W, H);
+    if (!isDeck) return;
+    let len = 0;
+    for (let i = 1; i < coords.length; i++) {
+      const dLat = (coords[i][1] - coords[i - 1][1]) * M;
+      const dLng = (coords[i][0] - coords[i - 1][0]) * M * Math.cos((coords[i][1] + coords[i - 1][1]) / 2 * Math.PI / 180);
+      len += Math.hypot(dLat, dLng);
+    }
+    const a = coords[0], b = coords[coords.length - 1];
+    decks.push([a[0], a[1], b[0], b[1], len]);
+  };
+  return { road, decks, addLine };
+}
+
+// A partir de linhas já em mãos (o "pelo viário", que acabou de consultar o FGB).
+function roadProductsFromLines(lines, meta, bb, W, H, A) {
+  const p = newRoadProducts(bb, W, H, A);
+  for (let i = 0; i < lines.length; i++) p.addLine(lines[i], !!(meta && meta[i] && meta[i].deck));
+  return { road: p.road, decks: p.decks };
+}
+
+// Lendo o FGB do viário direto pros produtos (terreno).
+async function viarioRoadProducts(bb, W, H, A, { signal = null } = {}) {
+  const key = `${bb.west.toFixed(5)},${bb.south.toFixed(5)},${bb.east.toFixed(5)},${bb.north.toFixed(5)}|${W}x${H}`;
+  const hit = _roadProductsCache.get(key);
+  if (hit) {
+    _roadProductsCache.delete(key); _roadProductsCache.set(key, hit);
+    touchRoutingMemory();
+    return hit;
+  }
+  const t0 = performance.now();
+  const p = newRoadProducts(bb, W, H, A);
+  let nFeat = 0;
+  await forEachFgbFeature(VIARIO_FGB_URL, bb, (f) => {
+    const g = f.geometry;
+    if (!g) return true;
+    nFeat++;
+    const props = f.properties || {};
+    const deck = (props.bridge && props.bridge !== 'no') || props.tunnel === 'yes';
+    if (g.type === 'LineString') p.addLine(g.coordinates, deck);
+    else if (g.type === 'MultiLineString') for (const ln of g.coordinates) p.addLine(ln, deck);
+    return true;
+  }, { signal });
+  const out = { road: p.road, decks: p.decks, bytes: p.road.byteLength + p.decks.length * 64 };
+  _roadProductsCache.set(key, out);
+  while (_roadProductsCache.size > ROAD_PRODUCTS_MAX) _roadProductsCache.delete(_roadProductsCache.keys().next().value);
+  touchRoutingMemory();
+  console.info(`[viario] FGB → máscara+portais ${(performance.now() - t0).toFixed(0)} ms · ` +
+    `${nFeat} feições (${p.decks.length} tabuleiros), sem guardar as feições`);
+  return out;
 }
 
 let _sqlJsPromise = null;
@@ -8392,7 +11121,9 @@ function parseWKB(view, off) {
   return null;
 }
 
-// Timeout compartilhado das buscas de rede do viário (FGB, grafo pré-cozido).
+// Timeout de INATIVIDADE das consultas FGB (sem nenhuma feição por este tempo
+// → desiste; ver forEachFgbFeature). O grafo pré-cozido tem o seu
+// (VIARIO_GRAPH_STALL_MS).
 const VIARIO_FETCH_TIMEOUT_MS = 60000;
 
 // Abre um GeoPackage (bytes já em memória) num handle de viário reusável pelas
@@ -8449,18 +11180,44 @@ async function buildViarioSrc(SQL, bytes) {
 // Fonte PRIMÁRIA do "Menor energia pelo viário": o grafo já montado no bake
 // (scripts/build-viario.py --graph) com as elevações amostradas POR NÓ (DEM de
 // SP ~5 m onde cobre, FABDEM no resto) e tabuleiros de ponte/túnel achatados em
-// rampa. Zero DEM, zero montagem de grafo por sessão: a decodificação é um
-// passe de typed arrays. O FGB do viário (streamFgbFeatures acima) segue em
-// uso pro modo TERRENO (água/corredores/portais) e como fallback do viário
-// fora da cobertura do grafo (que é SÓ SP — o FGB cobre a América do Sul).
-// Formato: ver o bloco "Grafo pré-cozido" no script.
+// rampa. Zero DEM, zero montagem de grafo por sessão. O FGB do viário
+// (streamFgbFeatures acima) segue em uso pro modo TERRENO (água/corredores/
+// portais) e como fallback do viário fora da cobertura do grafo (que é SÓ SP —
+// o FGB cobre a América do Sul). Formato: ver o bloco "Grafo pré-cozido" no
+// script.
+//
+// O grafo (~4,8 M nós, ~68 MB descomprimido) mora num WORKER
+// (lib/viario-graph-worker.js): decode e Dijkstra fora do main thread, buffers
+// do tamanho da bbox, buffer cru descartado — e terminar o worker devolve tudo
+// (releaseRoutingMemory, quando o editor fecha/fica ocioso). No main thread
+// ficou só o DOWNLOAD (pelo service worker — é ele que guarda o arquivo), com
+// progresso e timeout de INATIVIDADE: antes um teto de 60 s pro arquivo
+// INTEIRO abortava qualquer 4G abaixo de ~4,6 Mbps e cada trecho recomeçava do
+// zero. Depois de uma falha, espera VIARIO_GRAPH_RETRY_MS antes de tentar de
+// novo (no meio-tempo o trecho cai pro FGB). Não há retomada por Range: o
+// arquivo é servido com Content-Encoding gzip, e um pedaço do meio de um gzip
+// não se descomprime sozinho.
 const VIARIO_GRAPH_URL = 'https://telhas.pedalhidrografi.co/viario/sampa-viario-graph.bin';
+// Extensão do grafo = GRAPH_BBOX do scripts/build-viario.py (manter em
+// sincronia). O cabeçalho do .bin não a traz, e ela é consultada ANTES de
+// baixar: trecho com ponta fora dela vai direto pro FGB, sem os ~34 MB.
+const VIARIO_GRAPH_BBOX = { west: -47.419098, south: -24.041109, east: -45.807267, north: -23.088709 };
+const VIARIO_GRAPH_STALL_MS = 20 * 1000;       // sem NENHUM byte por 20 s → desiste
+const VIARIO_GRAPH_RETRY_MS = 60 * 1000;
+const VIARIO_GRAPH_MAX_BYTES = 256 * 1024 * 1024;   // cabeçalho absurdo = arquivo errado
 
-// Custo v2 por aresta — IDÊNTICO ao v2Edge do worker (lib/energy-worker.js) e
+function viarioGraphCovers(a, b) {
+  const g = VIARIO_GRAPH_BBOX;
+  const inside = (p) => p.lat >= g.south && p.lat <= g.north && p.lng >= g.west && p.lng <= g.east;
+  return inside(a) && inside(b);
+}
+
+// Custo v2 por aresta — IDÊNTICO ao v2Edge do worker (lib/energy-worker.js),
+// ao stepCost do lib/graph-engine.js (que o worker do grafo pré-cozido usa) e
 // ao v2_edge do backend Rust do simujaules; manter em sincronia. dist = metros
 // de solo, dh = desnível com sinal. Rolamento sempre; arrasto só fora das
-// subidas; recuperação na descida ε por grade. Compartilhado pelo grafo do
-// FGB (viarioGraphRoute) e pelo grafo pré-cozido (bakedViarioRoute).
+// subidas; recuperação na descida ε por grade. Usado pelo grafo do FGB
+// (viarioGraphRoute).
 function v2EdgeCostFn(cost) {
   return (dist, dh) => {
     if (dh >= 0) {
@@ -8477,174 +11234,177 @@ function v2EdgeCostFn(cost) {
   };
 }
 
-// Decodifica o binário PHVG (little-endian; seções alinhadas a 4 bytes) e
-// reconstrói o CSR num passe. Nós em µgrau (1e-6 — a MESMA quantização de
-// junção do viarioGraphRoute), elevação em decímetros, flags bit0 = interior
-// de tabuleiro, bit1 = aresta de cadeia pro nó i+1.
-function decodeViarioGraph(buf) {
-  const dv = new DataView(buf);
-  if (buf.byteLength < 24 || dv.getUint32(0, true) !== 0x47564850) // 'PHVG' LE
-    throw new Error('grafo: magic inválido');
+// Tamanho EXATO do arquivo PHVG a partir do cabeçalho de 24 bytes (seções
+// alinhadas a 4 — mesmo layout que o worker decodifica): o download escreve
+// direto num buffer desse tamanho (sem o acúmulo + cópia do arrayBuffer()) e o
+// progresso é a fração real, não uma estimativa.
+function phvgByteLength(head) {
+  const dv = new DataView(head.buffer, head.byteOffset, 24);
+  if (dv.getUint32(0, true) !== 0x47564850) throw new Error('grafo: magic inválido');   // 'PHVG' LE
   const version = dv.getUint32(4, true);
   if (version !== 1) throw new Error(`grafo: versão ${version} não suportada`);
-  const N = dv.getUint32(8, true);
-  const NESC = dv.getUint32(12, true);
-  const EX = dv.getUint32(16, true);
+  const N = dv.getUint32(8, true), NESC = dv.getUint32(12, true), EX = dv.getUint32(16, true);
   let off = 24;
-  const pad4 = () => { off = (off + 3) & ~3; };
-  const view = (Ctor, len) => { pad4(); const v = new Ctor(buf, off, len); off += len * Ctor.BYTES_PER_ELEMENT; return v; };
-  const dLat  = view(Int16Array, N);
-  const dLng  = view(Int16Array, N);
-  const elev  = view(Int16Array, N);   // dm
-  const flags = view(Uint8Array, N);
-  const chain = view(Uint16Array, N);  // dm
-  const escIdx = view(Uint32Array, NESC);
-  const escLat = view(Int32Array, NESC);
-  const escLng = view(Int32Array, NESC);
-  const exU = view(Uint32Array, EX);
-  const exV = view(Uint32Array, EX);
-  const exD = view(Uint16Array, EX);   // dm
-  if (off > buf.byteLength) throw new Error('grafo: arquivo truncado');
-
-  // Deltas → coordenadas absolutas (µgrau). Sentinela dLat=-32768 → escape.
-  const latU = new Int32Array(N), lngU = new Int32Array(N);
-  let pLat = 0, pLng = 0, e = 0;
-  for (let i = 0; i < N; i++) {
-    if (dLat[i] === -32768) {
-      if (e >= NESC || escIdx[e] !== i) throw new Error('grafo: escape fora de ordem');
-      pLat = escLat[e]; pLng = escLng[e]; e++;
-    } else {
-      pLat += dLat[i]; pLng += dLng[i];
-    }
-    latU[i] = pLat; lngU[i] = pLng;
+  for (const s of [2 * N, 2 * N, 2 * N, N, 2 * N, 4 * NESC, 4 * NESC, 4 * NESC, 4 * EX, 4 * EX, 2 * EX]) {
+    off = Math.ceil(off / 4) * 4 + s;
   }
-
-  // CSR: grau → prefix-sum → preenchimento (cadeia i↔i+1 + explícitas).
-  const indptr = new Uint32Array(N + 1);
-  for (let i = 0; i < N; i++) if ((flags[i] & 2) && i + 1 < N) { indptr[i + 1]++; indptr[i + 2]++; }
-  for (let k = 0; k < EX; k++) { indptr[exU[k] + 1]++; indptr[exV[k] + 1]++; }
-  for (let i = 0; i < N; i++) indptr[i + 1] += indptr[i];
-  const E2 = indptr[N];
-  const targets = new Uint32Array(E2);
-  const edist   = new Uint16Array(E2);  // dm
-  const cursor  = indptr.slice(0, N);
-  const put = (u, v, d) => { const c = cursor[u]++; targets[c] = v; edist[c] = d; };
-  for (let i = 0; i < N; i++) if ((flags[i] & 2) && i + 1 < N) { put(i, i + 1, chain[i]); put(i + 1, i, chain[i]); }
-  for (let k = 0; k < EX; k++) { put(exU[k], exV[k], exD[k]); put(exV[k], exU[k], exD[k]); }
-  return { N, latU, lngU, elev, flags, indptr, targets, edist };
+  if (off > VIARIO_GRAPH_MAX_BYTES) throw new Error('grafo: tamanho inválido no cabeçalho');
+  return off;
 }
 
-let _viarioGraphPromise = null;
-async function ensureViarioGraph() {
-  if (_viarioGraphPromise) return _viarioGraphPromise;
-  _viarioGraphPromise = (async () => {
-    showToast('Baixando grafo do viário de SP (uma vez)…');
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), VIARIO_FETCH_TIMEOUT_MS);
-    let buf;
-    try {
-      const t0 = performance.now();
-      const res = await fetch(VIARIO_GRAPH_URL, { signal: ctrl.signal });
-      if (!res.ok) throw new Error(`grafo ${res.status}`);
-      buf = await res.arrayBuffer();
-      const g = decodeViarioGraph(buf);
-      console.info(`[viario] grafo pré-cozido: ${g.N} nós · ${g.indptr[g.N]} arestas dirigidas · ` +
-        `${(buf.byteLength / 1e6).toFixed(0)} MB em ${(performance.now() - t0).toFixed(0)} ms`);
-      return g;
-    } finally {
-      clearTimeout(timer);
+async function downloadViarioGraph() {
+  const ctrl = new AbortController();
+  let stall = null;
+  const arm = () => { clearTimeout(stall); stall = setTimeout(() => ctrl.abort(), VIARIO_GRAPH_STALL_MS); };
+  const t0 = performance.now();
+  showToast('Baixando o grafo do viário de SP…', 4000);
+  arm();
+  try {
+    const res = await fetch(VIARIO_GRAPH_URL, { signal: ctrl.signal });
+    if (!res.ok) throw new Error(`grafo HTTP ${res.status}`);
+    // Bytes NA REDE (o .bin vem gzip, ~metade do descomprimido) — só pro rótulo.
+    const netBytes = Number(res.headers.get('content-length')) || 0;
+    if (!res.body || !res.body.getReader) return await res.arrayBuffer();
+    const reader = res.body.getReader();
+    const head = new Uint8Array(24);
+    let headLen = 0, out = null, total = 0, got = 0, lastToast = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      arm();
+      let chunk = value;
+      if (!out) {
+        const take = Math.min(24 - headLen, chunk.length);
+        head.set(chunk.subarray(0, take), headLen);
+        headLen += take;
+        if (headLen < 24) continue;
+        total = phvgByteLength(head);
+        out = new Uint8Array(total);
+        out.set(head, 0);
+        got = 24;
+        chunk = chunk.subarray(take);
+      }
+      if (got + chunk.length > total) throw new Error('grafo: maior que o cabeçalho diz');
+      out.set(chunk, got);
+      got += chunk.length;
+      const now = performance.now();
+      if (now - lastToast > 700) {
+        lastToast = now;
+        showToast(`Baixando o grafo do viário de SP… ${Math.floor(got * 100 / total)}%` +
+          (netBytes ? ` de ${Math.round(netBytes / 1e6)} MB` : ''), 4000);
+      }
     }
-  })();
-  _viarioGraphPromise.catch(() => { _viarioGraphPromise = null; });
-  return _viarioGraphPromise;
+    if (!out || got !== total) throw new Error('grafo: download incompleto');
+    console.info(`[viario] grafo baixado: ${(total / 1e6).toFixed(0)} MB em ${(performance.now() - t0).toFixed(0)} ms`);
+    return out.buffer;
+  } catch (e) {
+    if (ctrl.signal.aborted) throw new Error(`grafo: download parado (${VIARIO_GRAPH_STALL_MS / 1000} s sem dados)`);
+    throw e;
+  } finally {
+    clearTimeout(stall);
+  }
 }
 
-// Buffers de trabalho do Dijkstra no grafo pré-cozido, reusados entre chamadas
-// (N ~5 M — realocar por rota seria ~70 MB de churn). Seguro mesmo com rotas
-// concorrentes (mapConcurrent): o miolo síncrono roda sem await no meio.
-let _bakedScratch = null;
-function bakedScratch(N) {
-  if (!_bakedScratch || _bakedScratch.dist.length !== N) {
-    _bakedScratch = {
-      allowed: new Uint8Array(N),
-      done:    new Uint8Array(N),
-      dist:    new Float32Array(N),
-      prev:    new Int32Array(N),
+// Worker do grafo + chamadas correlacionadas por reqId.
+let _graphWorker = null;
+let _graphLoad = null;          // Promise do grafo carregado no worker atual
+let _graphFailUntil = 0;
+let _graphReqSeq = 0;
+const _graphPending = new Map();   // reqId → { resolve, reject }
+
+function dropGraphWorker(err) {
+  if (_graphWorker) { try { _graphWorker.terminate(); } catch { /* já morto */ } }
+  _graphWorker = null;
+  _graphLoad = null;
+  for (const p of _graphPending.values()) p.reject(err);
+  _graphPending.clear();
+}
+
+function graphCall(msg, transfer = []) {
+  if (!_graphWorker) {
+    const w = new Worker('./lib/viario-graph-worker.js');
+    w.onmessage = (ev) => {
+      const m = ev.data || {};
+      const p = _graphPending.get(m.reqId);
+      if (!p) return;
+      _graphPending.delete(m.reqId);
+      if (m.kind === 'error') p.reject(new Error(m.message)); else p.resolve(m);
     };
+    // Erro não tratado no worker (ou falha ao carregar o script): descarta —
+    // o próximo uso recria e recarrega.
+    w.onerror = (ev) => {
+      if (ev && ev.preventDefault) ev.preventDefault();
+      dropGraphWorker(new Error((ev && ev.message) || 'worker do grafo falhou'));
+    };
+    _graphWorker = w;
   }
-  return _bakedScratch;
+  const reqId = ++_graphReqSeq;
+  return new Promise((resolve, reject) => {
+    _graphPending.set(reqId, { resolve, reject });
+    _graphWorker.postMessage({ ...msg, reqId }, transfer);
+  });
+}
+
+function ensureViarioGraph() {
+  if (_graphLoad) return _graphLoad;
+  if (Date.now() < _graphFailUntil) {
+    return Promise.reject(new Error('grafo do viário indisponível — nova tentativa em instantes'));
+  }
+  const p = (async () => {
+    const buf = await downloadViarioGraph();
+    const info = await graphCall({ kind: 'load', buf }, [buf]);   // transfere: o main thread solta os 68 MB
+    console.info(`[viario] grafo pré-cozido: ${info.N} nós · ${info.E} arestas dirigidas · ` +
+      `decode ${info.ms.toFixed(0)} ms no worker`);
+    return info;
+  })();
+  _graphLoad = p;
+  p.catch((e) => {
+    if (_graphLoad !== p) return;   // worker solto de propósito (releaseRoutingMemory)
+    _graphLoad = null;
+    _graphFailUntil = Date.now() + VIARIO_GRAPH_RETRY_MS;
+    console.warn('[viario] grafo pré-cozido indisponível:', e.message);
+    showToast('Grafo do viário indisponível agora — roteando pelo FGB (mais lento).', 4000);
+  });
+  return p;
 }
 
 // Roteia origem→destino no grafo pré-cozido, restrito à bbox (paridade com o
-// grafo por-bbox do FGB). Devolve a polilinha [lat,lng] com .deckFlag, ou
-// null se não há caminho. Sem DEM: as elevações já vêm baked por nó.
-async function bakedViarioRoute(fromLatLng, toLatLng, bb) {
-  const g = await ensureViarioGraph();
-  const t0 = performance.now();
-  const { N, latU, lngU, elev, flags, indptr, targets, edist } = g;
-  const s6 = Math.round(bb.south * 1e6), n6 = Math.round(bb.north * 1e6);
-  const w6 = Math.round(bb.west * 1e6),  e6 = Math.round(bb.east * 1e6);
-  const sc = bakedScratch(N);
-  const { allowed, done, dist, prev } = sc;
-  done.fill(0); dist.fill(Infinity);
-
-  // Passe único: marca os nós na bbox e acha o nó mais próximo de cada ponta
-  // (mesma métrica não escalada do nearest() do viarioGraphRoute).
-  const fLat = Math.round(fromLatLng.lat * 1e6), fLng = Math.round(fromLatLng.lng * 1e6);
-  const tLat = Math.round(toLatLng.lat * 1e6),   tLng = Math.round(toLatLng.lng * 1e6);
-  let s = -1, t = -1, sD = Infinity, tD = Infinity, nAllowed = 0;
-  for (let i = 0; i < N; i++) {
-    const la = latU[i], lg = lngU[i];
-    if (la < s6 || la > n6 || lg < w6 || lg > e6) { allowed[i] = 0; continue; }
-    allowed[i] = 1; nAllowed++;
-    let dl = la - fLat, dg = lg - fLng;
-    let d = dl * dl + dg * dg;
-    if (d < sD) { sD = d; s = i; }
-    dl = la - tLat; dg = lg - tLng;
-    d = dl * dl + dg * dg;
-    if (d < tD) { tD = d; t = i; }
-  }
-  if (s < 0 || t < 0) return null;
-
-  const edgeCost = v2EdgeCostFn(readCost(params));
-  const heap = new MinHeap();
-  dist[s] = 0;
-  heap.push(0, s);
-  while (heap.size) {
-    const u = heap.pop();
-    if (done[u]) continue;
-    done[u] = 1;
-    if (u === t) break;
-    const du = dist[u], hu = elev[u];
-    for (let k = indptr[u], end = indptr[u + 1]; k < end; k++) {
-      const v = targets[k];
-      if (done[v] || !allowed[v]) continue;
-      const w = edgeCost(edist[k] * 0.1, (elev[v] - hu) * 0.1);
-      const nd = du + w;
-      if (nd < dist[v]) { dist[v] = nd; prev[v] = u; heap.push(nd, v); }
+// grafo por-bbox do FGB). Devolve a polilinha [lat,lng] com .deckFlag e
+// .routedEnergyJ, ou null se não há caminho. Sem DEM: as elevações já vêm
+// baked por nó. `signal` só desiste de ESPERAR (o download do grafo é de
+// todos os trechos e segue).
+async function bakedViarioRoute(fromLatLng, toLatLng, bb, signal) {
+  _routingInflight++;
+  try {
+    await withAbort(ensureViarioGraph(), signal);
+    const t0 = performance.now();
+    const r = await graphCall({
+      kind: 'route',
+      from: { lat: fromLatLng.lat, lng: fromLatLng.lng },
+      to: { lat: toLatLng.lat, lng: toLatLng.lng },
+      bb: { west: bb.west, south: bb.south, east: bb.east, north: bb.north },
+      cost: readCost(params),
+    });
+    if (!r.path) {
+      console.info(`[viario] grafo pré-cozido: ${r.nAllowed} nós na bbox · sem caminho`);
+      return null;
     }
+    const n = r.path.length / 2;
+    const path = new Array(n), deckFlag = new Array(n);
+    for (let i = 0; i < n; i++) {
+      path[i] = [r.path[2 * i], r.path[2 * i + 1]];
+      deckFlag[i] = r.deck[i] === 1;
+    }
+    path.deckFlag = deckFlag;
+    // Objetivo do roteador (J) — exibido na barra de métricas (ver energyRoute).
+    path.routedEnergyJ = r.J;
+    console.info(`[viario] grafo pré-cozido: ${r.nAllowed} nós na bbox · rota ${n} pts em ` +
+      `${r.ms.toFixed(0)} ms no worker (${(performance.now() - t0).toFixed(0)} ms ida e volta)`);
+    return path;
+  } finally {
+    _routingInflight--;
+    touchRoutingMemory();
   }
-  if (!done[t]) {
-    console.info(`[viario] grafo pré-cozido: ${nAllowed} nós na bbox · sem caminho`);
-    return null;
-  }
-
-  const path = [];
-  const deckFlag = [];
-  for (let v = t; ; v = prev[v]) {
-    path.push([latU[v] / 1e6, lngU[v] / 1e6]);
-    deckFlag.push(!!(flags[v] & 1));
-    if (v === s) break;
-  }
-  path.reverse(); deckFlag.reverse();
-  path.unshift([fromLatLng.lat, fromLatLng.lng]); deckFlag.unshift(false);
-  path.push([toLatLng.lat, toLatLng.lng]); deckFlag.push(false);
-  path.deckFlag = deckFlag;
-  // Objetivo do roteador (J) — exibido na barra de métricas (ver energyRoute).
-  path.routedEnergyJ = dist[t];
-  console.info(`[viario] grafo pré-cozido: ${nAllowed} nós na bbox · rota ${path.length} pts em ` +
-    `${(performance.now() - t0).toFixed(0)} ms`);
-  return path;
 }
 
 // ─── Rede viária custom (fgb, gpkg ou GeoJSON carregado de arquivo) ──────────
@@ -8735,17 +11495,27 @@ async function queryCustomNetworkLines(bb) {
 window.__phidroViario = {
   queryViarioLines, queryWater, streamFgbFeatures,
   setCustomNetwork, clearCustomNetwork, queryCustomNetworkLines,
+  // Memória/rede do roteamento (diagnóstico e testes). Getter: demStats é
+  // declarado mais abaixo no módulo (TDZ na avaliação desta linha).
+  releaseRoutingMemory,
+  get demStats() { return demStats; },
+  memory: () => ({
+    demTiles: _demTiles.size, demTileMB: +(_demTileBytes / 1e6).toFixed(1),
+    fgbEntries: _fgbCache.size, fgbMB: +(_fgbCacheBytes / 1e6).toFixed(1),
+    roadProducts: _roadProductsCache.size, graphWorker: !!_graphWorker,
+  }),
 };
 
 // Consulta o viário que cai na bbox e devolve as linhas em WGS84 (array de
 // polilinhas [[lng,lat], …]). É a matéria-prima do roteamento vetorial — a
 // rota segue a geometria real das vias, sem o serrilhado do grid raster.
 // Sem `src`: o FGB remoto da América do Sul, por range request (só os bytes
-// da bbox). Com `src`: um .gpkg custom já aberto (pipeline sql.js abaixo).
-async function queryViarioLines(bb, src) {
+// da bbox; `opts` = {signal, isStale} de streamFgbFeatures). Com `src`: um
+// .gpkg custom já aberto (pipeline sql.js abaixo).
+async function queryViarioLines(bb, src, opts = {}) {
   if (!src) {
     const t0 = performance.now();
-    const feats = await streamFgbFeatures(VIARIO_FGB_URL, bb);
+    const feats = await streamFgbFeatures(VIARIO_FGB_URL, bb, true, opts);
     const out = queryGeojsonLines(bb, { features: feats });
     // O produtor SEMPRE grava bridge/tunnel/layer no FGB — hasTags fixo em
     // true pra nunca acionar o fallback de tags por proximidade (que só
@@ -8863,8 +11633,8 @@ async function queryGpkgLines(bb, src) {
 // viário, que já carrega bridge/tunnel/layer — uma fonte a menos e uma
 // consulta a menos (o LRU do streamFgbFeatures ainda reaproveita a busca que
 // o roteamento já fez pra esta bbox).
-async function fetchViarioDecksForBbox(bb) {
-  const { lines, meta } = await queryViarioLines(bb);
+async function fetchViarioDecksForBbox(bb, opts = {}) {
+  const { lines, meta } = await queryViarioLines(bb, null, opts);
   const decks = [];
   for (let i = 0; i < lines.length; i++) {
     const m = meta[i];
@@ -8959,9 +11729,10 @@ function rasterSupercover(pts, out, W, H) {
 // polys = anéis por polígono ([anel externo, buracos…]); lines = polilinhas.
 // Best-effort por arquivo: um dos dois falhando não derruba o outro; os dois
 // falhando → null (o chamador segue sem máscara, como antes).
-async function queryWater(bb) {
+async function queryWater(bb, opts = {}) {
   let failures = 0;
-  const grab = (url) => streamFgbFeatures(url, bb).catch((e) => {
+  const grab = (url) => streamFgbFeatures(url, bb, true, opts).catch((e) => {
+    if (e && e.name === 'AbortError') throw e;
     failures++; console.warn('[water] FGB falhou:', url, e.message); return [];
   });
   const [areas, rivers] = await Promise.all([
@@ -9064,8 +11835,8 @@ function viarioGraphRoute(lines, meta, fromLatLng, toLatLng, dem, bb, A) {
   const adj = [];                     // adj[u] = [v0, cost0, v1, cost1, …]
   const M_DEG = 111320;
   const cellM = A * M_DEG;            // ~tamanho da célula do DEM em metros
-  // Custo v2 por aresta — helper compartilhado com o grafo pré-cozido
-  // (v2EdgeCostFn, junto do decodeViarioGraph acima).
+  // Custo v2 por aresta — mesma fórmula do grafo pré-cozido (v2EdgeCostFn, na
+  // seção dele acima; o worker do grafo usa o stepCost do graph-engine.js).
   const edgeCost = v2EdgeCostFn(readCost(params));
 
   // Pontos do caminho que caem em tabuleiro (p/ achatar também o perfil do
@@ -9223,13 +11994,41 @@ function viarioGraphRoute(lines, meta, fromLatLng, toLatLng, dem, bb, A) {
 
 // `mode` = 'free' (qualquer célula do DEM) | 'road' (restringe ao viário:
 // grafo pré-cozido → FGB da América do Sul → grid raster do mesmo FGB)
-async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
+// `superseded` diz quando o resultado não vai mais ser usado: um número = o
+// pendingRouteSeq da chamada (modelo de seq global — velho quando outra edição
+// sai na frente) ou uma função que devolve true quando o pedido ficou velho
+// (roteamento por segmento: um pedido mais novo pro mesmo trecho). Sair do
+// editor sempre conta. Nesses casos as leituras em voo (tiles de DEM, FGB,
+// espera do grafo) são abortadas e a função devolve null — NUNCA uma reta, que
+// o chamador tomaria por resultado roteado e poderia gravar no trecho.
+async function energyRoute(fromLatLng, toLatLng, mode = 'free', superseded = null) {
   const distKm = fromLatLng.distanceTo(toLatLng) / 1000;
   if (distKm > ENERGY_MAX_SEGMENT_KM) {
     showToast(`Segmento ${distKm.toFixed(2)} km > ${ENERGY_MAX_SEGMENT_KM} km — usando reta`);
     return straightPath(fromLatLng, toLatLng);
   }
+  const extra = typeof superseded === 'function' ? superseded
+    : typeof superseded === 'number' ? () => superseded !== pendingRouteSeq : null;
+  const isStale = () => !drawingMode || !!(extra && extra());
+  if (isStale()) return null;
+  const ctrl = new AbortController();
+  const signal = ctrl.signal;
+  const poll = setInterval(() => { if (isStale()) ctrl.abort(); }, 200);
+  _routingInflight++;
+  try {
+    return await energyRouteInner(fromLatLng, toLatLng, mode, signal);
+  } catch (e) {
+    if (signal.aborted || (e && e.name === 'AbortError')) return null;
+    throw e;
+  } finally {
+    clearInterval(poll);
+    _routingInflight--;
+    touchRoutingMemory();
+  }
+}
 
+async function energyRouteInner(fromLatLng, toLatLng, mode, signal) {
+  const checkAbort = () => { if (signal.aborted) throw demAbortError(); };
   // Clampa nos dois lados: sem teto, um valor corrompido importado inflaria
   // a bbox do mosaico FABDEM e alocaria um Float32Array gigante. 200% é
   // folga de sobra pro segmento de até 2 km.
@@ -9266,26 +12065,42 @@ async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
 
   // ROAD primário: grafo PRÉ-COZIDO do viário de SP — elevações já amostradas
   // no bake, então resolve SEM baixar DEM nem FGB (por isso roda antes do
-  // mosaico abaixo). Rede custom carregada tem prioridade e cai pro fluxo
-  // clássico; falha/sem caminho cai pro FGB, como sempre. O mesmo toggle
-  // useViarioGpkg governa grafo pré-cozido + FGB (é a mesma fonte, só o
-  // empacotamento muda); desligado, pula direto pro grid raster.
-  if (mode === 'road' && !_customNetwork && params.useViarioGpkg !== false) {
+  // mosaico abaixo). Só é tentado quando as DUAS pontas caem na extensão do
+  // grafo (VIARIO_GRAPH_BBOX) — fora dela nem baixa os ~34 MB. Rede custom
+  // carregada tem prioridade e cai pro fluxo clássico; falha/sem caminho cai
+  // pro FGB, como sempre. O mesmo toggle useViarioGpkg governa grafo
+  // pré-cozido + FGB (é a mesma fonte, só o empacotamento muda); desligado,
+  // pula direto pro grid raster.
+  if (mode === 'road' && !_customNetwork && params.useViarioGpkg !== false &&
+      viarioGraphCovers(fromLatLng, toLatLng)) {
     try {
-      const path = await bakedViarioRoute(fromLatLng, toLatLng, bb);
+      const path = await bakedViarioRoute(fromLatLng, toLatLng, bb, signal);
       if (path && path.length) return path;
       console.info('[energy_road] grafo pré-cozido sem caminho — caindo pro FGB');
     } catch (e) {
+      checkAbort();
       console.warn('[energy_road] grafo pré-cozido indisponível:', e.message);
     }
   }
 
-  await ensureGeoTIFF();
+  try {
+    await ensureGeoTIFF();
+  } catch (e) {
+    noteDemDegraded('leitor de relevo (geotiff.js)', false);
+    console.warn('[energy] geotiff.js indisponível — reta:', e.message);
+    return straightPath(fromLatLng, toLatLng);
+  }
+  checkAbort();
   const tDem = performance.now();
-  const dem = await loadDemMosaic(bb);
-  console.info(`[energy] DEM ${dem.W}×${dem.H} em ${(performance.now() - tDem).toFixed(0)} ms`);
-  if (!dem.W || !dem.H) {
-    console.warn('[energy] DEM vazio — fallback pra reta');
+  const dem = await loadDemMosaic(bb, signal);
+  checkAbort();
+  let covered = 0;
+  if (dem.W && dem.H) for (let i = 0; i < dem.mask.length; i++) covered += dem.mask[i];
+  console.info(`[energy] DEM ${dem.W}×${dem.H} (${covered} células com dado) em ${(performance.now() - tDem).toFixed(0)} ms`);
+  if (!covered) {
+    // Nenhuma fonte de relevo respondeu (fora do ar/sem cobertura): antes a
+    // rota virava reta EM SILÊNCIO.
+    showToast('Sem dados de relevo pra este trecho agora — ficou em linha reta.', 4000);
     return straightPath(fromLatLng, toLatLng);
   }
 
@@ -9316,9 +12131,10 @@ async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
       if (lines.length) {
         if (!hasTags) {
           try {
-            const decks = await fetchViarioDecksForBbox(bb);
+            const decks = await fetchViarioDecksForBbox(bb, { signal });
             markDecksByProximity(lines, meta, decks, bb);
           } catch (e3) {
+            checkAbort();
             console.warn('[energy_road] pontes do viário (rede custom) indisponíveis:', e3.message);
           }
         }
@@ -9327,6 +12143,7 @@ async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
         console.info('[energy_road] rede custom sem caminho — caindo pro FGB');
       }
     } catch (e) {
+      checkAbort();
       console.warn('[energy_road] grafo da rede custom falhou:', e.message);
     }
   }
@@ -9343,17 +12160,18 @@ async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
   // direto na energia livre).
   // Toggle (Parâmetros): ligado usa o grafo vetorial; desligado vai direto ao
   // grid raster da MESMA rede.
-  let roadLines = null;
+  let roadLines = null, roadMeta = null;
   if (mode === 'road') {
     try {
-      const { lines, meta } = await queryViarioLines(bb);
-      roadLines = lines;
+      const { lines, meta } = await queryViarioLines(bb, null, { signal });
+      roadLines = lines; roadMeta = meta;
       if (params.useViarioGpkg !== false) {
         const path = viarioGraphRoute(lines, meta, fromLatLng, toLatLng, dem, bb, A);
         if (path && path.length) return path;
         console.info('[energy_road] grafo do FGB sem caminho — tentando grid raster');
       }
     } catch (e) {
+      checkAbort();
       console.warn('[energy_road] viário do FGB falhou:', e.message);
       showToast(`Viário indisponível (${e.message}) — caindo para menor energia livre.`);
     }
@@ -9390,75 +12208,85 @@ async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
   // do viário): preenche lagos/represas e barra rios dos FGBs de água, pra
   // rota não atravessar água. Pontes/túneis viram PORTAIS (abaixo), pra
   // cruzar a água barrada no tabuleiro. Origem/destino nunca são barrados.
+  // A ÁGUA vem primeiro: ela é pequena e diz se o viário precisa abrir
+  // corredores (só onde a água barra alguma célula).
   let portals = null;
   const waterBlocked = [];   // células barradas pela água (p/ refazer sem elas)
-  // Viário (linhas do FGB): usado pra (a) abrir CORREDORES passáveis na máscara
-  // de água — estradas/pontes atravessam a água, como no sampasimu — e (b) os
-  // portais de ponte/túnel. Buscado UMA vez e reusado pelos dois blocos abaixo.
-  let viaLines = null, viaMeta = null;
-  if (params.useWaterMask !== false || params.usePortals !== false) {
-    try { const q = await queryViarioLines(bb); viaLines = q.lines; viaMeta = q.meta; }
-    catch (e) { console.warn('[energy] viário (corredores/portais) falhou:', e.message); }
-  }
+  const toG = (lng, lat) => [(lng - bb.west) / A, (bb.north - lat) / A];
+  let block = null, waterCells = 0, waterInfo = '';
   // Toggle nos Parâmetros (useWaterMask): desligado → água ignorada (e os FGBs
-  // nem são consultados se os portais também estiverem off → zero tráfego).
+  // nem são consultados).
   if (params.useWaterMask !== false) try {
-    const water = await queryWater(bb);
+    const water = await queryWater(bb, { signal });
     if (water && (water.polys.length || water.lines.length)) {
-      const block = new Uint8Array(dem.W * dem.H);
-      const toG = (lng, lat) => [(lng - bb.west) / A, (bb.north - lat) / A];
+      block = new Uint8Array(dem.W * dem.H);
       for (const rings of water.polys) fillRingsEvenOdd(rings.map((r) => r.map((p) => toG(p[0], p[1]))), block, dem.W, dem.H);
       for (const ln of water.lines) rasterSupercover(ln.map((p) => toG(p[0], p[1])), block, dem.W, dem.H);
-      // CORREDORES: as vias (incl. pontes/túneis) abrem caminho passável sobre a
-      // água — uma estrada que cruza um rio/represa não é barreira. Poupa essas
-      // células do bloqueio (o "network carves corridors" do sampasimu). Sem
-      // isto, um destino sobre/à beira d'água fica ilhado.
-      //
-      // Duas fontes de corredor: (a) `networkMask` — a rede RASTER em uso no
-      // "pelo viário" quando o grafo vetorial não achou caminho (ou o toggle
-      // está desligado); é ELA que o worker roteia, então é ELA que precisa
-      // atravessar a água, senão a ponte fica barrada e a rota cai na reta.
-      // (b) `road` — as linhas VETORIAIS do FGB (corredores do modo terreno;
-      // só existem com o viário consultado). Sem (a), o fallback raster perdia
-      // todas as travessias d'água.
-      let road = null;
-      if (viaLines) { road = new Uint8Array(dem.W * dem.H); for (const ln of viaLines) rasterSupercover(ln.map((p) => toG(p[0], p[1])), road, dem.W, dem.H); }
-      let blocked = 0, corr = 0;
-      for (let i = 0; i < block.length; i++) {
-        if (!block[i] || !dem.mask[i]) continue;
-        if (networkMask && networkMask[i]) { corr++; continue; }   // via raster cruza a água
-        if (road && road[i]) { corr++; continue; }                 // via vetorial (FGB) cruza a água
-        dem.mask[i] = 0; waterBlocked.push(i); blocked++;
-      }
-      dem.mask[seedR * dem.W + seedC] = 1; dem.mask[goalR * dem.W + goalC] = 1;
-      console.info(`[energy] máscara de água: ${blocked} células barradas (${water.polys.length} áreas, ${water.lines.length} rios)${corr ? `, ${corr} de corredor viário liberadas` : ''}`);
+      for (let i = 0; i < block.length; i++) if (block[i] && dem.mask[i]) waterCells++;
+      waterInfo = `${water.polys.length} áreas, ${water.lines.length} rios`;
     }
-  } catch (e) { console.warn('[energy] máscara de água falhou:', e.message); }
+  } catch (e) { checkAbort(); console.warn('[energy] máscara de água falhou:', e.message); }
+
+  // Viário: (a) CORREDORES passáveis sobre a água — estradas/pontes atravessam
+  // a água, como no sampasimu (só precisa se a água barrou alguma célula);
+  // (b) os PORTAIS de ponte/túnel (se ligados). No "pelo viário" as linhas já
+  // estão em mãos (roadLines); no terreno o FGB é LIDO DIRETO pra máscara +
+  // lista de tabuleiros, sem guardar as feições (eram dezenas de MB por trecho
+  // presos num LRU).
+  let road = null, decks = null;
+  const needCorridors = waterCells > 0;
+  const needPortals = params.usePortals !== false;
+  if (needCorridors || needPortals) {
+    try {
+      const prod = roadLines
+        ? roadProductsFromLines(roadLines, roadMeta, bb, dem.W, dem.H, A)
+        : await viarioRoadProducts(bb, dem.W, dem.H, A, { signal });
+      road = prod.road; decks = prod.decks;
+    } catch (e) { checkAbort(); console.warn('[energy] viário (corredores/portais) falhou:', e.message); }
+  }
+
+  if (block) {
+    // CORREDORES: as vias (incl. pontes/túneis) abrem caminho passável sobre a
+    // água — uma estrada que cruza um rio/represa não é barreira. Poupa essas
+    // células do bloqueio (o "network carves corridors" do sampasimu). Sem
+    // isto, um destino sobre/à beira d'água fica ilhado.
+    //
+    // Duas fontes de corredor: (a) `networkMask` — a rede RASTER em uso no
+    // "pelo viário" quando o grafo vetorial não achou caminho (ou o toggle
+    // está desligado); é ELA que o worker roteia, então é ELA que precisa
+    // atravessar a água, senão a ponte fica barrada e a rota cai na reta.
+    // (b) `road` — as linhas VETORIAIS do FGB rasterizadas (corredores do modo
+    // terreno). Sem (a), o fallback raster perdia todas as travessias d'água.
+    let blocked = 0, corr = 0;
+    for (let i = 0; i < block.length; i++) {
+      if (!block[i] || !dem.mask[i]) continue;
+      if (networkMask && networkMask[i]) { corr++; continue; }   // via raster cruza a água
+      if (road && road[i]) { corr++; continue; }                 // via vetorial (FGB) cruza a água
+      dem.mask[i] = 0; waterBlocked.push(i); blocked++;
+    }
+    dem.mask[seedR * dem.W + seedC] = 1; dem.mask[goalR * dem.W + goalC] = 1;
+    console.info(`[energy] máscara de água: ${blocked} células barradas (${waterInfo})${corr ? `, ${corr} de corredor viário liberadas` : ''}`);
+  }
 
   // Portais de ponte/túnel (raster): atalho dirigido entre as duas células de
   // apoio no custo do tabuleiro plano — deixa a rota cruzar a água barrada por
-  // cima da ponte. Decks = linhas do viário com bridge/tunnel (FGB já em cache
-  // pela água); o worker calcula o custo a partir das alturas das pontas.
+  // cima da ponte. Decks = linhas do viário com bridge/tunnel; o worker calcula
+  // o custo a partir das alturas das pontas.
   // Toggle nos Parâmetros (usePortals): desligado → água vira barreira total.
-  if (params.usePortals !== false && viaLines) try {
-    const lines = viaLines, meta = viaMeta;
-    const u = [], v = [], lenM = [], M = 111320;
+  if (needPortals && decks && decks.length) try {
+    const u = [], v = [], lenM = [];
     const cellOf = (lng, lat) => { const r = Math.round((bb.north - lat) / A), c = Math.round((lng - bb.west) / A); return (r < 0 || r >= dem.H || c < 0 || c >= dem.W) ? -1 : r * dem.W + c; };
-    for (let li = 0; li < lines.length; li++) {
-      if (!(meta[li] && meta[li].deck)) continue;
-      const ln = lines[li];
-      if (ln.length < 2) continue;
-      const a = cellOf(ln[0][0], ln[0][1]), b = cellOf(ln[ln.length - 1][0], ln[ln.length - 1][1]);
+    for (const d of decks) {
+      const a = cellOf(d[0], d[1]), b = cellOf(d[2], d[3]);
       if (a < 0 || b < 0 || a === b) continue;
-      let len = 0;
-      for (let i = 1; i < ln.length; i++) { const dLat = (ln[i][1] - ln[i - 1][1]) * M, dLng = (ln[i][0] - ln[i - 1][0]) * M * Math.cos((ln[i][1] + ln[i - 1][1]) / 2 * Math.PI / 180); len += Math.hypot(dLat, dLng); }
-      u.push(a); v.push(b); lenM.push(len);
+      u.push(a); v.push(b); lenM.push(d[4]);
     }
     if (u.length) portals = { u: Int32Array.from(u), v: Int32Array.from(v), lenM: Float64Array.from(lenM), n: u.length };
     if (portals) console.info(`[energy] ${portals.n} portais de ponte/túnel`);
   } catch (e) { console.warn('[energy] portais falharam:', e.message); }
 
   try {
+    checkAbort();
     const tWork = performance.now();
     const baseOpts = {
       height: dem.height,
@@ -9485,6 +12313,7 @@ async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
     // sem a barreira. Uma rota real que raspa a água é melhor que cair na reta.
     // (mask é CLONADA no postMessage, não transferida → dá pra reusar dem.mask.)
     if ((!res.path || !res.path.length) && waterBlocked.length) {
+      checkAbort();
       for (const idx of waterBlocked) dem.mask[idx] = 1;
       console.warn(`[energy] água ainda selou o caminho — refazendo sem a barreira (${waterBlocked.length} células)`);
       res = await runEnergyWorker({ ...baseOpts, mask: dem.mask });
@@ -9505,6 +12334,7 @@ async function energyRoute(fromLatLng, toLatLng, mode = 'free') {
     if (Number.isFinite(res.pathEnergy)) out.routedEnergyJ = res.pathEnergy;
     return out;
   } catch (e) {
+    checkAbort();
     console.warn('[energy] worker falhou:', e.message);
     return straightPath(fromLatLng, toLatLng);
   }
@@ -9601,6 +12431,10 @@ function updateDraftPolyline() {
     for (const layer of [draftPolyline, draftCasing]) {
       const el = layer.getElement();
       if (el) L.DomEvent.on(el, 'pointerdown', onLinePointerDown);
+      // O Leaflet só considera a linha ALVO do click se ela escuta 'click' —
+      // sem isto o `bubblingMouseEvents: false` nunca valia e o click de um
+      // toque/clique na linha caía no onMapClickInDrawing (ponto extra no fim).
+      layer.on('click', () => {});
     }
   } else {
     if (draftCasing) draftCasing.setLatLngs(latlngs);
@@ -9609,27 +12443,85 @@ function updateDraftPolyline() {
 }
 
 // ─── Press the draft line → insert an intermediate waypoint ─────────────────
-// A plain tap/click drops the new waypoint where you pressed; holding and
+// A plain click drops the new waypoint where you pressed; holding and
 // dragging places it wherever you release. The segment it lands in is fixed at
 // press time (the segment grabbed); only the position follows the pointer. A
 // dashed ghost previews the result during the drag. Pointer Events + pointer
 // capture make this work identically for mouse and touch — capture routes
 // every move/up to the original <path> even when the finger leaves the line.
+// NO TOQUE o gesto só é tomado depois de SEGURAR parado (LINE_HOLD_MS dentro
+// de LINE_HOLD_SLOP_PX): pan e pinça começam na linha o tempo todo (a faixa
+// de 7 px cruza a tela) e antes viravam um ponto extra onde o dedo soltava,
+// com o mapa travado. Mexeu antes do tempo = é pan, fica com o Leaflet; um
+// segundo dedo cancela.
+const LINE_HOLD_MS = 300;
+const LINE_HOLD_SLOP_PX = 8;
 let lineInsertActive = false; // set while a press-to-insert gesture is in flight
+let _lineTapHintShown = false;
 function onLinePointerDown(e) {
   if (!drawingMode || previewMode || trackpoints.length < 2) return;
   if (e.button != null && e.button > 0) return; // ignore right/middle click
   if (e.isPrimary === false) return;            // ignore extra touch points
+  if (e.pointerType === 'touch') { armLineHold(e); return; }
   L.DomEvent.stop(e);
+  startLineInsert(e, e.currentTarget, e.pointerId);
+}
 
+// Toque na linha: arma o "segurar". Não para o evento nem trava o mapa — se o
+// dedo andar, o Leaflet já está com o pan.
+function armLineHold(e) {
+  const target = e.currentTarget;
+  const pointerId = e.pointerId;
+  const x0 = e.clientX, y0 = e.clientY;
+  let last = e;
+  const container = map.getContainer();
+  let timer = 0;
+  const disarm = () => {
+    clearTimeout(timer);
+    target.removeEventListener('pointermove', onMove);
+    target.removeEventListener('pointerup', onUp);
+    target.removeEventListener('pointercancel', disarm);
+    container.removeEventListener('touchstart', onTouch, true);
+  };
+  const onMove = (ev) => {
+    if (ev.pointerId !== pointerId) return;
+    last = ev;
+    if (Math.hypot(ev.clientX - x0, ev.clientY - y0) > LINE_HOLD_SLOP_PX) disarm();
+  };
+  const onUp = (ev) => {
+    if (ev.pointerId !== pointerId) return;
+    disarm();
+    // Toque rápido na linha não insere mais — ensina o gesto, uma vez.
+    if (!_lineTapHintShown) {
+      _lineTapHintShown = true;
+      showToast('Pra inserir um ponto na linha, segure o dedo nela (e arraste pra posicionar).', 4500);
+    }
+  };
+  const onTouch = (ev) => { if (ev.touches && ev.touches.length > 1) disarm(); };
+  timer = setTimeout(() => {
+    disarm();
+    if (!drawingMode || previewMode || trackpoints.length < 2) return;
+    try { navigator.vibrate?.(12); } catch (_) { /* sem vibração */ }
+    startLineInsert(last, target, pointerId);
+  }, LINE_HOLD_MS);
+  target.addEventListener('pointermove', onMove);
+  target.addEventListener('pointerup', onUp);
+  target.addEventListener('pointercancel', disarm);
+  container.addEventListener('touchstart', onTouch, true);
+}
+
+function startLineInsert(e, target, pointerId) {
   const startLatLng = map.mouseEventToLatLng(e);
   const idx = findInsertIndex(startLatLng);
+  // Vizinhos por REFERÊNCIA: o índice é resolvido de novo ao soltar.
+  const prevTp = trackpoints[idx - 1] || null;
+  const nextTp = trackpoints[idx] || null;
   lineInsertActive = true;
   // Suspend map panning so the drag moves the ghost, not the map.
   map.dragging.disable();
+  const isTouch = e.pointerType === 'touch';
+  const container = map.getContainer();
 
-  const target = e.currentTarget; // the <path> that was pressed
-  const pointerId = e.pointerId;
   try { target.setPointerCapture(pointerId); } catch (_) { /* ok without it */ }
 
   const ghost = L.marker(startLatLng, {
@@ -9646,8 +12538,8 @@ function onLinePointerDown(e) {
     interactive: false,
   }).addTo(map);
 
-  const prevLatLng = trackpoints[idx - 1]?.marker.getLatLng();
-  const nextLatLng = trackpoints[idx]?.marker.getLatLng();
+  const prevLatLng = prevTp?.marker.getLatLng();
+  const nextLatLng = nextTp?.marker.getLatLng();
   const drawPreview = (latlng) => {
     const segs = [];
     if (prevLatLng) segs.push([prevLatLng, latlng]);
@@ -9658,6 +12550,7 @@ function onLinePointerDown(e) {
 
   let lastLatLng = startLatLng;
   const onMove = (ev) => {
+    if (ev.pointerId !== pointerId) return;
     L.DomEvent.preventDefault(ev); // stop the page from scrolling under a touch
     lastLatLng = map.mouseEventToLatLng(ev);
     ghost.setLatLng(lastLatLng);
@@ -9667,38 +12560,59 @@ function onLinePointerDown(e) {
     L.DomEvent.off(target, 'pointermove', onMove);
     L.DomEvent.off(target, 'pointerup', onUp);
     L.DomEvent.off(target, 'pointercancel', onCancel);
+    container.removeEventListener('touchstart', onTouch, true);
     try { target.releasePointerCapture(pointerId); } catch (_) { /* already gone */ }
     map.removeLayer(ghost);
     map.removeLayer(preview);
     map.dragging.enable();
     // The trailing `click` from a mouse press lands on the map container (the
     // common ancestor when released off the line); swallow it next tick so
-    // onMapClickInDrawing doesn't append a point at the end.
-    setTimeout(() => { lineInsertActive = false; }, 0);
+    // onMapClickInDrawing doesn't append a point at the end. (No toque o
+    // click sintetizado vem mais tarde — janela maior.)
+    setTimeout(() => { lineInsertActive = false; if (!_routesInFlight) scheduleRouteSweep(); }, isTouch ? 400 : 0);
   };
   const onUp = (ev) => {
+    if (ev.pointerId !== pointerId) return;
     L.DomEvent.preventDefault(ev);
     const dropLatLng = map.mouseEventToLatLng(ev);
     cleanup();
-    insertWaypointAt(idx, dropLatLng);
+    // Índice de agora (a lista pode ter mudado durante o gesto); se o par
+    // agarrado deixou de ser vizinho, recalcula pelo ponto de soltura.
+    let at = nextTp ? trackpoints.indexOf(nextTp) : trackpoints.length;
+    if (at < 0 || (prevTp && trackpoints[at - 1] !== prevTp)) at = findInsertIndex(dropLatLng);
+    insertWaypointAt(at, dropLatLng);
   };
-  const onCancel = () => cleanup();
+  const onCancel = (ev) => { if (!ev || ev.pointerId === pointerId) cleanup(); };
+  // Segundo dedo = pinça: cancela a inserção (o zoom segue com o Leaflet).
+  const onTouch = (ev) => { if (ev.touches && ev.touches.length > 1) cleanup(); };
   L.DomEvent.on(target, 'pointermove', onMove);
   L.DomEvent.on(target, 'pointerup', onUp);
   L.DomEvent.on(target, 'pointercancel', onCancel);
+  if (isTouch) container.addEventListener('touchstart', onTouch, true);
 }
 
-// Find the index where a new waypoint should be inserted: between the two
-// consecutive user waypoints whose great-circle segment is closest to the
-// click location. Uses a simple flat-Earth approximation — fine at the
-// scales the editor works at.
+// Find the index where a new waypoint should be inserted: the segment whose
+// drawn geometry (o caminho roteado/denso, não só a corda entre waypoints)
+// passes closest to the press. Uses a simple flat-Earth approximation — fine
+// at the scales the editor works at.
 function findInsertIndex(latlng) {
   let bestIdx = trackpoints.length;
   let bestDist = Infinity;
   for (let i = 0; i < trackpoints.length - 1; i++) {
     const a = trackpoints[i].marker.getLatLng();
     const b = trackpoints[i + 1].marker.getLatLng();
-    const d = pointToSegmentDistance(latlng, a, b);
+    const path = trackpoints[i + 1].pathFromPrev;
+    let d;
+    if (Array.isArray(path) && path.length > 2) {
+      d = Infinity;
+      for (let k = 1; k < path.length; k++) {
+        const dk = pointToSegmentDistance(latlng,
+          { lat: path[k - 1][0], lng: path[k - 1][1] }, { lat: path[k][0], lng: path[k][1] });
+        if (dk < d) d = dk;
+      }
+    } else {
+      d = pointToSegmentDistance(latlng, a, b);
+    }
     if (d < bestDist) {
       bestDist = d;
       bestIdx = i + 1;
@@ -9743,8 +12657,8 @@ async function insertWaypointAt(idx, latlng, init = {}) {
   } else {
     tp.pathFromPrev = null;
   }
-  if (idx + 1 < trackpoints.length) {
-    const next = trackpoints[idx + 1];
+  const next = trackpoints[idx + 1] || null;
+  if (next) {
     next.pathFromPrev = straightPath(
       tp.marker.getLatLng(),
       next.marker.getLatLng(),
@@ -9753,12 +12667,14 @@ async function insertWaypointAt(idx, latlng, init = {}) {
   redrawAndMetrics();
   updateTraceControls();
 
-  if (routingMode !== 'straight') {
-    if (idx > 0) await refetchPath(idx);
-    if (idx + 1 < trackpoints.length) await refetchPath(idx + 1);
+  // Os dois segmentos novos em paralelo, por referência (ver onMarkerDragEnd).
+  const jobs = routingMode !== 'straight'
+    ? [idx > 0 ? refetchPath(tp) : null, next ? refetchPath(next) : null] : [];
+  pushHistory();   // na hora — ver onMapClickInDrawing
+  if (jobs.length) {
+    await Promise.all(jobs);
     redrawAndMetrics();
   }
-  pushHistory();
 }
 
 // ─── Busca de endereços (geocoding) ──────────────────────────────────────────
@@ -9838,9 +12754,11 @@ function positionGeoSearchPanel() {
   const mapRect = map.getContainer().getBoundingClientRect();
   const btnRect = geoSearchBtn.getBoundingClientRect();
   if (window.innerWidth <= 600) {
-    // Tela estreita: largura (quase) toda, abaixo do botão. width:auto
-    // libera o esticamento left+right (o CSS fixa 320px pro desktop).
-    geoSearchPanel.style.top = `${Math.round(btnRect.bottom - mapRect.top + 6)}px`;
+    // Tela estreita: largura (quase) toda, no TOPO do mapa (cobre os botões
+    // da coluna — o "Fechar" do painel fecha). Abaixo do 🔍 a lista caía atrás do
+    // teclado do celular: sobravam ~2 resultados visíveis. width:auto libera
+    // o esticamento left+right (o CSS fixa 320px pro desktop).
+    geoSearchPanel.style.top = '8px';
     geoSearchPanel.style.left = '8px';
     geoSearchPanel.style.right = '8px';
     geoSearchPanel.style.width = 'auto';
@@ -9850,7 +12768,21 @@ function positionGeoSearchPanel() {
     geoSearchPanel.style.right = 'auto';
     geoSearchPanel.style.width = '';
   }
+  fitGeoSearchList();
 }
+
+// A lista cabe no que SOBRA da tela visível (visualViewport encolhe com o
+// teclado virtual) — rolando dentro dela, em vez de continuar atrás do
+// teclado.
+function fitGeoSearchList() {
+  if (!geoSearchList || geoSearchPanel.hidden) return;
+  const vv = window.visualViewport;
+  const visibleBottom = vv ? vv.offsetTop + vv.height : window.innerHeight;
+  const top = geoSearchList.getBoundingClientRect().top;
+  const avail = Math.floor(visibleBottom - top - 60);   // status + atribuição + folga
+  geoSearchList.style.maxHeight = `${Math.max(96, avail)}px`;
+}
+window.visualViewport?.addEventListener('resize', () => fitGeoSearchList());
 
 function setGeoSearchStatus(msg) {
   geoSearchStatus.textContent = msg;
@@ -9858,8 +12790,8 @@ function setGeoSearchStatus(msg) {
 }
 
 function openGeoSearch() {
-  positionGeoSearchPanel();
   geoSearchPanel.hidden = false;
+  positionGeoSearchPanel();
   geoSearchBtn.setAttribute('aria-pressed', 'true');
   geoSearchInput.focus();
   geoSearchInput.select();
@@ -9896,6 +12828,7 @@ function renderGeoSearchResults(items) {
     li.addEventListener('click', () => pickGeoSearchResult(item));
     geoSearchList.appendChild(li);
   });
+  fitGeoSearchList();
 }
 
 function setGeoSearchActive(idx) {
@@ -9983,10 +12916,13 @@ function dropGeoSearchPin(item, latlng) {
   traceHere.addEventListener('click', async () => {
     geoSearchPickTs = Date.now(); // o popup some sob o cursor — mesmo guard
     removeGeoSearchPin();
-    // Entrar no editor zera o rascunho — o endereço vira o ponto de PARTIDA.
-    if (!drawingMode) enterDrawingMode();
+    // Entrar no editor começa um traçado NOVO — o endereço vira o ponto de
+    // PARTIDA. O rascunho que havia fica guardado (↶ / Restaurar).
+    let stashed = null;
+    if (!drawingMode) stashed = prepareEditorReplace();
     else if (previewMode) exitPreviewMode();
     await insertWaypointAt(trackpoints.length, latlng, { name: item.label });
+    if (stashed) announceStashedDraft('Traçado novo a partir daqui', stashed);
   });
   div.appendChild(traceHere);
   const remove = document.createElement('button');
@@ -10025,7 +12961,17 @@ geoSearchInput?.addEventListener('keydown', (e) => {
   } else if (e.key === 'Enter') {
     e.preventDefault();
     const q = geoSearchInput.value.trim();
-    if (geoSearchActiveIdx >= 0 && geoSearchResults[geoSearchActiveIdx]) {
+    if (isCoarsePointer()) {
+      // No celular o "Buscar" do teclado é também o jeito de BAIXAR o
+      // teclado — ele só busca (se precisar) e libera a tela pros
+      // resultados; escolher é tocar num deles. (Escolher o 1º de cara
+      // acrescentava um waypoint no editor sem o usuário ver a lista.)
+      if (!(geoSearchResults.length && q === geoSearchLastQuery)) {
+        clearTimeout(geoSearchTimer);
+        runGeoSearch();
+      }
+      geoSearchInput.blur();
+    } else if (geoSearchActiveIdx >= 0 && geoSearchResults[geoSearchActiveIdx]) {
       pickGeoSearchResult(geoSearchResults[geoSearchActiveIdx]);
     } else if (geoSearchResults.length && q === geoSearchLastQuery) {
       pickGeoSearchResult(geoSearchResults[0]);
@@ -10038,6 +12984,14 @@ geoSearchInput?.addEventListener('keydown', (e) => {
     closeGeoSearch();
   }
 });
+document.getElementById('geo-search-close')?.addEventListener('click', () => closeGeoSearch());
+// Fora do editor, tocar no mapa fecha a busca (no editor o toque vira ponto
+// e o painel segue aberto pro loop buscar → adicionar).
+map.on('click', () => {
+  if (drawingMode || !geoSearchPanel || geoSearchPanel.hidden) return;
+  if (Date.now() - geoSearchPickTs < 700) return;
+  closeGeoSearch();
+});
 
 function totalDistanceMeters() {
   const latlngs = assembleLatLngs();
@@ -10049,9 +13003,10 @@ function totalDistanceMeters() {
 }
 
 // ─── FABDEM (1°×1° COG tiles hospedadas no R2, fabdem.pedalhidrografi.co) ────
-// Range-fetch só dos strips que cobrem cada ponto/bbox. geotiff.js é
+// Range-fetch só dos tiles (512²) que cobrem cada ponto/bbox. geotiff.js é
 // carregado sob demanda do CDN; window.GeoTIFF expõe a API. Os tiles ficam na
 // RAIZ do bucket (sem segmento /fabdem/) — nomes Bristol direto na base.
+// A abertura/leitura de TODO DEM passa pela seção "Leitura de COGs" abaixo.
 const FABDEM_BASE_URL = 'https://fabdem.pedalhidrografi.co/';
 const FABDEM_TILE_DEG = 1;
 const FABDEM_ARCSEC   = 1 / 3600;            // ~30 m no equador
@@ -10079,42 +13034,21 @@ function fabdemTileName(lat, lon) {
   return `${ns}${la}${ew}${lo}_FABDEM_V1-2.tif`;
 }
 
-// Cache de tiles abertos. Cada entrada guarda só o IFD (geotiff.js
-// adia o fetch de pixels até readRasters).
-const _fabdemTileCache = new Map();   // "SXX[E|W]XXX" → { image, origin, resolution, nodata } | null
-async function openFabdemTile(latLo, lonLo) {
-  const key = `${latLo}_${lonLo}`;
-  if (_fabdemTileCache.has(key)) return _fabdemTileCache.get(key);
-  const url = FABDEM_BASE_URL + fabdemTileName(latLo, lonLo);
-  try {
-    const GeoTIFF = await ensureGeoTIFF();
-    const tiff   = await GeoTIFF.fromUrl(url);
-    const image  = await tiff.getImage();
-    const origin = image.getOrigin();
-    const resolution = image.getResolution();
-    const nodataRaw = image.fileDirectory.getValue
-      ? image.fileDirectory.getValue('GDAL_NODATA')
-      : image.fileDirectory.GDAL_NODATA;
-    const nodata = nodataRaw ? parseFloat(nodataRaw) : null;
-    const entry = { image, origin, resolution, nodata };
-    _fabdemTileCache.set(key, entry);
-    return entry;
-  } catch (e) {
-    console.info(`[fabdem] tile (${latLo},${lonLo}) indisponível: ${e.message}`);
-    _fabdemTileCache.set(key, null);    // negative cache: don't keep retrying
-    return null;
-  }
+// Tile 1°×1° aberto (só o IFD — os pixels vêm por demTile). null = sem tile
+// (404 no mar/fora da cobertura, definitivo) ou fora do ar agora (rede — nova
+// tentativa em COG_RETRY_MS; ver openCogHandle).
+function openFabdemTile(latLo, lonLo) {
+  return openCogHandle(FABDEM_BASE_URL + fabdemTileName(latLo, lonLo), 'FABDEM');
 }
 
-// Interpolação BILINEAR num buffer de janela (interleave) lido via readRasters.
-// (u, v) são coords de pixel CENTRADAS — já descontado o 0.5 da borda, então o
-// valor da célula k mora em k e os vizinhos são floor(u)/floor(u)+1. cMin/rMin
-// são o canto da janela lida; winW/winH suas dimensões. Cantos nodata / NaN /
-// fora-da-janela são descartados e os pesos renormalizados (degrada com graça
-// nas bordas de cobertura); null se nenhum dos 4 cantos vale. A amostragem
+// Interpolação BILINEAR em (u, v) — coords de pixel CENTRADAS (já descontado o
+// 0.5 da borda: o valor da célula k mora em k e os vizinhos são floor(u) e
+// floor(u)+1). `px(c, r)` devolve o pixel (ou undefined fora da imagem/janela).
+// Cantos nodata / NaN / fora são descartados e os pesos renormalizados (degrada
+// com graça nas bordas de cobertura); null se nenhum dos 4 cantos vale. A
 // bilinear suaviza o serrilhado do nearest-neighbor — perfil de elevação mais
 // fiel à rampa real da célula, sem saltos de ±meia-célula entre pontos.
-function bilinearFromWindow(ras, winW, winH, cMin, rMin, u, v, nodata) {
+function bilinearAt(px, u, v, nodata) {
   const c0 = Math.floor(u), r0 = Math.floor(v);
   const fu = u - c0, fv = v - r0;
   const corners = [
@@ -10126,50 +13060,26 @@ function bilinearFromWindow(ras, winW, winH, cMin, rMin, u, v, nodata) {
   let acc = 0, wsum = 0;
   for (const [r, c, w] of corners) {
     if (w <= 0) continue;
-    const lc = c - cMin, lr = r - rMin;
-    if (lc < 0 || lr < 0 || lc >= winW || lr >= winH) continue;
-    const val = ras[lr * winW + lc];
-    if (!Number.isFinite(val) || (nodata != null && val === nodata)) continue;
+    const val = px(c, r);
+    if (val === undefined || !Number.isFinite(val) || (nodata != null && val === nodata)) continue;
     acc += val * w; wsum += w;
   }
   return wsum > 0 ? acc / wsum : null;
 }
 
-// Sample elevation (meters) at lat/lng, BILINEAR. Returns null when the tile is
-// missing or every covering cell is nodata. Batched callers should prefer
-// `sampleFabdemBatch` to reuse a single window per tile.
+// Elevação (m) num ponto, BILINEAR — null sem tile/nodata. Em lote, prefira
+// sampleFabdemBatch (um tile lido serve a todos os pontos dele).
 async function sampleFabdemAt(lat, lng) {
-  const latLo = Math.floor(lat);
-  const lonLo = Math.floor(lng);
-  const t = await openFabdemTile(latLo, lonLo);
-  if (!t) return null;
-  const [oX, oY] = t.origin;
-  const [rX, rY] = t.resolution;   // rX > 0, rY < 0
-  const W = t.image.getWidth(), H = t.image.getHeight();
-  const u = (lng - oX) / rX - 0.5;
-  const v = (lat - oY) / rY - 0.5;
-  const cMin = Math.max(0, Math.floor(u)), rMin = Math.max(0, Math.floor(v));
-  const cMax = Math.min(W - 1, Math.floor(u) + 1), rMax = Math.min(H - 1, Math.floor(v) + 1);
-  if (cMax < cMin || rMax < rMin) return null;
-  try {
-    const winW = cMax - cMin + 1, winH = rMax - rMin + 1;
-    const ras = await t.image.readRasters({
-      window: [cMin, rMin, cMax + 1, rMax + 1],
-      interleave: true,
-    });
-    return bilinearFromWindow(ras, winW, winH, cMin, rMin, u, v, t.nodata);
-  } catch (e) {
-    console.warn(`[fabdem] sample ${lat},${lng} falhou: ${e.message}`);
-    return null;
-  }
+  return (await sampleFabdemBatch([[lat, lng]]))[0];
 }
 
-// Sample many points efficiently: groups by tile and reads one bounding
-// window per tile, then indexes each point into the buffer. ~1 HTTP
-// range request per tile instead of one per point.
-async function sampleFabdemBatch(points /* [[lat, lng], …] */) {
-  if (!points.length) return [];
-  // Bucket points by their tile.
+// Muitos pontos: agrupa por tile 1°×1° e amostra só os tiles 512² do COG que
+// CONTÊM pontos (sampleDemPoints). `out.unavailable` = algum tile estava fora
+// do ar (rede) — quem cair pra fonte seguinte marca os valores como
+// provisórios (ver fetchMissingElevations).
+async function sampleFabdemBatch(points /* [[lat, lng], …] */, signal) {
+  const out = new Array(points.length).fill(null);
+  if (!points.length) return out;
   const groups = new Map();   // "latLo_lonLo" → { latLo, lonLo, idxs: [origIdx,…] }
   points.forEach(([lat, lng], i) => {
     const latLo = Math.floor(lat);
@@ -10178,56 +13088,32 @@ async function sampleFabdemBatch(points /* [[lat, lng], …] */) {
     if (!groups.has(k)) groups.set(k, { latLo, lonLo, idxs: [] });
     groups.get(k).idxs.push(i);
   });
-  const out = new Array(points.length).fill(null);
   for (const { latLo, lonLo, idxs } of groups.values()) {
     const t = await openFabdemTile(latLo, lonLo);
-    if (!t) continue;
-    const [oX, oY] = t.origin;
-    const [rX, rY] = t.resolution;
-    const W = t.image.getWidth(), H = t.image.getHeight();
-    // Janela cobrindo os 4 vizinhos bilineares (floor..floor+1) de cada ponto.
-    let cMin = Infinity, cMax = -Infinity, rMin = Infinity, rMax = -Infinity;
-    const samp = idxs.map(i => {
-      const [lat, lng] = points[i];
-      const u = (lng - oX) / rX - 0.5;
-      const v = (lat - oY) / rY - 0.5;
-      const c0 = Math.floor(u), r0 = Math.floor(v);
-      if (c0     < cMin) cMin = c0;     if (c0 + 1 > cMax) cMax = c0 + 1;
-      if (r0     < rMin) rMin = r0;     if (r0 + 1 > rMax) rMax = r0 + 1;
-      return [i, u, v];
-    });
-    cMin = Math.max(0, cMin); rMin = Math.max(0, rMin);
-    cMax = Math.min(W - 1, cMax); rMax = Math.min(H - 1, rMax);
-    if (cMax < cMin || rMax < rMin) continue;
-    try {
-      const winW = cMax - cMin + 1, winH = rMax - rMin + 1;
-      const ras = await t.image.readRasters({
-        window: [cMin, rMin, cMax + 1, rMax + 1],
-        interleave: true,
-      });
-      for (const [i, u, v] of samp) {
-        const z = bilinearFromWindow(ras, winW, winH, cMin, rMin, u, v, t.nodata);
-        if (z != null) out[i] = z;
-      }
-    } catch (e) {
-      console.warn(`[fabdem] read window (${latLo},${lonLo}) falhou: ${e.message}`);
+    if (!t) {
+      if (cogTemporarilyDown(FABDEM_BASE_URL + fabdemTileName(latLo, lonLo))) out.unavailable = true;
+      continue;
     }
+    const vals = await sampleDemPoints(t, idxs.map((i) => points[i]), signal);
+    idxs.forEach((i, k) => { if (vals[k] != null) out[i] = vals[k]; });
   }
   return out;
 }
 
 // ─── DEM local de SP (sampa_geral): COG único EPSG:4326 (~5 m) ───────────────
-// COG único hospedado em telhas.pedalhidrografi.co; geotiff.js puxa só os
-// blocos necessários por Range request. Mesma matemática de pixel do FABDEM
-// (ambos EPSG:4326), só que UMA imagem em vez de tiles 1°×1°. Aberto sob
-// demanda e cacheado; ativo apenas quando params.useSampaDem está ligado.
+// COG único hospedado em telhas.pedalhidrografi.co (IFD0 ~5,3 m + overviews
+// AVERAGE de ~10,7/21/43/85/171 m); geotiff.js puxa só os tiles necessários
+// por Range request. Mesma matemática de pixel do FABDEM (ambos EPSG:4326), só
+// que UMA imagem em vez de tiles 1°×1°. Aberto sob demanda; ativo apenas
+// quando params.useSampaDem está ligado.
 const SAMPA_DEM_URL = 'https://telhas.pedalhidrografi.co/dem/sampa_geral.tif';
 
-// Constrói o "handle" de DEM (origin/resolution/bounds/nodata) a partir de uma
-// imagem geotiff.js já aberta. Compartilhado entre o DEM de SP (Range fetch de
-// URL) e o DEM custom (GeoTIFF carregado de arquivo em memória). A matemática
-// de pixel assume EPSG:4326 (graus) — igual ao FABDEM.
-function demHandleFromImage(image) {
+// Constrói o "handle" de DEM a partir de uma imagem geotiff.js já aberta:
+// origin/resolution/bounds/nodata + `level0` (a grade de tiles da resolução
+// cheia) + `key` (identidade no cache de tiles). Compartilhado entre o DEM de
+// SP e o FABDEM (Range fetch de URL) e o DEM custom (GeoTIFF carregado de
+// arquivo). A matemática de pixel assume EPSG:4326 (graus).
+function demHandleFromImage(image, tiff = null, key = '') {
   const origin = image.getOrigin();         // [oX(west lon), oY(north lat)]
   const resolution = image.getResolution(); // [rX>0, rY<0]
   const W = image.getWidth();
@@ -10242,23 +13128,13 @@ function demHandleFromImage(image) {
     east:  origin[0] + W * resolution[0],
     south: origin[1] + H * resolution[1],
   };
-  return { image, origin, resolution, W, H, nodata, bounds };
+  const h = { image, tiff, key, origin, resolution, W, H, nodata, bounds, levels: null, _levelsP: null };
+  h.level0 = demLevel(image, h, 0);
+  return h;
 }
 
-let _sampaDemPromise = null;
-async function openSampaDem() {
-  if (_sampaDemPromise) return _sampaDemPromise;
-  _sampaDemPromise = (async () => {
-    try {
-      const GeoTIFF = await ensureGeoTIFF();
-      const tiff  = await GeoTIFF.fromUrl(SAMPA_DEM_URL);
-      return demHandleFromImage(await tiff.getImage());
-    } catch (e) {
-      console.info(`[sampa-dem] indisponível: ${e.message}`);
-      return null;   // negative cache: don't keep retrying
-    }
-  })();
-  return _sampaDemPromise;
+function openSampaDem() {
+  return openCogHandle(SAMPA_DEM_URL, 'DEM de SP');
 }
 
 // ─── DEM custom (GeoTIFF carregado de arquivo, EPSG:4326) ────────────────────
@@ -10267,11 +13143,12 @@ async function openSampaDem() {
 // handle/matemática do DEM de SP — só que a imagem vem de um ArrayBuffer
 // (fromArrayBuffer) em vez de Range fetch. Efêmero: some ao recarregar a página.
 let _customDem = null;   // { image, …, bounds, projected, name } | null
+let _customDemSeq = 0;
 async function setCustomDem(file) {
   const GeoTIFF = await ensureGeoTIFF();
   const buf = await file.arrayBuffer();
   const tiff = await GeoTIFF.fromArrayBuffer(buf);
-  const h = demHandleFromImage(await tiff.getImage());
+  const h = demHandleFromImage(await tiff.getImage(), tiff, `custom#${++_customDemSeq}`);
   // Aviso de CRS: a matemática de pixel é em graus (EPSG:4326). Um DEM projetado
   // (UTM/Web Mercator…) amostraria errado. Detecta por DUAS vias: a geokey
   // ProjectedCSTypeGeoKey (presente ⇒ projetado, mesmo que a base seja 4326) E
@@ -10284,57 +13161,399 @@ async function setCustomDem(file) {
     if (keys.ProjectedCSTypeGeoKey) h.projected = true;
   } catch { /* sem geokeys: vale a heurística de resolução acima */ }
   h.name = file.name;
+  if (_customDem) demTilesDrop(_customDem.key);
   _customDem = h;
   return h;
 }
-function clearCustomDem() { _customDem = null; }
+function clearCustomDem() {
+  if (_customDem) demTilesDrop(_customDem.key);
+  _customDem = null;
+}
 
 function withinSampaDem(b, lat, lng) {
   return lat >= b.south && lat <= b.north && lng >= b.west && lng <= b.east;
 }
 
-// Sample many points from the single COG: one bounding-window read covering
-// every in-bounds point. Out-of-bounds (or nodata) entries stay null so the
-// caller can fall back to FABDEM/Open-Meteo.
-async function sampleDemHandle(t, points /* [[lat,lng], …] */) {
+async function sampleSampaDemBatch(points, signal) {
+  const h = await openSampaDem();
+  if (!h) {
+    const out = new Array(points.length).fill(null);
+    if (cogTemporarilyDown(SAMPA_DEM_URL)) out.unavailable = true;
+    return out;
+  }
+  return sampleDemPoints(h, points, signal);
+}
+async function sampleCustomDemBatch(points, signal) { return sampleDemPoints(_customDem, points, signal); }
+
+// ─── Leitura de COGs (DEM de SP, FABDEM, DEM custom) ─────────────────────────
+// Toda leitura de DEM passa por aqui. Antes cada leitura era UMA janela na
+// resolução cheia sobre a bbox inteira (10–45 MB por trecho do modo terreno,
+// ~7 MB por perfil de rota, ~40 MB no "Estimar" da Câmera), decodificada no
+// main thread, sem cache nem cancelamento, e uma falha de rede desligava o DEM
+// até recarregar a página. Agora:
+//  • ABRIR (openCogHandle): cliente HTTP próprio pro geotiff.js — erro HTTP
+//    chega com o status: 4xx é definitivo (fica null a sessão toda), rede/5xx
+//    é temporário (nova tentativa em COG_RETRY_MS, com toast avisando que a
+//    precisão caiu); aberturas concorrentes são deduplicadas; timeout por
+//    requisição.
+//  • LER (demTile): por tile do COG (512²), decodificado e guardado num LRU com
+//    orçamento em bytes — re-rotear, arrastar ou reabrir na mesma área não
+//    baixa nem decodifica de novo. Um tile compartilhado só é cancelado quando
+//    NENHUM leitor espera mais por ele (AbortSignal por leitor).
+//  • PERFIL (sampleDemPoints): só os tiles que CONTÊM pontos, na resolução cheia
+//    — os mesmos pixels e a mesma bilinear de antes, então os números são
+//    idênticos.
+//  • MOSAICO do roteamento/Câmera (loadDemHandleMosaic): o overview mais grosso
+//    que ainda é ≤ a grade de 1″ (~30 m). No DEM de SP é o IFD2 (~21 m,
+//    overview AVERAGE): 1/16 dos pixels do IFD0 que era lido.
+const COG_RETRY_MS = 30 * 1000;
+const COG_REQ_TIMEOUT_MS = 30 * 1000;
+const DEM_MOSAIC_MAX_CELLS = 8e6;      // 1″: ~32 MB de Float32 — acima disso é pedido absurdo
+const DEM_MOSAIC_MAX_TILES = 48;       // tiles do COG por mosaico (DEM custom denso sem overview)
+const demStats = { requests: 0, bytes: 0 };   // diagnóstico (__phidroViario.demStats)
+
+function demAbortError() { return new DOMException('leitura de DEM cancelada', 'AbortError'); }
+
+// Promise que rejeita com AbortError quando ESTE chamador desiste (o trabalho
+// por baixo pode seguir pra outros leitores).
+function withAbort(promise, signal) {
+  if (!signal) return promise;
+  if (signal.aborted) return Promise.reject(demAbortError());
+  return new Promise((resolve, reject) => {
+    const onAbort = () => reject(demAbortError());
+    signal.addEventListener('abort', onAbort, { once: true });
+    promise.then(
+      (v) => { signal.removeEventListener('abort', onAbort); resolve(v); },
+      (e) => { signal.removeEventListener('abort', onAbort); reject(e); },
+    );
+  });
+}
+
+// Cliente do geotiff.js (fromCustomClient). O FetchClient padrão jogava fora o
+// status ("Error fetching data.") — sem ele não dá pra separar um 404 (tile que
+// não existe) de uma queda de rede. O corpo só é lido em getData(): uma
+// resposta 200 a um pedido com Range (servidor/cache ignorando o Range) é
+// cortada na hora em vez de baixar o arquivo inteiro.
+function makeCogClient(url) {
+  return {
+    url,
+    async request({ headers = {}, signal } = {}) {
+      if (signal && signal.aborted) throw demAbortError();
+      const ctrl = new AbortController();
+      const onAbort = () => ctrl.abort();
+      if (signal) signal.addEventListener('abort', onAbort, { once: true });
+      const timer = setTimeout(() => ctrl.abort(), COG_REQ_TIMEOUT_MS);
+      const done = () => { clearTimeout(timer); if (signal) signal.removeEventListener('abort', onAbort); };
+      let res;
+      try {
+        res = await fetch(url, { headers, signal: ctrl.signal });
+      } catch (e) {
+        done();
+        if (signal && signal.aborted) throw demAbortError();
+        throw e;
+      }
+      if (!res.ok || (res.status === 200 && (headers.Range || headers.range))) {
+        ctrl.abort(); done();
+        const err = new Error(res.ok ? 'servidor ignorou o Range' : `HTTP ${res.status}`);
+        err.status = res.status;
+        throw err;
+      }
+      demStats.requests++;
+      return {
+        status: res.status,
+        ok: true,
+        getHeader: (name) => res.headers.get(name) || undefined,
+        async getData() {
+          try {
+            const data = await res.arrayBuffer();
+            demStats.bytes += data.byteLength;
+            return data;
+          } catch (e) {
+            if (signal && signal.aborted) throw demAbortError();
+            throw e;
+          } finally { done(); }
+        },
+      };
+    },
+  };
+}
+
+// url → { promise } (aberto ou abrindo) | { failedAt, until, permanent }
+const _cogHandles = new Map();
+const _demToastAt = new Map();
+let _demRetryTimer = null;
+
+function cogTemporarilyDown(url) {
+  const e = _cogHandles.get(url);
+  return !!(e && !e.promise && !e.permanent);
+}
+
+// Abre um COG remoto (só os IFDs; pixels via demTile). Deduplica aberturas
+// concorrentes; falha 4xx = definitiva (null pra sessão toda), qualquer outra
+// (rede, 5xx, timeout, geotiff.js que não carregou) = temporária: null até
+// COG_RETRY_MS e aí tenta de novo — um tropeço de rede não desliga mais o DEM
+// até a página recarregar. `label` identifica a fonte no toast.
+function openCogHandle(url, label) {
+  const hit = _cogHandles.get(url);
+  if (hit) {
+    if (hit.promise) return hit.promise;
+    if (hit.permanent || Date.now() < hit.until) return Promise.resolve(null);
+  }
+  const wasDown = !!(hit && !hit.permanent);
+  const entry = {};
+  entry.promise = (async () => {
+    try {
+      const GeoTIFF = await ensureGeoTIFF();
+      const tiff = await GeoTIFF.fromCustomClient(makeCogClient(url));
+      const h = demHandleFromImage(await tiff.getImage(), tiff, url);
+      if (wasDown) onDemRecovered(label);
+      return h;
+    } catch (e) {
+      const permanent = e && e.status >= 400 && e.status < 500;
+      _cogHandles.set(url, { failedAt: Date.now(), until: Date.now() + COG_RETRY_MS, permanent, label });
+      console.info(`[dem] ${label} indisponível (${permanent ? 'definitivo' : 'nova tentativa em 30 s'}): ${e.message}`);
+      // 404 de tile do FABDEM = mar/fora da cobertura: não é perda de precisão.
+      if (!(permanent && label === 'FABDEM')) noteDemDegraded(label, permanent);
+      if (!permanent) armDemRetry();
+      return null;
+    }
+  })();
+  _cogHandles.set(url, entry);
+  return entry.promise;
+}
+
+function noteDemDegraded(label, permanent) {
+  // Um aviso COM ação na tela (o "↺ Restaurar" depois de abrir um link/GPX)
+  // não é atropelado — este volta na próxima leitura degradada (≤ 30 s).
+  const t = document.getElementById('toast');
+  if (t && !t.hidden && !t.classList.contains('fade') && t.querySelector('.toast-action')) return;
+  const now = Date.now();
+  if (now - (_demToastAt.get(label) || 0) < 60 * 1000) return;
+  _demToastAt.set(label, now);
+  showToast(permanent
+    ? `${label} indisponível — relevo por uma fonte menos precisa.`
+    : `Sem conexão com o ${label} — relevo menos preciso por enquanto (nova tentativa em 30 s).`, 5000);
+}
+
+// Com o editor aberto e elevações provisórias (vindas de uma fonte pior durante
+// a queda), tenta reabrir as fontes caídas sozinho — o PWA fica aberto dias.
+function armDemRetry() {
+  if (_demRetryTimer) return;
+  _demRetryTimer = setTimeout(() => {
+    _demRetryTimer = null;
+    if (!drawingMode || !elevationProvisional.size) return;
+    for (const [url, e] of _cogHandles) {
+      if (!e.promise && !e.permanent && Date.now() >= e.until) openCogHandle(url, e.label);
+    }
+  }, COG_RETRY_MS + 1000);
+}
+
+function onDemRecovered(label) {
+  console.info(`[dem] ${label} de volta`);
+  if (!elevationProvisional.size) return;
+  // Os pontos que caíram pra fonte pior durante a queda são reamostrados.
+  for (const k of elevationProvisional) elevationCache.delete(k);
+  elevationProvisional.clear();
+  showToast(`${label} de volta — recalculando o perfil.`, 2500);
+  scheduleElevationFetch();
+}
+
+// Grade de tiles de um nível (IFD0 = resolução cheia; overviews = mais grossos).
+// Overviews não têm georreferência própria: a resolução sai do IFD0 × razão de
+// tamanhos (mesma conta do image.getResolution(referência) do geotiff.js).
+function demLevel(image, h, index) {
+  const W = image.getWidth(), H = image.getHeight();
+  return {
+    image, index, W, H,
+    tw: image.getTileWidth(), th: image.getTileHeight(),
+    rX: h.resolution[0] * h.W / W,
+    rY: h.resolution[1] * h.H / H,
+    offsets: null,
+  };
+}
+
+// Níveis do COG (IFD0 + overviews; máscaras de fora), sob demanda — o perfil
+// só usa o IFD0 e não paga o parse dos outros IFDs.
+function demLevels(h) {
+  if (!h._levelsP) {
+    h._levelsP = (async () => {
+      const out = [h.level0];
+      const n = h.tiff ? await h.tiff.getImageCount() : 1;
+      for (let i = 1; i < n; i++) {
+        const im = await h.tiff.getImage(i);
+        let nst = 0;
+        try { nst = im.fileDirectory.getValue('NewSubfileType') || 0; } catch { /* ausente */ }
+        if ((nst & 1) && !(nst & 4)) out.push(demLevel(im, h, i));
+      }
+      h.levels = out;
+      return out;
+    })();
+    h._levelsP.catch(() => { h._levelsP = null; });
+  }
+  return h._levelsP;
+}
+
+// "Pool" pro readRasters do geotiff.js: decodifica no main thread como antes
+// (o Pool de verdade cria workers de blob:, barrados pela CSP), mas começa
+// cada tile numa macrotarefa própria — tiles que chegam juntos decodificavam
+// em cadeia de microtarefas, um bloco só de vários segundos (CPU×4).
+const DEM_YIELDING_POOL = {
+  bindParameters(compression, params) {
+    let decoder = null;
+    return {
+      async decode(buffer) {
+        await yieldToEventLoop();
+        if (!decoder) decoder = window.GeoTIFF.getDecoder(compression, params);
+        return (await decoder).decode(buffer);
+      },
+    };
+  },
+};
+
+// ── Cache de tiles decodificados (LRU com orçamento em bytes) ──
+// Chave: handle | nível | tx,ty. Cada entrada conta quantos leitores esperam
+// por ela: o download de um tile só é abortado quando o ÚLTIMO desiste.
+const _demTiles = new Map();   // chave → { promise, ctrl, users, tile, bytes, hkey }
+let _demTileBytes = 0;
+function demTileBudget() { return (dataBudgetCoarse() ? 24 : 64) * 1024 * 1024; }
+
+function demTilesEvict() {
+  const budget = demTileBudget();
+  if (_demTileBytes <= budget) return;
+  for (const [k, e] of _demTiles) {
+    if (_demTileBytes <= budget) break;
+    if (!e.tile || e.users > 0) continue;
+    _demTiles.delete(k);
+    _demTileBytes -= e.bytes;
+  }
+}
+// Solta os tiles (de um handle, ou todos) que ninguém está lendo agora.
+function demTilesDrop(hkey = null) {
+  for (const [k, e] of _demTiles) {
+    if (hkey != null && e.hkey !== hkey) continue;
+    if (e.users > 0) continue;
+    _demTiles.delete(k);
+    if (e.tile) _demTileBytes -= e.bytes;
+  }
+}
+
+async function demTile(h, lv, tx, ty, signal, retried = false) {
+  const key = `${h.key}|${lv.index}|${tx},${ty}`;
+  let e = _demTiles.get(key);
+  if (e) {
+    _demTiles.delete(key); _demTiles.set(key, e);   // refresca a posição no LRU
+  } else {
+    const ctrl = new AbortController();
+    e = { ctrl, users: 0, tile: null, bytes: 0, hkey: h.key };
+    e.promise = (async () => {
+      // As tabelas de offsets do nível numa leitura só (senão o geotiff.js
+      // faz 2 ranges minúsculos por tile antes do tile).
+      if (!lv.offsets) {
+        const fd = lv.image.fileDirectory;
+        const names = fd.hasTag && fd.hasTag('TileOffsets') ? ['TileOffsets', 'TileByteCounts'] : ['StripOffsets', 'StripByteCounts'];
+        lv.offsets = Promise.all(names.map((n) => fd.loadValue(n)));
+        lv.offsets.catch(() => { lv.offsets = null; });
+      }
+      await lv.offsets;
+      const x0 = tx * lv.tw, y0 = ty * lv.th;
+      const x1 = Math.min(x0 + lv.tw, lv.W), y1 = Math.min(y0 + lv.th, lv.H);
+      const data = await lv.image.readRasters({
+        window: [x0, y0, x1, y1], interleave: true, signal: ctrl.signal, pool: DEM_YIELDING_POOL,
+      });
+      return { data, x0, y0, w: x1 - x0, h: y1 - y0 };
+    })();
+    _demTiles.set(key, e);
+    e.promise.then((tile) => {
+      e.tile = tile;
+      e.bytes = tile.data.byteLength;
+      if (_demTiles.get(key) === e) { _demTileBytes += e.bytes; demTilesEvict(); }
+    }, () => { if (_demTiles.get(key) === e) _demTiles.delete(key); });
+  }
+  touchRoutingMemory();
+  e.users++;
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
+    e.users--;
+    // Este leitor desistiu e ninguém mais espera: corta o download (um tile
+    // que já chegou fica no cache — é trabalho feito).
+    if (e.users === 0 && !e.tile && signal && signal.aborted) e.ctrl.abort();
+  };
+  try {
+    return await withAbort(e.promise, signal);
+  } catch (err) {
+    // O download compartilhado foi abortado por OUTRO leitor que desistiu
+    // enquanto este ainda queria o tile: refaz uma vez.
+    if (err && err.name === 'AbortError' && !(signal && signal.aborted) && !retried) {
+      release();
+      if (_demTiles.get(key) === e) _demTiles.delete(key);
+      return demTile(h, lv, tx, ty, signal, true);
+    }
+    throw err;
+  } finally {
+    release();
+  }
+}
+
+// Amostra pontos (bilinear, resolução cheia) lendo SÓ os tiles que contêm os
+// pontos (e os vizinhos de borda que a bilinear toca). Mesma conta e mesmos
+// pixels da janela única de antes — os valores saem idênticos — mas sem
+// baixar a bbox inteira da rota. Fora da extensão/nodata → null (o chamador
+// cai pra próxima fonte).
+async function sampleDemPoints(h, points /* [[lat,lng], …] */, signal) {
   const out = new Array(points.length).fill(null);
-  if (!t || !points.length) return out;
-  const [oX, oY] = t.origin;
-  const [rX, rY] = t.resolution;
-  // Janela cobrindo os 4 vizinhos bilineares (floor..floor+1) de cada ponto.
-  let cMin = Infinity, cMax = -Infinity, rMin = Infinity, rMax = -Infinity;
-  const samp = [];
+  if (!h || !points.length) return out;
+  const lv = h.level0;
+  const [oX, oY] = h.origin;
+  const [rX, rY] = h.resolution;
+  const { W, H, tw, th } = lv;
+  const groups = new Map();   // tile do canto (c0,r0) → [[i, u, v], …]
   points.forEach(([lat, lng], i) => {
-    if (!withinSampaDem(t.bounds, lat, lng)) return;
+    if (!withinSampaDem(h.bounds, lat, lng)) return;
     const u = (lng - oX) / rX - 0.5;
     const v = (lat - oY) / rY - 0.5;
     const c0 = Math.floor(u), r0 = Math.floor(v);
-    if (c0 + 1 < 0 || c0 > t.W - 1 || r0 + 1 < 0 || r0 > t.H - 1) return;
-    if (c0     < cMin) cMin = c0;     if (c0 + 1 > cMax) cMax = c0 + 1;
-    if (r0     < rMin) rMin = r0;     if (r0 + 1 > rMax) rMax = r0 + 1;
-    samp.push([i, u, v]);
+    if (c0 + 1 < 0 || c0 > W - 1 || r0 + 1 < 0 || r0 > H - 1) return;
+    const k = Math.floor(Math.max(0, c0) / tw) * 65536 + Math.floor(Math.max(0, r0) / th);
+    let g = groups.get(k);
+    if (!g) groups.set(k, (g = []));
+    g.push([i, u, v]);
   });
-  if (!samp.length) return out;
-  cMin = Math.max(0, cMin); rMin = Math.max(0, rMin);
-  cMax = Math.min(t.W - 1, cMax); rMax = Math.min(t.H - 1, rMax);
-  if (cMax < cMin || rMax < rMin) return out;
-  try {
-    const winW = cMax - cMin + 1, winH = rMax - rMin + 1;
-    const ras = await t.image.readRasters({
-      window: [cMin, rMin, cMax + 1, rMax + 1],
-      interleave: true,
-    });
-    for (const [i, u, v] of samp) {
-      const z = bilinearFromWindow(ras, winW, winH, cMin, rMin, u, v, t.nodata);
+  if (!groups.size) return out;
+  const inImage = (c, r) => c >= 0 && r >= 0 && c < W && r < H;
+  await mapConcurrent([...groups.values()], 4, async (grp) => {
+    // Tiles dos cantos bilineares com peso > 0 dentro da imagem.
+    const need = new Map();
+    for (const [, u, v] of grp) {
+      const c0 = Math.floor(u), r0 = Math.floor(v), fu = u - c0, fv = v - r0;
+      for (const [r, c, w] of [[r0, c0, (1 - fu) * (1 - fv)], [r0, c0 + 1, fu * (1 - fv)],
+                               [r0 + 1, c0, (1 - fu) * fv], [r0 + 1, c0 + 1, fu * fv]]) {
+        if (w <= 0 || !inImage(c, r)) continue;
+        const tx = Math.floor(c / tw), ty = Math.floor(r / th);
+        need.set(tx * 65536 + ty, [tx, ty]);
+      }
+    }
+    const tiles = new Map();
+    try {
+      await Promise.all([...need].map(async ([k, [tx, ty]]) => { tiles.set(k, await demTile(h, lv, tx, ty, signal)); }));
+    } catch (e) {
+      if (e && e.name === 'AbortError') throw e;
+      console.warn(`[dem] leitura de tile falhou: ${e.message}`);
+      return;   // como a janela de antes: pontos do grupo ficam null
+    }
+    const px = (c, r) => {
+      if (!inImage(c, r)) return undefined;
+      const t = tiles.get(Math.floor(c / tw) * 65536 + Math.floor(r / th));
+      return t ? t.data[(r - t.y0) * t.w + (c - t.x0)] : undefined;
+    };
+    for (const [i, u, v] of grp) {
+      const z = bilinearAt(px, u, v, h.nodata);
       if (z != null) out[i] = z;
     }
-  } catch (e) {
-    console.warn(`[dem] read window falhou: ${e.message}`);
-  }
+  });
   return out;
 }
-async function sampleSampaDemBatch(points) { return sampleDemHandle(await openSampaDem(), points); }
-async function sampleCustomDemBatch(points) { return sampleDemHandle(_customDem, points); }
 
 // ─── Câmera Topográfica: relevo servido como tiles XYZ ───────────────────────
 // Igual ao sampasimu: elevação na paleta cmocean.phase (cíclica, perceptual)
@@ -10497,6 +13716,18 @@ async function buildCameraTopoFrame() {
 const elevationCache = new Map();
 let elevationDebounceTimer = null;
 let elevationFetchSeq = 0;
+// Geração da FONTE de elevação: só muda quando a fonte muda (toggle de DEM,
+// DEM custom — ver recomputeAfterDemChange). Uma leitura que termina depois de
+// uma edição continua valendo (o ponto é o mesmo); só a troca de fonte a
+// descarta — e aborta as leituras em voo.
+let elevationSourceGen = 0;
+let elevationAbort = new AbortController();
+// ponto → leitura em voo que vai preenchê-lo (uma busca mais nova espera por
+// ela em vez de ler o mesmo ponto de novo).
+const elevationInflight = new Map();
+// Pontos preenchidos por uma fonte PIOR porque a melhor estava fora do ar
+// (rede): voltam a ser lidos quando ela volta (onDemRecovered).
+const elevationProvisional = new Set();
 
 function elevKey(lat, lng) {
   return `${lat.toFixed(5)},${lng.toFixed(5)}`;
@@ -10554,33 +13785,64 @@ function scheduleElevationFetch() {
   }, 400);
 }
 
+// `seq` fica na assinatura por compatibilidade: uma busca superada NÃO joga
+// mais fora o que já leu (o resultado vale pro mesmo ponto) — quem decide se
+// redesenha é o scheduleElevationFetch. Pontos que uma busca anterior ainda
+// está lendo não são pedidos de novo: esta espera a leitura dela terminar.
 async function fetchMissingElevations(path, seq) {
+  const gen = elevationSourceGen;
+  const signal = elevationAbort.signal;
   // Collect unique cache keys we don't have.
   const seen = new Set();
   const missing = [];
+  const waits = new Set();
   for (const [lat, lng] of path) {
     const k = elevKey(lat, lng);
     if (elevationCache.has(k) || seen.has(k)) continue;
     seen.add(k);
+    const pending = elevationInflight.get(k);
+    if (pending) { waits.add(pending); continue; }
     missing.push([lat, lng]);
   }
-  if (missing.length === 0) return;
+  if (missing.length) {
+    const job = sampleElevationChain(missing, gen, signal);
+    const keys = missing.map(([la, lo]) => elevKey(la, lo));
+    for (const k of keys) elevationInflight.set(k, job);
+    job.finally(() => {
+      for (const k of keys) if (elevationInflight.get(k) === job) elevationInflight.delete(k);
+    }).catch(() => {});
+    waits.add(job);
+  }
+  if (waits.size) await Promise.allSettled([...waits]);
+}
 
-  // Cadeia de fontes: DEM de SP (se ligado, alta-res dentro da RMSP) →
-  // FABDEM (se ligado) → Open-Meteo. Cada fonte só recebe o que sobrou null.
+// Cadeia de fontes: DEM custom → DEM de SP (se ligado, alta-res dentro da
+// RMSP) → FABDEM (se ligado) → Open-Meteo. Cada fonte só recebe o que sobrou
+// null. Só a troca de FONTE (gen) cancela; se uma fonte melhor estava fora do
+// ar, o que as seguintes preencherem fica marcado como provisório.
+async function sampleElevationChain(missing, gen, signal) {
+  const stale = () => gen !== elevationSourceGen;
   let stillMissing = missing;
+  let provisional = false;
+  const store = (la, lo, e) => {
+    const k = elevKey(la, lo);
+    elevationCache.set(k, e);
+    if (provisional) elevationProvisional.add(k); else elevationProvisional.delete(k);
+  };
   const drainSource = async (label, sampleFn) => {
     try {
-      const elevs = await sampleFn(stillMissing);
-      if (seq !== elevationFetchSeq) return true; // cancelado: aborta
+      const elevs = await sampleFn(stillMissing, signal);
+      if (stale()) return true; // fonte trocada: descarta
       const remaining = [];
       stillMissing.forEach(([la, lo], i) => {
         const e = elevs[i];
-        if (Number.isFinite(e)) elevationCache.set(elevKey(la, lo), e);
+        if (Number.isFinite(e)) store(la, lo, e);
         else remaining.push([la, lo]);
       });
       stillMissing = remaining;
+      if (elevs.unavailable) provisional = true;
     } catch (err) {
+      if (stale() || (err && err.name === 'AbortError')) return true;
       console.warn(`${label} elevation fetch failed:`, err.message);
     }
     return false;
@@ -10601,21 +13863,23 @@ async function fetchMissingElevations(path, seq) {
   // Open-Meteo (fallback): 1 chamada a cada 100 coords.
   const BATCH = 100;
   for (let i = 0; i < stillMissing.length; i += BATCH) {
-    if (seq !== elevationFetchSeq) return;
+    if (stale()) return;
     const batch = stillMissing.slice(i, i + BATCH);
     const lats = batch.map(([la]) => la.toFixed(5)).join(',');
     const lons = batch.map(([, lo]) => lo.toFixed(5)).join(',');
     const url = `https://api.open-meteo.com/v1/elevation?latitude=${lats}&longitude=${lons}`;
     try {
-      const res = await fetch(url);
+      const res = await fetch(url, { signal });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
+      if (stale()) return;
       const elevs = Array.isArray(data.elevation) ? data.elevation : [];
       batch.forEach(([la, lo], j) => {
         const e = elevs[j];
-        if (Number.isFinite(e)) elevationCache.set(elevKey(la, lo), e);
+        if (Number.isFinite(e)) store(la, lo, e);
       });
     } catch (err) {
+      if (err && err.name === 'AbortError') return;
       console.warn('Open-Meteo elevation fetch failed:', err.message);
       return;
     }
@@ -10966,6 +14230,7 @@ function updateMetrics() {
   if (!sim) {
     traceMetrics.textContent = `0m · 0 kJ`;
     traceMetrics.title = '';
+    refreshTraceInfoDetail();
     return;
   }
 
@@ -11076,6 +14341,7 @@ function updateMetrics() {
         `  SUV usa ${fmt(bikeVsCarRatio, 0)}× mais energia que a bike (combustível vs. energia metabólica)`
       : '') +
     (sim.elevMissing > 0 ? `\n\n${sim.elevMissing} ponto(s) ainda sem elevação.` : '');
+  refreshTraceInfoDetail();
 }
 
 // formatHMS() now imported from lib/utils.js
@@ -11140,6 +14406,37 @@ paramsBtn.addEventListener('click', () => {
   fillParamInputs();
   paramsModal.hidden = false;
 });
+
+// Explicações dos parâmetros: o texto vivia só no `title` de cada linha
+// (tooltip de mouse — o iOS nunca mostra). Vira texto visível sob a linha,
+// atrás de um "ⓘ Mostrar explicações" no topo de cada modal do editor.
+function setupParamHelp(modal) {
+  const body = modal?.querySelector('.params-body');
+  if (!body) return;
+  const rows = [...body.querySelectorAll('.param-row[title], .ds-open-btn[title]')];
+  if (!rows.length) return;
+  for (const row of rows) {
+    const help = document.createElement('small');
+    help.className = 'param-help';
+    help.textContent = row.title;
+    row.after(help);
+  }
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'param-help-toggle';
+  toggle.setAttribute('aria-expanded', 'false');
+  toggle.textContent = 'ⓘ Mostrar explicações';
+  toggle.addEventListener('click', () => {
+    const on = !body.classList.contains('show-param-help');
+    body.classList.toggle('show-param-help', on);
+    toggle.setAttribute('aria-expanded', String(on));
+    toggle.textContent = on ? 'ⓘ Ocultar explicações' : 'ⓘ Mostrar explicações';
+  });
+  body.prepend(toggle);
+}
+for (const id of ['params-modal', 'datasources-modal', 'suv-compare-modal', 'camera-topo-modal']) {
+  setupParamHelp(document.getElementById(id));
+}
 paramsClose.addEventListener('click', () => (paramsModal.hidden = true));
 paramsModal.addEventListener('click', (e) => {
   if (e.target === paramsModal) paramsModal.hidden = true;
@@ -11273,39 +14570,109 @@ function fillDataSourceInputs() {
   PARAM_CHECKBOXES.useViarioGpkg.checked = params.useViarioGpkg !== false;
   refreshDataSourceStatus();
 }
-// Re-roteia TODOS os segmentos do rascunho atual com o modo/fontes vigentes.
-// Chamado quando algo que afeta a GEOMETRIA roteada muda: o seletor de modo, a
-// rede viária custom, ou os toggles de viário/DEM (no modo energia) — antes
-// essas mudanças só valiam pros próximos waypoints, então uma rota já carregada
-// ignorava as fontes. Sem efeito fora do desenho ou em 'straight' (reta não
-// roteia). Acima do limiar pede confirmação (re-rotear centenas de trechos por
-// energia é pesado); se recusar e `revertModeTo` veio (troca de seletor), volta
-// o modo anterior.
+// Retrato das configurações de DADOS que mudam a geometria roteada. Cada
+// chamada de rerouteCurrentDraft compara com o retrato anterior pra saber o
+// que mudou — os handlers dos toggles/fontes só chamam "re-roteie", e é aqui
+// que se decide QUEM depende da mudança (ver segmentDependsOn). O useFabdem
+// não entra: só vale pra elevação do perfil (o mosaico do roteamento cai no
+// FABDEM de qualquer jeito).
+function routingSettingsNow() {
+  return {
+    dem: `${params.useSampaDem ? 1 : 0}|${+params.demSmoothSigmaM || 0}`,
+    customDem: _customDem,
+    grid: params.nDirs | 0,
+    water: `${params.useWaterMask !== false}|${params.usePortals !== false}`,
+    viario: params.useViarioGpkg !== false,
+    network: _customNetwork,
+  };
+}
+let _routingSnap = routingSettingsNow();
+function routingSettingsChanged() {
+  const now = routingSettingsNow(), prev = _routingSnap;
+  _routingSnap = now;
+  return new Set(Object.keys(now).filter((k) => now[k] !== prev[k]));
+}
+
+// O trecho i (trackpoints[i-1] → trackpoints[i]) depende do que mudou? Só
+// trechos produzidos pelo MODO ATUAL (proveniência path.mode) — ou retas sem
+// proveniência (roteamento que falhou; nada de exato a perder): uma geometria
+// restaurada de GPX ou feita noutro modo não é sobrescrita por um toggle.
+// OSRM (Bicicleta/A pé) não lê nenhuma destas configurações. "Pelo terreno" lê
+// DEM/σ/direções/água/portais. "Pelo viário" lê a fonte do viário (grafo/FGB/
+// rede custom) — e DEM/σ/direções/água/portais SÓ nos trechos fora do grafo
+// pré-cozido (FGB/grid raster).
+function segmentDependsOn(i, changed) {
+  const tp = trackpoints[i], prev = trackpoints[i - 1];
+  const path = tp && tp.pathFromPrev;
+  if (!tp || !prev) return false;
+  const segMode = path && path.mode;
+  if (segMode ? segMode !== routingMode : (path && path.length > 2)) return false;
+  const terrainInputs = ['dem', 'customDem', 'grid', 'water'].some((k) => changed.has(k));
+  if (routingMode === 'energy') return terrainInputs;
+  if (routingMode === 'energy_road') {
+    if (changed.has('viario') || changed.has('network')) return true;
+    if (!terrainInputs) return false;
+    return !!_customNetwork || params.useViarioGpkg === false ||
+      !viarioGraphCovers(prev.marker.getLatLng(), tp.marker.getLatLng());
+  }
+  return false;
+}
+
+// Re-roteia o rascunho atual com o modo/fontes vigentes. Chamado quando algo
+// que afeta a GEOMETRIA roteada muda: o seletor de modo (`revertModeTo` vem —
+// re-roteia TODOS os trechos), a rede viária custom, ou os toggles de
+// viário/DEM/água/grade (só os trechos que dependem da mudança — antes um
+// toggle re-roteava tudo, até no OSRM, onde não tem efeito, e passava por cima
+// de geometria restaurada). Sem efeito fora do desenho ou em 'straight' (reta
+// não roteia). Acima do limiar pede confirmação (re-rotear centenas de trechos
+// por energia é pesado); se recusar e `revertModeTo` veio, volta o modo
+// anterior. Ao terminar entra no histórico (desfazer volta pro traçado de
+// antes).
 const REROUTE_CONFIRM_THRESHOLD = 150;
 async function rerouteCurrentDraft(revertModeTo) {
+  const changed = routingSettingsChanged();   // sempre atualiza o retrato
   if (!drawingMode || routingMode === 'straight' || trackpoints.length < 2) return;
+  const modeSwitch = revertModeTo !== undefined;
   const indices = [];
-  for (let i = 1; i < trackpoints.length; i++) indices.push(i);
+  for (let i = 1; i < trackpoints.length; i++) {
+    if (modeSwitch || segmentDependsOn(i, changed)) indices.push(i);
+  }
+  if (!indices.length) return;
   if (indices.length > REROUTE_CONFIRM_THRESHOLD &&
       !confirm(`Isto vai rotear ${indices.length} trechos pelo modo selecionado e pode demorar bastante. Continuar?`)) {
-    if (revertModeTo !== undefined) {
+    if (modeSwitch) {
       routingMode = revertModeTo;
       traceRoutingMode.value = revertModeTo;
     }
     return;
   }
-  const routeSeq = ++pendingRouteSeq;
   showToast(`Re-roteando ${indices.length} trecho(s)…`, 2500);
+  // Com o roteamento POR SEGMENTO do editor (routeSegmentsBatch: marca os
+  // trechos pendentes, entra no histórico e roteia por referência, sem
+  // invalidar o que está em voo nos outros trechos), é ele que roteia.
+  if (typeof routeSegmentsBatch === 'function') {
+    await routeSegmentsBatch(indices.map((i) => trackpoints[i]));
+    return;
+  }
+  const routeSeq = ++pendingRouteSeq;
   await mapConcurrent(indices, 4, (idx) => refetchPath(idx, routeSeq));
   redrawAndMetrics();
-  scheduleTraceDraftSave();
+  // Superado por outra edição no meio do caminho: ela cuida do histórico.
+  if (routeSeq === pendingRouteSeq && drawingMode) pushHistory();
+  else scheduleTraceDraftSave();
 }
 
 // Trocar a fonte de elevação exige limpar o cache (senão valores já amostrados
 // de outra fonte permaneceriam) e reagendar o fetch — que recalcula o perfil e
-// as métricas. No modo energia o DEM também muda a geometria roteada, então
-// re-roteia o rascunho.
+// as métricas. As leituras em voo da fonte antiga são abortadas (a geração
+// muda). No modo energia o DEM também muda a geometria roteada, então
+// re-roteia o que depende dele.
 function recomputeAfterDemChange() {
+  elevationSourceGen++;
+  elevationAbort.abort();
+  elevationAbort = new AbortController();
+  elevationInflight.clear();
+  elevationProvisional.clear();
   elevationCache.clear();
   scheduleElevationFetch();
   rerouteCurrentDraft();
@@ -11414,6 +14781,7 @@ function ctopoReadNum(input) {
 }
 function applyCameraTopoInputs() {
   const c = settings.cameraTopo;
+  const before = JSON.stringify([c.minElev, c.maxElev, c.maxSlope, c.slopeGamma, c.cycles]);
   c.minElev = ctopoReadNum(ctopoMinElev);
   c.maxElev = ctopoReadNum(ctopoMaxElev);
   const sl = ctopoReadNum(ctopoMaxSlope);
@@ -11422,12 +14790,18 @@ function applyCameraTopoInputs() {
   c.slopeGamma = g != null && g > 0 ? g : 1.2;
   const cyc = ctopoReadNum(ctopoCycles);
   c.cycles = cyc != null && cyc >= 1 ? Math.min(16, Math.round(cyc)) : 1;
+  // Nada mudou (campo re-confirmado) → não recarrega os tiles.
+  if (JSON.stringify([c.minElev, c.maxElev, c.maxSlope, c.slopeGamma, c.cycles]) === before) return;
   saveSettings();
   refreshCameraTopo();
 }
 if (ctopoModal) {
+  // `change` (Enter/OK/sair do campo, ou as setinhas no desktop), não `input`:
+  // cada tecla virava uma URL de tiles nova — digitar "720" recarregava a
+  // tela inteira de relevo pra 7, 72 e 720.
   for (const el of [ctopoMinElev, ctopoMaxElev, ctopoMaxSlope, ctopoGamma, ctopoCycles]) {
-    el.addEventListener('input', applyCameraTopoInputs);
+    el.addEventListener('change', applyCameraTopoInputs);
+    el.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); el.blur(); } });
   }
   document.getElementById('ctopo-close')?.addEventListener('click', closeCameraTopoModal);
   ctopoModal.addEventListener('click', (e) => { if (e.target === ctopoModal) closeCameraTopoModal(); });
@@ -11497,6 +14871,7 @@ const QUDT_PROFILE = {
   kEff:               { iri: 'transmissionEfficiency',         kind: 'kind:DimensionlessRatio',   unit: 'unit:UNITLESS' },
   deadbandM:          { iri: 'elevationDeadband',               kind: 'kind:Length',                unit: 'unit:M' },
   demSmoothSigmaM:    { iri: 'demSmoothingSigma',               kind: 'kind:Length',                unit: 'unit:M' },
+  nDirs:              { iri: 'gridMoveDirections',              kind: 'kind:Count',                 unit: 'unit:NUM' },
   energySearchMarginPct: { iri: 'energySearchMargin',           kind: 'kind:DimensionlessRatio',   unit: 'unit:PERCENT' },
   // Comparação com carro (SUV)
   carMass:            { iri: 'carTotalMass',                    kind: 'kind:Mass',                 unit: 'unit:KiloGM' },
@@ -11545,43 +14920,48 @@ function paramsToJsonLd(p) {
 }
 
 // Accept either a JSON-LD doc (detected by `@context`) or our older plain JSON.
-function paramsFromAnyJson(obj) {
+// O que o arquivo traz é MESCLADO sobre `base` (os parâmetros atuais): antes
+// partia dos padrões, então tudo que o arquivo não carrega — os liga/desliga
+// de fontes de dados (DEM de SP, viário, água, portais), a comparação com SUV
+// — voltava pro padrão em silêncio e era persistido (religava downloads que a
+// pessoa tinha desligado no 4G).
+function paramsFromAnyJson(obj, base = params) {
   if (!obj || typeof obj !== 'object') throw new Error('JSON inválido');
-  const out = { ...DEFAULT_PARAMS };
+  const out = { ...DEFAULT_PARAMS, ...base };
+  const accept = (key, v) => {
+    if (!Number.isFinite(v)) return;
+    if (key === 'nDirs' && ![4, 8, 16, 32, 64, 128].includes(v)) return;
+    out[key] = v;
+  };
   if (obj['@context']) {
     for (const [key, prof] of Object.entries(QUDT_PROFILE)) {
       const node = obj[prof.iri];
-      if (node && typeof node === 'object' && Number.isFinite(node.value)) {
-        out[key] = node.value;
-      }
+      if (node && typeof node === 'object') accept(key, node.value);
     }
     return out;
   }
   // JSON simples (formato antigo): aceita só chaves conhecidas com número
   // finito. O spread cru `{...obj}` deixava string/NaN escorrer pro
   // energyRoute e pro worker de energia.
-  for (const key of Object.keys(DEFAULT_PARAMS)) {
-    if (Number.isFinite(obj[key])) out[key] = obj[key];
-  }
+  for (const key of Object.keys(DEFAULT_PARAMS)) accept(key, obj[key]);
   return out;
+}
+
+// Parâmetros físicos que diferem entre dois conjuntos (pro aviso do GPX).
+function paramsDiffKeys(a, b) {
+  return Object.keys(QUDT_PROFILE).filter((k) => Number.isFinite(a[k]) && Number.isFinite(b[k]) && Math.abs(a[k] - b[k]) > 1e-9);
 }
 
 const paramsExport = document.getElementById('params-export');
 const paramsLoad = document.getElementById('params-load');
 const paramsImport = document.getElementById('params-import');
 
-paramsExport.addEventListener('click', () => {
+paramsExport.addEventListener('click', async () => {
   const blob = new Blob([JSON.stringify(paramsToJsonLd(params), null, 2)], {
     type: 'application/ld+json',
   });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `parametros-${new Date().toISOString().slice(0, 10)}.jsonld`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  const r = await saveFile(blob, `parametros-${new Date().toISOString().slice(0, 10)}.jsonld`);
+  if (r === 'shared' || r === 'downloaded') showToast('Parâmetros exportados.');
 });
 
 paramsLoad.addEventListener('click', () => paramsImport.click());
@@ -11610,17 +14990,24 @@ function snapshot() {
   return trackpoints.map((t) => ({
     lat: t.marker.getLatLng().lat,
     lng: t.marker.getLatLng().lng,
-    // Clone the path so future mutations don't bleed into history.
-    path: t.pathFromPrev ? t.pathFromPrev.map((p) => [p[0], p[1]]) : null,
+    // O array é COMPARTILHADO com o traçado vivo e os outros snapshots: os
+    // caminhos são sempre SUBSTITUÍDOS (roteamento, reta, inverter criam
+    // arrays novos), nunca mutados no lugar — então o desfazer não precisa de
+    // uma cópia profunda da rota inteira a cada edição (com um GPX denso,
+    // eram megabytes por toque e centenas de MB numa sessão).
+    path: t.pathFromPrev || null,
     // deckFlag marca trechos de ponte/túnel (viarioGraphRoute) p/ o flattening
     // de elevação — precisa sobreviver ao undo/redo (não é reconstruído).
-    deckFlag: t.pathFromPrev?.deckFlag ? [...t.pathFromPrev.deckFlag] : null,
+    deckFlag: t.pathFromPrev?.deckFlag || null,
     // Objetivo do roteador do segmento (J) — idem: capturado no roteamento,
     // não é reconstruível depois.
     routedEnergyJ: Number.isFinite(t.pathFromPrev?.routedEnergyJ) ? t.pathFromPrev.routedEnergyJ : null,
     // Modo de roteamento que produziu a geometria deste segmento
     // (proveniência; ver refetchPath) — sobrevive a undo/rascunho/GPX.
     mode: t.pathFromPrev?.mode || null,
+    // Segmento ainda na reta provisória, esperando o roteamento neste modo
+    // (restaurar um estado assim re-pede — ver sweepPendingRoutes).
+    pending: t._routePending || null,
     name: t.name || '',
     isPoi: !!t.isPoi,
     sym: t.sym || 'Flag, Blue',
@@ -11628,8 +15015,15 @@ function snapshot() {
 }
 
 function pushHistory() {
+  // Um handler assíncrono (roteamento) que termina depois de o editor fechar
+  // não empilha nada — nem agenda uma gravação que apagaria o rascunho.
+  if (!drawingMode) return;
   drawHistory = drawHistory.slice(0, historyIndex + 1);
-  drawHistory.push(snapshot());
+  const snap = snapshot();
+  snap.lineage = _draftLineage;
+  _lineageMeta.set(_draftLineage, { sid: currentSavedRouteId || null, n: defaultSaveName || '', rm: routingMode });
+  drawHistory.push(snap);
+  if (drawHistory.length > HISTORY_MAX) drawHistory.splice(0, drawHistory.length - HISTORY_MAX);
   historyIndex = drawHistory.length - 1;
   updateTraceControls();
   scheduleTraceDraftSave();
@@ -11686,24 +15080,50 @@ function reverseTraceDirection() {
 }
 
 function restoreSnapshot(snap) {
+  if (_tpPopup) { _tpPopup._discard = true; map.closePopup(_tpPopup); }
   for (const t of trackpoints) map.removeLayer(t.marker);
   trackpoints = [];
   pendingRouteSeq++; // invalidate any in-flight OSRM calls
-  for (const s of snap) {
+  const validModes = ['cycling', 'foot', 'energy', 'energy_road'];
+  for (let k = 0; k < snap.length; k++) {
+    const s = snap[k];
     const tp = createTrackpoint(L.latLng(s.lat, s.lng), {
       name: s.name || '',
       isPoi: !!s.isPoi,
       sym: s.sym || 'Flag, Blue',
     });
-    tp.pathFromPrev = s.path ? s.path.map((p) => [p[0], p[1]]) : null;
-    if (s.deckFlag && tp.pathFromPrev) tp.pathFromPrev.deckFlag = s.deckFlag;
-    if (Number.isFinite(s.routedEnergyJ) && tp.pathFromPrev) tp.pathFromPrev.routedEnergyJ = s.routedEnergyJ;
-    if (s.mode && tp.pathFromPrev) tp.pathFromPrev.mode = s.mode;
+    // Array compartilhado (ver snapshot()); as propriedades só são postas
+    // quando faltam — caso do rascunho/GPX vindo de JSON, onde o array não
+    // carrega deckFlag/modo.
+    const path = Array.isArray(s.path) && s.path.length >= 2 ? s.path : null;
+    if (path) {
+      if (s.deckFlag && !path.deckFlag && s.deckFlag.length === path.length) path.deckFlag = s.deckFlag;
+      if (Number.isFinite(s.routedEnergyJ) && !Number.isFinite(path.routedEnergyJ)) path.routedEnergyJ = s.routedEnergyJ;
+      if (s.mode && !path.mode) path.mode = s.mode;
+    }
+    tp.pathFromPrev = k > 0
+      ? (path || straightPath(trackpoints[k - 1].marker.getLatLng(), tp.marker.getLatLng()))
+      : null;
+    if (k > 0 && validModes.includes(s.pending)) tp._routePending = s.pending;
     trackpoints.push(tp);
+  }
+  // Vínculo com o servidor + modo da linhagem deste snapshot (ver _lineageMeta).
+  if (snap.lineage != null) {
+    _draftLineage = snap.lineage;
+    const meta = _lineageMeta.get(snap.lineage);
+    if (meta) {
+      currentSavedRouteId = meta.sid;
+      defaultSaveName = meta.n;
+      if (meta.rm && meta.rm !== routingMode) {
+        routingMode = meta.rm;
+        traceRoutingMode.value = meta.rm;
+      }
+    }
   }
   redrawAndMetrics();
   updateTraceControls();
   scheduleTraceDraftSave();
+  scheduleRouteSweep();
 }
 
 function updateTraceControls() {
@@ -11726,17 +15146,43 @@ function updateTraceControls() {
 // segmento inclusos), mais o modo global, o nome e o vínculo com a rota
 // salva no servidor.
 const TRACE_DRAFT_KEY = 'phidro:traceDraft:v1';
+// O rascunho que um carregamento tirou do caminho (link #st=/#rt=, rota
+// salva, GPX, "Editar este traçado", "Traçar a partir daqui") — antes ele era
+// sobrescrito sem aviso nem desfazer. Uma vaga; "Restaurar" troca os dois.
+const TRACE_DRAFT_PREV_KEY = 'phidro:traceDraft:prev';
+const ROUTED_MODES = ['cycling', 'foot', 'energy', 'energy_road'];
 let _traceDraftTimer = null;
+let _draftNudgeShown = false;
+let _draftPersistAsked = false;
 
 function scheduleTraceDraftSave() {
   if (_traceDraftTimer) clearTimeout(_traceDraftTimer);
   _traceDraftTimer = setTimeout(saveTraceDraft, 400);
 }
 
+// Grava AGORA a gravação debounced pendente (se houver).
+function flushTraceDraft() {
+  if (!_traceDraftTimer) return;
+  clearTimeout(_traceDraftTimer);
+  saveTraceDraft();
+}
+// Aba indo pro fundo (troca de app, tela bloqueada, descarte pelo iOS): o
+// debounce de 400 ms perderia a última edição se a aba morresse no meio.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') flushTraceDraft();
+});
+window.addEventListener('pagehide', flushTraceDraft);
+
 function saveTraceDraft() {
   _traceDraftTimer = null;
+  // Fora do editor o rascunho não muda — e `trackpoints` vazio aqui (um
+  // roteamento que terminou depois do Cancelar) APAGARIA o rascunho guardado.
+  if (!drawingMode) return;
+  // Tela vazia (desfazer até o começo, remover ponto a ponto) NÃO apaga o
+  // rascunho guardado: o descarte de verdade é só o 🗑 (clearTraceDraft) — um
+  // ↶ a mais e fechar o editor perdia a rota.
+  if (!trackpoints.length) return;
   try {
-    if (!trackpoints.length) { localStorage.removeItem(TRACE_DRAFT_KEY); return; }
     localStorage.setItem(TRACE_DRAFT_KEY, JSON.stringify({
       v: 1,
       rm: routingMode,
@@ -11744,10 +15190,25 @@ function saveTraceDraft() {
       sid: currentSavedRouteId || null,
       wp: snapshot(),
     }));
+    askPersistentStorageOnce();
   } catch (err) {
     // Quota cheia (rota gigante) ou storage indisponível — segue sem persistir.
     console.warn('[draft] não persistiu:', err.message);
   }
+}
+
+// Pede armazenamento persistente uma vez por sessão, quando já há um
+// rascunho que valha guardar. Chrome/Safari decidem em silêncio (o Safari
+// fora da tela de início ainda pode apagar após 7 dias sem visita — daí o
+// lembrete de salvar no servidor em exitDrawingMode). O Firefox abriria um
+// pedido de permissão do nada, então fica de fora.
+function askPersistentStorageOnce() {
+  if (_draftPersistAsked || trackpoints.length < 2) return;
+  _draftPersistAsked = true;
+  try {
+    if (/firefox/i.test(navigator.userAgent) || !navigator.storage?.persist) return;
+    navigator.storage.persisted().then((p) => { if (!p) return navigator.storage.persist(); }).catch(() => {});
+  } catch (_) { /* sem StorageManager */ }
 }
 
 function clearTraceDraft() {
@@ -11755,19 +15216,130 @@ function clearTraceDraft() {
   try { localStorage.removeItem(TRACE_DRAFT_KEY); } catch {}
 }
 
+// Lê um rascunho guardado (formato do saveTraceDraft); null se não houver.
+function readStoredDraft(key) {
+  let d = null;
+  try { d = JSON.parse(localStorage.getItem(key) || 'null'); } catch {}
+  if (!d || !Array.isArray(d.wp)) return null;
+  const wp = d.wp.filter((s) => s && Number.isFinite(s.lat) && Number.isFinite(s.lng));
+  return wp.length ? { ...d, wp } : null;
+}
+
+// Vínculo com o servidor da linhagem atual (ver _lineageMeta) — chamado
+// quando o id/nome mudam FORA de um pushHistory (salvar, adotar a rota de um
+// link), senão um desfazer dentro da mesma linhagem desvincularia a rota.
+function syncLineageMeta() {
+  _lineageMeta.set(_draftLineage, { sid: currentSavedRouteId || null, n: defaultSaveName || '', rm: routingMode });
+}
+
+// Rota densa (GPX de 1 Hz importado em Reta: milhares de waypoints, um
+// marcador DOM arrastável cada — ~10 mil travavam a aba por segundos e cada
+// pan depois) → no máximo `target` waypoints editáveis, com a geometria
+// EXATA entre eles no pathFromPrev de cada um (o formato que os segmentos
+// roteados já usam). Pontas e pontos com nome/POI sempre ficam; os demais
+// entram por importância (Douglas–Peucker: o que mais desvia da corda entre
+// os já escolhidos entra primeiro). `wps` no formato do snapshot().
+const DENSE_WAYPOINT_TARGET = 150;
+function compactDenseWaypoints(wps, target = DENSE_WAYPOINT_TARGET) {
+  const n = wps.length;
+  if (n <= target || n < 3) return wps;
+  const lat0 = wps[0].lat * Math.PI / 180;
+  const kx = Math.cos(lat0);
+  const xs = new Float64Array(n), ys = new Float64Array(n);
+  for (let i = 0; i < n; i++) { xs[i] = wps[i].lng * kx; ys[i] = wps[i].lat; }
+  const keep = new Uint8Array(n);
+  keep[0] = 1; keep[n - 1] = 1;
+  let count = 2;
+  for (let i = 1; i < n - 1; i++) {
+    if (wps[i].isPoi || wps[i].name) { keep[i] = 1; count++; }
+  }
+  // Maior desvio da corda a→b entre os waypoints estritamente dentro.
+  const best = (a, b) => {
+    let idx = -1, d = -1;
+    const ax = xs[a], ay = ys[a], dx = xs[b] - ax, dy = ys[b] - ay;
+    const len = Math.hypot(dx, dy);
+    for (let i = a + 1; i < b; i++) {
+      const di = len > 0
+        ? Math.abs(dx * (ys[i] - ay) - dy * (xs[i] - ax)) / len
+        : Math.hypot(xs[i] - ax, ys[i] - ay);
+      if (di > d) { d = di; idx = i; }
+    }
+    return { a, b, idx, d };
+  };
+  const intervals = [];
+  let prevKept = 0;
+  for (let i = 1; i < n; i++) {
+    if (!keep[i]) continue;
+    intervals.push(best(prevKept, i));
+    prevKept = i;
+  }
+  while (count < target) {
+    let bi = -1, bd = 0;
+    for (let k = 0; k < intervals.length; k++) {
+      if (intervals[k].d > bd) { bd = intervals[k].d; bi = k; }
+    }
+    if (bi < 0) break;   // o resto é colinear — nada a ganhar
+    const { a, b, idx } = intervals[bi];
+    keep[idx] = 1; count++;
+    intervals.splice(bi, 1, best(a, idx), best(idx, b));
+  }
+  // Remonta: cada waypoint mantido recebe a geometria concatenada desde o
+  // mantido anterior (interiores dos caminhos + os waypoints descartados).
+  const out = [];
+  let acc = null, modes = null, energy = 0, energyOk = true, flags = [], flagsOk = true;
+  for (let i = 0; i < n; i++) {
+    const w = wps[i];
+    if (i > 0) {
+      const p = Array.isArray(w.path) && w.path.length >= 2 ? w.path : null;
+      if (p) { for (let k = 1; k < p.length - 1; k++) acc.push([p[k][0], p[k][1]]); }
+      acc.push([w.lat, w.lng]);
+      modes.add(w.mode || null);
+      if (Number.isFinite(w.routedEnergyJ)) energy += w.routedEnergyJ; else energyOk = false;
+      if (p && Array.isArray(w.deckFlag) && w.deckFlag.length === p.length) {
+        for (let k = 1; k < p.length; k++) flags.push(w.deckFlag[k] ? 1 : 0);
+      } else flagsOk = false;
+    }
+    if (!keep[i]) continue;
+    const entry = { lat: w.lat, lng: w.lng, name: w.name || '', isPoi: !!w.isPoi, sym: w.sym || 'Flag, Blue',
+      path: null, deckFlag: null, routedEnergyJ: null, mode: null, pending: null };
+    if (i > 0) {
+      entry.path = acc;
+      entry.mode = modes.size === 1 ? [...modes][0] : null;
+      entry.routedEnergyJ = energyOk ? energy : null;
+      entry.deckFlag = flagsOk && flags.length === acc.length - 1 ? [0, ...flags] : null;
+    }
+    out.push(entry);
+    acc = [[w.lat, w.lng]]; modes = new Set(); energy = 0; energyOk = true; flags = []; flagsOk = true;
+  }
+  return out;
+}
+const DENSE_DRAFT_MAX = 1000;   // acima disso um rascunho é importação, não desenho à mão
+
 // Restaura o rascunho persistido (se houver) na sessão de desenho recém-
 // aberta pelo botão Traçar. Retorna true se restaurou. Os DEMAIS caminhos de
 // entrada (carregar GPX/rota salva/link) NÃO restauram — eles trazem a
-// própria rota, que vira o novo rascunho no pushHistory deles.
+// própria rota, que vira o novo rascunho no pushHistory deles (o rascunho
+// que sai do caminho vai pra TRACE_DRAFT_PREV_KEY — ver prepareEditorReplace).
 function restoreTraceDraft() {
-  let draft = null;
-  try { draft = JSON.parse(localStorage.getItem(TRACE_DRAFT_KEY) || 'null'); } catch {}
-  if (!draft || !Array.isArray(draft.wp)) return false;
-  const wp = draft.wp.filter((s) => s && Number.isFinite(s.lat) && Number.isFinite(s.lng));
-  if (!wp.length) return false;
-  if (draft.rm && ['straight', 'cycling', 'foot', 'energy', 'energy_road'].includes(draft.rm)) {
+  const draft = readStoredDraft(TRACE_DRAFT_KEY);
+  if (!draft) return false;
+  let wp = draft.wp;
+  const routed = ROUTED_MODES.includes(draft.rm);
+  if (draft.rm && (routed || draft.rm === 'straight')) {
     routingMode = draft.rm;
     traceRoutingMode.value = draft.rm;
+  }
+  // Rascunho de uma importação densa antiga (milhares de marcadores): compacta.
+  const dense = wp.length > DENSE_DRAFT_MAX;
+  if (dense) wp = compactDenseWaypoints(wp);
+  // Segmento reto sem proveniência num rascunho roteado = sobra de um
+  // roteamento que se perdeu (a corrida do contador global, ou o roteador
+  // fora do ar): vira pendente e a varredura roteia de novo.
+  if (routed) {
+    for (let k = 1; k < wp.length; k++) {
+      const s = wp[k];
+      if (!s.mode && !s.pending && (!Array.isArray(s.path) || s.path.length <= 2)) s.pending = draft.rm;
+    }
   }
   restoreSnapshot(wp);
   defaultSaveName = draft.n || '';
@@ -11775,8 +15347,99 @@ function restoreTraceDraft() {
   pushHistory();   // baseline do undo: [vazio, rascunho] — desfazer limpa a tela
   const bounds = L.latLngBounds(trackpoints.map((t) => t.marker.getLatLng()));
   if (bounds.isValid()) map.fitBounds(bounds, { padding: [40, 40] });
-  showToast(`Rascunho restaurado · ${trackpoints.length} pontos`);
+  showToast(dense
+    ? `Rascunho restaurado · ${draft.wp.length} pontos viraram ${trackpoints.length} editáveis (o traçado completo continua)`
+    : `Rascunho restaurado · ${trackpoints.length} pontos`);
   return true;
+}
+
+// Antes de um carregamento SUBSTITUIR o traçado: guarda o rascunho que vai
+// sair do caminho (o do editor aberto ou, com ele fechado, o persistido) em
+// TRACE_DRAFT_PREV_KEY, entra no editor e — se ele estava fechado — semeia o
+// desfazer com esse rascunho (↶ volta pra ele). Abre uma linhagem nova (o que
+// entra é outra rota, com outro vínculo no servidor). Devolve o rascunho
+// guardado (ou null) pro chamador mencioná-lo no aviso.
+function prepareEditorReplace() {
+  const wasDrawing = drawingMode;
+  let prev = null;
+  if (wasDrawing) {
+    syncLineageMeta();   // o histórico que fica pra trás leva o vínculo atual
+    if (trackpoints.length >= 2) {
+      prev = { v: 1, rm: routingMode, n: defaultSaveName || '', sid: currentSavedRouteId || null, wp: snapshot() };
+    }
+  } else {
+    prev = readStoredDraft(TRACE_DRAFT_KEY);
+  }
+  if (prev && prev.wp.length >= 2) {
+    try {
+      localStorage.setItem(TRACE_DRAFT_PREV_KEY, JSON.stringify({ ...prev, at: Date.now() }));
+    } catch (err) {
+      console.warn('[draft] não guardou o rascunho anterior:', err.message);
+    }
+  } else {
+    prev = null;
+  }
+  if (!drawingMode) enterDrawingMode();
+  if (!wasDrawing && prev) {
+    const seed = prev.wp.slice();
+    seed.lineage = _draftLineage;
+    _lineageMeta.set(_draftLineage, { sid: prev.sid || null, n: prev.n || '', rm: prev.rm || routingMode });
+    drawHistory = [seed];
+    historyIndex = 0;
+  }
+  if (_tpPopup) map.closePopup(_tpPopup);
+  _draftLineage = ++_lineageCounter;
+  return prev;
+}
+
+// Aviso depois do carregamento: o que entrou + botão pra trazer o anterior.
+function announceStashedDraft(msg, prev) {
+  if (!prev) { showToast(msg); return; }
+  showToastWithAction(
+    `${msg} — seu rascunho anterior (${prev.wp.length} pontos${prev.n ? ` · ${prev.n}` : ''}) ficou guardado.`,
+    '↺ Restaurar', restorePrevDraft, 9000,
+  );
+}
+
+// Toast com um botão de ação (o #toast é pointer-events:none; o botão não).
+function showToastWithAction(msg, label, onAction, ms = 8000) {
+  showToast(msg, ms);
+  const el = document.getElementById('toast');
+  if (!el) return;
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'toast-action';
+  btn.textContent = label;
+  btn.addEventListener('click', () => { el.hidden = true; onAction(); });
+  el.append(' ', btn);
+}
+
+// "Restaurar": traz o rascunho guardado em TRACE_DRAFT_PREV_KEY pro editor —
+// e o que estava no editor passa a ocupar a vaga (troca), então nada se perde.
+function restorePrevDraft() {
+  const prev = readStoredDraft(TRACE_DRAFT_PREV_KEY);
+  if (!prev) { showToast('Não há rascunho anterior guardado.'); return; }
+  const cur = drawingMode && trackpoints.length >= 2
+    ? { v: 1, rm: routingMode, n: defaultSaveName || '', sid: currentSavedRouteId || null, wp: snapshot() }
+    : readStoredDraft(TRACE_DRAFT_KEY);
+  if (!drawingMode) enterDrawingMode();
+  else if (previewMode) exitPreviewMode();
+  _draftLineage = ++_lineageCounter;
+  if (ROUTED_MODES.includes(prev.rm) || prev.rm === 'straight') {
+    routingMode = prev.rm;
+    traceRoutingMode.value = prev.rm;
+  }
+  restoreSnapshot(prev.wp.length > DENSE_DRAFT_MAX ? compactDenseWaypoints(prev.wp) : prev.wp);
+  defaultSaveName = prev.n || '';
+  currentSavedRouteId = prev.sid || null;
+  pushHistory();
+  try {
+    if (cur && cur.wp.length >= 2) localStorage.setItem(TRACE_DRAFT_PREV_KEY, JSON.stringify({ ...cur, at: Date.now() }));
+    else localStorage.removeItem(TRACE_DRAFT_PREV_KEY);
+  } catch (_) { /* segue */ }
+  const bounds = L.latLngBounds(trackpoints.map((t) => t.marker.getLatLng()));
+  if (bounds.isValid()) map.fitBounds(bounds, { padding: [40, 40] });
+  showToast(`Rascunho anterior restaurado · ${trackpoints.length} pontos${cur ? ' (o que estava aberto ficou guardado no lugar dele)' : ''}`);
 }
 
 // 🗑 Descartar: joga fora o traçado atual E o rascunho persistido — o único
@@ -11854,19 +15517,19 @@ function performSave(name) {
     routingMode,
   });
   const blob = new Blob([gpx], { type: 'application/gpx+xml' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filenameFromName(name, ts);
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
   // Exportar é um checkpoint, não um fim: o traçado continua aberto pra
   // seguir editando (era exitDrawingMode() aqui — a rota "sumia do mapa"
   // na hora que era salva). Esc ou ✕ Cancelar saem quando o usuário quiser.
   defaultSaveName = name;
-  showToast('GPX salvo — o traçado segue aberto pra edição (Esc sai).');
+  syncLineageMeta();
+  // saveFile chama o navigator.share AINDA dentro do toque (o Blob acima é
+  // síncrono) — no iPhone é a folha de compartilhar (Garmin, Komoot,
+  // WhatsApp, Salvar em Arquivos). O aviso só sai depois que deu certo.
+  const hint = isCoarsePointer() ? '' : ' (Esc sai)';
+  saveFile(blob, filenameFromName(name, ts)).then((r) => {
+    if (r === 'shared') showToast(`GPX pronto — o traçado segue aberto pra edição${hint}.`);
+    else if (r === 'downloaded') showToast(`GPX salvo — o traçado segue aberto pra edição${hint}.`);
+  });
 }
 
 function filenameFromName(name, ts) {
@@ -12025,12 +15688,13 @@ async function gzipB64UrlDecode(b64url) {
   return new Response(stream).text();
 }
 
-async function buildShareUrl(name) {
+// `maxChars`: teto do hash — o QR usa um bem menor (ver QR_MAX_HASH_CHARS).
+async function buildShareUrl(name, maxChars = SHARE_HASH_MAX_CHARS) {
   const state = snapshotForShare(name);
   let compressed = await gzipB64Url(JSON.stringify(state));
   // Rota muito longa → hash gigante: refaz sem a geometria embutida (vira um
   // link estilo v1 — quem abrir re-roteia via OSRM, como antes).
-  if (state.sg && compressed.length > SHARE_HASH_MAX_CHARS) {
+  if (state.sg && compressed.length > maxChars) {
     delete state.sg;
     compressed = await gzipB64Url(JSON.stringify(state));
   }
@@ -12042,7 +15706,9 @@ async function buildShareUrl(name) {
 // ao editor: restaura waypoints, geometria roteada por segmento (sg), modo de
 // roteamento e nome. Reusado pelo link `#st=` E pelas rotas salvas no servidor
 // (mesmo formato persistido). Retorna false se o estado não tem waypoints
-// válidos. NÃO mexe na URL/toast — quem chama cuida disso.
+// válidos; senão `{ stashed }` — o rascunho que saiu do caminho (guardado em
+// TRACE_DRAFT_PREV_KEY, ou null). NÃO mexe na URL/toast — quem chama cuida
+// disso (announceStashedDraft).
 async function applyShareState(state) {
   if (!state || !Array.isArray(state.wp) || state.wp.length === 0) return false;
   // Valida ANTES de desmontar o traçado atual — sem isto, um estado
@@ -12052,7 +15718,7 @@ async function applyShareState(state) {
     return false;
   }
 
-  if (!drawingMode) enterDrawingMode();
+  const stashed = prepareEditorReplace();
   for (const t of trackpoints) map.removeLayer(t.marker);
   trackpoints = [];
   pendingRouteSeq++;
@@ -12104,21 +15770,26 @@ async function applyShareState(state) {
   const bounds = L.latLngBounds(trackpoints.map((t) => t.marker.getLatLng()));
   if (bounds.isValid()) map.fitBounds(bounds, { padding: [40, 40] });
 
-  // Só re-roteia quando NÃO há geometria embutida (formato v1) — com sg os
-  // caminhos já foram restaurados acima.
-  if (routingMode !== 'straight' && !segs) {
-    // Up to 4 OSRM requests in flight at once — keeps within the FOSSGIS
-    // server's fair use while cutting end-to-end load by ~4× on long routes.
-    const indices = Array.from({ length: trackpoints.length - 1 }, (_, i) => i + 1);
-    const routeSeq = ++pendingRouteSeq;
-    await mapConcurrent(indices, 4, (idx) => refetchPath(idx, routeSeq));
-    redrawAndMetrics();
-  }
   // Todos os waypoints podem ter sido pulados por coords inválidas (lat/lng
   // não-numérico) — sem trackpoints não há o que desfazer/compartilhar.
   if (!trackpoints.length) return false;
+  // Só re-roteia quando NÃO há geometria embutida (formato v1) — com sg os
+  // caminhos já foram restaurados acima.
+  if (routingMode !== 'straight' && !segs) await routeSegmentsBatch(trackpoints.slice(1));
+  else pushHistory();
+  return { stashed };
+}
+
+// Lote de roteamento (link v1, GPX sem geometria): marca os segmentos como
+// pendentes JÁ — o snapshot empilhado agora fica coerente e o
+// patchPendingHistory o completa conforme as rotas chegam — e roteia até 4
+// por vez (fair use do FOSSGIS), POR REFERÊNCIA: um índice resolvido tarde
+// apontaria pro segmento errado se o usuário inserir um ponto no meio do lote.
+async function routeSegmentsBatch(tps) {
+  for (const t of tps) t._routePending = routingMode;
   pushHistory();
-  return true;
+  await mapConcurrent(tps, 4, (t) => refetchPath(t));
+  redrawAndMetrics();
 }
 
 async function tryLoadFromShareHash() {
@@ -12130,12 +15801,13 @@ async function tryLoadFromShareHash() {
   try {
     const json = await gzipB64UrlDecode(encoded);
     const state = JSON.parse(json);
-    if (!(await applyShareState(state))) return false;
+    const applied = await applyShareState(state);
+    if (!applied) return false;
     // Strip the #st=… so a later page reload doesn't clobber edits with the
     // original shared route. The state lives in localStorage / drawing
     // session memory now; the URL has done its job.
     window.history.replaceState(null, '', location.pathname + location.search);
-    showToast(`Link compartilhado carregado · ${trackpoints.length} pontos`);
+    announceStashedDraft(`Link compartilhado carregado · ${trackpoints.length} pontos`, applied.stashed);
     return true;
   } catch (err) {
     console.warn('Share hash decode failed:', err);
@@ -12162,10 +15834,12 @@ async function tryLoadSavedRouteFromHash() {
       throw new Error(res.status === 404 ? 'rota não encontrada no servidor' : `HTTP ${res.status}`);
     }
     const state = await res.json();
-    if (!(await applyShareState(state))) throw new Error('estado sem waypoints');
+    const applied = await applyShareState(state);
+    if (!applied) throw new Error('estado sem waypoints');
     if (state.id) currentSavedRouteId = state.id;
+    syncLineageMeta();
     window.history.replaceState(null, '', location.pathname + location.search);
-    showToast(`Rota "${state.n || slug}" carregada · ${trackpoints.length} pontos`);
+    announceStashedDraft(`Rota "${state.n || slug}" carregada · ${trackpoints.length} pontos`, applied.stashed);
     return true;
   } catch (err) {
     console.warn(`[route] deep link /route/${slug} falhou:`, err);
@@ -12310,8 +15984,8 @@ async function downloadAllRoutesGpx() {
 
   showToast('Compactando…', 4000);
   const blob = await zip.generateAsync({ type: 'blob' });
-  downloadBlob(blob, `pedal-hidrografico-rotas-${isoNow.slice(0, 10)}.zip`);
-  showToast(`${entries.length} rotas baixadas.`);
+  const r = await saveFile(blob, `pedal-hidrografico-rotas-${isoNow.slice(0, 10)}.zip`);
+  if (r === 'shared' || r === 'downloaded') showToast(`${entries.length} rotas exportadas.`);
 }
 
 // Envelope GPX 1.1 em volta de um ou mais <trk> + <wpt> já montados.
@@ -12510,15 +16184,26 @@ const saveConfirm = document.getElementById('save-confirm');
 const saveNameInput = document.getElementById('save-name');
 const saveFilenamePreview = document.getElementById('save-filename-preview');
 
+let _saveNameSelectOnFocus = false;
 function openSaveModal() {
   const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ');
   saveNameInput.value = defaultSaveName || `Traçado ${stamp}`;
   updateFilenamePreview();
+  // Desktop: o nome já vem focado e selecionado — `autofocus` porque o
+  // controlador de a11y dos modais foca o [autofocus] (senão focava o título
+  // por cima deste foco e o nome padrão ficava sem seleção). No toque NÃO: o
+  // teclado subiria cobrindo os botões da folha; tocar no campo seleciona o
+  // nome inteiro pra trocar.
+  const coarse = isCoarsePointer();
+  saveNameInput.toggleAttribute('autofocus', !coarse);
+  _saveNameSelectOnFocus = coarse;
   saveModal.hidden = false;
-  setTimeout(() => {
-    saveNameInput.focus();
-    saveNameInput.select();
-  }, 0);
+  if (!coarse) {
+    setTimeout(() => {
+      saveNameInput.focus();
+      saveNameInput.select();
+    }, 0);
+  }
 }
 function closeSaveModal() { saveModal.hidden = true; }
 
@@ -12528,8 +16213,20 @@ saveModal.addEventListener('click', (e) => {
   if (e.target === saveModal) closeSaveModal();
 });
 saveNameInput.addEventListener('input', updateFilenamePreview);
+saveNameInput.addEventListener('focus', () => {
+  if (!_saveNameSelectOnFocus) return;
+  _saveNameSelectOnFocus = false;
+  setTimeout(() => { try { saveNameInput.setSelectionRange(0, saveNameInput.value.length); } catch (_) {} }, 0);
+});
 saveNameInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') { e.preventDefault(); doSave(); }
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    // No celular o return/"OK" do teclado é o jeito de BAIXAR o teclado — só
+    // isso (antes exportava um GPX e fechava a folha). No desktop, Enter
+    // segue exportando (é o botão primário).
+    if (isCoarsePointer()) saveNameInput.blur();
+    else doSave();
+  }
   if (e.key === 'Escape') closeSaveModal();
 });
 saveConfirm.addEventListener('click', doSave);
@@ -12541,9 +16238,47 @@ saveConfirm.addEventListener('click', doSave);
 const saveCopyLink = document.getElementById('save-copy-link');
 const saveQrBtn = document.getElementById('save-qr');
 
+// Enquanto o POST do servidor roda, os três botões que salvam ficam
+// travados (e o tocado diz "Salvando…"): um segundo toque mandava outro POST
+// sem id, que batia no nome recém-criado e voltava 409 ("Já existe uma rota
+// chamada…" sobre a própria rota).
+let _saveBusy = false;
+function setSaveBusy(btn) {
+  _saveBusy = !!btn;
+  for (const id of ['save-copy-link', 'save-qr', 'save-server']) {
+    const b = document.getElementById(id);
+    if (!b) continue;
+    b.disabled = !!btn;
+    if (btn === b) { b.dataset.label = b.textContent; b.textContent = 'Salvando…'; }
+    else if (!btn && b.dataset.label) { b.textContent = b.dataset.label; delete b.dataset.label; }
+  }
+}
+async function withSaveBusy(btn, job) {
+  setSaveBusy(btn);
+  try { return await job(); } finally { setSaveBusy(null); }
+}
+
+// Checagens síncronas antes de começar (e antes de pedir o clipboard).
+function checkShareable() {
+  if (trackpoints.length < 2) {
+    alert('Adicione pelo menos 2 pontos antes de gerar o link.');
+    return false;
+  }
+  if (!saveNameInput.value.trim()) {
+    alert('Dê um nome à rota antes de salvar — é ele que vira o endereço.');
+    return false;
+  }
+  return true;
+}
+
+// Teto do hash #st= pro QR: acima de ~1,1 mil caracteres o QR fica denso
+// demais pra escanear de outro celular — o link sai sem a geometria embutida
+// (quem abrir re-roteia).
+const QR_MAX_HASH_CHARS = 1000;
+
 // Devolve { url, server } — ou null quando não dá pra compartilhar agora
 // (sem pontos, sem nome, nome já usado: o usuário já foi avisado).
-async function shareableRouteUrl() {
+async function shareableRouteUrl({ forQr = false } = {}) {
   if (trackpoints.length < 2) {
     alert('Adicione pelo menos 2 pontos antes de gerar o link.');
     return null;
@@ -12559,27 +16294,49 @@ async function shareableRouteUrl() {
     alert('Servidor indisponível, e o navegador não suporta o link #st= (precisa de CompressionStream).');
     return null;
   }
-  return { url: await buildShareUrl(saveNameInput.value.trim()), server: false };
+  const name = saveNameInput.value.trim();
+  return { url: await buildShareUrl(name, forQr ? QR_MAX_HASH_CHARS : SHARE_HASH_MAX_CHARS), server: false };
 }
 
-saveCopyLink?.addEventListener('click', async () => {
-  let share = null;
-  try {
-    share = await shareableRouteUrl();
-  } catch (err) {
-    alert(`Falha ao gerar link: ${err.message}`);
-    return;
+saveCopyLink?.addEventListener('click', () => {
+  if (_saveBusy || !checkShareable()) return;
+  const job = withSaveBusy(saveCopyLink, () => shareableRouteUrl());
+  // O link só existe depois do POST, mas o WebKit só deixa escrever no
+  // clipboard DENTRO do gesto — que se perde depois de um await de rede (o
+  // writeText caía SEMPRE no prompt() no iPhone). Então o pedido de cópia sai
+  // AGORA, no toque, com um ClipboardItem cujo conteúdo é a promessa do link.
+  let clipWrite = null;
+  if (navigator.clipboard?.write && typeof ClipboardItem === 'function') {
+    try {
+      const item = new ClipboardItem({
+        'text/plain': job.then((s) => {
+          if (!s) throw new Error('sem link');
+          return new Blob([s.url], { type: 'text/plain' });
+        }),
+      });
+      clipWrite = navigator.clipboard.write([item]);
+      clipWrite.catch(() => {});   // tratado abaixo
+    } catch (_) { clipWrite = null; }
   }
-  if (!share) return;
-  const note = share.server ? 'rota salva no servidor' : 'servidor fora — estado embutido no link';
-  try {
-    if (!navigator.clipboard) throw new Error('sem clipboard');
-    await navigator.clipboard.writeText(share.url);
-    showToast(`Link copiado · ${note}`);
-  } catch {
+  (async () => {
+    let share = null;
+    try {
+      share = await job;
+    } catch (err) {
+      alert(`Falha ao gerar link: ${err.message}`);
+      return;
+    }
+    if (!share) return;
+    const note = share.server ? 'rota salva no servidor' : 'servidor fora — estado embutido no link';
+    let copied = false;
+    if (clipWrite) { try { await clipWrite; copied = true; } catch (_) { /* cai no writeText */ } }
+    if (!copied && navigator.clipboard?.writeText) {
+      try { await navigator.clipboard.writeText(share.url); copied = true; } catch (_) { /* prompt */ }
+    }
+    if (copied) showToast(`Link copiado · ${note}`);
     // Fallback: prompt window with the URL pre-selected for manual copy.
-    window.prompt(`Copie o link (${note}):`, share.url);
-  }
+    else window.prompt(`Copie o link (${note}):`, share.url);
+  })();
 });
 
 // ─── QR-code modal ───────────────────────────────────────────────────────────
@@ -12594,22 +16351,30 @@ const qrDownloadPngBtn = document.getElementById('qr-download-png');
 
 let qrCurrentSvg = null;
 let qrCurrentUrl = '';
+let qrPngBlob = null;       // PNG pré-renderizado ao abrir o QR (ver showQrModal)
+let qrPngPromise = null;
 
 saveQrBtn?.addEventListener('click', async () => {
   if (typeof qrcode === 'undefined') {
     alert('Biblioteca de QR não carregou — verifique conexão.');
     return;
   }
+  if (_saveBusy || !checkShareable()) return;
   let share = null;
   try {
-    share = await shareableRouteUrl();
+    share = await withSaveBusy(saveQrBtn, () => shareableRouteUrl({ forQr: true }));
   } catch (err) {
     alert(`Falha ao gerar link: ${err.message}`);
     return;
   }
   if (!share) return;
   if (share.server) showToast('Rota salva no servidor');
-  showQrModal(share.url);
+  if (!showQrModal(share.url)) {
+    alert(
+      `O link desta rota é grande demais pra caber num QR (${share.url.length} caracteres).\n` +
+      'Com conexão, "☁ Salvar no servidor" gera um link curto — ou use "Copiar link".',
+    );
+  }
 });
 
 qrClose?.addEventListener('click', () => (qrModal.hidden = true));
@@ -12630,24 +16395,27 @@ qrCopyBtn?.addEventListener('click', async () => {
     window.prompt('Copie o URL:', qrCurrentUrl);
   }
 });
+const saveQrFile = (blob, ext) => saveFile(blob, `qr-${qrFilenameSlug()}.${ext}`).then((r) => {
+  if (r === 'shared' || r === 'downloaded') showToast('QR salvo.');
+});
 qrDownloadSvgBtn?.addEventListener('click', () => {
   if (!qrCurrentSvg) return;
-  downloadBlob(
-    new Blob([qrCurrentSvg], { type: 'image/svg+xml' }),
-    `qr-${qrFilenameSlug()}.svg`,
-  );
+  saveQrFile(new Blob([qrCurrentSvg], { type: 'image/svg+xml' }), 'svg');
 });
 qrDownloadPngBtn?.addEventListener('click', () => {
   if (!qrCurrentSvg) return;
-  svgToPngBlob(qrCurrentSvg, 1024).then((blob) => {
-    downloadBlob(blob, `qr-${qrFilenameSlug()}.png`);
-  });
+  // O PNG já foi rasterizado ao abrir o modal: com ele pronto, o compartilhar
+  // sai ainda DENTRO do toque (o iOS exige o gesto — é o caminho pro
+  // Instagram/Fotos). Se ainda não ficou pronto (raro), espera.
+  if (qrPngBlob) saveQrFile(qrPngBlob, 'png');
+  else (qrPngPromise || svgToPngBlob(qrCurrentSvg, 1024)).then((b) => saveQrFile(b, 'png'))
+    .catch((err) => showToast(`Não deu pra gerar o PNG: ${err.message}`));
 });
 
+// Monta o QR e abre o modal. Devolve false (sem abrir) se o link não cabe
+// num QR — o qrcode.js lança "code length overflow" acima de ~2,9 mil
+// caracteres, e antes isso virava uma rejeição silenciosa no meio do toque.
 function showQrModal(url) {
-  qrCurrentUrl = url;
-  qrUrlInput.value = url;
-
   // Pick error correction by URL length: shorter URLs can afford H (more
   // robust to camera blur), longer ones need L just to fit.
   let ec = 'H';
@@ -12656,13 +16424,28 @@ function showQrModal(url) {
   if (url.length > 1100) ec = 'L';
 
   // typeNumber=0 → auto-pick smallest version that fits.
-  const qr = qrcode(0, ec);
-  qr.addData(url);
-  qr.make();
+  let qr;
+  try {
+    qr = qrcode(0, ec);
+    qr.addData(url);
+    qr.make();
+  } catch (err) {
+    console.warn('[qr] não coube:', err.message || err);
+    return false;
+  }
+  qrCurrentUrl = url;
+  qrUrlInput.value = url;
 
   // 4-px cells with 4-cell quiet zone, scalable so the SVG fills the box.
   qrCurrentSvg = qr.createSvgTag({ cellSize: 4, margin: 4, scalable: true });
   qrImage.innerHTML = qrCurrentSvg;
+  qrPngBlob = null;
+  const svgForPng = qrCurrentSvg;
+  qrPngPromise = svgToPngBlob(svgForPng, 1024).then((b) => {
+    if (qrCurrentSvg === svgForPng) qrPngBlob = b;
+    return b;
+  });
+  qrPngPromise.catch(() => {});
 
   if (url.length > 1500) {
     qrWarning.textContent =
@@ -12673,6 +16456,7 @@ function showQrModal(url) {
   }
 
   qrModal.hidden = false;
+  return true;
 }
 
 function qrFilenameSlug() {
@@ -12683,16 +16467,7 @@ function qrFilenameSlug() {
     .slice(0, 50) || 'rota';
 }
 
-function downloadBlob(blob, filename) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
+// (O antigo downloadBlob() virou saveFile() em lib/utils.js — compartilhado.)
 
 // SVG string → PNG blob via Canvas. Used for the "Baixar PNG" button so the
 // QR can be pasted into apps that don't render SVG (some chat clients, IG).
@@ -12756,13 +16531,23 @@ const editGpxInput = document.getElementById('edit-gpx-input');
 // ("Carregar GPX do computador"). Carregar com a edição já aberta só troca o
 // traçado (os caminhos de load fazem `if (!drawingMode) enterDrawingMode()`).
 document.getElementById('trace-load')?.addEventListener('click', () => openSavedRoutesModal());
+// O `accept` do input inclui application/octet-stream (sem ele o seletor do
+// iOS deixava o .gpx cinza — o iOS não tem tipo de sistema pra GPX), então
+// qualquer arquivo pode chegar aqui: o tamanho barra antes de ler, e o
+// loadGpxIntoEditor já recusa XML inválido / sem pontos.
+const GPX_MAX_BYTES = 60 * 1024 * 1024;
 editGpxInput.addEventListener('change', () => {
   const file = editGpxInput.files?.[0];
   editGpxInput.value = '';
   if (!file) return;
+  if (file.size > GPX_MAX_BYTES) {
+    alert(`"${file.name}" tem ${(file.size / 1048576).toFixed(0)} MB — grande demais pra um GPX. Escolha o arquivo .gpx da rota.`);
+    return;
+  }
   closeSavedRoutesModal();
   const reader = new FileReader();
-  reader.onload = () => loadGpxIntoEditor(String(reader.result));
+  reader.onload = () => loadGpxIntoEditor(String(reader.result), file.name);
+  reader.onerror = () => alert('Não foi possível ler o arquivo.');
   reader.readAsText(file);
 });
 
@@ -12862,6 +16647,9 @@ async function saveRouteToServer() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, state, stats, id: id || undefined }),
+      // No 4G fraco o POST podia pendurar até o timeout do sistema, com os
+      // botões travados; estourou → erro de rede → quem chama cai no #st=.
+      signal: typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(15000) : undefined,
     });
     return { res, data: await res.json().catch(() => ({})) };
   };
@@ -12881,6 +16669,7 @@ async function saveRouteToServer() {
   if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
   currentSavedRouteId = data.id;
   defaultSaveName = name;
+  syncLineageMeta();          // desfazer na mesma linhagem mantém o vínculo
   scheduleTraceDraftSave();   // o rascunho passa a apontar pra rota salva
   return data;
 }
@@ -12888,12 +16677,13 @@ async function saveRouteToServer() {
 // "☁ Salvar no servidor" — salva/atualiza sem copiar link nem abrir QR.
 const saveServerBtn = document.getElementById('save-server');
 saveServerBtn?.addEventListener('click', async () => {
+  if (_saveBusy) return;
   if (trackpoints.length < 2) {
     alert('Adicione pelo menos 2 pontos antes de salvar.');
     return;
   }
   try {
-    const saved = await saveRouteToServer();
+    const saved = await withSaveBusy(saveServerBtn, () => saveRouteToServer());
     if (!saved) return;
     showToast(`Rota salva no servidor · /route/${saved.slug}`);
   } catch (err) {
@@ -12910,21 +16700,58 @@ const savedRoutesLocal = document.getElementById('saved-routes-local');
 // Botão "Carregar GPX do computador" — dispara o mesmo picker do antigo Editar.
 savedRoutesLocal?.addEventListener('click', () => editGpxInput.click());
 
+// "↺ Rascunho anterior": o rascunho que um carregamento tirou do caminho
+// (TRACE_DRAFT_PREV_KEY) — sobrevive a recarregar a página, ao contrário do
+// desfazer.
+const savedRoutesPrev = document.createElement('button');
+savedRoutesPrev.type = 'button';
+savedRoutesPrev.id = 'saved-routes-prev';
+savedRoutesPrev.className = 'secondary-btn';
+savedRoutesPrev.hidden = true;
+savedRoutesLocal?.after(savedRoutesPrev);
+savedRoutesPrev.addEventListener('click', () => { closeSavedRoutesModal(); restorePrevDraft(); });
+function refreshPrevDraftButton() {
+  const prev = readStoredDraft(TRACE_DRAFT_PREV_KEY);
+  savedRoutesPrev.hidden = !prev;
+  if (!prev) return;
+  let when = '';
+  try {
+    if (prev.at) when = new Date(prev.at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  } catch (_) { /* sem data */ }
+  savedRoutesPrev.textContent =
+    `↺ Restaurar rascunho anterior (${prev.wp.length} pontos${prev.n ? ` · ${prev.n}` : ''}${when ? ` · ${when}` : ''})`;
+}
+
+// Geração da grade: cada abertura/fechamento incrementa — o que estava em
+// voo de uma geração velha (a listagem, as miniaturas) não pinta nem começa
+// mais nada.
+let _savedRoutesGen = 0;
+let _thumbObserver = null;
+
 async function openSavedRoutesModal() {
+  const gen = ++_savedRoutesGen;
   savedRoutesModal.hidden = false;
   savedRoutesEmpty.hidden = true;
+  refreshPrevDraftButton();
   savedRoutesList.innerHTML = '<li class="muted">Carregando…</li>';
   try {
     const res = await fetch('./saved-routes', { cache: 'no-store' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
+    if (gen !== _savedRoutesGen) return;
     renderSavedRoutes(data.routes || []);
   } catch (err) {
+    if (gen !== _savedRoutesGen) return;
     savedRoutesList.innerHTML =
       `<li class="muted">Indisponível: ${escapeHtml(err.message)} (requer o backend same-origin).</li>`;
   }
 }
-function closeSavedRoutesModal() { savedRoutesModal.hidden = true; }
+function closeSavedRoutesModal() {
+  savedRoutesModal.hidden = true;
+  _savedRoutesGen++;
+  _thumbObserver?.disconnect();
+  _thumbObserver = null;
+}
 
 // Faixas fixas de intensidade por kJ — espelho do intensityFor do censo.html
 // (fonte canônica; o backend repete as mesmas faixas no badge do card OG).
@@ -13001,13 +16828,16 @@ const THUMB_HIDRO_MAIN_KM2 = 150;   // acima disso, só rio/canal/crista (legibi
 const THUMB_HIDRO_MAX_LINES = 400;  // teto de <polyline> por miniatura
 const THUMB_STROKE_SCALE = 0.33;    // pesos da camada (px de mapa) → unidades da viewBox
 
-async function fillThumbHidro(svgEl, proj, cacheKey) {
+async function fillThumbHidro(svgEl, proj, cacheKey, gen = _savedRoutesGen) {
   const g = svgEl?.querySelector('.thumb-hidro');
   if (!g) return;
   if (_thumbHidroCache.has(cacheKey)) {
     g.innerHTML = _thumbHidroCache.get(cacheKey);
     return;
   }
+  // Modal fechado/re-renderizado enquanto esta miniatura esperava a vez.
+  const stale = () => gen !== _savedRoutesGen || !g.isConnected;
+  if (stale()) return;
   const bb = proj.bb;
   const areaKm2 = bboxAreaKm2(bb);
   if (areaKm2 > OSM_FGB_MAX_BBOX_KM2) return;   // rota continental — sem fundo
@@ -13016,10 +16846,14 @@ async function fillThumbHidro(svgEl, proj, cacheKey) {
   // `null` = fetch FALHOU (timeout/offline) — diferente de lista vazia
   // ("não há água aqui"): falha desenha o que deu e NÃO entra no cache da
   // sessão, senão um timeout envenenaria a miniatura até recarregar a página.
+  // O 4º argumento ({isStale, maxParts}, a convenção do streamFgbPackedLines)
+  // corta o DOWNLOAD quando o modal fecha — no-op enquanto a leitura FGB não
+  // o aceitar.
   const [hidro, network] = await Promise.all([
-    streamFgbFeatures(HIDRO_FGB_URL, bb, false).catch(() => null),
+    streamFgbFeatures(HIDRO_FGB_URL, bb, false, { isStale: stale, maxParts: THUMB_HIDRO_MAX_LINES * 5 }).catch(() => null),
     loadPhCycleNetwork().catch(() => []),
   ]);
+  if (stale()) return;   // nem pinta nem guarda (pode ter vindo cortado)
   const lines = [];
   const pushFeature = (f, style) => {
     if (!style) return;
@@ -13049,9 +16883,11 @@ async function fillThumbHidro(svgEl, proj, cacheKey) {
 
 function renderSavedRoutes(routes) {
   savedRoutesList.innerHTML = '';
+  _thumbObserver?.disconnect();
+  _thumbObserver = null;
   if (!routes.length) { savedRoutesEmpty.hidden = false; return; }
   savedRoutesEmpty.hidden = true;
-  const hidroFills = [];   // (svg, proj, key) — preenchidos em lote no final
+  const hidroFills = [];   // (svg, proj, key) — preenchidos conforme aparecem
   for (const r of routes) {
     const li = document.createElement('li');
     li.className = 'saved-route-card';
@@ -13123,11 +16959,38 @@ function renderSavedRoutes(routes) {
     li.append(thumb, nameEl, statsEl, actions);
     savedRoutesList.appendChild(li);
   }
-  // Fundos "Morros e Águas" em lote, 3 por vez — best-effort (offline/timeout
-  // deixam o card só com o traçado, que já está na tela).
-  mapConcurrent(hidroFills, 3, ([svg, proj, key]) =>
-    fillThumbHidro(svg, proj, key).catch((e) => console.warn('[thumb-hidro]', e.message)),
-  );
+  // Fundos "Morros e Águas" só das miniaturas que APARECEM (a lista não tem
+  // paginação e cada fundo são range requests no FGB de 1,7 GB), 3 por vez
+  // — best-effort (offline/timeout deixam o card só com o traçado). Fechar o
+  // modal muda a geração: nada novo começa, nada velho pinta.
+  const gen = _savedRoutesGen;
+  const queue = [];
+  let running = 0;
+  const pump = () => {
+    while (running < 3 && queue.length && gen === _savedRoutesGen) {
+      const [svg, proj, key] = queue.shift();
+      running++;
+      fillThumbHidro(svg, proj, key, gen)
+        .catch((e) => console.warn('[thumb-hidro]', e.message))
+        .finally(() => { running--; pump(); });
+    }
+  };
+  const byThumb = new Map(hidroFills.map((f) => [f[0].closest('.saved-route-thumb'), f]));
+  if (typeof IntersectionObserver !== 'function') {
+    queue.push(...hidroFills);
+    pump();
+    return;
+  }
+  _thumbObserver = new IntersectionObserver((entries, obs) => {
+    for (const en of entries) {
+      if (!en.isIntersecting) continue;
+      obs.unobserve(en.target);
+      const f = byThumb.get(en.target);
+      if (f) queue.push(f);
+    }
+    pump();
+  }, { rootMargin: '120px 0px' });   // raiz = viewport, recortada pelos contêineres de rolagem
+  for (const el of byThumb.keys()) if (el) _thumbObserver.observe(el);
 }
 
 async function loadSavedRoute(id, name) {
@@ -13135,11 +16998,13 @@ async function loadSavedRoute(id, name) {
     const res = await fetch(`./saved-route/${encodeURIComponent(id)}`, { cache: 'no-store' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const state = await res.json();
-    if (!(await applyShareState(state))) throw new Error('estado sem waypoints');
+    const applied = await applyShareState(state);
+    if (!applied) throw new Error('estado sem waypoints');
     currentSavedRouteId = id;
     if (name) defaultSaveName = name;
+    syncLineageMeta();
     closeSavedRoutesModal();
-    showToast(`Rota carregada · ${trackpoints.length} pontos`);
+    announceStashedDraft(`Rota carregada · ${trackpoints.length} pontos`, applied.stashed);
   } catch (err) {
     alert(`Falha ao carregar a rota: ${err.message}`);
   }
@@ -13174,7 +17039,7 @@ async function editEntryInDrawingTool(entry) {
     return;
   }
 
-  if (!drawingMode) enterDrawingMode();
+  const stashed = prepareEditorReplace();
   for (const t of trackpoints) map.removeLayer(t.marker);
   trackpoints = [];
   pendingRouteSeq++;
@@ -13250,16 +17115,23 @@ async function editEntryInDrawingTool(entry) {
   const poiTag = poiCount
     ? ` (${poiCount} POI${poiCount === 1 ? '' : 's'})`
     : ' · sem POIs no routes.json — rode `python scripts/build-routes.py`';
-  showToast(
+  announceStashedDraft(
     `Editando "${entry.name || entry.date || `Route ${entry.id}`}" ` +
       `· ${trackpoints.length} pontos${poiTag}`,
+    stashed,
   );
 }
 
 // Distance between two lat/lng pairs in meters (haversine, no Leaflet dep).
 // haversine() now imported from lib/utils.js
 
-async function loadGpxIntoEditor(gpxText) {
+// Rótulos dos parâmetros físicos pro aviso de "GPX traz outros parâmetros".
+const PARAM_DIFF_LABELS = {
+  mass: ['massa', 'kg'], powerAscent: ['potência na subida', 'W'], powerFlat: ['potência no plano', 'W'],
+  powerDescent: ['potência na descida', 'W'], crr: ['Crr', ''], cda: ['CdA', 'm²'], rho: ['ρ', 'kg/m³'],
+};
+
+async function loadGpxIntoEditor(gpxText, fileName = '') {
   let doc;
   try {
     doc = new DOMParser().parseFromString(gpxText, 'application/xml');
@@ -13269,13 +17141,11 @@ async function loadGpxIntoEditor(gpxText) {
     return;
   }
 
-  // GPX de arquivo é uma rota nova — desvincula de qualquer rota do servidor
-  // pra um "Salvar no servidor" seguinte não sobrescrever a errada.
-  currentSavedRouteId = null;
-
-  // 0) Default save name from <metadata><name> if present.
-  const metaName = doc.querySelector('metadata > name')?.textContent;
-  if (metaName) defaultSaveName = metaName.trim();
+  // 0) Default save name from <metadata><name> if present (senão, o nome do
+  //    arquivo). Só é aplicado depois de guardar o rascunho atual (o nome
+  //    dele vai junto pro "anterior").
+  const metaName = (doc.querySelector('metadata > name')?.textContent || '').trim() ||
+    String(fileName || '').replace(/\.[^.]+$/, '').trim();
 
   // 1) Extensions (our own format) — restores user waypoints + params
   //    cleanly when the file came from this app.
@@ -13283,6 +17153,7 @@ async function loadGpxIntoEditor(gpxText) {
   let savedUserWaypoints = null;
   let savedRoutingMode = null;
   let chosenConnectMode = null;   // modo escolhido no modal p/ GPX de terceiros
+  let embeddedParams = null;
   let appliedParams = false;
   if (metaEls.length > 0) {
     const meta = metaEls[0];
@@ -13295,12 +17166,8 @@ async function loadGpxIntoEditor(gpxText) {
     try {
       if (paramsEl) {
         const obj = JSON.parse(paramsEl.textContent || 'null');
-        if (obj) {
-          params = paramsFromAnyJson(obj);
-          saveParams();
-          fillParamInputs();
-          appliedParams = true;
-        }
+        // Mesclado sobre os SEUS parâmetros (as fontes de dados e o SUV ficam).
+        if (obj) embeddedParams = paramsFromAnyJson(obj);
       }
     } catch (e) { console.warn('embedded params parse failed:', e); }
     if (rmEl) savedRoutingMode = (rmEl.textContent || '').trim();
@@ -13310,7 +17177,9 @@ async function loadGpxIntoEditor(gpxText) {
   //    the trkpt list (capped) for third-party GPX files.
   let waypointsToCreate;
   if (savedUserWaypoints && Array.isArray(savedUserWaypoints) && savedUserWaypoints.length > 0) {
-    waypointsToCreate = savedUserWaypoints;
+    waypointsToCreate = savedUserWaypoints.filter((w) => w && Number.isFinite(w.lat) && Number.isFinite(w.lng));
+    // GPX exportado de um rascunho denso antigo (um waypoint por trkpt).
+    if (waypointsToCreate.length > DENSE_DRAFT_MAX) waypointsToCreate = compactDenseWaypoints(waypointsToCreate);
   } else {
     const coords = [];
     for (const tag of ['trkpt', 'rtept']) {
@@ -13367,6 +17236,13 @@ async function loadGpxIntoEditor(gpxText) {
         waypointsToCreate.push({ lat: wlat, lng: wlng, name: nm, isPoi: true, sym: sm });
       }
     }
+    // Reta com traço denso (GPX de 1 Hz: milhares de pontos) → ~150 pontos
+    // editáveis e a geometria EXATA entre eles no pathFromPrev — um marcador
+    // DOM arrastável por trkpt travava a aba (~10 mil: 6,6 s de tarefa longa
+    // e cada pan/zoom depois).
+    if (chosenConnectMode === 'straight' && waypointsToCreate.length > 200) {
+      waypointsToCreate = compactDenseWaypoints(waypointsToCreate);
+    }
   }
 
   if (waypointsToCreate.length === 0) {
@@ -13374,11 +17250,43 @@ async function loadGpxIntoEditor(gpxText) {
     return;
   }
 
-  // 3) Enter drawing mode and instantiate the loaded waypoints.
-  if (!drawingMode) enterDrawingMode();
-  // Wipe any existing draft from the freshly entered drawing session.
+  // Parâmetros embutidos (GPX exportado pelo amora, talvez por OUTRA pessoa):
+  // aplicar troca a SUA massa/potência — pergunta quando diferem.
+  if (embeddedParams) {
+    const diff = paramsDiffKeys(embeddedParams, params);
+    if (diff.length) {
+      const fmtV = (k, v) => {
+        const [label, unit] = PARAM_DIFF_LABELS[k] || [k, ''];
+        return `${label} ${String(+(+v).toFixed(3)).replace('.', ',')}${unit ? ` ${unit}` : ''}`;
+      };
+      const shown = diff.filter((k) => PARAM_DIFF_LABELS[k]).slice(0, 4);
+      const lines = shown.map((k) => `• ${fmtV(k, embeddedParams[k])} (o seu: ${String(+(+params[k]).toFixed(3)).replace('.', ',')})`);
+      const more = diff.length - shown.length;
+      if (confirm(
+        'Este GPX traz parâmetros de simulação diferentes dos seus:\n' +
+        (lines.length ? lines.join('\n') + '\n' : '') +
+        (more > 0 ? `• e mais ${more} parâmetro(s)\n` : '') +
+        '\nAplicar os parâmetros do arquivo? (Cancelar mantém os seus.)',
+      )) {
+        params = embeddedParams;
+        saveParams();
+        fillParamInputs();
+        appliedParams = true;
+      }
+    }
+  }
+
+  // 3) Enter drawing mode and instantiate the loaded waypoints. O rascunho
+  //    atual sai do caminho guardado (↶ / Restaurar).
+  const stashed = prepareEditorReplace();
   for (const t of trackpoints) map.removeLayer(t.marker);
   trackpoints = [];
+  pendingRouteSeq++;
+  // GPX de arquivo é uma rota nova — desvincula de qualquer rota do servidor
+  // pra um "Salvar no servidor" seguinte não sobrescrever a errada (e o nome
+  // do rascunho anterior não vaza pra ela).
+  currentSavedRouteId = null;
+  defaultSaveName = metaName;
 
   if (savedRoutingMode && ['straight', 'cycling', 'foot', 'energy', 'energy_road'].includes(savedRoutingMode)) {
     routingMode = savedRoutingMode;
@@ -13423,24 +17331,20 @@ async function loadGpxIntoEditor(gpxText) {
   // Re-route em segundo plano só os segmentos SEM geometria salva (GPX de
   // terceiros / antigos). Segmentos com path restaurado ficam intactos — não
   // re-roteamos por cima da rota exata que o usuário salvou.
+  const todo = [];
   if (routingMode !== 'straight') {
-    const indices = [];
     for (let i = 1; i < trackpoints.length; i++) {
       const wp = waypointsToCreate[i];
-      if (!(wp.path && wp.path.length >= 2)) indices.push(i);
-    }
-    if (indices.length) {
-      const routeSeq = ++pendingRouteSeq;
-      await mapConcurrent(indices, 4, (idx) => refetchPath(idx, routeSeq));
-      redrawAndMetrics();
+      if (!(wp.path && wp.path.length >= 2)) todo.push(trackpoints[i]);
     }
   }
-  pushHistory();
+  if (todo.length) await routeSegmentsBatch(todo);
+  else pushHistory();
 
   const bits = [`${trackpoints.length} pontos`];
-  if (appliedParams) bits.push('parâmetros aplicados');
+  if (appliedParams) bits.push('parâmetros do arquivo aplicados');
   if (savedUserWaypoints) bits.push('waypoints originais restaurados');
-  showToast(`GPX carregado · ${bits.join(' · ')}`);
+  announceStashedDraft(`GPX carregado · ${bits.join(' · ')}`, stashed);
 }
 
 // ─── Acessibilidade centralizada dos modais ─────────────────────────────────
@@ -13499,6 +17403,29 @@ async function loadGpxIntoEditor(gpxText) {
     pick(); setTimeout(pick, 0); setTimeout(pick, 80);
   };
 
+  // Dica de rolagem nas folhas do celular: o iOS esconde a barra de rolagem até
+  // a pessoa rolar, e o corte da folha (40–70vh) costuma cair ENTRE dois botões
+  // — o ☰ Ações parecia completo sem Ajustes/Ajuda. `.has-more` liga um
+  // "mais ↓" grudado no pé da folha (CSS, só ≤760px) enquanto há conteúdo
+  // abaixo. Folhas de iframe não rolam por fora — ficam de fora.
+  const updateCue = (c) => {
+    c.classList.toggle('has-more', c.scrollHeight - c.scrollTop - c.clientHeight > 8);
+  };
+  const cueRO = window.ResizeObserver
+    ? new ResizeObserver((entries) => { for (const en of entries) updateCue(en.target); })
+    : null;
+  const wireScrollCue = (modal) => {
+    const c = modal.querySelector(':scope > .modal-content');
+    if (!c || c.classList.contains('upload-modal-content')) return;
+    if (!c._cueScroll) {
+      c._cueScroll = true;
+      c.addEventListener('scroll', () => updateCue(c), { passive: true });
+    }
+    cueRO?.observe(c);   // a folha cresce até o teto enquanto o conteúdo chega
+    updateCue(c);
+    setTimeout(() => updateCue(c), 350);
+  };
+
   function onShown(modal) {
     if (openStack.includes(modal)) return;
     modal.setAttribute('role', 'dialog');
@@ -13512,14 +17439,20 @@ async function loadGpxIntoEditor(gpxText) {
       returnFocusEl = document.activeElement;
       document.body.classList.add('modal-open');
       try { map.scrollWheelZoom.disable(); } catch (_) {}
-      inerted = bgEls();
+      // Só o que ainda NÃO estava inerte — e é só isso que volta no fim: a
+      // sidebar fechada no celular é inerte por conta própria (syncSheetsInert)
+      // e não pode "reviver" quando o modal fecha.
+      inerted = bgEls().filter((el) => !el.inert);
       inerted.forEach((el) => { el.inert = true; });
     }
     openStack.push(modal);
     focusModalSoon(modal);
+    wireScrollCue(modal);
   }
 
   function onHidden(modal) {
+    const c = modal.querySelector(':scope > .modal-content');
+    if (c) cueRO?.unobserve(c);
     const i = openStack.indexOf(modal);
     if (i === -1) return;
     openStack.splice(i, 1);
@@ -13533,25 +17466,38 @@ async function loadGpxIntoEditor(gpxText) {
       if (el && document.contains(el)) focusSoon(el);
     } else {
       // Modal aninhado fechou (ex.: QR sobre Salvar): devolve o foco pro modal
-      // que ficou por baixo em vez de largar no <body>.
+      // que ficou por baixo em vez de largar no <body> — num controle de
+      // conteúdo, não nas bolinhas de fechar/maximizar (agora as 1ªs da folha).
       const top = openStack[openStack.length - 1];
       const f = focusablesIn(top);
-      focusSoon(f.find((el) => !el.classList.contains('close')) || f[0]);
+      focusSoon(f.find((el) => !el.matches('.close, .close-dot, .maximize-dot')) || f[0]);
     }
   }
 
   function watch(modal) {
-    new MutationObserver(() => {
-      if (!modal.hidden) onShown(modal); else onHidden(modal);
-    }).observe(modal, { attributes: true, attributeFilter: ['hidden'] });
+    if (!modal._a11yWatched) {
+      modal._a11yWatched = true;
+      new MutationObserver(() => {
+        if (!modal.hidden && modal.isConnected) onShown(modal); else onHidden(modal);
+      }).observe(modal, { attributes: true, attributeFilter: ['hidden'] });
+    }
     if (!modal.hidden) onShown(modal);   // raro: modal já aberto no boot
   }
 
   document.querySelectorAll('.modal').forEach(watch);
   // Modais criados em runtime (ex.: photo-fallback) também entram no esquema.
+  // E um modal ABERTO removido do DOM (remove() sem hidden=true antes) conta
+  // como fechado — senão ficava na pilha e o fundo inteiro seguia inerte (o app
+  // "congelava" até recarregar; era o que o editor de Listas fazia).
   new MutationObserver((muts) => {
-    for (const m of muts) for (const n of m.addedNodes) {
-      if (n.nodeType === 1 && n.classList && n.classList.contains('modal')) watch(n);
+    for (const m of muts) {
+      for (const n of m.addedNodes) {
+        if (n.nodeType === 1 && n.classList && n.classList.contains('modal')) watch(n);
+      }
+      for (const n of m.removedNodes) {
+        // isConnected: um modal só MOVIDO (reanexado) segue aberto.
+        if (n.nodeType === 1 && n.classList && n.classList.contains('modal') && !n.isConnected) onHidden(n);
+      }
     }
   }).observe(document.body, { childList: true });
 
@@ -13575,11 +17521,15 @@ async function loadGpxIntoEditor(gpxText) {
   // existentes fecham o seu antes deste rodar, então aqui ele já sai da lista
   // (sem duplo-fechamento). O guard do modo de edição (ver onMapClickInDrawing)
   // já ignora ESC quando há `.modal:not([hidden])`.
+  // Um listener anterior que já tratou o Esc marca preventDefault (ex.: o form
+  // de envio perguntou "descartar?" e a pessoa cancelou) — aí não fecha por cima.
   document.addEventListener('keydown', (e) => {
-    if (e.key !== 'Escape') return;
+    if (e.key !== 'Escape' || e.defaultPrevented) return;
     const open = document.querySelectorAll('.modal:not([hidden])');
     if (!open.length) return;
     const modal = open[open.length - 1];
+    const closer = _modalClosers.get(modal);
+    if (closer) { e.preventDefault(); closer(); return; }
     const btn = modal.querySelector('.close');
     if (btn) { e.preventDefault(); btn.click(); } else { modal.hidden = true; }
   });

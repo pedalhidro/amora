@@ -16,10 +16,17 @@
   }
   body { font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace; max-width: 900px; margin: 1.5rem auto; padding: 0 1rem;
     color: var(--text); background: var(--bg); }
+  /* Embutido no sheet do app: rolar até a borda não encadeia no app nem
+     dispara o puxar-pra-recarregar da página de cima. */
+  html, body { overscroll-behavior: contain; }
   h1 { font-size: 1.4rem; margin: 0 0 .25rem; }
   p.lede { color: var(--muted); margin: 0 0 1rem; }
   a { color: var(--accent); }
-  fieldset { border: 1px solid var(--border); padding: 1rem; margin: 1rem 0; border-radius: 8px; background: var(--panel); }
+  /* min-inline-size: o UA dá `min-content` ao fieldset — o <code> inquebrável
+     dos rótulos da grade de 3 colunas o alargava pra 443 px num iPhone de
+     390 (a página inteira rolava de lado). */
+  fieldset { border: 1px solid var(--border); padding: 1rem; margin: 1rem 0; border-radius: 8px; background: var(--panel);
+    min-inline-size: 0; min-width: 0; }
   legend { font-weight: 600; padding: 0 .4rem; color: var(--text); }
   label { display: block; margin: .6rem 0 .2rem; font-size: .9rem; color: var(--text); }
   input[type="text"], input[type="number"], input[type="datetime-local"],
@@ -30,7 +37,7 @@
   input::placeholder, textarea::placeholder { color: var(--muted); }
   input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
   textarea { font-family: inherit; font-size: .95rem; min-height: 6rem; resize: vertical; }
-  small { display: block; color: var(--muted); font-size: .8rem; margin-top: .25rem; }
+  small { display: block; color: var(--muted); font-size: .8rem; margin-top: .25rem; overflow-wrap: anywhere; }
   pre { background: var(--surface); color: var(--text); padding: 1rem; overflow-x: auto; font-size: .85rem; border-radius: 4px; white-space: pre-wrap; word-break: break-word; border: 1px solid var(--border); }
   .actions { margin: 1rem 0; display: flex; gap: .5rem; flex-wrap: wrap; }
   button { padding: .5rem 1rem; font-size: 1rem; cursor: pointer; border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 5px; }
@@ -48,10 +55,13 @@
   button.danger-action:hover { background: rgba(230, 90, 90, 0.24); }
   button[disabled] { opacity: .45; cursor: not-allowed; }
   input[type="checkbox"], input[type="range"] { accent-color: var(--accent); }
-  /* Padrão geral p/ campos só-leitura: fundo mais escuro, texto esmaecido,
-     cursor bloqueado — deixa claro que o valor não é editável (ex.: o ID em edição). */
+  /* Padrão geral p/ campos só-leitura (o ID em edição, o Tempo total
+     calculado): borda tracejada + cursor bloqueado deixam claro que não é
+     editável, mas o valor segue LEGÍVEL — o fundo quase preto de antes, com
+     texto cinza (~2,6:1), sumia no sol. */
   input[readonly], textarea[readonly] {
-    background: #0a1119; color: var(--muted); cursor: not-allowed; border-color: var(--border);
+    background: var(--surface); color: var(--text); opacity: .8;
+    border-style: dashed; border-color: var(--muted); cursor: not-allowed;
   }
   .required::after { content: " *"; color: var(--err); }
   /* Miniatura da imagem do anúncio já cadastrada (modo edição). */
@@ -69,6 +79,12 @@
   .row > div { min-width: 0; }
   .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; }
   .row3 > div { min-width: 0; }
+  /* Celular: uma coluna — em duas, a data ficava com 105 px e cortava a hora. */
+  @media (max-width: 600px) {
+    body { margin: 1rem auto; padding: 0 .75rem; }
+    fieldset { padding: .75rem; }
+    .row, .row3 { grid-template-columns: 1fr; gap: 0; }
+  }
 
   /* Tom Select tema escuro pra combinar com o app. */
   .ts-wrapper { font-size: .9rem; }
@@ -83,6 +99,9 @@
     display: grid; grid-template-columns: 2fr 1fr auto; gap: .5rem;
     align-items: end; margin-bottom: .5rem;
   }
+  .series-row > div { min-width: 0; }
+  /* Com uma linha só, o ✕ não faz nada (série é obrigatória) — nem aparece. */
+  .series-row:only-child button.danger { visibility: hidden; }
   .checkboxes { display: flex; gap: 1.5rem; flex-wrap: wrap; }
   .checkboxes label {
     display: inline-flex; align-items: center; gap: .35rem; margin: 0;
@@ -91,6 +110,8 @@
   .checkboxes input { width: auto; }
 
   #notices { display: flex; flex-direction: column; gap: .35rem; }
+  #draft-notice { margin: 0 0 .75rem; line-height: 1.5; }
+  #draft-notice button.linkish { margin-left: .25rem; }
   .notice { padding: .35rem .55rem; border-radius: 4px; font-size: .85rem; }
   .notice.ok   { background: rgba(64, 200, 96, 0.15);  color: var(--ok);   border: 1px solid rgba(64, 200, 96, 0.4); }
   .notice.warn { background: rgba(240, 200, 60, 0.15); color: var(--warn); border: 1px solid rgba(240, 200, 60, 0.4); }
@@ -112,10 +133,32 @@
      fonte da verdade; o picker só escreve nele. */
   .dt-field { display: flex; gap: .4rem; align-items: stretch; position: relative; }
   .dt-field input[type="text"] { flex: 1; min-width: 0; }
+  .dt-field .pick-wrap { position: relative; display: flex; flex: 0 0 auto; }
   .dt-field button.pick { padding: 0 .6rem; font-size: 1.05rem; line-height: 1; flex: 0 0 auto; }
   .dt-field input[type="datetime-local"] {
     position: absolute; left: 0; bottom: 0; width: 1px; height: 1px;
     opacity: 0; pointer-events: none; border: 0; padding: 0; margin: 0;
+  }
+  /* Toque (e todo iOS): showPicker() não faz nada no iOS, então o
+     datetime-local REAL, transparente, cobre o 📅 — o toque cai direto nele e
+     abre a roda nativa, sem depender de JS. (.dt-overlay vem do JS.) */
+  .dt-field.dt-overlay .pick-wrap input[type="datetime-local"] {
+    left: 0; top: 0; right: 0; bottom: 0; width: 100%; height: 100%;
+    pointer-events: auto; cursor: pointer; font-size: 16px;
+    -webkit-appearance: none; appearance: none; background: transparent; color: transparent;
+  }
+
+  /* ── Toque: alvos de 44 px e campos de 16 px ──────────────────────────
+     O iOS dá zoom na página ao focar campo com fonte < 16 px (e não volta).
+     O CSS do Tom Select (carregado depois deste <style>) põe 13 px no
+     controle — daí o !important. */
+  @media (pointer: coarse) {
+    input, select, textarea,
+    .ts-control, .ts-control input, .ts-dropdown { font-size: 16px !important; }
+    .dt-field button.pick { min-width: 44px; min-height: 44px; }
+    button.danger { min-width: 44px; min-height: 44px; }
+    .checkboxes label { min-height: 44px; }
+    .topnav a.back { padding: .7rem .9rem; }
   }
 </style>
 <link href="./lib/tom-select.min.css" rel="stylesheet">
@@ -135,6 +178,9 @@
   inline.
 </p>
 
+<!-- Rascunho restaurado (localStorage) — preenchido pelo script. -->
+<div id="draft-notice" role="status" hidden></div>
+
 <form id="form" autocomplete="off">
 
   <fieldset>
@@ -153,7 +199,7 @@
     <div class="row">
       <div>
         <label class="required" for="t-date">Data + hora agendada</label>
-        <input type="text" id="t-date" required inputmode="numeric"
+        <input type="text" id="t-date" required
                pattern="\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2})?"
                placeholder="2026-06-11 20:00">
         <small>Formato 24h: <code>AAAA-MM-DD HH:MM</code> — ou escolha no 📅.</small>
@@ -229,7 +275,7 @@
     <div class="row">
       <div>
         <label for="t-energy-kj">Energia estimada (kJ)</label>
-        <input type="number" id="t-energy-kj" min="0" step="1" placeholder="ex.: 220">
+        <input type="number" id="t-energy-kj" min="0" step="any" placeholder="ex.: 220">
         <small>Vira <code>ph:energyEstimate</code>.</small>
       </div>
     </div>
@@ -240,14 +286,14 @@
     <div class="row">
       <div>
         <label for="t-departed">Partiu em</label>
-        <input type="text" id="t-departed" inputmode="numeric"
+        <input type="text" id="t-departed"
                pattern="\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2})?"
                placeholder="2026-06-11 20:05">
         <small>Vira <code>ph:departedAt</code>. Formato 24h: <code>AAAA-MM-DD HH:MM</code> — ou 📅.</small>
       </div>
       <div>
         <label for="t-arrived">Chegou em</label>
-        <input type="text" id="t-arrived" inputmode="numeric"
+        <input type="text" id="t-arrived"
                pattern="\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2})?"
                placeholder="2026-06-11 23:40">
         <small>Vira <code>ph:arrivedAt</code>. Formato 24h: <code>AAAA-MM-DD HH:MM</code> — ou 📅.</small>
@@ -292,7 +338,7 @@
       </div>
       <div>
         <label for="t-measured-kj">Energia medida (kJ)</label>
-        <input type="number" id="t-measured-kj" min="0" step="1" placeholder="ex.: 195">
+        <input type="number" id="t-measured-kj" min="0" step="any" placeholder="ex.: 195">
         <small>Vira <code>ph:measuredEnergy</code>.</small>
       </div>
     </div>
@@ -340,7 +386,29 @@ const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 if (window.self !== window.top) {
   $('h1')?.style.setProperty('display', 'none');
   $('.lede')?.style.setProperty('display', 'none');
+  // Pinça dentro do sheet não pode deixar o app INTEIRO com zoom (o Safari
+  // ignora user-scalable=no; estes são os eventos de gesto do WebKit).
+  // Standalone mantém o zoom de pinça (acessibilidade).
+  for (const t of ['gesturestart', 'gesturechange']) document.addEventListener(t, (e) => e.preventDefault(), { passive: false });
 }
+
+// ── Estado do form pro app-pai (contrato `phidro-form-state`) + rascunho ───
+// Embutido num sheet do app, o form avisa se tem trabalho em curso (`busy`:
+// salvando/apagando) ou digitação não salva (`dirty`) — o app pergunta antes
+// de fechar o sheet ou trocar o iframe. As funções moram no fim do script
+// (seção "Rascunho"); aqui só o estado, declarado antes de qualquer uso (o
+// boot tem awaits — um evento pode chegar no meio).
+const DRAFT_PREFIX = 'phidro:tourDraft:';
+let formReady = false;        // baseline capturado — antes disso nada está "sujo"
+let formBusy = '';            // '' ou o rótulo do trabalho em curso
+let _lastFormState = '';
+let draftKey = DRAFT_PREFIX + 'novo';
+let draftEnabled = false;     // liga no initFormState; desliga ao apagar/descartar
+let _draftTimer = 0;
+let leavingOnPurpose = false; // navegação já confirmada (sem beforeunload duplo)
+let baselineSnap = null, baselineKey = '', baselineTotalTyped = false;
+postFormState({ busy: false, dirty: false, label: '' });   // uma vez no load
+_lastFormState = 'false|false|';
 
 // "← Voltar ao censo (sem salvar)": só quando se chegou PELO censo — os links
 // de lá carregam `from=censo` (e o referrer serve de fallback). No modal
@@ -386,15 +454,14 @@ const DCT    = 'http://purl.org/dc/terms/';
 const RDF_TYPE = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
 
 // ────────────────────── Helpers ──────────────────────────────────────
+// Literal de UMA linha (quebras viram \n escapado). Vale também pra narrativa:
+// o multipart/form-data converte toda quebra CRUA dos campos de texto em CRLF
+// (o spec manda; WebKit e Blink fazem) — com um """longo""" o \r entrava no
+// literal e a descrição voltava do servidor com CRLF (o backfill a via como
+// "editada"). Escapada, só a indentação do Turtle vira CRLF, que é espaço.
 function turtleEscape(s) {
   return (s || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"')
     .replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t');
-}
-function turtleEscapeMultiline(s) {
-  // Escapa `"""` interno e qualquer aspa no fim (que estenderia o delimitador
-  // de fechamento `"""`), além de CR/barra. \n é permitido literal aqui.
-  return (s || '').replace(/\\/g, '\\\\').replace(/\r/g, '\\r')
-    .replace(/"""/g, '\\"\\"\\"').replace(/"+$/, m => m.replace(/"/g, '\\"'));
 }
 function escapeIri(u) {
   // Percent-encoda chars que não podem aparecer crus num IRI Turtle <...>.
@@ -443,15 +510,30 @@ function fmtDateTime(value) {
   }
   return v.length === 16 ? `${v}:00-03:00` : `${v}-03:00`;
 }
+// iOS/iPadOS: showPicker() existe mas NÃO abre nada em input de data/hora
+// (PageClientImplIOS::createDateTimePicker devolve nullptr — WebKit bug
+// 261703) e também não lança, então o fallback focus() nunca rodava e o 📅
+// ficava morto. O iPadOS se anuncia como Mac: quem o denuncia é o toque.
+const IS_IOS = /iP(hone|ad|od)/.test(navigator.userAgent)
+  || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+// Toque (ou iOS): o datetime-local REAL, transparente, fica por cima do 📅 —
+// o toque cai nele e o sistema abre a roda nativa sozinho (ver .dt-overlay).
+const DT_OVERLAY = IS_IOS || !!window.matchMedia?.('(pointer: coarse)').matches;
+
 // Picker nativo de data+hora por trás de um campo de texto 24h. O texto
 // "AAAA-MM-DD HH:MM" segue sendo o valor canônico (o datetime-local cru
 // renderiza mm/dd/yyyy + AM/PM em locale en-US, sem como forçar formato —
-// por isso os campos viraram texto); o 📅 abre o picker escondido e copia a
-// escolha pro texto. `seedFrom()` dá o valor inicial do picker quando o
-// campo está vazio (ex.: Chegou em abre no dia do Partiu em).
+// por isso os campos viraram texto); o 📅 abre o picker e copia a escolha
+// pro texto. `seedFrom()` dá o valor inicial do picker quando o campo está
+// vazio (ex.: Chegou em abre no dia do Partiu em).
 function attachDateTimePicker(input, seedFrom) {
+  // Teclado de TEXTO (o inputmode=numeric dava no iPhone um teclado só de
+  // dígitos, sem '-', ':' nem espaço) e sem autocorreção mexendo na data.
+  input.setAttribute('autocapitalize', 'off');
+  input.setAttribute('autocorrect', 'off');
+  input.spellcheck = false;
   const wrap = document.createElement('div');
-  wrap.className = 'dt-field';
+  wrap.className = 'dt-field' + (DT_OVERLAY ? ' dt-overlay' : '');
   input.parentNode.insertBefore(wrap, input);
   wrap.appendChild(input);
   const picker = document.createElement('input');
@@ -464,18 +546,26 @@ function attachDateTimePicker(input, seedFrom) {
   btn.textContent = '📅';
   btn.title = 'Escolher data e hora no calendário';
   btn.setAttribute('aria-label', 'Escolher data e hora');
-  wrap.append(btn, picker);
+  const pickWrap = document.createElement('span');
+  pickWrap.className = 'pick-wrap';
+  pickWrap.append(btn, picker);
+  wrap.append(pickWrap);
   const toPicker = (txt) => {
     const v = (txt || '').trim().replace(' ', 'T');
     return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(v) ? v.slice(0, 16) : '';
   };
+  const seed = () => { picker.value = toPicker(input.value) || toPicker(seedFrom?.()) || ''; };
+  // Sobreposto, o toque vai direto pro picker: semeia antes de a roda abrir
+  // (o pointerdown vem antes do foco; o foco cobre teclado/acessibilidade).
+  picker.addEventListener('pointerdown', seed);
+  picker.addEventListener('focus', seed);
   btn.addEventListener('click', () => {
-    picker.value = toPicker(input.value) || toPicker(seedFrom?.()) || '';
+    seed();
     // showPicker() exige gesto do usuário (estamos num click) e elemento
-    // renderizado; fora disso (Safari antigo) cai no focus+click, que no
-    // iOS abre a roda nativa.
+    // renderizado. No iOS ele não abre nada — lá quem abre a roda é o foco
+    // (dentro do gesto); idem em browser sem showPicker ou quando ele lança.
     try {
-      if (typeof picker.showPicker === 'function') picker.showPicker();
+      if (!IS_IOS && typeof picker.showPicker === 'function') picker.showPicker();
       else { picker.focus(); picker.click(); }
     } catch (_) { picker.focus(); picker.click(); }
   });
@@ -781,6 +871,15 @@ function setFreeTags(ts, values) {
     ts.addItem(v, true);
   }
 }
+// Seleciona `v` mesmo fora do catálogo (addItem sem a option não faz nada):
+// cria a opção com o fim do IRI de rótulo.
+function keepItem(ts, v) {
+  if (!ts.options[v]) {
+    const tail = String(v).replace(/^<|>$/g, '').split(/[/#:]/).pop() || v;
+    ts.addOption({ value: v, text: tail });
+  }
+  ts.addItem(v, true);
+}
 
 // Toggle de visibilidade dos campos de lista nominal — lê o setting do
 // localStorage (mesma chave usada pelo app principal: `phidro:settings`).
@@ -830,6 +929,7 @@ function addSeriesRow() {
   const sel  = row.querySelector('select');
   const num  = row.querySelector('input[type="number"]');
   const del  = row.querySelector('button.danger');
+  num.enterKeyHint = 'next';
 
   const ts = moveCreateToBottom(new TomSelect(sel, tsConfig(seriesOptions, mintSeries, false)));
 
@@ -845,9 +945,10 @@ function addSeriesRow() {
     row.remove();
     const idx = seriesTsList.indexOf(entry);
     if (idx >= 0) seriesTsList.splice(idx, 1);
+    onFormEdited();
   });
 }
-$('#add-series').addEventListener('click', addSeriesRow);
+$('#add-series').addEventListener('click', () => { addSeriesRow(); onFormEdited(); });
 addSeriesRow();    // primeira linha sempre presente
 
 // ────────────────────── Modo edição: patch por predicado ────────────────
@@ -907,7 +1008,7 @@ function buildTtl() {
   const title     = $('#t-title').value.trim();
   const date      = fmtDateTime($('#t-date').value);
   const instagram = $('#t-instagram').value.trim();
-  const narrative = $('#t-narrative').value.trim();
+  const narrative = $('#t-narrative').value.replace(/\r\n?/g, '\n').trim();
   const organizers = orgTs.getValue();
   const routeUrl  = $('#t-route-url').value.trim();
   const routeProv = providerTs.getValue();
@@ -984,7 +1085,7 @@ function buildTtl() {
     );
   }
   if (instagram) props.push(`ph:linkInstagram "${turtleEscape(instagram)}"^^xsd:anyURI`);
-  if (narrative) props.push(`dcterms:description """${turtleEscapeMultiline(narrative)}"""@pt`);
+  if (narrative) props.push(`dcterms:description "${turtleEscape(narrative)}"@pt`);
 
   // Guarda NaN/negativo: o campo é type="number", mas um valor que parseInt
   // não resolve por inteiro (ex.: "-") emitiria `ph:countAttendee NaN`,
@@ -1044,7 +1145,11 @@ function buildTtl() {
       }
     }
   }
-  const allPeople = new Set([...authors, ...providers]);
+  // Toda pessoa criada na hora (Tom Select) que o TTL referencia — autoras,
+  // quem subiu E as listas nominais. Participantes/iniciantes novos ficavam
+  // sem `a schema:Person` (a shape só avisa): o nome digitado se perdia e a
+  // pessoa virava um slug solto, que o próximo save ainda descartava.
+  const allPeople = new Set([...authors, ...providers, ...attendeesList, ...newcomersList]);
   const newPeopleUsed = [...newPersons].filter(([iri]) => allPeople.has(iri));
   if (newPeopleUsed.length) {
     auxDecls += '\n# Pessoas novas\n';
@@ -1089,6 +1194,7 @@ $('#preview').addEventListener('click', () => {
   clearNotices();
   try {
     let ttl = buildTtl();
+    onFormEdited();   // buildTtl pode deduzir um horário (Tempo total)
     if (editMode) {
       const rm = buildRemoveList();
       if (rm.length) ttl += `\n# patch — remove: ${rm.join(', ')}\n`;
@@ -1112,8 +1218,34 @@ function notifyParentTourChanged(tourId) {
   } catch (_) {}
 }
 
+// "return" num campo de linha única NÃO salva o passeio: a submissão
+// implícita mandava um PATCH pra produção a cada Enter (no iPhone é o jeito
+// de sair do campo). Checar `ev.submitter` no submit não resolve — a
+// submissão implícita é um clique simulado no #send (WebKit
+// HTMLFormElement::submitImplicitly; o Chromium idem), então o submitter é o
+// próprio #send. Barrar o keydown impede o clique. Enter pula pro próximo
+// campo; no Tom Select o Enter é dele (criar/escolher item) e só a submissão
+// é barrada. Textarea (quebra de linha) e botões (ativação) passam direto.
+const NEXT_FIELD_SEL = 'input:not([type=hidden]):not([type=checkbox]):not([type=radio]):not([type=file])'
+  + ':not([tabindex="-1"]), textarea';
+$('#form').addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' || e.isComposing) return;
+  const t = e.target;
+  if (!(t instanceof HTMLInputElement) || /^(button|submit|reset|image)$/.test(t.type)) return;
+  e.preventDefault();
+  if (t.closest('.ts-wrapper') || t.type === 'checkbox' || t.type === 'radio') return;
+  const fields = $$(NEXT_FIELD_SEL, $('#form'))
+    .filter((el) => !el.disabled && !el.readOnly && el.getClientRects().length);
+  const next = fields[fields.indexOf(t) + 1];
+  if (next) next.focus(); else t.blur();
+});
+for (const el of $$('#form input[type=text], #form input[type=url], #form input[type=number]')) {
+  if (!el.closest('.ts-wrapper')) el.enterKeyHint = 'next';
+}
+
 $('#form').addEventListener('submit', async (ev) => {
   ev.preventDefault();
+  if (formBusy) return;   // já salvando/apagando
   clearNotices();
   let ttl;
   try {
@@ -1127,6 +1259,10 @@ $('#form').addEventListener('submit', async (ev) => {
 
   $('#send').disabled = true;
   $('#send').textContent = 'Enviando…';
+  // Snapshot do que está indo — o que a pessoa digitar DURANTE o envio segue
+  // "sujo" (e no rascunho) depois do ✓.
+  const sentSnap = snapshotForm();
+  setFormBusy('passeio ainda sendo salvo');
   try {
     const fd = new FormData();
     fd.append('ttl', ttl);
@@ -1145,6 +1281,7 @@ $('#form').addEventListener('submit', async (ev) => {
         : '';
       notice(`✓ Salvo: <code>pas:${escapeHtml(json.tour_id)}</code>${aurl}. Catálogo recarregado.`, 'ok');
       notifyParentTourChanged(json.tour_id);
+      markSaved(sentSnap, json.tour_id);
       // Status da sincronização da rota (routes.json) — best-effort no backend.
       const r = json.route || {};
       const provLabel = r.provider === 'amora' ? 'da rota salva do Amora' : 'do RideWithGPS';
@@ -1171,7 +1308,8 @@ $('#form').addEventListener('submit', async (ev) => {
     notice(`Falha de rede: ${escapeHtml(e.message)}`, 'err');
   } finally {
     $('#send').disabled = false;
-    $('#send').textContent = 'Enviar →';
+    $('#send').textContent = editMode ? 'Atualizar ⟳' : 'Enviar →';
+    setFormBusy('');
   }
 });
 
@@ -1370,13 +1508,14 @@ async function prefillFromId(tourId) {
   setFreeTags(activitiesTs, activities);
   $('#t-route-url').value = routeUrl;
 
-  // Select e multi-selects.
+  // Select e multi-selects. Uma referência fora do catálogo (ex.: participante
+  // salvo sem declaração antes do conserto acima) entra como opção com o slug
+  // de rótulo — antes ela sumia do picker e o próximo save a apagava.
   if (routeProv && providerTs.options[routeProv]) providerTs.setValue(routeProv, true);
-  for (const v of authors)    if (authorTs.options[v])    authorTs.addItem(v, true);
-  for (const v of providers)  if (providerTs2.options[v]) providerTs2.addItem(v, true);
-  for (const v of organizers) if (orgTs.options[v])       orgTs.addItem(v, true);
-  for (const v of attendeesList) if (attendeesTs.options[v]) attendeesTs.addItem(v, true);
-  for (const v of newcomersList) if (newcomersTs.options[v]) newcomersTs.addItem(v, true);
+  for (const [ts, list] of [[authorTs, authors], [providerTs2, providers], [orgTs, organizers],
+                            [attendeesTs, attendeesList], [newcomersTs, newcomersList]]) {
+    for (const v of list) keepItem(ts, v);
+  }
   // Auto-revela os campos quando o passeio carregado JÁ tem listas — pra
   // que o usuário consiga editar mesmo se o toggle estiver OFF no app.
   if (attendeesList.length || newcomersList.length) {
@@ -1437,6 +1576,9 @@ async function prefillFromId(tourId) {
   // pré-seleciona o select via ?tour=<slug>).
   const mediaBtn = $('#upload-media');
   mediaBtn.addEventListener('click', () => {
+    // Sai do form (navega o iframe/aba): o que não foi salvo fica no rascunho
+    // deste aparelho, mas salvar é outro botão — confirma antes.
+    if (!confirmLeave('Ir pro envio de mídias')) return;
     // Propaga `from=censo` pra que o "← Voltar ao censo" apareça lá também.
     const fromCenso = new URLSearchParams(location.search).get('from') === 'censo';
     location.href = `./upload_images.html?tour=${encodeURIComponent(tourId)}${fromCenso ? '&from=censo' : ''}`;
@@ -1448,16 +1590,20 @@ async function prefillFromId(tourId) {
   const delBtn = $('#delete-tour');
   delBtn.hidden = false;
   delBtn.addEventListener('click', async () => {
+    if (formBusy) return;
     if (!confirm(`Apagar passeio pas:${tourId} de tours.ttl + assets do bucket? Esta ação não pode ser desfeita pelo form.`)) return;
     delBtn.disabled = true;
     const orig = delBtn.textContent;
     delBtn.textContent = 'Apagando…';
+    setFormBusy('passeio sendo apagado');
     try {
       const res = await fetch(`./delete-tour/${encodeURIComponent(tourId)}`, { method: 'POST' });
       const json = await res.json().catch(() => ({}));
       if (res.ok) {
         notice(`✓ Apagado: ${escapeHtml(json.triples || 0)} triples, ${escapeHtml(json.assets || 0)} arquivo(s).`, 'ok');
         notifyParentTourChanged(tourId);
+        // O passeio não existe mais: nem rascunho nem "alterações não salvas".
+        retireForm();
         // Trava o form pra evitar submit acidental de um tour fantasma.
         $$('input, select, textarea, button').forEach(el => { el.disabled = true; });
       } else {
@@ -1469,6 +1615,8 @@ async function prefillFromId(tourId) {
       notice(`Falha de rede: ${escapeHtml(e.message)}`, 'err');
       delBtn.disabled = false;
       delBtn.textContent = orig;
+    } finally {
+      setFormBusy('');
     }
   });
 
@@ -1484,14 +1632,254 @@ function mintTourSlug() {
   return Array.from(b, (x) => A[x % 32]).join('');
 }
 
+// ────────────────────── Rascunho + estado pro app-pai ─────────────────────
+// A cada mudança o form grava um RASCUNHO no localStorage (chave por ?id, ou
+// "novo" na criação): um toque fora do sheet, o iOS descartando a aba enquanto
+// a pessoa copia a legenda no Instagram, a bateria — nada disso perde mais a
+// digitação. Na próxima abertura do MESMO passeio o rascunho volta por cima do
+// estado carregado, com um aviso no topo (e "descartar"). Salvar com sucesso,
+// apagar o passeio ou "Voltar ao censo (sem salvar)" limpam o rascunho.
+const DRAFT_MAX_AGE_MS = 14 * 24 * 3600 * 1000;
+
+function snapshotForm() {
+  const val = (sel) => $(sel).value;
+  // Número normalizado ("340.0" do catálogo == "340" digitado).
+  const num = (sel) => { const v = val(sel).trim(); const n = parseFloat(v); return v === '' || !Number.isFinite(n) ? v : String(n); };
+  return {
+    id: val('#t-id'),
+    title: val('#t-title'), date: val('#t-date'), instagram: val('#t-instagram'),
+    narrative: val('#t-narrative'),
+    series: seriesTsList.map(({ ts, editionEl }) => [ts.getValue(), editionEl.value])
+      .filter(([code, edition]) => code || edition),
+    organizers: orgTs.getValue(),
+    routeUrl: val('#t-route-url'), routeProv: providerTs.getValue(),
+    authors: authorTs.getValue(), providers: providerTs2.getValue(),
+    attendeesList: attendeesTs.getValue(), newcomersList: newcomersTs.getValue(),
+    energy: num('#t-energy-kj'),
+    departed: val('#t-departed'), arrived: val('#t-arrived'),
+    total: val('#t-total-time'), moving: val('#t-moving-time'),
+    depLoc: val('#t-departure-loc'), arrLoc: val('#t-arrival-loc'),
+    attendees: num('#t-attendees'), newcomers: num('#t-newcomers'), measured: num('#t-measured-kj'),
+    bonde: $('#t-had-bonde').checked, rain: $('#t-had-rain').checked,
+    incidents: incidentsTs.getValue(), activities: activitiesTs.getValue(),
+    announcement: !!$('#t-announcement').files?.length,
+  };
+}
+// O slug fica fora da comparação: na criação ele é sorteado a cada abertura
+// (e na edição é travado).
+function stateKey(snap) {
+  const { id, ...rest } = snap;
+  return JSON.stringify(rest);
+}
+function isFormDirty() {
+  return formReady && stateKey(snapshotForm()) !== baselineKey;
+}
+function postFormState(st) {
+  if (window.parent === window) return;
+  try { window.parent.postMessage({ type: 'phidro-form-state', ...st }, location.origin); } catch (_) {}
+}
+function refreshFormState() {
+  const busy = !!formBusy, dirty = isFormDirty();
+  const label = busy ? formBusy : (dirty ? 'alterações não salvas no passeio' : '');
+  const k = `${busy}|${dirty}|${label}`;
+  if (k === _lastFormState) return;
+  _lastFormState = k;
+  postFormState({ busy, dirty, label });
+}
+function setFormBusy(label) {
+  formBusy = label || '';
+  refreshFormState();
+}
+function onFormEdited() {
+  if (!formReady) return;
+  refreshFormState();
+  clearTimeout(_draftTimer);
+  _draftTimer = setTimeout(saveDraftNow, 400);
+}
+function saveDraftNow() {
+  clearTimeout(_draftTimer);
+  if (!formReady || !draftEnabled) return;
+  const snap = snapshotForm();
+  try {
+    if (stateKey(snap) === baselineKey) { localStorage.removeItem(draftKey); return; }
+    localStorage.setItem(draftKey, JSON.stringify({
+      v: 1, at: Date.now(), base: baselineKey, state: snap, totalUserTyped,
+      newPersons: [...newPersons], newOrgs: [...newOrgs], newSeries: [...newSeries],
+    }));
+  } catch (_) { /* storage cheio/bloqueado (aba privada): segue sem rascunho */ }
+}
+function clearDraft() {
+  clearTimeout(_draftTimer);
+  try { localStorage.removeItem(draftKey); } catch (_) {}
+}
+function readDraft() {
+  try {
+    const d = JSON.parse(localStorage.getItem(draftKey) || 'null');
+    if (d && d.v === 1 && d.state && Date.now() - d.at < DRAFT_MAX_AGE_MS) return d;
+    if (d) localStorage.removeItem(draftKey);
+  } catch (_) {}
+  return null;
+}
+// Põe um estado (rascunho ou baseline) no form, pickers e séries inclusos.
+function applyFormState(st, typed) {
+  const put = (sel, v) => { if (typeof v === 'string') $(sel).value = v; };
+  if (!editMode) put('#t-id', st.id);
+  put('#t-title', st.title); put('#t-date', st.date); put('#t-instagram', st.instagram);
+  put('#t-narrative', st.narrative); put('#t-route-url', st.routeUrl);
+  put('#t-energy-kj', st.energy); put('#t-departed', st.departed); put('#t-arrived', st.arrived);
+  put('#t-total-time', st.total); put('#t-moving-time', st.moving);
+  put('#t-departure-loc', st.depLoc); put('#t-arrival-loc', st.arrLoc);
+  put('#t-attendees', st.attendees); put('#t-newcomers', st.newcomers);
+  put('#t-measured-kj', st.measured);
+  $('#t-had-bonde').checked = !!st.bonde;
+  $('#t-had-rain').checked = !!st.rain;
+  for (const [ts, list] of [[orgTs, st.organizers], [authorTs, st.authors], [providerTs2, st.providers],
+                            [attendeesTs, st.attendeesList], [newcomersTs, st.newcomersList]]) {
+    ts.clear(true);
+    for (const v of list || []) keepItem(ts, v);
+  }
+  if (st.routeProv) {
+    if (!providerTs.options[st.routeProv]) providerTs.addOption({ value: st.routeProv, text: st.routeProv });
+    providerTs.setValue(st.routeProv, true);
+  } else providerTs.clear(true);
+  setFreeTags(incidentsTs, st.incidents || []);
+  setFreeTags(activitiesTs, st.activities || []);
+  for (const e of [...seriesTsList]) { e.ts.destroy(); e.rowEl.remove(); }
+  seriesTsList.length = 0;
+  for (const [code, edition] of (st.series?.length ? st.series : [['', '']])) {
+    addSeriesRow();
+    const entry = seriesTsList[seriesTsList.length - 1];
+    if (code) {
+      if (!entry.ts.options[code]) entry.ts.addOption({ value: code, text: `${code} — ${code}` });
+      entry.ts.setValue(code, true);
+    }
+    entry.editionEl.value = edition || '';
+  }
+  if (st.attendeesList?.length || st.newcomersList?.length) $('#attendee-fields').hidden = false;
+  totalUserTyped = !!typed;
+  syncTotalTime();
+}
+function applyDraft(d) {
+  // Entidades criadas na hora no rascunho: voltam como opção E como "nova"
+  // (senão o TTL as referenciaria sem declarar).
+  for (const [iri, name] of d.newPersons || []) {
+    if (!newPersons.has(iri)) newPersons.set(iri, name);
+    broadcastNewPerson({ value: iri, text: name });
+  }
+  for (const [iri, name] of d.newOrgs || []) {
+    if (!newOrgs.has(iri)) newOrgs.set(iri, name);
+    orgTs.addOption({ value: iri, text: name });
+  }
+  for (const [iri, code] of d.newSeries || []) if (!newSeries.has(iri)) newSeries.set(iri, code);
+  applyFormState(d.state, d.totalUserTyped);
+}
+function showDraftNotice(d, serverChanged) {
+  const box = $('#draft-notice');
+  const when = new Date(d.at).toLocaleString('pt-BR',
+    { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  box.className = `notice ${serverChanged ? 'warn' : 'ok'}`;
+  box.innerHTML =
+    `<strong>Rascunho restaurado</strong> (de ${escapeHtml(when)}) — ainda <strong>não foi salvo</strong>.` +
+    (d.state.announcement ? ' A imagem do anúncio precisa ser escolhida de novo.' : '') +
+    (serverChanged ? ' Atenção: o passeio mudou no servidor depois deste rascunho — confira antes de salvar.' : '') +
+    ' <button type="button" class="linkish" id="discard-draft">descartar rascunho</button>';
+  box.hidden = false;
+  $('#discard-draft').addEventListener('click', () => {
+    if (!confirm('Descartar o rascunho e voltar ao estado salvo do passeio?')) return;
+    clearDraft();
+    $('#t-announcement').value = '';
+    applyFormState(baselineSnap, baselineTotalTyped);
+    box.hidden = true;
+    refreshFormState();
+  });
+}
+// Salvou: o que foi enviado vira o novo estado "limpo".
+function markSaved(sentSnap, tourId) {
+  clearDraft();
+  baselineSnap = sentSnap;
+  baselineKey = stateKey(sentSnap);
+  baselineTotalTyped = totalUserTyped;
+  // Passeio recém-criado: dali pra frente o rascunho é o DELE (é a abertura em
+  // modo edição, ?id=<slug>, que vai procurá-lo).
+  if (!editMode && tourId) draftKey = DRAFT_PREFIX + tourId;
+  $('#draft-notice').hidden = true;
+  refreshFormState();
+  saveDraftNow();   // digitou durante o envio? já vira rascunho
+}
+// Passeio apagado: nada mais a salvar nem a guardar.
+function retireForm() {
+  clearDraft();
+  draftEnabled = false;
+  formReady = false;
+  refreshFormState();
+}
+// Navegação pra fora do form (iframe ou aba) iniciada AQUI — o app não vê.
+const BUSY_LEAVE_MSG = 'Ainda há um envio em andamento — sair agora pode perdê-lo. Sair mesmo assim?';
+function confirmLeave(what) {
+  if (formBusy && !confirm(BUSY_LEAVE_MSG)) return false;
+  if (!formBusy && isFormDirty()
+      && !confirm(`Este passeio tem alterações não salvas (ficam como rascunho neste aparelho). ${what} mesmo assim?`)) return false;
+  saveDraftNow();
+  leavingOnPurpose = true;
+  return true;
+}
+function initFormState(editId) {
+  draftKey = DRAFT_PREFIX + (editId || 'novo');
+  baselineSnap = snapshotForm();
+  baselineKey = stateKey(baselineSnap);
+  baselineTotalTyped = totalUserTyped;
+  formReady = true;
+  draftEnabled = true;
+  const d = readDraft();
+  if (d && stateKey(d.state) !== baselineKey) {
+    applyDraft(d);
+    showDraftNotice(d, d.base !== baselineKey);
+  } else if (d) {
+    clearDraft();
+  }
+  $('#form').addEventListener('input', onFormEdited);
+  $('#form').addEventListener('change', onFormEdited);
+  // Saindo/escondendo: grava o rascunho já (o debounce pode não ter rodado) e
+  // avisa o app que este form deixou de existir.
+  addEventListener('pagehide', () => {
+    saveDraftNow();
+    _lastFormState = '';
+    postFormState({ busy: false, dirty: false, label: '' });
+  });
+  addEventListener('pageshow', (e) => { if (e.persisted) refreshFormState(); });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') saveDraftNow();
+  });
+  // Aba própria (fora do app): o navegador pergunta antes de fechar com
+  // alteração não salva. No sheet quem pergunta é o app.
+  if (window.parent === window) {
+    addEventListener('beforeunload', (e) => {
+      if (!leavingOnPurpose && (formBusy || isFormDirty())) { e.preventDefault(); e.returnValue = ''; }
+    });
+  }
+  // "← Voltar ao censo (sem salvar)": explícito — descarta o rascunho junto.
+  $('#back-censo').addEventListener('click', (e) => {
+    if ((formBusy && !confirm(BUSY_LEAVE_MSG))
+        || (!formBusy && isFormDirty() && !confirm('Voltar ao censo descartando as alterações não salvas deste passeio?'))) {
+      e.preventDefault();
+      return;
+    }
+    clearDraft();
+    draftEnabled = false;
+    leavingOnPurpose = true;
+  });
+  refreshFormState();
+}
+
 const editId = new URLSearchParams(location.search).get('id');
 if (editId) {
-  prefillFromId(editId);
+  await prefillFromId(editId);
 } else {
   // Modo criação: pré-preenche um slug aleatório.
   const el = document.getElementById('t-id');
   if (el && !el.value) el.value = mintTourSlug();
 }
+initFormState(editId);
 </script>
 </body>
 </html>

@@ -23,7 +23,9 @@
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; background: var(--bg); color: var(--text);
-    font: 14px/1.5 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace; }
+    font: 14px/1.5 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    /* Aberta dentro do sheet do Censo: rolar até a borda não encadeia no app. */
+    overscroll-behavior: contain; }
   body { padding: 16px; max-width: 980px; margin: 0 auto; }
 
   header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
@@ -98,6 +100,11 @@
   .editor textarea { padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border);
     background: var(--surface); color: var(--text); font: inherit; font-size: 13px; resize: vertical; }
   .editor textarea:focus { outline: none; border-color: var(--accent); }
+  /* Toque: campos de 16 px — com menos, o iOS dá zoom na página ao focar a
+     busca ou o editor (e não volta ao tirar o foco). */
+  @media (pointer: coarse) {
+    input, select, textarea { font-size: 16px !important; }
+  }
   /* Apelido ao lado do nome real no resumo; chips de links/redes no corpo. */
   .phandle { color: var(--muted); font-size: 13px; }
   .social { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 14px; }
@@ -211,6 +218,9 @@ if (window.self !== window.top) {
   // No modal, mostra o próprio título (o modal não tem barra), mas esconde a
   // nav ("Censo →" / "← Mapa") — fecha pelo botão vermelho / clique fora / Esc.
   $('header nav')?.style.setProperty('display', 'none');
+  // Pinça dentro do sheet não pode deixar o app INTEIRO com zoom (o Safari
+  // ignora user-scalable=no). Standalone mantém a pinça (acessibilidade).
+  for (const t of ['gesturestart', 'gesturechange']) document.addEventListener(t, (e) => e.preventDefault(), { passive: false });
 }
 
 // ── N3.js (UMD vendored em ./lib/n3.min.js → popula window.N3) ───────────────
@@ -475,6 +485,15 @@ function seriesCodeFor(tourIri) {
   return codes.length ? codes.join(' & ') : null;
 }
 
+// Miniatura da arte do anúncio (backend: GET /tour_assets/<dir>/
+// announcement.thumb.jpg, gerada no 1º pedido) a partir da URL do original
+// (…/tour_assets/<dir>/announcement.<ext>, em qualquer host); null = arte
+// externa.
+function artThumb(url) {
+  const m = /\/tour_assets\/([A-Za-z0-9_-]+)\/announcement\.(?:jpe?g|png|webp|gif)$/i.exec(url || '');
+  return m ? `./tour_assets/${m[1]}/announcement.thumb.jpg` : null;
+}
+
 // Tiles de galeria (thumbnail 56×56). Passeio: arte de divulgação
 // (schema:image) → senão código de série → senão título (fonte pequena).
 function tourTile(iri) {
@@ -488,10 +507,13 @@ function tourTile(iri) {
     : `<span class="title">${escapeHtml(title)}</span>`;
   const art = imageOf.get(iri);
   if (art) {
-    // Se a arte 404ar, o onerror vira o tile em texto (série/título) — sem
+    // Tile de 56 px: a MINIATURA que o backend deriva da arte (lado menor
+    // 256 px, ~25 KB) — o original é PNG de até 10 MB, e o cartão de quem
+    // organizou mais passeios baixava ~45 MB. Arte externa: a própria. Se a
+    // imagem 404ar, o onerror vira o tile em texto (série/título) — sem
     // deixar um quadrado vazio.
     return `<a class="tile tour" href="${href}" target="_blank" rel="noopener" title="${escapeHtml(hover)}">` +
-      `<img loading="lazy" src="${escapeHtml(art)}" alt="" ` +
+      `<img loading="lazy" decoding="async" src="${escapeHtml(artThumb(art) || art)}" alt="" ` +
       `onerror="this.style.display='none';this.closest('a').classList.add('txt-tile');this.nextElementSibling.hidden=false">` +
       `<span hidden>${body}</span></a>`;
   }

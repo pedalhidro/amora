@@ -19,7 +19,10 @@
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; background: var(--bg); color: var(--text);
-    font: 14px/1.5 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace; }
+    font: 14px/1.5 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    /* No sheet do app: rolar até a borda não encadeia no app (nem dispara o
+       puxar-pra-recarregar da página de cima). */
+    overscroll-behavior: contain; }
   /* Sem cap de largura: tabela é muito ampla (kJ × 2, tempo × 2, listas
      nominais quando ON…) e cabe melhor edge-to-edge. */
   body { padding: 16px; max-width: none; margin: 0; }
@@ -86,6 +89,7 @@
     letter-spacing: 0.03em;
     color: var(--muted);
     cursor: pointer;
+    -webkit-user-select: none;   /* o iOS só honra o prefixado */
     user-select: none;
     white-space: nowrap;
     box-shadow: 0 1px 0 var(--border);
@@ -247,6 +251,24 @@
     display: flex; align-items: center; gap: 5px; }
   .cap-legend { color: var(--muted); font-size: 11px; margin-left: auto; }
 
+  /* ── Toque: alvos de pelo menos 44 px ─────────────────────────────────
+     Os ✗ da Captura (bolinhas de 15 px a ~30 px umas das outras) passam a
+     ter a CÉLULA inteira como alvo — sem invadir a vizinha — e Editar/Subir,
+     as abas e os filtros ganham altura de dedo. */
+  @media (pointer: coarse) {
+    #captura-table td.f { position: relative; padding: 10px 6px; }
+    #captura-table td.f a.dot::after { content: ''; position: absolute; inset: 0; }
+    .dot { width: 22px; height: 22px; line-height: 22px; font-size: 12px; }
+    /* Altura de dedo, largura contida: a coluna Ações é sticky à direita e
+       cada px dela cobre a tabela num celular de 390. */
+    tbody td a.edit-btn { display: inline-flex; align-items: center; min-height: 44px;
+      padding: 0 8px; font-size: 12px; }
+    tbody td a.edit-btn + a.edit-btn { margin-left: 6px; }
+    .tabs button { min-height: 44px; }
+    .cap-toolbar label { min-height: 44px; }
+    .btn-primary { min-height: 44px; display: inline-flex; align-items: center; }
+  }
+
   footer { margin-top: 20px; color: var(--muted); font-size: 11px; }
 
   /* ── Impressão: métricas + tabela, sem cromo interativo ──────────────── */
@@ -380,6 +402,10 @@ if (window.self !== window.top) {
   // agora vive na faixa do header do modal. Quem fecha é a bolinha / clique fora
   // / Esc. Standalone (aberto direto), o header aparece normalmente.
   $('header')?.style.setProperty('display', 'none');
+  // Pinça dentro do sheet não pode deixar o app INTEIRO com zoom (o Safari
+  // ignora user-scalable=no; estes são os eventos de gesto do WebKit).
+  // Standalone mantém o zoom de pinça (acessibilidade).
+  for (const t of ['gesturestart', 'gesturechange']) document.addEventListener(t, (e) => e.preventDefault(), { passive: false });
 }
 
 // ── N3.js ────────────────────────────────────────────────────────────────

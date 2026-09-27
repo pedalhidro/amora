@@ -12,7 +12,11 @@
     <!-- maximum-scale=1 + user-scalable=no: o iOS NÃO dá zoom automático ao
          focar um input (font < 16px), o que antes "sumia" com a interface (a
          tela zumia e não voltava). O zoom do MAPA é do Leaflet (JS), então
-         segue funcionando — isto desliga só o zoom do navegador na interface. -->
+         segue funcionando — isto desliga só o zoom do navegador na interface.
+         O Safari ignora esses limites pra PINÇA; quem a segura é o
+         gesturestart do app.js + touch-action nas folhas (pinçar uma folha
+         ampliava a página inteira sem volta). Legibilidade vem do tamanho
+         do texto dos controles, não do zoom da página. -->
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
     <meta name="theme-color" content="#ffffff" />
     <!--
@@ -44,7 +48,11 @@
       object-src 'none';
     " />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <!-- "default" (barra de status opaca, ícones escuros): com
+         "black-translucent" o iOS desenha hora/bateria em BRANCO por cima da
+         topbar branca — invisíveis no app da tela de início. Instalações
+         antigas só pegam a troca ao re-adicionar o atalho. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="Amora" />
     <meta name="mobile-web-app-capable" content="yes" />
     <link rel="manifest" href="manifest.json" />
@@ -127,12 +135,14 @@
     <link rel="preload" href="routes.json" as="fetch" crossorigin />
     <!-- Aquece DNS+TLS dos hosts de tiles antes do Leaflet pedir o 1º tile —
          adianta a primeira pintura do mapa (handshakes em paralelo com o boot). -->
-    <!-- SEM crossorigin: tiles são <img> no-CORS — um preconnect CORS abriria
-         uma conexão do "tipo" errado que o fetch do tile não reaproveita. -->
-    <link rel="preconnect" href="https://a.tile.openstreetmap.org" />
-    <link rel="preconnect" href="https://b.tile.openstreetmap.org" />
-    <link rel="preconnect" href="https://c.tile.openstreetmap.org" />
-    <link rel="preconnect" href="https://telhas.pedalhidrografi.co" />
+    <!-- O crossorigin do preconnect tem que casar com o modo do request, senão
+         o tile não reaproveita a conexão: OSM e telhas vão em CORS (as camadas
+         têm crossOrigin, pro SW poder guardar os tiles offline); a Câmera
+         Topográfica ainda é <img> no-CORS → preconnect sem crossorigin. -->
+    <link rel="preconnect" href="https://a.tile.openstreetmap.org" crossorigin />
+    <link rel="preconnect" href="https://b.tile.openstreetmap.org" crossorigin />
+    <link rel="preconnect" href="https://c.tile.openstreetmap.org" crossorigin />
+    <link rel="preconnect" href="https://telhas.pedalhidrografi.co" crossorigin />
     <link rel="preconnect" href="https://cameratopo.pedalhidrografi.co" />
     <!-- COM crossorigin: o geotiff.js busca os COGs do FABDEM em modo CORS. -->
     <link rel="preconnect" href="https://fabdem.pedalhidrografi.co" crossorigin />
@@ -149,7 +159,7 @@
       </div>
       <nav class="topbar-actions">
       <input type="file" id="photos-import-input" accept=".ttl,.zip,text/turtle,application/zip" hidden />
-      <input type="file" id="edit-gpx-input" accept=".gpx,application/gpx+xml" hidden />
+      <input type="file" id="edit-gpx-input" accept=".gpx,application/gpx+xml,application/octet-stream" hidden />
       <button id="subir-btn" type="button" class="secondary-btn" title="Ações" aria-label="Ações">☰ ações</button>
       <button id="subir-imagens-btn" type="button" class="secondary-btn" title="Enviar imagens (envio simplificado)" aria-label="Enviar imagens" aria-pressed="false">📤 enviar imgs</button>
       <button id="trace-btn" type="button" class="secondary-btn" title="Traçar GPX" aria-label="Traçar GPX">🗺︎ traçar</button>
@@ -188,7 +198,10 @@
            coluna de controles top-left do Leaflet, abaixo do zoom. -->
       <button id="geo-search-btn" type="button" class="geo-search-btn leaflet-bar leaflet-control" title="Buscar endereço" aria-label="Buscar endereço" aria-pressed="false">🔍</button>
       <div id="geo-search-panel" class="geo-search-panel" hidden>
-        <input type="search" id="geo-search-input" placeholder="Buscar endereço ou lugar…" autocomplete="off" enterkeyhint="search" aria-label="Buscar endereço" />
+        <div class="geo-search-row">
+          <input type="search" id="geo-search-input" placeholder="Buscar endereço ou lugar…" autocomplete="off" enterkeyhint="search" aria-label="Buscar endereço" />
+          <button type="button" id="geo-search-close" class="geo-search-close" aria-label="Fechar a busca" title="Fechar a busca">Fechar</button>
+        </div>
         <ul id="geo-search-results" role="listbox" aria-label="Resultados da busca"></ul>
         <p id="geo-search-status" class="geo-search-status" hidden></p>
         <p class="geo-search-attrib">busca <a href="https://photon.komoot.io/" target="_blank" rel="noopener">Photon</a> · dados © colaboradores do <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a></p>
@@ -222,6 +235,27 @@
           <details class="help-changelog">
             <summary>Novidades (changelog)</summary>
             <dl>
+              <dt>27/09/2026 · v416</dt>
+              <dd>
+                <p>Uma revisão inteira do amora no iPhone (Safari, atalho da tela de início e o app). Os destaques:</p>
+                <ul>
+                  <li><strong>Offline de verdade e sinal fraco.</strong> A cada atualização o app inteiro (mapa, estilos, formulários) fica guardado no aparelho e abre sem sinal, com as miniaturas das fotos e os mapas já vistos. Em 4G fraco, rotas, fotos e o resumo do passeio aparecem em ~3 s do que já está guardado, em vez de ficar em “Carregando…”; sem conexão e sem cópia, aviso com “↻ Tentar de novo”. Quando sai uma versão nova aparece <em>“Nova versão do amora disponível — ↻ Atualizar”</em> (com envio em andamento, pergunta antes), e o grafo do viário (~34 MB) não é mais baixado de novo a cada atualização.</li>
+                  <li><strong>Links de passeio (<code>/passeio/…</code>) abrem com o mapa, a rota e as fotos</strong> — antes o mapa ficava cinza e sem fotos. A tira de fotos do passeio usa miniaturas (não derruba mais o Safari nos passeios grandes), cada foto dela abre no mapa mesmo fora do filtro Padrão, “Filtrar imagens para esta rota” mostra todas as fotos do pedal, e o resumo do passeio volta a mostrar o link da rota.</li>
+                  <li><strong>Mapa no toque:</strong> rotas mais fáceis de tocar (e a rota aberta aparece acima da folha, não atrás); tocar perto de um ponto já abre a foto; um toque parado com dois dedos não trava mais a pinça seguinte; nada de destaque “grudado”. Se o iPhone descartar a aba no meio do pedal, o mapa volta onde estava (vista, giro, localização, rota destacada). Animação e slider de datas mais leves.</li>
+                  <li><strong>Folhas e formulários:</strong> um toque fora da folha não fecha mais envio de imagens nem cadastro de passeio; fechar ou trocar de página com algo pendente pergunta antes; o formulário completo guarda os cards ao fechar e um envio em andamento continua em segundo plano. Bolinhas de fechar/maximizar maiores, campos sem zoom ao focar, pinçar a interface não amplia a página e puxar pra baixo não recarrega. Com “Bloquear todos os cookies” no Safari, o app abre.</li>
+                  <li><strong>📤 Envio simplificado:</strong> cada foto sobe assim que é lida; se o envio falhar (4G, troca de app, tela apagada) ela ganha ↻ e é reenviada sozinha; ✎ abre o editor por cima sem interromper o lote; um álbum por passeio; avisos de foto sem localização ou sem data; a mesma foto vinda de outro aparelho é reconhecida; menos memória e bateria.</li>
+                  <li><strong>Vídeo no formulário completo:</strong> no iPhone com iOS 18 a conversão começa no toque em Enviar e funciona em lote (onde o Safari não grava WebM, o vídeo sobe em MP4); vídeos longos avisam antes e sobem em partes, com mensagem clara no lugar de “HTTP 413”; recorte melhor no toque; envios recomeçam sozinhos quando a conexão ou a tela voltam, com a tela acesa durante conversões e envios.</li>
+                  <li><strong>Galeria:</strong> “← Mapa” fecha a galeria; “Ver no mapa” e “Compartilhar” sem rolar; o voltar do celular fecha a foto; a seleção (listas, baixar, excluir) funciona no toque; baixar no celular salva nas Fotos, em lotes, com progresso; abre mais rápido e sem depender do CDN; o filtro de datas pega o dia certo (pedais noturnos sumiam). “Ver grande” no mapa abre a foto na galeria sem recarregá-la.</li>
+                  <li><strong>✏️ Traçar no celular:</strong> tocar rápido não deixa mais trechos em linha reta; abrir um link, GPX ou rota salva não apaga o seu rascunho (↶ ou “↺ Restaurar”); pra inserir no meio, segure o dedo na linha (pan e pinça na linha não criam pontos); GPX denso abre leve; a folha Salvar cabe na tela, “Copiar link” copia de verdade e o QR abre por cima; exportar GPX, QR e parâmetros abre a folha de compartilhar; o .gpx não aparece mais cinza no seletor; ⓘ na barra explica os botões e a simulação; a busca de endereço fica acima do teclado.</li>
+                  <li><strong>Roteamento por energia no celular:</strong> “pelo terreno” lê o relevo na resolução certa (~21 m) e em blocos reaproveitados — cada trecho baixa ~4× menos dados e a tela não trava enquanto calcula; o perfil de elevação de uma rota baixa só o relevo sob ela (rota longa: 58 → 12 MB), com os mesmos números. “Pelo viário” roda em segundo plano, mostra o progresso do download, não desiste em 4G lento e solta a memória ao sair do editor. Sem conexão com o relevo, o app avisa, usa uma fonte menos precisa e refaz quando ela volta. Trocar uma fonte de dados só re-roteia os trechos afetados (e dá pra desfazer). “Estimar” da Câmera Topográfica ~10× mais rápido.</li>
+                  <li><strong>Camadas Morros e Águas, Cicloinfra e Viário OSM:</strong> esconder a camada ou mover o mapa cancela o download em andamento; no celular o Viário OSM abre a partir do zoom 12, reaproveita a área já carregada e acompanha a pinça e o giro sem redesenhar a cada passo.</li>
+                  <li><strong>📍 Localização ao vivo:</strong> gasta ~15× menos dados; sem sinal aparece um aviso e as posições ficam guardadas e vão juntas quando a rede volta; “Manter a tela acesa enquanto transmito”; “Retomar” depois de recarregar; parar pede confirmação; posição imprecisa não vira ponto nítido. “Mostrar minha localização” não trava mais com alerta em túnel e diz onde liberar a permissão.</li>
+                  <li><strong>Passeios:</strong> as datas abrem o calendário nativo e aceitam “-” e “:”; energia medida decimal voltou a salvar; o formulário guarda um rascunho; pessoas cadastradas na hora não perdem o nome; “return” não salva sem querer. As artes carregam numa versão leve (~10× menos dados), e links pra um passeio na Memória param no passeio certo.</li>
+                  <li><strong>Áudio dos clipes no iPhone:</strong> fades e volume do loop funcionam, o loop não fica mudo em faixas alternadas, e a Animação não pausa mais a sua música.</li>
+                  <li><strong>Baixar e compartilhar:</strong> “Compartilhar” abre o menu do celular; baixar as fotos de um passeio mostra o tamanho antes, o progresso e cancela no 2º toque, sem estourar a memória; exportações (catálogo, configurações) abrem a folha de compartilhar. A fonte “Local” não fica mais gravada (o app abria sem fotos).</li>
+                  <li><strong>App do iPhone</strong> (depois da próxima atualização do app): “Tirar Foto” e “Salvar nas Fotos” não fecham o app; sem sinal aparece “Sem conexão com o Amora” com “Tentar de novo”; “Baixar original” não derruba a transmissão ao vivo; hora e bateria legíveis.</li>
+                </ul>
+              </dd>
               <dt>26/09/2026 · v415</dt>
               <dd>
                 <ul>
@@ -1277,6 +1311,7 @@
           <h3>Traçar um GPX novo</h3>
           <ul>
             <li><strong>Traçar GPX</strong> abre o modo de edição: clique no mapa para adicionar pontos, arraste-os para mover.</li>
+            <li>No celular: toque no mapa acrescenta um ponto; pra inserir um no meio, <strong>segure o dedo na linha</strong> (e arraste pra posicionar) — pan e pinça na linha só movem o mapa. O <strong>ⓘ</strong> da barra explica cada botão e mostra o detalhamento da simulação.</li>
             <li>O seletor à direita escolhe como conectar pontos consecutivos: <em>Reta</em> (linha entre pontos, menor distância), <em>OSM ciclismo / a pé</em> (rota via OpenStreetMap) ou <em>Menor energia</em> (terreno ou viário).</li>
             <li><strong>Undo / Redo</strong> (também ⌘/Ctrl+Z e ⌘/Ctrl+Shift+Z), <strong>Cancelar</strong> (Esc) — fecha o editor <em>sem perder o traçado</em>: ele fica guardado no navegador e volta no próximo Traçar. Pra descartar de verdade, use o <strong>🗑</strong> da barra.</li>
             <li><strong>Salvar</strong> pede um nome — que vira o endereço da rota no servidor. <strong>Exportar GPX</strong> baixa o <code>.gpx</code>, que inclui os parâmetros de simulação, a lista de waypoints e o modo de roteamento de cada trecho como extensões — invisíveis para Garmin/Strava/RWGPS, mas usados ao reabrir aqui. <strong>☁ Salvar no servidor</strong> grava/atualiza a rota; <strong>Copiar link</strong>/<strong>QR</strong> também salvam e compartilham o link por nome (<code>/route/&lt;nome&gt;</code>).</li>
@@ -1347,7 +1382,7 @@
         <div class="save-body">
           <label class="save-row">
             <span>Nome da rota</span>
-            <input type="text" id="save-name" maxlength="120" />
+            <input type="text" id="save-name" maxlength="120" enterkeyhint="done" autocomplete="off" />
           </label>
           <p class="muted">O nome vira o endereço da rota no servidor (<code>/route/…</code>) — <strong>Salvar no servidor</strong>, <strong>Copiar link</strong> e <strong>QR</strong> salvam com esse nome (se já existir uma rota homônima, perguntamos se é pra atualizá-la). <strong>Exportar GPX</strong> baixa <code id="save-filename-preview">tracado.gpx</code>.</p>
           <div class="save-actions">
@@ -1369,7 +1404,7 @@
           <button class="close" id="saved-routes-close" type="button" aria-label="Fechar">&times;</button>
         </header>
         <div class="save-body">
-          <button type="button" id="saved-routes-local" class="secondary-btn" title="Carregar um arquivo .gpx do computador">📂🗺︎ Carregar GPX do computador…</button>
+          <button type="button" id="saved-routes-local" class="secondary-btn" title="Carregar um arquivo .gpx deste aparelho">📂🗺︎ Carregar arquivo GPX…</button>
           <p class="muted saved-routes-server-head">Rotas salvas no servidor</p>
           <p class="muted" id="saved-routes-empty" hidden>Nenhuma rota salva no servidor ainda.</p>
           <ul id="saved-routes-list" class="saved-routes-list"></ul>
@@ -1388,14 +1423,14 @@
           <p class="muted">Este GPX tem <strong><span id="gpx-connect-count">0</span> pontos</strong>.</p>
           <label class="settings-row"><span>Conectar com</span>
             <select id="gpx-connect-mode" aria-label="Modo de conexão">
-              <option value="straight">Reta (menor distância) — mantém todos os pontos</option>
+              <option value="straight">Reta (menor distância) — mantém o traço exato</option>
               <option value="cycling">OSM ciclismo</option>
               <option value="foot">OSM a pé</option>
               <option value="energy">Menor energia pelo terreno</option>
               <option value="energy_road">Menor energia pelo viário</option>
             </select>
           </label>
-          <p class="muted">Em <strong>Reta</strong>, todos os pontos do traço são preservados (geometria exata). Os modos roteados reamostram para ~100 pontos e recalculam o caminho entre eles, usando os mesmos parâmetros da barra de edição (⚙).</p>
+          <p class="muted">Em <strong>Reta</strong>, o traço inteiro é preservado (geometria exata) — num GPX denso, ~150 dos pontos viram pontos editáveis e o resto segue como o desenho entre eles. Os modos roteados reamostram para ~100 pontos e recalculam o caminho entre eles, usando os mesmos parâmetros da barra de edição (⚙).</p>
           <div class="settings-actions">
             <button type="button" id="gpx-connect-confirm">Carregar</button>
           </div>
@@ -1419,6 +1454,12 @@
               <input type="number" id="share-name-ttl-h" min="0" max="23" step="1" value="3" aria-label="horas"><span class="ttl-sep">h</span>
               <input type="number" id="share-name-ttl-m" min="0" max="59" step="1" value="0" aria-label="minutos"><span class="ttl-sep">min</span>
             </span></label>
+          <!-- Limite do navegador: o iPhone congela o GPS da página com a tela
+               apagada. O app mostra um ou outro aviso (liveIsNative). -->
+          <p class="muted share-name-note" id="share-name-web-note">No navegador a transmissão <strong>pausa com a tela apagada</strong> ou em outro app, e volta quando você reabre o amora. Celular no guidão? Deixe a tela acesa:</p>
+          <label class="settings-row" id="share-name-awake-row"><span>Manter a tela acesa enquanto transmito</span>
+            <input type="checkbox" id="share-name-awake" checked></label>
+          <p class="muted share-name-note" id="share-name-native-note" hidden>No app a transmissão continua com a tela apagada.</p>
           <div class="settings-actions">
             <button type="button" id="share-name-confirm">📍 Compartilhar</button>
           </div>

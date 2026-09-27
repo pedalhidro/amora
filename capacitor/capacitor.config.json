@@ -4,7 +4,13 @@
   "webDir": "www",
   "server": {
     "url": "https://amora.pedalhidrografi.co",
-    "cleartext": false
+    "cleartext": false,
+    "errorPath": "index.html"
+  },
+  "ios": {
+    "backgroundColor": "#ffffff",
+    "limitsNavigationsToAppBoundDomains": true,
+    "zoomEnabled": true
   },
   "plugins": {
     "BackgroundGeolocation": {}

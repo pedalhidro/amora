@@ -25,7 +25,8 @@ Rotas:
   GET  /photos/<path>             do store (redirect p/ URL pública em GCS,
                                   stream local em modo local)
   GET  /clips/<path>              idem (vídeo/áudio/thumb)
-  GET  /tour_assets/<path>        idem (arte de anúncio de passeios)
+  GET  /tour_assets/<path>        idem (arte de anúncio de passeios; as variantes
+                                  announcement.{web,thumb}.jpg nascem no 1º pedido)
   GET  /<path>                    estáticos de web/ (app.js, shapes.ttl, …)
   POST /upload-image              multipart com `ttl` + variantes
   POST /upload-video              multipart com `ttl` + audio/vídeo/thumb
@@ -262,13 +263,22 @@ def serialized(fn):
 # per-process, depende de --workers 1 / 1 instância (mesma premissa do
 # _state_lock); em multi-instância as posições se fragmentariam. Tem lock
 # próprio (leve) em vez do _state_lock pra não competir com os uploads.
-_live_positions = {}            # token -> {name, lat, lng, ts, accuracy?, heading?, trail}
+_live_positions = {}            # token -> {name, lat, lng, ts, ttl, accuracy?, heading?, trail}
 _live_positions_lock = threading.Lock()
 LIVE_TRAIL_S = 3 * 3600         # janela de visibilidade/rastro: 3h
 LIVE_TRAIL_MIN_GAP_S = 8        # thinning: tempo mínimo entre pontos guardados (s)
 LIVE_TRAIL_MIN_MOVE_M = 12      # thinning: distância mínima entre pontos guardados (m)
 LIVE_TRAIL_MAX_POINTS = 500     # teto de pontos de rastro por pessoa (memória)
 LIVE_MAX_PEERS = 500            # teto defensivo de participantes
+# Leitura incremental (GET /live-locations?since=<cursor>): cada ponto de
+# rastro guarda, além do instante do FIX (`ts`, que pode ser retrodatado — o
+# cliente reenvia os fixes que ficaram na fila sem conexão), o instante em que o
+# servidor o RECEBEU (`rt`). O cursor compara com `rt`: um fix retrodatado que
+# chega depois do último poll de alguém ainda aparece no delta dessa pessoa.
+LIVE_RESP_MAX_POINTS = 200      # teto de pontos por pessoa numa resposta ?since=
+LIVE_RESP_SIMPLIFY_M = 4        # tolerância (m) do Douglas-Peucker nessas respostas
+LIVE_POST_MAX_POINTS = 240      # teto de fixes enfileirados aceitos num POST
+_live_clock = 0.0               # último instante emitido por _live_now()
 
 # CORS restrito aos endpoints /live-* — o app rodando dentro do shell nativo
 # (Capacitor: capacitor://localhost / https://localhost) bate aqui cross-origin
@@ -294,6 +304,87 @@ def _prune_live(now):
             p["trail"] = [pt for pt in tr if pt[2] > cutoff]
     for t in dead:
         del _live_positions[t]
+
+
+def _live_now():
+    """Relógio do subsistema ao vivo: time.time(), mas ESTRITAMENTE crescente
+    entre chamadas. Chamar sob _live_positions_lock — é o que ordena os POSTs
+    e os GETs: todo ponto recebido depois de um GET tem `rt` maior que o `now`
+    que esse GET devolveu como cursor, e todo ponto anterior, menor. Assim o
+    `?since=` não perde nem repete ponto (nem com o relógio voltando)."""
+    global _live_clock
+    t = time.time()
+    if t <= _live_clock:
+        t = _live_clock + 1e-6
+    _live_clock = t
+    return t
+
+
+def _live_simplify(pts, tol_m=LIVE_RESP_SIMPLIFY_M, max_n=LIVE_RESP_MAX_POINTS):
+    """Emagrece um rastro [[lat, lng, …], …] pra resposta: Douglas-Peucker com
+    tolerância em metros (projeção equiretangular local — o rastro cabe numa
+    cidade) e, se ainda passar de max_n, amostragem uniforme. Mantém sempre o
+    primeiro e o último ponto. Não muda o que fica guardado em memória."""
+    n = len(pts)
+    if n <= 2:
+        return list(pts)
+    lat0, lng0 = pts[0][0], pts[0][1]
+    kx = 111320.0 * math.cos(math.radians(lat0))
+    xy = [((p[1] - lng0) * kx, (p[0] - lat0) * 110540.0) for p in pts]
+    keep = [False] * n
+    keep[0] = keep[-1] = True
+    tol2 = tol_m * tol_m
+    stack = [(0, n - 1)]
+    while stack:
+        a, b = stack.pop()
+        if b - a < 2:
+            continue
+        ax, ay = xy[a]
+        dx, dy = xy[b][0] - ax, xy[b][1] - ay
+        l2 = dx * dx + dy * dy
+        best, bi = -1.0, a
+        for i in range(a + 1, b):
+            px, py = xy[i][0] - ax, xy[i][1] - ay
+            u = (px * dx + py * dy) / l2 if l2 else 0.0
+            u = 0.0 if u < 0 else (1.0 if u > 1 else u)
+            ex, ey = px - u * dx, py - u * dy
+            d2 = ex * ex + ey * ey
+            if d2 > best:
+                best, bi = d2, i
+        if best > tol2:
+            keep[bi] = True
+            stack.append((a, bi))
+            stack.append((bi, b))
+    out = [p for p, k in zip(pts, keep) if k]
+    if len(out) > max_n:
+        step = (len(out) - 1) / (max_n - 1)
+        out = [out[round(i * step)] for i in range(max_n)]
+    return out
+
+
+def _live_fix(d):
+    """Valida um fix do corpo do POST → (lat, lng, accuracy|None,
+    heading|None, age_s). ValueError com a mensagem da resposta 400."""
+    if not isinstance(d, dict):
+        raise ValueError("lat/lng inválidos")
+    try:
+        lat = float(d.get("lat"))
+        lng = float(d.get("lng"))
+    except (TypeError, ValueError):
+        raise ValueError("lat/lng inválidos")
+    if not (math.isfinite(lat) and math.isfinite(lng)) or \
+            not (-90 <= lat <= 90 and -180 <= lng <= 180):
+        raise ValueError("lat/lng fora de faixa")
+    opt = {}
+    for k in ("accuracy", "heading", "age"):
+        try:
+            v = d.get(k)
+            if v is not None and math.isfinite(float(v)):
+                opt[k] = float(v)
+        except (TypeError, ValueError):
+            pass
+    return (lat, lng, opt.get("accuracy"), opt.get("heading"),
+            max(0.0, opt.get("age", 0.0)))
 
 
 def _valid_live_token(t):
@@ -324,7 +415,12 @@ def _live_cors(resp):
 def post_live_location():
     """Atualiza a posição ao vivo de um participante e acumula o rastro (3h).
     Efêmero, sem o lock de estado pesado. Body JSON:
-    {id, name?, lat, lng, accuracy?, heading?}."""
+    {id, name?, lat, lng, accuracy?, heading?, age?, ttl?, points?}.
+    `age` = há quantos segundos o fix foi obtido (default 0). `points` = fixes
+    MAIS ANTIGOS que ficaram na fila do cliente enquanto ele estava sem conexão,
+    cada um {lat, lng, accuracy?, heading?, age}: entram no rastro,
+    retrodatados e em ordem, antes do fix principal (que vira a posição atual).
+    Clientes antigos mandam só o fix principal — mesmo comportamento de antes."""
     if request.method == "OPTIONS":
         return ("", 204)
     data = request.get_json(silent=True) or {}
@@ -332,23 +428,9 @@ def post_live_location():
     if not _valid_live_token(token):
         return jsonify(error="id inválido"), 400
     try:
-        lat = float(data.get("lat"))
-        lng = float(data.get("lng"))
-    except (TypeError, ValueError):
-        return jsonify(error="lat/lng inválidos"), 400
-    if not (math.isfinite(lat) and math.isfinite(lng)) or \
-            not (-90 <= lat <= 90 and -180 <= lng <= 180):
-        return jsonify(error="lat/lng fora de faixa"), 400
-    now = time.time()
-    head = {"name": str(data.get("name") or "").strip()[:40],
-            "lat": lat, "lng": lng, "ts": now}
-    for k in ("accuracy", "heading"):
-        try:
-            v = data.get(k)
-            if v is not None and math.isfinite(float(v)):
-                head[k] = float(v)
-        except (TypeError, ValueError):
-            pass
+        main_fix = _live_fix(data)
+    except ValueError as e:
+        return jsonify(error=str(e)), 400
     # Retenção escolhida por quem compartilha (segundos): por quanto tempo o
     # servidor guarda o rastro deste token. Default 3h, teto defensivo de 24h.
     ttl = LIVE_TRAIL_S
@@ -358,30 +440,57 @@ def post_live_location():
             ttl = int(max(60, min(24 * 3600, float(v))))
     except (TypeError, ValueError):
         pass
-    head["ttl"] = ttl
+    queued = []
+    raw = data.get("points")
+    if isinstance(raw, list):
+        for d in raw[-LIVE_POST_MAX_POINTS:]:
+            try:
+                f = _live_fix(d)
+            except ValueError:
+                continue
+            if f[4] < ttl:          # fora da janela: seria podado na hora
+                queued.append(f)
+    queued.sort(key=lambda f: -f[4])          # mais antigo (maior age) primeiro
+    fixes = queued + [main_fix]
+    name = str(data.get("name") or "").strip()[:40]
     from rwgps import haversine_meters   # cacheado em sys.modules; boot barato
     with _live_positions_lock:
+        now = _live_now()           # sob o lock: ordena este POST contra os GETs
         _prune_live(now)
         prev = _live_positions.get(token)
         if prev is None and len(_live_positions) >= LIVE_MAX_PEERS:
             return jsonify(error="muitos participantes ao vivo"), 503
         trail = prev["trail"] if prev else []
-        # Thinning: só guarda um ponto novo se passou tempo OU distância
-        # suficiente desde o último — limita memória e suaviza a linha. O
-        # `head` sempre reflete o último fix (marcador preciso entre pontos).
-        if not trail:
-            keep = True
-        else:
-            llat, llng, lts = trail[-1][0], trail[-1][1], trail[-1][2]
-            keep = (now - lts >= LIVE_TRAIL_MIN_GAP_S
-                    or haversine_meters(llat, llng, lat, lng) >= LIVE_TRAIL_MIN_MOVE_M)
-        if keep:
-            # Ponto = [lat, lng, ts, accuracy?]. A precisão por ponto alimenta
-            # a faixa de incerteza desenhada ao longo do rastro no cliente.
-            trail.append([lat, lng, now, head.get("accuracy")])
-            if len(trail) > LIVE_TRAIL_MAX_POINTS:
-                del trail[:len(trail) - LIVE_TRAIL_MAX_POINTS]
-        head["trail"] = trail
+        last_ts = trail[-1][2] if trail else (prev["ts"] if prev else 0.0)
+        for lat, lng, acc, _hdg, age in fixes:
+            # Instante do fix no relógio do servidor. Nunca antes do último
+            # ponto: o rastro fica em ordem cronológica mesmo com um cliente
+            # atrasado/adiantado (a poda conta com isso).
+            ts = max(now - min(age, ttl - 1), last_ts)
+            # Thinning: só guarda um ponto novo se passou tempo OU distância
+            # suficiente desde o último — limita memória e suaviza a linha. O
+            # `head` sempre reflete o último fix (marcador preciso entre pontos).
+            if not trail:
+                keep = True
+            else:
+                llat, llng, lts = trail[-1][0], trail[-1][1], trail[-1][2]
+                keep = (ts - lts >= LIVE_TRAIL_MIN_GAP_S
+                        or haversine_meters(llat, llng, lat, lng) >= LIVE_TRAIL_MIN_MOVE_M)
+            if keep:
+                # Ponto = [lat, lng, ts, accuracy|None, rt]. A precisão por ponto
+                # alimenta os pontos de incerteza desenhados ao longo do rastro no
+                # cliente; `rt` (recebido em) é o que o cursor ?since= compara.
+                trail.append([lat, lng, ts, acc, now])
+                if len(trail) > LIVE_TRAIL_MAX_POINTS:
+                    del trail[:len(trail) - LIVE_TRAIL_MAX_POINTS]
+            last_ts = ts
+        lat, lng, acc, hdg, _age = main_fix
+        head = {"name": name, "lat": lat, "lng": lng, "ts": last_ts, "ttl": ttl,
+                "trail": trail}
+        if acc is not None:
+            head["accuracy"] = acc
+        if hdg is not None:
+            head["heading"] = hdg
         _live_positions[token] = head
     return jsonify(ok=True)
 
@@ -389,24 +498,73 @@ def post_live_location():
 @app.get("/live-locations")
 def get_live_locations():
     """Posições ao vivo (janela de 3h) + rastro de cada pessoa. Muda toda hora,
-    então SEM ETag/_conditional e com Cache-Control: no-store."""
-    now = time.time()
-    out = []
+    então SEM ETag/_conditional e com Cache-Control: no-store.
+
+    Sem parâmetro: o formato de sempre (rastro INTEIRO, cada ponto com a idade)
+    — clientes antigos e o shell nativo desatualizado seguem funcionando.
+    `?since=<cursor>` (o `now` devolvido pelo poll anterior; 0 = carga inicial):
+    as posições atuais de todo mundo + só os pontos de rastro RECEBIDOS depois
+    do cursor, emagrecidos (_live_simplify), com instante absoluto; `t0` = o
+    ponto mais antigo que o servidor ainda guarda (o cliente poda o que for
+    anterior). Quem sumiu da lista expirou ou parou. ~50× menos bytes por poll
+    num pedal em grupo."""
+    since = request.args.get("since")
+    if since is not None:
+        try:
+            since = float(since)
+        except ValueError:
+            return jsonify(error="since inválido"), 400
+        if not math.isfinite(since) or since < 0:
+            return jsonify(error="since inválido"), 400
+    snap = []
     with _live_positions_lock:
+        now = _live_now()
         _prune_live(now)
+        if since is not None and since > now:
+            since = 0.0             # cursor "do futuro" (outro processo): recomeça
         for t, p in _live_positions.items():
+            tr = p["trail"]
+            if since is None:
+                pts = list(tr)
+            else:
+                # `rt` só cresce ao longo do rastro: os novos estão no fim.
+                i = len(tr)
+                while i > 0 and (tr[i - 1][4] if len(tr[i - 1]) > 4 else 0.0) > since:
+                    i -= 1
+                pts = tr[i:]
+            snap.append((t, dict(p, trail=None), tr[0][2] if tr else None, pts))
+    # Serializa FORA do lock (o emagrecimento é O(n log n) por pessoa).
+    out = []
+    for t, p, t0, pts in snap:
+        if since is None:
             item = {"id": t, "name": p["name"], "lat": p["lat"], "lng": p["lng"],
                     "ts": p["ts"], "age": round(now - p["ts"], 1),
                     "trail": [[round(pt[0], 5), round(pt[1], 5),
                                (round(pt[3], 1) if len(pt) > 3 and pt[3] is not None else None),
                                round(now - pt[2])]   # idade (s) do ponto, p/ tooltip
-                              for pt in p["trail"]]}
+                              for pt in pts]}
             if "accuracy" in p:
                 item["accuracy"] = p["accuracy"]
             if "heading" in p:
                 item["heading"] = p["heading"]
-            out.append(item)
-    return Response(json.dumps({"positions": out}, ensure_ascii=False),
+        else:
+            item = {"id": t, "name": p["name"], "lat": round(p["lat"], 6),
+                    "lng": round(p["lng"], 6), "ts": round(p["ts"], 1),
+                    "age": round(now - p["ts"], 1),
+                    "t0": round(t0, 1) if t0 is not None else None,
+                    "trail": [[round(pt[0], 5), round(pt[1], 5),
+                               (round(pt[3], 1) if pt[3] is not None else None),
+                               round(pt[2], 1)]      # instante do fix (relógio do servidor)
+                              for pt in _live_simplify(pts)]}
+            if "accuracy" in p:
+                item["accuracy"] = round(p["accuracy"], 1)
+            if "heading" in p:
+                item["heading"] = round(p["heading"])
+        out.append(item)
+    body = {"now": now, "positions": out}
+    if since is not None:
+        body["since"] = since
+    return Response(json.dumps(body, ensure_ascii=False),
                     mimetype="application/json",
                     headers={"Cache-Control": "no-store"})
 
@@ -2799,11 +2957,331 @@ def get_data_ttl(filename):
                                           "X-Robots-Tag": "noindex"}))
 
 
+# ── Arte do anúncio: variantes leves (tour_assets) ────────────────────────
+# O /upload-tour grava a arte como veio (os pôsteres recentes são PNGs
+# 1080×1350 de 3–4 MB; um tem 9,7 MB) e todo mundo que só a EXIBE baixava o
+# original: 3,7 MB a cada abertura do passeio do dia no 4G, ~45 MB de artes
+# cheias pra tiles de 56 px no cartão de uma pessoa em /pessoas. Duas
+# derivadas JPEG moram AO LADO do original, no mesmo diretório do store:
+#   announcement.web.jpg    lado maior ≤ 1350 px (~300 KB): hero do modal do
+#                           passeio, Memória, <article> e og:image do SSR
+#   announcement.thumb.jpg  lado menor 256 px, maior ≤ 512 (~25 KB): tiles
+# Nascem no /upload-tour (dos bytes do upload) e, pras artes que já existiam,
+# no PRIMEIRO pedido da variante — a fonte é o original que o schema:image do
+# catálogo aponta naquele diretório (que nem sempre é o slug do passeio: os
+# migrados seguem no id numérico antigo). Ficam gravadas no store: sem
+# migração manual. O original não muda: "abrir em tamanho real", JSON-LD e
+# Markdown seguem nele.
+#
+# Cache: o nome é fixo e um upload novo SOBRESCREVE as variantes (como já faz
+# com o original), então o CONTEÚDO é mutável — o objeto no bucket fica no
+# max-age padrão do GCS (1 h, revalida por ETag) e o arquivo local em 1 h. O
+# que é permanente é o MAPEAMENTO caminho → objeto, então o 302 pro bucket vai
+# com max-age de 7 dias (navegador e borda pulam o Cloud Run nas visitas
+# seguintes). Pra re-gerar à mão: re-envie a arte (apagar as variantes do
+# bucket deixaria quebrado quem tem o 302 em cache até expirar).
+_ART_WEB_MAX = 1350                    # variante web: lado maior
+_ART_THUMB_SHORT, _ART_THUMB_LONG = 256, 512   # thumb: lado menor 256, maior ≤ 512
+_ART_JPEG_Q = {"web": 82, "thumb": 80}
+_ART_SRC_EXTS = ("jpg", "jpeg", "png", "webp", "gif")   # HEIC: o Pillow sem plugin não abre
+_ART_REDIRECT_MAX_AGE = 7 * 86400
+_ART_RETRY_S = 3600                    # original que não renderiza: não re-tenta antes disso
+# Original em qualquer host (bucket, amora, localhost de dev, file:// de script
+# antigo) — casa pelo caminho.
+_ART_SRC_RE = re.compile(r"/tour_assets/([A-Za-z0-9_-]+)/announcement\.([A-Za-z0-9]+)$")
+_ART_VARIANT_RE = re.compile(r"([A-Za-z0-9_-]+)/announcement\.(web|thumb)\.jpg")
+_art_dims = {}              # dir → {"web": (w, h), "thumb": (w, h)} — width/height do SSR
+_art_failed = {}            # chave do original → time.monotonic() da última falha de render
+_art_probed = {}            # dir → início da sondagem de dimensões em voo/malograda (_art_web_dims)
+_art_src_cache = {"graph": None, "map": {}}
+_art_meta_lock = threading.Lock()      # só pros dicts acima — nunca segura outro lock
+_art_dir_locks = {}                    # dir → Lock: um render por diretório
+# Teto de decodes simultâneos: o PNG maior vira ~15 MB de RGBA e o Cloud Run
+# tem 512 MiB — um cartão de /pessoas pede ~50 thumbs de uma vez na 1ª visita.
+_art_render_sem = threading.BoundedSemaphore(2)
+
+
+def _art_variant_key(dir_, name):
+    return f"tour_assets/{dir_}/announcement.{name}.jpg"
+
+
+def _art_variant_url(img_url, name, absolute=False):
+    """URL da variante `name` (web|thumb) da arte `img_url`, servida por
+    get_tour_asset — ou None se a arte não mora em tour_assets (URL externa).
+    Relativa à raiz do host por padrão; `absolute` usa SITE_URL (og:image)."""
+    m = _ART_SRC_RE.search(img_url or "")
+    if not m or m.group(2).lower() not in _ART_SRC_EXTS:
+        return None
+    return ((SITE_URL if absolute else "/")
+            + f"tour_assets/{m.group(1)}/announcement.{name}.jpg")
+
+
+def _render_art_variants(data):
+    """{"web": (jpeg, w, h), "thumb": (jpeg, w, h)} a partir dos bytes do
+    original. Levanta em formato que o Pillow não abre (HEIC sem plugin),
+    arquivo corrompido ou animação (GIF animado não vira pôster parado)."""
+    import io
+    from PIL import Image, ImageCms, ImageOps
+    with _art_render_sem:
+        im = Image.open(io.BytesIO(data))
+        # MPO (JPEG de iPhone com o mapa de profundidade/ganho como 2º quadro)
+        # conta como "animado" pro Pillow, mas é foto parada: vale o 1º quadro.
+        if getattr(im, "is_animated", False) and im.format != "MPO":
+            raise ValueError("arte animada")
+        fmt, icc = im.format, im.info.get("icc_profile")
+        im.draft("RGB", (_ART_WEB_MAX, _ART_WEB_MAX))   # JPEG grande: decodifica já reduzido
+        im = ImageOps.exif_transpose(im)
+        if im.mode in ("RGBA", "LA", "PA") or (im.mode == "P" and "transparency" in im.info):
+            # JPEG não tem alfa: achata sobre branco (pôster; as artes de
+            # produção com canal alfa são 100% opacas).
+            rgba = im.convert("RGBA")
+            im = Image.new("RGB", rgba.size, (255, 255, 255))
+            im.paste(rgba, mask=rgba.getchannel("A"))
+        elif im.mode not in ("RGB", "CMYK", "L"):
+            im = im.convert("RGB")
+        s = min(1.0, _ART_WEB_MAX / max(im.size))
+        if s < 1:
+            im = im.resize((max(1, round(im.width * s)), max(1, round(im.height * s))),
+                           Image.LANCZOS, reducing_gap=3.0)
+        # Cores pro sRGB, sem perfil embutido (a convenção do para_srgb de
+        # scripts/ingest-drive.py): há arte exportada com perfil de MONITOR
+        # (ASUS PA279) ou Display P3 — os pixels crus sairiam com as cores
+        # erradas. Perfil que já é sRGB (11 das 100 artes): nada a converter
+        # (~60 ms por arte à toa).
+        if icc:
+            try:
+                prof = ImageCms.ImageCmsProfile(io.BytesIO(icc))
+                if not ImageCms.getProfileDescription(prof).strip().lower().startswith("srgb"):
+                    im = ImageCms.profileToProfile(
+                        im, prof, ImageCms.createProfile("sRGB"), outputMode="RGB")
+            except Exception:  # noqa: BLE001 — perfil ilegível: segue com os pixels crus
+                pass
+        if im.mode != "RGB":
+            im = im.convert("RGB")
+        w, h = im.size
+        t = min(1.0, _ART_THUMB_SHORT / min(w, h), _ART_THUMB_LONG / max(w, h))
+        thumb = (im.resize((max(1, round(w * t)), max(1, round(h * t))),
+                           Image.LANCZOS, reducing_gap=3.0) if t < 1 else im)
+        out = {}
+        for name, v in (("web", im), ("thumb", thumb)):
+            buf = io.BytesIO()
+            v.save(buf, "JPEG", quality=_ART_JPEG_Q[name], optimize=True, progressive=True)
+            out[name] = (buf.getvalue(), v.width, v.height)
+        # JPEG que já cabe e já é leve (as artes pequenas de 2024): re-encodar
+        # só engordaria — a variante web é o próprio original (o navegador
+        # aplica a orientação EXIF e o perfil de cor dele).
+        if fmt in ("JPEG", "MPO") and s >= 1 and len(data) <= len(out["web"][0]):
+            out["web"] = (data, w, h)
+        return out
+
+
+def _art_dir_lock(dir_):
+    with _art_meta_lock:
+        return _art_dir_locks.setdefault(dir_, threading.Lock())
+
+
+def _store_art_variants(dir_, out):
+    """Grava as variantes já renderizadas (saída de _render_art_variants) de
+    `dir_`. Levanta se a gravação falhar. Quem chama segura o
+    _art_dir_lock(dir_)."""
+    for name, (jpg, _w, _h) in out.items():
+        STORE.write_bytes(_art_variant_key(dir_, name), jpg, content_type="image/jpeg")
+    with _art_meta_lock:
+        _art_dims[dir_] = {name: (w, h) for name, (_jpg, w, h) in out.items()}
+
+
+def _drop_art_variants(dir_):
+    """Apaga as variantes de `dir_` (best-effort): o próximo pedido re-deriva
+    do original que o catálogo aponta. Quem chama segura o _art_dir_lock."""
+    for name in ("web", "thumb"):
+        try:
+            STORE.delete(_art_variant_key(dir_, name))
+        except Exception as e:  # noqa: BLE001
+            print(f"[tour-art] aviso apagando {_art_variant_key(dir_, name)}: {e}")
+    with _art_meta_lock:
+        _art_dims.pop(dir_, None)
+
+
+def _store_uploaded_art_variants(dir_, src_key, out):
+    """/upload-tour: grava as variantes pré-renderizadas da arte nova — ou, se
+    ela não renderizou (`out` None: HEIC, corrompida, animada), apaga as da
+    arte ANTERIOR do diretório, que mostrariam o pôster velho (a rota cai no
+    original). Best-effort: não derruba o save; o 1º pedido re-tenta."""
+    with _art_dir_lock(dir_):
+        if out is None:
+            _drop_art_variants(dir_)
+            with _art_meta_lock:
+                _art_failed[src_key] = time.monotonic()
+            return
+        try:
+            _store_art_variants(dir_, out)
+            with _art_meta_lock:
+                _art_failed.pop(src_key, None)
+        except Exception as e:  # noqa: BLE001
+            print(f"[tour-art] gravando variantes de {src_key}: {e}")
+            _drop_art_variants(dir_)     # meia gravação = uma variante do pôster velho
+
+
+def _art_sources():
+    """dir → chave do original no store, pra cada schema:image do catálogo que
+    aponta pra tour_assets/<dir>/announcement.<ext>. Só arte do catálogo vira
+    variante (a rota não é um redimensionador genérico). Cacheado pelo grafo
+    de passeios — ele mesmo cacheado pelo digest do tours.ttl."""
+    from rdflib import URIRef
+    g = _tours_graph()
+    with _art_meta_lock:
+        if _art_src_cache["graph"] is g:
+            return _art_src_cache["map"]
+    m = {}
+    for p in (URIRef(SCHEMA_NS + "image"), URIRef("http://schema.org/image")):
+        for img in g.objects(None, p):
+            mm = _ART_SRC_RE.search(str(img))
+            if mm and mm.group(2).lower() in _ART_SRC_EXTS:
+                m[mm.group(1)] = f"tour_assets/{mm.group(1)}/announcement.{mm.group(2)}"
+    with _art_meta_lock:
+        _art_src_cache.update(graph=g, map=m)
+    return m
+
+
+def _ensure_art_variant(dir_, name):
+    """True: a variante `name` de `dir_` está no store (gerada agora se
+    faltava — as duas de uma vez, o decode do original é o caro). False: há
+    arte no catálogo, mas ela não deriva (formato que o Pillow não abre,
+    arquivo corrompido) — quem chama cai no original. None: nenhuma arte do
+    catálogo mora nesse diretório, ou o original sumiu do store."""
+    key = _art_variant_key(dir_, name)
+    if STORE.exists(key):
+        return True
+    # A fonte ANTES do lock do diretório: o /upload-tour pega esse lock
+    # segurando o _state_lock, e _art_sources não pode esperar por ninguém
+    # com ele na mão (ordem dos locks).
+    src = _art_sources().get(dir_)
+    if not src:
+        return None
+
+    def failed_recently():
+        with _art_meta_lock:
+            t = _art_failed.get(src)
+        return t is not None and time.monotonic() - t < _ART_RETRY_S
+
+    if failed_recently():
+        return False
+    with _art_dir_lock(dir_):
+        if STORE.exists(key):            # outra thread (ou o upload) acabou de gravar
+            return True
+        if failed_recently():            # falhou enquanto esperávamos o lock
+            return False
+        data = STORE.read_bytes(src)
+        if not data:
+            return None
+        try:
+            out = _render_art_variants(data)
+        except Exception as e:  # noqa: BLE001 — formato/arquivo: não adianta re-tentar já
+            print(f"[tour-art] {src} não deriva variantes: {e}")
+            with _art_meta_lock:
+                _art_failed[src] = time.monotonic()
+            return False
+        try:
+            _store_art_variants(dir_, out)
+        except Exception as e:  # noqa: BLE001 — store: transitório, o próximo pedido re-tenta
+            print(f"[tour-art] gravando variantes de {src}: {e}")
+            return False
+    print(f"[tour-art] variantes geradas: {dir_} ({src})")
+    return True
+
+
+def _art_web_dims(img_url):
+    """(w, h) da variante web da arte, se já conhecidos neste processo — pro
+    width/height do <img> e o og:image:width/height do SSR. Desconhecidos:
+    devolve None e, numa thread, garante a variante e lê as dimensões (o
+    próximo SSR já sai completo). Nunca bloqueia o request."""
+    m = _ART_SRC_RE.search(img_url or "")
+    if not m or m.group(2).lower() not in _ART_SRC_EXTS:
+        return None
+    dir_ = m.group(1)
+    with _art_meta_lock:
+        dims = _art_dims.get(dir_, {}).get("web")
+        if dims:
+            return dims
+        t = _art_probed.get(dir_)
+        if t is not None and time.monotonic() - t < _ART_RETRY_S:
+            return None                  # sondagem em voo, ou sem variante há pouco
+        _art_probed[dir_] = time.monotonic()
+
+    def _probe():
+        import io
+        try:
+            if _ensure_art_variant(dir_, "web") is not True:
+                return                   # fica marcada: não re-sonda antes de _ART_RETRY_S
+            with _art_meta_lock:
+                known = "web" in _art_dims.get(dir_, {})
+            if not known:
+                data = STORE.read_bytes(_art_variant_key(dir_, "web"))
+                if data:
+                    from PIL import Image
+                    size = Image.open(io.BytesIO(data)).size   # só o cabeçalho
+                    with _art_meta_lock:
+                        _art_dims.setdefault(dir_, {})["web"] = size
+            with _art_meta_lock:
+                _art_probed.pop(dir_, None)
+        except Exception as e:  # noqa: BLE001
+            print(f"[tour-art] dimensões de {dir_}: {e}")
+    threading.Thread(target=_probe, name=f"tour-art-{dir_}", daemon=True).start()
+    return None
+
+
+def _art_img_html(img_url, alt):
+    """<img> da arte no HTML do SSR: a variante web (URL externa: a própria),
+    lazy/async, com width/height quando já conhecidos (sem salto de layout)."""
+    from html import escape as h
+    src = _art_variant_url(img_url, "web") or img_url
+    dims = _art_web_dims(img_url) if src != img_url else None
+    wh = f' width="{dims[0]}" height="{dims[1]}"' if dims else ""
+    return (f'<img src="{h(src)}" alt="{h(alt)}" loading="lazy" '
+            f'decoding="async"{wh}/>')
+
+
+def _serve_art_variant(dir_, name):
+    """GET /tour_assets/<dir>/announcement.<web|thumb>.jpg — ver o bloco acima."""
+    try:
+        ok = _ensure_art_variant(dir_, name)
+    except Exception:  # noqa: BLE001 — store/catálogo fora do ar: tenta o original
+        app.logger.exception("[tour-art] variante %s/%s", dir_, name)
+        ok = False
+    if ok is None:
+        abort(404)
+    if ok is False:
+        # Sem variante possível: o original, sem cache (um render que passe a
+        # funcionar — Pillow novo, arte re-enviada — vale no pedido seguinte).
+        try:
+            src = _art_sources().get(dir_)
+        except Exception:  # noqa: BLE001
+            src = None
+        if not src:
+            abort(404)
+        resp = redirect(STORE.public_url(src) or f"/{src}", code=302)
+        resp.headers["Cache-Control"] = "no-store"
+        return resp
+    key = _art_variant_key(dir_, name)
+    url = STORE.public_url(key)
+    if url:
+        resp = redirect(url, code=302)
+        resp.headers["Cache-Control"] = f"public, max-age={_ART_REDIRECT_MAX_AGE}"
+        return resp
+    resp = send_from_directory(WEB / "tour_assets", f"{dir_}/announcement.{name}.jpg")
+    resp.headers["Cache-Control"] = "public, max-age=3600"
+    return resp
+
+
 @app.get("/tour_assets/<path:p>")
 def get_tour_asset(p):
     """Imagens de anúncio + qualquer arquivo associado a um tour. Mesma
     lógica de /photos: redireciona pra GCS público quando o store tiver
-    URL, stream local caso contrário."""
+    URL, stream local caso contrário. announcement.<web|thumb>.jpg são as
+    variantes leves da arte (geradas no 1º pedido — ver _serve_art_variant)."""
+    m = _ART_VARIANT_RE.fullmatch(p)
+    if m:
+        return _serve_art_variant(m.group(1), m.group(2))
     key = f"tour_assets/{p}"
     url = STORE.public_url(key)
     if url:
@@ -2811,9 +3289,29 @@ def get_tour_asset(p):
     local = WEB / "tour_assets" / p
     if local.is_file():
         resp = send_from_directory(WEB / "tour_assets", p)
-        resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        # 1 h, como o objeto no bucket: o /upload-tour reescreve a arte NA
+        # MESMA chave (announcement.<ext>) — com 1 ano immutable, quem já tinha
+        # a arte antiga nunca via a nova (só no modo local/auto-hospedado).
+        resp.headers["Cache-Control"] = "public, max-age=3600"
         return resp
     abort(404)
+
+
+# O 302 de /photos e /clips pro bucket PODE ficar em cache: o destino é função
+# só da chave (a URL pública do objeto). Sem Cache-Control ele era incacheável
+# (RFC 9111 não cacheia 302 por heurística) — cada boot pagava ~600 idas ao
+# Cloud Run só pros marcadores, e a Cloudflare dava BYPASS. 30 dias e não 1 ano
+# porque a única coisa que muda o destino é trocar o bucket (migração pro R2,
+# p.ex.): mantenha o antigo legível por 30 dias depois de repontar. O conteúdo
+# em si segue o Cache-Control do objeto (storage.blob_cache_control).
+BLOB_REDIRECT_CACHE = "public, max-age=2592000, immutable"
+from storage import blob_cache_control  # noqa: E402 — política única com o GCS
+
+
+def _blob_redirect(url):
+    resp = redirect(url, code=302)
+    resp.headers["Cache-Control"] = BLOB_REDIRECT_CACHE
+    return resp
 
 
 @app.get("/photos/<path:p>")
@@ -2823,11 +3321,11 @@ def get_photo(p):
     # que streamar via Flask. Local store retorna None e cai no fallback.
     url = STORE.public_url(key)
     if url:
-        return redirect(url, code=302)
+        return _blob_redirect(url)
     # Fallback: serve diretamente do filesystem (modo local).
     if (WEB / "photos" / p).is_file():
         resp = send_from_directory(WEB / "photos", p)
-        resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        resp.headers["Cache-Control"] = blob_cache_control(key) or "public, max-age=3600"
         return resp
     abort(404)
 
@@ -2842,10 +3340,12 @@ def get_clip(p):
     key = f"clips/{p}"
     url = STORE.public_url(key)
     if url:
-        return redirect(url, code=302)
+        return _blob_redirect(url)
     if (WEB / "clips" / p).is_file():
         resp = send_from_directory(WEB / "clips", p)
-        resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        # Mesmo Cache-Control do objeto no bucket (1 dia: excluir e reenviar
+        # com outro recorte reescreve a chave — ver storage.blob_cache_control).
+        resp.headers["Cache-Control"] = blob_cache_control(key) or "no-cache"
         return resp
     abort(404)
 
@@ -3955,7 +4455,9 @@ def _render_tour_index(tour_id):
     meta_bits.append("Pedal Hidrográfico")
     a.append('  <p class="tour-article-meta">' + " · ".join(meta_bits) + "</p>")
     if img_url:
-        a.append(f'  <figure><img src="{h(img_url)}" alt="{h(title)}"/></figure>')
+        # Variante web da arte (~300 KB; o original chega a 3–10 MB), lazy:
+        # com JS o app tira o <article> e mostra a mesma variante no modal.
+        a.append(f"  <figure>{_art_img_html(img_url, title)}</figure>")
     for para in re.split(r"\r?\n+", narrative):
         if para.strip():
             a.append(f"  <p>{h(para.strip())}</p>")
@@ -4039,12 +4541,24 @@ def _render_tour_index(tour_id):
     html_text = attr(r'(<meta property="og:url" content=")[^"]*(")',
                      h(page_url), html_text)
     if img_url:
+        # og:image = a variante web: o preview do WhatsApp/redes não baixa
+        # mais um PNG de 3–10 MB (a variante nasce no 1º pedido do crawler).
+        og_img = _art_variant_url(img_url, "web", absolute=True)
         html_text = attr(r'(<meta property="og:image" content=")[^"]*(")',
-                         h(img_url), html_text)
-        # As dimensões fixas são do ícone 512×512 — não valem pra arte.
-        html_text = re.sub(
-            r'\s*<meta property="og:image:(?:width|height)" content="[^"]*" />',
-            "", html_text)
+                         h(og_img or img_url), html_text)
+        dims = _art_web_dims(img_url) if og_img else None
+        if dims:
+            # As da variante, quando este processo já as conhece — o crawler
+            # monta o card sem esperar a imagem.
+            html_text = attr(r'(<meta property="og:image:width" content=")[^"]*(")',
+                             str(dims[0]), html_text)
+            html_text = attr(r'(<meta property="og:image:height" content=")[^"]*(")',
+                             str(dims[1]), html_text)
+        else:
+            # As dimensões fixas são do ícone 512×512 — não valem pra arte.
+            html_text = re.sub(
+                r'\s*<meta property="og:image:(?:width|height)" content="[^"]*" />',
+                "", html_text)
     html_text = html_text.replace("</head>", "    " + jsonld_tag + "\n  </head>", 1)
     html_text = html_text.replace("</body>", article + "\n</body>", 1)
     return html_text
@@ -4912,13 +5426,21 @@ def upsert_video_in_uploads(ttl_text, vid_id):
 # `/discard` (best-effort do cliente), senão pela varredura (boot + 1×/h).
 STAGING_PREFIX = "clips/_staging/"
 STAGING_MAX_AGE_S = int(os.environ.get("STAGING_MAX_AGE_S") or 6 * 3600)
+# Variantes de um clipe: campo do form → sufixos aceitos (o 1º é o default
+# quando o nome enviado não diz o contêiner) → content-type de cada um. WebM
+# é o formato de sempre; MP4/M4A (H.264 + AAC) é o que o MediaRecorder do
+# Safari grava antes do iOS 18.4 (sem writer WebM) — o form escolhe o sufixo
+# pelo contêiner real do blob e manda no NOME do arquivo.
 _CLIP_VARIANTS = (
-    # form field, sufixo da chave, content-type
-    ("audio", "audio.webm", "audio/webm"),
-    ("thumb", "thumb.jpg", "image/jpeg"),
-    ("video360", "360p.webm", "video/webm"),
-    ("video720", "720p.webm", "video/webm"),
+    # form field, ((sufixo da chave, content-type), ...)
+    ("audio", (("audio.webm", "audio/webm"), ("audio.m4a", "audio/mp4"))),
+    ("thumb", (("thumb.jpg", "image/jpeg"),)),
+    ("video360", (("360p.webm", "video/webm"), ("360p.mp4", "video/mp4"))),
+    ("video720", (("720p.webm", "video/webm"), ("720p.mp4", "video/mp4"))),
 )
+# Extensão do nome enviado → família do contêiner.
+_CLIP_EXT_FAMILY = {"webm": "webm", "m4a": "mp4", "mp4": "mp4", "m4v": "mp4",
+                    "mov": "mp4", "jpg": "jpg", "jpeg": "jpg"}
 _last_staging_sweep = 0.0
 
 
@@ -4927,7 +5449,39 @@ def _is_vhash(s):
 
 
 def _clip_keys(vid_id):
-    return [f"clips/{vid_id}.{suffix}" for _, suffix, _ in _CLIP_VARIANTS]
+    """TODAS as chaves possíveis de um clipe (webm E mp4) — pra descarte,
+    varredura e fechamento do pré-envio apagarem qualquer uma."""
+    return [f"clips/{vid_id}.{suffix}"
+            for _, variants in _CLIP_VARIANTS for suffix, _ in variants]
+
+
+def _sniff_container(data):
+    """'webm' (EBML/Matroska), 'mp4' (ISO BMFF: 'ftyp' no byte 4) ou None."""
+    head = bytes(data[:12])
+    if head[:4] == b"\x1a\x45\xdf\xa3":
+        return "webm"
+    if head[4:8] == b"ftyp":
+        return "mp4"
+    return None
+
+
+def _clip_variant_for(field, variants, filename, data):
+    """(sufixo, content-type) de um arquivo recebido. O sufixo vem do NOME
+    (é o que o TTL referencia); o content-type, dos BYTES quando dá pra saber —
+    um cliente que manda MP4 com nome .webm (ex.: o /subir antes de nomear
+    pelo blob) ainda é servido com o tipo certo pelo bucket."""
+    ext = (filename or "").rsplit(".", 1)[-1].lower() if "." in (filename or "") else ""
+    fam = _CLIP_EXT_FAMILY.get(ext)
+    suffix, ctype = variants[0]
+    for s, c in variants:
+        if _CLIP_EXT_FAMILY.get(s.rsplit(".", 1)[-1]) == fam:
+            suffix, ctype = s, c
+            break
+    sniffed = _sniff_container(data) if field != "thumb" else None
+    if sniffed:
+        kind = "audio" if field == "audio" else "video"
+        ctype = f"{kind}/{'webm' if sniffed == 'webm' else 'mp4'}"
+    return suffix, ctype
 
 
 def _media_in_catalog(vid_id):
@@ -4936,15 +5490,29 @@ def _media_in_catalog(vid_id):
     return (URIRef(MED_NS + vid_id), RDF.type, None) in _load_catalog()
 
 
+def _planned_clip_keys(vid_id):
+    """As chaves que `_write_clip_blobs` gravaria com os arquivos DESTE envio
+    (o sufixo só depende do nome — nada é lido aqui)."""
+    keys = []
+    for field, variants in _CLIP_VARIANTS:
+        f = request.files.get(field)
+        if f:
+            suffix, _ = _clip_variant_for(field, variants, f.filename, b"")
+            keys.append(f"clips/{vid_id}.{suffix}")
+    return keys
+
+
 def _write_clip_blobs(vid_id):
     """Lê os blobs de `request.files` e grava todos EM PARALELO (eram quatro
     round-trips em série no GCS). Devolve as chaves gravadas."""
     from concurrent.futures import ThreadPoolExecutor
     jobs = []
-    for field, suffix, ctype in _CLIP_VARIANTS:
+    for field, variants in _CLIP_VARIANTS:
         f = request.files.get(field)
         if f:
-            jobs.append((f"clips/{vid_id}.{suffix}", f.read(), ctype))
+            data = f.read()
+            suffix, ctype = _clip_variant_for(field, variants, f.filename, data)
+            jobs.append((f"clips/{vid_id}.{suffix}", data, ctype))
     if not jobs:
         return []
     with ThreadPoolExecutor(max_workers=len(jobs)) as ex:
@@ -4961,7 +5529,8 @@ def _clip_keys_from_ttl(ttl_text, vid_id):
     g = Graph()
     g.parse(data=ttl_text, format="turtle")
     subj = URIRef(MED_NS + vid_id)
-    allowed = {f"{vid_id}.{suffix}" for _, suffix, _ in _CLIP_VARIANTS}
+    allowed = {f"{vid_id}.{suffix}"
+               for _, variants in _CLIP_VARIANTS for suffix, _ in variants}
     keys = []
     for pred in (PH_NS + "audio", PH_NS + "video360p", PH_NS + "video720p",
                  "https://schema.org/thumbnail"):
@@ -5022,12 +5591,15 @@ def _maybe_sweep_staging_async(min_interval_s=3600):
 @app.post("/stage-video/<vid_id>")
 def stage_video(vid_id):
     """Pré-envio dos blobs de um vídeo ainda não catalogado (ver bloco acima).
-    Mesmos campos de arquivo do /upload-video, sem TTL."""
+    Mesmos campos de arquivo do /upload-video, sem TTL — e QUALQUER subconjunto
+    deles: um clipe que não cabe numa requisição (o Cloud Run recusa corpo
+    > 32 MiB em HTTP/1) sobe em várias, e o /upload-video com `staged=1`
+    confere que todos os arquivos que o TTL referencia chegaram."""
     vid_id = (vid_id or "").strip().lower()
     if not _is_vhash(vid_id):
         return jsonify(error="id inválido (esperado vhash de 16 hex)"), 400
-    if not request.files.get("audio"):
-        return jsonify(error="audio ausente (sempre obrigatório)"), 400
+    if not any(request.files.get(field) for field, _ in _CLIP_VARIANTS):
+        return jsonify(error="nenhum arquivo do clipe no envio"), 400
     # Nunca sobrescreve blobs de mídia já catalogada (o form deduplica antes,
     # mas o servidor não confia nisso).
     if _media_in_catalog(vid_id):
@@ -5066,9 +5638,11 @@ def discard_staged_video(vid_id):
 @app.post("/upload-video")
 def upload_video():
     """Recebe um clipe já processado no browser:
-      - `audio`     : opus dentro de webm (sempre presente, alta qualidade)
-      - `video360`  : webm 360p (opcional, audio-only mode)
-      - `video720`  : webm 720p (opcional, audio-only mode)
+      - `audio`     : opus em webm, ou AAC em m4a (sempre presente)
+      - `video360`  : webm (ou mp4) 360p (opcional, audio-only mode)
+      - `video720`  : webm (ou mp4) 720p (opcional, audio-only mode)
+      (o sufixo gravado — .webm | .mp4/.m4a — vem do nome do arquivo enviado;
+      ver _CLIP_VARIANTS)
       - `ttl`       : TTL auto-suficiente com 1 ph:MotionImage e seus metadados
       - `id`        : pHash de vídeo (16 hex)
       - `staged`    : "1" → os blobs já subiram via /stage-video; só o TTL vem
@@ -5119,8 +5693,23 @@ def upload_video():
             return jsonify(error="pré-envio não encontrado no servidor",
                            code="staging-missing", missing=missing, id=vid_id), 409
     else:
+        # O TTL só pode referenciar nomes do padrão `<vhash>.<sufixo>` — e o
+        # áudio/vídeo que ele cita tem que estar NESTE envio (ou já no store):
+        # com dois contêineres possíveis (webm | mp4/m4a), um TTL dizendo .webm
+        # com o arquivo enviado como .mp4 viraria referência quebrada.
+        try:
+            referenced = _clip_keys_from_ttl(ttl_text, vid_id)
+        except Exception as e:  # noqa: BLE001
+            return jsonify(error=str(e)), 400
+        planned = set(_planned_clip_keys(vid_id))
+        missing = [k for k in referenced
+                   if k not in planned and not k.endswith(".thumb.jpg") and not STORE.exists(k)]
+        if missing:
+            return jsonify(error="o TTL referencia arquivo(s) que não vieram no envio: "
+                                 + ", ".join(k.rsplit("/", 1)[-1] for k in missing),
+                           id=vid_id), 400
         # Grava (fora do lock; keys content-addressed pelo vhash — idempotente):
-        # audio.webm sempre; webms só se vieram (audio-only mode); thumb
+        # áudio sempre; vídeos só se vieram (audio-only mode); thumb
         # opcional. Todos em paralelo.
         try:
             written = _write_clip_blobs(vid_id)
@@ -5501,7 +6090,8 @@ def upload_tour():
 
     Opcionalmente, `announcement` (file): salvo em
     `tour_assets/<tour_id>/announcement.<ext>` no store e injetado como
-    `schema:image <URL>` no TTL antes de persistir.
+    `schema:image <URL>` no TTL antes de persistir — com as variantes leves
+    `announcement.{web,thumb}.jpg` ao lado (ver _render_art_variants).
 
     Depois de persistir, sincroniza routes.json: se o tour tem `ph:linkRoute`
     → RideWithGPS, busca a geometria e faz upsert da rota; senão remove a
@@ -5522,6 +6112,19 @@ def upload_tour():
     mode = (request.form.get("mode") or "replace").strip().lower()
     if mode not in ("replace", "patch"):
         return jsonify(error=f"mode inválido: {mode!r} (replace|patch)"), 400
+
+    # Variantes leves da arte (ver _render_art_variants): o render — CPU,
+    # dezenas a centenas de ms — roda aqui, FORA do _state_lock; lá dentro só
+    # a gravação, junto com a do original.
+    ann_file = request.files.get("announcement")
+    ann_bytes = ann_file.read() if ann_file and ann_file.filename else None
+    ann_variants = None
+    if ann_bytes:
+        try:
+            ann_variants = _render_art_variants(ann_bytes)
+        except Exception as e:  # noqa: BLE001 — HEIC/corrompida/animada: só o original
+            print(f"[upload-tour] arte sem variantes leves: {e}")
+    art_variants_written = False
 
     # Seção crítica: validação + announcement + escrita do tours.ttl, tudo
     # serializado. O fetch da rota acontece depois, sem o lock. O patch é
@@ -5573,7 +6176,7 @@ def upload_tour():
                 "heic": "image/heic", "heif": "image/heif",
             }.get(ext, "application/octet-stream")
             try:
-                STORE.write_bytes(key, f.read(), content_type=ct)
+                STORE.write_bytes(key, ann_bytes or b"", content_type=ct)   # lido antes do lock
             except Exception as e:  # noqa: BLE001
                 return jsonify(
                     error=f"persistência announcement: {e}", tour_id=tour_id,
@@ -5603,9 +6206,14 @@ def upload_tour():
             from rdflib import Graph as _RdfGraph, URIRef as _URIRef
             _tour_uri = _URIRef(PAS_NS + tour_id)
             _img_preds = (_URIRef("https://schema.org/image"), _URIRef("http://schema.org/image"))
+            _overwrote_image = False
             try:
                 _g = _RdfGraph().parse(data=ttl_text, format="turtle")
                 _has_image = any((_tour_uri, p, None) in _g for p in _img_preds)
+                # schema:image mantido pelo cliente que aponta pra ESTA chave:
+                # o upload acabou de sobrescrever a arte do catálogo.
+                _overwrote_image = any(str(o).endswith("/" + key)
+                                       for p in _img_preds for o in _g.objects(_tour_uri, p))
             except Exception:  # noqa: BLE001
                 _has_image = "schema:image" in ttl_text  # fallback conservador
             if not _has_image:
@@ -5618,6 +6226,12 @@ def upload_tour():
                     f"<{announcement_url}> .\n"
                 )
                 ttl_text = ttl_text + inject
+            if not _has_image or _overwrote_image:
+                # A arte do catálogo passa a ser esta: as variantes vão pro
+                # store ANTES do upsert — o catálogo nunca aponta pra arte
+                # nova com as variantes da anterior no lugar.
+                _store_uploaded_art_variants(tour_id, key, ann_variants)
+                art_variants_written = True
 
         try:
             upsert_tour_in_tours_ttl(ttl_text, tour_id)
@@ -5631,6 +6245,11 @@ def upload_tour():
                 except Exception as e2:  # noqa: BLE001
                     traceback.print_exc()   # o 500 devolve só str(e); o stack só existe aqui
                     print(f"[upload-tour] aviso limpando anúncio órfão de {tour_id}: {e2}")
+                if art_variants_written:
+                    # Retratam o upload que não entrou: o próximo pedido
+                    # re-deriva do original que o catálogo segue apontando.
+                    with _art_dir_lock(tour_id):
+                        _drop_art_variants(tour_id)
             return jsonify(
                 error=f"persistência ttl: {e}", tour_id=tour_id,
             ), 500

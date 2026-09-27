@@ -21,8 +21,13 @@ one optional hosted deploy target, not a dependency.
   road network, though amora's own "Menor energia pelo viário" mode
   routes in app.js instead: primary source is the PRE-BAKED binary graph
   `sampa-viario-graph.bin` from `build-viario.py --graph` (per-node elevations
-  already sampled at bake time — no DEM/network download per route; see
-  `bakedViarioRoute`/`decodeViarioGraph`), falling back to the inline
+  already sampled at bake time — no DEM/network download per route; decode +
+  Dijkstra run in `lib/viario-graph-worker.js` (the buffer is TRANSFERRED to
+  it; it prices edges with `GraphEngine.stepCost`, so a `graph-engine.js`
+  re-sync from simujaules must keep `stepCost(dist, dh, cost)`), and
+  `bakedViarioRoute` in app.js posts to it; `VIARIO_GRAPH_BBOX` in app.js
+  must equal `build-viario.py`'s `GRAPH_BBOX` — a segment outside it never
+  downloads the graph), falling back to the inline
   `viarioGraphRoute` over the South-America FlatGeobuf (range-request
   bbox reads via the vendored `flatgeobuf-geojson.min.js` —
   `streamFgbFeatures`), then that same FGB's lines rasterized into a
@@ -51,13 +56,22 @@ one optional hosted deploy target, not a dependency.
   escolhidas; tudo o mais é o default do
   `upload_images.html`: mesmos `POST /upload-image` / `/upload-video` (vídeo
   inteiro, sem recorte nem pré-envio), mesma dedup por pHash/vHash; cada
-  imagem enviada ganha ✎ editar (abre `upload_images.html?edit=`) / 🗑
-  excluir. Cada SESSÃO da página mint um **álbum** (`lst:<slug>`,
-  `schema:Collection` inline, slug derivado do nome "passeio · autora · data"
-  como o `slugifyList` do form completo; a data é a DO PASSEIO — vários
-  passeios no lote → "N passeios" + intervalo; o lote é lido/deduplicado
-  INTEIRO antes de mintar o álbum e começar os envios, porque o nome vai baked
-  no IRI de cada TTL) que toda mídia integra via `schema:isPartOf`; depois do
+  imagem enviada ganha ✎ editar (abre `upload_images.html?edit=` num overlay
+  DENTRO da página — o lote segue; o /subir repassa as mensagens do editor) / 🗑
+  excluir. **Streaming:** cada item sobe assim que é lido (no toque, um decode
+  full-res por vez — large, thumb e a miniatura da colagem saem do MESMO
+  decode do pHash); falha (4G, troca de app, tela apagada) ganha ↻ e re-tenta
+  sozinha quando a página volta visível/online; POSTs com timeout. **Um álbum
+  por passeio + autora** (`lst:<slug>`, `schema:Collection` inline, slug
+  derivado do nome "passeio · autora · data" como o `slugifyList` do form
+  completo; a data é a DO PASSEIO), mintado quando o 1º item daquele passeio é
+  aceito — lote misto = vários álbuns, e o Compartilhar alterna entre eles;
+  toda mídia integra o seu via `schema:isPartOf`. A sessão vive no
+  `sessionStorage` (`phidro:subirSessao`, 12 h); `phidro-upload-modal-closed`
+  com a página ociosa começa outra. Dedup secundária além do pHash: mesma data
+  ao segundo + mesmo lugar (~1,5 m) + Hamming ≤ 16 (`SAME_SHOT_*` — o pHash
+  muda com o motor do navegador: o mesmo original deu 14 bits entre iPhone e
+  Chrome). Depois do
   lote a página mostra o link `/imagens/lista/<slug>` e uma **colagem 9:16 ≤ 500 kB**
   (canvas 1080×1920 + `compressToTarget`, conteúdo dentro da área segura do
   story do Instagram: y ∈ [270, 1570]; legenda por célula quando há mais de um
@@ -71,7 +85,12 @@ one optional hosted deploy target, not a dependency.
   helpers do form completo** (pHash/vHash, variantes, EXIF, moov, motores de
   transcodificação), gerada por marcador de função; o form completo NÃO
   importa de lá ainda — mexeu num helper lá, regenere o módulo, senão os dois
-  forms divergem e a dedup quebra),
+  forms divergem e a dedup quebra. O FIM do módulo é uma seção NÃO verbatim
+  de variantes enxutas só do /subir (`scaledJpeg`, `compressToTargetLean`,
+  `copyExifSegmentFromHead`, `probeVideoDuration`, `processClipFile`). O
+  /subir importa como `./lib/media-pipeline.js?api=N`: o .js fica até 4 h no
+  cache HTTP da Cloudflare e HTML novo + módulo velho = erro de link, página
+  morta — suba o N quando o /subir passar a importar um nome novo),
   `censo.html` (aggregated tour metrics + roster, opened as a modal
   iframe from the main app), `upload_videos.html` (permanent redirect
   stub → `upload_images.html`), and the `data/`, `photos/`, `clips/`,
@@ -272,9 +291,20 @@ one optional hosted deploy target, not a dependency.
   `window.phidroLivePush`). `run-ios.sh` / `run-android.sh` build+deploy to a
   physical device via `npx cap run` without opening Xcode/Android Studio;
   `npm run icons` regenerates app icon + splash from `assets/` via
-  `@capacitor/assets`. `README.md`, plus gitignored `android/`, `ios/`,
-  `www/`, `node_modules/`. Edits to `web/` alone need NO native rebuild — the
-  app loads the remote site (so iterate by deploying `web/`, not rebuilding).
+  `@capacitor/assets`. `README.md`; `www/` is TRACKED (it's the `webDir`, and
+  its `index.html` is the `server.errorPath` page — "Sem conexão com o Amora"
+  with Tentar de novo); only `android/`, `ios/`, `node_modules/` and
+  `package-lock.json` are gitignored. `run-ios.sh` re-applies the Info.plist
+  keys (camera/Photos usage strings, WKAppBoundDomains, status bar…) on every
+  run — use `--prepare` before building from Xcode; `WKAppBoundDomains` and
+  `ios.limitsNavigationsToAppBoundDomains` must never be set one without the
+  other. Gotchas: on iOS Capacitor loads errorPath on ANY failed or cancelled
+  main-frame navigation (a same-origin URL that redirects to another host
+  lands on the offline page), and a same-origin `<a download>` becomes a
+  frame navigation in the shell (it killed live sharing) — popups use
+  `dlLinkAttrs()`, exports use `saveFile()`. Edits to `web/` alone need NO
+  native rebuild — the app loads the remote site (so iterate by deploying
+  `web/`, not rebuilding); `capacitor/` changes do.
 
 ## IRIs são dereferenciáveis (Linked Data) — esquema atual
 
@@ -454,7 +484,8 @@ Key flows:
     ways); packed is ~55 MB and redraws in ~40 ms. Density (Sé): ~300 ways
     and ~80 kB per km², ~50× the hidro — zoom 12 on a laptop = 37 MB, full
     HD = 62 MB — hence its own limits (`maxKm2` 3200 = full-HD zoom 12,
-    `maxFeatures` 400k) and no `DETAIL_MAIN` (that FGB has no `highway`
+    `maxFeatures` 400k; on touch 800 km² / 120k — the iPhone opens it from
+    zoom 12) and no `DETAIL_MAIN` (that FGB has no `highway`
     column). The driver hands `load(bb, {maxParts, isStale})` so a
     superseded pan or the cap stops the DOWNLOAD, not just the result.
   - The driver's `show()` defers the first `refresh` to a microtask:
@@ -480,7 +511,10 @@ Key flows:
     blocks hit the network, as contiguous runs, deduped across parallel
     requests (`fgbInflight`). The file's ETag is IN THE KEY (generations
     never mix), revalidated every 24 h with a 1-byte range (changed → old
-    blocks purged); offline it keeps serving the known version. FIFO budget
+    blocks purged; with a stale meta a read waits at most 2.5 s for that
+    revalidation, then serves the disk blocks — weak 4G used to hang the
+    first read ~60 s; a failed revalidation retries after 5 min); offline it
+    keeps serving the known version. FIFO budget
     of 4096 blocks (256 MB). The cache name is NOT versioned and is exempt
     from the activate cleanup — don't fold it into `VERSION`, or every deploy
     drops tens of MB of viário. Any failure falls back to plain network.
@@ -551,6 +585,26 @@ Key flows:
   existe — `app.js` já cai pro 360p. `?slow=1` força o MediaRecorder (debug).
   Testado headless (Chrome, `scratchpad/e2e.mjs`-style): clipe de 8 s
   preparado+pré-enviado em ~1,5 s, Enviar em 0,3 s.
+  **Vídeo no iPhone (v416).** O MediaRecorder grava WebM quando pode, senão
+  MP4 (H.264+AAC — o Safari antes do iOS 18.4 não tem writer WebM):
+  `recorderFormats()`; cada arquivo E a referência dele no TTL são nomeados
+  pelo contêiner REAL do blob (`clipFileName`: `.audio.webm|.m4a`,
+  `.360p|.720p.webm|.mp4` — o /subir usa o mesmo). O backend
+  (`_CLIP_VARIANTS`) tira o sufixo do NOME do arquivo enviado e o
+  content-type dos BYTES (EBML × `ftyp`); `_clip_keys` cobre as 7 chaves
+  possíveis. No WebKit sem WebCodecs completo não há preparo em segundo
+  plano: a conversão parte do toque em Enviar/Enviar todas, que chama
+  `blessMediaForGesture` SÍNCRONO (libera os `<video>` e um AudioContext pras
+  conversões do lote inteiro — tocar com som exige gesto). No toque, preparo
+  e pré-envio só depois de mexer no recorte/opções (ou já, pra clipe ≤ 20 s);
+  com `saveData`, nada é pré-enviado. Orçamento por requisição
+  `REQUEST_BODY_BUDGET` = 31 MiB (o Cloud Run em HTTP/1 recusa corpo > 32 MiB
+  antes do Flask): `/stage-video` aceita QUALQUER subconjunto dos arquivos,
+  então um clipe grande sobe em partes; um arquivo sozinho > 32 MiB pede
+  recorte. Fechar a folha NÃO apaga os cards (ver o contrato
+  `phidro-form-state` em Conventions). Hooks: `?mp4=1` (finge sem WebM),
+  `?maxreq=<MiB>`. `.card { min-width: 0 }` é load-bearing no toque (os
+  inputs de 16 px empurravam o card pra fora da faixa).
 - **Validation.** `pyshacl` loads `web/data/shapes.ttl` +
   `web/data/ontology.ttl` once per process. The validator merges the
   incoming TTL with the ontology before checking — `pyshacl`'s `ont_graph`
@@ -572,14 +626,28 @@ Key flows:
   extend `_validation_universe` — don't go back to merging the catalog.
 - **Clips / Animação.** The "Animação" topbar button toggles both the
   marker spotlight pulse AND a ghost-video overlay (translucent `<video>`
-  over the map). The app reads `ph:Video` entries from `uploads.ttl` via
-  `loadClipsFromUploadsTtl()` — files live under `./clips/`. Plays through
+  over the map). Clips come from the SAME parse as the photos
+  (`buildModelFromQuads` → `lastModelClips` → `setClipsFromModel()` on every
+  load, so `images-geo.ttl` is fetched once per boot; `loadClipsCatalog()` is
+  effectively `loadPhotos`, and after `clipsCatalog = null` it forces a
+  reload; the advanced-SPARQL N3 store is built on first use,
+  `ensureMediaStore`) — files live under `./clips/`. Plays through
   clips in random order with a 5-state marker handoff (green intro →
   pulsing white → orange outro). Clips with `audioOnly: true` (no
   `ph:video360p`/`ph:video720p`) are skipped by the ghost-video player but
   still participate in the audio loop. An independent "Loop de áudio"
   plays the same clips' audio-only tracks with a longer crossfade for
   ambient use. Both have controls in Ajustes and the layer panel.
+  **Audio on the iPhone:** WebKit locks `HTMLMediaElement.volume`, so the
+  ghost video and both loop `<audio>` go through ONE AudioContext
+  (MediaElementSource → GainNode) — that's what makes fades and the loop
+  volume work. Those elements need `crossOrigin='anonymous'` (else the graph
+  outputs silence); unlock on click/touchend/keydown (touchstart doesn't
+  count in WebKit); `navigator.audioSession.type` is `'ambient'` while
+  Animação or the loop is on (doesn't pause the user's music), `'auto'`
+  otherwise. The ghost (and the spotlight) pause while a map-covering modal
+  is open (`mapCoveredByModal()`, watching the `hidden` attribute of
+  `MEDIA_MODAL_IDS`) or other media on the page plays.
 - **Deletion.** `POST /delete-image/<phash>` and
   `POST /delete-video/<vhash>` purge the IRI's triples (plus its `<iri>_*`
   derived IRIs) from `uploads.ttl` AND delete the underlying blobs from the
@@ -600,7 +668,24 @@ Key flows:
   nativo via background-geolocation com a tela apagada). Ver e transmitir são
   flags independentes (`_liveViewing` / `_liveSharing`), reconciliados por
   `applyLiveLocation` a cada mudança de Ajustes / `visibilitychange` /
-  `pageshow`.
+  `pageshow`. **Poll incremental (v416):** `GET /live-locations?since=<now da
+  resposta anterior>` (`since=0` = primeira carga; a resposta traz `t0` e os
+  rastros emagrecidos) — sem `since`, o formato antigo, mantido de propósito
+  pro app.js em cache e pro shell. Pontos do rastro `[lat, lng, ts, acc, rt]`:
+  o cursor compara `rt` (quando o servidor RECEBEU), não `ts` — fixes da fila
+  offline chegam com data retroativa. `POST /live-location` aceita `age` e
+  `points` (a fila sem sinal vai junto quando a rede volta); `_live_now()` só
+  sob `_live_positions_lock`. O poll desacelera quando ninguém transmite e
+  pausa com a aba em segundo plano; um chip "sem conexão" aparece no mapa e as
+  pessoas esmaecem pela idade REAL do fix. Transmitindo: "Manter a tela acesa"
+  (wake lock — o WebKit só o concede DENTRO de um toque na 1ª vez da página:
+  `acquireLiveWakeLock()` fica SÍNCRONO na cadeia `confirmShareName →
+  applyLiveLocation → startLiveShare`), aviso se passou > 1 min sem enviar,
+  "Retomar" depois de um reload, e o shell guarda o id do watcher nativo
+  (`phidro:liveNativeWatcherId`). "Mostrar minha localização" subclassa
+  `L.Control.Locate.LocateControl` (o `L.Control.Locate` é só o namespace) e
+  SEMPRE sobrescreve `onLocationError` / `onLocationOutsideMapBounds` — os
+  defaults da lib chamam `alert()`, que no iPhone travava o app num túnel.
 - **Tour CRUD & Censo.** `POST /upload-tour` accepts a TTL fragment
   describing exactly one `phd:tour_<id> a ph:Tour` (plus any new
   `phd:pessoa*` / `phd:assoc_*` declarations it references) and upserts
@@ -618,7 +703,16 @@ Key flows:
   `announcement` file field is saved under
   `tour_assets/<tour_id>/announcement.<ext>` and wired in as
   `schema:image <URL>` before the triples are persisted (under `patch`,
-  a new file also replaces the current `schema:image`).
+  a new file also replaces the current `schema:image`). Next to the original
+  live two light variants, `announcement.web.jpg` (long side ≤ 1350 px, the
+  modal hero / Memória) and `announcement.thumb.jpg` (short side 256 px, tiles
+  and person cards) — made in `/upload-tour` or lazily on the first GET, and
+  only for art the catalog references. Clients derive the variant URL from
+  the original's; every new consumer of the art uses web/thumb, never the
+  original (the top organizer's person card went from ~46 MB to ~1.5 MB). To
+  regenerate, re-upload the art — never delete variants from the bucket: the
+  302 to them is cached for 7 days, so anyone holding it would get a broken
+  image.
   `POST /delete-tour/<tour_id>` removes the tour's triples + its `<iri>_*`
   derived IRIs and purges `tour_assets/<tour_id>/`; it deliberately does NOT
   delete referenced `phd:pessoa*` or series — git history preserves
@@ -697,9 +791,11 @@ Key flows:
   (force re-read of the on-disk TTL catalog after an out-of-band edit).
   Mutations: `POST /upload-image`, `POST /upload-video` (`staged=1` = só o
   TTL, blobs já pré-enviados), `POST /stage-video/<vhash>` (pré-envio dos
-  blobs de um vídeo AINDA não catalogado: grava nas chaves finais
-  `clips/<vhash>.*` em paralelo + marcador `clips/_staging/<vhash>` com o
-  instante; 409 se o vhash já está no catálogo), `POST
+  blobs de um vídeo AINDA não catalogado — qualquer subconjunto dos arquivos
+  por POST, pra caber no limite de 32 MiB por requisição: grava nas chaves
+  finais `clips/<vhash>.*` em paralelo + marcador `clips/_staging/<vhash>`
+  com o instante; 409 se o vhash já está no catálogo; `/upload-video` sem
+  pré-envio recusa com 400 um TTL que cita arquivo que não veio), `POST
   /stage-video/<vhash>/discard` (apaga um pré-envio não confirmado — só com
   marcador e sem entrada no catálogo; o form chama via `sendBeacon` ao
   remover o card / `pagehide`). Pré-envios abandonados são varridos por
@@ -757,9 +853,11 @@ Key flows:
   próximo Traçar restaura; o descarte real é o 🗑 da barra de edição. Localização ao vivo (efêmera, EM MEMÓRIA —
   NÃO toca os catálogos): `POST /live-location` (upsert da posição + rastro de
   um token pseudônimo; body JSON `{id, name?, lat, lng, accuracy?, heading?,
-  ttl?}`; rastro thinned por tempo/distância, teto 500 pts/pessoa e 500
-  pessoas), `GET /live-locations` (posições não-expiradas + rastro de cada
-  uma; `Cache-Control: no-store`, sem ETag), `POST /live-location/stop` (apaga
+  ttl?, age?, points?}` — `points` = a fila offline; rastro thinned por
+  tempo/distância, teto 500 pts/pessoa e 500 pessoas), `GET /live-locations`
+  (posições não-expiradas + rastro de cada uma; `?since=` = só o que mudou,
+  ver Localização ao vivo; `Cache-Control: no-store`, sem ETag),
+  `POST /live-location/stop` (apaga
   o próprio token na hora — NÃO chamado automaticamente; fica p/ um "apagar
   meu rastro" explícito). Estado em `_live_positions` (dict por token sob
   `_live_positions_lock`), retenção por token (`ttl` em s, default 3 h, teto
@@ -837,7 +935,13 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
     with Shift), and a **15° pinch dead zone** (`ROTATE_DEADZONE_DEG`, via a
     per-instance `map.setBearing` wrapper active only during two-finger
     touches) — without it every pinch-zoom tilted the map. Bearing is not
-    persisted. Don't edit the vendored file; adjust in `setupMapRotation`.
+    persisted across sessions (the tab session below restores it on a
+    same-tab reload/discard). Don't edit the vendored file; adjust in
+    `setupMapRotation`, which also carries two instance patches for the
+    plugin's two-finger handler: (5) a still two-finger tap cleared
+    `_zooming` but left `_rotating` and the document listeners behind, so the
+    next pinch jumped to NaN / lat −90; (6) the core TouchZoom the plugin
+    replaces stayed live in `map._handlers` (two moves per pinch) — disabled.
 
 - **`index.html` carrega `<base href="/">`.** Abrir um passeio reescreve a
   barra pra `/passeio/<slug>` (`_setTourUrl`, replaceState) e, sem o base,
@@ -847,6 +951,55 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
   home). O SSR de `/passeio/<slug>` já injetava esse base; agora o estático
   traz e a injeção é idempotente (`if "<base " not in html_text`). CSP tem
   `base-uri 'self'`; os `href="#"` do app são todos preventDefault'ados.
+  Consequência: em JS, NUNCA `new URL(rel, location.href)` — ele ignora o
+  base; use `document.baseURI` (o `fetchManifest` errava isso e as fotos
+  sumiam do mapa e da tira em todo link `/passeio/<slug>`).
+- **Sessão da aba (`phidro:session:v1`, sessionStorage).** Vista, rumo, rotas
+  destacadas e localização ligada, gravados no `moveend`/`rotateend`
+  (debounce), ao destacar/limpar e no `locateactivate`/`locatedeactivate` —
+  o iPhone descarta abas em segundo plano e o reload voltava pro
+  enquadramento inicial no meio do pedal. Restaurada no boot só SEM deep
+  link (`_bootHasDeepLink`: `/passeio/`, `?tour=`, `#st=`, `#rt=`,
+  `#midia=`); a localização volta com `locateControl.start()` sem recentrar.
+- **Folhas no celular (bottom sheets).** O `makeCloseDot` entra como PRIMEIRO
+  filho (`prepend`) e o `addMaximizeDot` logo depois; no toque a bolinha de
+  fechar é sticky — modal novo: prepend a bolinha. Maximizar só persiste no
+  desktop (> 760 px), nunca no celular. Folhas fechadas ficam `inert`
+  (`syncSheetsInert`; o controlador de a11y só devolve o que ele mesmo tornou
+  inert). O `#tour-article` do SSR é escondido ANTES do `L.map` e um
+  ResizeObserver no `#map` mantém o tamanho do Leaflet — não devolver o
+  artigo pro grid do body (era o mapa cinza de todo link de passeio). Pinça
+  na interface: `gesturestart`/`gesturechange` cancelados no app e nas
+  páginas EMBUTIDAS (só embutidas — standalone mantém o zoom) +
+  `overscroll-behavior: contain`. Leitura de `localStorage` em nível de
+  módulo passa por `storage.get` (com "Bloquear todos os cookies" o Safari
+  lança no getter e o app não abria). Toque × hover: as regras de hover de
+  bolinhas de foto, cone, tira e `.secondary-btn` ficam dentro de
+  `@media (hover: hover)` — o iOS aplica :hover no toque e ele gruda.
+- **Contrato `phidro-form-state` (forms embutidos → app).** Cada form que roda
+  numa folha manda, só embutido, a cada mudança e uma vez no load,
+  `{type:'phidro-form-state', busy, dirty, label, keepsOnClose?}` (`busy` =
+  envio/conversão/pré-envio/leitura em curso; `dirty` = algo não enviado;
+  `label` = o que se perderia, pt-BR). Produtores: subir, upload_images,
+  upload_tour, backfill_tours. Consumidor: app.js (`formPending` /
+  `confirmFormClose` / `confirmFormNavigate` + `_modalClosers`): toque no
+  overlay NUNCA fecha folha de formulário; fechar um form busy/dirty
+  pergunta — exceto com `keepsOnClose` (o upload_images guarda os cards e o
+  lote segue; reabrir mostra tudo); NAVEGAR o iframe sempre pergunta
+  (descarta de verdade). O app nunca manda `phidro-upload-modal-closed` com
+  o form ocupado; `{type:'phidro-upload-modal-closed', discard:true}` é o
+  descarte explícito. Rascunho do form de passeio em
+  `phidro:tourDraft:<slug|novo>`.
+- **Downloads e exportações: `saveFile()` (`lib/utils.js`) é o ÚNICO
+  caminho.** No toque ou no shell nativo, `navigator.share({files})` (é como
+  um arquivo chega em Arquivos/WhatsApp/Garmin no iPhone); senão
+  `<a download>`; devolve `'shared'|'downloaded'|'cancelled'` — toast só nos
+  dois primeiros. Chame DENTRO do toque, sem `await` antes: o `share()` do
+  WebKit consome a ativação transitória (~5 s); arquivo que fica pronto
+  depois (o .zip de fotos) cai no download. Chips de download em popups usam
+  `dlLinkAttrs()` (sem `download` no Capacitor). .zip grande no celular:
+  `buildStoreZip` (STORE + CRC-32, ~1× o payload na memória), não JSZip
+  (~3×). A fonte de fotos `'local'` (kit) nunca persiste.
 - **Catálogo residente em memória (`_dumps`).** Cada dump fica em memória
   como TEXTO (o que `/data/<ttl>` serve) e como GRAFO rdflib VIVO, parseado
   uma vez e mutado in place pelos RMW — nada de `STORE.read_text` + parse +
@@ -921,10 +1074,106 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
   do PH 113 passava de 1 GB e o Safari do iPhone matava a aba ("A problem
   repeatedly occurred"). Pelo mesmo motivo a View Transition da galeria só
   roda com ela ≤ ~2 telas de altura: o snapshot do WebKit é do elemento
-  inteiro, não da parte visível.
+  inteiro, não da parte visível. No toque o `large.jpg` vai só pros
+  `LARGE_MAX_TILES` (11) tiles mais perto do centro da tela
+  (`reconcileLargeTiles`, IntersectionObserver, despejando o mais longe) e a
+  grade tem no máximo 9 colunas. A **tira de fotos do modal do passeio**
+  segue a mesma regra: só miniaturas (`large.jpg` só no visualizador) — ela
+  derrubava o Safari nos passeios grandes.
+- **Galeria sem Comunica na visão padrão.** As facetas filtram em JS
+  (`MQ.facetRows`, em `lib/media-query.js`) — tem que continuar EQUIVALENTE ao
+  `buildQueryFromFacets` (mude os dois juntos); o Comunica só carrega no
+  Avançado (SPARQL), e `albumSequence` é síncrono. A faceta de data usa a
+  data de CALENDÁRIO gravada (`SUBSTR(STR(?d),1,10)`): o Comunica aplica o
+  fuso do navegador, com o sinal trocado, a limites de data sem fuso (pedais
+  noturnos sumiam). Standalone, o lightbox empilha histórico também fora de
+  álbum (estado `{phLb, iri}`; voltar fecha a foto); embutida, nunca mexe em
+  histórico. Mensagens: `phidro-gallery-back` (← Mapa, toque),
+  `phidro-gallery-show`, `phidro-gallery-reload` (galeria → app) e
+  `phidro-gallery-pick {hash}` (app → galeria: "Ver grande" abre a foto no
+  mesmo documento, sem recarregar). No modo seleção do toque, "Selecionar
+  tudo" e a contagem ficam no ☰ e na barra de baixo (a barra de cima não
+  quebra linha).
+- **Mapa no toque.** Toda rota tem uma polyline `hit` invisível na pane de
+  rotas (`ROUTE_HIT_WEIGHT`: 22 px no toque, 10 px no mouse) — caminho novo
+  de mostrar/esconder rota adiciona/remove `r.hit` junto; no Traçar o toque
+  nela adiciona ponto (e foto/clipe perto do toque ganha da rota). Um toque a
+  ≤ 16 px da borda de uma bolinha abre a foto/clipe mais próximo. O
+  `focusRoute` usa `routeFitOptions()` (no celular, padding de baixo = altura
+  da folha). Relaxação das fotos = base + tick (`computeRelaxBase` /
+  `relaxFromBase`), sempre via `scheduleRelax(rebuild)`; `commitRelax` só
+  escreve valor que mudou; `--photo-scale` fica no container do mapa, não em
+  cada marcador. O slider de datas atualiza a lista no `input` e as fotos só
+  no `change` (ou 250 ms parado).
+- **Editor de traçado (Traçar).** Roteamento POR SEGMENTO: cada trecho tem
+  seu carimbo (`tp._routeSeq`) e um resultado só entra se o carimbo, o
+  vizinho anterior e as duas pontas ainda batem; `pendingRouteSeq` virou a
+  ÉPOCA do rascunho (desfazer/descartar/inverter/carregar incrementam).
+  Trecho pendente fica marcado no snapshot e `sweepPendingRoutes` re-pede o
+  que sobrou quando nada está em voo. O histórico é empilhado ANTES do
+  `await` e completado por `patchPendingHistory` (o push tardio apagava o
+  refazer). Rotear em lote: `routeSegmentsBatch(tps)`, por referência, nunca
+  por índice. Os snapshots do desfazer COMPARTILHAM os arrays de
+  `pathFromPrev` — nunca mute um path no lugar, substitua; `HISTORY_MAX` =
+  100. Carregar link `#st=`/`#rt=`, rota salva, GPX, "Editar este traçado"
+  ou "Traçar a partir daqui" guarda o rascunho deslocado em
+  `phidro:traceDraft:prev` (`prepareEditorReplace` / `announceStashedDraft`,
+  "↺ Restaurar" no aviso e no 📂 Carregar); `saveTraceDraft` não faz nada
+  fora do editor ou com o mapa vazio, e só o 🗑 apaga o rascunho. O vínculo
+  com a rota do servidor (id/nome) é por "linhagem" (`_lineageMeta`) — mudou
+  id/nome fora do `pushHistory`, chame `syncLineageMeta()`. No toque,
+  inserir no meio da linha exige SEGURAR (300 ms, 8 px; 2º dedo cancela).
+  GPX em Reta com > 200 pontos vira ~150 pontos editáveis (Douglas–Peucker
+  por importância) com a geometria exata no `pathFromPrev`. Gotcha do
+  Leaflet: `bubblingMouseEvents:false` só vale em layer que ESCUTA o evento —
+  por isso a linha do rascunho tem um listener de click vazio (sem ele o
+  clique na linha vazava pro mapa e criava ponto no fim).
+- **Memória e rede do roteamento (Traçar).** `touchRoutingMemory` /
+  `releaseRoutingMemory` soltam o worker do grafo, os tiles de DEM, o LRU do
+  FGB e os produtos do viário 30 s depois de sair do editor (ou 5 min parado
+  dentro dele). DEM (SP, FABDEM, custom) SÓ pela seção "Leitura de COGs":
+  `openCogHandle` (4xx = definitivo; rede/5xx/timeout = toast + nova
+  tentativa em 30 s, e os pontos de uma fonte pior são refeitos quando a
+  boa volta), `demTile` (LRU de tiles 512² com orçamento em bytes — 24 MB no
+  toque, 64 MB no desktop — e abort contado por referência),
+  `sampleDemPoints` (perfis: resolução cheia, só os tiles com pontos) e
+  `loadDemHandleMosaic` (terreno e "Estimar" da Câmera: o overview mais
+  grosso ainda ≤ 1″ — no DEM de SP, o IFD2 de ~21 m). Não voltar a ler
+  janelas do IFD0 sobre a bbox inteira (34 MB e 30 s de long tasks por trecho
+  de 9 km). O grafo baixa por `fetch` simples (o SW é quem o guarda —
+  `phidro-graph-v1`), com timeout de INATIVIDADE de 20 s e progresso.
+  `energyRoute(from, to, mode, superseded)` devolve null quando cancelado —
+  quem chama não grava esse null. **Gotcha do FGB:** o flatgeobuf 4.4 pede
+  todos os lotes de feições de uma vez depois do índice e não aceita
+  AbortSignal; o cancelamento marca os range requests de cada consulta com
+  o header `x-phidro-fgb-query` (5º argumento do `deserialize`) e
+  `installFgbFetchAbort` (wrapper do `window.fetch`) troca o marcador pelo
+  signal da consulta e o remove antes da rede — numa atualização do
+  flatgeobuf, confira que ele ainda chama o `fetch` global com esses
+  headers. `streamFgbFeatures(url, bb, useCache, {isStale, signal, maxParts,
+  keep})`: no teto devolve o parcial com `.capped`; stale rejeita com
+  AbortError. `makeOsmFgbLayer` reaproveita a última carga completa enquanto
+  a vista couber nela (`padFrac`/`density0`; limites podem ser função). Viário
+  OSM: 800 km² / 120 mil vias no toque (abre a partir do zoom 12), 3200 / 400
+  mil no desktop; `PackedLinesLayer` cobre o quadrado da diagonal com o mapa
+  girado (redesenha só quando um canto sai dele), acompanha a pinça pelo
+  evento `zoom` e limita o DPR do canvas a 2. Trocar uma fonte de dados só
+  re-roteia os trechos que dependem dela (proveniência `path.mode`): parâmetro
+  novo que afete o roteamento entra em `routingSettingsNow()` e em
+  `segmentDependsOn()`.
+- **Campos de formulário no iPhone.** `showPicker()` não faz nada no iOS em
+  input de data (e não lança): no toque o padrão é um input transparente
+  POR CIMA do controle (`.dt-overlay` nos forms de passeio,
+  `.date-pick-overlay` no filtro de datas do mapa); `showPicker()` só no
+  desktop. A narrativa (`dcterms:description`) vai como literal de UMA linha
+  com escapes — o multipart/form-data transforma quebra de linha nua em CRLF;
+  não voltar pros `"""longos"""` nos forms. Submissão implícita (Enter) é um
+  clique simulado no botão default (o `ev.submitter` não distingue): bloqueie
+  o Enter no `keydown`. Inputs com 16 px no toque (menos que isso o Safari
+  dá zoom ao focar).
 - **Os forms avisam o app-pai por `postMessage`** — `phidro-media-changed`
   (upload_images.html: envio, edição) e `phidro-tour-changed`
-  (upload_tour.html: save, delete). O app marca o modal como "sujo" e só
+  (upload_tour.html e backfill_tours.html: save, delete). O app marca o modal como "sujo" e só
   chama `reloadPhotos()` ao fechar se algo foi salvo; fechar sem salvar não
   custa mais 4 dumps + rebuild de marcadores. Um novo caminho de escrita num
   form precisa emitir a mensagem, senão o mapa só atualiza no próximo reload.
@@ -945,7 +1194,50 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
   won't reach users. It's a monotonic `phidro-vN` integer counter; just
   increment. For user-visible changes, also add an entry to the collapsed
   changelog `<details class="help-changelog">` at the top of the Ajuda
-  modal in `index.html` (dated, keyed to the new vN).
+  modal in `index.html` (dated, keyed to the new vN). Since v416 this is
+  STRICT: shell and pages are served cache-first from the version's precache.
+- **Service worker = one precache per deploy (v416).** Every file that
+  `index.html`/`app.js` loads at boot goes in `SHELL_ASSETS` — ONE atomic
+  `cache.addAll` (`{cache:'no-cache'}`: fresh but 304 when unchanged), so a
+  404 there blocks everyone's update (the old SW keeps control with its
+  complete set). Iframe pages and their libs go in `PAGE_ASSETS`
+  (best-effort). No `?v=` anywhere — `VERSION` is the only version
+  mechanism; code is cache-first, so HTML and JS of two deploys never mix. A
+  query-versioned import (`media-pipeline.js?api=N`) falls back offline to
+  the precached copy without the query. Navigations to `/`, `/index.html`,
+  `/passeio/<slug>` (the app opens tours from the path — the SSR only reaches
+  crawlers and clients without a SW), `/imagens/lista/…`, `/pessoas/<slug>`,
+  `/subir` and the iframe pages come from the precache; `?format=` bypasses
+  the SW. Unversioned caches (`KEEP_CACHES`; anything else is DELETED on
+  activate — don't add a page-side Cache Storage): `phidro-data-v1`
+  (network-first racing a 3.5 s timer — the cached copy wins on weak 4G and
+  the network updates it in the background; `data_graphs.ttl` is SWR),
+  `phidro-media-v1` (photo/clip `thumb.jpg`, refetched in CORS through the
+  302, FIFO 3000; `large.jpg` goes to the network and falls back to the
+  thumb offline; `original.*`, clip video/audio and `tour_assets/` are never
+  cached), `phidro-tiles-v1` (only layers with `crossOrigin: ''` on hosts that
+  ALWAYS send ACAO — osm, satellite, rmsampa, mtpi*, 1850; not sara1930, whose
+  WMS only sends it with an Origin), `phidro-cdn-v1`, `phidro-graph-v1` (the
+  baked viário graph, cache-first, HEAD-revalidated ≤ 1×/24 h, one shared
+  in-flight GET) and the FGB block cache. Install copies data/graph/CDN
+  entries from the old versioned caches; opaque responses are never cached.
+  Updates: skipWaiting + clients.claim, `registration.update()` when the page
+  becomes visible (throttled 15 min), and `watchSwUpdates` shows "Nova versão
+  do amora disponível — ↻ Atualizar" (asks first if a form is busy/dirty).
+  Clients without a SW still get JS/CSS up to 4 h stale: Cloudflare's Browser
+  Cache TTL rewrites the origin's `no-cache` to `max-age=14400` ("Respect
+  Existing Headers" there would fix it). routes.json with no cached copy and
+  no network shows "↻ Tentar de novo" (sidebar + banner, `showActionToast`)
+  and retries by itself on `online`.
+- **Media blob Cache-Control (`storage.blob_cache_control`).** Photo
+  `thumb`/`large` (content-addressed by pHash): 1 year immutable; `original.*`
+  keeps the short default (it carries the EXIF/GPS, and a privacy delete must
+  not stay servable from Google's edge cache for a year); clips (keyed by the
+  SOURCE vHash — a re-upload with another trim rewrites them): 1 day. Applied
+  to new GCS writes and to local-mode Flask responses; objects written before
+  keep 1 h until a `gcloud storage objects update --cache-control`. The
+  `/photos` and `/clips` 302 itself is `public, max-age=2592000, immutable`
+  (30 days): moving buckets means keeping the old one readable that long.
 - **Compression + ETags are load-bearing.** The backend uses
   `flask-compress` (best-effort import; `COMPRESS_STREAMS = True` is
   required or `send_from_directory` responses — app.js, style.css — go out
