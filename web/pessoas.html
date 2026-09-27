@@ -23,7 +23,9 @@
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; background: var(--bg); color: var(--text);
-    font: 14px/1.5 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace; }
+    font: 14px/1.5 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    /* Aberta dentro do sheet do Censo: rolar até a borda não encadeia no app. */
+    overscroll-behavior: contain; }
   body { padding: 16px; max-width: 980px; margin: 0 auto; }
 
   header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
@@ -98,6 +100,11 @@
   .editor textarea { padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border);
     background: var(--surface); color: var(--text); font: inherit; font-size: 13px; resize: vertical; }
   .editor textarea:focus { outline: none; border-color: var(--accent); }
+  /* Toque: campos de 16 px — com menos, o iOS dá zoom na página ao focar a
+     busca ou o editor (e não volta ao tirar o foco). */
+  @media (pointer: coarse) {
+    input, select, textarea { font-size: 16px !important; }
+  }
   /* Apelido ao lado do nome real no resumo; chips de links/redes no corpo. */
   .phandle { color: var(--muted); font-size: 13px; }
   .social { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 14px; }
@@ -211,6 +218,9 @@ if (window.self !== window.top) {
   // No modal, mostra o próprio título (o modal não tem barra), mas esconde a
   // nav ("Censo →" / "← Mapa") — fecha pelo botão vermelho / clique fora / Esc.
   $('header nav')?.style.setProperty('display', 'none');
+  // Pinça dentro do sheet não pode deixar o app INTEIRO com zoom (o Safari
+  // ignora user-scalable=no). Standalone mantém a pinça (acessibilidade).
+  for (const t of ['gesturestart', 'gesturechange']) document.addEventListener(t, (e) => e.preventDefault(), { passive: false });
 }
 
 // ── N3.js (UMD vendored em ./lib/n3.min.js → popula window.N3) ───────────────

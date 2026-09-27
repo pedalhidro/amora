@@ -84,6 +84,11 @@
     background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
     padding: 3px 9px; font-size: 12px; font-weight: 600; text-decoration: none; }
   .edit-btn:hover { border-color: var(--accent); }
+  /* Sem arte, o texto ocupa a largura toda: título longo corria por baixo das
+     ações (entre ~720 e ~900 px). Reserva o canto delas. */
+  @media (min-width: 721px) {
+    li.tm:has(> .tm-grid.sem-arte) .texto h2 { padding-right: 200px; }
+  }
 
   /* Grid do TourMemory — compacto: a galeria vai pra coluna que tem espaço
      sobrando (medido em placeGalleries()); se não couber em nenhuma, ganha a
@@ -108,6 +113,20 @@
     .tm-grid { grid-template-columns: 1fr; }
     .tm-grid .texto, .tm-grid .arte, .tm-grid .galeria {
       grid-column: 1 !important; grid-row: auto !important; }
+    /* Numa coluna só, as ações ancoradas no canto cobriam a série (o número
+       da edição sumia) e a 1ª linha do título — e um toque no fim do título
+       abria o form de edição. Aqui elas viram uma linha própria, no fluxo. */
+    .tm-actions { position: static; justify-content: flex-end; flex-wrap: wrap;
+      margin: 0 0 8px; }
+  }
+  /* Toque: nav, ações, "ordem" e o summary da galeria com 44 px de altura
+     (eram 13–25 px). */
+  @media (pointer: coarse) {
+    header nav { display: flex; flex-wrap: wrap; gap: 0 14px; }
+    header nav a, .toolbar button, .edit-btn {
+      display: inline-flex; align-items: center; min-height: 44px; }
+    .edit-btn { padding: 0 12px; }
+    details.galeria summary { padding: 15px 0; min-height: 44px; }
   }
 
   .texto .serie { margin: 0; color: var(--muted); font-size: 11px;
@@ -151,7 +170,7 @@
      padrao (só a lista Padrão) → all (todas) → closed → padrao … */
   details.galeria { margin-top: 8px; }
   details.galeria summary { cursor: pointer; color: var(--muted); font-size: 12px;
-    user-select: none; }
+    -webkit-user-select: none; user-select: none; }
   details.galeria summary:hover { color: var(--accent); }
   details.galeria[open] summary { margin-bottom: 6px; }
   .tm-grid[data-gal="padrao"] .g-tiles a[data-extra] { display: none; }
