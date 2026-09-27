@@ -1122,8 +1122,8 @@ body.modal-open { overflow: hidden; }
      dar espaço de leitura/uso sem virar tela cheia. Também o ☰ Ações (em 40vh
      o Compartilhar localização, Ajustes e Ajuda — que só existem ali — ficavam
      abaixo do corte), o QR (abria cortado), o compartilhar localização (o
-     botão de confirmar sumia em telas de 320px) e o artigo de um passeio sem
-     rota. */
+     botão de confirmar sumia em telas de 320px), o artigo de um passeio sem
+     rota e as folhas Salvar / GPX do editor de traçado (botões em 2 linhas). */
   #help-modal .modal-content,
   #settings-modal .modal-content,
   #route-modal .modal-content,
@@ -1133,6 +1133,8 @@ body.modal-open { overflow: hidden; }
   #subir-modal .modal-content,
   #qr-modal .modal-content,
   #share-name-modal .modal-content,
+  #save-modal .modal-content,
+  #gpx-connect-modal .modal-content,
   #tour-article-modal .modal-content {
     max-height: 70vh;
   }

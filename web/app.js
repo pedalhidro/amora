@@ -3429,12 +3429,9 @@ async function importPhotosLocal(file) {
 function downloadTtl() {
   if (!lastTtlText) { showToast('Carregue um catálogo primeiro.'); return; }
   const blob = new Blob([lastTtlText], { type: 'text/turtle;charset=utf-8' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
   const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-  a.download = `photos-${stamp}.ttl`;
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  // Dentro do toque: no celular abre a folha de compartilhar (lib/utils.js).
+  saveFile(blob, `photos-${stamp}.ttl`);
 }
 
 // O kit leva as 3 variantes de TODAS as fotos com GPS (~600 × ~3,5 MB ≈ 2 GB),
@@ -3470,11 +3467,7 @@ async function downloadKit() {
   }
   const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
   const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `phidro-kit-${stamp}.zip`;
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  await saveFile(blob, `phidro-kit-${stamp}.zip`);
   showToast(`Kit pronto: ${added} arquivo(s)${missing ? `, ${missing} indisponível(is)` : ''}.`);
 }
 
@@ -4118,11 +4111,10 @@ async function bulkDownloadPhotos(photos, variant, label, btn) {
     const out = buildStoreZip(entries);
     const safe = (label || 'pedal').replace(/[\\/:*?"<>|\s]+/g, '_');
     const fname = `${safe}_${variant}.zip`;
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(out);
-    a.download = fname;
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 60_000);
+    // O .zip fica pronto muito depois do toque: sem ativação, o saveFile baixa
+    // direto (no iPhone, vai pra Arquivos → Downloads).
+    const r = await saveFile(out, fname, { type: 'application/zip' });
+    if (r === 'cancelled') return;
     showToast(`${ok} ${ok > 1 ? 'imagens compactadas' : 'imagem compactada'} (${fmtMB(bytes)})${fail ? ` · ${fail} com erro` : ''}`);
   } catch (e) {
     if (e.name === 'AbortError') showToast('Download cancelado.');
@@ -4418,11 +4410,7 @@ function exportUploadedPhotos() {
   const blob = new Blob([JSON.stringify(payload, null, 2)], {
     type: 'application/json',
   });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'photos-upload.json';
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  saveFile(blob, 'photos-upload.json');
 }
 
 function renderUploadChip() {
@@ -5552,12 +5540,9 @@ function downloadSettingsJsonLd() {
   const blob = new Blob([JSON.stringify(doc, null, 2)],
     { type: 'application/ld+json' });
   const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `phidro-settings-${stamp}.jsonld`;
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-  showToast('Configurações exportadas.');
+  saveFile(blob, `phidro-settings-${stamp}.jsonld`).then((r) => {
+    if (r === 'shared' || r === 'downloaded') showToast('Configurações exportadas.');
+  });
 }
 async function importSettingsJsonLd(file) {
   const text = await file.text();
