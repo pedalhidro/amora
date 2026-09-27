@@ -1263,6 +1263,10 @@ body.modal-open { overflow: hidden; }
     * var(--clip-intensity, 0)
   ));
   transition: transform 0.06s linear;
+  /* Escalado até 20× (~360 px) por cima do pane das fotos, o anel roubava o
+     toque dos marcadores em volta (e reiniciava o clipe). O dot do vídeo por
+     baixo segue tocável. */
+  pointer-events: none;
 }
 /* Estados de início (1s antes do clipe começar a pulsar) e fim (1s antes
    de ceder pro próximo): bolinhas sólidas, não pulsam. Verde no intro,
@@ -1382,9 +1386,14 @@ body.modal-open { overflow: hidden; }
   font-size: 13px;
   margin-right: 6px;
 }
-.secondary-btn:hover {
-  background: rgba(255, 140, 46, 0.18);
-  border-color: var(--accent);
+/* Só com mouse: no toque o :hover gruda no último botão tocado e, com a mesma
+   cor do "ligado" (aria-pressed), o toggle desligado continuava parecendo
+   ligado. */
+@media (hover: hover) {
+  .secondary-btn:hover {
+    background: rgba(255, 140, 46, 0.18);
+    border-color: var(--accent);
+  }
 }
 /* Botões de toggle (Animação, Camadas, Rotas, Traçar GPX/Cancelar) acendem
    em laranja quando estão ativos; "desligado" fica igual aos botões comuns
@@ -2548,9 +2557,14 @@ body.trace-preview .tp-label { display: none !important; }
 }
 /* Quando o usuário passa o cursor sobre um dot que está visualmente "debaixo"
    de outro marcador, esta regra eleva o wrapper inteiro pro topo — assim o
-   dot ampliado fica acima dos vizinhos e o popup abre no marcador certo. */
-.photo-dot-wrap:has(.photo-dot:hover) {
-  z-index: 1000 !important;
+   dot ampliado fica acima dos vizinhos e o popup abre no marcador certo.
+   Todo o "cresce no hover" dos dots é SÓ pra mouse (hover: hover): no toque o
+   :hover dispara no tap e gruda — o dot ficava com 132 px por cima dos
+   vizinhos, e o toque seguinte, mirando um vizinho, caía nele. */
+@media (hover: hover) {
+  .photo-dot-wrap:has(.photo-dot:hover) {
+    z-index: 1000 !important;
+  }
 }
 .photo-dot {
   /* Dimensiona o elemento real (width/height) — não usar transform:scale
@@ -2578,14 +2592,16 @@ body.trace-preview .tp-label { display: none !important; }
   pointer-events: auto;
   transition: width 0.3s ease, height 0.3s ease, transform 0.3s ease;
 }
-.photo-dot:hover {
-  /* Hover cresce para `--photo-hover-scale × 40px` (definido em
-     `settings.markerLayout.hoverScale` via JS; default 3.3 ⇒ 132 px). */
-  width: calc(40px * var(--photo-hover-scale, 3.3));
-  height: calc(40px * var(--photo-hover-scale, 3.3));
-  z-index: 1000;
-  /* Hover transitiona mais rápido que o re-layout pra resposta tátil. */
-  transition: width 0.15s ease, height 0.15s ease, transform 0.3s ease;
+@media (hover: hover) {
+  .photo-dot:hover {
+    /* Hover cresce para `--photo-hover-scale × 40px` (definido em
+       `settings.markerLayout.hoverScale` via JS; default 3.3 ⇒ 132 px). */
+    width: calc(40px * var(--photo-hover-scale, 3.3));
+    height: calc(40px * var(--photo-hover-scale, 3.3));
+    z-index: 1000;
+    /* Hover transitiona mais rápido que o re-layout pra resposta tátil. */
+    transition: width 0.15s ease, height 0.15s ease, transform 0.3s ease;
+  }
 }
 /* Cone de visada acompanha o mesmo encolhimento + nudge. */
 .photo-aim {
@@ -2612,10 +2628,12 @@ body.trace-preview .tp-label { display: none !important; }
 }
 /* Hover do dot interno: width/height fixos (40px), o scale inverte o do pai
    pra chegar ao tamanho ajustável (alinhado com o hover do dot solto). */
-.photo-aim > .photo-dot:hover {
-  width: 40px;
-  height: 40px;
-  transform: scale(calc(var(--photo-hover-scale, 3.3) / (var(--photo-scale, 1) * var(--photo-density-scale, 1))));
+@media (hover: hover) {
+  .photo-aim > .photo-dot:hover {
+    width: 40px;
+    height: 40px;
+    transform: scale(calc(var(--photo-hover-scale, 3.3) / (var(--photo-scale, 1) * var(--photo-density-scale, 1))));
+  }
 }
 
 /* Geo-tagged photo popups (Fotos geo overlay). Layout em duas colunas:
@@ -2922,7 +2940,9 @@ body.trace-preview .tp-label { display: none !important; }
   transition: transform 0.12s ease;
   image-orientation: none;
 }
-.route-photos-strip img:hover { transform: scale(1.06); }
+@media (hover: hover) {
+  .route-photos-strip img:hover { transform: scale(1.06); }
+}
 /* Vídeos no gallery: mesma tira, mas com moldura red-orange + glifo de
    play sobreposto pra diferenciar do strip de fotos. */
 .route-clip { position: relative; display: inline-block; }
@@ -3394,8 +3414,10 @@ body:has(#media-lists-editor:not([hidden])) .photo-nav-arrow { display: none; }
    tamanho absoluto em pixels (igual ao truque do dot logo abaixo), senão
    em zoom mais distante o cone encolhe junto com o pai e some atrás do
    dot que mantém tamanho fixo. */
-.photo-aim:has(> .photo-dot:hover) > svg {
-  transform: scale(calc(var(--photo-hover-scale, 3.3) / 1.5 / (var(--photo-scale, 1) * var(--photo-density-scale, 1))));
+@media (hover: hover) {
+  .photo-aim:has(> .photo-dot:hover) > svg {
+    transform: scale(calc(var(--photo-hover-scale, 3.3) / 1.5 / (var(--photo-scale, 1) * var(--photo-density-scale, 1))));
+  }
 }
 .photo-cone {
   fill: #fff;
