@@ -5404,13 +5404,21 @@ def upsert_video_in_uploads(ttl_text, vid_id):
 # `/discard` (best-effort do cliente), senão pela varredura (boot + 1×/h).
 STAGING_PREFIX = "clips/_staging/"
 STAGING_MAX_AGE_S = int(os.environ.get("STAGING_MAX_AGE_S") or 6 * 3600)
+# Variantes de um clipe: campo do form → sufixos aceitos (o 1º é o default
+# quando o nome enviado não diz o contêiner) → content-type de cada um. WebM
+# é o formato de sempre; MP4/M4A (H.264 + AAC) é o que o MediaRecorder do
+# Safari grava antes do iOS 18.4 (sem writer WebM) — o form escolhe o sufixo
+# pelo contêiner real do blob e manda no NOME do arquivo.
 _CLIP_VARIANTS = (
-    # form field, sufixo da chave, content-type
-    ("audio", "audio.webm", "audio/webm"),
-    ("thumb", "thumb.jpg", "image/jpeg"),
-    ("video360", "360p.webm", "video/webm"),
-    ("video720", "720p.webm", "video/webm"),
+    # form field, ((sufixo da chave, content-type), ...)
+    ("audio", (("audio.webm", "audio/webm"), ("audio.m4a", "audio/mp4"))),
+    ("thumb", (("thumb.jpg", "image/jpeg"),)),
+    ("video360", (("360p.webm", "video/webm"), ("360p.mp4", "video/mp4"))),
+    ("video720", (("720p.webm", "video/webm"), ("720p.mp4", "video/mp4"))),
 )
+# Extensão do nome enviado → família do contêiner.
+_CLIP_EXT_FAMILY = {"webm": "webm", "m4a": "mp4", "mp4": "mp4", "m4v": "mp4",
+                    "mov": "mp4", "jpg": "jpg", "jpeg": "jpg"}
 _last_staging_sweep = 0.0
 
 
@@ -5419,7 +5427,39 @@ def _is_vhash(s):
 
 
 def _clip_keys(vid_id):
-    return [f"clips/{vid_id}.{suffix}" for _, suffix, _ in _CLIP_VARIANTS]
+    """TODAS as chaves possíveis de um clipe (webm E mp4) — pra descarte,
+    varredura e fechamento do pré-envio apagarem qualquer uma."""
+    return [f"clips/{vid_id}.{suffix}"
+            for _, variants in _CLIP_VARIANTS for suffix, _ in variants]
+
+
+def _sniff_container(data):
+    """'webm' (EBML/Matroska), 'mp4' (ISO BMFF: 'ftyp' no byte 4) ou None."""
+    head = bytes(data[:12])
+    if head[:4] == b"\x1a\x45\xdf\xa3":
+        return "webm"
+    if head[4:8] == b"ftyp":
+        return "mp4"
+    return None
+
+
+def _clip_variant_for(field, variants, filename, data):
+    """(sufixo, content-type) de um arquivo recebido. O sufixo vem do NOME
+    (é o que o TTL referencia); o content-type, dos BYTES quando dá pra saber —
+    um cliente que manda MP4 com nome .webm (ex.: o /subir antes de nomear
+    pelo blob) ainda é servido com o tipo certo pelo bucket."""
+    ext = (filename or "").rsplit(".", 1)[-1].lower() if "." in (filename or "") else ""
+    fam = _CLIP_EXT_FAMILY.get(ext)
+    suffix, ctype = variants[0]
+    for s, c in variants:
+        if _CLIP_EXT_FAMILY.get(s.rsplit(".", 1)[-1]) == fam:
+            suffix, ctype = s, c
+            break
+    sniffed = _sniff_container(data) if field != "thumb" else None
+    if sniffed:
+        kind = "audio" if field == "audio" else "video"
+        ctype = f"{kind}/{'webm' if sniffed == 'webm' else 'mp4'}"
+    return suffix, ctype
 
 
 def _media_in_catalog(vid_id):
@@ -5428,15 +5468,29 @@ def _media_in_catalog(vid_id):
     return (URIRef(MED_NS + vid_id), RDF.type, None) in _load_catalog()
 
 
+def _planned_clip_keys(vid_id):
+    """As chaves que `_write_clip_blobs` gravaria com os arquivos DESTE envio
+    (o sufixo só depende do nome — nada é lido aqui)."""
+    keys = []
+    for field, variants in _CLIP_VARIANTS:
+        f = request.files.get(field)
+        if f:
+            suffix, _ = _clip_variant_for(field, variants, f.filename, b"")
+            keys.append(f"clips/{vid_id}.{suffix}")
+    return keys
+
+
 def _write_clip_blobs(vid_id):
     """Lê os blobs de `request.files` e grava todos EM PARALELO (eram quatro
     round-trips em série no GCS). Devolve as chaves gravadas."""
     from concurrent.futures import ThreadPoolExecutor
     jobs = []
-    for field, suffix, ctype in _CLIP_VARIANTS:
+    for field, variants in _CLIP_VARIANTS:
         f = request.files.get(field)
         if f:
-            jobs.append((f"clips/{vid_id}.{suffix}", f.read(), ctype))
+            data = f.read()
+            suffix, ctype = _clip_variant_for(field, variants, f.filename, data)
+            jobs.append((f"clips/{vid_id}.{suffix}", data, ctype))
     if not jobs:
         return []
     with ThreadPoolExecutor(max_workers=len(jobs)) as ex:
@@ -5453,7 +5507,8 @@ def _clip_keys_from_ttl(ttl_text, vid_id):
     g = Graph()
     g.parse(data=ttl_text, format="turtle")
     subj = URIRef(MED_NS + vid_id)
-    allowed = {f"{vid_id}.{suffix}" for _, suffix, _ in _CLIP_VARIANTS}
+    allowed = {f"{vid_id}.{suffix}"
+               for _, variants in _CLIP_VARIANTS for suffix, _ in variants}
     keys = []
     for pred in (PH_NS + "audio", PH_NS + "video360p", PH_NS + "video720p",
                  "https://schema.org/thumbnail"):
@@ -5514,12 +5569,15 @@ def _maybe_sweep_staging_async(min_interval_s=3600):
 @app.post("/stage-video/<vid_id>")
 def stage_video(vid_id):
     """Pré-envio dos blobs de um vídeo ainda não catalogado (ver bloco acima).
-    Mesmos campos de arquivo do /upload-video, sem TTL."""
+    Mesmos campos de arquivo do /upload-video, sem TTL — e QUALQUER subconjunto
+    deles: um clipe que não cabe numa requisição (o Cloud Run recusa corpo
+    > 32 MiB em HTTP/1) sobe em várias, e o /upload-video com `staged=1`
+    confere que todos os arquivos que o TTL referencia chegaram."""
     vid_id = (vid_id or "").strip().lower()
     if not _is_vhash(vid_id):
         return jsonify(error="id inválido (esperado vhash de 16 hex)"), 400
-    if not request.files.get("audio"):
-        return jsonify(error="audio ausente (sempre obrigatório)"), 400
+    if not any(request.files.get(field) for field, _ in _CLIP_VARIANTS):
+        return jsonify(error="nenhum arquivo do clipe no envio"), 400
     # Nunca sobrescreve blobs de mídia já catalogada (o form deduplica antes,
     # mas o servidor não confia nisso).
     if _media_in_catalog(vid_id):
@@ -5558,9 +5616,11 @@ def discard_staged_video(vid_id):
 @app.post("/upload-video")
 def upload_video():
     """Recebe um clipe já processado no browser:
-      - `audio`     : opus dentro de webm (sempre presente, alta qualidade)
-      - `video360`  : webm 360p (opcional, audio-only mode)
-      - `video720`  : webm 720p (opcional, audio-only mode)
+      - `audio`     : opus em webm, ou AAC em m4a (sempre presente)
+      - `video360`  : webm (ou mp4) 360p (opcional, audio-only mode)
+      - `video720`  : webm (ou mp4) 720p (opcional, audio-only mode)
+      (o sufixo gravado — .webm | .mp4/.m4a — vem do nome do arquivo enviado;
+      ver _CLIP_VARIANTS)
       - `ttl`       : TTL auto-suficiente com 1 ph:MotionImage e seus metadados
       - `id`        : pHash de vídeo (16 hex)
       - `staged`    : "1" → os blobs já subiram via /stage-video; só o TTL vem
@@ -5611,8 +5671,23 @@ def upload_video():
             return jsonify(error="pré-envio não encontrado no servidor",
                            code="staging-missing", missing=missing, id=vid_id), 409
     else:
+        # O TTL só pode referenciar nomes do padrão `<vhash>.<sufixo>` — e o
+        # áudio/vídeo que ele cita tem que estar NESTE envio (ou já no store):
+        # com dois contêineres possíveis (webm | mp4/m4a), um TTL dizendo .webm
+        # com o arquivo enviado como .mp4 viraria referência quebrada.
+        try:
+            referenced = _clip_keys_from_ttl(ttl_text, vid_id)
+        except Exception as e:  # noqa: BLE001
+            return jsonify(error=str(e)), 400
+        planned = set(_planned_clip_keys(vid_id))
+        missing = [k for k in referenced
+                   if k not in planned and not k.endswith(".thumb.jpg") and not STORE.exists(k)]
+        if missing:
+            return jsonify(error="o TTL referencia arquivo(s) que não vieram no envio: "
+                                 + ", ".join(k.rsplit("/", 1)[-1] for k in missing),
+                           id=vid_id), 400
         # Grava (fora do lock; keys content-addressed pelo vhash — idempotente):
-        # audio.webm sempre; webms só se vieram (audio-only mode); thumb
+        # áudio sempre; vídeos só se vieram (audio-only mode); thumb
         # opcional. Todos em paralelo.
         try:
             written = _write_clip_blobs(vid_id)
