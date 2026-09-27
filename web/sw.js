@@ -393,7 +393,16 @@ async function cacheFirst(event, cacheName, { ignoreSearch = false } = {}) {
   if (hit) return hit;
   // Pula o cache HTTP (max-age da Cloudflare): o que entra aqui fica até o
   // próximo deploy e tem que ser o arquivo DESTE.
-  const res = await fetch(req.mode === 'navigate' ? req : new Request(req, { cache: 'no-cache' }));
+  let res;
+  try {
+    res = await fetch(req.mode === 'navigate' ? req : new Request(req, { cache: 'no-cache' }));
+  } catch (err) {
+    // Sem rede: um import versionado por query (`lib/media-pipeline.js?api=N`
+    // do /subir) cai no arquivo pré-cacheado sem a query — é o deste deploy.
+    const loose = await cache.match(req, { ignoreSearch: true });
+    if (loose) return loose;
+    throw err;
+  }
   if (res.ok && res.status === 200 && res.type === 'basic') extend(event, cache.put(req, res.clone()));
   return res;
 }

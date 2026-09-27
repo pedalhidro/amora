@@ -3096,6 +3096,17 @@ function ensureMediaStore() {
   return _mediaStorePromise;
 }
 
+// Store N3 SÓ de tours.ttl + identities.ttl (alguns milhares de quads, ms pra
+// montar) pro resumo do modal do passeio — os quads já vieram parseados no
+// boot. Não usar o ensureMediaStore aqui: todo link /passeio/ abre o modal, e
+// o store completo (~95 ms, ~40 MB com a mídia) voltaria em quase toda visita.
+let lastTourQuads = null;
+let _tourStore = null;
+function ensureTourStore() {
+  if (!_tourStore && lastTourQuads?.length && window.N3?.Store) _tourStore = new window.N3.Store(lastTourQuads);
+  return _tourStore;
+}
+
 // Tenta carregar o manifesto `data/data_graphs.ttl` de uma fonte; devolve
 // a lista de URLs absolutas dos arquivos a fundir.
 const VOID  = 'http://rdfs.org/ns/void#';
@@ -3150,6 +3161,7 @@ async function loadAllGraphs() {
     // ~10× com o acervo do WhatsApp e tudo isso seria parseado e descartado.
     m.urls = m.urls.map((u) => u.replace(/\/data\/images\.ttl$/, '/data/images-geo.ttl'));
     const allQuads = [];
+    const tourQuads = [];   // tours.ttl + identities.ttl — o resumo do passeio (ensureTourStore)
     const parts    = [];
     const texts = await Promise.all(m.urls.map((u) =>
       fetch(u, { cache: 'no-cache' })
@@ -3160,11 +3172,14 @@ async function loadAllGraphs() {
       const u = m.urls[i];
       try {
         parts.push(`# ─── ${u} ───\n${t}`);
-        allQuads.push(...await parseTtlToQuads(t));
+        const q = await parseTtlToQuads(t);
+        allQuads.push(...q);
+        if (/\/data\/(tours|identities)\.ttl$/.test(u)) tourQuads.push(...q);
       } catch (e) { console.warn(`[manifest] ${u}: ${e.message}`); }
     }
     return {
       quads:   allQuads,
+      tourQuads,
       text:    parts.join('\n\n'),
       origin:  b.label,
       sources: m.urls,
@@ -3185,6 +3200,8 @@ async function loadPhotos() {
       if (seq !== photosFetchSeq) return;
       lastTtlText  = r.text;
       lastTtlOrigin = `${r.origin} · ${r.sources.length} grafo(s)`;
+      lastTourQuads = r.tourQuads || null;
+      _tourStore = null;
       const photos = buildModelFromQuads(r.quads);
       buildPhotoMarkers(photos);
       setClipsFromModel();
@@ -4656,8 +4673,8 @@ function closeTourModal() {
   if (tourIframe && !formPending(tourIframe)?.busy) tourIframe.src = '';
   // Tour criado/editado/deletado (o form avisa via phidro-tour-changed) →
   // recarrega catálogos; fechar sem salvar não recarrega nada. O resumo no
-  // route-modal re-fetch'a tours.ttl com no-cache na próxima abertura, então
-  // mudanças aparecem sem refresh.
+  // route-modal lê os passeios da última carga (ensureTourStore), que o
+  // reloadPhotos refaz — mudanças aparecem na próxima abertura, sem refresh.
   if (_tourDirty) { _tourDirty = false; reloadPhotos(); }
 }
 function requestCloseTourModal() {
@@ -7676,21 +7693,13 @@ function watchSwUpdates() {
   });
 }
 
-// Recarregar com envio/edição em curso num form embutido perderia o trabalho:
-// pergunta antes. O estado vem do protocolo phidro-form-state ({busy, dirty,
-// label}, postado pelos forms a cada mudança) — aqui só guardamos o último de
-// cada iframe.
-const _formStates = new Map();   // WindowProxy do iframe → último estado
-window.addEventListener('message', (e) => {
-  if (e.origin !== location.origin || e.data?.type !== 'phidro-form-state') return;
-  _formStates.set(e.source, e.data);
-});
+// Recarregar com envio/edição em curso num form embutido perderia o trabalho
+// (mesmo num que guarda tudo ao fechar a folha): pergunta antes. O estado vem
+// do contrato phidro-form-state — formPending, junto dos modais de formulário.
 function pendingFormWork() {
-  for (const f of document.querySelectorAll('iframe')) {
-    const st = _formStates.get(f.contentWindow);
-    // Iframe esvaziado (src='') guarda o estado do form que já saiu — ignora.
-    if (!st || !(st.busy || st.dirty) || !f.getAttribute('src')) continue;
-    return st.label || 'Há um envio em andamento';
+  for (const f of [uploadIframe, tourIframe, censoIframe]) {
+    const s = formPending(f);
+    if (s) return _formPendingLabel(s);
   }
   return null;
 }
@@ -7969,6 +7978,14 @@ async function boot() {
     if (!entry.latlngs || entry.latlngs.length === 0) {
       li.classList.add('failed');
       li.title = entry.error || 'Sem traçado disponível';
+      // O motivo também VISÍVEL (o iOS nunca mostra o title): uma linha curta
+      // sob o nome da rota esmaecida.
+      const why = document.createElement('small');
+      why.className = 'route-fail-reason';
+      why.textContent = entry.error
+        ? `sem traçado — ${String(entry.error).slice(0, 90)}`
+        : 'sem traçado disponível';
+      li.querySelector('div')?.appendChild(why);
       routes.set(key, { entry, listEl: li, dateMs: entry.dateMs ?? null, visible: false });
       continue;
     }
@@ -8613,8 +8630,8 @@ function _tourIdFromIri(iri) {
 }
 
 // Quads do passeio + vizinhança (associação → série, pessoas, referência de
-// rota) tirados do grafo que o app JÁ parseou (mediaStore: tours + identities +
-// mídia, montado pelo loadPhotos — que a tira de fotos do modal também espera).
+// rota) tirados do grafo que o app JÁ parseou (ensureTourStore: os quads de
+// tours + identities do loadPhotos — que a tira de fotos do modal também espera).
 // Antes cada abertura do modal re-baixava tours.ttl + identities.ttl (network-
 // first) e reparseava ~300 KB: em 4G fraco o resumo ficava em "carregando…"
 // por dezenas de segundos com tudo em cache. Depois de um save no form de
@@ -8624,7 +8641,7 @@ function _tourIdFromIri(iri) {
 async function _tourSummaryQuads(tourIri) {
   if (photoSource === 'server') {
     try { await loadPhotos(); } catch (_) { /* segue pro fetch */ }
-    const store = mediaStore;
+    const store = ensureTourStore();
     if (store?.getQuads && window.N3?.DataFactory) {
       const own = store.getQuads(window.N3.DataFactory.namedNode(tourIri), null, null, null);
       if (own.length) {
@@ -8786,9 +8803,11 @@ async function _renderTourSummary(tourId) {
     }
   }
 
-  // Rota via blank node ph:linkRoute.
+  // Rota via ph:linkRoute — hoje um IRI derivado (`<passeio>_route`); blank
+  // node só em catálogo antigo. Só 'bn' aqui escondia a linha "Rota" de todo
+  // passeio desde a migração pra IRIs.
   let route = null;
-  const routeBn = first(PH + 'linkRoute', 'bn');
+  const routeBn = first(PH + 'linkRoute', 'iri') || first(PH + 'linkRoute', 'bn');
   if (routeBn) {
     const m = bnodeProps(routeBn);
     route = {

@@ -46,8 +46,12 @@ def blob_cache_control(key: str) -> str | None:
     miniaturas). Clipe é endereçado pelo vHash da FONTE e o recorte é escolhido
     no envio — excluir e reenviar o mesmo vídeo com outro recorte reescreve as
     mesmas chaves — então 1 dia. Os marcadores de pré-envio
-    (clips/_staging/<vhash>) ficam no default."""
+    (clips/_staging/<vhash>) ficam no default. O `original.*` também: guarda o
+    EXIF (GPS, aparelho), só é baixado sob demanda e, com 1 ano, uma exclusão
+    (pedido de privacidade) seguiria servível pelo cache de borda do GCS."""
     if key.startswith("photos/"):
+        if "/original." in key:
+            return None
         return "public, max-age=31536000, immutable"
     if key.startswith("clips/") and not key.startswith("clips/_staging/"):
         return "public, max-age=86400"

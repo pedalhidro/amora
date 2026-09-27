@@ -3322,7 +3322,7 @@ def get_photo(p):
     # Fallback: serve diretamente do filesystem (modo local).
     if (WEB / "photos" / p).is_file():
         resp = send_from_directory(WEB / "photos", p)
-        resp.headers["Cache-Control"] = blob_cache_control(key)
+        resp.headers["Cache-Control"] = blob_cache_control(key) or "public, max-age=3600"
         return resp
     abort(404)
 
