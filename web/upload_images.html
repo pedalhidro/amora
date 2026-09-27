@@ -135,6 +135,16 @@
   .cards-nav[disabled] { opacity: .3; cursor: default; }
   .cards-nav-left  { left: -4px; }
   .cards-nav-right { right: -4px; }
+  /* No toque o card é alto (mídia + formulário inteiro) e as setas, no meio
+     da faixa, cobriam campos (Listas/Licença, Lat/🗺). Sobem pra uma linha
+     própria acima da faixa; arrastar a faixa pro lado continua valendo. */
+  @media (pointer: coarse) {
+    .cards-carousel { display: grid; grid-template-columns: auto 1fr auto; }
+    .cards-nav { position: static; transform: none; grid-row: 1; width: 44px; height: 40px; }
+    .cards-nav-left  { grid-column: 1; }
+    .cards-nav-right { grid-column: 3; }
+    #cards { grid-row: 2; grid-column: 1 / -1; min-width: 0; }
+  }
   /* Realce breve quando o card é alcançado via clique numa miniatura. */
   .card.card-flash { box-shadow: 0 0 0 3px var(--accent); transition: box-shadow .2s; }
 

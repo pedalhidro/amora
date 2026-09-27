@@ -604,6 +604,11 @@ async function saveTour(t) {
       : r.status === 'fetch_failed' ? ' · ⚠ rota não sincronizou'
       : '';
     setStatus(t, `✓ salvo${routeNote}`, 'ok');
+    // Embutido (Censo → backfill, no iframe do app): avisa que os passeios
+    // mudaram — o app recarrega ao fechar a folha, como no upload_tour.html.
+    try {
+      if (window.parent !== window) window.parent.postMessage({ type: 'phidro-tour-changed', tourId: t.id }, window.location.origin);
+    } catch (_) {}
     refreshDirty(t);
     applyFilter();
     return true;

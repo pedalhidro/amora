@@ -4709,11 +4709,8 @@ window.addEventListener('message', (e) => {
   switch (e.data.type) {
     case 'phidro-censo-back':     closeCensoModal(); break;
     case 'phidro-gallery-back':   closeImagensModal(); break;
-    case 'phidro-gallery-reload':
-      reloadPhotos();
-      clipsCatalog = null;
-      loadClipsCatalog().then((clips) => makeClipMarkers(clips));
-      break;
+    // reloadPhotos relê o catálogo inteiro — fotos E clipes (setClipsFromModel).
+    case 'phidro-gallery-reload': reloadPhotos(); break;
     case 'phidro-gallery-show':   galleryShowMedia(e.data.iri); break;
     // Form de upload salvou/editou / form de passeio salvou/apagou: recarrega ao
     // fechar a folha — ou já, se ela está fechada (lote em segundo plano, Censo).
