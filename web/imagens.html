@@ -32,7 +32,13 @@
   [hidden] { display: none !important; }
   html, body { margin: 0; background: var(--bg); color: var(--text);
     font: 14px/1.5 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace; }
+  /* Rolar até a ponta não "vaza" pro app-pai (embutida no modal) nem dispara o
+     puxar-pra-recarregar. */
+  html, body { overscroll-behavior: contain; }
   body { padding: 12px; margin: 0; }
+  /* Embutida no modal do app: o header (título + "← Mapa") some — o modal já
+     tem título; a saída no toque é o "← Mapa" da barra (#tb-back). */
+  body.embedded > header { display: none; }
   /* A barra de ação inferior (e o espaço p/ ela) só existe no toque; no desktop
      as ações vêm do menu de contexto (botão direito). */
   body.touch-ui.select-mode { padding-bottom: 76px; }
@@ -43,6 +49,10 @@
   header .sub { color: var(--muted); font-size: 13px; }
   header a { color: var(--accent); text-decoration: none; margin-left: auto; }
   header a:hover { color: var(--accent-hover); }
+  /* "← Mapa" dentro da barra de filtros: só embutida + toque (ver #tb-back).
+     Seletor com .tb-bar pra vencer o display do .btn (declarado depois). */
+  .tb-bar .tb-back { display: none; }
+  body.embedded.touch-ui .tb-bar .tb-back { display: inline-flex; align-items: center; }
 
   #status { color: var(--muted); padding: 10px 0; }
   .err { color: #b3261e; }
@@ -89,6 +99,12 @@
   .toolbar.collapsed .tb-toggle .chev { transform: rotate(-90deg); }
   .tb-body { margin-top: 8px; }
   .toolbar.collapsed .tb-body { display: none; }
+  /* Tela baixa/estreita (celular em pé ou deitado): aberta, a barra passa da
+     altura da tela — fixa no topo, cobria a grade inteira. Aberta ela rola
+     junto com a página; recolhida volta a ficar fixa. */
+  @media (max-width: 760px), (max-height: 500px) {
+    .toolbar:not(.collapsed) { position: static; }
+  }
 
   .segmented { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
   .segmented button {
@@ -284,6 +300,14 @@
     transition: width 0.22s ease, height 0.22s ease;
   }
   .tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  /* Segurar um tile = entrar em seleção (arrastar pinta o intervalo). Sem isto
+     o iOS abre o menu da imagem (Salvar/Copiar/Compartilhar) ou começa a
+     arrastar a foto, cancela o toque e o drag-select para. O lightbox mantém
+     o menu (lá o "Salvar nas Fotos" é bem-vindo). */
+  .tile, .tile img {
+    -webkit-touch-callout: none; -webkit-user-select: none; user-select: none;
+    -webkit-user-drag: none;
+  }
   .tile:hover { border-color: var(--accent); }
   /* Modo colagem: linhas justificadas (estilo Google Fotos) — as imagens ficam
      no aspect-ratio real e cada linha preenche a largura toda. layoutJustified()
@@ -314,8 +338,14 @@
 
   /* ── Lightbox ─────────────────────────────────────────────────────────── */
   /* pan-y: o navegador cuida da rolagem vertical e do pinch; o arrasto
-     horizontal fica pro gesto de trocar de foto (wireLightboxSwipe). */
-  .lightbox { position: fixed; inset: 0; z-index: 100; display: flex; touch-action: pan-y pinch-zoom; }
+     horizontal fica pro gesto de trocar de foto (wireLightboxSwipe). O próprio
+     overlay é quem rola quando foto + painel não cabem (celular), sem vazar a
+     rolagem pra grade atrás (overscroll + html.lb-open no toque). */
+  .lightbox {
+    position: fixed; inset: 0; z-index: 100; display: flex; touch-action: pan-y pinch-zoom;
+    overflow-y: auto; overscroll-behavior: contain;
+  }
+  @media (pointer: coarse) { html.lb-open, html.lb-open body { overflow: hidden; } }
   /* fixed (não absolute): no celular o .lightbox rola (foto + painel não cabem
      numa tela) e o fundo/× têm que ficar parados cobrindo a viewport. */
   .lb-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.86); }
@@ -338,9 +368,12 @@
     position: fixed; top: 18px; left: 16px; z-index: 3; color: #fff; font-size: 14px;
     text-shadow: 0 1px 3px rgba(0,0,0,.6); pointer-events: none;
   }
+  /* Foto e painel lado a lado (nowrap): com wrap, uma foto em pé num celular
+     deitado (844×390) encolhia o bloco e o painel caía pra baixo da foto,
+     fora da tela. No celular em pé é uma coluna (wrap, no bloco de baixo). */
   .lb-content {
     position: relative; z-index: 2; margin: auto; display: flex; gap: 16px;
-    max-width: 96vw; max-height: 94vh; padding: 16px; flex-wrap: wrap;
+    max-width: 96vw; max-height: 94vh; padding: 16px; flex-wrap: nowrap;
     align-items: center; justify-content: center;
   }
   .lb-media { flex: 1 1 420px; min-width: 0; display: flex; align-items: center; justify-content: center; }
@@ -353,9 +386,14 @@
   .lb-media img { image-orientation: none; }
   .lb-media audio { width: 100%; margin-top: 8px; }
   .lb-panel {
-    flex: 0 1 320px; background: var(--panel); border: 1px solid var(--border);
+    flex: 0 0 320px; background: var(--panel); border: 1px solid var(--border);
     border-radius: 8px; padding: 14px; max-height: 84vh; overflow: auto;
   }
+  /* Ações da mídia no TOPO do painel: no celular o painel fica embaixo da
+     foto, e antes elas vinham por último (depois do editor de listas) — fora
+     da tela. */
+  .lb-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .lb-actions .btn { flex: 1 1 130px; margin-top: 0; }
   .lb-meta dl { margin: 0 0 12px; display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; }
   .lb-meta dt { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .03em; }
   .lb-meta dd { margin: 0; font-size: 13px; word-break: break-word; }
@@ -369,7 +407,6 @@
   .lb-lists-hint { font-style: normal; color: var(--muted); font-weight: 400; text-transform: none; }
   .lb-lists-status { font-size: 12px; color: var(--muted); min-height: 16px; display: block; }
   .lb-lists-status.ok { color: #1a7f4b; }
-  .lb-panel .btn { width: 100%; margin-top: 8px; }
   #lb-error { margin-top: 8px; font-size: 12px; }
 
   /* ── Barra de ação da seleção (fixa embaixo) ──────────────────────────── */
@@ -379,7 +416,9 @@
     display: flex; align-items: center; justify-content: center; padding: 7px 12px;
     box-shadow: 0 -2px 12px rgba(16, 24, 32, .16);
   }
+  .selbar { gap: 18px; }
   .selbar-actions { display: flex; gap: 18px; }
+  .selbar-count { font-size: 14px; color: var(--muted); white-space: nowrap; }
   .selbar .btn { padding: 5px 9px; font-size: 16px; }
   @media (max-width: 760px) {
     /* Compacto: só ícones grandes o suficiente pra tocar. */
@@ -399,6 +438,7 @@
     color: var(--text); font-size: 13px; padding: 8px 10px; border-radius: 6px; cursor: pointer;
   }
   .ctx-menu button:hover { background: var(--surface); }
+  .ctx-menu button:disabled { opacity: .4; cursor: default; background: transparent; }
   .ctx-menu button.danger { color: #b3261e; }
   .ctx-menu button.danger:hover { background: rgba(179, 38, 30, .1); }
 
@@ -407,7 +447,10 @@
     position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 140;
     background: var(--panel); border: 1px solid var(--accent); border-radius: 8px;
     padding: 8px 14px; font-size: 13px; box-shadow: 0 4px 16px rgba(16, 24, 32, .18); max-width: 90vw;
+    pointer-events: none;   /* só avisa: não pode engolir o toque no ☰ logo embaixo */
   }
+  /* Com a barra de seleção (toque) o aviso sobe pra cima dela. */
+  body.touch-ui.select-mode .toast { bottom: 84px; }
 
   /* ── Modal genérico (adicionar a listas) ──────────────────────────────── */
   .modal { position: fixed; inset: 0; z-index: 120; display: flex; }
@@ -421,6 +464,9 @@
   .modal-box select { width: 100%; }
   .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
   #assign-error { margin-top: 10px; font-size: 12px; }
+  .dl-progress { width: 100%; height: 10px; accent-color: var(--accent); }
+  .dl-status { min-height: 18px; margin-top: 6px; font-size: 12px; color: var(--muted); }
+  .dl-status.err { color: #b3261e; }
 
   footer { margin-top: 20px; color: var(--muted); font-size: 11px; }
 
@@ -438,6 +484,10 @@
     body.touch-ui.select-mode { padding-bottom: 70px; }
     .toolbar { padding: 8px; }
     header h1 { font-size: 18px; }
+    /* "Imagens ……… ← Mapa" numa linha, o subtítulo embaixo. */
+    header .sub { order: 3; flex-basis: 100%; }
+    /* "← Mapa" + "Filtros" + "Selecionar" numa linha só (390 px). */
+    body.embedded .tb-toggle-more { display: none; }
     /* Facetas empilhadas em largura total (mais usáveis no toque). */
     .tb-facets { flex-direction: column; align-items: stretch; gap: 10px; }
     .tb-facets .facet { width: 100%; }
@@ -446,14 +496,49 @@
     .range-block .dual { flex: 1 1 120px; }
     .facet-range input[type="date"].range-end { width: auto; flex: 1 1 100px; }
     .selbar { flex-wrap: wrap; }
-    /* Lightbox: foto em cima, painel (listas, Ver no mapa, Compartilhar)
-       embaixo — ROLANDO. Antes o painel passava da tela e não dava pra
-       chegar nos botões. A foto deixa o topo do painel aparecendo. */
-    .lightbox { overflow-y: auto; overscroll-behavior: contain; }
-    .lb-content { margin: 0 auto; padding: 52px 8px 20px; max-width: 100vw; max-height: none; gap: 10px; }
+    /* Lightbox: uma coluna — foto em cima (no máx. 55% da altura VISÍVEL:
+       svh, não vh, que no Safari é a viewport grande), painel embaixo com as
+       ações (Ver no mapa, Compartilhar) no topo dele, então aparecem sem
+       rolar; metadados e listas seguem, e o overlay rola. */
+    .lb-content { margin: 0 auto; padding: 52px 8px 20px; max-width: 100vw; max-height: none; gap: 10px; flex-wrap: wrap; }
     .lb-media { flex-basis: 100%; }
-    .lb-media img, .lb-media video { max-height: 72vh; }
+    .lb-media img, .lb-media video { max-height: 55vh; max-height: 55svh; }
     .lb-panel { flex-basis: 100%; max-height: none; overflow: visible; }
+  }
+
+  /* ── Toque: alvos de ≥ 44 px (diretriz do iOS) e campos de 16 px ─────── */
+  /* Campo com fonte < 16 px faz o iOS dar zoom na página ao focar (e ela fica
+     ampliada) — vale pros links de álbum abertos direto no Safari. Inclui o
+     <input> do Tom Select (o CSS vendorado é carregado depois: seletores mais
+     específicos aqui). */
+  @media (pointer: coarse) {
+    input, select, textarea, #adv-sparql,
+    .facet input[type="date"], .facet input[type="number"], .range-end,
+    .ts-wrapper .ts-control > input, .ts-wrapper .ts-control input { font-size: 16px; }
+    .btn, .tb-toggle { min-height: 44px; }
+    .segmented button { min-height: 44px; padding: 6px 14px; }
+    .iconseg button { min-width: 44px; }
+    .zoomctl button { width: 44px; height: 44px; }
+    .icon-toggle { width: 44px; height: 44px; }
+    .tl-mark { min-height: 40px; padding: 4px 12px; }
+    .facet-wd .wd-boxes { gap: 2px 4px; }
+    .facet-wd label { min-height: 40px; padding: 0 6px; font-size: 14px; }
+    .facet-wd input { width: 20px; height: 20px; }
+    .ts-control { min-height: 44px; }
+    .facet .ts-wrapper.multi .ts-control > div.item { font-size: 13px; line-height: 1.35; padding-top: 5px; padding-bottom: 5px; }
+    body .ts-wrapper.plugin-remove_button .item .remove { padding: 0 10px; font-size: 16px; }
+    .ts-dropdown .option { font-size: 15px; padding: 11px 12px; }
+    .range-end { min-height: 44px; }
+    .dual, .dual input[type="range"] { height: 44px; }
+    .dual::before, .dual-fill { top: 20px; }
+    .dual input[type="range"]::-webkit-slider-thumb { width: 28px; height: 28px; }
+    .dual input[type="range"]::-moz-range-thumb { width: 28px; height: 28px; }
+    .selbar .btn { min-width: 48px; }
+    .ctx-menu button { padding: 12px; font-size: 15px; }
+    .lb-close { top: 4px; right: 4px; width: 48px; height: 48px; }
+    .pick-note .btn { padding: 8px 12px; }
+    header a { padding: 12px 0 12px 12px; }
+    .adv summary { padding: 13px 0; }
   }
 </style>
 <link href="./lib/tom-select.min.css" rel="stylesheet">
@@ -467,13 +552,15 @@
 <header>
   <h1>Imagens</h1>
   <span class="sub">Pedal Hidrográfico — galeria de fotos e vídeos</span>
+  <a href="./" id="hdr-map">← Mapa</a>
 </header>
 
 <div id="status" role="status" aria-live="polite">Carregando catálogo de mídias…</div>
 
 <div class="toolbar" hidden>
   <div class="tb-bar">
-    <button id="tb-toggle" type="button" class="tb-toggle" aria-expanded="true" aria-controls="tb-body"><span class="chev">▾</span> Filtros &amp; agrupamento</button>
+    <button id="tb-back" type="button" class="btn tb-back" title="Fechar a galeria e voltar pro mapa">← Mapa</button>
+    <button id="tb-toggle" type="button" class="tb-toggle" aria-expanded="true" aria-controls="tb-body"><span class="chev">▾</span> Filtros<span class="tb-toggle-more"> &amp; agrupamento</span></button>
     <div class="tb-spacer"></div>
     <button id="btn-select" type="button" class="btn">Selecionar</button>
     <button id="btn-select-all" type="button" class="btn" hidden>Selecionar tudo</button>
@@ -564,14 +651,16 @@
   <div class="lb-content">
     <div class="lb-media" id="lb-media"></div>
     <div class="lb-panel">
+      <div class="lb-actions">
+        <button id="lb-map" type="button" class="btn btn-primary">📍 Ver no mapa</button>
+        <button id="lb-share" type="button" class="btn">🔗 Compartilhar</button>
+      </div>
       <div class="lb-meta" id="lb-meta"></div>
       <div class="lb-lists">
         <label class="facet"><span>Listas desta mídia <em class="lb-lists-hint">(salva sozinho)</em></span><select id="lb-lists-select" multiple placeholder="nenhuma"></select></label>
         <span id="lb-lists-status" class="lb-lists-status"></span>
         <div id="lb-error" class="err" hidden></div>
       </div>
-      <button id="lb-map" type="button" class="btn btn-primary">📍 Ver no mapa</button>
-      <button id="lb-share" type="button" class="btn">🔗 Compartilhar</button>
     </div>
   </div>
 </div>
@@ -579,6 +668,7 @@
 <!-- Barra de ação da seleção (aparece quando há fotos selecionadas). No celular
      faz o papel do menu de contexto do botão direito. -->
 <div id="selbar" class="selbar" hidden>
+  <span id="selbar-count" class="selbar-count" aria-live="polite"></span>
   <div class="selbar-actions">
     <button id="sel-share" type="button" class="btn icon-btn" title="Compartilhar link">
       <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -605,6 +695,7 @@
 
 <!-- Menu do ☰ na barra de seleção (celular) — todas as ações menos compartilhar -->
 <div id="selbar-menu" class="ctx-menu" hidden role="menu">
+  <button type="button" role="menuitem" data-act="all">☑ Selecionar tudo</button>
   <button type="button" role="menuitem" data-act="lists">＋ Adicionar a listas</button>
   <button type="button" role="menuitem" data-act="unlist">－ Remover de listas</button>
   <button type="button" role="menuitem" data-act="download">⤓ Baixar</button>
@@ -626,10 +717,31 @@
   </div>
 </div>
 
+<!-- Modal: baixar/salvar a seleção — confirma o tamanho, mostra o progresso e
+     deixa cancelar (ver downloadSelected). -->
+<div id="dl-modal" class="modal" hidden>
+  <div class="modal-backdrop" id="dl-backdrop"></div>
+  <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="dl-title">
+    <h2 id="dl-title">Baixar</h2>
+    <p class="muted" id="dl-desc"></p>
+    <progress id="dl-progress" class="dl-progress" max="1" value="0" hidden></progress>
+    <div id="dl-status" class="dl-status" role="status" aria-live="polite"></div>
+    <div class="modal-actions">
+      <button id="dl-cancel" type="button" class="btn btn-ghost">Cancelar</button>
+      <button id="dl-go" type="button" class="btn btn-primary">Baixar</button>
+    </div>
+  </div>
+</div>
+
 <script type="module">
 'use strict';
 const $  = (q) => document.querySelector(q);
 const $$ = (q) => Array.from(document.querySelectorAll(q));
+// localStorage com try/catch: com "Bloquear todos os cookies" no Safari o
+// simples ACESSO a window.localStorage lança SecurityError — lido solto no topo
+// do módulo, abortava a galeria inteira (ficava em "Carregando…").
+function lsGet(key) { try { return window.localStorage.getItem(key); } catch (_) { return null; } }
+function lsSet(key, val) { try { window.localStorage.setItem(key, val); } catch (_) {} }
 
 const MQ = window.PhidroMediaQuery;   // publicado por ./lib/media-query.js (clássico)
 if (!MQ) {
@@ -719,12 +831,29 @@ async function ensureJSZip() {
 }
 
 // ── Modo embutido (iframe do modal do app) ──────────────────────────────────
-// No modal, esconde o header inteiro (título "Imagens", subtítulo e nav "← Mapa")
-// — o modal já é claramente a galeria; fecha pelo botão vermelho / clique fora /
-// Esc. Standalone (aberto direto), o header aparece normalmente.
+// No modal, esconde o header inteiro (título "Imagens", subtítulo e o link
+// "← Mapa") — o modal já é claramente a galeria; fecha pela bolinha / clique
+// fora / Esc do app e, no toque, pelo "← Mapa" da barra de filtros (#tb-back):
+// no celular o modal abre em tela cheia e a bolinha é pequena (e, numa aba do
+// Safari, pode ficar fora da tela). Standalone, o header aparece normalmente.
+const EMBEDDED = window.self !== window.top;
 function embeddedSetup() {
-  if (window.self === window.top) return;
-  $('header')?.style.setProperty('display', 'none');
+  if (!EMBEDDED) return;
+  document.body.classList.add('embedded');
+  // Pinça dentro do modal não pode deixar o APP inteiro ampliado: o iOS
+  // ignora user-scalable=no e amplia a página de cima (eventos do WebKit).
+  for (const t of ['gesturestart', 'gesturechange']) document.addEventListener(t, (e) => e.preventDefault(), { passive: false });
+}
+// Mensagem pro app-pai (só embutida; mesma origem).
+function postToParent(msg) {
+  if (!EMBEDDED) return;
+  try { window.parent.postMessage(msg, location.origin); } catch (_) {}
+}
+// Volta pro mapa: embutida, pede pro app fechar o modal (phidro-gallery-back,
+// que o app.js já trata); standalone, navega pra ele.
+function backToMap() {
+  if (EMBEDDED) postToParent({ type: 'phidro-gallery-back' });
+  else location.href = './';
 }
 
 // ── Carregamento dos dados (manifesto void → tours.ttl + uploads.ttl) ────────
@@ -773,19 +902,25 @@ let pickSet = null;          // ?pick=… → restringe a galeria a estas mídia
 let currentGroup = 'tour';
 let currentSparql = '';
 let isCustom = false;
-let galleryLayout = (localStorage.getItem('phidro:galleryLayout') === 'collage') ? 'collage' : 'grid';
-// Zoom das miniaturas = nº de fotos (quadradas) por linha. "+" aumpenta (menos
+let galleryLayout = (lsGet('phidro:galleryLayout') === 'collage') ? 'collage' : 'grid';
+// Aparelho de toque (celular/tablet — inclusive iPad com mouse, por isso não é
+// o TOUCH_UI, que segue o último ponteiro): lá a aba morre de memória bem antes
+// que num desktop (ver wantLargeTiles) e a grade para em 9 colunas.
+const MEMORY_TIGHT = navigator.maxTouchPoints > 0;
+// Zoom das miniaturas = nº de fotos (quadradas) por linha. "+" aumenta (menos
 // colunas), "−" diminui (mais colunas). Índice no array; default 5 col/linha.
-const GALLERY_COLS = [1, 2, 3, 5, 7, 9, 18, 36];
+// No toque, sem 18/36: tiles de ~7–20 px decodificando centenas de miniaturas
+// inteiras não servem pra nada no celular (e o prefixo mantém o índice salvo).
+const GALLERY_COLS = MEMORY_TIGHT ? [1, 2, 3, 5, 7, 9] : [1, 2, 3, 5, 7, 9, 18, 36];
 let galleryZoom = (() => {
-  const n = parseInt(localStorage.getItem('phidro:galleryZoom'), 10);
-  return (Number.isInteger(n) && n >= 0 && n < GALLERY_COLS.length) ? n : GALLERY_COLS.indexOf(5);
+  const n = parseInt(lsGet('phidro:galleryZoom'), 10);
+  return (Number.isInteger(n) && n >= 0) ? Math.min(n, GALLERY_COLS.length - 1) : GALLERY_COLS.indexOf(5);
 })();
 function galleryCols() { return GALLERY_COLS[galleryZoom]; }
 // Modo "contínuo": em vez de uma seção (linhas próprias) por grupo, todas as
 // miniaturas fluem numa grade só e cada grupo é contornado por um polígono
 // (só faz sentido na grade quadrada). Persistido.
-let galleryWrap = localStorage.getItem('phidro:galleryWrap') === '1';
+let galleryWrap = lsGet('phidro:galleryWrap') === '1';
 let overlayGroups = null;   // groupList do último render contínuo (p/ redesenhar)
 let runSeq = 0;
 let selectMode = false;
@@ -812,17 +947,17 @@ const ALBUM_PATH_RE = /\/imagens\/lista\/([^/]+)(?:\/(\d+))?\/?$/;
 const SHARE_ORIGIN = 'https://amora.pedalhidrografi.co';   // links compartilhados apontam pra produção
 const PAGE_TITLE = document.title;
 let albumSlug = null;                // álbum refletido na barra de endereço (standalone)
-let _dataGen = 0;                    // bump a cada loadAndBuild (invalida sequências em voo)
-const _albumSeqCache = new Map();    // listIri → Promise<string[]>
-const _albumSeqReady = new Map();    // listIri → string[] (IRIs na ordem do álbum), p/ uso síncrono
+const _albumSeqReady = new Map();    // listIri → string[] (IRIs na ordem do álbum)
 
-// Reconstrói store + model + índice a partir dos dados atuais.
+// Reconstrói store + model + índice a partir dos dados atuais. O store (N3)
+// serve aos records e à consulta Avançado (SPARQL); a grade em si sai dos
+// records (MQ.facetRows), sem o Comunica.
 async function loadAndBuild() {
   const quads = await loadData();
   store = MQ.makeStore(quads);
   model = MQ.buildMediaRecords(store);
   recordByIri = new Map(model.records.map((r) => [r.iri, r]));
-  _dataGen++; _albumSeqCache.clear(); _albumSeqReady.clear();
+  _albumSeqReady.clear();
 }
 
 // ── Opções de faceta ─────────────────────────────────────────────────────────
@@ -990,6 +1125,11 @@ function readFacets() {
 // ── Pipeline de consulta ─────────────────────────────────────────────────────
 const debouncedRebuild = debounce(rebuildAndRun, 250);
 
+// Facetas → grade. A consulta SPARQL equivalente continua sendo montada (é o
+// que aparece em "Avançado", editável), mas a grade sai direto dos records em
+// JS (MQ.facetRows, mesma semântica): nada de baixar/compilar o Comunica
+// (~1,6 MB do CDN) pra visão padrão, nem uma consulta ao catálogo inteiro a
+// cada faceta — offline ou com o CDN fora, a galeria funciona igual.
 function rebuildAndRun() {
   const facets = readFacets();
   const sparql = MQ.buildQueryFromFacets(facets);
@@ -998,7 +1138,13 @@ function rebuildAndRun() {
   $('#adv-sparql').value = sparql;
   $('#adv-flag').hidden = true;
   syncAlbumUrl();
-  runAndRender(sparql, facets);
+  renderFacets(facets);
+}
+// Refaz a grade com o estado atual (depois de uma mutação/recarga): consulta
+// personalizada → Comunica; senão, facetas em JS.
+function rerunCurrent() {
+  if (isCustom) runSparqlAndRender(currentSparql, readFacets());
+  else renderFacets(readFacets());
 }
 
 // Filtro/agrupamento reconstrói o #gallery inteiro (innerHTML) — sem isso, a
@@ -1022,9 +1168,17 @@ function tileCount(rows) {
   return pickSet ? rows.filter((r) => r.m && pickSet.has(r.m.value)).length : rows.length;
 }
 
-async function runAndRender(sparql, facets) {
+function renderFacets(facets) {
+  ++runSeq;                  // descarta uma consulta Avançado ainda em voo
+  setQueryStatus('');
+  clearError();
+  const rows = MQ.facetRows(model, facets);
+  withViewTransition(() => renderGroups(rows, facets), tileCount(rows));
+}
+// Só a consulta "Avançado (SPARQL)" usa o Comunica (lazy, ~1,6 MB na 1ª vez).
+async function runSparqlAndRender(sparql, facets) {
   const seq = ++runSeq;
-  setQueryStatus('carregando consulta…');   // Comunica é lazy (~1.6 MB) na 1ª vez
+  setQueryStatus('carregando consulta…');
   clearError();
   let rows;
   try {
@@ -1032,7 +1186,10 @@ async function runAndRender(sparql, facets) {
   } catch (e) {
     if (seq !== runSeq) return;
     setQueryStatus('');
-    showError('Erro na consulta: ' + e.message);
+    const offline = /falha ao carregar/.test(e.message || '');
+    showError(offline
+      ? 'Não deu pra baixar o motor de consulta SPARQL (Comunica, ~1,6 MB) — confira a conexão e aplique de novo.'
+      : 'Erro na consulta: ' + e.message, { adv: true });
     return;
   }
   if (seq !== runSeq) return;   // uma consulta mais nova já começou
@@ -1041,8 +1198,25 @@ async function runAndRender(sparql, facets) {
 }
 
 function setQueryStatus(msg) { $('#query-status').textContent = msg; }
-function showError(msg) { const el = $('#adv-error'); el.textContent = msg; el.hidden = false; if (!$('#adv').open) $('#adv').open = true; }
-function clearError() { const el = $('#adv-error'); el.textContent = ''; el.hidden = true; }
+// Erro VISÍVEL: vai pro #status (fora da barra de filtros, que no celular
+// fica recolhida) + um aviso passageiro; os da consulta SPARQL também aparecem
+// no painel Avançado, junto da consulta.
+function showError(msg, { adv = false } = {}) {
+  const st = $('#status');
+  st.innerHTML = `<span class="err">${escapeHtml(msg)}</span>`;
+  st.hidden = false;
+  if (adv) {
+    const el = $('#adv-error'); el.textContent = msg; el.hidden = false;
+    if (!$('#adv').open) $('#adv').open = true;
+  } else {
+    toast(msg, 5000);
+  }
+}
+function clearError() {
+  const el = $('#adv-error'); el.textContent = ''; el.hidden = true;
+  const st = $('#status');
+  if (st.querySelector('.err')) { st.textContent = ''; st.hidden = true; }
+}
 
 // ── Agrupamento + render da grade ────────────────────────────────────────────
 function groupOrderStr(key) {
@@ -1170,6 +1344,7 @@ function renderGroups(rows, facets) {
     }
     requestAnimationFrame(() => drawGroupPolygons());
     buildTimeline(groupList);
+    largeTilesReset();
     updateSelUI();
     return;
   }
@@ -1185,6 +1360,7 @@ function renderGroups(rows, facets) {
   gallery.innerHTML = html;
   applyGalleryLayout();
   buildTimeline(noGroup ? [] : groupList);
+  largeTilesReset();
   updateSelUI();
 }
 
@@ -1223,11 +1399,17 @@ function buildTimeline(groupList) {
   tl.hidden = false;
   refreshTimelineActive();
 }
+// Altura que a barra de filtros cobre no topo da tela: 0 quando ela não está
+// fixa (aberta no celular ela rola com a página — ver .toolbar:not(.collapsed)).
+function toolbarCover() {
+  const header = document.querySelector('.toolbar');
+  if (!header || getComputedStyle(header).position !== 'sticky') return 0;
+  return header.offsetHeight;
+}
 function scrollToGroup(id) {
   const el = document.getElementById(id);
   if (!el) return;
-  const header = document.querySelector('.toolbar');
-  const top = el.getBoundingClientRect().top + window.scrollY - (header ? header.offsetHeight : 0) - 8;
+  const top = el.getBoundingClientRect().top + window.scrollY - toolbarCover() - 8;
   window.scrollTo({ top, behavior: 'smooth' });
 }
 // Destaca o marcador do grupo que está no topo da área visível (abaixo do
@@ -1236,7 +1418,7 @@ function refreshTimelineActive() {
   const tl = $('#timeline');
   if (tl.hidden) return;
   const header = document.querySelector('.toolbar');
-  const cut = (header ? header.getBoundingClientRect().bottom : 0) + 6;
+  const cut = Math.max(0, header ? header.getBoundingClientRect().bottom : 0) + 6;
   // timelineGroups está em ordem da galeria (mais novo primeiro). O grupo ativo
   // é o último (mais antigo) cujo topo já passou pelo cabeçalho; se nenhum
   // passou (galeria no topo), o ativo é o mais novo (timelineGroups[0]).
@@ -1411,29 +1593,29 @@ function drawGroupPolygons() {
 // ── Resolução dos tiles: thumb.jpg × large.jpg ───────────────────────────────
 // O tile mostra o thumb.jpg (256 px no lado maior → ~192 px úteis no recorte
 // quadrado) e só troca pro large.jpg (2400 px, ~17 MB decodificado) quando o
-// tile tem mais que ~2× isso em pixels de tela E, em aparelho de toque, cabem
-// poucos tiles na tela. Era um srcset "large 2x", e todo celular (DPR 2–3)
-// caía no large em TODOS os tiles: o WebKit decodifica em tamanho cheio o que
-// está visível (sem subamostrar abaixo de 5 MP) — o álbum de 64 fotos do PH 113
-// passava de 1 GB e o Safari do iPhone matava a aba ("A problem repeatedly
-// occurred"). Toque = celular/tablet (inclusive iPad com mouse — por isso não
-// é o TOUCH_UI, que segue o último ponteiro): lá a aba morre bem antes que num
-// desktop.
+// tile tem mais que ~2× isso em pixels de tela. Era um srcset "large 2x", e
+// todo celular (DPR 2–3) caía no large em TODOS os tiles: o WebKit decodifica
+// em tamanho cheio o que está visível (sem subamostrar abaixo de 5 MP) — o
+// álbum de 64 fotos do PH 113 passava de 1 GB e o Safari do iPhone matava a aba
+// ("A problem repeatedly occurred").
+// Desktop: com o zoom grande, todo tile vai de large (lazy). Toque
+// (MEMORY_TIGHT): o HTML sai SEMPRE com o thumb e só os tiles perto da tela —
+// no máximo LARGE_MAX_TILES, os mais perto do centro — sobem pro large; os que
+// se afastam voltam pro thumb (reconcileLargeTiles). Antes o zoom de 2 colunas
+// trocava a grade INTEIRA pro large (64 downloads de ~400 KB no álbum do PH 113)
+// e estimava a memória com tiles quadrados — na colagem cabem ~19 retratos.
 const THUMB_USEFUL_PX = 192;
 const LARGE_DECODED_MB = 17;     // 2400×1800×4
-const LARGE_BUDGET_MB = 200;     // teto de larges decodificados na tela (toque)
-const MEMORY_TIGHT = navigator.maxTouchPoints > 0;
-let tileLarge = false;
+const LARGE_BUDGET_MB = 200;     // teto de larges decodificados ao mesmo tempo (toque)
+const LARGE_MAX_TILES = Math.floor(LARGE_BUDGET_MB / LARGE_DECODED_MB);   // 11
+let tileLarge = false;           // o zoom atual pede o large (tile > 2× o útil do thumb)
 function wantLargeTiles() {
   const cw = $('#gallery').clientWidth || document.documentElement.clientWidth;
   const tile = cw / galleryCols();
-  if (tile * (window.devicePixelRatio || 1) <= 2 * THUMB_USEFUL_PX) return false;
-  if (!MEMORY_TIGHT) return true;   // desktop: memória sobra
-  const onScreen = galleryCols() * (window.innerHeight / tile + 1);   // + a linha cortada
-  return onScreen * LARGE_DECODED_MB <= LARGE_BUDGET_MB;
+  return tile * (window.devicePixelRatio || 1) > 2 * THUMB_USEFUL_PX;
 }
 function tileSrc(rec) {
-  return (tileLarge && rec.largeUrl) ? rec.largeUrl : rec.thumbUrl;
+  return (tileLarge && !MEMORY_TIGHT && rec.largeUrl) ? rec.largeUrl : rec.thumbUrl;
 }
 // Zoom/resize cruzou o limiar: troca o src dos tiles já na grade (o navegador
 // segue mostrando a imagem atual até a nova carregar).
@@ -1441,17 +1623,68 @@ function syncTileResolution() {
   const want = wantLargeTiles();
   if (want === tileLarge) return;
   tileLarge = want;
+  if (MEMORY_TIGHT) { largeTilesReset(); return; }
   $$('#gallery .tile img').forEach((img) => {
     const rec = recordByIri.get(img.closest('.tile').dataset.iri);
     if (rec) img.src = tileSrc(rec);
   });
 }
+// Toque: um IntersectionObserver marca os tiles perto da tela (±25% da altura)
+// e, parada a rolagem, os LARGE_MAX_TILES mais perto do centro ficam com o
+// large; todo o resto volta pro thumb (o large some da memória decodificada).
+let _largeIO = null;
+const _nearImgs = new Set();
+function largeTilesReset() {
+  if (!MEMORY_TIGHT) return;
+  _nearImgs.clear();
+  if (_largeIO) _largeIO.disconnect();
+  if (!tileLarge || !('IntersectionObserver' in window)) { reconcileLargeTiles(); return; }
+  if (!_largeIO) {
+    _largeIO = new IntersectionObserver((entries) => {
+      for (const e of entries) {
+        if (e.isIntersecting) _nearImgs.add(e.target); else _nearImgs.delete(e.target);
+      }
+      scheduleLargeReconcile();
+    }, { rootMargin: '25% 0px' });
+  }
+  $$('#gallery .tile img').forEach((img) => _largeIO.observe(img));
+}
+function reconcileLargeTiles() {
+  if (!MEMORY_TIGHT) return;
+  const large = $$('#gallery .tile img[data-large]');
+  if (!tileLarge) { large.forEach((img) => setTileLarge(img, false)); return; }
+  const mid = window.innerHeight / 2;
+  const dist = (img) => { const b = img.getBoundingClientRect(); return Math.abs((b.top + b.bottom) / 2 - mid); };
+  const byDist = (arr) => arr.map((img) => ({ img, d: dist(img) })).sort((a, b) => a.d - b.d).map((x) => x.img);
+  // Os perto da tela, do centro pra fora, até o teto…
+  const want = byDist([..._nearImgs].filter((img) => img.isConnected)).slice(0, LARGE_MAX_TILES);
+  const wantSet = new Set(want);
+  // …e os que já estão de large e se afastaram ficam enquanto sobrar vaga (rolar
+  // pra lá e pra cá não re-baixa); sem vaga, sai primeiro o mais longe.
+  const room = LARGE_MAX_TILES - want.length;
+  byDist(large.filter((img) => !wantSet.has(img))).forEach((img, i) => { if (i >= room) setTileLarge(img, false); });
+  want.forEach((img) => setTileLarge(img, true));
+}
+// Debounce: rolando (inclusive a inércia do iOS) nada troca; ao parar, sobe.
+const scheduleLargeReconcile = debounce(reconcileLargeTiles, 150);
+if (MEMORY_TIGHT) {
+  window.addEventListener('scroll', () => { if (tileLarge) scheduleLargeReconcile(); }, { passive: true });
+}
+function setTileLarge(img, on) {
+  const tile = img.closest('.tile');
+  const rec = tile && recordByIri.get(tile.dataset.iri);
+  if (!rec || !rec.largeUrl || rec.largeUrl === rec.thumbUrl) return;
+  const want = on ? rec.largeUrl : rec.thumbUrl;
+  if (img.getAttribute('src') !== want) img.src = want;
+  if (on) img.dataset.large = '1'; else delete img.dataset.large;
+}
 
 function tileHtml(rec, opts) {
   const sel = selected.has(rec.iri) ? ' selected' : '';
   const noImg = rec.thumbUrl ? '' : ' no-img';
+  // draggable=false: segurar um tile no iOS não "levanta" a foto (ver .tile no CSS).
   const img = rec.thumbUrl
-    ? `<img loading="lazy" src="${escapeHtml(tileSrc(rec))}" alt="" ` +
+    ? `<img loading="lazy" draggable="false" src="${escapeHtml(tileSrc(rec))}" alt="" ` +
       `onerror="this.style.display='none';this.parentElement.classList.add('no-img')">`
     : '';
   const badge = rec.kind === 'video' ? `<span class="badge">▶</span>` : '';
@@ -1582,9 +1815,13 @@ function wireGallery() {
   gallery.addEventListener('contextmenu', onGalleryContextMenu);
 
   // Clique/toque fora de qualquer foto e da UI de seleção → limpa a seleção.
+  // Os menus (.ctx-menu: o do botão direito E o ☰ da barra de seleção, que é
+  // irmão da #selbar, não filho) e o aviso contam como UI de seleção — sem
+  // isso, tocar num item do ☰ limpava a seleção ANTES do click e toda ação
+  // (listas, baixar, excluir) saía sem nada selecionado.
   document.addEventListener('pointerdown', (e) => {
     if (!selected.size && !_forceSelectMode) return;
-    if (e.target.closest('.tile, #selbar, .toolbar, #lightbox, .modal, #ctx-menu')) return;
+    if (e.target.closest('.tile, #selbar, .ctx-menu, .toolbar, #lightbox, .modal, #toast')) return;
     clearSelection();
   });
 }
@@ -1599,27 +1836,36 @@ function syncSelectMode() {
   document.body.classList.toggle('select-mode', active);
   $('#btn-select').textContent = active ? 'Concluir' : 'Selecionar';
   $('#btn-select').classList.toggle('active', active);
-  $('#btn-select-all').hidden = !active;
-  $('#sel-count').hidden = !active;
+  // No toque, "Selecionar tudo" (vai pro ☰) e a contagem (vai pra barra de
+  // baixo) saem da barra de cima: entrando em seleção ela quebrava numa 2ª
+  // linha e empurrava a grade ~50 px pra baixo DEBAIXO do dedo — segurar e
+  // arrastar pintava a linha errada.
+  $('#btn-select-all').hidden = !active || TOUCH_UI;
+  $('#sel-count').hidden = !active || TOUCH_UI;
   $('#selbar').hidden = !active || !TOUCH_UI;   // barra inferior só no toque
   updateSelUI();
+}
+function selectAllTiles() {
+  $$('#gallery .tile').forEach((t) => { selected.add(t.dataset.iri); t.classList.add('selected'); });
+  syncSelectMode();
 }
 function wireSelect() {
   $('#btn-select').addEventListener('click', () => {
     if (selectMode) clearSelection();                  // "Concluir"
     else { _forceSelectMode = true; syncSelectMode(); } // entra em seleção vazia
   });
-  $('#btn-select-all').addEventListener('click', () => {
-    $$('#gallery .tile').forEach((t) => { selected.add(t.dataset.iri); t.classList.add('selected'); });
-    syncSelectMode();
-  });
+  $('#btn-select-all').addEventListener('click', selectAllTiles);
 }
 function updateSelUI() {
   const n = selected.size;
   const label = `${n} selecionada${n === 1 ? '' : 's'}`;
   $('#sel-count').textContent = label;
+  $('#selbar-count').textContent = label;
   const none = n === 0;
-  ['#sel-share', '#sel-menu'].forEach((s) => { $(s).disabled = none; });
+  // O ☰ fica ativo mesmo sem nada selecionado (tem o "Selecionar tudo"); as
+  // ações que dependem da seleção ficam desabilitadas dentro dele.
+  $('#sel-share').disabled = none;
+  $$('#selbar-menu button[data-act]').forEach((b) => { b.disabled = none && b.dataset.act !== 'all'; });
 }
 
 // ── Álbum (lista na barra de endereço) ───────────────────────────────────────
@@ -1656,7 +1902,6 @@ function syncAlbumUrl() {
   albumSlug = slug;
   if (slug) {
     history.replaceState(history.state, '', albumUrl(slug));
-    albumSequence(iri).catch(() => {});   // aquece: a 1ª foto aberta já sai com o /<n>
   } else if (wasAlbum) {
     const u = new URL('imagens.html', document.baseURI);
     const qs = new URLSearchParams(location.search);
@@ -1671,28 +1916,24 @@ function syncAlbumUrl() {
 // que numera o /<n>: quem compartilha e quem recebe contam igual, seja qual
 // for o agrupamento/filtro na tela de quem compartilhou. A ordem dentro dos
 // grupos vem de canonicalRowOrder, e o backend a reproduz em _album_sequence
-// (preview do link) — mudou uma, mude a outra.
+// (preview do link) — mudou uma, mude a outra. Síncrona (facetas em JS, sem
+// Comunica) e memoizada por carga de dados (loadAndBuild zera).
 function albumSequence(listIri) {
-  let p = _albumSeqCache.get(listIri);
-  if (p) return p;
-  const gen = _dataGen;
+  let seq = _albumSeqReady.get(listIri);
+  if (seq) return seq;
   const facets = { group: 'tour', lists: [listIri] };
-  p = MQ.runQuery(store, MQ.buildQueryFromFacets(facets)).then((rows) => {
-    const { groups, keys } = groupRows(rows, facets, null, true);
-    const seen = new Set(), seq = [];
-    for (const k of keys) {
-      for (const r of groups.get(k).records) if (!seen.has(r.iri)) { seen.add(r.iri); seq.push(r.iri); }
-    }
-    if (gen === _dataGen) _albumSeqReady.set(listIri, seq);
-    return seq;
-  });
-  p.catch(() => { if (_albumSeqCache.get(listIri) === p) _albumSeqCache.delete(listIri); });
-  _albumSeqCache.set(listIri, p);
-  return p;
+  const { groups, keys } = groupRows(MQ.facetRows(model, facets), facets, null, true);
+  const seen = new Set();
+  seq = [];
+  for (const k of keys) {
+    for (const r of groups.get(k).records) if (!seen.has(r.iri)) { seen.add(r.iri); seq.push(r.iri); }
+  }
+  _albumSeqReady.set(listIri, seq);
+  return seq;
 }
-// Posição (1-based) da mídia no álbum, se a sequência já está pronta; senão null.
+// Posição (1-based) da mídia no álbum; null se ela não é dele.
 function albumIndexSync(listIri, rec) {
-  const seq = listIri && _albumSeqReady.get(listIri);
+  const seq = listIri ? albumSequence(listIri) : null;
   const i = seq ? seq.indexOf(rec.iri) : -1;
   return i >= 0 ? i + 1 : null;
 }
@@ -1703,12 +1944,10 @@ function albumContextIri(rec) {
 }
 // Abre a n-ésima mídia (1-based) do álbum da barra de endereço (deep link
 // /imagens/lista/<slug>/<n>, ou "avançar" do navegador de volta pra uma foto).
-async function openAlbumItem(n, opts = {}) {
+function openAlbumItem(n, opts = {}) {
   if (!albumSlug) return;
   const slug = albumSlug;
-  let seq;
-  try { seq = await albumSequence(LIST_PREFIX + slug); } catch (_) { return; }
-  if (albumSlug !== slug) return;
+  const seq = albumSequence(LIST_PREFIX + slug);
   const rec = recordByIri.get(seq[n - 1]);
   if (!rec) {
     history.replaceState(null, '', albumUrl(slug));
@@ -1722,28 +1961,27 @@ async function openAlbumItem(n, opts = {}) {
   else history.replaceState(null, '', albumUrl(slug));
   openLightbox(rec);
 }
-// Barra de endereço com a foto aberta: /imagens/lista/<slug>/<n>. Abrir empurra
-// UMA entrada no histórico (o "voltar" do celular fecha a foto em vez de sair
-// do álbum); trocar de foto (deslizar/setas) só substitui essa entrada.
+// Histórico com a foto aberta (só standalone): abrir empurra UMA entrada — o
+// "voltar" do celular (botão, ou o gesto de borda do iPhone) fecha a foto em
+// vez de sair da galeria; trocar de foto (deslizar/setas) só substitui essa
+// entrada. Num álbum a barra mostra /imagens/lista/<slug>/<n>; fora dele a URL
+// não muda (o estado guarda a mídia, pro "avançar" reabrir). Embutida no modal
+// do app não mexe em URL/histórico (ver STANDALONE).
 function syncLightboxUrl(rec, wasOpen) {
-  if (!STANDALONE || !albumSlug) return;
-  const slug = albumSlug, listIri = LIST_PREFIX + slug;
-  if (!(rec.lists || []).includes(listIri)) {   // ex.: tirada do álbum pelo seletor de listas
-    if (wasOpen) history.replaceState(history.state, '', albumUrl(slug));
-    return;
-  }
+  if (!STANDALONE) return;
   // Manual: ao fechar (history.back) o navegador não "restaura" a rolagem da
-  // entrada do álbum por cima do scrollIntoView da última foto vista.
+  // entrada anterior por cima do scrollIntoView da última foto vista.
   try { history.scrollRestoration = 'manual'; } catch (_) {}
-  const n = albumIndexSync(listIri, rec);
-  if (!wasOpen && !_lbPushed) { history.pushState({ phLb: 1 }, '', albumUrl(slug, n)); _lbPushed = true; }
-  else history.replaceState({ phLb: 1 }, '', albumUrl(slug, n));
-  if (n == null) {   // sequência ainda calculando: completa o /<n> quando chegar
-    albumSequence(listIri).then(() => {
-      const m = albumIndexSync(listIri, rec);
-      if (m && lbRecord === rec && albumSlug === slug) history.replaceState({ phLb: 1 }, '', albumUrl(slug, m));
-    }).catch(() => {});
+  const state = { phLb: 1, iri: rec.iri };
+  let url = location.href;
+  if (albumSlug) {
+    const listIri = LIST_PREFIX + albumSlug;
+    // Tirada do álbum pelo seletor de listas: fica no álbum, sem o /<n>.
+    const n = (rec.lists || []).includes(listIri) ? albumIndexSync(listIri, rec) : null;
+    url = albumUrl(albumSlug, n);
   }
+  if (!wasOpen && !_lbPushed) { history.pushState(state, '', url); _lbPushed = true; }
+  else history.replaceState(state, '', url);
 }
 
 // ── Lightbox ─────────────────────────────────────────────────────────────────
@@ -1760,7 +1998,7 @@ function lbSequence() {
   });
   if (seen.has(lbRecord.iri)) return dom;
   const ctx = albumContextIri(lbRecord);
-  const seq = ctx && _albumSeqReady.get(ctx);
+  const seq = ctx && albumSequence(ctx);
   return (seq && seq.includes(lbRecord.iri)) ? seq : [lbRecord.iri];
 }
 function updateLightboxNav() {
@@ -1888,21 +2126,24 @@ function wireLightbox() {
     e.preventDefault(); e.stopPropagation();
   }, true);
   // Voltar do navegador (ou o gesto de borda do iPhone) com a foto aberta: fecha
-  // a foto. Avançar de volta pra entrada de uma foto: reabre.
+  // a foto. Avançar de volta pra entrada de uma foto: reabre (no álbum pelo
+  // /<n>; fora dele pela mídia guardada no estado — ver syncLightboxUrl).
   window.addEventListener('popstate', (e) => {
     const open = !$('#lightbox').hidden;
     const lbEntry = !!(e.state && e.state.phLb);
     if (open && !lbEntry) { _lbPushed = false; closeLightbox({ fromPop: true }); return; }
     if (!open && lbEntry) {
       const r = parseAlbumRoute();
-      if (r && r.n) openAlbumItem(r.n, { fromPop: true });
+      if (r && r.n && albumSlug) { openAlbumItem(r.n, { fromPop: true }); return; }
+      const rec = e.state.iri && recordByIri.get(e.state.iri);
+      if (rec) { _lbPushed = true; openLightbox(rec); }
     }
   });
   $('#lb-map').addEventListener('click', () => {
     if (!lbRecord) return;
-    if (window.self !== window.top) {
+    if (EMBEDDED) {
       // Embutida no modal do app: o app fecha a galeria e voa até o marcador.
-      try { window.parent.postMessage({ type: 'phidro-gallery-show', iri: lbRecord.iri }, '*'); } catch (_) {}
+      postToParent({ type: 'phidro-gallery-show', iri: lbRecord.iri });
       closeLightbox();
       return;
     }
@@ -1989,10 +2230,12 @@ function openLightbox(rec, opts = {}) {
   lbTS.addOptions(listOptions());
   lbTS.setValue(rec.lists || [], true);
   $('#lightbox').hidden = false;
+  // A página atrás não rola junto (no toque; ver html.lb-open no CSS) e a nova
+  // foto começa do topo do overlay (ele rola no celular).
+  document.documentElement.classList.add('lb-open');
+  if (!wasOpen) $('#lightbox').scrollTop = 0;
   updateLightboxNav();
   syncLightboxUrl(rec, wasOpen);
-  const ctx = albumContextIri(rec);
-  if (ctx) albumSequence(ctx).catch(() => {});   // o 🔗 Compartilhar usa o nº no álbum
   if (opts.dir) animateLbIn(opts.dir);
   preloadNeighbors(opts.dir || 1);
 }
@@ -2000,6 +2243,7 @@ let _lbDirty = false;   // houve save no lightbox → refaz galeria+mapa ao fech
 function closeLightbox(opts = {}) {
   const shownIri = lbRecord && lbRecord.iri;
   $('#lightbox').hidden = true;
+  document.documentElement.classList.remove('lb-open');
   $('#lb-media').innerHTML = '';   // para o vídeo/áudio ao fechar
   // Flush: se há uma alteração de listas ainda esperando o debounce de 500ms,
   // salva agora (com lbRecord ainda setado) em vez de deixar o timer disparar
@@ -2061,6 +2305,7 @@ async function saveLightboxLists() {
   // Atualiza o registro (mesma referência em model.records) + catálogo de listas
   // + chips exibidos; marca dirty pra sincronizar galeria/mapa ao fechar.
   rec.lists = listIris;
+  _albumSeqReady.clear();   // o pertencimento mudou: a numeração dos álbuns também
   for (const li of listIris) {
     if (!model.lists[li]) model.lists[li] = pendingNewLists.get(li) || short(li);
   }
@@ -2105,7 +2350,8 @@ function wireSelbar() {
     const btn = e.target.closest('button[data-act]'); if (!btn) return;
     hideSelbarMenu();
     const act = btn.dataset.act;
-    if (act === 'lists') openAssignModal();
+    if (act === 'all') selectAllTiles();
+    else if (act === 'lists') openAssignModal();
     else if (act === 'unlist') openUnassignModal();
     else if (act === 'download') downloadSelected();
     else if (act === 'delete') deleteSelected();
@@ -2208,10 +2454,27 @@ function shareSelectedLink() {
   url.searchParams.delete('pick');
   url.searchParams.set('p', packed);
   const link = url.toString();
+  const what = `${recs.length} mídia${recs.length === 1 ? '' : 's'}`;
+  shareOrCopy(link, `Pedal Hidrográfico — ${what}`, `✓ Link de ${what} copiado`);
+}
+// Compartilhar: no toque abre a folha de compartilhar do sistema (é o caminho
+// pro WhatsApp no iPhone — o ícone já prometia isso); no desktop, ou se a
+// folha falhar, copia o link. Chamada DENTRO do toque: o Safari exige a
+// ativação do usuário tanto pro share quanto pro clipboard (nada de await antes).
+const SHARE_SHEET = MEMORY_TIGHT && typeof navigator.share === 'function';
+function shareOrCopy(link, title, copiedMsg) {
+  if (SHARE_SHEET) {
+    navigator.share({ title, url: link }).catch((e) => {
+      if (e && e.name === 'AbortError') return;   // fechou a folha: nada a fazer
+      copyLink(link, copiedMsg);
+    });
+    return;
+  }
+  copyLink(link, copiedMsg);
+}
+function copyLink(link, msg) {
   if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(link).then(
-      () => toast(`✓ Link de ${recs.length} mídia${recs.length === 1 ? '' : 's'} copiado`),
-      () => prompt('Copie o link:', link));
+    navigator.clipboard.writeText(link).then(() => toast(msg), () => prompt('Copie o link:', link));
   } else {
     prompt('Copie o link:', link);
   }
@@ -2222,36 +2485,32 @@ function shareSelectedLink() {
 // Fora de álbum: ?pick=<hash>, consistente com o compartilhar do popup no
 // mapa. Origem SEMPRE fixa em amora.pedalhidrografi.co (não location.href):
 // um link compartilhado tem que funcionar pra quem recebe, mesmo testando em
-// localhost. (O nº sai de albumSequence, já aquecida pelo openLightbox — o
-// clipboard do Safari exige a escrita ainda dentro do toque, sem await.)
+// localhost. (O nº sai de albumSequence, síncrona — o share/clipboard do
+// Safari exigem a chamada ainda dentro do toque, sem await.)
 function shareLightboxLink() {
   if (!lbRecord) return;
   const ctx = albumContextIri(lbRecord);
   const n = albumIndexSync(ctx, lbRecord);
-  let link, msg;
+  let link, msg, title;
   if (n) {
     link = `${SHARE_ORIGIN}/imagens/lista/${encodeURIComponent(ctx.slice(LIST_PREFIX.length))}/${n}`;
     msg = `✓ Link copiado (mídia ${n} do álbum)`;
+    title = `${model.lists[ctx] || 'Álbum'} — ${n}`;
   } else {
     const hash = lbRecord.iri.slice(MED.length);
     link = `${SHARE_ORIGIN}/imagens.html?pick=${encodeURIComponent(hash)}`;
     msg = '✓ Link da mídia copiado';
+    title = lbRecord.tourLabel || 'Pedal Hidrográfico';
   }
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(link).then(
-      () => toast(msg),
-      () => prompt('Copie o link:', link));
-  } else {
-    prompt('Copie o link:', link);
-  }
+  shareOrCopy(link, title, msg);
 }
 // Aviso passageiro no rodapé (funciona no desktop, onde a barra fica escondida).
 let _toastT = null;
-function toast(msg) {
+function toast(msg, ms = 1800) {
   const el = $('#toast'); if (!el) return;
   el.textContent = msg; el.hidden = false;
   clearTimeout(_toastT);
-  _toastT = setTimeout(() => { el.hidden = true; }, 1800);
+  _toastT = setTimeout(() => { el.hidden = true; }, ms);
 }
 
 // Adicionar/remover listas (lote) → POST /assign-media-lists. O mesmo modal
@@ -2323,42 +2582,206 @@ async function applyAssign() {
   await refresh();
 }
 
-// Baixar seleção como ZIP (JSZip lazy).
-async function downloadSelected() {
+// ── Baixar/salvar a seleção ──────────────────────────────────────────────────
+// Antes baixava TUDO (large + original de cada foto) e montava o ZIP na
+// memória sem avisar — ~140 MB no álbum do PH 113, com pico de ~3× isso: a aba
+// do iPhone caía. Agora um modal confirma com a estimativa de tamanho, mostra
+// o progresso e deixa cancelar. No toque, com suporte a compartilhar ARQUIVOS
+// (iOS 15+, Android), em vez do ZIP os originais vão pra folha de compartilhar
+// em lotes de até SHARE_BATCH (lá dá pra "Salvar imagens" direto nas Fotos) —
+// um lote na memória por vez. Cada lote precisa do SEU toque: o navegador só
+// abre a folha dentro de um gesto, e baixar o lote leva mais que isso.
+const SHARE_BATCH = 10;
+const EST_MB = { original: 3, large: 0.45, clip: 3, audio: 0.4 };   // típico, só p/ estimar
+const MIME_BY_EXT = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.heic': 'image/heic',
+  '.heif': 'image/heif', '.webm': 'video/webm', '.mp4': 'video/mp4', '.m4a': 'audio/mp4' };
+function fmtMB(mb) { return mb >= 100 ? `${Math.round(mb)} MB` : `${mb.toFixed(1).replace('.', ',')} MB`; }
+function canShareFiles() {
+  if (!MEMORY_TIGHT || typeof navigator.canShare !== 'function') return false;
+  try { return navigator.canShare({ files: [new File(['x'], 'teste.jpg', { type: 'image/jpeg' })] }); }
+  catch (_) { return false; }
+}
+// Arquivos de cada mídia: no compartilhar, o original da foto / o vídeo (um
+// por mídia); no ZIP, como antes (large + original / vídeo + áudio).
+function dlFilesFor(r, share) {
+  const out = [];
+  const add = (name, url, est, kind) => { if (url) out.push({ name, url, est, kind }); };
+  if (r.kind === 'image') {
+    if (share) add(r.phash + (extDot(r.fullUrl || r.largeUrl) || '.jpg'), r.fullUrl || r.largeUrl, EST_MB.original, 'image');
+    else {
+      add(r.phash + (extDot(r.largeUrl) || '.jpg'), r.largeUrl, EST_MB.large, 'image');
+      add(r.phash + '_original' + (extDot(r.fullUrl) || '.jpg'), r.fullUrl, EST_MB.original, 'image');
+    }
+  } else {
+    const clipMB = r.duration ? Math.max(0.5, r.duration * 0.12) : EST_MB.clip;
+    add(r.vhash + (extDot(r.clipUrl) || '.webm'), r.clipUrl, clipMB, 'video');
+    if (!share || !r.clipUrl) add(r.vhash + '_audio' + (extDot(r.audioUrl) || '.webm'), r.audioUrl, EST_MB.audio, 'video');
+  }
+  return out;
+}
+// Lotes do compartilhar: fotos primeiro; nunca mistura foto com vídeo (com um
+// .webm no meio o iOS some com o "Salvar imagens").
+function shareBatches(files) {
+  const sorted = [...files.filter((f) => f.kind === 'image'), ...files.filter((f) => f.kind !== 'image')];
+  const batches = [];
+  for (const f of sorted) {
+    const cur = batches[batches.length - 1];
+    if (!cur || cur.length >= SHARE_BATCH || cur[0].kind !== f.kind) batches.push([f]);
+    else cur.push(f);
+  }
+  return batches;
+}
+let _dl = null;   // estado do modal de download em curso
+function downloadSelected() {
   const recs = selectedRecords();
   if (!recs.length) return;
-  toast('Preparando…');
+  const share = canShareFiles();
+  const files = recs.flatMap((r) => dlFilesFor(r, share));
+  const what = `${recs.length} mídia${recs.length === 1 ? '' : 's'}`;
+  if (!files.length) { toast(`Nada pra baixar em ${what}.`); return; }
+  const est = files.reduce((a, f) => a + f.est, 0);
+  _dl = { share, files, what, batches: share ? shareBatches(files) : null, bi: 0, ready: null, ctrl: null, busy: false };
+  $('#dl-title').textContent = share ? `Salvar ${what}` : `Baixar ${what}`;
+  if (share) {
+    const nb = _dl.batches.length;
+    $('#dl-desc').textContent = `${files.length} arquivo${files.length === 1 ? '' : 's'} (originais), ~${fmtMB(est)} (estimativa). ` +
+      `Vão pro menu Compartilhar ${nb > 1 ? `em ${nb} lotes de até ${SHARE_BATCH}` : 'de uma vez'} — lá dá pra “Salvar imagens” nas Fotos.`;
+  } else {
+    $('#dl-desc').textContent = `ZIP com ${files.length} arquivo${files.length === 1 ? '' : 's'} (tamanho grande + original de cada foto), ` +
+      `~${fmtMB(est)} (estimativa). O ZIP é montado na memória do navegador antes de salvar.`;
+  }
+  dlStatus('');
+  $('#dl-progress').hidden = true;
+  dlSetGo(share ? dlBatchLabel('Preparar') : 'Baixar ZIP', false);
+  $('#dl-modal').hidden = false;
+}
+function dlBatchLabel(verb) {
+  const nb = _dl.batches.length;
+  if (verb === 'Preparar') return nb > 1 ? `Preparar lote ${_dl.bi + 1} de ${nb}` : 'Preparar';
+  const b = _dl.batches[_dl.bi];
+  const start = _dl.batches.slice(0, _dl.bi).reduce((a, x) => a + x.length, 0);
+  return nb > 1 ? `Compartilhar ${start + 1}–${start + b.length} de ${_dl.files.length}` : 'Compartilhar';
+}
+function dlSetGo(label, disabled) { const b = $('#dl-go'); b.textContent = label; b.disabled = !!disabled; }
+function dlStatus(msg, err) { const el = $('#dl-status'); el.textContent = msg; el.classList.toggle('err', !!err); }
+function dlProgress(v, max) { const p = $('#dl-progress'); p.hidden = false; p.max = max || 1; p.value = v; }
+function closeDownloadModal() {
+  if (_dl && _dl.ctrl) _dl.ctrl.abort();   // cancela o que estiver baixando
+  _dl = null;
+  $('#dl-modal').hidden = true;
+}
+// Baixa uma lista de arquivos em série (progresso por arquivo); pula os que
+// falham. Devolve [{name, blob}] ou null se cancelado.
+async function dlFetchAll(list, onStep) {
+  const dl = _dl;
+  dl.ctrl = new AbortController();
+  const out = [];
+  let bytes = 0, failed = 0;
+  for (let i = 0; i < list.length; i++) {
+    if (_dl !== dl) return null;
+    onStep(i, bytes);
+    try {
+      const resp = await fetch(list[i].url, { signal: dl.ctrl.signal });
+      if (!resp.ok) { failed++; continue; }
+      const blob = await resp.blob();
+      bytes += blob.size;
+      out.push({ name: list[i].name, blob });
+    } catch (e) {
+      if (e && e.name === 'AbortError') return null;
+      failed++;
+    }
+  }
+  if (_dl !== dl) return null;
+  dl.ctrl = null;
+  onStep(list.length, bytes);
+  out.failed = failed; out.bytes = bytes;
+  return out;
+}
+async function dlGo() {
+  const dl = _dl;
+  if (!dl || dl.busy) return;
+  if (dl.share) {
+    if (dl.ready) { dlShareReady(); return; }   // lote pronto: este toque abre a folha
+    dl.busy = true;
+    dlSetGo(dlBatchLabel('Preparar'), true);
+    const batch = dl.batches[dl.bi];
+    const got = await dlFetchAll(batch, (i, bytes) => {
+      dlProgress(i, batch.length);
+      dlStatus(`Baixando ${Math.min(i + 1, batch.length)} de ${batch.length} · ${fmtMB(bytes / 1e6)}`);
+    });
+    if (_dl !== dl) return;
+    dl.busy = false;
+    if (!got || !got.length) { dlStatus('Não deu pra baixar este lote — tente de novo.', true); dlSetGo(dlBatchLabel('Preparar'), false); return; }
+    const files = got.map((g) => new File([g.blob], g.name, { type: g.blob.type || MIME_BY_EXT[extDot(g.name)] || 'application/octet-stream' }))
+      .filter((f) => { try { return navigator.canShare({ files: [f] }); } catch (_) { return false; } });
+    const skipped = got.failed + (got.length - files.length);
+    if (!files.length) { dlStatus('Este aparelho não compartilha esses arquivos.', true); dlNextBatch(); return; }
+    dl.ready = files;
+    dlStatus(`Pronto: ${files.length} arquivo${files.length === 1 ? '' : 's'}, ${fmtMB(got.bytes / 1e6)}` +
+      (skipped ? ` (${skipped} indisponíve${skipped === 1 ? 'l' : 'is'})` : '') + '.');
+    dlSetGo(dlBatchLabel('Compartilhar'), false);
+    return;
+  }
+  // ZIP (desktop, ou sem compartilhar arquivos).
+  dl.busy = true;
+  dlSetGo('Baixando…', true);
   let JSZip;
   try { JSZip = await ensureJSZip(); }
-  catch (e) { showError('JSZip indisponível: ' + e.message); return; }
+  catch (e) { if (_dl === dl) { dl.busy = false; dlStatus('JSZip indisponível: ' + e.message, true); dlSetGo('Baixar ZIP', false); } return; }
+  const got = await dlFetchAll(dl.files, (i, bytes) => {
+    dlProgress(i, dl.files.length);
+    dlStatus(`Baixando ${Math.min(i + 1, dl.files.length)} de ${dl.files.length} arquivos · ${fmtMB(bytes / 1e6)}`);
+  });
+  if (!got || _dl !== dl) return;
+  if (!got.length) { dl.busy = false; dlStatus('Nenhum arquivo disponível.', true); dlSetGo('Baixar ZIP', false); return; }
   const zip = new JSZip();
-  let done = 0;
-  for (const r of recs) {
-    const files = [];   // [nomeNoZip, url]
-    if (r.kind === 'image') {
-      if (r.largeUrl) files.push([r.phash + (extDot(r.largeUrl) || '.jpg'), r.largeUrl]);
-      if (r.fullUrl)  files.push([r.phash + '_original' + (extDot(r.fullUrl) || '.jpg'), r.fullUrl]);
-    } else {
-      if (r.clipUrl)  files.push([r.vhash + (extDot(r.clipUrl) || '.webm'), r.clipUrl]);
-      if (r.audioUrl) files.push([r.vhash + '_audio' + (extDot(r.audioUrl) || '.webm'), r.audioUrl]);
-    }
-    for (const [name, url] of files) {
-      try {
-        const resp = await fetch(url);
-        if (!resp.ok) continue;
-        zip.file(name, await resp.blob());
-      } catch (_) { /* arquivo indisponível — pula */ }
-    }
-    done++;
-    toast(`Baixando ${done}/${recs.length}…`);
+  got.forEach((g) => zip.file(g.name, g.blob));
+  dlStatus('Compactando…');
+  let blob;
+  try {
+    blob = await zip.generateAsync({ type: 'blob' }, (m) => { if (_dl === dl) dlProgress(m.percent, 100); });
+  } catch (e) {
+    if (_dl === dl) { dl.busy = false; dlStatus('Falha ao montar o ZIP: ' + e.message, true); dlSetGo('Baixar ZIP', false); }
+    return;
   }
-  toast('Compactando…');
-  const blob = await zip.generateAsync({ type: 'blob' });
+  if (_dl !== dl) return;
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = `imagens_${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.zip`;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  closeDownloadModal();
+  toast(got.failed ? `✓ ZIP salvo (${got.failed} arquivo(s) indisponíveis)` : '✓ ZIP salvo', 3000);
+}
+// Abre a folha de compartilhar com o lote pronto — síncrono, dentro do toque.
+function dlShareReady() {
+  const dl = _dl;
+  const files = dl.ready;
+  let p;
+  try { p = navigator.share({ files }); }
+  catch (e) { dlStatus('Falha ao compartilhar: ' + e.message, true); return; }
+  dlSetGo(dlBatchLabel('Compartilhar'), true);
+  p.then(() => { if (_dl === dl) dlNextBatch(); }, (e) => {
+    if (_dl !== dl) return;
+    // Fechou a folha sem escolher: o mesmo lote fica pronto pra tentar de novo.
+    dlSetGo(dlBatchLabel('Compartilhar'), false);
+    if (!(e && e.name === 'AbortError')) dlStatus('Falha ao compartilhar: ' + (e && e.message), true);
+  });
+}
+function dlNextBatch() {
+  const dl = _dl;
+  dl.ready = null;   // solta os arquivos do lote da memória
+  dl.bi++;
+  if (dl.bi >= dl.batches.length) { closeDownloadModal(); toast('✓ Pronto', 2500); return; }
+  dlStatus(`Lote ${dl.bi} de ${dl.batches.length} enviado.`);
+  $('#dl-progress').hidden = true;
+  dlGo();   // já baixa o próximo; o toque seguinte compartilha
+}
+function wireDownloadModal() {
+  $('#dl-go').addEventListener('click', dlGo);
+  $('#dl-cancel').addEventListener('click', closeDownloadModal);
+  $('#dl-backdrop').addEventListener('click', closeDownloadModal);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#dl-modal').hidden) closeDownloadModal(); });
 }
 
 // Excluir seleção → POST /delete-image|/delete-video.
@@ -2380,7 +2803,8 @@ async function deleteSelected() {
 }
 
 // ── Refresh após mutação: recarrega dados, re-roda consulta, avisa o mapa ─────
-async function refresh() {
+// `notify: false` = só recarregar (nada mudou aqui; o mapa não precisa refazer).
+async function refresh({ notify = true } = {}) {
   try {
     await loadAndBuild();
   } catch (e) {
@@ -2388,31 +2812,44 @@ async function refresh() {
     return;
   }
   syncListOptions();
-  if (albumSlug) albumSequence(LIST_PREFIX + albumSlug).catch(() => {});   // pertencimento pode ter mudado
-  try { window.parent.postMessage({ type: 'phidro-gallery-reload' }, '*'); } catch (_) {}
-  runAndRender(currentSparql, readFacets());
+  if (notify) postToParent({ type: 'phidro-gallery-reload' });
+  rerunCurrent();
 }
 
 // ── Toolbar: grupo, avançado, limpar ─────────────────────────────────────────
 function wireToolbar() {
-  // Recolher/expandir o painel de filtros & agrupamento (padrão: recolhido no
-  // celular). O botão + o "Selecionar" ficam sempre visíveis.
+  // Recolher/expandir o painel de filtros & agrupamento. O botão + o
+  // "Selecionar" ficam sempre visíveis. Padrão: recolhido em tela estreita OU
+  // baixa (celular deitado: 844×390 tem largura de desktop, mas aberta a barra
+  // levava 340 dos 390 px) — e, enquanto a pessoa não escolheu, acompanha a
+  // rotação. A escolha dela persiste.
   const toolbar = document.querySelector('.toolbar');
-  const saved = localStorage.getItem('phidro:filtersCollapsed');
-  let filtersCollapsed = saved != null ? saved === '1'
-    : window.matchMedia('(max-width: 760px)').matches;
+  const smallMq = window.matchMedia('(max-width: 760px), (max-height: 500px)');
+  const saved = lsGet('phidro:filtersCollapsed');
+  let userChose = saved != null;
+  let filtersCollapsed = userChose ? saved === '1' : smallMq.matches;
   const applyCollapse = () => {
     toolbar.classList.toggle('collapsed', filtersCollapsed);
     $('#tb-toggle').setAttribute('aria-expanded', String(!filtersCollapsed));
   };
   applyCollapse();
+  const onSmallChange = () => {
+    if (userChose || filtersCollapsed === smallMq.matches) return;
+    filtersCollapsed = smallMq.matches;
+    applyCollapse();
+  };
+  if (smallMq.addEventListener) smallMq.addEventListener('change', onSmallChange);
+  else if (smallMq.addListener) smallMq.addListener(onSmallChange);
   $('#tb-toggle').addEventListener('click', () => {
     filtersCollapsed = !filtersCollapsed;
-    try { localStorage.setItem('phidro:filtersCollapsed', filtersCollapsed ? '1' : '0'); } catch (_) {}
+    userChose = true;
+    lsSet('phidro:filtersCollapsed', filtersCollapsed ? '1' : '0');
     applyCollapse();
     if (galleryLayout === 'collage') layoutAllJustified();   // altura do header mudou
     if (overlayGroups) drawGroupPolygons();
   });
+  // "← Mapa" da barra (embutida + toque): pede pro app fechar o modal.
+  $('#tb-back').addEventListener('click', backToMap);
   // Estado inicial dos botões de agrupamento reflete currentGroup (pode vir de
   // ?pick=… como 'none') — não confia só no class="active" fixo do HTML.
   $$('#tb-group button').forEach((b) => b.classList.toggle('active', b.dataset.group === currentGroup));
@@ -2430,7 +2867,7 @@ function wireToolbar() {
     const btn = e.target.closest('button[data-layout]');
     if (!btn) return;
     galleryLayout = btn.dataset.layout;
-    try { localStorage.setItem('phidro:galleryLayout', galleryLayout); } catch (_) {}
+    lsSet('phidro:galleryLayout', galleryLayout);
     $$('#tb-layout button').forEach((b) => b.classList.toggle('active', b === btn));
     if (galleryWrap || overlayGroups) rerender();   // estrutura do DOM muda (contínuo)
     else applyGalleryLayout();
@@ -2442,7 +2879,7 @@ function wireToolbar() {
   }
   function setZoom(idx) {
     galleryZoom = Math.max(0, Math.min(GALLERY_COLS.length - 1, idx));
-    try { localStorage.setItem('phidro:galleryZoom', String(galleryZoom)); } catch (_) {}
+    lsSet('phidro:galleryZoom', String(galleryZoom));
     applyGalleryLayout();
     syncTileResolution();
     if (overlayGroups) requestAnimationFrame(drawGroupPolygons);   // grade mudou → redesenha
@@ -2460,7 +2897,7 @@ function wireToolbar() {
   syncWrapBtn();
   $('#tb-wrap').addEventListener('click', () => {
     galleryWrap = !galleryWrap;
-    try { localStorage.setItem('phidro:galleryWrap', galleryWrap ? '1' : '0'); } catch (_) {}
+    lsSet('phidro:galleryWrap', galleryWrap ? '1' : '0');
     syncWrapBtn();
     rerender();
   });
@@ -2528,7 +2965,12 @@ function wireTimeline() {
     currentSparql = sparql;
     isCustom = true;
     $('#adv-flag').hidden = false;
-    runAndRender(sparql, readFacets());   // dia-da-semana ainda é aplicado no cliente
+    runSparqlAndRender(sparql, readFacets());   // dia-da-semana ainda é aplicado no cliente
+  });
+  // Abriu o "Avançado": começa a baixar o Comunica já (é o único uso dele) —
+  // o "Aplicar" não espera o download inteiro.
+  $('#adv').addEventListener('toggle', () => {
+    if ($('#adv').open) MQ.ensureEngine().catch(() => {});
   });
   $('#btn-clear').addEventListener('click', () => {
     ftLists.clear(true); ftAuthors.clear(true); ftUploaders.clear(true); ftTours.clear(true);
@@ -2598,6 +3040,34 @@ function applyListParam() {
   }
 }
 
+// ── "🔍 Ver grande" do app sem recarregar a galeria ──────────────────────────
+// Embutida: o app (pai) manda {type:'phidro-gallery-pick', hash} pra abrir uma
+// mídia na galeria JÁ carregada, em vez de trocar o src do iframe (?pick=),
+// que refazia o boot inteiro (catálogo + grade) a cada toque. Mensagem que
+// chega antes do boot terminar fica na fila. Mídia que a galeria ainda não
+// conhece (subiu depois que ela carregou) → recarrega o catálogo antes.
+let _booted = false, _pendingPick = null;
+window.addEventListener('message', (e) => {
+  if (!EMBEDDED || e.source !== window.parent || e.origin !== location.origin) return;
+  const d = e.data;
+  if (!d || d.type !== 'phidro-gallery-pick') return;
+  const hash = d.hash || (d.iri ? String(d.iri).slice(MED.length) : '');
+  if (!hash) return;
+  if (!_booted) { _pendingPick = hash; return; }
+  pickFromParent(hash);
+});
+async function pickFromParent(hash) {
+  const iri = MED + String(hash).replace(/^(image_|video_)/, '');
+  let rec = recordByIri.get(iri);
+  if (!rec) {
+    await refresh({ notify: false });
+    rec = recordByIri.get(iri);
+  }
+  if (!rec) { toast('Mídia não encontrada no catálogo.', 4000); return; }
+  hideSelbarMenu(); hideCtxMenu();
+  openLightbox(rec);
+}
+
 // ── Boot ─────────────────────────────────────────────────────────────────────
 (async () => {
   try {
@@ -2617,6 +3087,7 @@ function applyListParam() {
     wireSelbar();
     wireContextMenu();
     wireAssignModal();
+    wireDownloadModal();
     $('#status').hidden = true;
     $('.toolbar').hidden = false;
     // Visão padrão: agrupado por passeio, sem filtros (mostra TODAS as mídias).
@@ -2632,9 +3103,16 @@ function applyListParam() {
       // /imagens/lista/<slug>/<n>: abre a n-ésima mídia do álbum.
       if (bootRoute && bootRoute.n && albumSlug) openAlbumItem(bootRoute.n);
     }
+    _booted = true;
+    if (_pendingPick) { const h = _pendingPick; _pendingPick = null; pickFromParent(h); }
   } catch (e) {
     console.error(e);
-    $('#status').innerHTML = `<span class="err">Falha ao iniciar: ${escapeHtml(e.message)}</span>`;
+    // Embutida, a saída pelo app pode estar fora de alcance (tela cheia no
+    // celular): oferece o "← Mapa" aqui mesmo. Standalone tem o do header.
+    $('#status').innerHTML = `<span class="err">Falha ao iniciar: ${escapeHtml(e.message)}</span>` +
+      (EMBEDDED ? ' <button type="button" class="btn" id="status-back">← Mapa</button>' : '');
+    $('#status').hidden = false;
+    $('#status-back')?.addEventListener('click', backToMap);
   }
 })();
 </script>

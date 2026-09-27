@@ -3,10 +3,10 @@
  * (app.js) e a galeria (imagens.html).
  *
  * Substrato: os dados (tours.ttl + uploads.ttl) já são parseados com N3.js;
- * aqui eles viram um N3.Store em memória e as consultas rodam via Comunica
- * (@comunica/query-sparql-rdfjs), SPARQL 1.1 completo, carregado sob demanda
- * (lazy) na primeira consulta — o padrão dos outros deps pesados do app
- * (exifr/jszip/geotiff via jsdelivr; o SW faz runtime-cache pro offline).
+ * aqui eles viram um N3.Store em memória. A galeria filtra as facetas em JS,
+ * direto dos records (facetRows) — o Comunica (@comunica/query-sparql-rdfjs,
+ * SPARQL 1.1 completo, ~1,6 MB do jsdelivr) só é baixado, sob demanda, pra
+ * consulta SPARQL escrita à mão (Avançado da galeria, filtro SPARQL do mapa).
  *
  * Carregado como <script> clássico (NÃO módulo) por app.js e imagens.html;
  * publica window.PhidroMediaQuery. Requer window.N3 já carregado.
@@ -44,7 +44,8 @@
       var s = document.createElement('script');
       s.src = src;
       s.onload = function () { resolve(); };
-      s.onerror = function () { reject(new Error('falha ao carregar ' + src)); };
+      // Tira a tag que falhou: uma nova tentativa (ensureEngine) cria outra.
+      s.onerror = function () { s.remove(); reject(new Error('falha ao carregar ' + src)); };
       document.head.appendChild(s);
     });
   }
@@ -88,6 +89,9 @@
         _engine = new global.Comunica.QueryEngine();
         return _engine;
       })();
+      // Falhou (rede ruim, offline, CDN fora): não memoiza a rejeição — a
+      // próxima consulta tenta de novo em vez de falhar pra sempre.
+      _enginePromise.catch(function () { _enginePromise = null; });
     }
     return _enginePromise;
   }
@@ -273,11 +277,17 @@
       W.push(valuesBlock('ftour', facets.tours));
       W.push('?m ph:capturedDuring ?ftour .');
     }
+    // Datas pelo DIA-calendário gravado na mídia (o AAAA-MM-DD do
+    // dcterms:date, no fuso dela — como o agrupamento por dia e o dia da
+    // semana). Era ?d >= "…T00:00:00"^^xsd:dateTime: um limite SEM fuso, que
+    // o Comunica resolve pelo fuso do navegador e com o sinal invertido — em
+    // São Paulo a janela do dia ia de 18h da véspera a 17h59 (medido: "de
+    // 25/09 até 25/09" achava 0 das 67 mídias do PH 113, um pedal noturno).
     if (facets.dateFrom) {
-      W.push('FILTER(?d >= "' + facets.dateFrom + 'T00:00:00"^^xsd:dateTime)');
+      W.push('FILTER(SUBSTR(STR(?d), 1, 10) >= ' + sparqlStr(facets.dateFrom) + ')');
     }
     if (facets.dateTo) {
-      W.push('FILTER(?d <= "' + facets.dateTo + 'T23:59:59"^^xsd:dateTime)');
+      W.push('FILTER(SUBSTR(STR(?d), 1, 10) <= ' + sparqlStr(facets.dateTo) + ')');
     }
     if (facets.kjMin != null || facets.kjMax != null) {
       W.push('?m ph:capturedDuring ?et . ?et ph:energyEstimate ?kj .');
@@ -315,6 +325,62 @@
       W.join('\n  ') + '\n}\nORDER BY DESC(?d) ?m';
   }
 
+  // ── facetas → linhas em JS (sem Comunica) ─────────────────────────────────
+  // As MESMAS linhas {m, group} que runQuery(store, buildQueryFromFacets(f))
+  // devolve (SELECT DISTINCT ?m ?group), calculadas direto de model.records —
+  // a galeria renderiza a visão padrão e cada faceta sem baixar/compilar o
+  // Comunica nem consultar o catálogo inteiro. Mesma semântica da consulta
+  // (mudou uma, mude a outra): listas/autoras/quem subiu/passeios = "qualquer
+  // um de"; datas pelo dia-calendário gravado; kJ pela estimativa do passeio
+  // (sem passeio/estimativa → fora); grupo = passeio | dia | mês | ano |
+  // nenhum. Dia da semana fica com quem chama (não existe em SPARQL). Sem
+  // ordem: quem chama ordena (canonicalRowOrder na galeria).
+  var DATE_RE = /^(\d{4})-(\d{2})-(\d{2})/;
+  function facetGroup(rec, g) {
+    if (g === 'tour') {
+      return rec.tourIri ? { value: rec.tourIri, termType: 'NamedNode' } : { value: 'sem-passeio', termType: 'Literal' };
+    }
+    if (g !== 'year' && g !== 'month' && g !== 'day') return { value: '', termType: 'Literal' };
+    var m = DATE_RE.exec(rec.datetime || '');
+    var v = !m ? 'sem-data' : (g === 'year' ? m[1] : (g === 'month' ? m[1] + '-' + m[2] : m[0]));
+    return { value: v, termType: 'Literal' };
+  }
+  function facetRows(model, facets) {
+    facets = facets || {};
+    var asSet = function (a) { return (a && a.length) ? new Set(a) : null; };
+    var lists = asSet(facets.lists), authors = asSet(facets.authors),
+      uploaders = asSet(facets.uploaders), tours = asSet(facets.tours);
+    var anyIn = function (vals, set) {
+      for (var i = 0; vals && i < vals.length; i++) if (set.has(vals[i])) return true;
+      return false;
+    };
+    var kjMin = facets.kjMin, kjMax = facets.kjMax;
+    var hasKj = kjMin != null || kjMax != null;
+    var g = facets.group || 'tour';
+    var seen = new Set(), rows = [];
+    ((model && model.records) || []).forEach(function (r) {
+      if (seen.has(r.iri)) return;
+      if (lists && !anyIn(r.lists, lists)) return;
+      if (authors && !anyIn(r.authorIris, authors)) return;
+      if (uploaders && !anyIn(r.uploaderIris, uploaders)) return;
+      if (tours && !(r.tourIri && tours.has(r.tourIri))) return;
+      if (facets.dateFrom || facets.dateTo) {
+        var dm = DATE_RE.exec(r.datetime || '');
+        if (!dm) return;   // sem data: fora de qualquer faixa (como o FILTER)
+        if (facets.dateFrom && dm[0] < facets.dateFrom) return;
+        if (facets.dateTo && dm[0] > facets.dateTo) return;
+      }
+      if (hasKj) {
+        if (r.energyKj == null) return;
+        if (kjMin != null && !(r.energyKj >= +kjMin)) return;
+        if (kjMax != null && !(r.energyKj <= +kjMax)) return;
+      }
+      seen.add(r.iri);
+      rows.push({ m: { value: r.iri, termType: 'NamedNode' }, group: facetGroup(r, g) });
+    });
+    return rows;
+  }
+
   // Consulta simples de pertencimento (default do mapa): membros de uma lista.
   function listMembershipQuery(listIri) {
     return 'PREFIX schema: <' + NS.schema + '>\n' +
@@ -330,6 +396,7 @@
     queryMediaIris: queryMediaIris,
     buildMediaRecords: buildMediaRecords,
     buildQueryFromFacets: buildQueryFromFacets,
+    facetRows: facetRows,
     listMembershipQuery: listMembershipQuery,
     weekdayOf: weekdayOf,
   };
