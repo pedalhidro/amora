@@ -546,8 +546,18 @@ map.on('popupclose', (e) => {
   }, 0);
 });
 
+// crossOrigin: '' (CORS anônimo) nas camadas cujo host manda
+// Access-Control-Allow-Origin: * em TODA resposta — conferido com curl
+// (com/sem Origin, cache HIT/MISS) em OSM a/b/c, arcgisonline e telhas
+// (rmsampa-v2, mtpi ×2, 1850). Resposta CORS é legível: o SW guarda os tiles
+// (TILE_CACHE) pro mapa offline; <img> no-cors dava resposta OPACA, que o SW
+// não guarda. NÃO ligar num host sem ACAO — o tile deixaria de carregar
+// (o WMS do GeoSampa só manda ACAO quando há Origin e sem Vary: Origin — fica
+// sem). Os preconnects do index.html levam crossorigin pelo mesmo motivo.
+const TILE_CORS = '';
 const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 19,
+  crossOrigin: TILE_CORS,
   pane: LAYER_PANE('osm'),
   attribution: '&copy; OpenStreetMap contributors',
 });
@@ -555,6 +565,7 @@ const satellite = L.tileLayer(
   'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
   {
     maxZoom: 19,
+    crossOrigin: TILE_CORS,
     pane: LAYER_PANE('satellite'),
     attribution:
       'Imagery © Esri, Maxar, Earthstar Geographics, and the GIS User Community',
@@ -581,6 +592,7 @@ const rmsampa = L.tileLayer('https://telhas.pedalhidrografi.co/rmsampa-v2/{z}/{x
   tileSize: rmsampaRetina ? 128 : 256,
   zoomOffset: rmsampaRetina ? 1 : 0,
   opacity: 0.85,
+  crossOrigin: TILE_CORS,
   pane: LAYER_PANE('rmsampa'),
   attribution: 'Topografia: Pedal Hidrográfico',
 }).addTo(map);
@@ -610,12 +622,14 @@ const sara1930 = L.tileLayer.wms(
 const mtpiPindorama = L.tileLayer('https://telhas.pedalhidrografi.co/mtpi_cop90_sa_full/{z}/{x}/{y}.png', {
   maxZoom: 19,
   maxNativeZoom: 10,
+  crossOrigin: TILE_CORS,
   pane: LAYER_PANE('mtpi-pindorama'),
   attribution: 'MTPI COP90 · Pedal Hidrográfico',
 });
 const mtpiParana = L.tileLayer('https://telhas.pedalhidrografi.co/mtpi_bacia_parana_30/{z}/{x}/{y}.png', {
   maxZoom: 19,
   maxNativeZoom: 12,
+  crossOrigin: TILE_CORS,
   pane: LAYER_PANE('mtpi-parana'),
   attribution: 'MTPI Bacia do Paraná 30 m · Pedal Hidrográfico',
 });
@@ -626,6 +640,7 @@ const mapa1850 = L.tileLayer('https://telhas.pedalhidrografi.co/1850/{z}/{x}/{y}
   maxZoom: 19,
   maxNativeZoom: 18,
   opacity: 0.85,
+  crossOrigin: TILE_CORS,
   pane: LAYER_PANE('mapa1850'),
   attribution: 'Mapa de 1850 · Pedal Hidrográfico',
 });
@@ -2798,6 +2813,10 @@ function resolvePhotoUrl(phash, variant /* 'large' | 'thumb' | 'original' */, or
     return '';
   }
   const ext = variant === 'original' ? origExt : 'jpg';
+  // Same-origin de propósito (funciona em qualquer backend, local ou bucket):
+  // em modo GCS o backend 302a pro bucket com Cache-Control longo (o destino
+  // só depende da chave), e o SW guarda a MINIATURA sob esta URL (MEDIA_CACHE,
+  // buscada em CORS) — marcadores e galeria com foto também offline.
   return `./${PHOTOS_DIR_REL}${phash}/${variant}.${ext}`;
 }
 
@@ -7603,11 +7622,12 @@ function updateMenuBtnPressed() {
 }
 
 // ─── PWA: register service worker ────────────────────────────────────────────
-// Em dev local (localhost / 127.0.0.1) o SW fica DESLIGADO: ele cacheia
-// app.js/style.css com stale-while-revalidate, o que obrigava a recarregar
-// duas vezes (ou limpar cache) pra ver cada edição. Aqui desregistramos
-// qualquer SW e limpamos os caches, então um reload normal sempre traz o
-// código mais novo. Em produção (amora) registra normalmente.
+// Em dev local (localhost / 127.0.0.1) o SW fica DESLIGADO: ele serve o app do
+// cache (o deploy inteiro, cache-first), o que obrigaria a mexer na VERSION pra
+// ver cada edição. Aqui desregistramos qualquer SW e limpamos os caches, então
+// um reload normal sempre traz o código mais novo. Em produção (amora) registra
+// normalmente. (Testar o SW local: http://amora.localhost:<porta> — o Chrome
+// trata *.localhost como contexto seguro e esta checagem não o pega.)
 const _isLocalDev = ['localhost', '127.0.0.1', '0.0.0.0', ''].includes(location.hostname);
 if ('serviceWorker' in navigator) {
   if (_isLocalDev) {
@@ -7622,7 +7642,104 @@ if ('serviceWorker' in navigator) {
         console.warn('[sw] registration failed:', err);
       });
     });
+    watchSwUpdates();
   }
+}
+
+// Versão nova do app. O SW novo só assume com o deploy INTEIRO já no cache
+// (instalação atômica — ver sw.js) e assume na hora (skipWaiting + claim), mas
+// a página aberta segue com o código que carregou até recarregar. Então: aviso
+// tocável, em vez de recarregar sozinho (perderia um envio ou o traçado em
+// curso). O app da tela inicial do iPhone volta do segundo plano SEM navegar —
+// e só navegação dispara a checagem automática do SW —, então checa também ao
+// voltar pro primeiro plano (no máx. a cada SW_UPDATE_CHECK_MS).
+const SW_UPDATE_CHECK_MS = 15 * 60 * 1000;
+function watchSwUpdates() {
+  const sw = navigator.serviceWorker;
+  // Sem controlador no load = 1ª visita (ou recarga forçada): o claim() do SW
+  // recém-instalado dispara um controllerchange que NÃO é versão nova.
+  let hadController = !!sw.controller;
+  sw.addEventListener('controllerchange', () => {
+    if (!hadController) { hadController = true; return; }
+    showActionToast({
+      id: 'sw-update',
+      text: 'Nova versão do amora disponível.',
+      action: '↻ Atualizar',
+      onAction: reloadForUpdate,
+    });
+  });
+  let lastCheck = Date.now();
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible' || Date.now() - lastCheck < SW_UPDATE_CHECK_MS) return;
+    lastCheck = Date.now();
+    sw.getRegistration().then((r) => r?.update()).catch(() => {});
+  });
+}
+
+// Recarregar com envio/edição em curso num form embutido perderia o trabalho:
+// pergunta antes. O estado vem do protocolo phidro-form-state ({busy, dirty,
+// label}, postado pelos forms a cada mudança) — aqui só guardamos o último de
+// cada iframe.
+const _formStates = new Map();   // WindowProxy do iframe → último estado
+window.addEventListener('message', (e) => {
+  if (e.origin !== location.origin || e.data?.type !== 'phidro-form-state') return;
+  _formStates.set(e.source, e.data);
+});
+function pendingFormWork() {
+  for (const f of document.querySelectorAll('iframe')) {
+    const st = _formStates.get(f.contentWindow);
+    // Iframe esvaziado (src='') guarda o estado do form que já saiu — ignora.
+    if (!st || !(st.busy || st.dirty) || !f.getAttribute('src')) continue;
+    return st.label || 'Há um envio em andamento';
+  }
+  return null;
+}
+function reloadForUpdate() {
+  const pending = pendingFormWork();
+  if (pending && !confirm(`${pending} — atualizar agora interrompe. Atualizar mesmo assim?`)) return;
+  location.reload();
+}
+
+// Aviso COM ação (o #toast comum é só texto e não recebe toque): faixas fixas
+// empilhadas no rodapé, uma por id (reusar o id troca o texto) — "Nova
+// versão… ↻ Atualizar", "Sem conexão… ↻ Tentar de novo".
+function showActionToast({ id, text, action, onAction, dismissible = true }) {
+  let box = document.getElementById('action-toasts');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'action-toasts';
+    box.className = 'action-toasts';
+    document.body.appendChild(box);
+  }
+  let bar = document.getElementById(`action-toast-${id}`);
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = `action-toast-${id}`;
+    bar.className = 'action-toast';
+    bar.setAttribute('role', 'status');
+    box.appendChild(bar);
+  }
+  const msg = document.createElement('span');
+  msg.textContent = text;
+  const go = document.createElement('button');
+  go.type = 'button';
+  go.className = 'action-toast-go';
+  go.textContent = action;
+  go.addEventListener('click', () => onAction());
+  bar.replaceChildren(msg, go);
+  if (dismissible) {
+    const x = document.createElement('button');
+    x.type = 'button';
+    x.className = 'action-toast-close';
+    x.setAttribute('aria-label', 'Fechar aviso');
+    x.textContent = '×';
+    x.addEventListener('click', () => bar.remove());
+    bar.append(x);
+  }
+  return bar;
+}
+function hideActionToast(id) {
+  document.getElementById(`action-toast-${id}`)?.remove();
 }
 
 // ─── Boot ────────────────────────────────────────────────────────────────────
@@ -7785,25 +7902,56 @@ async function readBodyWithProgress(res, onProgress) {
   return new TextDecoder().decode(all);
 }
 
+// Sem routes.json (nem a cópia offline do SW): em vez de um erro de dev sem
+// saída, um aviso com "tentar de novo" — na lista E numa faixa tocável (no
+// celular a lista mora na gaveta fechada) —, e nova tentativa sozinha quando a
+// rede volta. O boot fica esperando aqui: os deep links (/passeio/<slug>) abrem
+// assim que as rotas chegarem.
+function waitForRoutesRetry() {
+  return new Promise((resolve) => {
+    const retry = () => {
+      window.removeEventListener('online', retry);
+      hideActionToast('routes');
+      resolve();
+    };
+    const text = 'Não foi possível carregar as rotas — verifique a conexão.';
+    routesStatus.hidden = false;
+    routesStatus.classList.add('error');
+    routesStatus.textContent = `${text} `;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'linkbtn';
+    btn.textContent = '↻ Tentar de novo';
+    btn.addEventListener('click', retry);
+    routesStatus.appendChild(btn);
+    showActionToast({ id: 'routes', text: 'As rotas não carregaram — sem conexão?',
+      action: '↻ Tentar de novo', onAction: retry });
+    window.addEventListener('online', retry);
+  });
+}
+
 async function boot() {
   routesStatus.textContent = 'Carregando rotas…';
   let data;
-  try {
-    // Sem `cache: 'no-cache'` de propósito: precisa casar com o
-    // <link rel="preload" as="fetch"> do index.html (modos de cache
-    // diferentes não casam e o download duplicaria). A revalidação fica
-    // por conta do Cache-Control: no-cache + ETag que o backend manda.
-    const res = await fetch(ROUTES_JSON_URL);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    data = JSON.parse(await readBodyWithProgress(res, (received) => {
-      routesStatus.textContent =
-        `Carregando rotas… ${(received / 1048576).toFixed(1).replace('.', ',')} MB`;
-    }));
-  } catch (err) {
-    throw new Error(
-      `Não foi possível carregar ${ROUTES_JSON_URL} (${err.message}). ` +
-        `Rode \`python scripts/build-routes.py\` para gerá-lo.`,
-    );
+  for (;;) {
+    try {
+      // Sem `cache: 'no-cache'` de propósito: precisa casar com o
+      // <link rel="preload" as="fetch"> do index.html (modos de cache
+      // diferentes não casam e o download duplicaria). A revalidação fica
+      // por conta do Cache-Control: no-cache + ETag que o backend manda.
+      const res = await fetch(ROUTES_JSON_URL);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      data = JSON.parse(await readBodyWithProgress(res, (received) => {
+        routesStatus.textContent =
+          `Carregando rotas… ${(received / 1048576).toFixed(1).replace('.', ',')} MB`;
+      }));
+      break;
+    } catch (err) {
+      console.warn(`[routes] ${ROUTES_JSON_URL}: ${err.message}`);
+      await waitForRoutesRetry();
+      routesStatus.classList.remove('error');
+      routesStatus.textContent = 'Carregando rotas…';
+    }
   }
 
   const all = Array.isArray(data?.routes) ? data.routes : [];
@@ -8464,10 +8612,78 @@ function _tourIdFromIri(iri) {
   return null;
 }
 
-// Constrói uma view legível do passeio: lê tours.ttl + identities.ttl, resolve
-// o IRI alvo e seus blank nodes (route reference, energy values) e
-// dependentes (associações → série+edição), mapeia pessoas/séries pra nomes
-// via declarações nesses arquivos e devolve HTML pronto pra render no modal.
+// Quads do passeio + vizinhança (associação → série, pessoas, referência de
+// rota) tirados do grafo que o app JÁ parseou (mediaStore: tours + identities +
+// mídia, montado pelo loadPhotos — que a tira de fotos do modal também espera).
+// Antes cada abertura do modal re-baixava tours.ttl + identities.ttl (network-
+// first) e reparseava ~300 KB: em 4G fraco o resumo ficava em "carregando…"
+// por dezenas de segundos com tudo em cache. Depois de um save no form de
+// passeio o closeTourModal recarrega o catálogo (reloadPhotos), e o
+// loadPhotos() abaixo espera essa recarga. O fetch direto fica pra fonte
+// "local" (o kit não traz passeios) e pra passeio que o grafo ainda não tem.
+async function _tourSummaryQuads(tourIri) {
+  if (photoSource === 'server') {
+    try { await loadPhotos(); } catch (_) { /* segue pro fetch */ }
+    const store = mediaStore;
+    if (store?.getQuads && window.N3?.DataFactory) {
+      const own = store.getQuads(window.N3.DataFactory.namedNode(tourIri), null, null, null);
+      if (own.length) {
+        // 2 saltos a partir do passeio cobrem o que o resumo lê: rótulos de
+        // pessoas/organização (1), séries via associação e provedor da rota (2).
+        const out = [...own];
+        const seen = new Set([`NamedNode ${tourIri}`]);
+        let frontier = own;
+        for (let hop = 0; hop < 2; hop++) {
+          const next = [];
+          for (const q of frontier) {
+            const o = q.object;
+            if (o.termType !== 'NamedNode' && o.termType !== 'BlankNode') continue;
+            const k = `${o.termType} ${o.value}`;
+            if (seen.has(k)) continue;
+            seen.add(k);
+            const qs = store.getQuads(o, null, null, null);
+            out.push(...qs);
+            next.push(...qs);
+          }
+          frontier = next;
+        }
+        return out;
+      }
+    }
+  }
+  const Parser = await ensureN3();
+  // Pessoas (schema:Person + nomes) vivem SÓ em identities.ttl desde o
+  // split dos catálogos — sem ela, autoras/quem-subiu/participantes caem
+  // no fallback de IRI crua (nameOf() nunca acha o label).
+  const [tRes, iRes] = await Promise.all([
+    fetch('./data/tours.ttl', { cache: 'no-cache' }),
+    fetch('./data/identities.ttl', { cache: 'no-cache' }),
+  ]);
+  if (!tRes.ok) throw new Error(`HTTP ${tRes.status}`);
+  const identitiesText = iRes.ok ? await iRes.text() : '';
+  return new Parser().parse((await tRes.text()) + '\n\n' + identitiesText);
+}
+
+// Falha ao montar o resumo (sem rede e sem cópia, parser que não carregou):
+// aviso pra gente + "tentar de novo" (tratado por delegação logo abaixo).
+function _tourSummaryRetryHtml(tourId) {
+  return `<p class="muted">Não foi possível carregar o resumo do passeio — verifique a conexão. ` +
+    `<button type="button" class="linkbtn tour-summary-retry" data-tour-id="${escapeHtml(tourId)}">↻ Tentar de novo</button></p>`;
+}
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest?.('.tour-summary-retry');
+  if (!btn || !routeModalSummary.contains(btn)) return;
+  routeModalSummary.innerHTML = `<p class="muted">carregando…</p>`;
+  const reqId = ++_routeModalReqId;
+  _renderTourSummary(btn.dataset.tourId).then((html) => {
+    if (reqId === _routeModalReqId) routeModalSummary.innerHTML = html;
+  });
+});
+
+// Constrói uma view legível do passeio a partir de tours.ttl + identities.ttl
+// (ver _tourSummaryQuads): resolve o IRI alvo e seus nós aninhados (route
+// reference) e dependentes (associações → série+edição), mapeia pessoas/séries
+// pra nomes e devolve HTML pronto pra render no modal.
 async function _renderTourSummary(tourId) {
   const PH    = 'https://id.pedalhidrografi.co/terms#';
   const PHD   = 'https://pedalhidrografi.co/data/';
@@ -8478,48 +8694,30 @@ async function _renderTourSummary(tourId) {
   const PROV  = 'http://www.w3.org/ns/prov#';
   const QUDT  = 'http://qudt.org/schema/qudt/';
 
-  let Parser;
+  const tourIri = `${PAS}${tourId}`;
+  let quads;
   try {
-    Parser = await ensureN3();
+    quads = await _tourSummaryQuads(tourIri);
   } catch (e) {
-    return `<p class="muted">Parser N3 indisponível: ${escapeHtml(e.message)}.</p>`;
-  }
-  let text;
-  try {
-    // Pessoas (schema:Person + nomes) vivem SÓ em identities.ttl desde o
-    // split dos catálogos — sem ela, autoras/quem-subiu/participantes caem
-    // no fallback de IRI crua (nameOf() nunca acha o label).
-    const [tRes, iRes] = await Promise.all([
-      fetch('./data/tours.ttl', { cache: 'no-cache' }),
-      fetch('./data/identities.ttl', { cache: 'no-cache' }),
-    ]);
-    if (!tRes.ok) throw new Error(`HTTP ${tRes.status}`);
-    const identitiesText = iRes.ok ? await iRes.text() : '';
-    text = (await tRes.text()) + '\n\n' + identitiesText;
-  } catch (e) {
-    return `<p class="muted">tours.ttl indisponível: ${escapeHtml(e.message)}.</p>`;
+    console.warn(`[tour] resumo de ${tourId}:`, e);
+    return _tourSummaryRetryHtml(tourId);
   }
 
-  const tourIri = `${PAS}${tourId}`;
   const subjBy = new Map();  // subject IRI/bnode-id → array of quads
   const types = new Map();   // subject → Set of types
   const labels = new Map();  // subject → human label (name/title/code)
-  try {
-    for (const q of new Parser().parse(text)) {
-      const s = q.subject.value, p = q.predicate.value, o = q.object.value;
-      if (!subjBy.has(s)) subjBy.set(s, []);
-      subjBy.get(s).push(q);
-      if (p === RDFT) {
-        if (!types.has(s)) types.set(s, new Set());
-        types.get(s).add(o);
-      } else if (p === SCHEMA + 'name') {
-        labels.set(s, o);   // nome real vence sobre apelido/título
-      } else if (p === SCHEMA + 'alternateName' || p === DCT + 'title') {
-        if (!labels.has(s)) labels.set(s, o);
-      }
+  for (const q of quads) {
+    const s = q.subject.value, p = q.predicate.value, o = q.object.value;
+    if (!subjBy.has(s)) subjBy.set(s, []);
+    subjBy.get(s).push(q);
+    if (p === RDFT) {
+      if (!types.has(s)) types.set(s, new Set());
+      types.get(s).add(o);
+    } else if (p === SCHEMA + 'name') {
+      labels.set(s, o);   // nome real vence sobre apelido/título
+    } else if (p === SCHEMA + 'alternateName' || p === DCT + 'title') {
+      if (!labels.has(s)) labels.set(s, o);
     }
-  } catch (e) {
-    return `<p class="muted">Parser falhou: ${escapeHtml(e.message)}.</p>`;
   }
   const own = subjBy.get(tourIri) || [];
   if (!own.length) {

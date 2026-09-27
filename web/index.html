@@ -135,12 +135,14 @@
     <link rel="preload" href="routes.json" as="fetch" crossorigin />
     <!-- Aquece DNS+TLS dos hosts de tiles antes do Leaflet pedir o 1º tile —
          adianta a primeira pintura do mapa (handshakes em paralelo com o boot). -->
-    <!-- SEM crossorigin: tiles são <img> no-CORS — um preconnect CORS abriria
-         uma conexão do "tipo" errado que o fetch do tile não reaproveita. -->
-    <link rel="preconnect" href="https://a.tile.openstreetmap.org" />
-    <link rel="preconnect" href="https://b.tile.openstreetmap.org" />
-    <link rel="preconnect" href="https://c.tile.openstreetmap.org" />
-    <link rel="preconnect" href="https://telhas.pedalhidrografi.co" />
+    <!-- O crossorigin do preconnect tem que casar com o modo do request, senão
+         o tile não reaproveita a conexão: OSM e telhas vão em CORS (as camadas
+         têm crossOrigin, pro SW poder guardar os tiles offline); a Câmera
+         Topográfica ainda é <img> no-CORS → preconnect sem crossorigin. -->
+    <link rel="preconnect" href="https://a.tile.openstreetmap.org" crossorigin />
+    <link rel="preconnect" href="https://b.tile.openstreetmap.org" crossorigin />
+    <link rel="preconnect" href="https://c.tile.openstreetmap.org" crossorigin />
+    <link rel="preconnect" href="https://telhas.pedalhidrografi.co" crossorigin />
     <link rel="preconnect" href="https://cameratopo.pedalhidrografi.co" />
     <!-- COM crossorigin: o geotiff.js busca os COGs do FABDEM em modo CORS. -->
     <link rel="preconnect" href="https://fabdem.pedalhidrografi.co" crossorigin />

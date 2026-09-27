@@ -1365,6 +1365,56 @@ body.modal-open { overflow: hidden; }
 .toast.fade { opacity: 0; }
 .toast[hidden] { display: none; }
 
+/* Avisos com ação (showActionToast: "Nova versão… ↻ Atualizar", "Sem
+   conexão… ↻ Tentar de novo") — como o .toast, mas tocáveis e empilhados. */
+.action-toasts {
+  position: fixed;
+  left: 50%;
+  bottom: calc(22px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  z-index: 6100;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: max-content;
+  max-width: calc(100vw - 24px);
+}
+.action-toast {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 6px 6px 14px;
+  font-size: 13px;
+  box-shadow: 0 4px 18px rgba(16, 24, 32, 0.18);
+}
+.action-toast > span { flex: 1 1 auto; min-width: 0; }   /* só o texto quebra linha */
+.action-toast button {
+  flex: none;
+  min-height: 36px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.action-toast .action-toast-go {
+  padding: 0 12px;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+.action-toast .action-toast-close { width: 36px; font-size: 18px; line-height: 1; }
+@media (pointer: coarse) {
+  .action-toast button { min-height: 44px; }
+  .action-toast .action-toast-close { width: 44px; }
+}
+
 /* ─── GPX drawing tool ───────────────────────────────────────────────────── */
 .primary-btn {
   background: var(--accent);
