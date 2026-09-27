@@ -485,6 +485,15 @@ function seriesCodeFor(tourIri) {
   return codes.length ? codes.join(' & ') : null;
 }
 
+// Miniatura da arte do anúncio (backend: GET /tour_assets/<dir>/
+// announcement.thumb.jpg, gerada no 1º pedido) a partir da URL do original
+// (…/tour_assets/<dir>/announcement.<ext>, em qualquer host); null = arte
+// externa.
+function artThumb(url) {
+  const m = /\/tour_assets\/([A-Za-z0-9_-]+)\/announcement\.(?:jpe?g|png|webp|gif)$/i.exec(url || '');
+  return m ? `./tour_assets/${m[1]}/announcement.thumb.jpg` : null;
+}
+
 // Tiles de galeria (thumbnail 56×56). Passeio: arte de divulgação
 // (schema:image) → senão código de série → senão título (fonte pequena).
 function tourTile(iri) {
@@ -498,10 +507,13 @@ function tourTile(iri) {
     : `<span class="title">${escapeHtml(title)}</span>`;
   const art = imageOf.get(iri);
   if (art) {
-    // Se a arte 404ar, o onerror vira o tile em texto (série/título) — sem
+    // Tile de 56 px: a MINIATURA que o backend deriva da arte (lado menor
+    // 256 px, ~25 KB) — o original é PNG de até 10 MB, e o cartão de quem
+    // organizou mais passeios baixava ~45 MB. Arte externa: a própria. Se a
+    // imagem 404ar, o onerror vira o tile em texto (série/título) — sem
     // deixar um quadrado vazio.
     return `<a class="tile tour" href="${href}" target="_blank" rel="noopener" title="${escapeHtml(hover)}">` +
-      `<img loading="lazy" src="${escapeHtml(art)}" alt="" ` +
+      `<img loading="lazy" decoding="async" src="${escapeHtml(artThumb(art) || art)}" alt="" ` +
       `onerror="this.style.display='none';this.closest('a').classList.add('txt-tile');this.nextElementSibling.hidden=false">` +
       `<span hidden>${body}</span></a>`;
   }

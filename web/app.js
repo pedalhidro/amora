@@ -7885,15 +7885,40 @@ async function _renderTourSummary(tourId) {
   if (announceUrl && announceUrl.startsWith('file:///app/tour_assets/')) {
     announceUrl = './' + announceUrl.slice('file:///app/'.length);
   }
+  // A <img> mostra a variante web que o backend deriva da arte (≤ 1350 px,
+  // ~300 KB — as recentes são PNGs de 3–4 MB); o link "tamanho real" segue no
+  // original. Falhas: ver o listener de 'error' logo depois desta função.
   const heroHtml = announceUrl
     ? `<a class="tour-announce-hero" href="${escapeHtml(announceUrl)}" ` +
       `target="_blank" rel="noopener" title="Abrir imagem em tamanho real">` +
-      `<img src="${escapeHtml(announceUrl)}" alt="anúncio" ` +
-      `onerror="this.parentElement.style.display='none'"></a>`
+      `<img src="${escapeHtml(tourArtVariant(announceUrl, 'web') || announceUrl)}" ` +
+      `data-orig="${escapeHtml(announceUrl)}" alt="anúncio" decoding="async"></a>`
     : '';
 
   return heroHtml + `<dl class="tour-summary">${rows.join('')}</dl>`;
 }
+
+// Variante leve da arte do anúncio (backend: _serve_art_variant). A URL do
+// original (…/tour_assets/<dir>/announcement.<ext>, em qualquer host: bucket,
+// amora, localhost) vira ./tour_assets/<dir>/announcement.<web|thumb>.jpg,
+// gerada no 1º pedido. null = arte externa (fica o original).
+function tourArtVariant(url, name) {
+  const m = /\/tour_assets\/([A-Za-z0-9_-]+)\/announcement\.(?:jpe?g|png|webp|gif)$/i.exec(url || '');
+  return m ? `./tour_assets/${m[1]}/announcement.${name}.jpg` : null;
+}
+
+// Erro na arte do hero. O onerror INLINE que havia aqui é barrado pela CSP do
+// index.html (script-src sem 'unsafe-inline') — offline o modal mostrava a
+// caixa quebrada "anúncio". Variante falhou → tenta o original; o original
+// falhou → some o hero. `error` de <img> não borbulha: captura no contêiner.
+routeModalSummary?.addEventListener('error', (e) => {
+  const img = e.target;
+  const hero = img instanceof HTMLImageElement && img.closest('.tour-announce-hero');
+  if (!hero) return;
+  const orig = img.dataset.orig;
+  if (orig && img.getAttribute('src') !== orig) img.src = orig;
+  else hero.style.display = 'none';
+}, true);
 
 function openRouteModal(id) {
   const r = routes.get(id);

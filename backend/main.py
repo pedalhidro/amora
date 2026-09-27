@@ -25,7 +25,8 @@ Rotas:
   GET  /photos/<path>             do store (redirect p/ URL pública em GCS,
                                   stream local em modo local)
   GET  /clips/<path>              idem (vídeo/áudio/thumb)
-  GET  /tour_assets/<path>        idem (arte de anúncio de passeios)
+  GET  /tour_assets/<path>        idem (arte de anúncio de passeios; as variantes
+                                  announcement.{web,thumb}.jpg nascem no 1º pedido)
   GET  /<path>                    estáticos de web/ (app.js, shapes.ttl, …)
   POST /upload-image              multipart com `ttl` + variantes
   POST /upload-video              multipart com `ttl` + audio/vídeo/thumb
@@ -2956,11 +2957,331 @@ def get_data_ttl(filename):
                                           "X-Robots-Tag": "noindex"}))
 
 
+# ── Arte do anúncio: variantes leves (tour_assets) ────────────────────────
+# O /upload-tour grava a arte como veio (os pôsteres recentes são PNGs
+# 1080×1350 de 3–4 MB; um tem 9,7 MB) e todo mundo que só a EXIBE baixava o
+# original: 3,7 MB a cada abertura do passeio do dia no 4G, ~45 MB de artes
+# cheias pra tiles de 56 px no cartão de uma pessoa em /pessoas. Duas
+# derivadas JPEG moram AO LADO do original, no mesmo diretório do store:
+#   announcement.web.jpg    lado maior ≤ 1350 px (~300 KB): hero do modal do
+#                           passeio, Memória, <article> e og:image do SSR
+#   announcement.thumb.jpg  lado menor 256 px, maior ≤ 512 (~25 KB): tiles
+# Nascem no /upload-tour (dos bytes do upload) e, pras artes que já existiam,
+# no PRIMEIRO pedido da variante — a fonte é o original que o schema:image do
+# catálogo aponta naquele diretório (que nem sempre é o slug do passeio: os
+# migrados seguem no id numérico antigo). Ficam gravadas no store: sem
+# migração manual. O original não muda: "abrir em tamanho real", JSON-LD e
+# Markdown seguem nele.
+#
+# Cache: o nome é fixo e um upload novo SOBRESCREVE as variantes (como já faz
+# com o original), então o CONTEÚDO é mutável — o objeto no bucket fica no
+# max-age padrão do GCS (1 h, revalida por ETag) e o arquivo local em 1 h. O
+# que é permanente é o MAPEAMENTO caminho → objeto, então o 302 pro bucket vai
+# com max-age de 7 dias (navegador e borda pulam o Cloud Run nas visitas
+# seguintes). Pra re-gerar à mão: re-envie a arte (apagar as variantes do
+# bucket deixaria quebrado quem tem o 302 em cache até expirar).
+_ART_WEB_MAX = 1350                    # variante web: lado maior
+_ART_THUMB_SHORT, _ART_THUMB_LONG = 256, 512   # thumb: lado menor 256, maior ≤ 512
+_ART_JPEG_Q = {"web": 82, "thumb": 80}
+_ART_SRC_EXTS = ("jpg", "jpeg", "png", "webp", "gif")   # HEIC: o Pillow sem plugin não abre
+_ART_REDIRECT_MAX_AGE = 7 * 86400
+_ART_RETRY_S = 3600                    # original que não renderiza: não re-tenta antes disso
+# Original em qualquer host (bucket, amora, localhost de dev, file:// de script
+# antigo) — casa pelo caminho.
+_ART_SRC_RE = re.compile(r"/tour_assets/([A-Za-z0-9_-]+)/announcement\.([A-Za-z0-9]+)$")
+_ART_VARIANT_RE = re.compile(r"([A-Za-z0-9_-]+)/announcement\.(web|thumb)\.jpg")
+_art_dims = {}              # dir → {"web": (w, h), "thumb": (w, h)} — width/height do SSR
+_art_failed = {}            # chave do original → time.monotonic() da última falha de render
+_art_probed = {}            # dir → início da sondagem de dimensões em voo/malograda (_art_web_dims)
+_art_src_cache = {"graph": None, "map": {}}
+_art_meta_lock = threading.Lock()      # só pros dicts acima — nunca segura outro lock
+_art_dir_locks = {}                    # dir → Lock: um render por diretório
+# Teto de decodes simultâneos: o PNG maior vira ~15 MB de RGBA e o Cloud Run
+# tem 512 MiB — um cartão de /pessoas pede ~50 thumbs de uma vez na 1ª visita.
+_art_render_sem = threading.BoundedSemaphore(2)
+
+
+def _art_variant_key(dir_, name):
+    return f"tour_assets/{dir_}/announcement.{name}.jpg"
+
+
+def _art_variant_url(img_url, name, absolute=False):
+    """URL da variante `name` (web|thumb) da arte `img_url`, servida por
+    get_tour_asset — ou None se a arte não mora em tour_assets (URL externa).
+    Relativa à raiz do host por padrão; `absolute` usa SITE_URL (og:image)."""
+    m = _ART_SRC_RE.search(img_url or "")
+    if not m or m.group(2).lower() not in _ART_SRC_EXTS:
+        return None
+    return ((SITE_URL if absolute else "/")
+            + f"tour_assets/{m.group(1)}/announcement.{name}.jpg")
+
+
+def _render_art_variants(data):
+    """{"web": (jpeg, w, h), "thumb": (jpeg, w, h)} a partir dos bytes do
+    original. Levanta em formato que o Pillow não abre (HEIC sem plugin),
+    arquivo corrompido ou animação (GIF animado não vira pôster parado)."""
+    import io
+    from PIL import Image, ImageCms, ImageOps
+    with _art_render_sem:
+        im = Image.open(io.BytesIO(data))
+        # MPO (JPEG de iPhone com o mapa de profundidade/ganho como 2º quadro)
+        # conta como "animado" pro Pillow, mas é foto parada: vale o 1º quadro.
+        if getattr(im, "is_animated", False) and im.format != "MPO":
+            raise ValueError("arte animada")
+        fmt, icc = im.format, im.info.get("icc_profile")
+        im.draft("RGB", (_ART_WEB_MAX, _ART_WEB_MAX))   # JPEG grande: decodifica já reduzido
+        im = ImageOps.exif_transpose(im)
+        if im.mode in ("RGBA", "LA", "PA") or (im.mode == "P" and "transparency" in im.info):
+            # JPEG não tem alfa: achata sobre branco (pôster; as artes de
+            # produção com canal alfa são 100% opacas).
+            rgba = im.convert("RGBA")
+            im = Image.new("RGB", rgba.size, (255, 255, 255))
+            im.paste(rgba, mask=rgba.getchannel("A"))
+        elif im.mode not in ("RGB", "CMYK", "L"):
+            im = im.convert("RGB")
+        s = min(1.0, _ART_WEB_MAX / max(im.size))
+        if s < 1:
+            im = im.resize((max(1, round(im.width * s)), max(1, round(im.height * s))),
+                           Image.LANCZOS, reducing_gap=3.0)
+        # Cores pro sRGB, sem perfil embutido (a convenção do para_srgb de
+        # scripts/ingest-drive.py): há arte exportada com perfil de MONITOR
+        # (ASUS PA279) ou Display P3 — os pixels crus sairiam com as cores
+        # erradas. Perfil que já é sRGB (11 das 100 artes): nada a converter
+        # (~60 ms por arte à toa).
+        if icc:
+            try:
+                prof = ImageCms.ImageCmsProfile(io.BytesIO(icc))
+                if not ImageCms.getProfileDescription(prof).strip().lower().startswith("srgb"):
+                    im = ImageCms.profileToProfile(
+                        im, prof, ImageCms.createProfile("sRGB"), outputMode="RGB")
+            except Exception:  # noqa: BLE001 — perfil ilegível: segue com os pixels crus
+                pass
+        if im.mode != "RGB":
+            im = im.convert("RGB")
+        w, h = im.size
+        t = min(1.0, _ART_THUMB_SHORT / min(w, h), _ART_THUMB_LONG / max(w, h))
+        thumb = (im.resize((max(1, round(w * t)), max(1, round(h * t))),
+                           Image.LANCZOS, reducing_gap=3.0) if t < 1 else im)
+        out = {}
+        for name, v in (("web", im), ("thumb", thumb)):
+            buf = io.BytesIO()
+            v.save(buf, "JPEG", quality=_ART_JPEG_Q[name], optimize=True, progressive=True)
+            out[name] = (buf.getvalue(), v.width, v.height)
+        # JPEG que já cabe e já é leve (as artes pequenas de 2024): re-encodar
+        # só engordaria — a variante web é o próprio original (o navegador
+        # aplica a orientação EXIF e o perfil de cor dele).
+        if fmt in ("JPEG", "MPO") and s >= 1 and len(data) <= len(out["web"][0]):
+            out["web"] = (data, w, h)
+        return out
+
+
+def _art_dir_lock(dir_):
+    with _art_meta_lock:
+        return _art_dir_locks.setdefault(dir_, threading.Lock())
+
+
+def _store_art_variants(dir_, out):
+    """Grava as variantes já renderizadas (saída de _render_art_variants) de
+    `dir_`. Levanta se a gravação falhar. Quem chama segura o
+    _art_dir_lock(dir_)."""
+    for name, (jpg, _w, _h) in out.items():
+        STORE.write_bytes(_art_variant_key(dir_, name), jpg, content_type="image/jpeg")
+    with _art_meta_lock:
+        _art_dims[dir_] = {name: (w, h) for name, (_jpg, w, h) in out.items()}
+
+
+def _drop_art_variants(dir_):
+    """Apaga as variantes de `dir_` (best-effort): o próximo pedido re-deriva
+    do original que o catálogo aponta. Quem chama segura o _art_dir_lock."""
+    for name in ("web", "thumb"):
+        try:
+            STORE.delete(_art_variant_key(dir_, name))
+        except Exception as e:  # noqa: BLE001
+            print(f"[tour-art] aviso apagando {_art_variant_key(dir_, name)}: {e}")
+    with _art_meta_lock:
+        _art_dims.pop(dir_, None)
+
+
+def _store_uploaded_art_variants(dir_, src_key, out):
+    """/upload-tour: grava as variantes pré-renderizadas da arte nova — ou, se
+    ela não renderizou (`out` None: HEIC, corrompida, animada), apaga as da
+    arte ANTERIOR do diretório, que mostrariam o pôster velho (a rota cai no
+    original). Best-effort: não derruba o save; o 1º pedido re-tenta."""
+    with _art_dir_lock(dir_):
+        if out is None:
+            _drop_art_variants(dir_)
+            with _art_meta_lock:
+                _art_failed[src_key] = time.monotonic()
+            return
+        try:
+            _store_art_variants(dir_, out)
+            with _art_meta_lock:
+                _art_failed.pop(src_key, None)
+        except Exception as e:  # noqa: BLE001
+            print(f"[tour-art] gravando variantes de {src_key}: {e}")
+            _drop_art_variants(dir_)     # meia gravação = uma variante do pôster velho
+
+
+def _art_sources():
+    """dir → chave do original no store, pra cada schema:image do catálogo que
+    aponta pra tour_assets/<dir>/announcement.<ext>. Só arte do catálogo vira
+    variante (a rota não é um redimensionador genérico). Cacheado pelo grafo
+    de passeios — ele mesmo cacheado pelo digest do tours.ttl."""
+    from rdflib import URIRef
+    g = _tours_graph()
+    with _art_meta_lock:
+        if _art_src_cache["graph"] is g:
+            return _art_src_cache["map"]
+    m = {}
+    for p in (URIRef(SCHEMA_NS + "image"), URIRef("http://schema.org/image")):
+        for img in g.objects(None, p):
+            mm = _ART_SRC_RE.search(str(img))
+            if mm and mm.group(2).lower() in _ART_SRC_EXTS:
+                m[mm.group(1)] = f"tour_assets/{mm.group(1)}/announcement.{mm.group(2)}"
+    with _art_meta_lock:
+        _art_src_cache.update(graph=g, map=m)
+    return m
+
+
+def _ensure_art_variant(dir_, name):
+    """True: a variante `name` de `dir_` está no store (gerada agora se
+    faltava — as duas de uma vez, o decode do original é o caro). False: há
+    arte no catálogo, mas ela não deriva (formato que o Pillow não abre,
+    arquivo corrompido) — quem chama cai no original. None: nenhuma arte do
+    catálogo mora nesse diretório, ou o original sumiu do store."""
+    key = _art_variant_key(dir_, name)
+    if STORE.exists(key):
+        return True
+    # A fonte ANTES do lock do diretório: o /upload-tour pega esse lock
+    # segurando o _state_lock, e _art_sources não pode esperar por ninguém
+    # com ele na mão (ordem dos locks).
+    src = _art_sources().get(dir_)
+    if not src:
+        return None
+
+    def failed_recently():
+        with _art_meta_lock:
+            t = _art_failed.get(src)
+        return t is not None and time.monotonic() - t < _ART_RETRY_S
+
+    if failed_recently():
+        return False
+    with _art_dir_lock(dir_):
+        if STORE.exists(key):            # outra thread (ou o upload) acabou de gravar
+            return True
+        if failed_recently():            # falhou enquanto esperávamos o lock
+            return False
+        data = STORE.read_bytes(src)
+        if not data:
+            return None
+        try:
+            out = _render_art_variants(data)
+        except Exception as e:  # noqa: BLE001 — formato/arquivo: não adianta re-tentar já
+            print(f"[tour-art] {src} não deriva variantes: {e}")
+            with _art_meta_lock:
+                _art_failed[src] = time.monotonic()
+            return False
+        try:
+            _store_art_variants(dir_, out)
+        except Exception as e:  # noqa: BLE001 — store: transitório, o próximo pedido re-tenta
+            print(f"[tour-art] gravando variantes de {src}: {e}")
+            return False
+    print(f"[tour-art] variantes geradas: {dir_} ({src})")
+    return True
+
+
+def _art_web_dims(img_url):
+    """(w, h) da variante web da arte, se já conhecidos neste processo — pro
+    width/height do <img> e o og:image:width/height do SSR. Desconhecidos:
+    devolve None e, numa thread, garante a variante e lê as dimensões (o
+    próximo SSR já sai completo). Nunca bloqueia o request."""
+    m = _ART_SRC_RE.search(img_url or "")
+    if not m or m.group(2).lower() not in _ART_SRC_EXTS:
+        return None
+    dir_ = m.group(1)
+    with _art_meta_lock:
+        dims = _art_dims.get(dir_, {}).get("web")
+        if dims:
+            return dims
+        t = _art_probed.get(dir_)
+        if t is not None and time.monotonic() - t < _ART_RETRY_S:
+            return None                  # sondagem em voo, ou sem variante há pouco
+        _art_probed[dir_] = time.monotonic()
+
+    def _probe():
+        import io
+        try:
+            if _ensure_art_variant(dir_, "web") is not True:
+                return                   # fica marcada: não re-sonda antes de _ART_RETRY_S
+            with _art_meta_lock:
+                known = "web" in _art_dims.get(dir_, {})
+            if not known:
+                data = STORE.read_bytes(_art_variant_key(dir_, "web"))
+                if data:
+                    from PIL import Image
+                    size = Image.open(io.BytesIO(data)).size   # só o cabeçalho
+                    with _art_meta_lock:
+                        _art_dims.setdefault(dir_, {})["web"] = size
+            with _art_meta_lock:
+                _art_probed.pop(dir_, None)
+        except Exception as e:  # noqa: BLE001
+            print(f"[tour-art] dimensões de {dir_}: {e}")
+    threading.Thread(target=_probe, name=f"tour-art-{dir_}", daemon=True).start()
+    return None
+
+
+def _art_img_html(img_url, alt):
+    """<img> da arte no HTML do SSR: a variante web (URL externa: a própria),
+    lazy/async, com width/height quando já conhecidos (sem salto de layout)."""
+    from html import escape as h
+    src = _art_variant_url(img_url, "web") or img_url
+    dims = _art_web_dims(img_url) if src != img_url else None
+    wh = f' width="{dims[0]}" height="{dims[1]}"' if dims else ""
+    return (f'<img src="{h(src)}" alt="{h(alt)}" loading="lazy" '
+            f'decoding="async"{wh}/>')
+
+
+def _serve_art_variant(dir_, name):
+    """GET /tour_assets/<dir>/announcement.<web|thumb>.jpg — ver o bloco acima."""
+    try:
+        ok = _ensure_art_variant(dir_, name)
+    except Exception:  # noqa: BLE001 — store/catálogo fora do ar: tenta o original
+        app.logger.exception("[tour-art] variante %s/%s", dir_, name)
+        ok = False
+    if ok is None:
+        abort(404)
+    if ok is False:
+        # Sem variante possível: o original, sem cache (um render que passe a
+        # funcionar — Pillow novo, arte re-enviada — vale no pedido seguinte).
+        try:
+            src = _art_sources().get(dir_)
+        except Exception:  # noqa: BLE001
+            src = None
+        if not src:
+            abort(404)
+        resp = redirect(STORE.public_url(src) or f"/{src}", code=302)
+        resp.headers["Cache-Control"] = "no-store"
+        return resp
+    key = _art_variant_key(dir_, name)
+    url = STORE.public_url(key)
+    if url:
+        resp = redirect(url, code=302)
+        resp.headers["Cache-Control"] = f"public, max-age={_ART_REDIRECT_MAX_AGE}"
+        return resp
+    resp = send_from_directory(WEB / "tour_assets", f"{dir_}/announcement.{name}.jpg")
+    resp.headers["Cache-Control"] = "public, max-age=3600"
+    return resp
+
+
 @app.get("/tour_assets/<path:p>")
 def get_tour_asset(p):
     """Imagens de anúncio + qualquer arquivo associado a um tour. Mesma
     lógica de /photos: redireciona pra GCS público quando o store tiver
-    URL, stream local caso contrário."""
+    URL, stream local caso contrário. announcement.<web|thumb>.jpg são as
+    variantes leves da arte (geradas no 1º pedido — ver _serve_art_variant)."""
+    m = _ART_VARIANT_RE.fullmatch(p)
+    if m:
+        return _serve_art_variant(m.group(1), m.group(2))
     key = f"tour_assets/{p}"
     url = STORE.public_url(key)
     if url:
@@ -4112,7 +4433,9 @@ def _render_tour_index(tour_id):
     meta_bits.append("Pedal Hidrográfico")
     a.append('  <p class="tour-article-meta">' + " · ".join(meta_bits) + "</p>")
     if img_url:
-        a.append(f'  <figure><img src="{h(img_url)}" alt="{h(title)}"/></figure>')
+        # Variante web da arte (~300 KB; o original chega a 3–10 MB), lazy:
+        # com JS o app tira o <article> e mostra a mesma variante no modal.
+        a.append(f"  <figure>{_art_img_html(img_url, title)}</figure>")
     for para in re.split(r"\r?\n+", narrative):
         if para.strip():
             a.append(f"  <p>{h(para.strip())}</p>")
@@ -4196,12 +4519,24 @@ def _render_tour_index(tour_id):
     html_text = attr(r'(<meta property="og:url" content=")[^"]*(")',
                      h(page_url), html_text)
     if img_url:
+        # og:image = a variante web: o preview do WhatsApp/redes não baixa
+        # mais um PNG de 3–10 MB (a variante nasce no 1º pedido do crawler).
+        og_img = _art_variant_url(img_url, "web", absolute=True)
         html_text = attr(r'(<meta property="og:image" content=")[^"]*(")',
-                         h(img_url), html_text)
-        # As dimensões fixas são do ícone 512×512 — não valem pra arte.
-        html_text = re.sub(
-            r'\s*<meta property="og:image:(?:width|height)" content="[^"]*" />',
-            "", html_text)
+                         h(og_img or img_url), html_text)
+        dims = _art_web_dims(img_url) if og_img else None
+        if dims:
+            # As da variante, quando este processo já as conhece — o crawler
+            # monta o card sem esperar a imagem.
+            html_text = attr(r'(<meta property="og:image:width" content=")[^"]*(")',
+                             str(dims[0]), html_text)
+            html_text = attr(r'(<meta property="og:image:height" content=")[^"]*(")',
+                             str(dims[1]), html_text)
+        else:
+            # As dimensões fixas são do ícone 512×512 — não valem pra arte.
+            html_text = re.sub(
+                r'\s*<meta property="og:image:(?:width|height)" content="[^"]*" />',
+                "", html_text)
     html_text = html_text.replace("</head>", "    " + jsonld_tag + "\n  </head>", 1)
     html_text = html_text.replace("</body>", article + "\n</body>", 1)
     return html_text
@@ -5658,7 +5993,8 @@ def upload_tour():
 
     Opcionalmente, `announcement` (file): salvo em
     `tour_assets/<tour_id>/announcement.<ext>` no store e injetado como
-    `schema:image <URL>` no TTL antes de persistir.
+    `schema:image <URL>` no TTL antes de persistir — com as variantes leves
+    `announcement.{web,thumb}.jpg` ao lado (ver _render_art_variants).
 
     Depois de persistir, sincroniza routes.json: se o tour tem `ph:linkRoute`
     → RideWithGPS, busca a geometria e faz upsert da rota; senão remove a
@@ -5679,6 +6015,19 @@ def upload_tour():
     mode = (request.form.get("mode") or "replace").strip().lower()
     if mode not in ("replace", "patch"):
         return jsonify(error=f"mode inválido: {mode!r} (replace|patch)"), 400
+
+    # Variantes leves da arte (ver _render_art_variants): o render — CPU,
+    # dezenas a centenas de ms — roda aqui, FORA do _state_lock; lá dentro só
+    # a gravação, junto com a do original.
+    ann_file = request.files.get("announcement")
+    ann_bytes = ann_file.read() if ann_file and ann_file.filename else None
+    ann_variants = None
+    if ann_bytes:
+        try:
+            ann_variants = _render_art_variants(ann_bytes)
+        except Exception as e:  # noqa: BLE001 — HEIC/corrompida/animada: só o original
+            print(f"[upload-tour] arte sem variantes leves: {e}")
+    art_variants_written = False
 
     # Seção crítica: validação + announcement + escrita do tours.ttl, tudo
     # serializado. O fetch da rota acontece depois, sem o lock. O patch é
@@ -5730,7 +6079,7 @@ def upload_tour():
                 "heic": "image/heic", "heif": "image/heif",
             }.get(ext, "application/octet-stream")
             try:
-                STORE.write_bytes(key, f.read(), content_type=ct)
+                STORE.write_bytes(key, ann_bytes or b"", content_type=ct)   # lido antes do lock
             except Exception as e:  # noqa: BLE001
                 return jsonify(
                     error=f"persistência announcement: {e}", tour_id=tour_id,
@@ -5760,9 +6109,14 @@ def upload_tour():
             from rdflib import Graph as _RdfGraph, URIRef as _URIRef
             _tour_uri = _URIRef(PAS_NS + tour_id)
             _img_preds = (_URIRef("https://schema.org/image"), _URIRef("http://schema.org/image"))
+            _overwrote_image = False
             try:
                 _g = _RdfGraph().parse(data=ttl_text, format="turtle")
                 _has_image = any((_tour_uri, p, None) in _g for p in _img_preds)
+                # schema:image mantido pelo cliente que aponta pra ESTA chave:
+                # o upload acabou de sobrescrever a arte do catálogo.
+                _overwrote_image = any(str(o).endswith("/" + key)
+                                       for p in _img_preds for o in _g.objects(_tour_uri, p))
             except Exception:  # noqa: BLE001
                 _has_image = "schema:image" in ttl_text  # fallback conservador
             if not _has_image:
@@ -5775,6 +6129,12 @@ def upload_tour():
                     f"<{announcement_url}> .\n"
                 )
                 ttl_text = ttl_text + inject
+            if not _has_image or _overwrote_image:
+                # A arte do catálogo passa a ser esta: as variantes vão pro
+                # store ANTES do upsert — o catálogo nunca aponta pra arte
+                # nova com as variantes da anterior no lugar.
+                _store_uploaded_art_variants(tour_id, key, ann_variants)
+                art_variants_written = True
 
         try:
             upsert_tour_in_tours_ttl(ttl_text, tour_id)
@@ -5788,6 +6148,11 @@ def upload_tour():
                 except Exception as e2:  # noqa: BLE001
                     traceback.print_exc()   # o 500 devolve só str(e); o stack só existe aqui
                     print(f"[upload-tour] aviso limpando anúncio órfão de {tour_id}: {e2}")
+                if art_variants_written:
+                    # Retratam o upload que não entrou: o próximo pedido
+                    # re-deriva do original que o catálogo segue apontando.
+                    with _art_dir_lock(tour_id):
+                        _drop_art_variants(tour_id)
             return jsonify(
                 error=f"persistência ttl: {e}", tour_id=tour_id,
             ), 500
