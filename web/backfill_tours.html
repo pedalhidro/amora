@@ -8,6 +8,8 @@
 <link rel="stylesheet" href="./fonts/fonts.css">
 <style>
   body { font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace; max-width: 1100px; margin: 1.5rem auto; padding: 0 1rem; color: #222; }
+  /* Aberto dentro do sheet do Censo: rolar até a borda não encadeia no app. */
+  html, body { overscroll-behavior: contain; }
   h1 { font-size: 1.4rem; margin: 0 0 .25rem; }
   p.lede { color: #666; margin: 0 0 1rem; font-size: .9rem; }
   code { background: #eee; padding: 0 .25rem; border-radius: 2px; font-size: .9em; }
@@ -21,7 +23,7 @@
   #chips label {
     display: inline-flex; align-items: center; gap: .3rem;
     border: 1px solid #ccc; border-radius: 999px; padding: .15rem .6rem;
-    font-size: .8rem; cursor: pointer; user-select: none; background: #f8f8f8;
+    font-size: .8rem; cursor: pointer; -webkit-user-select: none; user-select: none; background: #f8f8f8;
   }
   #chips label:has(input:checked) { background: #e6f0fa; border-color: #69c; }
   #toolbar .spacer { flex: 1; }
@@ -42,6 +44,9 @@
 
   .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem .8rem; }
   .grid .full { grid-column: 1 / -1; }
+  /* min-width 0: sem isto o link da arte (nowrap) ditava a largura da coluna
+     e a página ia a ~690 px num celular de 390 (e a data sobrava com 24 px). */
+  .grid > .field { min-width: 0; }
   .field label { display: block; font-size: .75rem; color: #555; margin-bottom: .15rem; }
   .field input[type="text"], .field input[type="number"], .field textarea, .field input[type="file"] {
     width: 100%; padding: .35rem; box-sizing: border-box; font-size: .9rem; font-family: inherit;
@@ -53,10 +58,19 @@
      RENDERIZADO — showPicker() recusa display:none). Igual ao upload_tour.html. */
   .field .dt-field { display: flex; gap: .3rem; align-items: stretch; position: relative; }
   .field .dt-field input[type="text"] { flex: 1; min-width: 0; }
+  .field .dt-field .pick-wrap { position: relative; display: flex; flex: 0 0 auto; }
   .field .dt-field button.pick { padding: 0 .45rem; font-size: .95rem; line-height: 1; flex: 0 0 auto; }
   .field .dt-field input[type="datetime-local"] {
     position: absolute; left: 0; bottom: 0; width: 1px; height: 1px;
     opacity: 0; pointer-events: none; border: 0; padding: 0; margin: 0;
+  }
+  /* Toque (e todo iOS, onde showPicker() não abre nada): o datetime-local
+     REAL, transparente, cobre o 📅 e recebe o toque — a roda nativa abre sem
+     depender de JS. Igual ao upload_tour.html. */
+  .field .dt-field.dt-overlay .pick-wrap input[type="datetime-local"] {
+    left: 0; top: 0; right: 0; bottom: 0; width: 100%; height: 100%;
+    pointer-events: auto; cursor: pointer; font-size: 16px;
+    -webkit-appearance: none; appearance: none; background: transparent; color: transparent;
   }
   .field .img-current { font-size: .75rem; color: #666; display: block; margin-bottom: .2rem;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -69,7 +83,21 @@
   pre.ttl { background: #f4f4f4; padding: .6rem; overflow-x: auto; font-size: .75rem;
     border-radius: 4px; white-space: pre-wrap; word-break: break-word; margin: .5rem 0 0; }
 
-  @media (max-width: 720px) { .grid { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 720px) {
+    .grid { grid-template-columns: 1fr 1fr; }
+    /* Grudada no topo, a barra (chips + botões) cobria ~40% da tela. */
+    #toolbar { position: static; }
+  }
+  @media (max-width: 600px) { .grid { grid-template-columns: 1fr; } }
+  /* Toque: campos de 16 px (menos que isso o iOS dá zoom ao focar e não
+     volta) e alvos de 44 px. */
+  @media (pointer: coarse) {
+    input, select, textarea { font-size: 16px !important; }
+    .field .dt-field button.pick { min-width: 44px; min-height: 44px; }
+    button { min-height: 44px; }
+    button.mini { font-size: .8rem; padding: .4rem .7rem; }
+    #chips label { padding: .45rem .8rem; }
+  }
 </style>
 </head>
 <body>
@@ -135,14 +163,16 @@ const PREFIXES = `\
 @prefix xsd:     <http://www.w3.org/2001/XMLSchema#> .
 `;
 
+// Literal de UMA linha, narrativa inclusa: o multipart/form-data converte toda
+// quebra CRUA de um campo de texto em CRLF (o spec manda) — num """longo""" o
+// \r entrava na descrição gravada. Escapada, a quebra chega como \n.
 function turtleEscape(s) {
   return (s || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"')
     .replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t');
 }
-function turtleEscapeMultiline(s) {
-  return (s || '').replace(/\\/g, '\\\\').replace(/\r/g, '\\r')
-    .replace(/"""/g, '\\"\\"\\"').replace(/"+$/, m => m.replace(/"/g, '\\"'));
-}
+// Quebras de linha como o <textarea> as devolve (LF): uma descrição gravada
+// com CRLF parecia "editada" e inflava o "Salvar todos (N)".
+const normNewlines = (s) => String(s ?? '').replace(/\r\n?/g, '\n');
 function fmtDateTime(value) {
   const v = value.trim().replace(' ', 'T');
   if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(v)) {
@@ -181,7 +211,8 @@ function extractTour(own, subjBy) {
     else if (p === DCT + 'date') date = q.object.value;
     const key = PRED_TO_FIELD[p];
     if (!key || fields[key].orig) continue;
-    if (key === 'desc' || key === 'image') fields[key].orig = q.object.value;
+    if (key === 'desc') fields[key].orig = normNewlines(q.object.value);
+    else if (key === 'image') fields[key].orig = q.object.value;
     else if (key === 'departed' || key === 'arrived')
       fields[key].orig = q.object.value.slice(0, 16).replace('T', ' ');
     else if (key === 'moving') fields[key].orig = durToDisplay(q.object.value);
@@ -229,7 +260,7 @@ function buildTourPatch(id, tour, cur) {
     emit(v);
   }
   handle('desc', v =>
-    newProps.push(`dcterms:description """${turtleEscapeMultiline(v)}"""@pt`));
+    newProps.push(`dcterms:description "${turtleEscape(normNewlines(v))}"@pt`));
   handle('departed', v =>
     newProps.push(`ph:departedAt "${fmtDateTime(v)}"^^xsd:dateTime`));
   handle('arrived', v =>
@@ -263,6 +294,11 @@ function buildTourPatch(id, tour, cur) {
 // ═══════════════════════ [/pure] ══════════════════════════════════════════
 
 const $ = (sel, root = document) => root.querySelector(sel);
+// Dentro do sheet do Censo, pinça não pode deixar o app INTEIRO com zoom (o
+// Safari ignora user-scalable=no). Standalone mantém a pinça (acessibilidade).
+if (window.self !== window.top) {
+  for (const t of ['gesturestart', 'gesturechange']) document.addEventListener(t, (e) => e.preventDefault(), { passive: false });
+}
 function escapeHtml(s) {
   return String(s ?? '').replace(/[&<>"']/g, c => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
@@ -317,14 +353,25 @@ function currentValues(t) {
 }
 
 // ───────────────────────── Render ─────────────────────────────────────────
+// iOS/iPadOS: showPicker() existe mas não abre nada em input de data/hora
+// (WebKit bug 261703) nem lança — o 📅 ficava morto. iPadOS se diz Mac.
+const IS_IOS = /iP(hone|ad|od)/.test(navigator.userAgent)
+  || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+// Toque (ou iOS): o picker real, transparente, fica POR CIMA do 📅 (.dt-overlay).
+const DT_OVERLAY = IS_IOS || !!window.matchMedia?.('(pointer: coarse)').matches;
+
 // Picker nativo por trás do campo de texto 24h (o texto segue canônico — o
 // datetime-local cru renderiza mm/dd/yyyy + AM/PM em locale en-US). O 📅 abre
-// o picker escondido e copia a escolha pro texto, disparando `input` pra
-// manter o dirty-tracking do card. `seedFrom()` dá o valor inicial quando o
-// campo está vazio (ex.: Chegou em abre no dia do Partiu em).
+// o picker e copia a escolha pro texto, disparando `input` pra manter o
+// dirty-tracking do card. `seedFrom()` dá o valor inicial quando o campo está
+// vazio (ex.: Chegou em abre no dia do Partiu em).
 function attachDateTimePicker(input, seedFrom) {
+  // Texto livre sem autocorreção (a data é AAAA-MM-DD HH:MM).
+  input.setAttribute('autocapitalize', 'off');
+  input.setAttribute('autocorrect', 'off');
+  input.spellcheck = false;
   const wrap = document.createElement('div');
-  wrap.className = 'dt-field';
+  wrap.className = 'dt-field' + (DT_OVERLAY ? ' dt-overlay' : '');
   input.parentNode.insertBefore(wrap, input);
   wrap.appendChild(input);
   const picker = document.createElement('input');
@@ -337,15 +384,23 @@ function attachDateTimePicker(input, seedFrom) {
   btn.textContent = '📅';
   btn.title = 'Escolher data e hora no calendário';
   btn.setAttribute('aria-label', 'Escolher data e hora');
-  wrap.append(btn, picker);
+  const pickWrap = document.createElement('span');
+  pickWrap.className = 'pick-wrap';
+  pickWrap.append(btn, picker);
+  wrap.append(pickWrap);
   const toPicker = (txt) => {
     const v = (txt || '').trim().replace(' ', 'T');
     return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(v) ? v.slice(0, 16) : '';
   };
+  const seed = () => { picker.value = toPicker(input.value) || toPicker(seedFrom?.()) || ''; };
+  // Sobreposto, o toque cai direto no picker: semeia antes de a roda abrir.
+  picker.addEventListener('pointerdown', seed);
+  picker.addEventListener('focus', seed);
   btn.addEventListener('click', () => {
-    picker.value = toPicker(input.value) || toPicker(seedFrom?.()) || '';
+    seed();
+    // No iOS quem abre a roda é o foco (dentro do gesto), não o showPicker().
     try {
-      if (typeof picker.showPicker === 'function') picker.showPicker();
+      if (!IS_IOS && typeof picker.showPicker === 'function') picker.showPicker();
       else { picker.focus(); picker.click(); }
     } catch (_) { picker.focus(); picker.click(); }
   });
@@ -515,6 +570,8 @@ async function saveTour(t) {
   }
   t.saveBtn.disabled = true;
   setStatus(t, 'Salvando…', 'warn');
+  _savingN++;
+  postFormState();
   try {
     const fd = new FormData();
     fd.append('ttl', patch.ttl);
@@ -554,12 +611,16 @@ async function saveTour(t) {
     setStatus(t, `✗ rede: ${e.message}`, 'err');
     t.saveBtn.disabled = false;
     return false;
+  } finally {
+    _savingN--;
+    postFormState();
   }
 }
 
 // ───────────────────────── Toolbar / filtros ──────────────────────────────
 function refreshToolbar() {
   const dirtyN = tours.filter(isDirty).length;
+  postFormState();
   const btn = $('#save-all');
   btn.textContent = `Salvar todos (${dirtyN})`;
   btn.disabled = dirtyN === 0;
@@ -595,23 +656,57 @@ function buildChips() {
     chips.appendChild(lab);
   }
   $('#show-all').addEventListener('change', applyFilter);
-  $('#reload').addEventListener('click', () => location.reload());
+  $('#reload').addEventListener('click', () => {
+    const n = tours.filter(isDirty).length;
+    if (n && !confirm(`${n} passeio(s) com alterações não salvas — recarregar descarta tudo. Recarregar mesmo assim?`)) return;
+    location.reload();
+  });
   $('#save-all').addEventListener('click', async () => {
     const btn = $('#save-all');
     btn.disabled = true;
     const dirty = tours.filter(isDirty);
     let okN = 0, failN = 0;
+    _savingN++;   // o lote inteiro conta como "salvando" (sem piscar entre um e outro)
     // Sequencial de propósito: o backend serializa as mutações com um lock
     // global, e cada save pode disparar um fetch no RideWithGPS.
-    for (let i = 0; i < dirty.length; i++) {
-      btn.textContent = `Salvando ${i + 1}/${dirty.length}…`;
-      (await saveTour(dirty[i])) ? okN++ : failN++;
+    try {
+      for (let i = 0; i < dirty.length; i++) {
+        btn.textContent = `Salvando ${i + 1}/${dirty.length}…`;
+        (await saveTour(dirty[i])) ? okN++ : failN++;
+      }
+    } finally {
+      _savingN--;
     }
+    // refreshToolbar() reescreve o #stats — o resumo do lote vem DEPOIS (antes
+    // ele era sobrescrito na hora e ninguém via quantos falharam).
+    refreshToolbar();
     $('#stats').textContent = `Salvamento em massa: ${okN} ok` +
       (failN ? `, ${failN} com erro (veja os cards)` : '') + '.';
-    refreshToolbar();
   });
 }
+
+// ── Estado pro app-pai (contrato `phidro-form-state`) ─────────────────────
+// Aberto dentro do sheet do Censo (o ✗ da Captura navega o iframe pra cá),
+// o app pergunta antes de fechar/reapontar o iframe com card não salvo ou
+// com salvamento em curso. Standalone não posta nada.
+let _savingN = 0, _lastFormState = '';
+function postFormState() {
+  if (window.parent === window) return;
+  const n = tours.filter(isDirty).length;
+  const busy = _savingN > 0, dirty = n > 0;
+  const label = busy ? 'passeios ainda sendo salvos'
+    : (dirty ? `${n} passeio${n > 1 ? 's' : ''} com alterações não salvas` : '');
+  const k = `${busy}|${dirty}|${label}`;
+  if (k === _lastFormState) return;
+  _lastFormState = k;
+  try { window.parent.postMessage({ type: 'phidro-form-state', busy, dirty, label }, location.origin); } catch (_) {}
+}
+addEventListener('pagehide', () => {
+  _lastFormState = '';
+  if (window.parent !== window) {
+    try { window.parent.postMessage({ type: 'phidro-form-state', busy: false, dirty: false, label: '' }, location.origin); } catch (_) {}
+  }
+});
 
 // ───────────────────────── Boot ───────────────────────────────────────────
 try {
