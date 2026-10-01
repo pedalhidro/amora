@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacidade — amora · Pedal Hidrográfico</title>
+<meta name="description" content="Que dados o amora (site e app do Pedal Hidrográfico) coleta, o que fica público, por quanto tempo e como pedir remoção.">
+<link rel="stylesheet" href="./fonts/fonts.css">
+<style>
+  /* Política de privacidade: a URL que as lojas (App Store / Google Play)
+     exigem. Página estática, sem script — legível em qualquer navegador e
+     sem depender do app. Mesmo estilo do custos.html. */
+  :root {
+    --bg: #fafbfc;
+    --panel: #ffffff;
+    --text: #101820;
+    --muted: #4a5867;
+    --accent: #c2410c;
+    --accent-hover: #9a3412;
+    --border: #c6ced6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #11161b; --panel: #182028; --text: #e6ebf0; --muted: #a3b0bd;
+      --accent: #f0864a; --accent-hover: #f6a676; --border: #2e3a46;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.6 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace; }
+  body { padding: 16px; max-width: 760px; margin: 0 auto; }
+  header { margin: 8px 0 20px; }
+  header h1 { margin: 0 0 4px; font-size: 22px; }
+  header .sub { color: var(--muted); font-size: 13px; }
+  h2 { font-size: 17px; margin: 28px 0 8px; }
+  a { color: var(--accent); }
+  a:hover { color: var(--accent-hover); }
+  .resumo { background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px 16px; }
+  .resumo ul { margin: 0; padding-left: 20px; }
+  li { margin: 4px 0; }
+  footer { margin: 36px 0 16px; color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Privacidade no amora</h1>
+  <div class="sub">Site <a href="https://amora.pedalhidrografi.co/">amora.pedalhidrografi.co</a> e app “Amora” (Android e iOS) do Pedal Hidrográfico · atualizada em 1º de outubro de 2026</div>
+</header>
+
+<section class="resumo" aria-label="Resumo">
+  <ul>
+    <li><strong>Sem conta, sem anúncios, sem rastreadores.</strong> O amora não usa ferramentas de análise nem vende ou compartilha dados para publicidade.</li>
+    <li><strong>O que você envia vira acervo público.</strong> Fotos e vídeos enviados são publicados abertamente (licença CC BY-SA 4.0), com data, local e autoria — inclusive o arquivo original, com seus metadados.</li>
+    <li><strong>Localização ao vivo é opcional e passageira.</strong> Fica desligada até você ligar, é vista por quem abrir o mapa e some do servidor no prazo que você escolhe (no máximo 24 horas).</li>
+  </ul>
+</section>
+
+<h2>Quem é responsável</h2>
+<p>O amora é software livre mantido por pessoas voluntárias do <strong>Pedal Hidrográfico</strong>, coletivo de ciclismo urbano de São Paulo, sem fins lucrativos e sem personalidade jurídica. Responsável pelo tratamento de dados: [[NOME DA PESSOA RESPONSÁVEL]]. Contato: <a href="mailto:[[EMAIL DE CONTATO]]">[[EMAIL DE CONTATO]]</a>.</p>
+
+<h2>Fotos e vídeos que você envia</h2>
+<p>Quando você envia uma imagem ou vídeo (pelo site ou pelo app), ela entra no acervo do coletivo e fica <strong>pública</strong>: aparece no mapa, na galeria e nos dados abertos do acervo, sob a licença <a href="https://creativecommons.org/licenses/by-sa/4.0/deed.pt-br">CC BY-SA 4.0</a>. Junto com ela ficam públicos:</p>
+<ul>
+  <li>a data e a hora em que foi feita e o <strong>local</strong> (as coordenadas de GPS gravadas no arquivo, ou a localização do aparelho, se você tocar em “Usar minha localização atual”);</li>
+  <li>o nome de autoria, se você preencher (é um campo livre — pode ser um apelido ou ficar vazio);</li>
+  <li>o passeio a que ela pertence, deduzido pela data;</li>
+  <li><strong>o arquivo original</strong>, que pode ser baixado com os metadados que vieram nele (como modelo da câmera e coordenadas). Se você não quer publicar algum desses dados, remova-os do arquivo antes de enviar.</li>
+</ul>
+<p>Os arquivos ficam no Google Cloud (região de São Paulo) e são entregues através da Cloudflare. O acervo é colaborativo e não tem login: quem usa o amora consegue editar e excluir registros. Para pedir a remoção de uma imagem — sua ou em que você aparece —, escreva para o contato acima.</p>
+<p>No app, ao escolher arquivos, o amora lê <strong>somente os arquivos que você selecionar</strong> — não tem acesso ao resto da sua galeria. Uma cópia deles fica no armazenamento do app até o envio terminar (e é apagada em no máximo 7 dias). O app usa a câmera e o microfone só quando você escolhe fotografar ou filmar para enviar.</p>
+
+<h2>Localização</h2>
+<ul>
+  <li><strong>“Mostrar minha localização” no mapa:</strong> a posição é usada só no seu aparelho, para desenhar o ponto azul. Não é enviada a ninguém.</li>
+  <li><strong>Localização ao vivo (opcional, desligada por padrão):</strong> ao ligar, o amora envia ao servidor a sua posição, a precisão e o rumo, junto com o apelido que você escolher e um identificador aleatório do aparelho. Quem abrir o mapa vê você e o seu rastro. No app, o envio continua com a tela apagada até você desligar. Esses dados ficam <strong>só na memória do servidor</strong> — não são gravados em disco nem no acervo — e são apagados no prazo de retenção que você escolhe (3 horas por padrão, no máximo 24 horas), ou antes, se o servidor reiniciar.</li>
+</ul>
+
+<h2>Notificações</h2>
+<p>No Android, o app mostra uma notificação enquanto envia arquivos em segundo plano e outra quando termina. Não há notificações de outro tipo.</p>
+
+<h2>Dados guardados no seu aparelho</h2>
+<p>Preferências (camadas ligadas, opacidade, apelido da localização ao vivo), rascunhos de traçados e formulários e a fila de envios ficam no armazenamento do navegador ou do app, no seu aparelho. Apagar os dados do site ou desinstalar o app remove tudo isso.</p>
+
+<h2>Registros técnicos</h2>
+<p>Como qualquer site, os servidores que hospedam o amora (Google Cloud e Cloudflare) registram, por segurança e funcionamento, o endereço IP, a data, a página acessada e o navegador de cada acesso. Esses registros são mantidos por tempo limitado pelos provedores e não são usados para identificar nem acompanhar ninguém.</p>
+
+<h2>Serviços de terceiros</h2>
+<p>Para desenhar o mapa e algumas funções, o seu aparelho conversa diretamente com serviços de terceiros, que recebem o seu endereço IP e a área do mapa ou a informação pedida:</p>
+<ul>
+  <li>mapas e camadas: OpenStreetMap, Esri (imagem de satélite), GeoSampa (Prefeitura de São Paulo), OpenInfraMap e Bici Busão Sampa;</li>
+  <li>busca de endereços: Photon (Komoot), que recebe o texto buscado;</li>
+  <li>roteamento no editor de traçado: OSRM (routing.openstreetmap.de), que recebe os pontos do traçado;</li>
+  <li>altitude dos pontos de um traçado (quando o relevo próprio não cobre a região): Open-Meteo, que recebe as coordenadas desses pontos;</li>
+  <li>bibliotecas de código: jsDelivr.</li>
+</ul>
+
+<h2>Seus direitos</h2>
+<p>Pela Lei Geral de Proteção de Dados (LGPD), você pode pedir acesso, correção ou exclusão dos seus dados, e informações sobre como são tratados. Escreva para <a href="mailto:[[EMAIL DE CONTATO]]">[[EMAIL DE CONTATO]]</a>.</p>
+
+<h2>Código aberto</h2>
+<p>Tudo o que está descrito aqui pode ser conferido no código-fonte, sob a licença GNU AGPL v3.0: <a href="https://github.com/pedalhidro/amora">github.com/pedalhidro/amora</a>.</p>
+
+<h2>Mudanças</h2>
+<p>Se esta política mudar, a nova versão é publicada nesta mesma página, com a data atualizada no topo.</p>
+
+<footer><a href="./">← voltar ao mapa</a></footer>
+</body>
+</html>
