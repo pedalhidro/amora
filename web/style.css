@@ -2567,6 +2567,17 @@ body.trace-preview .tp-label { display: none !important; }
 .osm-tip em { color: #97a3b1; font-style: italic; }
 .osm-tip strong { color: #fff; }
 
+/* Popup de linha/estação do metrô e trens. */
+.rail-popup { font-size: 12px; line-height: 1.4; }
+.rail-popup .rail-row { margin-top: 3px; white-space: nowrap; }
+.rail-popup .rail-chip {
+  display: inline-block; min-width: 1.6em; padding: 0 4px; margin-right: 5px;
+  border-radius: 3px; color: #fff; font-weight: 700; text-align: center;
+  text-shadow: 0 0 2px rgba(0, 0, 0, 0.6);
+}
+.rail-popup .rail-op { color: #666; }
+.rail-popup .rail-bike { margin: 6px 0 4px; color: #333; }
+
 /* Popup de feição do OpenInfraMap (clique numa linha/estação/torre). */
 .oim-popup { font-size: 12px; line-height: 1.35; }
 .oim-popup .oim-kind { color: #666; font-style: italic; }

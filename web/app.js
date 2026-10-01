@@ -242,6 +242,7 @@ const DEFAULT_LAYER_ORDER = [
   'osm-overpass',
   // OpenInfraMap — acima da hidrografia, abaixo das rotas do coletivo.
   'oim-water', 'oim-petroleum', 'oim-telecoms', 'oim-power',
+  'metro-trens',               // metrô e trens (Bici Busão Sampa), logo abaixo das rotas
   'routes',                    // linhas das rotas, no topo das camadas de mapa
   'route-highlight',           // rota destacada (1,5×), acima das rotas normais
 ];
@@ -1247,6 +1248,100 @@ enchente1929.on('add', () => {
     });
 });
 
+// ─── Metrô e trens (dados do Bici Busão Sampa) ───────────────────────────────
+// Linhas 1–15 e 17 do Metrô, ViaQuatro, ViaMobilidade, LinhaUni, CPTM e TIC
+// Trens, com as estações. NÃO há cópia no amora: os dados são lidos de
+// busao.bicisampa.info (repo danlessa/bicibusaosampa), que os regenera do OSM
+// toda semana — rail.geojson (trilhos `kind: track` por `ref` + estações
+// `kind: station` com `refs`) e rail-lines.json (nome, operadora, cor oficial,
+// modo, horários e a regra da bicicleta). CORS aberto nos dois; o status AO
+// VIVO de lá (/api/rail-status) não tem CORS, então aqui vai só a regra
+// escrita, com link pro busão. Baixados só quando a camada é ligada.
+//
+// Estações: círculo branco com anel na cor da linha (anel escuro na
+// integração entre linhas), só do zoom 12 em diante — abaixo disso viram
+// confete. Sem os símbolos do Metrô/CPTM de propósito (licença não conferida).
+// Tudo é vetor no pane da camada (gira com o mapa); a opacidade vai no pane.
+const BUSAO_BASE = 'https://busao.bicisampa.info/';
+const RAIL_STATIONS_MIN_ZOOM = 12;
+const RAIL_DEFAULT_PCT = 100;
+const railTracks = L.featureGroup();
+const railStations = L.featureGroup();
+const railLayer = L.layerGroup([railTracks], {
+  attribution: '© OpenStreetMap · linhas: <a href="https://busao.bicisampa.info/">Bici Busão Sampa</a>',
+});
+// Cor vinda de outro site entra num atributo style: só aceita hex.
+const railColor = (c) => (/^#[0-9a-f]{3,8}$/i.test(c || '') ? c : '#555');
+let _railLoad = null, _railLines = null, _railBikeSummary = '';
+
+function railLineRow(line) {
+  return `<div class="rail-row"><span class="rail-chip" style="background:${railColor(line.color)}">${escapeHtml(line.ref)}</span>`
+    + `${escapeHtml(line.name)} <span class="rail-op">· ${escapeHtml(line.operator || '')}</span></div>`;
+}
+function railPopupHtml(title, lines) {
+  return `<div class="rail-popup">${title ? `<strong>${escapeHtml(title)}</strong>` : ''}`
+    + lines.map(railLineRow).join('')
+    + (_railBikeSummary ? `<p class="rail-bike">🚲 ${escapeHtml(_railBikeSummary)}</p>` : '')
+    + '<a href="https://busao.bicisampa.info/" target="_blank" rel="noopener">bici liberada agora? busao.bicisampa.info ↗</a>'
+    + '</div>';
+}
+// Clique abre o popup — menos no editor de traçado, que é dono do clique.
+function railOnClick(layer, html) {
+  layer.on('click', (e) => {
+    if (drawingMode) return;
+    L.popup({ maxWidth: 300 }).setLatLng(e.latlng).setContent(html()).openOn(map);
+  });
+}
+function railSyncStations() {
+  const want = map.hasLayer(railLayer) && map.getZoom() >= RAIL_STATIONS_MIN_ZOOM;
+  if (want && !railLayer.hasLayer(railStations)) railLayer.addLayer(railStations);
+  else if (!want && railLayer.hasLayer(railStations)) railLayer.removeLayer(railStations);
+}
+map.on('zoomend', railSyncStations);
+
+function loadRail() {
+  if (_railLoad) return _railLoad;
+  const get = (f) => fetch(BUSAO_BASE + f).then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); });
+  _railLoad = Promise.all([get('data/rail-lines.json'), get('data/rail.geojson')]).then(([cfg, geo]) => {
+    _railLines = new Map((cfg.lines || []).map((l) => [String(l.ref), l]));
+    _railBikeSummary = cfg.bikeRules?.summary || '';
+    const pane = LAYER_PANE('metro-trens');
+    for (const f of geo.features || []) {
+      const p = f.properties || {}, g = f.geometry;
+      if (p.kind === 'track' && g) {
+        const line = _railLines.get(String(p.ref));
+        if (!line) continue;
+        const parts = g.type === 'MultiLineString' ? g.coordinates : g.type === 'LineString' ? [g.coordinates] : [];
+        const latlngs = parts.map((part) => part.map(([lon, lat]) => [lat, lon]));
+        // Contorno branco por baixo: a cor oficial some no relevo colorido sem ele.
+        L.polyline(latlngs, { pane, color: '#fff', weight: 6, opacity: 0.9, interactive: false }).addTo(railTracks);
+        const track = L.polyline(latlngs, { pane, color: railColor(line.color), weight: 3.5, opacity: 1 });
+        track.bindTooltip(escapeHtml(line.name), { sticky: true, className: 'osm-tip' });
+        railOnClick(track, () => railPopupHtml('', [line]));
+        track.addTo(railTracks);
+      } else if (p.kind === 'station' && g?.type === 'Point') {
+        const lines = (p.refs || []).map((r) => _railLines.get(String(r))).filter(Boolean);
+        const [lon, lat] = g.coordinates;
+        const ring = lines.length === 1 ? railColor(lines[0].color) : '#222';
+        const st = L.circleMarker([lat, lon], {
+          pane, radius: 5, color: ring, weight: 2.5, fillColor: '#fff', fillOpacity: 1,
+        });
+        st.bindTooltip(escapeHtml(p.name || ''), { direction: 'top', offset: [0, -6] });
+        railOnClick(st, () => railPopupHtml(p.name, lines));
+        st.addTo(railStations);
+      }
+    }
+    railSyncStations();
+  }).catch((err) => {
+    _railLoad = null;             // o próximo liga/desliga tenta de novo
+    console.warn('[metro-trens]', err);
+    showToast(`Falha ao carregar metrô e trens: ${err.message}`);
+  });
+  return _railLoad;
+}
+railLayer.on('add', () => { loadRail(); railSyncStations(); });
+map.getPane(LAYER_PANE('metro-trens')).style.opacity = String(RAIL_DEFAULT_PCT / 100);
+
 // ─── Combined layer panel ────────────────────────────────────────────────────
 // A single flat list of layers — each an independent visibility checkbox plus
 // an opacity slider. There is deliberately NO "base vs overlay" distinction:
@@ -1342,6 +1437,16 @@ const OVERLAY_LAYERS = [
   { id: 'oim-water',     label: 'Água e esgoto (OpenInfraMap)',   layer: oimWater,     defaultVisible: false, defaultPct: 100 },
   { id: 'oim-telecoms',  label: 'Telecom (OpenInfraMap)',         layer: oimTelecoms,  defaultVisible: false, defaultPct: 100 },
   { id: 'oim-petroleum', label: 'Petróleo e gás (OpenInfraMap)',  layer: oimPetroleum, defaultVisible: false, defaultPct: 100 },
+  // Metrô e trens — linhas nas cores oficiais + estações (zoom ≥ 12), lidos do
+  // busao.bicisampa.info (ver BUSAO_BASE). Opacidade no pane.
+  {
+    id: 'metro-trens',
+    label: 'Metrô e trens',
+    layer: railLayer,
+    defaultVisible: false,
+    defaultPct: RAIL_DEFAULT_PCT,
+    setOpacity: (frac) => { map.getPane(LAYER_PANE('metro-trens')).style.opacity = String(frac); },
+  },
   // Viário do OSM (todo highway=*), branco com 3 m de largura real.
   {
     id: 'osm-viario',

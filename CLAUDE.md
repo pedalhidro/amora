@@ -546,6 +546,15 @@ Key flows:
   shared LRU (`oimHitTest` → `oimPopupHtml`) and ignores clicks on
   `.leaflet-interactive`/markers/popups and while `drawingMode`. The SW caches
   the host (RUNTIME_HOSTS) — it's a volunteer project, keep it polite.
+- **Metrô e trens** (`metro-trens`): lines + stations read AT RUNTIME from
+  `busao.bicisampa.info/data/{rail.geojson,rail-lines.json}` (repo
+  `danlessa/bicibusaosampa`, regenerated weekly from OSM there; CORS open) —
+  no copy in amora, so a schema change over there breaks this layer
+  (`loadRail` reads `kind: track|station`, `ref`/`refs`, and per line
+  `ref/name/operator/color/mode` + `bikeRules.summary`). Its live status
+  (`/api/rail-status`) has NO CORS, so the popup shows only the written bike
+  rule and links to busão. Stations only at zoom ≥ 12; colours from the data
+  pass a hex-only filter (`railColor`) before going into a style attribute.
 - **Display.** `web/app.js` fetches `./data/data_graphs.ttl`, follows each
   `void:dataDump` IRI to load the constituent graphs (currently `tours.ttl`
   and `uploads.ttl`), parses them with the bundled N3.js
