@@ -3588,11 +3588,10 @@ _ROUTE_OG_KEY = "route_og/{rid}.png"
 _route_og_cache = {}            # (rid, updated) → bytes PNG
 _ROUTE_OG_CACHE_MAX = 32
 
-# FGB/GeoJSON via storage.googleapis.com, NÃO telhas.pedalhidrografi.co: a
+# FGB via storage.googleapis.com, NÃO telhas.pedalhidrografi.co: a
 # Cloudflare 403a user-agents não-browser (urllib), e do Cloud Run o GCS
-# direto é mais perto de qualquer jeito. Mesmos arquivos.
+# direto é mais perto de qualquer jeito. Mesmo arquivo.
 _OG_HIDRO_FGB = "https://storage.googleapis.com/telhas/viario/south-america-hidro.fgb"
-_OG_PH_NETWORK = "https://storage.googleapis.com/telhas/viario/ph-cycle-network.geojson"
 _OG_HIDRO_MAIN_KM2 = 150        # acima disso, só rio/canal/crista (como as miniaturas)
 _OG_HIDRO_MAX_FEATURES = 2500
 _OG_HIDRO_TIMEOUT_S = 12
@@ -3635,24 +3634,6 @@ def _og_font(size):
         f.save(buf)
         _og_ttf_bytes = buf.getvalue()
     return ImageFont.truetype(io.BytesIO(_og_ttf_bytes), size)
-
-
-_og_network_cache = None
-
-
-def _og_ph_network():
-    """Rede cicloviária do coletivo (GeoJSON minúsculo) — baixada uma vez por
-    processo. Falha não cacheia (tenta de novo no próximo render)."""
-    global _og_network_cache
-    if _og_network_cache is None:
-        try:
-            import urllib.request
-            with urllib.request.urlopen(_OG_PH_NETWORK, timeout=8) as resp:
-                _og_network_cache = json.loads(resp.read()).get("features") or []
-        except Exception as e:  # noqa: BLE001
-            print(f"[route-og] rede do coletivo indisponível: {e}")
-            return []
-    return _og_network_cache
 
 
 def _fetch_og_hidro(bb):
@@ -3758,12 +3739,11 @@ def _render_route_og(entry):
     }
     main_only = _bbox_area_km2(bb) > _OG_HIDRO_MAIN_KM2
     hidro = _fetch_og_hidro(bb) or []
-    network = [(f, ((45, 169, 255), 5, False)) for f in _og_ph_network()]
     drawn = 0
-    for feat, forced_style in [(f, None) for f in hidro] + network:
+    for feat in hidro:
         if drawn >= _OG_HIDRO_MAX_FEATURES:
             break
-        style = forced_style or _og_hidro_style(feat.get("properties") or {}, main_only)
+        style = _og_hidro_style(feat.get("properties") or {}, main_only)
         if not style:
             continue
         rgb, weight, dashed = style
@@ -3774,7 +3754,7 @@ def _render_route_og(entry):
             if not isinstance(coords, list) or len(coords) < 2:
                 continue
             ppts = [to_px(c[1], c[0]) for c in coords]   # FGB/GeoJSON: [lng,lat]
-            # Fora do canvas inteiro (rede do coletivo cobre a cidade toda) → pula.
+            # Fora do canvas inteiro → pula.
             if (max(p[0] for p in ppts) < 0 or min(p[0] for p in ppts) > w
                     or max(p[1] for p in ppts) < 0 or min(p[1] for p in ppts) > h):
                 continue

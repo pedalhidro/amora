@@ -174,8 +174,9 @@ one optional hosted deploy target, not a dependency.
   **`--layers`** emits the two MAP-LAYER FGBs that replaced Overpass —
   `south-america-hidro.fgb` (`waterway=*` + `natural=ridge` lines, with
   `tunnel`/`name`) for "Morros e Águas" and `south-america-cicloinfra.fgb`
-  for "Cicloinfra OSM" — plus the tiny `ph-cycle-network.geojson`
-  (`cycle_network=BR:PedalHidrografico` relations, fetched whole);
+  for "Cicloinfra OSM" (the collective's own cycle network —
+  `cycle_network=BR:PedalHidrografico` relations, drawn over "Morros e Águas"
+  — was DROPPED in v421: amora no longer builds, publishes or draws it);
   **`--no-viario`** skips the expensive 4.5 GB viário build and is what the
   weekly CI job runs. **The browser reads the `.fgb` from R2**, not GCS:
   `https://fabdem.pedalhidrografi.co/viario/<name>.fgb` (the cameratopo
@@ -185,8 +186,8 @@ one optional hosted deploy target, not a dependency.
   egress (22 Sep 2026: ~10 GiB in 40 min testing the viário layer). CI publishes
   to BOTH (`build-fgb.yml`: GCS, then an R2 mirror via the `R2_*` repo secrets
   — missing secrets = warning, R2 goes stale); the backend (`_OG_HIDRO_FGB`)
-  keeps reading GCS (same region, free). The small `ph-cycle-network.geojson`
-  and `sampa-viario-graph.bin` stay on telhas (Cloudflare caches them). Two gotchas baked into the script: GDAL **sanitizes
+  keeps reading GCS (same region, free). The small `sampa-viario-graph.bin`
+  stays on telhas (Cloudflare caches it). Two gotchas baked into the script: GDAL **sanitizes
   `cycleway:left` → `cycleway_left`** (that's the name in `-select`, in
   `-where`, and in `props.*` on the client), and `osmium tags-filter` is a
   UNION with no value regex — so cicloinfra pre-filters a cheap superset and

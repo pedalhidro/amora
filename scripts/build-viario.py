@@ -23,13 +23,11 @@ Pipeline (fonte = south-america-latest.osm.pbf, ~4 GB, cacheado em ignore/):
     landuse=reservoir / waterway=riverbank) e
     `south-america-water-rivers.fgb` (linhas: waterway=river);
   - `--layers`: os dois FGBs das CAMADAS DE MAPA (o que antes vinha do
-    Overpass ao vivo) + o GeoJSON da rede cicloviária do coletivo:
+    Overpass ao vivo):
     `south-america-hidro.fgb` (linhas: `waterway=*` + `natural=ridge`, com
     `tunnel`/`name` — a camada "Morros e Águas"),
     `south-america-cicloinfra.fgb` (linhas: ciclovias, caminhos compartilhados
-    e vias com ciclofaixa — a camada "Cicloinfra OSM") e
-    `ph-cycle-network.geojson` (as relations `cycle_network=BR:PedalHidrografico`,
-    minúsculo, baixado inteiro pelo cliente);
+    e vias com ciclofaixa — a camada "Cicloinfra OSM");
   - EPSG:4326 nativo do pbf — nada de reprojeção; índice espacial é o
     default do driver FlatGeobuf.
 
@@ -110,18 +108,12 @@ OUT_WATER_RIVERS = IGNORE / "south-america-water-rivers.fgb"
 # liam do Overpass ao vivo, agora assadas pro mesmo host dos outros FGBs.
 OUT_HIDRO = IGNORE / "south-america-hidro.fgb"
 OUT_CICLOINFRA = IGNORE / "south-america-cicloinfra.fgb"
-OUT_PH_NETWORK = IGNORE / "ph-cycle-network.geojson"
 
 # Valores de `cycleway[:left|:right|:both]` que contam como ciclofaixa — os
 # MESMOS do regex que a consulta Overpass usava, agora como lista SQL (o
 # -where do OGR não tem regex portátil).
 CYCLEWAY_LANE_VALUES = ("lane", "track", "opposite_lane", "opposite_track",
                         "shared_lane", "share_busway")
-
-# A rede cicloviária do coletivo no OSM: relations com esta tag. São poucas e
-# locais — viram um GeoJSON minúsculo (uma MultiLineString por relation, com
-# name/ref) que o cliente baixa INTEIRO, em vez de um FGB por range request.
-PH_CYCLE_NETWORK = "BR:PedalHidrografico"
 
 # osmconf.ini mínimo pro driver OSM do GDAL. `attributes=` é a UNIÃO do que
 # todas as saídas precisam (highway fica implícito no pré-filtro, mas entra
@@ -155,7 +147,7 @@ other_tags=no
 
 [multilinestrings]
 osm_id=no
-attributes=type,name,ref,cycle_network
+attributes=type
 other_tags=no
 
 [other_relations]
@@ -321,50 +313,6 @@ def build_cicloinfra_fgb(pbf: Path) -> None:
           "--config", "OSM_MAX_TMPFILE_SIZE", "4000"])
     ci_pbf.unlink(missing_ok=True)
     print(f"→ {OUT_CICLOINFRA.name}: {OUT_CICLOINFRA.stat().st_size / 1e6:.0f} MB")
-
-
-def build_ph_network_geojson(pbf: Path) -> None:
-    """ph-cycle-network.geojson: as relations da rede do coletivo.
-
-    Uma MultiLineString por relation (o driver OSM já costura os membros), com
-    `name`/`ref` pro tooltip. São poucas — o cliente baixa o arquivo inteiro.
-    Não é fatal se não houver nenhuma (extrato de teste, tag ainda não mapeada).
-    """
-    rel_pbf = IGNORE / (pbf.stem + "-phnet.osm.pbf")
-    _run(["osmium", "tags-filter", pbf, "-o", rel_pbf, "--overwrite",
-          f"r/cycle_network={PH_CYCLE_NETWORK}"])
-    conf = _write_osmconf()
-    OUT_PH_NETWORK.unlink(missing_ok=True)
-    try:
-        # Sem -where: o osmium já deixou só as relations certas, e um -where
-        # sobre um campo que não materializou abortaria o build à toa.
-        _run(["ogr2ogr", "-f", "GeoJSON", OUT_PH_NETWORK, rel_pbf,
-              "multilinestrings", "-oo", f"CONFIG_FILE={conf}",
-              "-select", "name,ref"])
-    except subprocess.CalledProcessError:
-        # O driver GeoJSON cria o arquivo ao ABRIR o dataset, então um ogr2ogr
-        # que falha deixa um .geojson de 0 byte pra trás. Sem este unlink ele
-        # passaria no `exists()` do main() e seria publicado por cima do bom.
-        print(f"  (ogr2ogr falhou em {OUT_PH_NETWORK.name} — descartado)")
-        OUT_PH_NETWORK.unlink(missing_ok=True)
-        rel_pbf.unlink(missing_ok=True)
-        return
-    rel_pbf.unlink(missing_ok=True)
-    n = OUT_PH_NETWORK.read_text().count('"type": "Feature"')
-    # ZERO relations NÃO é um sucesso silencioso. O driver OSM declara a camada
-    # `multilinestrings` a partir do osmconf mesmo sem nenhuma feição, então o
-    # ogr2ogr acima sai com 0 e grava um FeatureCollection vazio — o `except`
-    # não pega este caso. Publicar isso apagaria a rede do coletivo do mapa,
-    # num bucket SEM Object Versioning. Some com o arquivo: aí ele fica fora do
-    # `built` e o job não sobe nada.
-    if n == 0:
-        OUT_PH_NETWORK.unlink(missing_ok=True)
-        print(f"  AVISO: nenhuma relation cycle_network={PH_CYCLE_NETWORK} no "
-              f"extrato — {OUT_PH_NETWORK.name} NÃO gerado (nada a publicar). "
-              f"Se isso for inesperado, confira a tag no OSM antes de subir.")
-        return
-    print(f"→ {OUT_PH_NETWORK.name}: {n} relation(s), "
-          f"{OUT_PH_NETWORK.stat().st_size / 1e3:.0f} kB")
 
 
 # ─── Grafo pré-cozido (--graph) ───────────────────────────────────────────────
@@ -823,17 +771,10 @@ def bake_graph(fgb: Path | str, out: Path, graph_bbox: tuple[float, float, float
 
 def _print_upload_help(built: list[Path]) -> None:
     fgbs = [p for p in built if p.suffix == ".fgb"]
-    others = [p for p in built if p.suffix != ".fgb"]
     if fgbs:
         print("\nsuba pro bucket (SEM -Z nos .fgb — gzip quebraria os range requests):\n"
               "    gcloud storage cp --cache-control=\"public,max-age=86400\" \\\n"
               + "".join(f"        {p} \\\n" for p in fgbs)
-              + "        gs://telhas/viario/")
-    if others:
-        # GeoJSON é baixado INTEIRO (não por Range) — aí o -Z vale a pena.
-        print("\ne o GeoJSON, esse sim com -Z (baixado inteiro, não por Range):\n"
-              "    gcloud storage cp -Z --cache-control=\"public,max-age=86400\" \\\n"
-              + "".join(f"        {p} \\\n" for p in others)
               + "        gs://telhas/viario/")
     print("\ne confira VIARIO_FGB_URL / WATER_*_FGB_URL / OSM_FGB_* em web/app.js.")
 
@@ -849,8 +790,7 @@ def main() -> int:
     ap.add_argument("--water", action="store_true",
                     help="também gera os dois FGBs de água (áreas + rios)")
     ap.add_argument("--layers", action="store_true",
-                    help="também gera as camadas de mapa: hidro + cicloinfra "
-                         "(FGB) e a rede do coletivo (GeoJSON)")
+                    help="também gera as camadas de mapa: hidro + cicloinfra (FGB)")
     ap.add_argument("--no-viario", action="store_true",
                     help="pula o FGB do viário (~4,5 GB, o build mais caro) — "
                          "é o modo do job semanal, que só refaz água + camadas")
@@ -929,10 +869,7 @@ def main() -> int:
         if args.layers:
             build_hidro_fgb(pbf)
             build_cicloinfra_fgb(pbf)
-            build_ph_network_geojson(pbf)
             built += [OUT_HIDRO, OUT_CICLOINFRA]
-            if OUT_PH_NETWORK.exists():
-                built.append(OUT_PH_NETWORK)
         if args.graph:
             bake_graph(args.graph_src or args.dst, args.graph_out, graph_bbox,
                        args.graph_sigma)

@@ -3,7 +3,6 @@
 # O que ele produz (todos da América do Sul, do extrato Geofabrik):
 #   south-america-hidro.fgb        camada "Morros e Águas" (waterway=* + natural=ridge)
 #   south-america-cicloinfra.fgb   camada "Cicloinfra OSM"
-#   ph-cycle-network.geojson       as relations cycle_network=BR:PedalHidrografico
 #   south-america-water-areas.fgb  barreira de água do modo terreno (polígonos)
 #   south-america-water-rivers.fgb barreira de água do modo terreno (linhas)
 #
@@ -100,8 +99,6 @@ jobs:
           fi
           echo "build-viario.py $ARGS"
           python3 scripts/build-viario.py $ARGS
-          # `ls` tolerante: o ph-cycle-network.geojson não sai se ainda não
-          # houver relation mapeada com a tag, e isso não é erro.
           ls -lh ignore/ || true
           df -h /mnt
 
@@ -151,17 +148,6 @@ jobs:
             if [ "$(stat -c %s "$f")" -gt 500000000 ]; then cc="private, max-age=86400"; else cc="public, max-age=86400"; fi
             gcloud storage cp --cache-control="$cc" "$f" gs://telhas/viario/
           done
-          # O build-viario.py APAGA este arquivo quando sai com zero relations
-          # (ou quando o ogr2ogr falha e deixa 0 byte), justamente pra que este
-          # `-f` não publique um FeatureCollection vazio por cima da rede boa —
-          # o bucket não tem versionamento pra desfazer.
-          if [ -s ignore/ph-cycle-network.geojson ]; then
-            gcloud storage cp -Z --cache-control="public,max-age=86400" \
-              ignore/ph-cycle-network.geojson \
-              gs://telhas/viario/
-          else
-            echo "ph-cycle-network.geojson ausente/vazio — mantendo o publicado."
-          fi
 
       # Espelho no R2 (bucket `fabdem`, servido em fabdem.pedalhidrografi.co): é
       # DE LÁ que o navegador lê os .fgb — o R2 não cobra download; pelo GCS

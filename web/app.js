@@ -1566,10 +1566,9 @@ const OVERLAY_LAYERS = [
 // GBs por range request direto — pelo telhas (Cloudflare → GCS, arquivos acima
 // do limite de 512 MB do cache) cada byte virava egress pago do GCS. O CI
 // (build-fgb.yml) publica nos dois; o backend segue lendo do GCS (mesma região).
-// (O .geojson e o .bin, pequenos, seguem no telhas — a Cloudflare os cacheia.)
+// (O .bin do grafo, pequeno, segue no telhas — a Cloudflare o cacheia.)
 const HIDRO_FGB_URL      = 'https://fabdem.pedalhidrografi.co/viario/south-america-hidro.fgb';
 const CICLOINFRA_FGB_URL = 'https://fabdem.pedalhidrografi.co/viario/south-america-cicloinfra.fgb';
-const PH_NETWORK_URL     = 'https://telhas.pedalhidrografi.co/viario/ph-cycle-network.geojson';
 
 // O Overpass exigia zoom ≥ 13 porque cada consulta pesava num servidor
 // compartilhado — esse motivo MORREU com o FGB. O que sobra é custo do lado do
@@ -1768,22 +1767,6 @@ const PackedLinesLayer = L.Layer.extend({
   },
 });
 
-// A rede cicloviária do coletivo (relations cycle_network=BR:PedalHidrografico)
-// vem num GeoJSON minúsculo, baixado UMA vez e reusado — são poucas e locais,
-// não valem um range request por pan. Falha não derruba a camada: a hidrografia
-// desenha do mesmo jeito.
-let _phNetworkPromise = null;
-async function loadPhCycleNetwork() {
-  if (!_phNetworkPromise) {
-    _phNetworkPromise = fetch(PH_NETWORK_URL)
-      .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
-      .then((fc) => fc.features || []);
-    // Erro não fica grudado: solta a promise pra próxima tentativa refazer.
-    _phNetworkPromise.catch(() => { _phNetworkPromise = null; });
-  }
-  return _phNetworkPromise;
-}
-
 // Driver compartilhado das camadas. Cada `source` sabe buscar suas feições na
 // bbox e como estilizar/rotular — é só isso que distingue Morros e Águas de
 // Cicloinfra. A ordem das sources é a ordem de desenho (a última fica por cima).
@@ -1844,11 +1827,8 @@ function makeOsmFgbLayer({ id, label, sources,
     const pane = LAYER_PANE(id);
     let capped = false;
     for (let s = 0; s < sources.length; s++) {
-      const { styleFor, tipFor, alwaysDraw, packed, style: packedStyle } = sources[s];
-      // Teto batido: para de desenhar as fontes volumosas, mas SEGUE nas
-      // isentas (`continue`, não `break` — sair do laço aqui puliria a rede do
-      // coletivo, que é justamente a última source e a que não pode sumir).
-      if (capped && !alwaysDraw) continue;
+      const { styleFor, tipFor, packed, style: packedStyle } = sources[s];
+      if (capped) break;                        // teto batido: o resto não desenha
       if (packed) {
         const lines = perSource[s];
         if (!lines || !lines.parts) continue;   // falhou (virou []) ou vazio
@@ -1860,7 +1840,7 @@ function makeOsmFgbLayer({ id, label, sources,
         continue;
       }
       const feats = perSource[s] || [];
-      if (feats.capped && !alwaysDraw) capped = true;
+      if (feats.capped) capped = true;
       for (const f of feats) {
         const g = f && f.geometry; if (!g) continue;
         const props = f.properties || {};
@@ -1871,11 +1851,7 @@ function makeOsmFgbLayer({ id, label, sources,
           : g.type === 'MultiLineString' ? g.coordinates : [];
         for (const coords of parts) {
           if (!Array.isArray(coords) || coords.length < 2) continue;
-          // `alwaysDraw` isenta as fontes minúsculas e importantes do teto — a
-          // rede do coletivo é a ÚLTIMA source (pra ficar por cima), então sem
-          // isto ela sumiria justo onde a hidrografia é densa o bastante pra
-          // estourar o limite.
-          if (!alwaysDraw && nDrawn >= maxF) { capped = true; break; }
+          if (nDrawn >= maxF) { capped = true; break; }
           nDrawn++;
           // O FGB guarda [lng,lat]; o Leaflet quer [lat,lng].
           const layer = L.polyline(coords.map((c) => [c[1], c[0]]),
@@ -1885,7 +1861,7 @@ function makeOsmFgbLayer({ id, label, sources,
           layer.addTo(map);
           drawn.push(layer);
         }
-        if (capped && !alwaysDraw) break;
+        if (capped) break;
       }
     }
     return capped;
@@ -1946,11 +1922,10 @@ function makeOsmFgbLayer({ id, label, sources,
       const capped = render(perSource, detail, maxF);
       loaded = { bb, detail, complete: !failed && !capped };
       if (loaded.complete) density = total / Math.max(1e-6, bboxAreaKm2(bb));
-      // `failed` PRECISA aparecer também no caminho de sucesso. A rede do
-      // coletivo não é filtrada por bbox e fica memoizada, então ela sozinha
-      // mantém `total > 0` mesmo com o FGB da hidrografia fora do ar — sem
-      // isto, o mapa mostrava só as linhas azuis sob um toast triunfante e o
-      // usuário concluía que a área não tem água mapeada.
+      // `failed` PRECISA aparecer também no caminho de sucesso: numa camada
+      // de várias sources, uma que respondeu mantém `total > 0` com outra fora
+      // do ar — sem o aviso, o toast triunfante fazia o usuário concluir que a
+      // área não tem nada mapeado.
       const notes = [];
       if (failed) notes.push('parte das fontes indisponível');
       if (capped) notes.push('aproxime para ver o resto');
@@ -2031,13 +2006,6 @@ function hidroTipFor(p) {
   return parts.join(' · ') || 'OSM';
 }
 
-// Rede do coletivo: azul de destaque, grossa, por cima da hidrografia.
-function phNetworkTipFor(p) {
-  const parts = [`<strong>${escapeHtml(p.name || 'Pedal Hidrográfico')}</strong>`];
-  if (p.ref) parts.push(`<em>ref ${escapeHtml(p.ref)}</em>`);
-  return parts.join(' · ');
-}
-
 const hidroLayer = makeOsmFgbLayer({
   id: 'osm-overpass',            // id histórico — ver OVERLAY_LAYERS
   label: 'hidrografia OSM',
@@ -2050,14 +2018,6 @@ const hidroLayer = makeOsmFgbLayer({
       load: (bb, opts) => streamFgbFeatures(HIDRO_FGB_URL, bb, false, opts),
       styleFor: hidroStyleFor,
       tipFor: hidroTipFor,
-    },
-    {
-      // Sem bbox: são poucas relations e a viewport já recorta no desenho —
-      // mesmo comportamento da consulta Overpass antiga.
-      load: () => loadPhCycleNetwork(),
-      styleFor: () => ({ color: '#2da9ff', weight: 5 }),
-      tipFor: phNetworkTipFor,
-      alwaysDraw: true,   // são dezenas de linhas, e é a camada-assinatura
     },
   ],
 });
@@ -17603,8 +17563,8 @@ function routePreviewSvg(pts, proj) {
   );
 }
 
-// Fundo "Morros e Águas" de uma miniatura: consulta o FGB de hidrografia (e
-// a rede do coletivo) na bbox da viewBox e desenha as linhas no <g> de fundo,
+// Fundo "Morros e Águas" de uma miniatura: consulta o FGB de hidrografia na
+// bbox da viewBox e desenha as linhas no <g> de fundo,
 // com o MESMO estilo da camada do mapa (hidroStyleFor) em traço fino. Cache
 // por rota (id+updated) — reabrir o modal na sessão não re-consulta.
 const _thumbHidroCache = new Map();
@@ -17633,10 +17593,8 @@ async function fillThumbHidro(svgEl, proj, cacheKey, gen = _savedRoutesGen) {
   // O 4º argumento ({isStale, maxParts}, a convenção do streamFgbPackedLines)
   // corta o DOWNLOAD quando o modal fecha — no-op enquanto a leitura FGB não
   // o aceitar.
-  const [hidro, network] = await Promise.all([
-    streamFgbFeatures(HIDRO_FGB_URL, bb, false, { isStale: stale, maxParts: THUMB_HIDRO_MAX_LINES * 5 }).catch(() => null),
-    loadPhCycleNetwork().catch(() => []),
-  ]);
+  const hidro = await streamFgbFeatures(HIDRO_FGB_URL, bb, false,
+    { isStale: stale, maxParts: THUMB_HIDRO_MAX_LINES * 5 }).catch(() => null);
   if (stale()) return;   // nem pinta nem guarda (pode ter vindo cortado)
   const lines = [];
   const pushFeature = (f, style) => {
@@ -17657,7 +17615,6 @@ async function fillThumbHidro(svgEl, proj, cacheKey, gen = _savedRoutesGen) {
     }
   };
   for (const f of hidro || []) pushFeature(f, hidroStyleFor(f.properties || {}, detail));
-  for (const f of network) pushFeature(f, { color: '#2da9ff', weight: 5 });
   const html = lines.join('');
   if (hidro !== null) _thumbHidroCache.set(cacheKey, html);
   // O modal pode ter sido fechado/re-renderizado durante o fetch — só pinta

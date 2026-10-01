@@ -25,7 +25,7 @@
 // origin) e v371/v372 saíram na `deploy` (busca de endereços, ⇄ inverter).
 // v373 fica acima de tudo que já circulou, que é o que importa: se a VERSION
 // não crescer, o service worker serve cache velho.
-const VERSION = 'phidro-v420';
+const VERSION = 'phidro-v421';
 const STATIC_CACHE = `${VERSION}-static`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 const DATA_CACHE = 'phidro-data-v1';
@@ -251,7 +251,6 @@ const TILE_HOSTS = [
 // query de typeahead é única, então cachear não compra nada; hosts fora das
 // listas passam direto pra rede, sem bloqueio.)
 const RUNTIME_HOSTS = [
-  /(^|\.)telhas\.pedalhidrografi\.co$/,     // ph-cycle-network.geojson
   /^busao\.bicisampa\.info$/,               // metrô e trens (rail.geojson + rail-lines.json)
   /(^|\.)api\.open-meteo\.com$/,
   /(^|\.)routing\.openstreetmap\.de$/,
