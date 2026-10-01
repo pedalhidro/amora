@@ -13,7 +13,8 @@
     "@capacitor/android": "^6.2.1",
     "@capacitor/core": "^6.2.1",
     "@capacitor/ios": "^6.2.1",
-    "@capacitor-community/background-geolocation": "^1.2.26"
+    "@capacitor-community/background-geolocation": "^1.2.26",
+    "amora-upload": "file:plugins/amora-upload"
   },
   "devDependencies": {
     "@capacitor/assets": "^3.0.0",

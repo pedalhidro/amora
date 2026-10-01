@@ -138,10 +138,31 @@ apply_info_plist() {
   echo "Info.plist: localização, câmera/microfone/Fotos, barra de status escura${bound:+, WKAppBoundDomains $bound}."
 }
 
+# ─── AppDelegate: envio em segundo plano (plugin amora-upload) ──────────────
+# A URLSession em segundo plano do plugin conclui envios com o app suspenso ou
+# morto; o iOS relança o app e entrega os eventos via
+# application(_:handleEventsForBackgroundURLSession:completionHandler:) — que
+# tem que existir no AppDelegate (gerado e gitignorado, daí o patch a cada
+# execução, idempotente pelo marcador). Sem ele o envio ainda conclui, mas o
+# resultado só é processado quando o app volta pra frente.
+APPDELEGATE="ios/App/App/AppDelegate.swift"
+apply_app_delegate() {
+  if [[ ! -f "$APPDELEGATE" ]]; then
+    echo "AppDelegate.swift não encontrado em $APPDELEGATE." >&2
+    exit 1
+  fi
+  if grep -q "amora-upload" "$APPDELEGATE"; then return; fi
+  perl -0pi -e 's/^import Capacitor\n/import Capacitor\nimport AmoraUpload \/\/ amora-upload\n/m' "$APPDELEGATE"
+  perl -0pi -e 's/\n\}\s*\z/\n\n    \/\/ amora-upload: a URLSession em segundo plano do plugin entrega os eventos aqui.\n    func application(_ application: UIApplication, handleEventsForBackgroundURLSession identifier: String, completionHandler: \@escaping () -> Void) {\n        AmoraUploadQueue.shared.handleEvents(identifier: identifier, completionHandler: completionHandler)\n    }\n}\n/' "$APPDELEGATE"
+  grep -q "handleEventsForBackgroundURLSession" "$APPDELEGATE" || { echo "Patch do AppDelegate falhou." >&2; exit 1; }
+  echo "AppDelegate: envio em segundo plano (amora-upload)."
+}
+
 # Copia web assets (a tela sem conexão do www/) + config/plugins nativos pro
-# projeto ios/, e só DEPOIS mexe no Info.plist.
+# projeto ios/, e só DEPOIS mexe no Info.plist e no AppDelegate.
 npx cap sync ios
 apply_info_plist
+apply_app_delegate
 
 if [[ "$PREPARE_ONLY" == 1 ]]; then
   echo "Pronto. Abra no Xcode com: npx cap open ios"

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Mesclado no manifesto do app pelo Gradle: nada a remendar no android/
+     gerado (que é gitignorado). -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Nada de READ_MEDIA_* nem ACCESS_MEDIA_LOCATION: o seletor de documentos
+         entrega o original COM GPS sem permissão (ver o pick() do plugin). -->
+    <!-- Notificação de progresso do envio (Android 13+ pede em tempo de execução). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+
+    <application>
+        <!-- O serviço de primeiro plano do WorkManager: o Android 14+ exige o
+             tipo declarado (dataSync = envio iniciado pelo usuário). -->
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:foregroundServiceType="dataSync"
+            tools:node="merge" />
+    </application>
+</manifest>

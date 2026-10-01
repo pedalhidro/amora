@@ -1,0 +1,35 @@
+apply plugin: 'com.android.library'
+
+// Versões vêm do variables.gradle do app quando existem (mesmo padrão dos
+// plugins da comunidade); o fallback é o que foi testado.
+def ext_ = rootProject.ext
+def v = { String name, fallback -> ext_.has(name) ? ext_.get(name) : fallback }
+
+android {
+    namespace = "co.pedalhidrografi.amora.upload"
+    compileSdk = v('compileSdkVersion', 36)
+    defaultConfig {
+        minSdkVersion v('minSdkVersion', 24)
+        targetSdkVersion v('targetSdkVersion', 36)
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    lint {
+        abortOnError = false
+    }
+}
+
+repositories {
+    google()
+    mavenCentral()
+}
+
+dependencies {
+    implementation project(':capacitor-android')
+    implementation "androidx.activity:activity:${v('androidxActivityVersion', '1.11.0')}"
+    implementation "androidx.core:core:${v('androidxCoreVersion', '1.17.0')}"
+    implementation "androidx.work:work-runtime:2.10.5"
+    implementation "androidx.exifinterface:exifinterface:1.4.1"
+}

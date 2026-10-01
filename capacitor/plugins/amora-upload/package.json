@@ -1,0 +1,15 @@
+{
+  "name": "amora-upload",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Plugin Capacitor local do Amora: seletor nativo de mídia + envio em segundo plano (sobrevive a tela apagada, troca de app e queda de rede). Contrato em docs/PLAN-native-upload.md §3.",
+  "license": "AGPL-3.0-only",
+  "capacitor": {
+    "ios": {
+      "src": "ios"
+    },
+    "android": {
+      "src": "android"
+    }
+  }
+}

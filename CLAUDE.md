@@ -299,7 +299,16 @@ one optional hosted deploy target, not a dependency.
   `@capacitor-community/background-geolocation` plugin. The one thing it buys
   over the PWA: **Localização ao vivo keeps transmitting with the screen off /
   app backgrounded** (the background bridge lives in `web/app.js` —
-  `window.phidroLivePush`). `run-ios.sh` / `run-android.sh` build+deploy to a
+  `window.phidroLivePush`). The second thing (Android today, iOS planned):
+  the local plugin `capacitor/plugins/amora-upload/` — native gallery picker
+  (the system DOCUMENT picker — the Photo Picker zeroes GPS; measured) + a background upload queue (WorkManager) that
+  `/subir` uses when `AmoraUpload.info()` answers; contract and as-built notes
+  in `docs/PLAN-native-upload.md`. Gotchas there: the bridge exists only in
+  the MAIN frame (`/subir` in the app's iframe uses `parent.Capacitor`), picked
+  files are read whole from `/_capacitor_file_…` (Capacitor's Range is broken;
+  `sw.js` must not `respondWith` that path), and `web/` reaches every shell
+  at once while native builds lag — keep the `apiVersion` gate.
+  `run-ios.sh` / `run-android.sh` build+deploy to a
   physical device via `npx cap run` without opening Xcode/Android Studio;
   `npm run icons` regenerates app icon + splash from `assets/` via
   `@capacitor/assets`. `README.md`; `www/` is TRACKED (it's the `webDir`, and

@@ -40,6 +40,19 @@ bloqueio; no Android a página é congelada).
   `window.phidroLivePush` a cada fix, inclusive com a tela apagada); num
   navegador comum o plugin não existe e caímos no `watchPosition`. O projeto
   nativo só precisa **registrar o plugin** — nenhum código JS extra aqui.
+- **Envio de fotos e vídeos em segundo plano (Android; iOS planejado).** O
+  plugin local `plugins/amora-upload/` (dependência `file:` no
+  `package.json`, entra no `npx cap sync` como qualquer plugin) dá ao
+  `/subir` uma galeria nativa — no Android, o seletor de DOCUMENTOS do
+  sistema, que entrega o original COM o GPS (o Photo Picker zera; medido) — e
+  uma fila de envio do sistema (WorkManager + notificação de progresso) que segue com a tela apagada, o app fechado e a
+  rede caindo. O lado web está em `web/subir.html` (seção "Shell nativo") e só
+  liga quando `AmoraUpload.info()` responde: navegador e app antigo seguem no
+  caminho de sempre. Contrato, decisões e o que falta testar em aparelho:
+  `docs/PLAN-native-upload.md`. Permissões (mescladas pelo Gradle a partir do
+  manifesto do plugin — nada a colar no `android/`): só
+  `POST_NOTIFICATIONS` (pedida no primeiro "Escolher imagens") e
+  `FOREGROUND_SERVICE_DATA_SYNC` — nenhuma permissão de mídia.
 
 ## Pré-requisitos
 

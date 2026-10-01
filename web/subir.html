@@ -970,7 +970,7 @@ function setThumbUrl(item, url) {
   img.onerror = () => { const d = document.createElement('div'); d.className = 'noimg'; img.replaceWith(d); };
   $('.noimg', item.li)?.replaceWith(img);
 }
-const CLS = { queued: 'is-busy', preparing: 'is-busy', sending: 'is-busy', ok: 'is-ok', err: 'is-err', dup: 'is-dup', deleted: 'is-dup' };
+const CLS = { queued: 'is-busy', preparing: 'is-busy', sending: 'is-busy', native: 'is-busy', ok: 'is-ok', err: 'is-err', dup: 'is-dup', deleted: 'is-dup' };
 function setState(item, state, html) {
   item.state = state;
   const li = item.li;
@@ -1061,6 +1061,7 @@ function fail(item, e, { kind = 'read', status = 0 } = {}) {
 }
 function retryItem(item, { auto = false } = {}) {
   if (item.state !== 'err') return;
+  if (item.nativeJob) { retryNative(item); return; }
   if (auto) item.autoTries = (item.autoTries || 0) + 1;
   else item.autoTries = 0;
   setState(item, 'queued', auto ? 'tentando de novo…' : 'na fila…');
@@ -1118,24 +1119,27 @@ function runPhoto(item) {
 }
 async function postPhoto(item) {
   const { ttl, hasGeo: ttlGeo } = buildImageTtl(item, item.author);
+  if (nativeUpload) return enqueuePhoto(item, ttl, ttlGeo);
   const fd = new FormData();
   fd.append('ttl', ttl);
   fd.append('original', item.file, `original.${originalFormat(item.file).ext}`);
   fd.append('large', item.largeBlob, 'large.jpg');
   fd.append('thumb', item.thumbBlob, 'thumb.jpg');
   const r = await postMedia(item, './upload-image', fd, item.file.size + item.largeBlob.size + item.thumbBlob.size);
-  if (r === 'ok') {
-    existingPhashes.push(item.phash);   // re-escolher nesta sessão = duplicada
-    if (item.shotWhen && item.hasExifGeo) addShot(item.shotWhen, item.lat, item.lon, item.phash);
-    item.sentGeo = ttlGeo && !item.hasExifGeo;
-    item.largeBlob = null;   // já subiu: solta os ~500 kB
-    showSent(item);
-    saveSession();
-    notifyParent('upload-image', item.phash);
-    // A localização do aparelho chegou com o POST já em voo: grava agora.
-    if (item.devGeo && !hasGeo(item)) patchGeo(item);
-  }
+  if (r === 'ok') photoSent(item, ttlGeo);
   return r;
+}
+// Foto no servidor — pelo POST daqui ou pela fila do aparelho (shell nativo).
+function photoSent(item, ttlGeo) {
+  existingPhashes.push(item.phash);   // re-escolher nesta sessão = duplicada
+  if (item.shotWhen && item.hasExifGeo) addShot(item.shotWhen, item.lat, item.lon, item.phash);
+  item.sentGeo = ttlGeo && !item.hasExifGeo;
+  item.largeBlob = null;   // já subiu: solta os ~500 kB
+  showSent(item);
+  saveSession();
+  notifyParent('upload-image', item.phash);
+  // A localização do aparelho chegou com o POST já em voo: grava agora.
+  if (item.devGeo && !hasGeo(item)) patchGeo(item);
 }
 
 // Um transcode por vez (dois em máquinas com ≥ 8 threads) — mesmo teto do
@@ -1163,6 +1167,7 @@ async function runVideo(item) {
 async function postVideo(item) {
   const result = item.clip;
   const vid = item.phash;
+  if (nativeUpload) return enqueueVideo(item, buildVideoTtl(item, item.author, result), result);
   const fd = new FormData();
   fd.append('ttl', buildVideoTtl(item, item.author, result));
   fd.append('id', vid);
@@ -1173,14 +1178,15 @@ async function postVideo(item) {
   if (result.blob720) fd.append('video720', result.blob720, clipFileName(vid, '720p', result.blob720));
   const bytes = [result.audio, thumb, result.blob360, result.blob720].reduce((s, b) => s + (b?.size || 0), 0);
   const r = await postMedia(item, './upload-video', fd, bytes);
-  if (r === 'ok') {
-    existingVhashes.push(vid);
-    item.clip = null;   // já subiu: solta os webms
-    showSent(item, ` (${result.engine})`);
-    saveSession();
-    notifyParent('upload-video', vid);
-  }
+  if (r === 'ok') videoSent(item, result.engine);
   return r;
+}
+function videoSent(item, engine) {
+  existingVhashes.push(item.phash);
+  item.clip = null;   // já subiu: solta os webms
+  showSent(item, engine ? ` (${engine})` : '');
+  saveSession();
+  notifyParent('upload-video', item.phash);
 }
 
 async function deleteItem(item, edit, del) {
@@ -1337,13 +1343,13 @@ window.addEventListener('message', (e) => {
   // O app fechou o modal: com a página OCIOSA, zera a sessão (grade, álbuns,
   // colagem) — a próxima abertura é um envio novo, sem cair no álbum do
   // passeio anterior. Ocupada, não mexe: o lote segue e o resultado fica.
-  if (e.data.type === 'phidro-upload-modal-closed' && !jobs) resetSession();
+  if (e.data.type === 'phidro-upload-modal-closed' && !jobs && !nativePendingCount()) resetSession();
 });
 function resetSession() {
   gen++;
   closeEditor(true);
   clearTimeout(_retryTimer); _retryTimer = 0;
-  items.length = 0; sentItems.length = 0; batchHashes.length = 0;
+  items.length = 0; sentItems.length = 0; batchHashes.length = 0; nativeItems.clear();
   albums.clear(); curAlbum = null; runItems = new Set(); runSkip = 0;
   collageMode = 'all'; collageSample = [];
   if (_collageUrl) URL.revokeObjectURL(_collageUrl);
@@ -1389,7 +1395,7 @@ function runList() { return [...runItems].filter((i) => i.state !== 'replaced');
 function renderProgress() {
   if (!jobs) return;
   const run = runList();
-  const done = run.filter((i) => DONE.has(i.state)).length;
+  const done = run.filter((i) => DONE.has(i.state) || i.state === 'native').length;
   const err = run.filter((i) => i.state === 'err').length;
   const st = $('#status');
   st.className = 'running';
@@ -1408,7 +1414,7 @@ function finishRun() {
   const run = runList();
   runItems = new Set();
   const count = (st) => run.filter((i) => i.state === st).length;
-  const ok = count('ok'), dup = count('dup');
+  const ok = count('ok'), dup = count('dup'), queued = count('native');
   // Erros: TODOS os pendentes da sessão, não só os desta rodada — senão a
   // rodada da re-tentativa automática ("2 enviadas") escondia as que seguem
   // com erro de uma rodada anterior.
@@ -1419,6 +1425,7 @@ function finishRun() {
   const skip = runSkip; runSkip = 0;
   const parts = [];
   if (ok)     parts.push(`<span class="ok">${plural(ok, 'imagem enviada', 'imagens enviadas')}</span>`);
+  if (queued) parts.push(`<span class="ok">${queued} na fila do aparelho — <strong>pode fechar o app</strong>, o envio continua</span>`);
   if (dup)    parts.push(`<span class="warn">${plural(dup, 'duplicada', 'duplicadas')}</span>`);
   if (err)    parts.push(`<span class="err">${err} com erro — toque ↻ na imagem${errItems.some((i) => i.transient) ? ' (ou espere: tentamos de novo quando a conexão voltar)' : ''}</span>`);
   if (noGeo)  parts.push(`<span class="warn">${noGeo} sem localização (fora do mapa — ✎ marca o lugar)</span>`);
@@ -1453,6 +1460,7 @@ function startJob(item) {
       if (ACTIVE.has(item.state)) fail(item, e, { kind: 'read' });
     }
   })().finally(() => {
+    if (item.state === 'dup') releasePick(item);
     jobs--;
     scheduleUi();
     if (jobs === 0) finishRun();
@@ -1702,10 +1710,369 @@ $('#copy-link').addEventListener('click', async () => {
 $('#sample-btn').addEventListener('click', () => { collageMode = 'sample'; resample(albumItems(curAlbum)); updateShare(); });
 $('#all-btn').addEventListener('click', () => { collageMode = 'all'; updateShare(); });
 
+// ===================== Shell nativo: galeria + fila do aparelho =========
+// No app (Capacitor) com o plugin AmoraUpload (capacitor/plugins/amora-upload,
+// contrato em docs/PLAN-native-upload.md §3), duas coisas mudam — o resto
+// (hash, EXIF, variantes, TTL, álbum) é o MESMO pipeline daqui:
+//  - ESCOLHER pela galeria nativa: no Android ela entrega o original COM o GPS
+//    (o seletor da web vem com a localização apagada), copiado pro
+//    armazenamento do app; a página lê a cópia pela mesma origem
+//    (/_capacitor_file_/…, servido pelo próprio Capacitor) ou, se isso
+//    falhar, em pedaços pela ponte (readChunk).
+//  - ENVIAR pela fila do aparelho: os pedaços feitos aqui (large, thumb,
+//    webms) vão pro disco pela ponte (putBlob), o original nem volta (sobe da
+//    cópia), e o POST é do sistema — segue com a tela apagada, o app fechado
+//    e a rede caindo; o nativo re-tenta sozinho. A célula fica 'native' (na
+//    fila do aparelho) e conclui pelo evento jobChanged.
+// Versões: a web chega a todo app no deploy; o app novo só pela loja/APK.
+// Sem o plugin (navegador, app antigo) nada aqui roda — `info().apiVersion`
+// decide; um apiVersion 2 futuro tem que manter este ramo.
+// A ponte do Capacitor só existe no frame PRINCIPAL (iOS e Android): embutida
+// no iframe do app, a página usa a do `parent` (mesma origem). Os callbacks
+// dos ouvintes rodam neste documento — removidos no pagehide.
+const CAP = (EMBEDDED ? (() => { try { return window.parent.Capacitor; } catch (_) { return null; } })() : null) || window.Capacitor;
+const NATIVE_UP = CAP?.isNativePlatform?.() ? CAP.Plugins?.AmoraUpload : null;
+let nativeUpload = false;
+const nativeItems = new Map();   // jobId → item
+let _nativeListener = null, _nativeEvents = null;
+
+function nativePendingCount() { return items.filter((i) => i.state === 'native').length; }
+function releasePick(item) {
+  if (!nativeUpload || !item.pickId || item.pickReleased || item.nativeJob) return;
+  item.pickReleased = true;
+  NATIVE_UP.release({ pickIds: [item.pickId] }).catch(() => {});
+}
+
+// Blob → arquivo no armazenamento do app, em pedaços de 768 KiB (1 MiB em
+// base64 — a ponte carrega strings).
+function blobBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(String(fr.result).split(',')[1] || '');
+    fr.onerror = () => reject(fr.error || new Error('leitura do blob'));
+    fr.readAsDataURL(blob);
+  });
+}
+async function blobToNative(blob) {
+  const STEP = 768 * 1024;
+  let blobId = null;
+  let off = 0;
+  do {
+    const base64 = await blobBase64(blob.slice(off, off + STEP));
+    blobId = (await NATIVE_UP.putBlob(blobId ? { blobId, base64 } : { base64 })).blobId;
+    off += STEP;
+  } while (off < blob.size);
+  return blobId;
+}
+function base64Bytes(b64) {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+// A cópia escolhida → File. Pela URL de mesma origem (o service worker deixa
+// passar /_capacitor_file_/); se não der, pela ponte em pedaços de 4 MiB.
+// Nunca por Range: o Capacitor responde 206 com o arquivo inteiro.
+async function pickedFile(it) {
+  let blob = null;
+  try {
+    const r = await fetch(it.url, { cache: 'no-store' });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    blob = await r.blob();
+    if (blob.size !== it.size) throw new Error(`tamanho ${blob.size} ≠ ${it.size}`);
+  } catch (e) {
+    console.warn('subir: cópia pela URL falhou, lendo pela ponte —', e);
+    const parts = [];
+    let off = 0;
+    while (off < it.size) {
+      const c = await NATIVE_UP.readChunk({ pickId: it.pickId, offset: off, length: 4 << 20 });
+      const bytes = base64Bytes(c.base64 || '');
+      if (!bytes.length) break;
+      parts.push(bytes);
+      off += bytes.length;
+    }
+    blob = new Blob(parts, { type: it.mime });
+  }
+  return new File([blob], it.name, { type: it.mime });
+}
+
+let _picking = false;
+async function nativePick() {
+  if (_picking) return;
+  _picking = true;
+  const st = $('#status');
+  let sub = null;
+  try {
+    sub = await NATIVE_UP.addListener('pickProgress', (p) => {
+      st.className = 'running';
+      st.textContent = `trazendo da galeria… ${p.done}/${p.total}`;
+      _statusLocked = true;
+    });
+    const r = await NATIVE_UP.pick({ videos: true });
+    const lost = (r?.failed || []).map((f) => `${f.name} (${f.error})`);
+    for (const it of r?.items || []) {
+      // Diagnóstico do GPS da cópia (o motivo de existir a galeria nativa no Android).
+      console.info('subir: galeria nativa', it.name, JSON.stringify(it.diag));
+      let file;
+      try { file = await pickedFile(it); }
+      catch (e) {
+        lost.push(`${it.name} (${e.message})`);
+        NATIVE_UP.release({ pickIds: [it.pickId] }).catch(() => {});
+        continue;
+      }
+      handlePickedFiles([file], [it.pickId]);
+    }
+    if (lost.length) {
+      const msg = `<span class="err">${plural(lost.length, 'arquivo não veio', 'arquivos não vieram')} da galeria: ${escapeHtml(lost.join(', '))}</span>`;
+      if (jobs) console.warn('subir:', lost); else { st.className = ''; st.innerHTML = msg; _statusLocked = true; }
+    }
+  } catch (e) {
+    st.className = '';
+    st.innerHTML = `<span class="err">galeria: ${escapeHtml(e?.message || String(e))}</span>`;
+    _statusLocked = true;
+  } finally {
+    _picking = false;
+    sub?.remove?.();
+  }
+}
+
+// O que a fila guarda junto do job pra uma página NOVA (recarregada, ou a
+// sessão expirou) saber mostrar a célula e o álbum.
+function nativeMeta(item, extra = {}) {
+  return {
+    hash: item.phash, kind: item.kind, label: item.name,
+    album: item.album || null,
+    tour: item.tour ? { iri: item.tour.iri, ms: item.tour.ms, title: item.tour.title } : null,
+    dateMs: Number.isFinite(item.dateMs) ? item.dateMs : null,
+    hasDate: hasDate(item),
+    ...extra,
+  };
+}
+async function enqueueNative(item, path, fields, files, meta, onDone) {
+  const jobId = `${item.phash}-${Date.now().toString(36)}`;
+  item.nativeJob = jobId;
+  item.onNativeDone = onDone;
+  nativeItems.set(jobId, item);   // ANTES do enqueue: o 1º jobChanged pode chegar antes da resposta
+  try {
+    await NATIVE_UP.enqueue({ jobId, url: new URL(path, document.baseURI).href, fields, files, meta });
+  } catch (e) {
+    nativeItems.delete(jobId);
+    item.nativeJob = null;
+    throw e;
+  }
+  if (item.state === 'sending') setState(item, 'native', `na fila do aparelho${tourSuffix(item)}`);
+  return 'native';
+}
+async function enqueuePhoto(item, ttl, ttlGeo) {
+  setState(item, 'sending', `indo pra fila do aparelho…${tourSuffix(item)}`);
+  try {
+    const b = item.nativeBlobs ||= {};
+    // O servidor tem que receber EXATAMENTE os bytes do hash: se o JS trocou o
+    // arquivo (HEIC → JPEG pelo heic2any), sobem os bytes daqui, não a cópia.
+    const fromPick = item.pickId && !item.pickReleased && item.file === item.srcFile;
+    if (!fromPick) b.original ||= await blobToNative(item.file);
+    b.large ||= await blobToNative(item.largeBlob);
+    b.thumb ||= await blobToNative(item.thumbBlob);
+    item.largeBlob = null;   // já está no disco do aparelho
+    const files = [
+      { field: 'original', filename: `original.${originalFormat(item.file).ext}`,
+        contentType: item.file.type || originalFormat(item.file).mime,
+        source: fromPick ? { pickId: item.pickId } : { blobId: b.original } },
+      { field: 'large', filename: 'large.jpg', contentType: 'image/jpeg', source: { blobId: b.large } },
+      { field: 'thumb', filename: 'thumb.jpg', contentType: 'image/jpeg', source: { blobId: b.thumb } },
+    ];
+    return await enqueueNative(item, './upload-image', { ttl }, files,
+      nativeMeta(item, { hasGeo: ttlGeo }), () => photoSent(item, ttlGeo));
+  } catch (e) {
+    return fail(item, e, { kind: 'native' });
+  }
+}
+async function enqueueVideo(item, ttl, result) {
+  setState(item, 'sending', `indo pra fila do aparelho…${tourSuffix(item)}`);
+  try {
+    const vid = item.phash;
+    const thumb = result.thumb || item.thumbBlob;
+    const files = [];
+    const add = async (field, blob, filename) => {
+      if (blob) files.push({ field, filename, contentType: blob.type || 'application/octet-stream', source: { blobId: await blobToNative(blob) } });
+    };
+    // TODO (passo 5 do plano): > 31 MiB no total → cadeia /stage-video + `after`.
+    await add('audio', result.audio, clipFileName(vid, 'audio', result.audio));
+    await add('thumb', thumb, `${vid}.thumb.jpg`);
+    await add('video360', result.blob360, clipFileName(vid, '360p', result.blob360));
+    await add('video720', result.blob720, clipFileName(vid, '720p', result.blob720));
+    if (thumb) item.thumbBlob = thumb;
+    const engine = result.engine;
+    const r = await enqueueNative(item, './upload-video', { ttl, id: vid }, files,
+      nativeMeta(item, { hasGeo: !!item.gps }), () => videoSent(item, engine));
+    item.clip = null;   // os webms estão no disco do aparelho
+    return r;
+  } catch (e) {
+    return fail(item, e, { kind: 'native' });
+  }
+}
+async function retryNative(item) {
+  const jobId = item.nativeJob;
+  if (!reaccept(item)) {   // escolhida de novo e aceita nesse meio-tempo
+    nativeItems.delete(jobId);
+    item.nativeJob = null;
+    NATIVE_UP.ack({ jobId }).catch(() => {});
+    return;
+  }
+  setState(item, 'native', `na fila do aparelho${tourSuffix(item)}`);
+  try {
+    const r = await NATIVE_UP.retry({ jobId });
+    if (!r?.retried) throw new Error('a fila do aparelho não tem mais este envio — escolha a imagem de novo');
+  } catch (e) {
+    nativeItems.delete(jobId);
+    item.nativeJob = null;
+    fail(item, e, { kind: 'native' });
+  }
+}
+
+function onNativeJob(job) {
+  const item = nativeItems.get(job.jobId);
+  if (!item) return orphanNativeJob(job);
+  if (item.state === 'deleted' || item.state === 'replaced') return;
+  const where = tourSuffix(item);
+  switch (job.state) {
+    case 'queued':
+      setState(item, 'native', `na fila do aparelho${where}`);
+      break;
+    case 'sending':
+      setState(item, 'native', job.total ? `enviando… ${Math.round((100 * job.sent) / job.total)}%${where}` : `enviando…${where}`);
+      break;
+    case 'waiting':
+      setState(item, 'native', `sem conexão — o aparelho tenta de novo sozinho${job.error ? ` (${escapeHtml(job.error)})` : ''}${where}`);
+      break;
+    case 'done':
+      nativeItems.delete(job.jobId);
+      item.nativeJob = null;
+      item.pickReleased = true;   // o ack apaga a cópia junto
+      item.onNativeDone?.(job.response);
+      NATIVE_UP.ack({ jobId: job.jobId }).catch(() => {});
+      afterNativeSettled();
+      break;
+    case 'failed': {
+      const s = job.httpStatus || 0;
+      fail(item, new Error(job.error || (s ? `HTTP ${s}` : 'falhou')), { kind: 'native', status: s });
+      afterNativeSettled();
+      break;
+    }
+    default: break;
+  }
+}
+// Job sem célula (a sessão foi zerada, ou é de antes desta página): concluído
+// = vale como "já está no acervo" e o app recarrega o mapa; falha fica na fila
+// pro próximo carregamento mostrar com ↻.
+function orphanNativeJob(job) {
+  if (job.state !== 'done') return;
+  const m = job.meta || {};
+  if (/^[0-9a-f]{16}$/.test(m.hash || '')) {
+    (m.kind === 'video' ? existingVhashes : existingPhashes).push(m.hash);
+    notifyParent(m.kind === 'video' ? 'upload-video' : 'upload-image', m.hash);
+  }
+  NATIVE_UP.ack({ jobId: job.jobId }).catch(() => {});
+}
+function afterNativeSettled() {
+  saveSession();
+  if (jobs) return;   // uma rodada em curso fecha o resumo no finishRun
+  renderNativeStatus();
+  if (sentItems.length) updateShare({ reveal: !nativePendingCount() });
+}
+function renderNativeStatus() {
+  if (jobs) return;
+  const n = nativePendingCount();
+  const err = failedCount();
+  const st = $('#status');
+  if (n) {
+    st.className = 'running';
+    st.innerHTML = `📤 ${n} na fila do aparelho — <strong>pode fechar o app</strong>, o envio continua` +
+      (err ? ` · <span class="err">${err} com erro</span>` : '');
+  } else {
+    st.className = '';
+    const parts = [];
+    if (sentItems.length) parts.push(`<span class="ok">${plural(sentItems.length, 'imagem enviada', 'imagens enviadas')}</span>`);
+    if (err) parts.push(`<span class="err">${err} com erro — toque ↻ na imagem</span>`);
+    st.innerHTML = (parts.join(' · ') || 'nada na fila.') + (sentItems.length ? ' <a href="#share">álbum e colagem ↓</a>' : '');
+  }
+  _statusLocked = true;
+  scheduleUi();
+}
+
+// Página nova (recarregada, ou o app reaberto): o que a fila do aparelho tem
+// vira célula — concluídos entram como enviados, pendentes e falhos seguem
+// pelo evento. Os eventos que chegam durante a leitura ficam guardados.
+function reconcileNativeJobs(list) {
+  for (const job of list.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0))) {
+    if (nativeItems.has(job.jobId)) continue;
+    const m = job.meta || {};
+    if (!/^[0-9a-f]{16}$/.test(m.hash || '')) { NATIVE_UP.ack({ jobId: job.jobId }).catch(() => {}); continue; }
+    if (m.album?.key && m.album.iri && !albums.has(m.album.key)) albums.set(m.album.key, m.album);
+    const known = items.find((i) => i.restored && i.phash === m.hash && i.state === 'ok');
+    if (known) { if (job.state === 'done' || job.state === 'failed') NATIVE_UP.ack({ jobId: job.jobId }).catch(() => {}); continue; }
+    const item = {
+      kind: m.kind === 'video' ? 'video' : 'image', phash: m.hash, name: m.label || m.hash, restored: true,
+      album: albums.get(m.album?.key) || null, tour: m.tour || null,
+      dateMs: Number.isFinite(m.dateMs) ? m.dateMs : NaN, hasGeo: !!m.hasGeo, hasDate: !!m.hasDate,
+      nativeJob: job.jobId, pickReleased: true,
+    };
+    item.li = makeCell(item.name);
+    item.onNativeDone = () => {
+      (item.kind === 'video' ? existingVhashes : existingPhashes).push(item.phash);
+      setThumbUrl(item, item.kind === 'video' ? `./clips/${item.phash}.thumb.jpg` : `./photos/${item.phash}/thumb.jpg`);
+      showSent(item, ' · em segundo plano');
+      saveSession();
+      notifyParent(item.kind === 'video' ? 'upload-video' : 'upload-image', item.phash);
+    };
+    items.push(item);
+    nativeItems.set(job.jobId, item);
+    if (job.state !== 'failed') { batchHashes.push(item.phash); item.accepted = true; }
+    onNativeJob(job);
+  }
+}
+async function attachNativeListener() {
+  if (_nativeListener) return;
+  _nativeEvents = [];
+  _nativeListener = await NATIVE_UP.addListener('jobChanged', (job) => {
+    if (_nativeEvents) _nativeEvents.push(job); else onNativeJob(job);
+  });
+  try {
+    const { jobs: list } = await NATIVE_UP.listJobs();
+    reconcileNativeJobs(list || []);
+  } catch (e) { console.warn('subir: fila do aparelho ilegível', e); }
+  const pending = _nativeEvents; _nativeEvents = null;
+  for (const job of pending) onNativeJob(job);
+  if (nativePendingCount() || items.some((i) => i.nativeJob)) renderNativeStatus();
+}
+async function initNative() {
+  try {
+    const info = await NATIVE_UP.info();
+    if (!(info?.apiVersion >= 1)) return;
+  } catch (_) { return; }
+  nativeUpload = true;
+  $('#ios-video-note').hidden = true;
+  $('#files').accept = 'image/*,video/*';
+  await attachNativeListener();
+}
+window.addEventListener('pagehide', () => {
+  try { _nativeListener?.remove?.(); } catch (_) {}
+  _nativeListener = null;
+});
+window.addEventListener('pageshow', (e) => { if (e.persisted && nativeUpload) attachNativeListener(); });
+
 // ===================== Seleção = envio ===================================
-function handlePickedFiles(files) {
-  const media = files.filter(f => isVideoFile(f) || (f.type || '').startsWith('image/') || isHeicFile(f));
+// `pickIds` (shell nativo): o id da cópia de cada arquivo no armazenamento do
+// app — o original sobe de lá, sem voltar pela ponte.
+function handlePickedFiles(files, pickIds = []) {
+  const isMedia = (f) => isVideoFile(f) || (f.type || '').startsWith('image/') || isHeicFile(f);
+  const media = files.filter(isMedia);
+  const pickOf = new Map(files.map((f, i) => [f, pickIds[i] || null]));
   const skipped = files.length - media.length;
+  if (nativeUpload) {
+    const drop = files.filter((f) => !isMedia(f)).map((f) => pickOf.get(f)).filter(Boolean);
+    if (drop.length) NATIVE_UP.release({ pickIds: drop }).catch(() => {});
+  }
   if (!media.length) {
     if (skipped && !jobs) {
       $('#status').innerHTML = `<span class="warn">${plural(skipped, 'arquivo ignorado', 'arquivos ignorados')} (só imagens e vídeos).</span>`;
@@ -1716,7 +2083,7 @@ function handlePickedFiles(files) {
   runSkip += skipped;
   const authorName = readAuthorName();   // lido UMA vez por escolha (o campo pode mudar no meio)
   for (const f of media) {
-    const item = { kind: isVideoFile(f) ? 'video' : 'image', file: f, srcFile: f, name: f.name, authorName };
+    const item = { kind: isVideoFile(f) ? 'video' : 'image', file: f, srcFile: f, name: f.name, authorName, pickId: pickOf.get(f) };
     item.li = makeCell(f.name);
     items.push(item);
     setState(item, 'queued', 'na fila…');
@@ -1729,6 +2096,13 @@ function handlePickedFiles(files) {
 // não conta como gesto — o clique em "Escolher imagens" conta. No-op fora do
 // WebKit (ver blessMediaForGesture no pipeline).
 $('#picker').addEventListener('click', () => { if (!IS_IOS) blessMediaForGesture(3); });
+// Shell nativo: "Escolher" abre a galeria nativa (o <input> fica de reserva
+// enquanto o plugin não respondeu, e pra quem não tem o plugin).
+$('#picker').addEventListener('click', (e) => {
+  if (!nativeUpload) return;
+  e.preventDefault();
+  nativePick();
+});
 // Listener real (o provisório do <script> clássico desliga ao ver
 // _phidroEarlyPicks = null) + seleções feitas antes do módulo subir.
 $('#files').addEventListener('change', (e) => {
@@ -1748,6 +2122,7 @@ $('#files').addEventListener('change', (e) => {
   }
   for (const files of early) handlePickedFiles(files);
   scheduleUi();   // estado inicial pro app (ociosa, sem pendência)
+  if (NATIVE_UP) initNative();
 }
 </script>
 </body>

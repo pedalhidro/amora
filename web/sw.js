@@ -25,7 +25,7 @@
 // origin) e v371/v372 saíram na `deploy` (busca de endereços, ⇄ inverter).
 // v373 fica acima de tudo que já circulou, que é o que importa: se a VERSION
 // não crescer, o service worker serve cache velho.
-const VERSION = 'phidro-v421';
+const VERSION = 'phidro-v422';
 const STATIC_CACHE = `${VERSION}-static`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 const DATA_CACHE = 'phidro-data-v1';
@@ -270,6 +270,13 @@ self.addEventListener('fetch', (event) => {
   // Localização ao vivo: NUNCA cachear. As posições mudam a cada segundo e
   // o GET sai com Cache-Control: no-store — deixa passar direto pra rede.
   if (url.pathname.includes('/live-location')) return;  // cobre /live-locations tb
+
+  // Shell nativo (Capacitor): a cópia de um arquivo escolhido na galeria
+  // nativa é servida pelo PRÓPRIO app nessa rota, interceptando o request da
+  // página. Um fetch() feito daqui (service worker) não passa por esse
+  // interceptador e iria pro servidor (404) — sem respondWith, o request
+  // segue o caminho da página e o app responde.
+  if (url.pathname.startsWith('/_capacitor_file_/')) return;
 
   // FlatGeobuf (viário/água/camadas OSM): NUNCA pelo staleWhileRevalidate —
   // o leitor busca fatias por Range (206) e o cache.match() IGNORA o header

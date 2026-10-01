@@ -5457,6 +5457,28 @@ function requestCloseUploadModal() {
 }
 if (uploadModal) _modalClosers.set(uploadModal, requestCloseUploadModal);
 uploadBtn?.addEventListener('click', () => openUploadModal());
+// Shell nativo: a fila do aparelho (plugin AmoraUpload — ver o subir.html)
+// conclui envios com a folha fechada, ou com o /subir já descarregado. Daqui
+// o app só OBSERVA: concluído → recarrega o mapa como num
+// phidro-media-changed e, com a folha fechada, avisa num toast. Quem dá o ack
+// é o /subir (ou a varredura de 7 dias do plugin).
+(() => {
+  const up = window.Capacitor?.isNativePlatform?.() ? window.Capacitor.Plugins?.AmoraUpload : null;
+  if (!up) return;
+  let done = 0, timer = 0;
+  Promise.resolve(up.addListener('jobChanged', (job) => {
+    if (job?.state !== 'done') return;
+    _uploadDirty = true;
+    scheduleBackgroundReload();
+    if (uploadModal && !uploadModal.hidden) return;
+    done++;
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      showToast(done === 1 ? '✓ 1 imagem enviada em segundo plano' : `✓ ${done} imagens enviadas em segundo plano`, 5000);
+      done = 0;
+    }, 1500);
+  })).catch(() => {});   // app antigo, sem o plugin
+})();
 // 📤 enviar imgs (barra): o envio simplificado (/subir) no mesmo modal.
 const subirImagensBtn = document.getElementById('subir-imagens-btn');
 subirImagensBtn?.addEventListener('click', () => {
