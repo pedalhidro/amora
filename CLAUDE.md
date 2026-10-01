@@ -232,6 +232,13 @@ one optional hosted deploy target, not a dependency.
   o plano B pago ~US$0,12/GB). Consumidores a repontar depois (Fase 3):
   `web/app.js` `FABDEM_BASE_URL`, `scripts/build-viario.py` `FABDEM_BASE`,
   `cameratopo/render.py`, `quilojaules/app.js`),
+  `build-enchente.py` (data-prep: assa `web/geo/enchente-1922.geojson`, a
+  camada "Enchente de 1922 (cota 724 m)" — banheira sobre o relevo ATUAL
+  (mosaico DEM de SP + FABDEM, mesma fusão/guarda de buracos do
+  `build-viario.py`), só as componentes conexas às sementes nas calhas do
+  Tietê/Pinheiros/Tamanduateí, cortada a jusante de Barueri (`--west`);
+  `pip install rasterio numpy scipy shapely`, ~15 s; re-rodar e commitar o
+  GeoJSON — ele vai no container, não no bucket),
   `audit-captura.py` (**o motor da auditoria de captura** — cruza
   `tours.ttl` + `images.ttl` + o acervo do Drive e diz, por passeio, o que
   falta nos três funis; `--sync` grava os passes de coleta via
@@ -528,6 +535,17 @@ Key flows:
   - **Coverage regressed to South America** (the extract the pipeline
     already used). Overpass worked worldwide. Outside SA the layers are
     empty and "pelo viário" falls through to free-energy routing.
+- **OpenInfraMap layers** (`oim-power`/`oim-water`/`oim-telecoms`/
+  `oim-petroleum`): the OIM has NO raster tiles any more — only MVT at
+  `openinframap.org/map/<tema>/{z}/{x}/{y}.pbf` (CORS open, max z17, 512 px
+  tiles: the OIM tile z is Leaflet zoom z+1, hence `tileSize: 512` and the
+  `coords.z - 1`). `OimLayer` (L.GridLayer) decodes them with the in-file
+  `decodeMvt` (no dependency) and paints a canvas per tile with OIM's own
+  palettes (`OIM_THEMES`, rule `z` = OIM zoom); overzoom past z17 redraws the
+  parent tile scaled. Click-to-inspect re-hit-tests the decoded tile from the
+  shared LRU (`oimHitTest` → `oimPopupHtml`) and ignores clicks on
+  `.leaflet-interactive`/markers/popups and while `drawingMode`. The SW caches
+  the host (RUNTIME_HOSTS) — it's a volunteer project, keep it polite.
 - **Display.** `web/app.js` fetches `./data/data_graphs.ttl`, follows each
   `void:dataDump` IRI to load the constituent graphs (currently `tours.ttl`
   and `uploads.ttl`), parses them with the bundled N3.js

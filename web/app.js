@@ -234,11 +234,14 @@ const DEFAULT_LAYER_ORDER = [
   'rmsampa',                   // topografia colorida
   'sara1930',                  // SARA 1930 (histórico)
   'mapa1850',                  // Mapa de 1850 (histórico)
-  'mtpi-pindorama', 'mtpi-parana', // MTPI (índice de posição topográfica multiescala)
+  'mtpi-v1', 'mtpi-v2',        // MTPI global (índice de posição topográfica multiescala)
+  'enchente-1922',             // mancha da enchente (acima dos mapas de relevo/históricos)
   'custom-wms', 'custom-xyz',  // camadas custom do usuário
   'osm-viario',                // todas as vias em branco — sob cicloinfra/águas
   'osm-cicloinfra',
   'osm-overpass',
+  // OpenInfraMap — acima da hidrografia, abaixo das rotas do coletivo.
+  'oim-water', 'oim-petroleum', 'oim-telecoms', 'oim-power',
   'routes',                    // linhas das rotas, no topo das camadas de mapa
   'route-highlight',           // rota destacada (1,5×), acima das rotas normais
 ];
@@ -554,7 +557,7 @@ map.on('popupclose', (e) => {
 // crossOrigin: '' (CORS anônimo) nas camadas cujo host manda
 // Access-Control-Allow-Origin: * em TODA resposta — conferido com curl
 // (com/sem Origin, cache HIT/MISS) em OSM a/b/c, arcgisonline e telhas
-// (rmsampa-v2, mtpi ×2, 1850). Resposta CORS é legível: o SW guarda os tiles
+// (rmsampa-v2, 1850) e mtpi.pedalhidrografi.co (MTPI v1/v2). Resposta CORS é legível: o SW guarda os tiles
 // (TILE_CACHE) pro mapa offline; <img> no-cors dava resposta OPACA, que o SW
 // não guarda. NÃO ligar num host sem ACAO — o tile deixaria de carregar
 // (o WMS do GeoSampa só manda ACAO quando há Origin e sem Vary: Origin — fica
@@ -620,24 +623,29 @@ const sara1930 = L.tileLayer.wms(
   },
 );
 
-// MTPI (índice de posição topográfica multiescala) servido em XYZ por
-// telhas.pedalhidrografi.co. Tiles nativos só até z10 (Pindorama/COP90 90 m,
-// América do Sul) e z12 (Bacia do Paraná 30 m); maxNativeZoom escala acima disso
-// em vez de levar 404.
-const mtpiPindorama = L.tileLayer('https://telhas.pedalhidrografi.co/mtpi_cop90_sa_full/{z}/{x}/{y}.png', {
-  maxZoom: 19,
-  maxNativeZoom: 10,
-  crossOrigin: TILE_CORS,
-  pane: LAYER_PANE('mtpi-pindorama'),
-  attribution: 'MTPI COP90 · Pedal Hidrográfico',
-});
-const mtpiParana = L.tileLayer('https://telhas.pedalhidrografi.co/mtpi_bacia_parana_30/{z}/{x}/{y}.png', {
-  maxZoom: 19,
-  maxNativeZoom: 12,
-  crossOrigin: TILE_CORS,
-  pane: LAYER_PANE('mtpi-parana'),
-  attribution: 'MTPI Bacia do Paraná 30 m · Pedal Hidrográfico',
-});
+// MTPI global (índice de posição topográfica multiescala), v1 (escalas de
+// 3/30/300 km) e v2 (30/300/3000 km) — os mesmos WebP do cameratopo, no R2
+// pelo domínio próprio mtpi.pedalhidrografi.co (CORS liberado). Substituem os
+// antigos MTPI Pindorama 90m / Bacia do Paraná 30m do telhas.
+// Tiles nativos até z10 (z11 dá 404); acima o Leaflet reamplia. São tiles de
+// DADO, então em tela retina pedem o zoom seguinte em meia caixa — o mesmo
+// esquema da rmsampa (tileSize 128 + zoomOffset 1, nativo −1 pra não passar
+// do z10). Os tiles saem com Cache-Control immutable de 1 ano: o `?r=N` é o
+// mesmo do cameratopo e TEM que subir a cada re-render do MTPI.
+const MTPI_TILE_REV = 2;
+const mtpiRetina = L.Browser.retina;
+const makeMtpiLayer = (version, id) => L.tileLayer(
+  `https://mtpi.pedalhidrografi.co/${version}/xyz/{z}/{x}/{y}.webp?r=${MTPI_TILE_REV}`, {
+    maxZoom: 19,
+    maxNativeZoom: mtpiRetina ? 9 : 10,
+    tileSize: mtpiRetina ? 128 : 256,
+    zoomOffset: mtpiRetina ? 1 : 0,
+    crossOrigin: TILE_CORS,             // mtpi manda ACAO: * (curl) → TILE_CACHE do SW
+    pane: LAYER_PANE(id),
+    attribution: `MTPI global ${version} · Pedal Hidrográfico`,
+  });
+const mtpiV1 = makeMtpiLayer('v1', 'mtpi-v1');
+const mtpiV2 = makeMtpiLayer('v2', 'mtpi-v2');
 
 // Mapa histórico georreferenciado de São Paulo (1850), tiles XYZ em
 // telhas.pedalhidrografi.co. Tiles nativos até z18; maxNativeZoom escala acima.
@@ -648,6 +656,584 @@ const mapa1850 = L.tileLayer('https://telhas.pedalhidrografi.co/1850/{z}/{x}/{y}
   crossOrigin: TILE_CORS,
   pane: LAYER_PANE('mapa1850'),
   attribution: 'Mapa de 1850 · Pedal Hidrográfico',
+});
+
+// ─── OpenInfraMap: energia, água, telecom, petróleo e gás ────────────────────
+// Infraestrutura do OSM como o openinframap.org a recorta e serve. O site NÃO
+// tem mais tiles raster (o tiles-*.openinframap.org sumiu e o /map.json está
+// marcado DEPRECATED) — só vetoriais (MVT), um tileset por tema em
+// /map/<tema>/{z}/{x}/{y}.pbf, CORS aberto. Então decodificamos o MVT aqui e
+// desenhamos num <canvas> por tile (L.GridLayer), com as paletas do próprio
+// OpenInfraMap (cores por tensão, por substância). Sem dependência nova: o
+// decodificador de protobuf abaixo cobre só o que o formato MVT usa.
+//
+// Os tiles do OIM são de 512 px (padrão do MapLibre): o tile z cobre o que o
+// Leaflet chama de zoom z+1. Por isso a GridLayer usa tileSize 512 e pede o
+// tile (zoom − 1) — 4× menos requisições que em 256, e a generalização bate
+// com a que o OIM desenhou. Nas regras de estilo, `z` é o zoom do OIM (o do
+// MapLibre), pra os limiares poderem ser copiados de lá. Acima do z17 (o máximo
+// do OIM) o tile-pai é reaproveitado e redesenhado em escala — vetor, nítido.
+//
+// O OIM é um projeto voluntário: o SW guarda os tiles (sw.js, RUNTIME_HOSTS),
+// a camada só busca no fim do gesto (updateWhenIdle/updateWhenZooming) e um
+// LRU em memória serve os tiles-pai do overzoom e o clique-pra-inspecionar.
+const OIM_TILE_BASE = 'https://openinframap.org/map';
+const OIM_MAX_ZOOM = 17;
+const OIM_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+  + ' · <a href="https://openinframap.org/copyright">OpenInfraMap</a>';
+
+// MVT (Mapbox Vector Tile, protobuf) → { [camada]: { extent, features:
+// [{ type, props, rings }] } }. type: 1 ponto, 2 linha, 3 polígono. `rings` é
+// uma lista de arrays planos [x0,y0,x1,y1,…] em unidades do tile (0..extent);
+// um ponto é um anel de 1 vértice.
+const _mvtText = new TextDecoder();
+function decodeMvt(buf) {
+  const bytes = new Uint8Array(buf);
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let pos = 0;
+  // Varint em aritmética de Number (sem bitwise): coordenadas e índices cabem
+  // folgados em 2^53. Byte além do fim é undefined → (undefined & 0x80) = 0
+  // encerra o laço, então um buffer truncado não trava.
+  const varint = () => {
+    let r = 0, mul = 1, b;
+    do { b = bytes[pos++]; r += (b & 0x7f) * mul; mul *= 128; } while (b & 0x80);
+    return r;
+  };
+  // Inteiros de 64 bits dos VALORES (osm_id de relation é negativo — int64
+  // negativo ocupa 10 bytes e não sobrevive à conta em Number).
+  const varintBig = () => {
+    let r = 0n, s = 0n, b;
+    do { b = bytes[pos++]; r |= BigInt(b & 0x7f) << s; s += 7n; } while (b & 0x80);
+    return r;
+  };
+  // ATENÇÃO: o comprimento de um campo length-delimited é lido ANTES de somar
+  // ao `pos` (`const n = varint(); end = pos + n`) — `pos + varint()` lê o
+  // `pos` velho e erra o fim pelo tamanho do próprio prefixo.
+  const str = (len) => { const s = _mvtText.decode(bytes.subarray(pos, pos + len)); pos += len; return s; };
+  const skip = (wt) => {
+    if (wt === 0) varint();
+    else if (wt === 1) pos += 8;
+    else if (wt === 2) { const n = varint(); pos += n; }
+    else if (wt === 5) pos += 4;
+    else throw new Error(`MVT: wire type ${wt}`);
+  };
+  const packed = () => {
+    const len = varint(), end = pos + len, out = [];
+    while (pos < end) out.push(varint());
+    return out;
+  };
+  const value = (end) => {
+    let v = null;
+    while (pos < end) {
+      const tag = varint(), f = tag >>> 3, wt = tag & 7;
+      if (f === 1 && wt === 2) v = str(varint());
+      else if (f === 2 && wt === 5) { v = view.getFloat32(pos, true); pos += 4; }
+      else if (f === 3 && wt === 1) { v = view.getFloat64(pos, true); pos += 8; }
+      else if (f === 4 && wt === 0) v = Number(BigInt.asIntN(64, varintBig()));
+      else if (f === 5 && wt === 0) v = Number(varintBig());
+      else if (f === 6 && wt === 0) { const z = varintBig(); v = Number((z >> 1n) ^ -(z & 1n)); }
+      else if (f === 7 && wt === 0) v = varint() !== 0;
+      else skip(wt);
+    }
+    return v;
+  };
+  const geometry = (cmds) => {
+    const rings = [];
+    let ring = null, x = 0, y = 0, i = 0;
+    while (i < cmds.length) {
+      const ci = cmds[i++], id = ci & 7, count = ci >>> 3;
+      if (id === 1 || id === 2) {
+        for (let k = 0; k < count && i + 1 < cmds.length; k++) {
+          const dx = cmds[i++], dy = cmds[i++];
+          x += (dx >>> 1) ^ -(dx & 1);
+          y += (dy >>> 1) ^ -(dy & 1);
+          if (id === 1 || !ring) { ring = [x, y]; rings.push(ring); }
+          else ring.push(x, y);
+        }
+      } else if (id === 7 && ring) {
+        ring.push(ring[0], ring[1]);
+      }
+    }
+    return rings;
+  };
+  const out = {};
+  while (pos < bytes.length) {
+    const tag = varint(), f = tag >>> 3, wt = tag & 7;
+    if (f !== 3 || wt !== 2) { skip(wt); continue; }
+    const len = varint(), end = pos + len;
+    const layer = { name: '', extent: 4096, keys: [], values: [], raw: [] };
+    while (pos < end) {
+      const lt = varint(), lf = lt >>> 3, lwt = lt & 7;
+      if (lf === 1 && lwt === 2) layer.name = str(varint());
+      else if (lf === 3 && lwt === 2) layer.keys.push(str(varint()));
+      else if (lf === 4 && lwt === 2) { const n = varint(), ve = pos + n; layer.values.push(value(ve)); pos = ve; }
+      else if (lf === 5 && lwt === 0) layer.extent = varint();
+      else if (lf === 2 && lwt === 2) {
+        const n = varint(), fe = pos + n;
+        const feat = { type: 0, tags: [], cmds: [] };
+        while (pos < fe) {
+          const ft = varint(), ff = ft >>> 3, fwt = ft & 7;
+          if (ff === 2 && fwt === 2) feat.tags = packed();
+          else if (ff === 3 && fwt === 0) feat.type = varint();
+          else if (ff === 4 && fwt === 2) feat.cmds = packed();
+          else skip(fwt);
+        }
+        pos = fe;
+        layer.raw.push(feat);
+      } else skip(lwt);
+    }
+    pos = end;
+    // Chaves/valores podem vir DEPOIS das feições no stream — resolve no fim.
+    out[layer.name] = {
+      extent: layer.extent,
+      features: layer.raw.map(({ type, tags, cmds }) => {
+        const props = {};
+        for (let t = 0; t + 1 < tags.length; t += 2) props[layer.keys[tags[t]]] = layer.values[tags[t + 1]];
+        return { type, props, rings: geometry(cmds) };
+      }),
+    };
+  }
+  return out;
+}
+
+// LRU de tiles decodificados (promise por URL). Compartilhado pelos 4 temas.
+const _oimTiles = new Map();
+const OIM_TILE_LRU = 128;
+function fetchOimTile(theme, z, x, y) {
+  const url = `${OIM_TILE_BASE}/${theme}/${z}/${x}/${y}.pbf`;
+  let p = _oimTiles.get(url);
+  if (p) { _oimTiles.delete(url); _oimTiles.set(url, p); return p; }
+  p = fetch(url).then((r) => {
+    // Tile sem nada é 200 com corpo vazio; 204/404 tratamos igual.
+    if (r.status === 204 || r.status === 404) return new ArrayBuffer(0);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.arrayBuffer();
+  }).then(decodeMvt);
+  _oimTiles.set(url, p);
+  p.catch(() => _oimTiles.delete(url));   // erro não gruda: o próximo pedido refaz
+  while (_oimTiles.size > OIM_TILE_LRU) _oimTiles.delete(_oimTiles.keys().next().value);
+  return p;
+}
+
+// Interpolação linear da largura/raio entre dois zooms (fora deles, satura).
+const oimLerp = (z, z0, v0, z1, v1) => v0 + (v1 - v0) * Math.min(1, Math.max(0, (z - z0) / (z1 - z0)));
+const oimNum = (v) => { const n = Number(v); return Number.isFinite(n) ? n : null; };
+// Maior tensão (kV) entre voltage, voltage_2…; 0 se nenhuma.
+const oimMaxVoltage = (p) => Math.max(0, ...[p.voltage, p.voltage_2, p.voltage_3, p.voltage_4]
+  .map(oimNum).filter((n) => n != null));
+// Paleta de tensões do OpenInfraMap (kV → cor; sem tensão = cinza).
+const OIM_VOLTAGE_COLORS = [[0, '#7A7A85'], [10, '#6E97B8'], [25, '#55B555'], [52, '#B59F10'],
+  [132, '#B55D00'], [220, '#C73030'], [310, '#B54EB2'], [550, '#00C1CF']];
+function oimVoltageColor(p) {
+  if (String(p.frequency) === '0') return '#4E01B5';     // HVDC
+  if (p.line === 'traction' || p.type === 'traction') return '#A8B596';
+  const v = oimMaxVoltage(p);
+  let c = OIM_VOLTAGE_COLORS[0][1];
+  for (const [kv, col] of OIM_VOLTAGE_COLORS) if (v >= kv && kv > 0) c = col;
+  return c;
+}
+const oimUnderground = (p) => p.location === 'underground' || p.location === 'underwater'
+  || p.type === 'cable' || p.tunnel === true;
+// Em construção: tracejado; desativado: esmaecido.
+const oimState = (p, s) => {
+  if (!s) return s;
+  if (p.construction) s.dash = [2, 4];
+  if (p.disused) s.alpha = 0.4;
+  return s;
+};
+// Cor de duto de água (substance) e de óleo/gás (substance + porte).
+function oimWaterColor(p) {
+  switch (p.substance) {
+    case 'hot_water': return '#AD4C4C';
+    case 'wastewater': case 'sewage': case 'waterwaste': return '#BAA87B';
+    case 'steam': return '#7BBAAC';
+    default: return '#7B7CBA';
+  }
+}
+function oimPetroleumColor(p) {
+  switch (p.substance || p.type || '') {
+    case 'gas': case 'natural_gas': case 'cng': case 'lpg': case 'lng': {
+      if (p.usage !== 'transmission') return '#BFBC6B';
+      const d = oimNum(p.diameter) || 0;
+      return d >= 700 ? '#8A3976' : d >= 300 ? '#E65757' : '#EA972D';
+    }
+    case 'oil': return '#6B6B6B';
+    case 'fuel': return '#CC9F83';
+    case 'ngl': case 'y-grade': case 'hydrocarbons': case 'condensate': case 'naphtha': return '#78CC9E';
+    case 'hydrogen': return '#CC78AB';
+    default: return '#BABABA';
+  }
+}
+
+// Regras por tema, na ordem de desenho (a última fica por cima). `style(p, z)`
+// devolve null pra pular a feição; o que desenha sai do TIPO da geometria —
+// ponto: círculo {fill, radius, color?, width?}; linha: traço {color, width,
+// dash?}; polígono: {fill, fillAlpha, color?, width?}. `alpha` vale pra tudo.
+const OIM_THEMES = {
+  power: [
+    { layer: 'power_plant', minZoom: 9,
+      style: (p) => oimState(p, { fill: '#b2b2b2', fillAlpha: 0.3, color: '#666', width: 1 }) },
+    { layer: 'power_substation', minZoom: 12,
+      style: (p) => oimState(p, { fill: oimVoltageColor(p), fillAlpha: 0.3, color: oimVoltageColor(p), width: 1 }) },
+    { layer: 'power_line',
+      style: (p, z) => {
+        const v = oimMaxVoltage(p);
+        // Distribuição (minor_line, < 25 kV) só de perto — é a renda que
+        // cobre a cidade inteira.
+        const minor = p.type === 'minor_line' || (v > 0 && v < 25);
+        if (minor && z < 10) return null;
+        const width = v >= 132 ? oimLerp(z, 3, 0.6, 16, 4)
+          : v >= 25 ? oimLerp(z, 5, 0.5, 16, 2.5)
+          : oimLerp(z, 10, 0.5, 16, 1.5);
+        return oimState(p, { color: oimVoltageColor(p), width,
+          dash: oimUnderground(p) ? [5, 3] : null });
+      } },
+    { layer: 'power_tower', minZoom: 13,
+      style: (p, z) => ({ fill: '#7A7A85', radius: oimLerp(z, 13, 1, 17, 3) }) },
+    { layer: 'power_transformer', minZoom: 14,
+      style: () => ({ fill: '#7A7A85', radius: 2.5 }) },
+    { layer: 'power_substation_point', minZoom: 7,
+      style: (p, z) => oimState(p, { fill: oimVoltageColor(p), radius: oimLerp(z, 7, 1.5, 14, 4),
+        color: '#fff', width: 1 }) },
+    { layer: 'power_plant_point', minZoom: 5,
+      style: (p, z) => oimState(p, {
+        fill: { solar: '#FCB512', wind: '#78CC9E', hydro: '#3a85d9', nuclear: '#863BED',
+          coal: '#7C4544', gas: '#BFBC6B', oil: '#6B6B6B', diesel: '#6B6B6B',
+          biomass: '#9fb84a', biogas: '#9fb84a', waste: '#9fb84a' }[p.source] || '#999',
+        radius: oimLerp(z, 5, 2, 14, 5), color: '#333', width: 1 }) },
+  ],
+  water: [
+    { layer: 'water_reservoir', minZoom: 4,
+      style: (p) => ({ fill: p.type === 'reservoir_covered' ? '#8e8e9a' : '#3a85d9', fillAlpha: 0.55,
+        color: 'rgb(80,80,100)', width: 0.5 }) },
+    { layer: 'water_treatment_plant_polygon', minZoom: 10,
+      style: () => ({ fill: '#7BBAAC', fillAlpha: 0.3, color: '#00001e', width: 1 }) },
+    { layer: 'wastewater_plant_polygon', minZoom: 10,
+      style: () => ({ fill: '#BAA87B', fillAlpha: 0.3, color: '#00001e', width: 1 }) },
+    { layer: 'pumping_station_polygon', minZoom: 10,
+      style: () => ({ fill: '#7B7CBA', fillAlpha: 0.3, color: '#00001e', width: 1 }) },
+    { layer: 'pressurised_waterway', minZoom: 3,
+      style: (p, z) => ({ color: oimWaterColor(p), width: oimLerp(z, 3, 0.3, 16, 4) }) },
+    { layer: 'water_pipeline', minZoom: 3,
+      style: (p, z) => ({ color: oimWaterColor(p),
+        width: oimLerp(z, 3, 1, 18, p.usage === 'transmission' ? 10 : 3) }) },
+    { layer: 'water_well', minZoom: 8,
+      style: (p, z) => ({ fill: '#7B7CBA', radius: oimLerp(z, 8, 1, 18, 6), color: '#000', width: 1 }) },
+    { layer: 'water_tower', minZoom: 10,
+      style: (p, z) => ({ fill: '#7B7CBA', radius: oimLerp(z, 10, 1.5, 17, 5), color: '#fff', width: 1 }) },
+    { layer: 'water_treatment_plant_point', minZoom: 5,
+      style: (p, z) => ({ fill: '#7BBAAC', radius: oimLerp(z, 5, 2, 14, 5), color: '#00001e', width: 1 }) },
+    { layer: 'wastewater_plant_point', minZoom: 5,
+      style: (p, z) => ({ fill: '#BAA87B', radius: oimLerp(z, 5, 2, 14, 5), color: '#00001e', width: 1 }) },
+    { layer: 'pumping_station_point', minZoom: 7,
+      style: (p, z) => ({ fill: '#7B7CBA', radius: oimLerp(z, 7, 1.5, 14, 4), color: '#00001e', width: 1 }) },
+  ],
+  telecoms: [
+    { layer: 'telecoms_communication_line',
+      style: (p, z) => oimState(p, { color: '#61637A', width: oimLerp(z, 3, 0.3, 11, 2), dash: [3, 2] }) },
+    // O data center vem como polígono OU ponto em `telecoms_data_center` dos
+    // zooms médios em diante; antes disso, só os centróides em `_point`.
+    { layer: 'telecoms_data_center_point', maxZoom: 9,
+      style: (p, z) => ({ fill: '#7D59AB', radius: oimLerp(z, 4, 1.5, 9, 3), color: '#fff', width: 1 }) },
+    { layer: 'telecoms_data_center', minZoom: 10,
+      style: () => ({ fill: '#7D59AB', fillAlpha: 0.3, radius: 4, color: '#000', width: 1 }) },
+    { layer: 'telecoms_exchange', minZoom: 10,
+      style: () => ({ fill: '#7D59AB', fillAlpha: 0.3, radius: 3.5, color: '#000', width: 1 }) },
+    { layer: 'telecoms_cabinet', minZoom: 14,
+      style: () => ({ fill: '#61637A', radius: 2 }) },
+    { layer: 'telecoms_antenna', minZoom: 13,
+      style: (p) => oimState(p, { fill: '#9a8bc0', radius: 2, color: '#fff', width: 0.5 }) },
+    { layer: 'telecoms_mast', minZoom: 10,
+      style: (p, z) => oimState(p, { fill: '#61637A', radius: oimLerp(z, 10, 1.5, 16, 4), color: '#fff', width: 1 }) },
+  ],
+  petroleum: [
+    { layer: 'petroleum_site', minZoom: 7,
+      style: () => ({ fill: '#CC9F83', fillAlpha: 0.25, color: '#8c6d5a', width: 1 }) },
+    // Contorno escuro por baixo do duto (o "case" do OIM).
+    { layer: 'petroleum_pipeline', minZoom: 7,
+      style: (p, z) => ({ color: '#666', width: oimLerp(z, 8, 1.5, 16, p.usage === 'transmission' ? 5.5 : 3) }) },
+    { layer: 'petroleum_pipeline',
+      style: (p, z) => ({ color: oimPetroleumColor(p),
+        width: oimLerp(z, 3, 1, 16, p.usage === 'transmission' ? 4 : 1.5),
+        dash: p.location === 'underwater' ? [4, 2] : null }) },
+    { layer: 'petroleum_well', minZoom: 10,
+      style: (p, z) => ({ fill: '#6B6B6B', radius: oimLerp(z, 10, 1, 16, 3.5) }) },
+  ],
+};
+
+// Pinta um tile. `scale` = px CSS por unidade do tile; (dx, dy) = deslocamento
+// em px CSS do canto (≠ 0 só no overzoom, quando o tile é um pedaço do pai).
+function drawOimTile(ctx, data, rules, z, scale, dx, dy) {
+  for (const rule of rules) {
+    if (z < (rule.minZoom ?? 0) || z > (rule.maxZoom ?? 99)) continue;
+    const layer = data[rule.layer];
+    if (!layer) continue;
+    const k = scale * 4096 / layer.extent;
+    const X = (v) => v * k + dx, Y = (v) => v * k + dy;
+    for (const f of layer.features) {
+      const s = rule.style(f.props, z);
+      if (!s) continue;
+      ctx.globalAlpha = s.alpha ?? 1;
+      ctx.setLineDash(s.dash || []);
+      ctx.beginPath();
+      if (f.type === 1) {
+        for (const r of f.rings) {
+          ctx.moveTo(X(r[0]) + s.radius, Y(r[1]));
+          ctx.arc(X(r[0]), Y(r[1]), s.radius, 0, 2 * Math.PI);
+        }
+        ctx.fillStyle = s.fill;
+        ctx.fill();
+        if (s.color && s.width) { ctx.strokeStyle = s.color; ctx.lineWidth = s.width; ctx.stroke(); }
+        continue;
+      }
+      for (const r of f.rings) {
+        ctx.moveTo(X(r[0]), Y(r[1]));
+        for (let i = 2; i < r.length; i += 2) ctx.lineTo(X(r[i]), Y(r[i + 1]));
+      }
+      if (f.type === 3 && s.fill) {
+        ctx.globalAlpha = (s.alpha ?? 1) * (s.fillAlpha ?? 1);
+        ctx.fillStyle = s.fill;
+        ctx.fill('evenodd');
+        ctx.globalAlpha = s.alpha ?? 1;
+      }
+      if (s.color && s.width) {
+        ctx.strokeStyle = s.color;
+        ctx.lineWidth = s.width;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.stroke();
+      }
+    }
+  }
+  ctx.globalAlpha = 1;
+  ctx.setLineDash([]);
+}
+
+let _oimErrorToastShown = false;
+const OimLayer = L.GridLayer.extend({
+  options: {
+    tileSize: 512,
+    maxZoom: 19,
+    minZoom: 2,
+    updateWhenIdle: true,
+    updateWhenZooming: false,
+    attribution: OIM_ATTRIBUTION,
+  },
+  initialize(theme, options) {
+    this._theme = theme;
+    this._rules = OIM_THEMES[theme];
+    L.GridLayer.prototype.initialize.call(this, options);
+    this.on('tileerror', () => {
+      if (_oimErrorToastShown) return;
+      _oimErrorToastShown = true;
+      showToast('OpenInfraMap indisponível agora — tente de novo mais tarde');
+    });
+  },
+  createTile(coords, done) {
+    const tile = L.DomUtil.create('canvas', 'leaflet-tile');
+    const size = this.getTileSize().x;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    tile.width = tile.height = size * dpr;
+    // Tile 512 do Leaflet no zoom Z == tile do OIM no zoom Z−1.
+    const oz = coords.z - 1;
+    const d = Math.max(0, oz - OIM_MAX_ZOOM);           // níveis de overzoom
+    const sub = 2 ** d;
+    const px = Math.floor(coords.x / sub), py = Math.floor(coords.y / sub);
+    fetchOimTile(this._theme, oz - d, px, py).then((data) => {
+      const ctx = tile.getContext('2d');
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      drawOimTile(ctx, data, this._rules, oz, size * sub / 4096,
+        -(coords.x - px * sub) * size, -(coords.y - py * sub) * size);
+      done(null, tile);
+    }, (err) => done(err, tile));
+    return tile;
+  },
+});
+const oimPower     = new OimLayer('power',     { pane: LAYER_PANE('oim-power') });
+const oimWater     = new OimLayer('water',     { pane: LAYER_PANE('oim-water') });
+const oimTelecoms  = new OimLayer('telecoms',  { pane: LAYER_PANE('oim-telecoms') });
+const oimPetroleum = new OimLayer('petroleum', { pane: LAYER_PANE('oim-petroleum') });
+
+// Clique-pra-inspecionar: o canvas não tem eventos por feição, então no clique
+// do mapa refazemos o teste de acerto contra o tile decodificado (já no LRU) de
+// cada tema visível, da regra de cima pra baixo. A tolerância é em px de tela.
+const OIM_KIND_PT = {
+  power_line: 'Linha de energia', power_tower: 'Torre de energia', power_transformer: 'Transformador',
+  power_substation: 'Subestação', power_substation_point: 'Subestação',
+  power_plant: 'Usina', power_plant_point: 'Usina',
+  water_pipeline: 'Adutora / tubulação', pressurised_waterway: 'Conduto forçado',
+  water_reservoir: 'Reservatório', water_tower: 'Reservatório elevado', water_well: 'Poço',
+  water_treatment_plant_polygon: 'Estação de tratamento de água', water_treatment_plant_point: 'Estação de tratamento de água',
+  wastewater_plant_polygon: 'Estação de tratamento de esgoto', wastewater_plant_point: 'Estação de tratamento de esgoto',
+  pumping_station_polygon: 'Estação elevatória', pumping_station_point: 'Estação elevatória',
+  telecoms_communication_line: 'Cabo de telecomunicação', telecoms_mast: 'Torre de telecom',
+  telecoms_antenna: 'Antena', telecoms_cabinet: 'Armário de telecom', telecoms_exchange: 'Central telefônica',
+  telecoms_data_center: 'Data center', telecoms_data_center_point: 'Data center',
+  petroleum_pipeline: 'Duto', petroleum_site: 'Instalação de petróleo/gás', petroleum_well: 'Poço de petróleo/gás',
+};
+const OIM_SUBSTANCE_PT = {
+  water: 'água', rainwater: 'água pluvial', hot_water: 'água quente', wastewater: 'esgoto', sewage: 'esgoto',
+  steam: 'vapor', gas: 'gás', natural_gas: 'gás natural', lpg: 'GLP', lng: 'GNL', cng: 'GNV', oil: 'petróleo',
+  fuel: 'combustível', hydrogen: 'hidrogênio', ngl: 'líquidos de gás natural', condensate: 'condensado',
+};
+const OIM_SOURCE_PT = {
+  solar: 'solar', wind: 'eólica', hydro: 'hidrelétrica', nuclear: 'nuclear', coal: 'carvão', gas: 'gás',
+  oil: 'óleo', diesel: 'diesel', biomass: 'biomassa', biogas: 'biogás', waste: 'resíduos',
+};
+const OIM_LOCATION_PT = { underground: 'subterrâneo', underwater: 'submerso', overground: 'aéreo', overhead: 'aéreo', indoor: 'interno' };
+
+function oimPopupHtml(layerName, p) {
+  let kind = OIM_KIND_PT[layerName] || layerName;
+  if (layerName === 'power_line') {
+    kind = p.type === 'cable' ? 'Cabo de energia'
+      : p.type === 'minor_line' ? 'Linha de distribuição' : 'Linha de transmissão';
+  }
+  const rows = [];
+  const row = (k, v) => { if (v != null && v !== '') rows.push(`<tr><th>${k}</th><td>${escapeHtml(String(v))}</td></tr>`); };
+  row('Operadora', p.operator);
+  const kv = [p.voltage, p.voltage_2, p.voltage_3, p.voltage_4].map(oimNum).filter((n) => n)
+    .map((n) => `${+n.toFixed(1)}`.replace('.', ','));
+  if (kv.length) row('Tensão', `${[...new Set(kv)].join(' / ')} kV`);
+  row('Circuitos', p.circuits);
+  if (layerName === 'power_line' || layerName.startsWith('power_substation')) {
+    row('Frequência', String(p.frequency) === '0' ? 'corrente contínua (HVDC)' : (p.frequency ? `${p.frequency} Hz` : ''));
+  }
+  if (p.substation) row('Tipo', p.substation);
+  if (p.source) row('Fonte', OIM_SOURCE_PT[p.source] || p.source);
+  row('Potência', p.output);
+  if (p.substance) row('Substância', OIM_SUBSTANCE_PT[p.substance] || p.substance);
+  if (oimNum(p.diameter)) row('Diâmetro', `${p.diameter} mm`);
+  if (p.usage === 'transmission') row('Uso', 'transmissão');
+  if (p.location) row('Local', OIM_LOCATION_PT[p.location] || p.location);
+  row('Ref.', p.ref);
+  row('Início de operação', p.start_date);
+  const flags = [p.construction && 'em construção', p.disused && 'desativado'].filter(Boolean);
+  // osm_id negativo = relation (convenção do imposm, que alimenta o OIM).
+  let osm = '';
+  const id = oimNum(p.osm_id);
+  if (id) {
+    const type = id < 0 ? 'relation' : p.is_node ? 'node' : 'way';
+    osm = `<a href="https://www.openstreetmap.org/${type}/${Math.abs(id)}" target="_blank" rel="noopener">ver no OSM ↗</a>`;
+  }
+  return `<div class="oim-popup"><strong>${escapeHtml(p.name || kind)}</strong>`
+    + (p.name ? `<div class="oim-kind">${escapeHtml(kind)}</div>` : '')
+    + (flags.length ? `<div class="oim-kind">${flags.join(', ')}</div>` : '')
+    + (rows.length ? `<table>${rows.join('')}</table>` : '')
+    + (osm ? `<div class="oim-osm">${osm}</div>` : '')
+    + '</div>';
+}
+
+// Distância² de (px,py) ao segmento (ax,ay)–(bx,by).
+function _segDist2(px, py, ax, ay, bx, by) {
+  const vx = bx - ax, vy = by - ay;
+  const L2 = vx * vx + vy * vy;
+  let t = L2 ? ((px - ax) * vx + (py - ay) * vy) / L2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  const qx = ax + t * vx - px, qy = ay + t * vy - py;
+  return qx * qx + qy * qy;
+}
+function _ringContains(r, x, y) {
+  let inside = false;
+  for (let i = 0, j = r.length - 2; i < r.length; j = i, i += 2) {
+    const xi = r[i], yi = r[i + 1], xj = r[j], yj = r[j + 1];
+    if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+// Feição sob (x, y) em unidades do tile; `unitPx` = px de tela por unidade.
+function oimHitTest(data, rules, z, x, y, unitPx) {
+  const TOL_PX = 6;
+  for (let ri = rules.length - 1; ri >= 0; ri--) {
+    const rule = rules[ri];
+    if (z < (rule.minZoom ?? 0) || z > (rule.maxZoom ?? 99)) continue;
+    const layer = data[rule.layer];
+    if (!layer) continue;
+    const u = unitPx * 4096 / layer.extent;            // px por unidade DESTA camada
+    const lx = x * layer.extent / 4096, ly = y * layer.extent / 4096;
+    for (let fi = layer.features.length - 1; fi >= 0; fi--) {
+      const f = layer.features[fi];
+      const s = rule.style(f.props, z);
+      if (!s) continue;
+      if (f.type === 1) {
+        const tol = ((s.radius || 2) + TOL_PX) / u;
+        if (f.rings.some((r) => (r[0] - lx) ** 2 + (r[1] - ly) ** 2 <= tol * tol)) return { layer: rule.layer, f };
+      } else if (f.type === 3 && s.fill) {
+        let inside = false;
+        for (const r of f.rings) if (_ringContains(r, lx, ly)) inside = !inside;
+        if (inside) return { layer: rule.layer, f };
+      } else {
+        const tol = ((s.width || 1) / 2 + TOL_PX) / u;
+        for (const r of f.rings) {
+          for (let i = 2; i < r.length; i += 2) {
+            if (_segDist2(lx, ly, r[i - 2], r[i - 1], r[i], r[i + 1]) <= tol * tol) return { layer: rule.layer, f };
+          }
+        }
+      }
+    }
+  }
+  return null;
+}
+
+map.on('click', async (e) => {
+  if (drawingMode) return;                 // o editor de traçado é dono do clique
+  // Clique num marcador/rota/popup é deles — o evento ainda borbulha até o mapa.
+  if (e.originalEvent?.target?.closest?.('.leaflet-interactive, .leaflet-marker-icon, .leaflet-popup')) return;
+  // Ordem: o tema mais alto no empilhamento ganha.
+  const themes = [['oim-power', oimPower], ['oim-water', oimWater],
+    ['oim-telecoms', oimTelecoms], ['oim-petroleum', oimPetroleum]]
+    .filter(([, l]) => map.hasLayer(l))
+    .sort(([a], [b]) => layerOrder.indexOf(b) - layerOrder.indexOf(a));
+  if (!themes.length) return;
+  const zoom = map.getZoom();
+  const Z = Math.min(Math.round(zoom), OIM_MAX_ZOOM + 1);  // zoom do tile 512 no Leaflet
+  const zStyle = Math.round(zoom) - 1;                    // o mesmo `z` do desenho
+  const pt = map.project(e.latlng, Z);
+  const n = 2 ** (Z - 1);
+  const tx = Math.floor(pt.x / 512), ty = Math.floor(pt.y / 512);
+  const x = (pt.x / 512 - tx) * 4096, y = (pt.y / 512 - ty) * 4096;
+  const unitPx = 512 / 4096 * 2 ** (zoom - Z);
+  for (const [, l] of themes) {
+    let data;
+    try { data = await fetchOimTile(l._theme, Z - 1, ((tx % n) + n) % n, ty); } catch { continue; }
+    const hit = oimHitTest(data, l._rules, zStyle, x, y, unitPx);
+    if (hit) {
+      L.popup({ maxWidth: 280, className: 'oim-popup-wrap' })
+        .setLatLng(e.latlng).setContent(oimPopupHtml(hit.layer, hit.f.props)).openOn(map);
+      return;
+    }
+  }
+});
+
+// ─── Enchente de 1922 (cota 724 m) ───────────────────────────────────────────
+// Mancha de "banheira": todo o relevo ATUAL até 724 m ligado às calhas do
+// Tietê, Pinheiros e Tamanduateí. Assada por scripts/build-enchente.py (DEM de
+// SP + FABDEM) — ver lá as hipóteses e o corte a jusante de Barueri. É um
+// GeoJSON pequeno (~225 kB, gzip no transporte), baixado só quando a camada é
+// ligada pela primeira vez. Não-interativa: cobre a várzea inteira e não pode
+// roubar o clique das rotas nem do editor de traçado. A opacidade vai no PANE
+// (não no estilo), pra contorno e preenchimento esmaecerem juntos.
+const ENCHENTE_1922_URL = './geo/enchente-1922.geojson';
+const ENCHENTE_1922_DEFAULT_PCT = 70;
+// O slider só reaplica opacidade no `input`, e o restore só toca no que difere
+// do default — então o pane já nasce no default.
+map.getPane(LAYER_PANE('enchente-1922')).style.opacity = String(ENCHENTE_1922_DEFAULT_PCT / 100);
+const enchente1922 = L.geoJSON(null, {
+  pane: LAYER_PANE('enchente-1922'),
+  interactive: false,
+  style: { color: '#0b3d91', weight: 1, fillColor: '#0a84ff', fillOpacity: 0.85 },
+  attribution: 'Enchente de 1922 (cota 724 m): modelo Pedal Hidrográfico sobre DEM de SP + FABDEM',
+});
+let _enchenteLoad = null;
+enchente1922.on('add', () => {
+  if (_enchenteLoad) return;
+  _enchenteLoad = fetch(ENCHENTE_1922_URL)
+    .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+    .then((fc) => enchente1922.addData(fc))
+    .catch((err) => {
+      _enchenteLoad = null;   // deixa o próximo liga/desliga tentar de novo
+      console.warn('[enchente-1922]', err);
+      showToast(`Falha ao carregar a enchente de 1922: ${err.message}`);
+    });
 });
 
 // ─── Combined layer panel ────────────────────────────────────────────────────
@@ -693,8 +1279,18 @@ const OVERLAY_LAYERS = [
   },
   { id: 'sara1930', label: 'SARA 1930',           layer: sara1930, defaultVisible: false, defaultPct: 85 },
   { id: 'mapa1850', label: 'Mapa 1850',           layer: mapa1850, defaultVisible: false, defaultPct: 85 },
-  { id: 'mtpi-pindorama', label: 'MTPI Pindorama 90m',       layer: mtpiPindorama, defaultVisible: false, defaultPct: 100 },
-  { id: 'mtpi-parana',    label: 'MTPI Bacia do Paraná 30m', layer: mtpiParana,    defaultVisible: false, defaultPct: 100 },
+  { id: 'mtpi-v1', label: 'MTPI v1 (3/30/300 km)',    layer: mtpiV1, defaultVisible: false, defaultPct: 100 },
+  { id: 'mtpi-v2', label: 'MTPI v2 (30/300/3000 km)', layer: mtpiV2, defaultVisible: false, defaultPct: 100 },
+  // Mancha da enchente de 1922: relevo atual até 724 m ligado às calhas (ver
+  // ENCHENTE_1922_URL). Opacidade no pane — contorno e preenchimento juntos.
+  {
+    id: 'enchente-1922',
+    label: 'Enchente de 1922 (cota 724 m)',
+    layer: enchente1922,
+    defaultVisible: false,
+    defaultPct: ENCHENTE_1922_DEFAULT_PCT,
+    setOpacity: (frac) => { map.getPane(LAYER_PANE('enchente-1922')).style.opacity = String(frac); },
+  },
   // Pseudo-layer for the loaded sidebar routes. Custom show/hide/setOpacity
   // because routes are a Map of polylines + markers, not a single tileLayer.
   {
@@ -729,6 +1325,12 @@ const OVERLAY_LAYERS = [
     hide: () => cicloinfraLayer.hide(),
     setOpacity: (frac) => cicloinfraLayer.setOpacity(frac),
   },
+  // OpenInfraMap — tiles vetoriais desenhados em canvas (ver OimLayer).
+  // Clique numa feição abre o popup com operadora/tensão/substância.
+  { id: 'oim-power',     label: 'Energia (OpenInfraMap)',         layer: oimPower,     defaultVisible: false, defaultPct: 100 },
+  { id: 'oim-water',     label: 'Água e esgoto (OpenInfraMap)',   layer: oimWater,     defaultVisible: false, defaultPct: 100 },
+  { id: 'oim-telecoms',  label: 'Telecom (OpenInfraMap)',         layer: oimTelecoms,  defaultVisible: false, defaultPct: 100 },
+  { id: 'oim-petroleum', label: 'Petróleo e gás (OpenInfraMap)',  layer: oimPetroleum, defaultVisible: false, defaultPct: 100 },
   // Viário do OSM (todo highway=*), branco com 3 m de largura real.
   {
     id: 'osm-viario',

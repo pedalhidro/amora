@@ -2567,6 +2567,14 @@ body.trace-preview .tp-label { display: none !important; }
 .osm-tip em { color: #97a3b1; font-style: italic; }
 .osm-tip strong { color: #fff; }
 
+/* Popup de feição do OpenInfraMap (clique numa linha/estação/torre). */
+.oim-popup { font-size: 12px; line-height: 1.35; }
+.oim-popup .oim-kind { color: #666; font-style: italic; }
+.oim-popup table { border-collapse: collapse; margin-top: 4px; }
+.oim-popup th { text-align: left; font-weight: 600; padding: 1px 8px 1px 0; color: #444; vertical-align: top; }
+.oim-popup td { padding: 1px 0; }
+.oim-popup .oim-osm { margin-top: 4px; font-size: 11px; }
+
 /* Permanent name tooltip beside trackpoints / POIs. */
 .tp-label {
   background: rgba(15, 23, 33, 0.9);

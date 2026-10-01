@@ -25,7 +25,7 @@
 // origin) e v371/v372 saíram na `deploy` (busca de endereços, ⇄ inverter).
 // v373 fica acima de tudo que já circulou, que é o que importa: se a VERSION
 // não crescer, o service worker serve cache velho.
-const VERSION = 'phidro-v417';
+const VERSION = 'phidro-v418';
 const STATIC_CACHE = `${VERSION}-static`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 const DATA_CACHE = 'phidro-data-v1';
@@ -239,7 +239,12 @@ const TILE_HOSTS = [
   /(^|\.)server\.arcgisonline\.com$/,
   /(^|\.)telhas\.pedalhidrografi\.co$/,
   /(^|\.)cameratopo\.pedalhidrografi\.co$/,
+  /^mtpi\.pedalhidrografi\.co$/,          // MTPI global v1/v2 (WebP no R2)
   /(^|\.)raster\.geosampa\.prefeitura\.sp\.gov\.br$/,
+  // Tiles VETORIAIS (MVT) do OpenInfraMap — energia/água/telecom/petróleo e
+  // gás. Vêm por fetch() (destination vazio), não por <img>: entram pelo
+  // `.pbf` no teste abaixo. Projeto voluntário: o cache poupa o servidor deles.
+  /^openinframap\.org$/,
 ];
 // APIs de terceiros que vale guardar (stale-while-revalidate, por deploy).
 // (photon.komoot.io — a busca de endereços — fica DE FORA de propósito: cada
@@ -342,7 +347,8 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  if (TILE_HOSTS.some((re) => re.test(url.hostname)) && req.destination === 'image') {
+  if (TILE_HOSTS.some((re) => re.test(url.hostname))
+      && (req.destination === 'image' || url.pathname.endsWith('.pbf'))) {
     if (req.mode === 'cors') event.respondWith(tileResponse(event));
     return;   // no-cors: resposta opaca — sem cache do SW (o cache HTTP segue valendo)
   }
