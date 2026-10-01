@@ -235,7 +235,7 @@ const DEFAULT_LAYER_ORDER = [
   'sara1930',                  // SARA 1930 (histórico)
   'mapa1850',                  // Mapa de 1850 (histórico)
   'mtpi-v1', 'mtpi-v2',        // MTPI global (índice de posição topográfica multiescala)
-  'enchente-1922',             // mancha da enchente (acima dos mapas de relevo/históricos)
+  'enchente-1929',             // mancha da enchente (acima dos mapas de relevo/históricos)
   'custom-wms', 'custom-xyz',  // camadas custom do usuário
   'osm-viario',                // todas as vias em branco — sob cicloinfra/águas
   'osm-cicloinfra',
@@ -658,13 +658,24 @@ const mapa1850 = L.tileLayer('https://telhas.pedalhidrografi.co/1850/{z}/{x}/{y}
   attribution: 'Mapa de 1850 · Pedal Hidrográfico',
 });
 
+// ─── Cor da água ─────────────────────────────────────────────────────────────
+// Cor-PADRÃO de tudo o que é água no app (reservatórios, adutoras, poços,
+// usina hidrelétrica, a mancha da enchente…): o oliva-terroso dos rios do
+// interior carregados de sedimento — amarelo/marrom/preto —, NÃO o azul, que
+// lê como oceano. Decisão do coletivo; use estas constantes em vez de um azul
+// numa camada nova de água. (A "Morros e Águas" fica de fora: o verde/ocre
+// dela espelha de propósito a folha de estilo JOSM homônima.)
+const WATER_COLOR = '#867627';
+const WATER_COLOR_DARK = '#4a4115';      // contornos sobre o WATER_COLOR
+
 // ─── OpenInfraMap: energia, água, telecom, petróleo e gás ────────────────────
 // Infraestrutura do OSM como o openinframap.org a recorta e serve. O site NÃO
 // tem mais tiles raster (o tiles-*.openinframap.org sumiu e o /map.json está
 // marcado DEPRECATED) — só vetoriais (MVT), um tileset por tema em
 // /map/<tema>/{z}/{x}/{y}.pbf, CORS aberto. Então decodificamos o MVT aqui e
 // desenhamos num <canvas> por tile (L.GridLayer), com as paletas do próprio
-// OpenInfraMap (cores por tensão, por substância). Sem dependência nova: o
+// OpenInfraMap (cores por tensão, por substância) — exceto a ÁGUA, que segue a
+// WATER_COLOR do app em vez do azul/lilás do OIM. Sem dependência nova: o
 // decodificador de protobuf abaixo cobre só o que o formato MVT usa.
 //
 // Os tiles do OIM são de 512 px (padrão do MapLibre): o tile z cobre o que o
@@ -847,7 +858,7 @@ function oimWaterColor(p) {
     case 'hot_water': return '#AD4C4C';
     case 'wastewater': case 'sewage': case 'waterwaste': return '#BAA87B';
     case 'steam': return '#7BBAAC';
-    default: return '#7B7CBA';
+    default: return WATER_COLOR;          // água, pluvial ou sem substância
   }
 }
 function oimPetroleumColor(p) {
@@ -897,36 +908,36 @@ const OIM_THEMES = {
         color: '#fff', width: 1 }) },
     { layer: 'power_plant_point', minZoom: 5,
       style: (p, z) => oimState(p, {
-        fill: { solar: '#FCB512', wind: '#78CC9E', hydro: '#3a85d9', nuclear: '#863BED',
+        fill: { solar: '#FCB512', wind: '#78CC9E', hydro: WATER_COLOR, nuclear: '#863BED',
           coal: '#7C4544', gas: '#BFBC6B', oil: '#6B6B6B', diesel: '#6B6B6B',
           biomass: '#9fb84a', biogas: '#9fb84a', waste: '#9fb84a' }[p.source] || '#999',
         radius: oimLerp(z, 5, 2, 14, 5), color: '#333', width: 1 }) },
   ],
   water: [
     { layer: 'water_reservoir', minZoom: 4,
-      style: (p) => ({ fill: p.type === 'reservoir_covered' ? '#8e8e9a' : '#3a85d9', fillAlpha: 0.55,
-        color: 'rgb(80,80,100)', width: 0.5 }) },
+      style: (p) => ({ fill: p.type === 'reservoir_covered' ? '#8e8e9a' : WATER_COLOR, fillAlpha: 0.8,
+        color: WATER_COLOR_DARK, width: 0.5 }) },
     { layer: 'water_treatment_plant_polygon', minZoom: 10,
-      style: () => ({ fill: '#7BBAAC', fillAlpha: 0.3, color: '#00001e', width: 1 }) },
+      style: () => ({ fill: WATER_COLOR, fillAlpha: 0.3, color: '#00001e', width: 1 }) },
     { layer: 'wastewater_plant_polygon', minZoom: 10,
       style: () => ({ fill: '#BAA87B', fillAlpha: 0.3, color: '#00001e', width: 1 }) },
     { layer: 'pumping_station_polygon', minZoom: 10,
-      style: () => ({ fill: '#7B7CBA', fillAlpha: 0.3, color: '#00001e', width: 1 }) },
+      style: () => ({ fill: WATER_COLOR, fillAlpha: 0.3, color: '#00001e', width: 1 }) },
     { layer: 'pressurised_waterway', minZoom: 3,
       style: (p, z) => ({ color: oimWaterColor(p), width: oimLerp(z, 3, 0.3, 16, 4) }) },
     { layer: 'water_pipeline', minZoom: 3,
       style: (p, z) => ({ color: oimWaterColor(p),
         width: oimLerp(z, 3, 1, 18, p.usage === 'transmission' ? 10 : 3) }) },
     { layer: 'water_well', minZoom: 8,
-      style: (p, z) => ({ fill: '#7B7CBA', radius: oimLerp(z, 8, 1, 18, 6), color: '#000', width: 1 }) },
+      style: (p, z) => ({ fill: WATER_COLOR, radius: oimLerp(z, 8, 1, 18, 6), color: '#000', width: 1 }) },
     { layer: 'water_tower', minZoom: 10,
-      style: (p, z) => ({ fill: '#7B7CBA', radius: oimLerp(z, 10, 1.5, 17, 5), color: '#fff', width: 1 }) },
+      style: (p, z) => ({ fill: WATER_COLOR, radius: oimLerp(z, 10, 1.5, 17, 5), color: '#fff', width: 1 }) },
     { layer: 'water_treatment_plant_point', minZoom: 5,
-      style: (p, z) => ({ fill: '#7BBAAC', radius: oimLerp(z, 5, 2, 14, 5), color: '#00001e', width: 1 }) },
+      style: (p, z) => ({ fill: WATER_COLOR, radius: oimLerp(z, 5, 2, 14, 5), color: '#00001e', width: 1 }) },
     { layer: 'wastewater_plant_point', minZoom: 5,
       style: (p, z) => ({ fill: '#BAA87B', radius: oimLerp(z, 5, 2, 14, 5), color: '#00001e', width: 1 }) },
     { layer: 'pumping_station_point', minZoom: 7,
-      style: (p, z) => ({ fill: '#7B7CBA', radius: oimLerp(z, 7, 1.5, 14, 4), color: '#00001e', width: 1 }) },
+      style: (p, z) => ({ fill: WATER_COLOR, radius: oimLerp(z, 7, 1.5, 14, 4), color: '#00001e', width: 1 }) },
   ],
   telecoms: [
     { layer: 'telecoms_communication_line',
@@ -1204,7 +1215,7 @@ map.on('click', async (e) => {
   }
 });
 
-// ─── Enchente de 1922 (cota 724 m) ───────────────────────────────────────────
+// ─── Enchente de 1929 (cota 724 m) ───────────────────────────────────────────
 // Mancha de "banheira": todo o relevo ATUAL até 724 m ligado às calhas do
 // Tietê, Pinheiros e Tamanduateí. Assada por scripts/build-enchente.py (DEM de
 // SP + FABDEM) — ver lá as hipóteses e o corte a jusante de Barueri. É um
@@ -1212,27 +1223,27 @@ map.on('click', async (e) => {
 // ligada pela primeira vez. Não-interativa: cobre a várzea inteira e não pode
 // roubar o clique das rotas nem do editor de traçado. A opacidade vai no PANE
 // (não no estilo), pra contorno e preenchimento esmaecerem juntos.
-const ENCHENTE_1922_URL = './geo/enchente-1922.geojson';
-const ENCHENTE_1922_DEFAULT_PCT = 70;
+const ENCHENTE_1929_URL = './geo/enchente-1929.geojson';
+const ENCHENTE_1929_DEFAULT_PCT = 70;
 // O slider só reaplica opacidade no `input`, e o restore só toca no que difere
 // do default — então o pane já nasce no default.
-map.getPane(LAYER_PANE('enchente-1922')).style.opacity = String(ENCHENTE_1922_DEFAULT_PCT / 100);
-const enchente1922 = L.geoJSON(null, {
-  pane: LAYER_PANE('enchente-1922'),
+map.getPane(LAYER_PANE('enchente-1929')).style.opacity = String(ENCHENTE_1929_DEFAULT_PCT / 100);
+const enchente1929 = L.geoJSON(null, {
+  pane: LAYER_PANE('enchente-1929'),
   interactive: false,
-  style: { color: '#0b3d91', weight: 1, fillColor: '#0a84ff', fillOpacity: 0.85 },
-  attribution: 'Enchente de 1922 (cota 724 m): modelo Pedal Hidrográfico sobre DEM de SP + FABDEM',
+  style: { color: WATER_COLOR_DARK, weight: 1, fillColor: WATER_COLOR, fillOpacity: 0.85 },
+  attribution: 'Enchente de 1929 (cota 724 m): modelo Pedal Hidrográfico sobre DEM de SP + FABDEM',
 });
 let _enchenteLoad = null;
-enchente1922.on('add', () => {
+enchente1929.on('add', () => {
   if (_enchenteLoad) return;
-  _enchenteLoad = fetch(ENCHENTE_1922_URL)
+  _enchenteLoad = fetch(ENCHENTE_1929_URL)
     .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
-    .then((fc) => enchente1922.addData(fc))
+    .then((fc) => enchente1929.addData(fc))
     .catch((err) => {
       _enchenteLoad = null;   // deixa o próximo liga/desliga tentar de novo
-      console.warn('[enchente-1922]', err);
-      showToast(`Falha ao carregar a enchente de 1922: ${err.message}`);
+      console.warn('[enchente-1929]', err);
+      showToast(`Falha ao carregar a enchente de 1929: ${err.message}`);
     });
 });
 
@@ -1281,15 +1292,15 @@ const OVERLAY_LAYERS = [
   { id: 'mapa1850', label: 'Mapa 1850',           layer: mapa1850, defaultVisible: false, defaultPct: 85 },
   { id: 'mtpi-v1', label: 'MTPI v1 (3/30/300 km)',    layer: mtpiV1, defaultVisible: false, defaultPct: 100 },
   { id: 'mtpi-v2', label: 'MTPI v2 (30/300/3000 km)', layer: mtpiV2, defaultVisible: false, defaultPct: 100 },
-  // Mancha da enchente de 1922: relevo atual até 724 m ligado às calhas (ver
-  // ENCHENTE_1922_URL). Opacidade no pane — contorno e preenchimento juntos.
+  // Mancha da enchente de 1929: relevo atual até 724 m ligado às calhas (ver
+  // ENCHENTE_1929_URL). Opacidade no pane — contorno e preenchimento juntos.
   {
-    id: 'enchente-1922',
-    label: 'Enchente de 1922 (cota 724 m)',
-    layer: enchente1922,
+    id: 'enchente-1929',
+    label: 'Enchente de 1929 (cota 724 m)',
+    layer: enchente1929,
     defaultVisible: false,
-    defaultPct: ENCHENTE_1922_DEFAULT_PCT,
-    setOpacity: (frac) => { map.getPane(LAYER_PANE('enchente-1922')).style.opacity = String(frac); },
+    defaultPct: ENCHENTE_1929_DEFAULT_PCT,
+    setOpacity: (frac) => { map.getPane(LAYER_PANE('enchente-1929')).style.opacity = String(frac); },
   },
   // Pseudo-layer for the loaded sidebar routes. Custom show/hide/setOpacity
   // because routes are a Map of polylines + markers, not a single tileLayer.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Assa a mancha da enchente histórica de São Paulo (camada "Enchente de 1922").
+"""Assa a mancha da enchente histórica de São Paulo (camada "Enchente de 1929").
 
 Hipótese da camada: tudo o que hoje está a até COTA metros de altitude
 (default 724 m) e é ligado aos rios da cidade estava debaixo d'água. É um
@@ -20,7 +20,7 @@ de SP discorda dele em mais de SRC_DISAGREE_MAX_M (os buracos que o DEM de SP
 grava como 0 m — sem essa guarda cada buraco viraria um lago).
 
 Saída: GeoJSON (FeatureCollection com 1 MultiPolygon) em
-web/geo/enchente-1922.geojson, servido pelo container junto do app.
+web/geo/enchente-1929.geojson, servido pelo container junto do app.
 
 Dependências (só pro bake, não pro backend):
     pip install rasterio numpy scipy shapely
@@ -38,7 +38,7 @@ import math
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-DEFAULT_OUT = REPO / "web" / "geo" / "enchente-1922.geojson"
+DEFAULT_OUT = REPO / "web" / "geo" / "enchente-1929.geojson"
 
 # Mesmas fontes do build-viario.py (FABDEM_BASE / SAMPA_DEM_URL).
 FABDEM_BASE = "https://fabdem.pedalhidrografi.co/"

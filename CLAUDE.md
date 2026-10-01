@@ -232,8 +232,8 @@ one optional hosted deploy target, not a dependency.
   o plano B pago ~US$0,12/GB). Consumidores a repontar depois (Fase 3):
   `web/app.js` `FABDEM_BASE_URL`, `scripts/build-viario.py` `FABDEM_BASE`,
   `cameratopo/render.py`, `quilojaules/app.js`),
-  `build-enchente.py` (data-prep: assa `web/geo/enchente-1922.geojson`, a
-  camada "Enchente de 1922 (cota 724 m)" — banheira sobre o relevo ATUAL
+  `build-enchente.py` (data-prep: assa `web/geo/enchente-1929.geojson`, a
+  camada "Enchente de 1929 (cota 724 m)" — banheira sobre o relevo ATUAL
   (mosaico DEM de SP + FABDEM, mesma fusão/guarda de buracos do
   `build-viario.py`), só as componentes conexas às sementes nas calhas do
   Tietê/Pinheiros/Tamanduateí, cortada a jusante de Barueri (`--west`);
@@ -928,6 +928,14 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
 
 ## Conventions — please follow
 
+- **Água é `WATER_COLOR` (`#867627`), não azul.** Decisão do coletivo: rio
+  do interior carregado de sedimento é amarelo/marrom/preto; azul lê como
+  oceano. Toda camada de água nova (preenchimento, linha, ponto) usa
+  `WATER_COLOR` / `WATER_COLOR_DARK` (contorno), declaradas antes da seção do
+  OpenInfraMap em `web/app.js` — inclusive desviando da paleta de uma fonte
+  externa (o OIM pinta água de azul/lilás). Exceção consciente: "Morros e
+  Águas" (e o card OG que a espelha no backend) seguem o verde/ocre da folha
+  de estilo JOSM homônima.
 - **License: AGPL-3.0** (was GPL-2.0 until v411, 09/2026 — switched so the
   GPL-3.0 `leaflet-rotate` could be bundled; GPL-3.0 and AGPL-3.0 combine via
   §13 of each). Every vendored dep must stay AGPL-compatible (today: BSD,
