@@ -13,15 +13,14 @@ pra produção — é exatamente este kit.
 
 ## Pendências (só a pessoa responsável resolve)
 
-- [ ] **E-mail de contato** público (lojas + política de privacidade). Sugestão:
-      um endereço do coletivo, não pessoal. Substituir `[[contato@pedalhidrografi.co]]`
-      aqui e em `web/privacidade.html`.
-- [ ] **Nome da pessoa responsável** pelos dados (LGPD) em
-      `web/privacidade.html` (`[[Danilo Lessa Bernardineli]]`).
+- [x] **E-mail de contato** público (lojas + política de privacidade):
+      `contato@abiru.to`.
+- [x] **Pessoa responsável** pelos dados (LGPD): Danilo Lessa Bernardineli.
 - [ ] **Telefone** pra revisão da Apple (não é público).
-- [ ] Publicar `web/privacidade.html` (deploy) — as lojas exigem a URL no ar:
+- [x] `web/privacidade.html` no ar (v423):
       `https://amora.pedalhidrografi.co/privacidade.html`.
-- [ ] Contas: Apple Developer (US$ 99/ano) e Play Console (US$ 25, uma vez).
+- [ ] Contas: Play Console (US$ 25, uma vez) — em verificação desde
+      01/10/2026; Apple Developer (US$ 99/ano) — a criar.
 - [ ] Chave de assinatura do Android (upload key) — gerar UMA vez e guardar com
       backup; perder a chave = não conseguir mais atualizar o app (o Play App
       Signing permite trocar a de upload, com pedido ao suporte).
@@ -38,7 +37,7 @@ pra produção — é exatamente este kit.
 | Site | `https://amora.pedalhidrografi.co/` | |
 | URL de suporte | `https://github.com/pedalhidro/amora/issues` | |
 | Política de privacidade | `https://amora.pedalhidrografi.co/privacidade.html` | |
-| E-mail de contato | `[[EMAIL DE CONTATO]]` | |
+| E-mail de contato | `contato@abiru.to` | |
 
 ### Descrição completa (Play ≤ 4000 · App Store ≤ 4000)
 
@@ -145,7 +144,7 @@ App Store Connect → Apps → novo app (iOS, nome, idioma principal Português
   ```
   Versão de teste do amora, o mapa do Pedal Hidrográfico — coletivo de ciclismo urbano de São Paulo que pedala seguindo os rios e córregos escondidos da cidade. Nesta fase, testamos principalmente o envio de fotos e vídeos pelo app e a localização ao vivo com a tela apagada.
   ```
-- **E-mail para feedback:** `[[EMAIL DE CONTATO]]`
+- **E-mail para feedback:** `contato@abiru.to`
 - **URL de marketing:** `https://amora.pedalhidrografi.co/` · **Política de
   privacidade:** `https://amora.pedalhidrografi.co/privacidade.html`
 - **O que testar** (por build):
@@ -169,7 +168,7 @@ What the app adds over the website:
 2. Native photo/video picker and background upload — tap "enviar imgs", then "Escolher imagens". The system photo picker is used without photo-library permission; uploads continue in a background URLSession if the app is closed.
 3. An offline page and a cached copy of the map.
 
-User-generated content: uploaded photos and videos join the collective's public archive (CC BY-SA 4.0). Any item can be deleted from its popup (🗑), and removal can be requested at [[EMAIL DE CONTATO]]. Privacy policy: https://amora.pedalhidrografi.co/privacidade.html
+User-generated content: uploaded photos and videos join the collective's public archive (CC BY-SA 4.0). Any item can be deleted from its popup (🗑), and removal can be requested at contato@abiru.to. Privacy policy: https://amora.pedalhidrografi.co/privacidade.html
 ```
 
 **Para a App Store (depois do beta):** capturas de iPhone 6,9" (1320×2868) e,
