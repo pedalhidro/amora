@@ -124,6 +124,11 @@
 
 <script src="./lib/n3.min.js"></script>
 <script type="module">
+// Helpers comuns das páginas (?api=N: ver o comentário do import no subir.html).
+import {
+  escapeHtml, turtleEscape, TTL_PREFIXES, blockEmbeddedPinch,
+  fmtDateTime, parseDuration, attachDateTimePicker,
+} from './lib/utils.js?api=1';
 // ═══════════════════════ [pure] lógica de TTL (sem DOM) ═══════════════════
 // Mesmo dialeto do upload_tour.html. O save usa mode=patch: o documento só
 // afirma os campos que MUDARAM (mais `a ph:Tour` pra identificar o alvo) e
@@ -152,42 +157,12 @@ const PRED_TO_FIELD = {};
 for (const [k, preds] of Object.entries(FIELD_PREDS))
   for (const p of preds) PRED_TO_FIELD[p] = k;
 
-const PREFIXES = `\
-@prefix dcterms: <http://purl.org/dc/terms/> .
-@prefix ph:      <https://id.pedalhidrografi.co/terms#> .
-@prefix phd:     <https://pedalhidrografi.co/data/> .
-@prefix pas:     <https://id.pedalhidrografi.co/passeio/> .
-@prefix qudt:    <http://qudt.org/schema/qudt/> .
-@prefix schema:  <https://schema.org/> .
-@prefix unit:    <http://qudt.org/vocab/unit/> .
-@prefix xsd:     <http://www.w3.org/2001/XMLSchema#> .
-`;
+const PREFIXES = TTL_PREFIXES + '\n';
 
-// Literal de UMA linha, narrativa inclusa: o multipart/form-data converte toda
-// quebra CRUA de um campo de texto em CRLF (o spec manda) — num """longo""" o
-// \r entrava na descrição gravada. Escapada, a quebra chega como \n.
-function turtleEscape(s) {
-  return (s || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"')
-    .replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t');
-}
+// Literal de UMA linha, narrativa inclusa (turtleEscape: a quebra chega como \n).
 // Quebras de linha como o <textarea> as devolve (LF): uma descrição gravada
 // com CRLF parecia "editada" e inflava o "Salvar todos (N)".
 const normNewlines = (s) => String(s ?? '').replace(/\r\n?/g, '\n');
-function fmtDateTime(value) {
-  const v = value.trim().replace(' ', 'T');
-  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(v)) {
-    throw new Error(`data inválida: "${value}" — use AAAA-MM-DD HH:MM (24h)`);
-  }
-  return v.length === 16 ? `${v}:00-03:00` : `${v}-03:00`;
-}
-function parseDuration(value) {
-  if (!value) return null;
-  const parts = value.split(':').map(p => parseInt(p, 10));
-  if (parts.length !== 2 && parts.length !== 3) return null;
-  if (parts.some(n => !Number.isFinite(n) || n < 0)) return null;
-  const [h, m, s = 0] = parts;
-  return `PT${h}H${m}M${s}S`;
-}
 function durToDisplay(lit) {
   const m = lit.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?$/);
   if (!m) return '';
@@ -294,16 +269,8 @@ function buildTourPatch(id, tour, cur) {
 // ═══════════════════════ [/pure] ══════════════════════════════════════════
 
 const $ = (sel, root = document) => root.querySelector(sel);
-// Dentro do sheet do Censo, pinça não pode deixar o app INTEIRO com zoom (o
-// Safari ignora user-scalable=no). Standalone mantém a pinça (acessibilidade).
-if (window.self !== window.top) {
-  for (const t of ['gesturestart', 'gesturechange']) document.addEventListener(t, (e) => e.preventDefault(), { passive: false });
-}
-function escapeHtml(s) {
-  return String(s ?? '').replace(/[&<>"']/g, c => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-  }[c]));
-}
+// Dentro do sheet do Censo, pinça não pode deixar o app INTEIRO com zoom.
+blockEmbeddedPinch();
 
 const FIELD_LABELS = {
   desc: 'descrição', departed: 'partida', arrived: 'chegada',
@@ -353,66 +320,6 @@ function currentValues(t) {
 }
 
 // ───────────────────────── Render ─────────────────────────────────────────
-// iOS/iPadOS: showPicker() existe mas não abre nada em input de data/hora
-// (WebKit bug 261703) nem lança — o 📅 ficava morto. iPadOS se diz Mac.
-const IS_IOS = /iP(hone|ad|od)/.test(navigator.userAgent)
-  || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-// Toque (ou iOS): o picker real, transparente, fica POR CIMA do 📅 (.dt-overlay).
-const DT_OVERLAY = IS_IOS || !!window.matchMedia?.('(pointer: coarse)').matches;
-
-// Picker nativo por trás do campo de texto 24h (o texto segue canônico — o
-// datetime-local cru renderiza mm/dd/yyyy + AM/PM em locale en-US). O 📅 abre
-// o picker e copia a escolha pro texto, disparando `input` pra manter o
-// dirty-tracking do card. `seedFrom()` dá o valor inicial quando o campo está
-// vazio (ex.: Chegou em abre no dia do Partiu em).
-function attachDateTimePicker(input, seedFrom) {
-  // Texto livre sem autocorreção (a data é AAAA-MM-DD HH:MM).
-  input.setAttribute('autocapitalize', 'off');
-  input.setAttribute('autocorrect', 'off');
-  input.spellcheck = false;
-  const wrap = document.createElement('div');
-  wrap.className = 'dt-field' + (DT_OVERLAY ? ' dt-overlay' : '');
-  input.parentNode.insertBefore(wrap, input);
-  wrap.appendChild(input);
-  const picker = document.createElement('input');
-  picker.type = 'datetime-local';
-  picker.tabIndex = -1;
-  picker.setAttribute('aria-hidden', 'true');
-  const btn = document.createElement('button');
-  btn.type = 'button';
-  btn.className = 'pick';
-  btn.textContent = '📅';
-  btn.title = 'Escolher data e hora no calendário';
-  btn.setAttribute('aria-label', 'Escolher data e hora');
-  const pickWrap = document.createElement('span');
-  pickWrap.className = 'pick-wrap';
-  pickWrap.append(btn, picker);
-  wrap.append(pickWrap);
-  const toPicker = (txt) => {
-    const v = (txt || '').trim().replace(' ', 'T');
-    return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(v) ? v.slice(0, 16) : '';
-  };
-  const seed = () => { picker.value = toPicker(input.value) || toPicker(seedFrom?.()) || ''; };
-  // Sobreposto, o toque cai direto no picker: semeia antes de a roda abrir.
-  picker.addEventListener('pointerdown', seed);
-  picker.addEventListener('focus', seed);
-  btn.addEventListener('click', () => {
-    seed();
-    // No iOS quem abre a roda é o foco (dentro do gesto), não o showPicker().
-    try {
-      if (!IS_IOS && typeof picker.showPicker === 'function') picker.showPicker();
-      else { picker.focus(); picker.click(); }
-    } catch (_) { picker.focus(); picker.click(); }
-  });
-  const commit = () => {
-    if (!picker.value) return;
-    input.value = picker.value.slice(0, 16).replace('T', ' ');
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-  };
-  picker.addEventListener('change', commit);
-  picker.addEventListener('input', commit);   // iOS: a roda emite input a cada giro
-}
-
 function fieldEl(t, key, label, opts = {}) {
   const wrap = document.createElement('div');
   wrap.className = 'field' + (opts.full ? ' full' : '');

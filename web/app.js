@@ -6,9 +6,6 @@
 //   - a date-window slider that filters routes in real time
 //   - clicking a route to open a modal embedding the linked Instagram post
 
-// Marcador de build — confira no console (`window.__PHIDRO_BUILD`) pra saber
-// se o browser está rodando o app.js mais novo (deve casar com o sw VERSION).
-window.__PHIDRO_BUILD = 270;
 
 const ROUTES_JSON_URL = 'routes.json';
 const SP = [-23.5505, -46.6333];
@@ -1592,11 +1589,8 @@ const OSM_FGB_MAX_FEATURES = 20000;
 // Aparelho de toque (celular/tablet): tela pequena, DPR alto, pouca memória
 // por aba (o iOS recarrega a aba perto de ~1 GB) e dados móveis — as camadas
 // e caches pesados (viário OSM, tiles de DEM, feições FGB) usam orçamentos
-// menores nele. Avaliado a cada uso: um tablet pode ganhar mouse no meio da
-// sessão.
-function dataBudgetCoarse() {
-  try { return window.matchMedia('(pointer: coarse)').matches; } catch { return false; }
-}
+// menores nele — isCoarsePointer(), avaliado a cada uso: um tablet pode
+// ganhar mouse no meio da sessão.
 
 // Nível de detalhe derivado da área: em bbox grande desenha só o que ainda
 // significa alguma coisa naquela escala (rios e cristas; ciclovias
@@ -1772,7 +1766,7 @@ const PackedLinesLayer = L.Layer.extend({
 // Cicloinfra. A ordem das sources é a ordem de desenho (a última fica por cima).
 // Os limites de área/feições têm default nas constantes acima; o viário, muito
 // mais denso, passa os seus — número OU função (avaliada a cada consulta: o
-// viário usa tetos menores em aparelho de toque, ver dataBudgetCoarse).
+// viário usa tetos menores em aparelho de toque, ver isCoarsePointer).
 //
 // Uma source `packed: true` (o viário) troca styleFor/tipFor por um `style`
 // fixo ({color, widthM}) e o seu `load` devolve linhas empacotadas
@@ -2062,9 +2056,9 @@ const VIARIO_LAYER_WIDTH_M = 3;
 const viarioLayer = makeOsmFgbLayer({
   id: 'osm-viario',
   label: 'viário OSM',
-  maxKm2: () => (dataBudgetCoarse() ? 800 : 3200),
-  fullKm2: () => (dataBudgetCoarse() ? 800 : 3200),   // sem nível "só o principal": o FGB não traz `highway`
-  maxFeatures: () => (dataBudgetCoarse() ? 120000 : 400000),
+  maxKm2: () => (isCoarsePointer() ? 800 : 3200),
+  fullKm2: () => (isCoarsePointer() ? 800 : 3200),   // sem nível "só o principal": o FGB não traz `highway`
+  maxFeatures: () => (isCoarsePointer() ? 120000 : 400000),
   padFrac: 0.2,
   density0: 300,         // vias/km² no centro de SP — estimativa da 1ª carga
   sources: [{
@@ -2282,9 +2276,10 @@ document.addEventListener('click', (ev) => {
         }
         showToast('Vídeo excluído.');
         closePhotoPreview();
-        // Recarrega o catálogo de clipes do zero pra refletir.
+        // Recarrega o catálogo do zero pra refletir (setClipsFromModel
+        // recria os marcadores).
         clipsCatalog = null;
-        loadClipsCatalog().then((clips) => makeClipMarkers(clips));
+        loadClipsCatalog();
       })
       .catch((err) => {
         delV.disabled = false; delV.textContent = 'Excluir ✕';
@@ -3492,6 +3487,7 @@ async function ensureN3() {
 const PH_NS  = 'https://id.pedalhidrografi.co/terms#';
 const MED_NS = 'https://id.pedalhidrografi.co/midia/';    // mídia (image_/video_ + hash)
 const LST_NS = 'https://id.pedalhidrografi.co/listas/';   // listas/álbuns (schema:Collection)
+const PAS_NS = 'https://id.pedalhidrografi.co/passeio/';  // passeios (e edições: <ES>/<seq>)
 const SCHEMA = 'https://schema.org/';
 const DCT    = 'http://purl.org/dc/terms/';
 const PROV   = 'http://www.w3.org/ns/prov#';
@@ -4661,7 +4657,7 @@ function openMediaListsEditor(kind, hash, currentLists) {
       close();
       showToast('Listas atualizadas.');
       if (kind === 'image') reloadPhotos();
-      else { clipsCatalog = null; loadClipsCatalog().then((clips) => makeClipMarkers(clips)); }
+      else { clipsCatalog = null; loadClipsCatalog(); }
     } catch (e) {
       errBox.textContent = 'Erro: ' + (e.message || e);
       saveBtn.disabled = false;
@@ -5086,7 +5082,6 @@ const _modalClosers = new WeakMap();
 // Toque: o toque na faixa acima de uma folha de FORMULÁRIO não fecha — era o
 // gesto de esconder o teclado e apagava o formulário inteiro. Fecha pela
 // bolinha. No desktop, clicar fora fecha (perguntando se há pendência).
-const _isCoarsePointer = () => window.matchMedia('(pointer: coarse)').matches;
 // Envios que terminam com a folha FECHADA (lote em segundo plano, ou um save
 // feito pelo Censo) também atualizam o mapa — antes só o próximo fechar-a-
 // folha recarregava. Com debounce: um lote de 30 fotos vira um reload só.
@@ -5196,16 +5191,8 @@ subirImagensBtn?.addEventListener('click', () => {
 });
 // Clique no overlay (fora do conteúdo) fecha — menos no toque (ver acima).
 uploadModal?.addEventListener('click', (e) => {
-  if (e.target !== uploadModal || _isCoarsePointer()) return;
+  if (e.target !== uploadModal || isCoarsePointer()) return;
   requestCloseUploadModal();
-});
-// Esc também fecha. preventDefault: o Esc genérico do controlador de
-// acessibilidade não fecha por cima se a pessoa cancelou a pergunta.
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && uploadModal && !uploadModal.hidden) {
-    e.preventDefault();
-    requestCloseUploadModal();
-  }
 });
 
 // Cadastro/edição de passeio em iframe — o src é remontado a cada abertura
@@ -5258,14 +5245,8 @@ function requestCloseTourModal() {
 }
 if (tourModal) _modalClosers.set(tourModal, requestCloseTourModal);
 tourModal?.addEventListener('click', (e) => {
-  if (e.target !== tourModal || _isCoarsePointer()) return;
+  if (e.target !== tourModal || isCoarsePointer()) return;
   requestCloseTourModal();
-});
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && tourModal && !tourModal.hidden) {
-    e.preventDefault();
-    requestCloseTourModal();
-  }
 });
 
 // Censo em iframe — re-aponta pra censo.html toda vez que abre. Sem isto,
@@ -5300,9 +5281,6 @@ function closeCensoModal() {
 }
 censoModal?.addEventListener('click', (e) => {
   if (e.target === censoModal) closeCensoModal();
-});
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && censoModal && !censoModal.hidden) closeCensoModal();
 });
 // Mensagens dos iframes filhos (Censo, Galeria). Só mesma origem.
 window.addEventListener('message', (e) => {
@@ -5394,9 +5372,6 @@ function shareLink(url, label = 'Link', title = '') {
 }
 imagensModal?.addEventListener('click', (e) => {
   if (e.target === imagensModal) closeImagensModal();
-});
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && imagensModal && !imagensModal.hidden) closeImagensModal();
 });
 // "Ver no mapa" da galeria → fecha o modal, voa até o marcador e abre o popup.
 // Voa até uma mídia e abre o popup dela. Chamado pela galeria embutida
@@ -5501,9 +5476,6 @@ subirBtn?.addEventListener('click', openSubirModal);
 subirModalClose?.addEventListener('click', closeSubirModal);
 subirModal?.addEventListener('click', (e) => {
   if (e.target === subirModal) closeSubirModal();
-});
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && subirModal && !subirModal.hidden) closeSubirModal();
 });
 document.getElementById('subir-upload-media')?.addEventListener('click', () => {
   closeSubirModal();
@@ -9177,18 +9149,14 @@ routeModalClose.addEventListener('click', closeRouteModal);
 routeModal.addEventListener('click', (e) => {
   if (e.target === routeModal) closeRouteModal();
 });
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && !routeModal.hidden) closeRouteModal();
-});
 addMaximizeDot(routeModal, 'phidro:routeModalMaximized');
 
 // Extrai o slug do passeio (sufixo após `pas:` / IRI completa). Aceita também
 // as formas legadas phd:tour_ por segurança (dados/links pré-migração).
 function _tourIdFromIri(iri) {
   if (!iri) return null;
-  const PAS = 'https://id.pedalhidrografi.co/passeio/';
   const PHD = 'https://pedalhidrografi.co/data/';
-  if (iri.startsWith(PAS))            return iri.slice(PAS.length);
+  if (iri.startsWith(PAS_NS))         return iri.slice(PAS_NS.length);
   if (iri.startsWith('pas:'))         return iri.slice('pas:'.length);
   if (iri.startsWith(PHD + 'tour_'))  return iri.slice((PHD + 'tour_').length);
   if (iri.startsWith('phd:tour_'))    return iri.slice('phd:tour_'.length);
@@ -9268,12 +9236,7 @@ document.addEventListener('click', (e) => {
 // reference) e dependentes (associações → série+edição), mapeia pessoas/séries
 // pra nomes e devolve HTML pronto pra render no modal.
 async function _renderTourSummary(tourId) {
-  const PH    = 'https://id.pedalhidrografi.co/terms#';
-  const PAS   = 'https://id.pedalhidrografi.co/passeio/';
-  const SCHEMA = 'https://schema.org/';
-  const DCT   = 'http://purl.org/dc/terms/';
-  const RDFT  = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
-  const PROV  = 'http://www.w3.org/ns/prov#';
+  const PH = PH_NS, PAS = PAS_NS;
 
   const tourIri = `${PAS}${tourId}`;
   let quads;
@@ -9383,18 +9346,10 @@ async function _renderTourSummary(tourId) {
   // ph:energyEstimate / ph:measuredEnergy são literais xsd:decimal (kJ) direto
   // no tour. A classificação de intensidade é derivada do valor por faixas
   // fixas (não é mais armazenada no TTL).
-  function intensityFor(kj) {
-    if (!Number.isFinite(kj)) return null;
-    if (kj < 150)  return 'De boa';
-    if (kj < 300)  return 'Ok';
-    if (kj < 500)  return 'Endorfinado';
-    if (kj < 1000) return 'Frito';
-    return 'Insano';
-  }
   function readEnergy(pred, withClass) {
     const v = first(pred);
     if (v == null) return null;
-    return { value: v, class: withClass ? intensityFor(parseFloat(v)) : null };
+    return { value: v, class: withClass ? intensityForKj(parseFloat(v)) : null };
   }
   const energyEst  = readEnergy(PH + 'energyEstimate', true);
   const energyMeas = readEnergy(PH + 'measuredEnergy', false);
@@ -9949,22 +9904,20 @@ traceRoutingMode.addEventListener('change', () => {
 });
 
 document.addEventListener('keydown', (e) => {
-  // Defer to whatever modal is open instead of acting on the drawing tool.
-  if (!paramsModal.hidden) {
-    if (e.key === 'Escape') paramsModal.hidden = true;
-    return;
-  }
+  // Defer to whatever modal is open instead of acting on the drawing tool
+  // (Esc closes the top modal in the global handler at the end of the file).
+  if (!paramsModal.hidden) return;
   const saveModalOpen = document.getElementById('save-modal') && !document.getElementById('save-modal').hidden;
-  if (saveModalOpen) return; // its own keydown listener handles Enter / Esc
+  if (saveModalOpen) return; // Enter is the name input's; Esc is the global one
   if (!drawingMode) return;
   const isMod = e.metaKey || e.ctrlKey;
   if (isMod && e.key.toLowerCase() === 'z') {
     e.preventDefault();
     if (e.shiftKey) redo(); else undo();
   } else if (e.key === 'Escape') {
-    // Esc com um modal aberto (QR do link, Ajuda, …) é do modal — cada um
-    // fecha o seu no próprio listener. Sem este guard o mesmo keydown
-    // também derrubava o modo de edição e o traçado ia embora junto.
+    // Esc com um modal aberto (QR do link, Ajuda, …) é do modal — o Esc
+    // global fecha o do topo. Sem este guard o mesmo keydown também
+    // derrubava o modo de edição e o traçado ia embora junto.
     if (document.querySelector('.modal:not([hidden])')) return;
     if (previewMode) exitPreviewMode();   // Esc no modo Ver volta pra edição
     else exitDrawingMode();
@@ -11153,7 +11106,7 @@ async function ensureFlatgeobuf() {
 const _fgbCache = new Map();   // chave → { feats, bytes }
 let _fgbCacheBytes = 0;
 const FGB_CACHE_MAX = 10;
-function fgbCacheBudget() { return (dataBudgetCoarse() ? 32 : 128) * 1024 * 1024; }
+function fgbCacheBudget() { return (isCoarsePointer() ? 32 : 128) * 1024 * 1024; }
 // ~56 B por vértice ([x,y] num array JS) + ~200 B por feição (objeto,
 // properties, geometry) — ordem de grandeza medida no heap do Chrome.
 const FGB_BYTES_PER_VERTEX = 56, FGB_BYTES_PER_FEATURE = 200;
@@ -13830,7 +13783,7 @@ const DEM_YIELDING_POOL = {
 // por ela: o download de um tile só é abortado quando o ÚLTIMO desiste.
 const _demTiles = new Map();   // chave → { promise, ctrl, users, tile, bytes, hkey }
 let _demTileBytes = 0;
-function demTileBudget() { return (dataBudgetCoarse() ? 24 : 64) * 1024 * 1024; }
+function demTileBudget() { return (isCoarsePointer() ? 24 : 64) * 1024 * 1024; }
 
 function demTilesEvict() {
   const budget = demTileBudget();
@@ -15197,9 +15150,6 @@ if (ctopoModal) {
   }
   document.getElementById('ctopo-close')?.addEventListener('click', closeCameraTopoModal);
   ctopoModal.addEventListener('click', (e) => { if (e.target === ctopoModal) closeCameraTopoModal(); });
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !ctopoModal.hidden) closeCameraTopoModal();
-  });
   document.getElementById('ctopo-reset')?.addEventListener('click', () => {
     const d = SETTINGS_DEFAULTS.cameraTopo;
     Object.assign(settings.cameraTopo, {
@@ -16511,11 +16461,7 @@ async function collectTourMeta(text) {
   const map = new Map();
   let Parser;
   try { Parser = await ensureN3(); } catch (_) { return map; }
-  const PH = 'https://id.pedalhidrografi.co/terms#';
-  const DCT = 'http://purl.org/dc/terms/';
-  const PROV = 'http://www.w3.org/ns/prov#';
-  const SCHEMA = 'https://schema.org/';
-  const PAS = 'https://id.pedalhidrografi.co/passeio/';
+  const PH = PH_NS, PAS = PAS_NS;
   let quads;
   try { quads = new Parser().parse(text); } catch (_) { return map; }
   const subjBy = new Map();
@@ -16528,14 +16474,6 @@ async function collectTourMeta(text) {
     if (!subjBy.has(s)) subjBy.set(s, []);
     subjBy.get(s).push(q);
   }
-  const intensityFor = (kj) => {
-    if (!Number.isFinite(kj)) return null;
-    if (kj < 150) return 'De boa';
-    if (kj < 300) return 'Ok';
-    if (kj < 500) return 'Endorfinado';
-    if (kj < 1000) return 'Frito';
-    return 'Insano';
-  };
   for (const [s, qs] of subjBy) {
     if (!s.startsWith(PAS) || s.slice(PAS.length).includes('/')) continue;  // pula edições
     const lit = (pred) => {
@@ -16551,7 +16489,7 @@ async function collectTourMeta(text) {
     map.set(s, {
       description: lit(DCT + 'description'),
       energyKj: energy,
-      intensity: energy != null ? intensityFor(parseFloat(energy)) : null,
+      intensity: energy != null ? intensityForKj(parseFloat(energy)) : null,
       measuredKj: lit(PH + 'measuredEnergy'),
       moving: lit(PH + 'movingDuration'),
       departed: lit(PH + 'departedAt'),
@@ -16615,7 +16553,6 @@ saveNameInput.addEventListener('keydown', (e) => {
     if (isCoarsePointer()) saveNameInput.blur();
     else doSave();
   }
-  if (e.key === 'Escape') closeSaveModal();
 });
 saveConfirm.addEventListener('click', doSave);
 
@@ -16768,11 +16705,6 @@ saveQrBtn?.addEventListener('click', async () => {
 qrClose?.addEventListener('click', () => (qrModal.hidden = true));
 qrModal?.addEventListener('click', (e) => {
   if (e.target === qrModal) qrModal.hidden = true;
-});
-// Esc fecha só o QR — o keydown do modo de edição ignora Esc com modal
-// aberto, então sem isto o Esc ficava sem efeito aqui.
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && qrModal && !qrModal.hidden) qrModal.hidden = true;
 });
 qrCopyBtn?.addEventListener('click', async () => {
   if (!qrCurrentUrl) return;
@@ -17154,7 +17086,9 @@ function closeSavedRoutesModal() {
 
 // Faixas fixas de intensidade por kJ — espelho do intensityFor do censo.html
 // (fonte canônica; o backend repete as mesmas faixas no badge do card OG).
+// null sem número.
 function intensityForKj(kj) {
+  if (!Number.isFinite(kj)) return null;
   if (kj < 150) return 'De boa';
   if (kj < 300) return 'Ok';
   if (kj < 500) return 'Endorfinado';
@@ -17912,18 +17846,20 @@ async function loadGpxIntoEditor(gpxText, fileName = '') {
     else if (!e.shiftKey && active === last) { e.preventDefault(); first.focus(); }
   }, true);
 
-  // ESC fecha o modal do topo via seu `.close`. Cobre os modais que não tinham
-  // ESC próprio (Ajuda, Ajustes, rotas salvas, compartilhar). Os listeners já
-  // existentes fecham o seu antes deste rodar, então aqui ele já sai da lista
-  // (sem duplo-fechamento). O guard do modo de edição (ver onMapClickInDrawing)
-  // já ignora ESC quando há `.modal:not([hidden])`.
-  // Um listener anterior que já tratou o Esc marca preventDefault (ex.: o form
-  // de envio perguntou "descartar?" e a pessoa cancelou) — aí não fecha por cima.
+  // ESC fecha SÓ o modal do topo: pelo fechador registrado (_modalClosers — os
+  // forms perguntam antes se há pendência), senão pelo seu `.close`, senão
+  // escondendo. É o ÚNICO Esc de modal do app — modal novo não precisa de
+  // listener próprio (os antigos fechavam o seu e, como este rodava depois,
+  // ele fechava também o de baixo: Esc no QR aberto do Salvar fechava os dois).
+  // O guard do modo de edição (ver onMapClickInDrawing) já ignora ESC quando há
+  // `.modal:not([hidden])`. Um listener que já tratou o Esc marca
+  // preventDefault — aí este não fecha por cima.
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape' || e.defaultPrevented) return;
-    const open = document.querySelectorAll('.modal:not([hidden])');
-    if (!open.length) return;
-    const modal = open[open.length - 1];
+    // O do topo é o ÚLTIMO ABERTO (openStack), não o último no HTML: o
+    // #qr-modal vem antes do #save-modal no DOM e fica por cima via z-index.
+    const modal = openStack[openStack.length - 1];
+    if (!modal) return;
     const closer = _modalClosers.get(modal);
     if (closer) { e.preventDefault(); closer(); return; }
     const btn = modal.querySelector('.close');

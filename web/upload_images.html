@@ -6,15 +6,10 @@
 <meta name="robots" content="noindex">
 <title>Subir imagens — Pedal Hidrográfico</title>
 <link rel="stylesheet" href="./fonts/fonts.css">
+<link rel="stylesheet" href="./lib/pages.css">
 <style>
   /* Paleta espelhada do app (style.css) pra o formulário combinar com o modal. */
-  :root {
-    --bg: #fafbfc; --panel: #ffffff; --surface: #eef1f4;
-    --text: #101820; --muted: #4a5867;
-    --accent: #c2410c; --accent-hover: #9a3412; --border: #c6ced6;
-    /* estados (verde/amarelo/vermelho) em versões que leem bem no escuro */
-    --ok: #1a7f4b; --warn: #9c6a10; --err: #b3261e;
-  }
+  /* :root (paleta) em lib/pages.css */
   body { font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace; max-width: 1400px; margin: 1.5rem auto; padding: 0 1rem;
     color: var(--text); background: var(--bg); transition: background .2s; }
   /* Sem "puxar pra recarregar" nem rolagem encadeada pro app-pai: um puxão
@@ -442,6 +437,11 @@ import {
   transcodeAtShortSide, transcodeClip, transcodeClipFast,
   tryExtractVideoCreationDate, tryExtractVideoGps, videoFirstFrameBlob
 } from './lib/media-pipeline.js?api=4';
+// Helpers comuns das páginas (?api=N: idem).
+import {
+  escapeHtml, turtleEscape, TTL_PREFIXES, slugifyList, randPersonSlug, IS_IOS,
+  setupEmbeddedPage, loadN3, loadTomSelect, heic2anyReady,
+} from './lib/utils.js?api=1';
 const $  = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
@@ -458,22 +458,12 @@ $('#files')?.addEventListener('change', (e) => {
 });
 
 // Embutido no iframe do app: o título vive na faixa do header do modal —
-// esconde o <h1> interno pra não duplicar. Standalone mostra normalmente.
-if (window.self !== window.top) $('h1')?.style.setProperty('display', 'none');
+// esconde o <h1> interno pra não duplicar (+ bloqueia a pinça).
+setupEmbeddedPage(['h1']);
 
-// Embutido: pinça dentro da folha não pode deixar o APP inteiro com zoom (o
-// Safari do iOS ignora user-scalable=no; estes são os eventos do WebKit).
-// Standalone mantém o zoom por pinça (acessibilidade).
-if (window.self !== window.top) {
-  for (const t of ['gesturestart', 'gesturechange']) document.addEventListener(t, (e) => e.preventDefault(), { passive: false });
-}
-
-// iPhone/iPad (inclui o iPadOS que se apresenta como Mac) — mesma checagem do
-// subir.html. No iOS todo navegador é WebKit: converter vídeo pelo
+// iPhone/iPad (IS_IOS). No iOS todo navegador é WebKit: converter vídeo pelo
 // MediaRecorder exige um <video> tocando COM SOM, e isso só com um toque (ver
 // blessMediaForGesture).
-const IS_IOS = /iP(hone|ad|od)/.test(navigator.userAgent) ||
-  (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 if (IS_IOS) $('#ios-video-note').hidden = false;
 
 // "← Voltar ao censo": só quando se chegou PELO censo — o botão "Subir" de lá
@@ -497,56 +487,18 @@ try {
   exifr = await import('./lib/exifr.esm.js').then(m => m.default || m);
 } catch (e) { console.warn('exifr indisponível:', e); }
 
-// Tom Select é UMD vendored em web/lib/ — sem CDN, sem dynamic ESM import
-// (que falha quando esm.sh está bloqueado).
-function _loadScript(src) {
-  return new Promise((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = src; s.onload = () => resolve(); s.onerror = () => reject(new Error(`falha ao carregar ${src}`));
-    document.head.appendChild(s);
-  });
-}
-if (!window.TomSelect) await _loadScript('./lib/tom-select.complete.min.js');
-const TomSelect = window.TomSelect;
-// N3.js VENDORADO (UMD → window.N3), como nas outras páginas: o import de
-// esm.sh era a cadeia mais longa do boot (13 hops — ~1 s em rede boa, vários
-// segundos no celular) e caía em silêncio com ETP/offline. Carregado sob
-// demanda pelo loadCatalog, uma vez só.
-let _n3P = null;
-function n3Parser() {
-  return _n3P ||= (window.N3 ? Promise.resolve() : _loadScript('./lib/n3.min.js'))
-    .then(() => window.N3.Parser);
-}
-// (JSZip saiu daqui: nada nesta página o usava — o kit ZIP vive no app.js.)
+// Tom Select e N3.js são UMDs vendorados em web/lib/ (sem CDN — esm.sh caía
+// com ETP/offline); N3 sob demanda pelo loadCatalog, uma vez só.
+const TomSelect = await loadTomSelect();
 
-// heic2any: HEIC → JPEG no cliente. Chrome/Firefox não decodificam HEIC
-// nativamente; sem isto, `createImageBitmap` falha em arquivos de iPhone.
-// Import NÃO-bloqueante e memoizado por promise: o boot não espera 1,35 MB
-// (340 KB gz) que só o primeiro HEIC fora do Safari usa; quem precisar
-// aguarda a promise (N cards concorrentes não disparam N imports). Prefetch
-// eager só onde o fallback existe de fato — o Safari decodifica HEIC
-// nativamente e nunca chega nele.
-let heic2any = null, _heicP = null;
-function heic2anyReady() {
-  return _heicP ||= import('https://esm.sh/heic2any@0.0.4')
-    .then(m => { heic2any = m.default; return heic2any; })
-    .catch(() => { console.warn('heic2any indisponível — uploads HEIC só funcionarão no Safari.'); return null; });
-}
+// heic2any (lib/utils.js): HEIC → JPEG no cliente — Chrome/Firefox não
+// decodificam HEIC; sem isto, `createImageBitmap` falha em arquivos de iPhone.
+// Prefetch eager só onde o fallback existe de fato (fora do Safari).
 if (!/^((?!chrome|android).)*safari/i.test(navigator.userAgent)) heic2anyReady();
 
 // ===================== Helpers básicos =================================
-function turtle_escape(s) {
-  return (s || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"')
-    .replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t');
-}
-function escapeHtml(s) {
-  // notify() e os status injetam via innerHTML — strings dinâmicas (nome de
-  // arquivo, título de passeio do tours.ttl, mensagem de erro) passam por
-  // aqui antes de interpolar.
-  return String(s ?? '').replace(/[&<>"']/g, c => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-  }[c]));
-}
+// (escapeHtml/turtleEscape: lib/utils.js — notify() e os status injetam via
+// innerHTML; toda string dinâmica passa pelo escapeHtml antes.)
 // FNV-1a 32-bit — fallback determinístico quando slugifyPerson não sobra
 // nenhum caractere ASCII (nome 100% não-latino, ex: "田中太郎"). Sem isto,
 // mintPerson não conseguia mintar IRI nenhuma pra essas pessoas (D2).
@@ -601,7 +553,7 @@ function fmtAssoc(label, n) {
 async function loadCatalog() {
   let Parser;
   try {
-    Parser = await n3Parser();
+    Parser = (await loadN3()).Parser;
   } catch (e) {
     throw new Error('N3.js indisponível.');
   }
@@ -814,13 +766,6 @@ populateTourSelect($('#d-tour'));
 // Slug de identidade OPACO e aleatório (8 chars, base32 Crockford sem i/l/o/u):
 // nunca derivado do nome (que é editável). IRI = pes:<slug>. Duas pessoas com o
 // mesmo nome são pessoas distintas — reuse os já-existentes pelo picker.
-function randPersonSlug(n = 8) {
-  const A = '0123456789abcdefghjkmnpqrstvwxyz';
-  const b = crypto.getRandomValues(new Uint8Array(n));
-  let s = '';
-  for (let i = 0; i < n; i++) s += A[b[i] & 31];
-  return s;
-}
 function mintPerson(input) {
   const name = input.trim();
   if (!name) return null;
@@ -876,12 +821,8 @@ function destroyPersonSelect(ts) {
 }
 
 // ===================== Mint / picker de LISTAS (álbuns) ================
-// Slug minúsculo idêntico ao app.js e ao imagens.html — pra que a MESMA lista
-// criada em lugares diferentes case na mesma IRI lst:<slug>.
-function slugifyList(name) {
-  return (name || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'lista';
-}
+// slugifyList (lib/utils.js) é idêntico ao do app.js — a MESMA lista criada em
+// lugares diferentes cai na mesma IRI lst:<slug>.
 function mintList(input) {
   const name = (input || '').trim();
   if (!name) return null;
@@ -961,7 +902,7 @@ async function extractMediaFields(iri) {
   // IRI de mídia é opaco (med:<hash>); o hash é o localname, e o TIPO
   // (foto/vídeo) vem da CLASSE no catálogo (detectado no loop abaixo).
   const hash = iri.startsWith(MED_NS) ? iri.slice(MED_NS.length) : iri.split('/').pop();
-  const Parser = await n3Parser();
+  const { Parser } = await loadN3();
   const res = await fetch('./data/images.ttl', { cache: 'no-cache' });
   if (!res.ok) throw new Error('images.ttl indisponível (' + res.status + ')');
   const text = await res.text();
@@ -1129,23 +1070,11 @@ async function saveMediaEdit(f, card, authorTs, providerTs, listTs, orig) {
   if (providers.length) for (const p of providers) P.push(`pav:providedBy ${p}`);        else remove.push('pav:providedBy');
   if (lists.length)     for (const l of lists)     P.push(`schema:isPartOf ${l}`);        else remove.push('schema:isPartOf');
 
-  const prefixes = [
-    '@prefix dcterms: <http://purl.org/dc/terms/> .',
-    '@prefix exif:    <http://www.w3.org/2003/12/exif/ns#> .',
-    '@prefix pav:     <http://purl.org/pav/> .',
-    '@prefix ph:      <https://id.pedalhidrografi.co/terms#> .',
-    '@prefix phd:     <https://pedalhidrografi.co/data/> .',
-    '@prefix pes:     <https://id.pedalhidrografi.co/pessoas/> .',
-    '@prefix med:     <https://id.pedalhidrografi.co/midia/> .',
-    '@prefix lst:     <https://id.pedalhidrografi.co/listas/> .',
-    '@prefix prov:    <http://www.w3.org/ns/prov#> .',
-    '@prefix schema:  <https://schema.org/> .',
-    '@prefix xsd:     <http://www.w3.org/2001/XMLSchema#> .',
-  ].join('\n');
+  const prefixes = TTL_PREFIXES;
   const usedP = [...authors, ...providers].filter((v) => newPersons.has(v));
   const personDecls = usedP.length
     ? '\n# Pessoas novas\n' + usedP.map((iri) =>
-        `${iri} a schema:Person ;\n    schema:alternateName "${turtle_escape(newPersons.get(iri))}" .`).join('\n\n') + '\n'
+        `${iri} a schema:Person ;\n    schema:alternateName "${turtleEscape(newPersons.get(iri))}" .`).join('\n\n') + '\n'
     : '';
   const listDecls = buildNewListDecls(lists);
   const body = `${iriCurie}\n    ${P.join(' ;\n    ')} .${geoNode}`;
@@ -2011,7 +1940,7 @@ async function preprocessImageFile(file) {
     if (!isHeicFile(file)) {
       return fail('decode-error', `<strong>${escapeHtml(file.name)}</strong>: não consegui ler (${escapeHtml(nativeErr.message)}).`);
     }
-    if (!heic2any) await heic2anyReady();
+    const heic2any = await heic2anyReady();
     if (!heic2any) {
       return fail('heic-unavailable', `<strong>${escapeHtml(file.name)}</strong>: HEIC requer heic2any (CDN indisponível).`);
     }
@@ -2681,35 +2610,22 @@ function buildImageBlock(card) {
 }
 
 // ===================== Empacotamento single-image TTL ==================
-// Gera um TTL auto-suficiente para 1 foto: prefixos + declarações de pessoas
-// novas usadas + bloco da imagem. O backend valida com SHACL e mescla em
-// web/data/photos.ttl deduplicando pelo IRI.
-function buildSingleImageTtl(card) {
-  const prefixes = [
-    '@prefix dcterms: <http://purl.org/dc/terms/> .',
-    '@prefix exif:    <http://www.w3.org/2003/12/exif/ns#> .',
-    '@prefix nfo:     <http://www.semanticdesktop.org/ontologies/2007/03/22/nfo#> .',
-    '@prefix pav:     <http://purl.org/pav/> .',
-    '@prefix ph:      <https://id.pedalhidrografi.co/terms#> .',
-    '@prefix phd:     <https://pedalhidrografi.co/data/> .',
-    '@prefix pes:     <https://id.pedalhidrografi.co/pessoas/> .',
-    '@prefix med:     <https://id.pedalhidrografi.co/midia/> .',
-    '@prefix lst:     <https://id.pedalhidrografi.co/listas/> .',
-    '@prefix prov:    <http://www.w3.org/ns/prov#> .',
-    '@prefix schema:  <https://schema.org/> .',
-    '@prefix xsd:     <http://www.w3.org/2001/XMLSchema#> .',
-  ].join('\n');
+// Gera um TTL auto-suficiente para 1 mídia: prefixos + declarações de pessoas
+// e listas novas usadas + o bloco da mídia (`block()`, chamado por último). O
+// backend valida com SHACL e mescla no catálogo deduplicando pelo IRI.
+function buildSingleMediaTtl(card, block) {
   const used = new Set();
   for (const v of [...personValues(card, 'author'), ...personValues(card, 'provider')]) {
     if (newPersons.has(v)) used.add(v);
   }
   const personDecls = [...used].map(iri =>
-    `${iri} a schema:Person ;\n    schema:alternateName "${turtle_escape(newPersons.get(iri))}" .`
+    `${iri} a schema:Person ;\n    schema:alternateName "${turtleEscape(newPersons.get(iri))}" .`
   ).join('\n\n');
   const decls = personDecls ? `\n# Pessoas novas\n${personDecls}\n` : '';
   const listDecls = buildNewListDecls(listValues(card));
-  return `${prefixes}\n${decls}${listDecls}\n${buildImageBlock(card).ttl}\n`;
+  return `${TTL_PREFIXES}\n${decls}${listDecls}\n${block()}\n`;
 }
+const buildSingleImageTtl = (card) => buildSingleMediaTtl(card, () => buildImageBlock(card).ttl);
 
 // Declarações inline das LISTAS novas usadas (schema:Collection + schema:name),
 // no mesmo espírito das pessoas novas — persistem como sujeitos à parte.
@@ -2717,7 +2633,7 @@ function buildNewListDecls(listIris) {
   const used = (listIris || []).filter(iri => newLists.has(iri));
   if (!used.length) return '';
   const body = used.map(iri =>
-    `${iri} a schema:Collection ;\n    schema:name "${turtle_escape(newLists.get(iri))}" .`
+    `${iri} a schema:Collection ;\n    schema:name "${turtleEscape(newLists.get(iri))}" .`
   ).join('\n\n');
   return `\n# Listas novas\n${body}\n`;
 }
@@ -2786,31 +2702,8 @@ function buildClipBlock(card, r) {
   return { iri, ttl: `${iri}\n${body} .${derived}` };
 }
 
-// TTL auto-suficiente para 1 clipe: prefixos + pessoas novas + bloco.
-function buildSingleClipTtl(card, r) {
-  const prefixes = [
-    '@prefix dcterms: <http://purl.org/dc/terms/> .',
-    '@prefix pav:     <http://purl.org/pav/> .',
-    '@prefix ph:      <https://id.pedalhidrografi.co/terms#> .',
-    '@prefix phd:     <https://pedalhidrografi.co/data/> .',
-    '@prefix pes:     <https://id.pedalhidrografi.co/pessoas/> .',
-    '@prefix med:     <https://id.pedalhidrografi.co/midia/> .',
-    '@prefix lst:     <https://id.pedalhidrografi.co/listas/> .',
-    '@prefix prov:    <http://www.w3.org/ns/prov#> .',
-    '@prefix schema:  <https://schema.org/> .',
-    '@prefix xsd:     <http://www.w3.org/2001/XMLSchema#> .',
-  ].join('\n');
-  const used = new Set();
-  for (const v of [...personValues(card, 'author'), ...personValues(card, 'provider')]) {
-    if (newPersons.has(v)) used.add(v);
-  }
-  const personDecls = [...used].map(iri =>
-    `${iri} a schema:Person ;\n    schema:alternateName "${turtle_escape(newPersons.get(iri))}" .`
-  ).join('\n\n');
-  const decls = personDecls ? `\n# Pessoas novas\n${personDecls}\n` : '';
-  const listDecls = buildNewListDecls(listValues(card));
-  return `${prefixes}\n${decls}${listDecls}\n${buildClipBlock(card, r).ttl}\n`;
-}
+// TTL auto-suficiente para 1 clipe.
+const buildSingleClipTtl = (card, r) => buildSingleMediaTtl(card, () => buildClipBlock(card, r).ttl);
 
 // Constrói as 3 variantes da imagem em blobs (mesma lógica do kit ZIP do
 // modo lote: respeita Anonimizar / Comprimir; large/thumb sempre derivam

@@ -11,17 +11,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Imagens — Pedal Hidrográfico</title>
 <link rel="stylesheet" href="./fonts/fonts.css">
+<link rel="stylesheet" href="./lib/pages.css">
 <style>
   /* Tema herdado do censo.html (mesma paleta escura) para casar visualmente. */
   :root {
-    --bg: #fafbfc;
-    --panel: #ffffff;
-    --surface: #eef1f4;
-    --text: #101820;
-    --muted: #4a5867;
-    --accent: #c2410c;
-    --accent-hover: #9a3412;
-    --border: #c6ced6;
+    /* paleta comum em lib/pages.css */
     --danger: #b3431e;
     --danger-hover: #922f0f;
   }
@@ -735,6 +729,11 @@
 
 <script type="module">
 'use strict';
+// Helpers comuns das páginas (?api=N: ver o comentário do import no subir.html).
+import {
+  escapeHtml, turtleEscape, slugifyList, EMBEDDED, blockEmbeddedPinch,
+  loadScript, loadN3, loadTomSelect,
+} from './lib/utils.js?api=1';
 const $  = (q) => document.querySelector(q);
 const $$ = (q) => Array.from(document.querySelectorAll(q));
 // localStorage com try/catch: com "Bloquear todos os cookies" no Safari o
@@ -771,25 +770,11 @@ const LIST_PREFIX = NS.lst;   // listas/álbuns (schema:Collection) → lst:<slu
 const TOUR_PREFIX = NS.pas;   // passeios → pas:<slug>
 
 // ── Helpers básicos ─────────────────────────────────────────────────────────
-function escapeHtml(s) {
-  return String(s ?? '').replace(/[&<>"']/g, (c) =>
-    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
-// Escapa string para literal Turtle (usado ao emitir schema:name inline).
-function ttlEsc(s) {
-  return String(s ?? '').replace(/\\/g, '\\\\').replace(/"/g, '\\"')
-    .replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t');
-}
+// (escapeHtml, turtleEscape — literal Turtle do schema:name inline —
+// e slugifyList, IDÊNTICO ao app.js e aos forms: lib/utils.js.)
 const short = (iri) => String(iri || '').split(/[/#]/).pop();
 function debounce(fn, ms) {
   let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
-}
-// Slug minúsculo p/ IRI de lista nova — IDÊNTICO ao app.js e ao
-// upload_images.html, pra que a MESMA lista criada em lugares diferentes case
-// na mesma IRI lst:<slug>.
-function slugifyList(s) {
-  return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'lista';
 }
 function extDot(url) {
   const m = /\.([a-z0-9]+)(?:\?|#|$)/i.exec(url || '');
@@ -804,25 +789,7 @@ function fmtDateTimePt(iso) {
   return d.toLocaleString('pt-BR');
 }
 
-// ── N3.js (UMD vendored em ./lib/n3.min.js → popula window.N3) ───────────────
-async function loadN3() {
-  if (window.N3) return window.N3;
-  await loadScript('./lib/n3.min.js');
-  return window.N3;
-}
-function loadScript(src) {
-  return new Promise((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = src; s.onload = () => resolve(); s.onerror = () => reject(new Error(`falha ao carregar ${src}`));
-    document.head.appendChild(s);
-  });
-}
-// Tom Select — UMD vendored (sem CDN), igual upload_images.html.
-async function loadTomSelect() {
-  if (window.TomSelect) return window.TomSelect;
-  await loadScript('./lib/tom-select.complete.min.js');
-  return window.TomSelect;
-}
+// N3.js e Tom Select: UMDs vendorados, sob demanda (loadN3/loadTomSelect).
 // JSZip carregado sob demanda (só no download) — mesmo CDN dos outros deps pesados.
 async function ensureJSZip() {
   if (window.JSZip) return window.JSZip;
@@ -836,13 +803,10 @@ async function ensureJSZip() {
 // fora / Esc do app e, no toque, pelo "← Mapa" da barra de filtros (#tb-back):
 // no celular o modal abre em tela cheia e a bolinha é pequena (e, numa aba do
 // Safari, pode ficar fora da tela). Standalone, o header aparece normalmente.
-const EMBEDDED = window.self !== window.top;
 function embeddedSetup() {
   if (!EMBEDDED) return;
   document.body.classList.add('embedded');
-  // Pinça dentro do modal não pode deixar o APP inteiro ampliado: o iOS
-  // ignora user-scalable=no e amplia a página de cima (eventos do WebKit).
-  for (const t of ['gesturestart', 'gesturechange']) document.addEventListener(t, (e) => e.preventDefault(), { passive: false });
+  blockEmbeddedPinch();   // pinça no modal não amplia o APP inteiro (iOS)
 }
 // Mensagem pro app-pai (só embutida; mesma origem).
 function postToParent(msg) {
@@ -2330,7 +2294,7 @@ function membershipTtl(rec, listIris) {
   for (const li of listIris) {
     if (!model.lists[li]) {
       const nm = pendingNewLists.get(li) || short(li);
-      lines.push(`<${li}> a schema:Collection ; schema:name "${ttlEsc(nm)}" .`);
+      lines.push(`<${li}> a schema:Collection ; schema:name "${turtleEscape(nm)}" .`);
     }
   }
   return lines.join('\n') + '\n';

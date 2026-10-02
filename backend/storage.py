@@ -9,6 +9,7 @@ uma interface comum:
   StateStore.write_bytes(key, b, ct=…)   → None
   StateStore.delete(key)                 → None
   StateStore.delete_prefix(prefix)       → None
+  StateStore.list_keys(prefix)           → list[str]
   StateStore.exists(key)                 → bool
   StateStore.public_url(key)             → str | None
       (None = sirva via Flask; URL = HTTP redirect)
@@ -17,17 +18,19 @@ Dois backends:
   LocalStateStore(root_dir)   — dev / local: lê e grava no filesystem
   GCSStateStore(bucket_name)  — Cloud Run: lê e grava num bucket público
 
-Keys são relativos ao estado (p.ex. "data/uploads.ttl",
+Keys são relativos ao estado (p.ex. "data/images.ttl",
 "photos/abc123.../large.jpg"). NUNCA começam com "/".
 
 Estado mutável (ambos backends):
-  data/uploads.ttl                    catálogo de imagens uploaded
-  data/data_graphs.ttl                manifesto void:Dataset
-  photos/<phash>/<variant>.<ext>      variantes por imagem
+  data/{images,identities,lists,tours}.ttl   catálogos RDF
+  routes.json, saved_routes.json             rotas (passeios / editor)
+  photos/<phash>/<variant>.<ext>             variantes por foto
+  clips/<vhash>.<sufixo>                     variantes por vídeo
+  tour_assets/<slug>/announcement.*          arte de anúncio dos passeios
+  route_og/<id>.png                          card OG das rotas salvas
 
-Estado estático (sempre servido pelo Flask a partir do container):
-  data/shapes.ttl, data/ontology.ttl, data/tours.ttl
-  index.html, app.js, style.css, lib/*, …
+Estático (container; data/shapes.ttl e ontology.ttl são bucket-first com o
+container de fallback): index.html, app.js, style.css, lib/*, …
 """
 from __future__ import annotations
 
@@ -121,25 +124,23 @@ class LocalStateStore(StateStore):
                 pass
             raise
 
-    def read_text(self, key):
+    def _nonempty_file(self, key):
         p = self._p(key)
-        if not (p.exists() and p.is_file() and p.stat().st_size > 0):
-            return None
-        return p.read_text(encoding="utf-8")
+        return p if p.is_file() and p.stat().st_size > 0 else None
+
+    def read_text(self, key):
+        p = self._nonempty_file(key)
+        return p.read_text(encoding="utf-8") if p else None
 
     def read_bytes(self, key):
-        p = self._p(key)
-        if not (p.exists() and p.is_file() and p.stat().st_size > 0):
-            return None
-        return p.read_bytes()
+        p = self._nonempty_file(key)
+        return p.read_bytes() if p else None
 
     def write_text(self, key, text, content_type="text/turtle"):
-        p = self._p(key)
-        self._atomic_write(p, lambda f: f.write(text.encode("utf-8")))
+        self.write_bytes(key, text.encode("utf-8"))
 
     def write_bytes(self, key, data, content_type=None):
-        p = self._p(key)
-        self._atomic_write(p, lambda f: f.write(data))
+        self._atomic_write(self._p(key), lambda f: f.write(data))
 
     def delete(self, key):
         p = self._p(key)
@@ -278,8 +279,6 @@ def make_store_from_env(default_local_root: str | Path) -> StateStore:
     STORAGE_BACKEND=gcs  →  GCSStateStore(GCS_BUCKET)
     STORAGE_BACKEND=local (default)  →  LocalStateStore(default_local_root)
     """
-    import os
-
     backend = (os.environ.get("STORAGE_BACKEND") or "local").lower()
     if backend == "gcs":
         bucket = os.environ.get("GCS_BUCKET")

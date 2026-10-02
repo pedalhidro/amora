@@ -7,14 +7,10 @@
 <meta name="description" content="Envio simplificado de imagens (fotos, vídeos, artes) pro acervo do Pedal Hidrográfico: só autora (opcional) e as imagens — sobem sozinhas ao escolher; data, GPS e passeio saem do próprio arquivo.">
 <title>Subir imagens — Pedal Hidrográfico</title>
 <link rel="stylesheet" href="./fonts/fonts.css">
+<link rel="stylesheet" href="./lib/pages.css">
 <style>
   /* Paleta espelhada do app (style.css) — mesma do upload_images.html. */
-  :root {
-    --bg: #fafbfc; --panel: #ffffff; --surface: #eef1f4;
-    --text: #101820; --muted: #4a5867;
-    --accent: #c2410c; --accent-hover: #9a3412; --border: #c6ced6;
-    --ok: #1a7f4b; --warn: #9c6a10; --err: #b3261e;
-  }
+  /* :root (paleta) em lib/pages.css */
   html { color-scheme: light; }
   /* Rolagem não escapa da página: dentro da folha do app, puxar pra baixo no
      topo não vira pull-to-refresh (que recarregava o app no meio do envio). */
@@ -284,25 +280,20 @@ import {
   scaledJpeg, compressToTargetLean, copyExifSegmentFromHead,
   clipFileName, blessMediaForGesture,
 } from './lib/media-pipeline.js?api=3';
+// Helpers comuns das páginas (lib/utils.js — mesma regra do ?api=N).
+import {
+  escapeHtml, turtleEscape, TTL_PREFIXES, slugifyList, randPersonSlug, IS_IOS,
+  EMBEDDED, setupEmbeddedPage, loadN3, heic2anyReady,
+} from './lib/utils.js?api=1';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
 // Embutido no iframe do app: o título vive na faixa do header do modal —
 // esconde o <h1> pra não duplicar (mesmo padrão do upload_images.html), e o
 // "Voltar ao mapa" (o mapa está logo atrás; o link carregaria o app DENTRO
-// do iframe).
-const EMBEDDED = window.self !== window.top;
+// do iframe). Também bloqueia a pinça (ver setupEmbeddedPage).
 const COARSE = (() => { try { return matchMedia('(pointer: coarse)').matches; } catch (_) { return false; } })();
-const IS_IOS = /iP(hone|ad|od)/.test(navigator.userAgent) ||
-  (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-if (EMBEDDED) {
-  $('h1')?.style.setProperty('display', 'none');
-  $('.foot .back')?.remove();
-  // Pinça dentro da folha do app não pode deixar o app inteiro com zoom (o
-  // Safari ignora user-scalable=no; estes são os eventos do WebKit). Só
-  // embutida — standalone mantém o zoom (acessibilidade).
-  for (const t of ['gesturestart', 'gesturechange']) document.addEventListener(t, (e) => e.preventDefault(), { passive: false });
-}
+if (setupEmbeddedPage(['h1'])) $('.foot .back')?.remove();
 
 // ===================== Dependências =====================================
 // exifr por promise (sem top-level await: o módulo registra os listeners na
@@ -310,38 +301,11 @@ if (EMBEDDED) {
 const exifrP = import('./lib/exifr.esm.js').then((m) => m.default || m)
   .catch((e) => { console.warn('exifr indisponível:', e); return null; });
 
-function _loadScript(src) {
-  return new Promise((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = src; s.onload = () => resolve(); s.onerror = () => reject(new Error(`falha ao carregar ${src}`));
-    document.head.appendChild(s);
-  });
-}
-let _n3P = null;
-function n3Parser() {
-  return _n3P ||= (window.N3 ? Promise.resolve() : _loadScript('./lib/n3.min.js'))
-    .then(() => window.N3.Parser);
-}
-// heic2any: só pra Chrome/Firefox (Safari decodifica HEIC nativo). Import
-// não-bloqueante, memoizado por promise.
-let heic2any = null, _heicP = null;
-function heic2anyReady() {
-  return _heicP ||= import('https://esm.sh/heic2any@0.0.4')
-    .then(m => { heic2any = m.default; return heic2any; })
-    .catch(() => { console.warn('heic2any indisponível — HEIC só no Safari.'); return null; });
-}
+// heic2any: só pra Chrome/Firefox (Safari decodifica HEIC nativo) — prefetch
+// não-bloqueante (lib/utils.js memoiza).
 if (!/^((?!chrome|android).)*safari/i.test(navigator.userAgent)) heic2anyReady();
 
 // ===================== Helpers básicos ==================================
-function turtle_escape(s) {
-  return (s || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"')
-    .replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t');
-}
-function escapeHtml(s) {
-  return String(s ?? '').replace(/[&<>"']/g, c => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-  }[c]));
-}
 function pad(n) { return String(n).padStart(2, '0'); }
 function plural(n, one, many) { return `${n} ${n === 1 ? one : many}`; }
 // Sinal de tempo-limite pros POSTs: sem ele um envio que o iOS suspendeu (ou
@@ -413,7 +377,7 @@ function addShot(when, lat, lon, h) {
 }
 
 async function loadCatalog() {
-  const Parser = await n3Parser();
+  const { Parser } = await loadN3();
   const URLS = ['./data/tours.ttl', './data/images.ttl', './data/identities.ttl'];
   const texts = await Promise.all(URLS.map(url =>
     fetch(url).then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.text(); })
@@ -501,13 +465,6 @@ const catalogReady = loadCatalog().then((n) => {
 // aceite do item — depois do catálogo, senão uma pessoa já cadastrada, com
 // o catálogo ainda carregando, virava pessoa nova.
 const mintedByName = new Map();   // nome normalizado → { iri, name }
-function randPersonSlug(n = 8) {
-  const A = '0123456789abcdefghjkmnpqrstvwxyz';
-  const b = crypto.getRandomValues(new Uint8Array(n));
-  let s = '';
-  for (let i = 0; i < n; i++) s += A[b[i] & 31];
-  return s;
-}
 function readAuthorName() {
   const name = $('#author').value.trim();
   try { localStorage.setItem(AUTHOR_KEY, name); } catch (_) {}
@@ -525,7 +482,7 @@ function resolveAuthor(name) {
   }
   return {
     iri: minted.iri, name,
-    decl: `<${minted.iri}> a schema:Person ;\n    schema:alternateName "${turtle_escape(minted.name)}" .\n`,
+    decl: `<${minted.iri}> a schema:Person ;\n    schema:alternateName "${turtleEscape(minted.name)}" .\n`,
   };
 }
 try { $('#author').value = localStorage.getItem(AUTHOR_KEY) || ''; } catch (_) {}
@@ -594,7 +551,7 @@ async function decodeImage(item) {
   try { return await createImageBitmap(item.file, { imageOrientation: 'from-image' }); }
   catch (nativeErr) {
     if (!isHeicFile(item.file)) throw new Error(`não consegui ler (${nativeErr.message})`);
-    if (!heic2any) await heic2anyReady();
+    const heic2any = await heic2anyReady();
     if (!heic2any) throw new Error('HEIC precisa do heic2any (indisponível) — tente pelo Safari');
     const out = await heicLimit(() => heic2any({ blob: item.file, toType: 'image/jpeg', quality: 0.92 }));
     const blob = Array.isArray(out) ? out[0] : out;
@@ -746,10 +703,7 @@ function reaccept(item) {
 // passeio (sem passeio: "Envio" · autora · data da 1ª imagem, ou agora com a
 // hora se ela não tem data). Toda mídia leva schema:isPartOf + a declaração
 // inline (upsert no servidor; _route_new_collections a desvia pra lists.ttl).
-function slugifyList(name) {
-  return (name || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'lista';
-}
+// slugifyList (lib/utils.js) é o MESMO do app.js e do form completo.
 function fmtDate(ms) { const d = new Date(ms); return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`; }
 function fmtDay(ms)  { const d = new Date(ms); return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}`; }
 function fmtRange(msA, msB) {
@@ -798,7 +752,7 @@ function describeItems(items) {
   return { tours, title, dateText };
 }
 function albumTtl(a) {
-  return `<${a.iri}> a schema:Collection ;\n    schema:name "${turtle_escape(a.name)}" .\n`;
+  return `<${a.iri}> a schema:Collection ;\n    schema:name "${turtleEscape(a.name)}" .\n`;
 }
 
 // ===================== Sessão no sessionStorage ========================
@@ -842,19 +796,7 @@ function restoreSession() {
 }
 
 // ===================== TTL ==============================================
-const PREFIXES = [
-  '@prefix dcterms: <http://purl.org/dc/terms/> .',
-  '@prefix exif:    <http://www.w3.org/2003/12/exif/ns#> .',
-  '@prefix nfo:     <http://www.semanticdesktop.org/ontologies/2007/03/22/nfo#> .',
-  '@prefix pav:     <http://purl.org/pav/> .',
-  '@prefix ph:      <https://id.pedalhidrografi.co/terms#> .',
-  '@prefix pes:     <https://id.pedalhidrografi.co/pessoas/> .',
-  '@prefix med:     <https://id.pedalhidrografi.co/midia/> .',
-  '@prefix lst:     <https://id.pedalhidrografi.co/listas/> .',
-  '@prefix prov:    <http://www.w3.org/ns/prov#> .',
-  '@prefix schema:  <https://schema.org/> .',
-  '@prefix xsd:     <http://www.w3.org/2001/XMLSchema#> .',
-].join('\n');
+const PREFIXES = TTL_PREFIXES;
 
 function originalFormat(file) {
   const raw = (file.name.match(/\.([a-z0-9]+)$/i)?.[1] || 'jpg').toLowerCase();

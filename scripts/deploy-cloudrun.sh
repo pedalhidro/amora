@@ -11,8 +11,9 @@
 #   scripts/deploy-cloudrun.sh --dry-run      # imprime configs sem executar
 #   scripts/deploy-cloudrun.sh --state        # build + deploy + também
 #                                             # sincroniza estado mutável
-#                                             # (uploads.ttl, data_graphs.ttl,
-#                                             #  routes.json, photos/, clips/)
+#                                             # (images.ttl, lists.ttl,
+#                                             #  routes.json, photos/, clips/,
+#                                             #  tour_assets/)
 #                                             # pro bucket
 #   scripts/deploy-cloudrun.sh --state-only   # SÓ sincroniza estado mutável,
 #                                             # sem rebuild/redeploy
@@ -22,8 +23,8 @@
 #   scripts/deploy-cloudrun.sh --state --force    # ignora a guarda anti-
 #                                                 # clobber (ver abaixo)
 #
-# Guarda anti-clobber: uploads.ttl, data_graphs.ttl, tours.ttl e routes.json
-# também são mutados server-side (uploads, Tour CRUD). O push desses
+# Guarda anti-clobber: os catálogos TTL (images/identities/lists/tours.ttl) e
+# routes.json também são mutados server-side (uploads, Tour CRUD). O push desses
 # arquivos é recusado se o bucket mudou desde o último sync E difere do
 # local — senão edições feitas via upload_*.html seriam descartadas.
 # Nesse caso: scripts/pull-cloudrun.sh --data-only, reconcilie, e rode de
@@ -37,7 +38,7 @@
 #   GCS_BUCKET         default: phidro-state
 #   CLOUDRUN_MEMORY    default: 512Mi
 #   CLOUDRUN_CPU       default: 1
-#   CLOUDRUN_MAX_INSTANCES  default: 5
+#   CLOUDRUN_MAX_INSTANCES  default: 1
 #   CLOUDRUN_MIN_INSTANCES  default: 0  (scale-to-zero)
 #
 # Pré-requisitos:
@@ -186,8 +187,8 @@ $DRY gcloud storage buckets update "gs://$BUCKET" \
 rm -f "$CORS_FILE"
 
 # Object Versioning: aplicado em TODO deploy (idempotente), igual ao CORS.
-# Mantém as gerações antigas dos arquivos de estado mutável (uploads.ttl,
-# tours.ttl, routes.json) a cada sobrescrita server-side — rede de segurança
+# Mantém as gerações antigas dos arquivos de estado mutável (catálogos TTL,
+# routes.json) a cada sobrescrita server-side — rede de segurança
 # contra clobber/lost-update e purga ruim. Recuperável via
 # scripts/state-history.sh (gcloud storage ls -a + cp da generation). Buckets
 # criados antes desta config não tinham versioning — por isso roda sempre.
@@ -287,7 +288,8 @@ else
 fi
 
 # ── 4. Estado mutável (--state / --state-only) ──────────────────────────
-# Sync de uploads.ttl + data_graphs.ttl + routes.json + photos/ + clips/ pro bucket.
+# Sync de images.ttl + lists.ttl + routes.json + photos/ + clips/ + tour_assets/
+# pro bucket. (data_graphs.ttl não é estado: o backend serve um shim fixo.)
 # Por padrão o deploy NÃO faz isso pra não clobberar uploads server-side;
 # rode com a flag quando quiser espelhar o local pra cloud.
 if [[ "$SYNC_STATE" == 1 ]]; then
@@ -296,7 +298,7 @@ if [[ "$SYNC_STATE" == 1 ]]; then
   [[ -n "$MIRROR_FLAG" ]] && echo "  (modo --mirror: deleta no bucket o que não existe local)"
 
   # --mirror nos rsync de photos/, clips/ e tour_assets/ abaixo apaga do
-  # bucket qualquer objeto ausente localmente. Ao contrário de uploads.ttl/
+  # bucket qualquer objeto ausente localmente. Ao contrário dos TTLs/
   # routes.json (guardados por md5 acima), esses três NÃO passam pela guarda
   # anti-clobber — são rsync direto — e tour_assets/ em particular é
   # dual-writer (comentário mais abaixo) e não é content-addressed: um
@@ -320,7 +322,7 @@ if [[ "$SYNC_STATE" == 1 ]]; then
     fi
   fi
 
-  for f in images.ttl lists.ttl data_graphs.ttl; do
+  for f in images.ttl lists.ttl; do
     if [[ -f "$REPO_ROOT/web/data/$f" ]]; then
       guarded_push "$REPO_ROOT/web/data/$f" "gs://$BUCKET/data/$f"
     else
@@ -330,7 +332,7 @@ if [[ "$SYNC_STATE" == 1 ]]; then
 
   # routes.json é servido bucket-first (o backend faz upsert incremental por
   # upload de tour). Um rebuild local completo (build-routes.py) só chega na
-  # cloud se empurrado aqui — mesma tensão dual-writer que uploads.ttl.
+  # cloud se empurrado aqui — mesma tensão dual-writer dos catálogos TTL.
   if [[ -f "$REPO_ROOT/web/routes.json" ]]; then
     guarded_push "$REPO_ROOT/web/routes.json" "gs://$BUCKET/routes.json"
   else

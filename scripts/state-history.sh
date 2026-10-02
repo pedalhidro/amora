@@ -11,13 +11,13 @@
 #   scripts/state-history.sh diff    <arquivo> <genA> <genB>
 #   scripts/state-history.sh restore <arquivo> <gen>
 #
-#   <arquivo>: uploads.ttl | tours.ttl | data_graphs.ttl (sob data/) OU
-#              routes.json (raiz do bucket). Nome simples; o script resolve a key.
+#   <arquivo>: images.ttl | identities.ttl | lists.ttl | tours.ttl (sob data/)
+#              OU routes.json (raiz do bucket). Nome simples; o script resolve a key.
 #
 # Exemplos:
-#   scripts/state-history.sh list uploads.ttl
+#   scripts/state-history.sh list images.ttl
 #   scripts/state-history.sh diff tours.ttl 1700000000123456 1700000999123456
-#   scripts/state-history.sh restore uploads.ttl 1700000000123456
+#   scripts/state-history.sh restore images.ttl 1700000000123456
 #
 # restore é NÃO-destrutivo: copia a geração escolhida por cima da corrente, o
 # que cria uma nova geração (a corrente atual vira não-corrente, ainda
@@ -40,7 +40,7 @@ uso:
   scripts/state-history.sh diff    <arquivo> <genA> <genB>
   scripts/state-history.sh restore <arquivo> <gen>
 
-<arquivo>: uploads.ttl | tours.ttl | data_graphs.ttl | routes.json
+<arquivo>: images.ttl | identities.ttl | lists.ttl | tours.ttl | routes.json
 env: GCP_PROJECT (default pedal-hidrografico), GCS_BUCKET (default phidro-state)
 EOF
   exit "${1:-0}"
@@ -49,13 +49,13 @@ EOF
 command -v gcloud >/dev/null 2>&1 || {
   echo "ERROR: gcloud CLI não encontrado." >&2; exit 1; }
 
-# Resolve o nome simples (uploads.ttl) na key do bucket. routes.json fica na
+# Resolve o nome simples (images.ttl) na key do bucket. routes.json fica na
 # raiz; os TTLs ficam sob data/. Uma key já completa (com /) passa direto.
 state_key() {
   local f="$1"
   case "$f" in
     routes.json) echo "routes.json" ;;
-    */*)         echo "$f" ;;          # já é uma key (ex.: data/uploads.ttl)
+    */*)         echo "$f" ;;          # já é uma key (ex.: data/images.ttl)
     *.ttl)       echo "data/$f" ;;
     *) echo "ERROR: arquivo de estado não reconhecido: $f" >&2; return 1 ;;
   esac

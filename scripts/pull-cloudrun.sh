@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 #
 # Inverso de scripts/deploy-cloudrun.sh --state-only: puxa do bucket GCS
-# (`phidro-state`) pro repo local o estado vivo do serviço — uploads.ttl,
-# data_graphs.ttl, tours.ttl, routes.json, photos/, clips/. Útil pra desenvolver
+# (`phidro-state`) pro repo local o estado vivo do serviço — images.ttl,
+# identities.ttl, lists.ttl, tours.ttl, routes.json, tour_assets/, photos/,
+# clips/. Útil pra desenvolver
 # localmente com o catálogo atual de produção, ou pra ter backup do que foi
 # enviado via upload_images.html / upload_tour.html.
 #
@@ -15,8 +16,8 @@
 # deploy é que sobe pro bucket — invertendo a direção corromperia o
 # source-of-truth.
 #
-# Guarda anti-clobber: o pull dos arquivos dual-writer (uploads.ttl,
-# data_graphs.ttl, tours.ttl, routes.json) é recusado se o LOCAL mudou
+# Guarda anti-clobber: o pull dos arquivos dual-writer (os catálogos TTL e
+# routes.json) é recusado se o LOCAL mudou
 # desde o último sync E difere do bucket — senão um build/edição local
 # ainda não empurrado seria sobrescrito. Nesse caso: commit/backup do
 # local (ou deploy-cloudrun.sh --state-only pra empurrá-lo) e rode de
@@ -27,7 +28,7 @@
 #   scripts/pull-cloudrun.sh --dry-run      # preview, sem baixar
 #   scripts/pull-cloudrun.sh --photos-only  # só photos/
 #   scripts/pull-cloudrun.sh --clips-only   # só clips/
-#   scripts/pull-cloudrun.sh --data-only    # só uploads.ttl + data_graphs.ttl + tours.ttl + routes.json
+#   scripts/pull-cloudrun.sh --data-only    # só os catálogos TTL + routes.json + tour_assets/
 #   scripts/pull-cloudrun.sh --mirror       # espelho exato: deleta local o que
 #                                           # não existe no bucket (perigoso)
 #   scripts/pull-cloudrun.sh --force        # ignora a guarda anti-clobber
@@ -135,10 +136,10 @@ if [[ -n "$MIRROR_FLAG" && -z "$DRY" ]]; then
   [[ "$_ans" == "y" || "$_ans" == "Y" ]] || { echo "Abortado."; exit 1; }
 fi
 
-# ── Dados mutáveis (uploads.ttl + data_graphs.ttl + tours.ttl) ──────────
+# ── Dados mutáveis (catálogos TTL + routes.json + tour_assets/) ─────────
 if [[ "$SYNC_DATA" == 1 ]]; then
   mkdir -p "$REPO_ROOT/web/data"
-  for f in images.ttl identities.ttl lists.ttl data_graphs.ttl tours.ttl; do
+  for f in images.ttl identities.ttl lists.ttl tours.ttl; do
     guarded_pull "gs://$BUCKET/data/$f" "$REPO_ROOT/web/data/$f"
   done
 

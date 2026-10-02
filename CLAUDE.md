@@ -110,7 +110,7 @@ one optional hosted deploy target, not a dependency.
   but the backend no longer mutates it — the dump list is fixed
   (`CATALOG_DUMPS = tours.ttl + images.ttl + identities.ttl`) and
   `/data/data_graphs.ttl` is served from a static shim (`DATA_GRAPHS_SHIM`).
-  (`scripts/migrate-split-catalogs.py` is the one-shot that carved
+  (a one-shot migration — removed, see git history — carved
   `uploads.ttl`→`images.ttl`+`identities.ttl` and re-typed the media classes;
   `uploads.ttl` is now obsolete — and `GET /data/uploads.ttl` is a hard 404:
   a stale July-2026 copy left in the bucket still carried media deleted
@@ -118,16 +118,7 @@ one optional hosted deploy target, not a dependency.
   `phidro.plist` (launchd), `requirements.txt`, `README.md`. Runs locally
   (macOS/Linux) or on Cloud Run. (Was `backend/pi/` — the Raspberry Pi
   deploy was retired; the systemd unit + `pi-deploy.sh` were removed.)
-- `research/photos-rdf/` — the RDF research lab. Currently holds
-  the seed `data/initial-data.ttl`, `data/tours.csv` (historical
-  spreadsheet dump — `build-tours.py`, which regenerated `tours.ttl`
-  from it, was removed: `tours.ttl` is now maintained solely via
-  `upload_tour.html` / the Tour CRUD endpoints, and a CSV rebuild would
-  wipe the backfilled narratives and announcement images),
-  `decisions.ttl`, `design.ttl`,
-  `conversion-notes.md`, and the legacy `upload-form.html` (kit-download
-  form — superseded in production by `web/upload_images.html`). The
-  active SHACL `shapes.ttl` and `ontology.ttl` live alongside the data
+- The active SHACL `shapes.ttl` and `ontology.ttl` live alongside the data
   in `web/data/`; the backend lazily loads them (bucket-first, container
   copy as fallback) on first validation — a warm-up thread at boot
   (`_warm_caches`, opt-out `PHIDRO_NO_WARMUP=1`) does it in parallel with the
@@ -159,13 +150,7 @@ one optional hosted deploy target, not a dependency.
   the `deploy-amora.sh` / `pull-amora.sh` /
   `push-clips.sh` / `gcloud-ssh-rsync.sh` / `pi-deploy.sh` family for the
   old GCE VM and Raspberry Pi deploys was removed; amora is Cloud Run now),
-  `remux-clips-audio.py` (one-shot migration: muxes audio back into
-  pre-v225 silent `web/clips/*.webm` that were transcoded before audio
-  was embedded — see the upload-flow note below; removable once all
-  clips are re-encoded), `migrate-bnodes-to-iris.py` (one-shot migration:
-  converted the historical blank nodes in `tours.ttl`/`uploads.ttl` into the
-  derived-IRI convention — idempotent, removable once it's clearly not needed
-  again), `build-viario.py` (data-prep, not runtime: builds the road-network
+  `build-viario.py` (data-prep, not runtime: builds the road-network
   **FlatGeobuf** `south-america-viario.fgb` from Geofabrik's
   `south-america-latest.osm.pbf` (~4 GB, cached in `ignore/`) via
   `osmium tags-filter w/highway` + `ogr2ogr -f FlatGeobuf` with a
@@ -275,19 +260,14 @@ one optional hosted deploy target, not a dependency.
   paralelo** (`prewarm`, 32 threads): lidos um a um materializam a ~250 KB/s
   (latência por arquivo), em paralelo ~5× mais; `ingest-whatsapp` pré-baixa
   em lotes de 256),
-  `migrate-captura-fixes.py` (reparos de catálogo: arte em host local, datatype
-  de `ph:sequenceInSeries`),
-  `migrate-date-offsets.py` (one-shot: repara os offsets UTC das
-  `dcterms:date` de mídia que o bug do owlrl deslocou — ver Conventions;
-  textual, dry-run por default, `--apply` grava; round-trip pull → script →
-  `deploy-cloudrun.sh --state-only` → `POST /reload`),
-  `gen-synthetic-rdf.py`, `mock_location.sh` (empurra posições de
+  `mock_location.sh` (empurra posições de
   teste da localização ao vivo pro backend — random walk, 1 ponto/3 s; bate no
   remoto amora por padrão, `--local` p/ 127.0.0.1:8080; curl não precisa de
-  CORS), `exiftool_ph.config`.
-  `build-photos.py` and
-  `build-routes.mjs` are legacy artefacts pending removal — see "Open
-  loose ends".
+  CORS), `exiftool_ph.config`. The one-shot migrations (`migrate-*.py`:
+  bnodes→IRIs, catalog split, IRI host/slug moves, date offsets, …) and the
+  legacy `build-photos.py` / `build-routes.mjs` / `gen-synthetic-rdf.py`
+  were removed in 10/2026 once production showed none of the old patterns —
+  git history has them if a restore ever reintroduces old data.
 - `docs/` — design-reference notes not loaded at runtime. `DESIGN.md`
   (RDF substrate / ontology design rationale), `ICON_DESIGN.md` (PWA
   icon decisions) and `CAPTURA.md` (**captura de dados**: os três funis
@@ -370,9 +350,9 @@ SHACL `ph:SeriesEditionShape` impõe isso).
 menções históricas nos comentários deste arquivo — onde o texto abaixo diz
 `phd:image_`/`phd:video_`/`phd:tour_`/`phd:assoc_`, leia `med:<hash>` (foto E
 vídeo)/`pas:<slug>`/`<…/passeio/<ES>/<seq>>`. `phd:org_` (organizadores) NÃO
-migrou (fora de escopo). A migração foi feita por scripts idempotentes
-(`scripts/migrate-{georeferenced,lists-split,media-host,tour-iris,editions}.py`),
-com `scripts/tour-iri-map.json` (id-numérico antigo ↔ slug) baked no container.
+migrou (fora de escopo). A migração foi feita por scripts idempotentes (já
+removidos — ver git history), com `web/data/tour-iri-map.json` (id-numérico
+antigo ↔ slug) baked no container.
 
 **Continuidade de deep link + gotcha da Cloudflare.** Links antigos
 `?tour=<id-numérico>` são preservados: o worker da Cloudflare que fronteia amora
@@ -465,8 +445,8 @@ deletion/merge trivial: purging a subject = removing `(subject, *, *)` plus the
 `backend/main.py`), with no blank-node-reachability walk. Both the TTL emitters
 (`upload_images.html`, `upload_tour.html`, `backfill_tours.html`,
 `scripts/build-clips.py`) and the validator's re-upload `exclude` set rely on
-this prefix convention. (`scripts/migrate-bnodes-to-iris.py` converted the
-historical bnode data — git history holds the pre-IRI form.)
+this prefix convention. (A one-shot migration, now removed, converted the
+historical bnode data — git history holds both.)
 
 Key flows:
 
@@ -1090,7 +1070,8 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
   cada gravação re-serializava o catálogo, o desvio acumulava: 435 das 460
   datas de mídia chegaram a offsets até `-23:00` (wall-clock certo, offset
   errado — conferido contra o EXIF dos originais). Reprodutível com um
-  harness de threads; `scripts/migrate-date-offsets.py` repara o acumulado.
+  harness de threads; o acumulado foi reparado em 09/2026 (o script de
+  migração saiu do repo — git history).
 - **Uploads não seguram o lock global durante a transferência.**
   `/upload-image` E `/upload-video` (este era `@serialized` inteiro) recebem
   o corpo, validam (só o `pyshacl.validate` serializa, sob `_validate_lock`)
@@ -1235,6 +1216,15 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
   clique simulado no botão default (o `ev.submitter` não distingue): bloqueie
   o Enter no `keydown`. Inputs com 16 px no toque (menos que isso o Safari
   dá zoom ao focar).
+- **Helpers das páginas embutidas moram em `lib/utils.js`** (`escapeHtml`,
+  `turtleEscape`, `TTL_PREFIXES`, `slugifyList` — tem que seguir igual ao do
+  app.js, os slugs de álbum dependem disso —, `randPersonSlug`, loaders de
+  N3/Tom Select/scripts, `setupEmbeddedPage`, helpers do form de passeio) e os
+  tokens de cor em `lib/pages.css` (só tokens, linkado ANTES do `<style>` de
+  cada página). As páginas importam `./lib/utils.js?api=N` — suba o N de quem
+  passar a importar um nome novo (mesmo motivo do `media-pipeline.js`); o
+  app.js importa sem query (vem do mesmo precache). Não recopie esses helpers
+  numa página. Exceção: `memoria.html` é script clássico e tem os seus.
 - **Os forms avisam o app-pai por `postMessage`** — `phidro-media-changed`
   (upload_images.html: envio, edição) e `phidro-tour-changed`
   (upload_tour.html e backfill_tours.html: save, delete). O app marca o modal como "sujo" e só
@@ -1462,21 +1452,6 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
 
 ## Open loose ends
 
-- **Retire legacy build scripts.** `scripts/build-routes.mjs` (the old
-  Node port — now orphaned; `package.json`'s `build:routes` already points
-  at `build-routes.py`) and `scripts/build-photos.py` (predates the upload
-  form) are both superseded. User-deletes when ready:
-  `git rm scripts/build-routes.mjs scripts/build-photos.py`. The
-  `coletor_*.py` family was already removed.
-- **`scripts/gen-synthetic-rdf.py` is stale.** It targets the removed
-  top-level `ontology/` dir (`--out-dir ontology/v2`) and emits the old
-  `censo/1.0/` namespace with classes absent from the current
-  `web/data/ontology.ttl` — its output can't validate against current
-  shapes. User-deletes when ready: `git rm scripts/gen-synthetic-rdf.py`
-  (or retarget it at `web/data/` if synthetic data is still useful).
-- **`research/photos-rdf/upload-form.html`** is the legacy "build a kit ZIP"
-  form. Production uploads go through `web/upload_images.html`. Keep the
-  research one only if you still use it for batch-export experiments.
 - **`web/data/uploads.ttl` and `web/photos/<phash>/`** are runtime artifacts
   of the backend — gitignore or commit per your deploy strategy. The CDN
   mirror shows no photos until those files exist at the destination.

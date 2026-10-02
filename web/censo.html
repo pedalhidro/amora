@@ -6,17 +6,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Censo Hidrográfico — Pedal Hidrográfico</title>
 <link rel="stylesheet" href="./fonts/fonts.css">
+<link rel="stylesheet" href="./lib/pages.css">
 <style>
-  :root {
-    --bg: #fafbfc;
-    --panel: #ffffff;
-    --surface: #eef1f4;
-    --text: #101820;
-    --muted: #4a5867;
-    --accent: #c2410c;
-    --accent-hover: #9a3412;
-    --border: #c6ced6;
-  }
+  /* :root (paleta) em lib/pages.css */
   * { box-sizing: border-box; }
   html, body { margin: 0; background: var(--bg); color: var(--text);
     font: 14px/1.5 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -390,6 +382,8 @@
 </div><!-- /view-captura -->
 
 <script type="module">
+// Helpers comuns das páginas (?api=N: ver o comentário do import no subir.html).
+import { escapeHtml, setupEmbeddedPage, loadN3 } from './lib/utils.js?api=1';
 const $ = (q) => document.querySelector(q);
 
 // "← Mapa": no modo embutido (iframe do modal Censo dentro do app), o link
@@ -397,28 +391,10 @@ const $ = (q) => document.querySelector(q);
 // inteiro dentro do modal ("dois mapas"). Em vez disso, avisa o app pra fechar
 // o modal, revelando o mapa que já está embaixo. Standalone (aberto direto),
 // o link navega pro mapa normalmente.
-if (window.self !== window.top) {
-  // No modal, esconde o header interno inteiro — o título ("Censo Hidrográfico")
-  // agora vive na faixa do header do modal. Quem fecha é a bolinha / clique fora
-  // / Esc. Standalone (aberto direto), o header aparece normalmente.
-  $('header')?.style.setProperty('display', 'none');
-  // Pinça dentro do sheet não pode deixar o app INTEIRO com zoom (o Safari
-  // ignora user-scalable=no; estes são os eventos de gesto do WebKit).
-  // Standalone mantém o zoom de pinça (acessibilidade).
-  for (const t of ['gesturestart', 'gesturechange']) document.addEventListener(t, (e) => e.preventDefault(), { passive: false });
-}
-
-// ── N3.js ────────────────────────────────────────────────────────────────
-// Vendored UMD em ./lib/n3.min.js — popula window.N3 quando carrega.
-async function loadN3() {
-  if (window.N3) return window.N3;
-  await new Promise((res, rej) => {
-    const s = document.createElement('script');
-    s.src = './lib/n3.min.js'; s.onload = res; s.onerror = rej;
-    document.head.appendChild(s);
-  });
-  return window.N3;
-}
+// No modal, esconde o header interno inteiro — o título ("Censo Hidrográfico")
+// agora vive na faixa do header do modal. Quem fecha é a bolinha / clique fora
+// / Esc. Standalone (aberto direto), o header aparece normalmente.
+setupEmbeddedPage(['header']);
 
 const PH     = 'https://id.pedalhidrografi.co/terms#';
 const PHD    = 'https://pedalhidrografi.co/data/';
@@ -884,11 +860,6 @@ function renderTable(tours) {
   tbody.innerHTML = rows.join('');
   $('.table-wrap').hidden = false;
   $('.table-toolbar').hidden = false;
-}
-
-function escapeHtml(s) {
-  return String(s ?? '').replace(/[&<>"]/g, (c) =>
-    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 }
 
 // Sort por click no header. Re-renderiza tabela com a nova ordem.

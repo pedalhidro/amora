@@ -6,14 +6,10 @@
 <meta name="robots" content="noindex">
 <title>Cadastrar passeio — Pedal Hidrográfico</title>
 <link rel="stylesheet" href="./fonts/fonts.css">
+<link rel="stylesheet" href="./lib/pages.css">
 <style>
   /* Paleta espelhada do app (style.css) pra o formulário combinar com o modal. */
-  :root {
-    --bg: #fafbfc; --panel: #ffffff; --surface: #eef1f4;
-    --text: #101820; --muted: #4a5867;
-    --accent: #c2410c; --accent-hover: #9a3412; --border: #c6ced6;
-    --ok: #1a7f4b; --warn: #9c6a10; --err: #b3261e;
-  }
+  /* :root (paleta) em lib/pages.css */
   body { font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace; max-width: 900px; margin: 1.5rem auto; padding: 0 1rem;
     color: var(--text); background: var(--bg); }
   /* Embutido no sheet do app: rolar até a borda não encadeia no app nem
@@ -378,19 +374,17 @@
 </form>
 
 <script type="module">
+// Helpers comuns das páginas (?api=N: ver o comentário do import no subir.html).
+import {
+  escapeHtml, turtleEscape, TTL_PREFIXES, randPersonSlug, setupEmbeddedPage,
+  loadN3, loadTomSelect, fmtDateTime, parseDuration, attachDateTimePicker,
+} from './lib/utils.js?api=1';
 const $  = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
 // Embutido no iframe do app: o título vive na faixa do header do modal —
-// esconde o <h1>/lede internos pra não duplicar. Standalone mostra normalmente.
-if (window.self !== window.top) {
-  $('h1')?.style.setProperty('display', 'none');
-  $('.lede')?.style.setProperty('display', 'none');
-  // Pinça dentro do sheet não pode deixar o app INTEIRO com zoom (o Safari
-  // ignora user-scalable=no; estes são os eventos de gesto do WebKit).
-  // Standalone mantém o zoom de pinça (acessibilidade).
-  for (const t of ['gesturestart', 'gesturechange']) document.addEventListener(t, (e) => e.preventDefault(), { passive: false });
-}
+// esconde o <h1>/lede internos pra não duplicar (+ bloqueia a pinça).
+setupEmbeddedPage(['h1', '.lede']);
 
 // ── Estado do form pro app-pai (contrato `phidro-form-state`) + rascunho ───
 // Embutido num sheet do app, o form avisa se tem trabalho em curso (`busy`:
@@ -423,23 +417,7 @@ _lastFormState = 'false|false|';
 }
 
 // ────────────────────── Tom Select on-demand load ─────────────────────
-async function loadScript(src) {
-  return new Promise((res, rej) => {
-    const s = document.createElement('script');
-    s.src = src; s.onload = res; s.onerror = rej;
-    document.head.appendChild(s);
-  });
-}
-if (!window.TomSelect) await loadScript('./lib/tom-select.complete.min.js');
-const TomSelect = window.TomSelect;
-
-// N3.js VENDORADO (UMD → window.N3): o import de esm.sh era a cadeia mais
-// longa do boot e caía com ETP/offline. Uma vez só, sob demanda.
-let _n3P = null;
-function n3Parser() {
-  return _n3P ||= (window.N3 ? Promise.resolve() : loadScript('./lib/n3.min.js'))
-    .then(() => window.N3.Parser);
-}
+const TomSelect = await loadTomSelect();
 // Texto dos dumps baixados no boot — o prefill de edição (?id=) reusa em vez
 // de baixar tours.ttl de novo.
 const catalogText = new Map();
@@ -454,15 +432,7 @@ const DCT    = 'http://purl.org/dc/terms/';
 const RDF_TYPE = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
 
 // ────────────────────── Helpers ──────────────────────────────────────
-// Literal de UMA linha (quebras viram \n escapado). Vale também pra narrativa:
-// o multipart/form-data converte toda quebra CRUA dos campos de texto em CRLF
-// (o spec manda; WebKit e Blink fazem) — com um """longo""" o \r entrava no
-// literal e a descrição voltava do servidor com CRLF (o backfill a via como
-// "editada"). Escapada, só a indentação do Turtle vira CRLF, que é espaço.
-function turtleEscape(s) {
-  return (s || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"')
-    .replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t');
-}
+// (turtleEscape, fmtDateTime, parseDuration, attachDateTimePicker: lib/utils.js)
 function escapeIri(u) {
   // Percent-encoda chars que não podem aparecer crus num IRI Turtle <...>.
   // O campo é type="url", mas isto garante RDF válido mesmo com input estranho.
@@ -498,85 +468,6 @@ function shortIRI(iri) {
   if (iri.startsWith(PHD_NS)) return 'phd:' + iri.slice(PHD_NS.length);
   if (iri.startsWith(PH_NS))  return 'ph:'  + iri.slice(PH_NS.length);
   return `<${iri}>`;
-}
-function fmtDateTime(value) {
-  if (!value) return null;
-  // Inputs agora são texto livre "AAAA-MM-DD HH:MM" (24h) — o
-  // datetime-local antigo renderizava mm/dd/yyyy + AM/PM em locale en-US,
-  // sem como forçar formato. Aceita ' ' ou 'T' como separador.
-  const v = value.trim().replace(' ', 'T');
-  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(v)) {
-    throw new Error(`data inválida: "${value}" — use AAAA-MM-DD HH:MM (24h)`);
-  }
-  return v.length === 16 ? `${v}:00-03:00` : `${v}-03:00`;
-}
-// iOS/iPadOS: showPicker() existe mas NÃO abre nada em input de data/hora
-// (PageClientImplIOS::createDateTimePicker devolve nullptr — WebKit bug
-// 261703) e também não lança, então o fallback focus() nunca rodava e o 📅
-// ficava morto. O iPadOS se anuncia como Mac: quem o denuncia é o toque.
-const IS_IOS = /iP(hone|ad|od)/.test(navigator.userAgent)
-  || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-// Toque (ou iOS): o datetime-local REAL, transparente, fica por cima do 📅 —
-// o toque cai nele e o sistema abre a roda nativa sozinho (ver .dt-overlay).
-const DT_OVERLAY = IS_IOS || !!window.matchMedia?.('(pointer: coarse)').matches;
-
-// Picker nativo de data+hora por trás de um campo de texto 24h. O texto
-// "AAAA-MM-DD HH:MM" segue sendo o valor canônico (o datetime-local cru
-// renderiza mm/dd/yyyy + AM/PM em locale en-US, sem como forçar formato —
-// por isso os campos viraram texto); o 📅 abre o picker e copia a escolha
-// pro texto. `seedFrom()` dá o valor inicial do picker quando o campo está
-// vazio (ex.: Chegou em abre no dia do Partiu em).
-function attachDateTimePicker(input, seedFrom) {
-  // Teclado de TEXTO (o inputmode=numeric dava no iPhone um teclado só de
-  // dígitos, sem '-', ':' nem espaço) e sem autocorreção mexendo na data.
-  input.setAttribute('autocapitalize', 'off');
-  input.setAttribute('autocorrect', 'off');
-  input.spellcheck = false;
-  const wrap = document.createElement('div');
-  wrap.className = 'dt-field' + (DT_OVERLAY ? ' dt-overlay' : '');
-  input.parentNode.insertBefore(wrap, input);
-  wrap.appendChild(input);
-  const picker = document.createElement('input');
-  picker.type = 'datetime-local';
-  picker.tabIndex = -1;
-  picker.setAttribute('aria-hidden', 'true');
-  const btn = document.createElement('button');
-  btn.type = 'button';
-  btn.className = 'pick';
-  btn.textContent = '📅';
-  btn.title = 'Escolher data e hora no calendário';
-  btn.setAttribute('aria-label', 'Escolher data e hora');
-  const pickWrap = document.createElement('span');
-  pickWrap.className = 'pick-wrap';
-  pickWrap.append(btn, picker);
-  wrap.append(pickWrap);
-  const toPicker = (txt) => {
-    const v = (txt || '').trim().replace(' ', 'T');
-    return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(v) ? v.slice(0, 16) : '';
-  };
-  const seed = () => { picker.value = toPicker(input.value) || toPicker(seedFrom?.()) || ''; };
-  // Sobreposto, o toque vai direto pro picker: semeia antes de a roda abrir
-  // (o pointerdown vem antes do foco; o foco cobre teclado/acessibilidade).
-  picker.addEventListener('pointerdown', seed);
-  picker.addEventListener('focus', seed);
-  btn.addEventListener('click', () => {
-    seed();
-    // showPicker() exige gesto do usuário (estamos num click) e elemento
-    // renderizado. No iOS ele não abre nada — lá quem abre a roda é o foco
-    // (dentro do gesto); idem em browser sem showPicker ou quando ele lança.
-    try {
-      if (!IS_IOS && typeof picker.showPicker === 'function') picker.showPicker();
-      else { picker.focus(); picker.click(); }
-    } catch (_) { picker.focus(); picker.click(); }
-  });
-  const commit = () => {
-    if (!picker.value) return;
-    input.value = picker.value.slice(0, 16).replace('T', ' ');
-    input.dispatchEvent(new Event('input',  { bubbles: true }));
-    input.dispatchEvent(new Event('change', { bubbles: true }));
-  };
-  picker.addEventListener('change', commit);
-  picker.addEventListener('input', commit);   // iOS: a roda emite input a cada giro
 }
 attachDateTimePicker($('#t-date'));
 attachDateTimePicker($('#t-departed'), () => $('#t-date').value);
@@ -659,25 +550,6 @@ for (const id of ['#t-departed', '#t-arrived']) {
 }
 syncTotalTime();
 
-function parseDuration(value) {
-  if (!value) return null;
-  const parts = value.split(':').map(p => parseInt(p, 10));
-  // Aceita só HH:MM:SS ou MM:SS. Sem isto, um valor de campo único (ex.: "45")
-  // virava parts.length===1 → m=undefined → "PT45HundefinedM0S" (xsd:duration
-  // inválido) enviado pro servidor; 4+ segmentos descartavam o resto silencioso.
-  if (parts.length !== 2 && parts.length !== 3) return null;
-  if (parts.some(n => !Number.isFinite(n) || n < 0)) return null;
-  // 2 partes = HH:MM (conforme o placeholder do campo), 3 = HH:MM:SS.
-  const [h, m, s = 0] = parts;
-  return `PT${h}H${m}M${s}S`;
-}
-function escapeHtml(s) {
-  // notice() injeta via innerHTML — qualquer string dinâmica (URL, erro do
-  // servidor, ?id= da URL) precisa passar por aqui antes de interpolar.
-  return String(s ?? '').replace(/[&<>"']/g, c => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-  }[c]));
-}
 function saneUrl(u) {
   // Só rendereiza <a href> pra URLs que parecem sãs (http(s) ou relativas
   // ao site) — bloqueia javascript: e afins vindos do servidor/TTL.
@@ -721,7 +593,7 @@ providerOptions.push({ value: 'ph:amora',  text: 'Amora (rota salva)' });
 async function loadCatalog() {
   let Parser;
   try {
-    Parser = await n3Parser();
+    Parser = (await loadN3()).Parser;
   } catch { return; }
   const types = new Map(), names = new Map(), titles = new Map();
   const providers = new Set();
@@ -774,15 +646,8 @@ async function loadCatalog() {
 await loadCatalog();
 
 // ────────────────────── Mints ────────────────────────────────────────
-// Slug de identidade OPACO e aleatório (8 chars, base32 Crockford) — nunca
-// derivado do nome editável. IRI = pes:<slug>.
-function randPersonSlug(n = 8) {
-  const A = '0123456789abcdefghjkmnpqrstvwxyz';
-  const b = crypto.getRandomValues(new Uint8Array(n));
-  let s = '';
-  for (let i = 0; i < n; i++) s += A[b[i] & 31];
-  return s;
-}
+// Slug de identidade OPACO e aleatório (8 chars, base32 Crockford —
+// randPersonSlug) — nunca derivado do nome editável. IRI = pes:<slug>.
 function mintPerson(input) {
   const name = input.trim();
   if (!name) return null;
@@ -1167,20 +1032,7 @@ function buildTtl() {
     }
   }
 
-  const prefixes = `\
-@prefix dcterms: <http://purl.org/dc/terms/> .
-@prefix pav:     <http://purl.org/pav/> .
-@prefix ph:      <https://id.pedalhidrografi.co/terms#> .
-@prefix phd:     <https://pedalhidrografi.co/data/> .
-@prefix pas:     <https://id.pedalhidrografi.co/passeio/> .
-@prefix ser:     <https://id.pedalhidrografi.co/serie/> .
-@prefix pes:     <https://id.pedalhidrografi.co/pessoas/> .
-@prefix prov:    <http://www.w3.org/ns/prov#> .
-@prefix qudt:    <http://qudt.org/schema/qudt/> .
-@prefix schema:  <https://schema.org/> .
-@prefix unit:    <http://qudt.org/vocab/unit/> .
-@prefix xsd:     <http://www.w3.org/2001/XMLSchema#> .
-`;
+  const prefixes = TTL_PREFIXES + '\n';
 
   const tourBlock = `\n# Passeio\n${tourIri}\n    ${props.join(' ;\n    ')} .\n`;
   const derivedBlock = derived.length
@@ -1326,7 +1178,7 @@ notice(
 async function prefillFromId(tourId) {
   let Parser;
   try {
-    Parser = await n3Parser();
+    Parser = (await loadN3()).Parser;
   } catch {
     notice('Não consegui carregar parser N3 pra prefill.', 'err');
     return;
@@ -1626,11 +1478,7 @@ async function prefillFromId(tourId) {
 // Slug aleatório Crockford base32 (8 chars, sem i/l/o/u) — igual às pessoas.
 // Passeios novos nascem com um slug opaco (o IRI é pas:<slug>); o campo fica
 // editável (dá pra trocar), mas o default é aleatório — nada de id sequencial.
-function mintTourSlug() {
-  const A = '0123456789abcdefghjkmnpqrstvwxyz';
-  const b = new Uint8Array(8); crypto.getRandomValues(b);
-  return Array.from(b, (x) => A[x % 32]).join('');
-}
+const mintTourSlug = () => randPersonSlug();
 
 // ────────────────────── Rascunho + estado pro app-pai ─────────────────────
 // A cada mudança o form grava um RASCUNHO no localStorage (chave por ?id, ou

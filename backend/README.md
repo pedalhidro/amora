@@ -6,103 +6,80 @@ Linux) e no Cloud Run — `STORAGE_BACKEND` escolhe onde vive o estado.
 
 ```text
 host local  (ou Cloud Run — mesmo main.py, STORAGE_BACKEND escolhe storage)
-  └─ gunicorn → main.py (Flask)
-        ├─ GET  /                       → web/index.html (o app)
-        ├─ GET  /health                 → "ok" (liveness)
-        ├─ GET  /<path>                 → estáticos de web/ (app.js,
-        │                                 data/*.ttl estáticos, …)
-        ├─ GET  /data/<filename>        → uploads.ttl / data_graphs.ttl
-        │                                 (bucket-first, container fallback)
-        ├─ GET  /routes.json            → geometria das rotas (mutável,
-        │                                 bucket-first; upsert incremental)
-        ├─ GET  /feed.xml               → RSS 2.0 dos passeios (tours.ttl)
+  └─ gunicorn --workers 1 → main.py (Flask)
+        ├─ GET  /, /<path>              → o app (estáticos de web/)
+        ├─ GET  /data/<dump>.ttl        → catálogos RDF (bucket-first,
+        │                                 container fallback)
+        ├─ GET  /routes.json, /feed.xml, /sitemap.xml, /passeio/<slug>, …
         ├─ GET  /photos|/clips|/tour_assets/<path>
         │                                 → blobs (302 pro bucket em modo gcs)
-        ├─ POST /upload-image           → multipart: ttl + variantes;
-        │                                 valida com pyshacl, grava em web/
-        ├─ POST /upload-video           → multipart: ttl + audio.webm|.m4a +
-        │                                 (opcional) video360/720.webm|.mp4 +
-        │                                 thumb.jpg; valida via VideoShape
-        ├─ POST /upload-tour            → upsert de 1 ph:Tour em tours.ttl
-        │                                 (+ anúncio opcional em tour_assets/)
-        ├─ POST /delete-image/<phash>   → apaga arquivos + triples
-        ├─ POST /delete-video/<vhash>   → apaga clipes + thumb + triples
-        ├─ POST /delete-tour/<tour_id>  → apaga triples do tour + assets
-        └─ POST /reload                 → invalida caches in-memory
+        └─ POST /upload-*, /update-*, /delete-*, /save-route, /reload, …
   └─ cloudflared → túnel HTTPS público (local) ou Cloud Run domain mapping
 ```
+
+A lista completa de rotas está em `../web/openapi.json` (leitura) e na seção
+"Backend endpoint summary" do `../CLAUDE.md` (tudo, inclusive mutações).
 
 Arquivos: `main.py`, `storage.py`, `rwgps.py`, `requirements.txt`,
 `phidro.plist` (launchd, macOS).
 
 ## O estado vive em `web/` (local) ou no bucket GCS (Cloud Run)
 
-Não há SQLite. Os uploads — imagens E vídeos — viram triples no mesmo
-**`web/data/uploads.ttl`** (Turtle). Os blobs (foto/vídeo/áudio/thumb)
-vivem em `web/photos/` e `web/clips/` em modo local, ou no bucket
-GCS no Cloud Run.
+Não há SQLite. O estado são quatro catálogos Turtle em `web/data/` —
+**`images.ttl`** (fotos `ph:StillImage` e vídeos `ph:MotionImage`),
+**`identities.ttl`** (pessoas), **`lists.ttl`** (álbuns) e **`tours.ttl`**
+(passeios) — mais `routes.json`/`saved_routes.json` e os blobs
+(foto/vídeo/áudio/thumb/arte) em `web/photos/`, `web/clips/` e
+`web/tour_assets/` em modo local, ou no bucket GCS no Cloud Run. O antigo
+`uploads.ttl` foi dividido e é recusado com 404.
 
 **No Cloud Run o container é magrinho**: `.gcloudignore` exclui
 `web/photos/` e `web/clips/` inteiros, então nada de mídia local é
 empacotado na imagem. Os handlers `/photos/<path>` e `/clips/<path>`
 redirecionam pro bucket via 302 (storage público leitura).
 
-Um manifesto em **`web/data/data_graphs.ttl`** registra cada dump
-(`void:dataDump`), e é ele que o app consulta no boot pra descobrir
-quais grafos carregar.
+`/data/data_graphs.ttl` é um manifesto VoID fixo (não é estado — o backend
+serve uma constante) que lista os dumps via `void:dataDump`.
 
 ```text
 web/                            (no container do Cloud Run: só o que NÃO está excluído)
 ├─ index.html, app.js, style.css, sw.js, manifest.json, icons…
-├─ upload_images.html           formulário unificado (imagens + vídeos)
-├─ upload_videos.html           redirect stub → upload_images.html
-├─ lib/                         utils.js + n3.min.js + energy-worker.js +
-│                               tom-select.* + leaflet/ + locatecontrol/ +
-│                               qrcode.js (deps vendored)
-├─ data/                        TTLs estáticos vão no container; mutáveis no bucket
-│   ├─ shapes.ttl               SHACL — ph:ImageShape + ph:VideoShape (no container)
-│   ├─ ontology.ttl             vocabulário ph:                       (no container)
-│   ├─ tours.ttl                catálogo de passeios                  (no container)
-│   ├─ uploads.ttl              triples de TODA mídia                 (bucket-only)
-│   └─ data_graphs.ttl          manifesto void:                       (bucket-only)
+├─ upload_images.html, subir.html   envio de mídia (imagens + vídeos)
+├─ upload_tour.html, censo.html     CRUD de passeios
+├─ lib/                         deps vendored
+├─ data/
+│   ├─ shapes.ttl, ontology.ttl SHACL + vocabulário ph: (container; bucket-first)
+│   ├─ tours.ttl, identities.ttl  passeios / pessoas (seed no container; vivo no bucket)
+│   └─ images.ttl, lists.ttl    mídia / álbuns                     (bucket)
 ├─ photos/<phash>/              { original.* | large.jpg | thumb.jpg }    (bucket-only no CR)
-└─ clips/                       clipes de vídeo curtos (Animação + galleries) (bucket-only no CR)
-    ├─ <stem>.{360p,720p}.mp4   transcodes de build-clips.py (raw → otimizado)
-    ├─ <stem>.thumb.jpg         miniatura pro marker no mapa
-    ├─ audio/<stem>.m4a         trilha de áudio extraída (loop ambiente)
-    ├─ <vhash>.{360p,720p}.webm transcodes do upload form (browser-side,
-    │                           áudio opus EMBUTIDO no webm de vídeo; .mp4
-    │                           H.264+AAC onde o navegador não grava WebM)
-    ├─ <vhash>.audio.webm       opus avulso pro audio loop (não baixa o vídeo;
-    │                           .m4a no caminho MP4)
-    └─ <vhash>.thumb.jpg
+├─ clips/<vhash>.*              audio.{webm,m4a} + {360p,720p}.{webm,mp4} +
+│                               thumb.jpg                                 (bucket-only no CR)
+└─ tour_assets/<slug>/          announcement.* (+ .web.jpg/.thumb.jpg)
 ```
 
-> O host local serve `web/clips/` e `web/photos/` diretamente do disco —
-> o `build-clips.py` roda localmente (precisa de `ffmpeg` + `exiftool`).
-> Pra subir essas mídias pro Cloud Run, rode
+> O host local serve `web/clips/` e `web/photos/` diretamente do disco.
+> Pra subir mídias locais pro Cloud Run, rode
 > `scripts/deploy-cloudrun.sh --state-only`.
 
 A validação SHACL acontece contra `web/data/shapes.ttl` mesclado com
-`web/data/ontology.ttl`. Imagens validam contra `ph:ImageShape` (24 triples,
-exige date/location/license/author etc.); vídeos contra `ph:VideoShape`
-(NÃO subclasse de `ph:Image` — não exige bearing/focal-35), que adiciona
-`schema:duration`, `ph:availableResolution`, `ph:audio`, opcionalmente
+`web/data/ontology.ttl` e só a fatia do catálogo que as shapes consultam
+(ver `_validation_universe`). Fotos e vídeos são subclasses de `ph:Image`
+(`ph:VisualMediaShape` comum); `ph:StillImageShape` acrescenta bearing/focal/
+hash e `ph:MotionImageShape` acrescenta `schema:duration`,
+`ph:availableResolution`, `ph:audio` e, opcionalmente,
 `ph:video360p`/`ph:video720p`/`schema:thumbnail`.
 
 Passeios (`ph:Tour`) seguem a mesma mecânica, mas gravam em
 **`web/data/tours.ttl`**: `POST /upload-tour` faz upsert de exatamente 1
-tour (mais quaisquer `phd:pessoa*`/`phd:assoc_*` novos que ele referencie)
-e, se vier um campo `announcement`, salva a arte em
-`tour_assets/<tour_id>/` e injeta `schema:image`. `POST /delete-tour/<id>`
+tour (`mode=replace|patch`) e, se vier um campo `announcement`, salva a arte
+em `tour_assets/<tour_id>/` e injeta `schema:image`. `POST /delete-tour/<id>`
 remove os triples do tour + seus assets (mas NÃO as pessoas/séries, que
 podem ser referenciadas por outros tours). O form é `web/upload_tour.html`;
 `web/censo.html` mostra métricas agregadas + roster editável.
 
-**Backup é copiar `web/data/` + `web/photos/` + `web/clips/`** — não há
-mais nada de estado. (`web/routes.json` é regenerado por
-`scripts/build-routes.py`; clipes transcodados podem ser re-gerados de
-`web/clips/raw/` com `scripts/build-clips.py`.)
+**Backup é copiar `web/data/` + `web/photos/` + `web/clips/` +
+`web/tour_assets/` + `web/routes.json` + `web/saved_routes.json`** — não há
+mais nada de estado.
 
 No Cloud Run o bucket tem **Object Versioning** ligado (pelo
 `deploy-cloudrun.sh`, idempotente), então cada sobrescrita de um arquivo de
@@ -187,7 +164,7 @@ serviço para `http://localhost:8000`, e rode o `cloudflared` como serviço
 ## 5. O app já está pronto
 
 `web/app.js` e `web/upload_images.html` usam caminhos relativos
-(`./data/data_graphs.ttl`, `./data/uploads.ttl`, `./photos/<phash>/large.jpg`,
+(`./data/data_graphs.ttl`, `./data/images.ttl`, `./photos/<phash>/large.jpg`,
 `./upload-image`, `./delete-image/<phash>`). Como o backend serve o app e a
 API na **mesma origem**, funciona sem CORS e sem configurar URLs.
 
@@ -220,13 +197,14 @@ Deploy completo (build + push + rota + bucket bootstrap):
 
 ```sh
 scripts/deploy-cloudrun.sh                # build + deploy
-scripts/deploy-cloudrun.sh --state        # idem + sync uploads.ttl/photos/clips
+scripts/deploy-cloudrun.sh --state        # idem + sync images/lists.ttl/photos/clips
 scripts/deploy-cloudrun.sh --state-only   # só sync, sem rebuild
 scripts/deploy-cloudrun.sh --dry-run      # preview
 ```
 
-O sync push `web/photos/` e `web/clips/` (excluindo `raw/`) e os TTLs
-mutáveis (`uploads.ttl`, `data_graphs.ttl`) pro bucket via
-`gcloud storage rsync`. Os TTLs estáticos (shapes/ontology/tours) já
-vão em todo deploy, independente das flags. No fim, faz `POST /reload`
-pra invalidar caches in-memory do validador + manifesto.
+O sync empurra `web/photos/`, `web/clips/` (excluindo `raw/`) e
+`web/tour_assets/` via `gcloud storage rsync`, e `images.ttl`, `lists.ttl` e
+`routes.json` pela guarda anti-clobber (`scripts/sync-guard.sh`). shapes/
+ontology vão em todo deploy; `tours.ttl`/`identities.ttl` também (guardados),
+exceto com `--no-catalog-push` (CI). No fim, faz `POST /reload` pra
+invalidar os caches in-memory.

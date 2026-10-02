@@ -1,52 +1,22 @@
 """
-Pedal Hidrográfico — backend Flask.
+Pedal Hidrográfico — backend Flask (amora).
 
-Mesmo código serve dois alvos:
+Serve o PWA estático de `web/` E valida + grava o estado mutável: catálogos
+RDF (`data/images.ttl`, `identities.ttl`, `lists.ttl`, `tours.ttl` — SHACL
+contra `web/data/shapes.ttl` + `ontology.ttl`), blobs de mídia
+(`photos/<phash>/…`, `clips/<vhash>.*`, `tour_assets/<slug>/…`), `routes.json`
+e `saved_routes.json`. O store é o filesystem (`STORAGE_BACKEND=local`,
+padrão) ou um bucket GCS (`STORAGE_BACKEND=gcs`, Cloud Run) — ver storage.py.
 
-  STORAGE_BACKEND=local (padrão)  — dev/local: estado mutável no filesystem
-  STORAGE_BACKEND=gcs              — Cloud Run: estado num bucket GCS
-
-Cada upload contém:
-  - `ttl`        : bloco Turtle com exatamente 1 `ph:Image` (texto ou arquivo)
-  - `original`   : arquivo da foto fonte (jpg/png/heic). Opcional.
-  - `large`      : foto reduzida (~500 KB). Opcional.
-  - `thumb`      : miniatura. Opcional.
-
-Validação SHACL contra `web/data/shapes.ttl` (sempre do filesystem do
-container/repo); variantes vão para `photos/<phash>/...` no store; triples
-deduplicadas em `data/uploads.ttl` no store; manifesto em
-`data/data_graphs.ttl` no store.
-
-Rotas:
-  GET  /                          serve web/index.html
-  GET  /health                    "ok"
-  GET  /data/uploads.ttl          do store (mutável)
-  GET  /data/data_graphs.ttl      do store (mutável)
-  GET  /photos/<path>             do store (redirect p/ URL pública em GCS,
-                                  stream local em modo local)
-  GET  /clips/<path>              idem (vídeo/áudio/thumb)
-  GET  /tour_assets/<path>        idem (arte de anúncio de passeios; as variantes
-                                  announcement.{web,thumb}.jpg nascem no 1º pedido)
-  GET  /<path>                    estáticos de web/ (app.js, shapes.ttl, …)
-  POST /upload-image              multipart com `ttl` + variantes
-  POST /upload-video              multipart com `ttl` + audio/vídeo/thumb
-  POST /upload-tour               upsert de 1 ph:Tour em tours.ttl
-  POST /delete-image/<phash>      remove arquivos + triples
-  POST /delete-video/<vhash>      remove clipes + triples
-  POST /delete-tour/<tour_id>     remove triples do tour + assets
-  POST /live-location             upsert da posição ao vivo (efêmera, em memória)
-  GET  /live-locations            posições ao vivo não-expiradas
-  POST /live-location/stop        remove a própria posição na hora
-  POST /reload                    invalida caches in-memory
-
-Sem auth — quem alcança o servidor é de confiança. Todas as mutações são
-serializadas por um lock global (ver `serialized` / `_state_lock`) pra que
-POSTs concorrentes não corrompam os catálogos TTL compartilhados.
+Rotas: `web/openapi.json` (leitura) e a seção "Backend endpoint summary" do
+CLAUDE.md (tudo, inclusive as mutações). Sem auth — quem alcança o servidor
+é de confiança. Mutações de catálogo passam por `_mutating(...)` sob
+`_state_lock`; uploads transferem o corpo e gravam blobs FORA do lock.
 
 Variáveis de ambiente:
   STORAGE_BACKEND   local | gcs                 (padrão: local)
   GCS_BUCKET        nome do bucket (modo gcs)
-  PHIDRO_WEB        pasta do app                (padrão: ../../web)
+  PHIDRO_WEB        pasta do app                (padrão: ../web ou ./web)
   PORT              porta HTTP                  (padrão: 8000)
   MAX_UPLOAD_BYTES  teto do multipart por req   (padrão: 256 MiB)
   PUBLIC_BASE_URL   host público deste servidor (ex.: https://amora.example)
@@ -54,6 +24,7 @@ Variáveis de ambiente:
                     (schema:image do anúncio) quando o store não tem URL
                     pública própria. Sem ele, cai no host da requisição, que
                     num backend de dev grava `http://localhost:8080/…` no dado.
+  PHIDRO_NO_WARMUP  1 = não aquece validador/catálogo no boot
   STORAGE_EMULATOR_HOST   p/ rodar contra fake-gcs-server localmente
                           (https://github.com/fsouza/fake-gcs-server)
 """
@@ -92,8 +63,6 @@ def _default_web_path():
 
 WEB = Path(os.environ.get("PHIDRO_WEB") or _default_web_path()).resolve()
 DATA_DIR      = WEB / "data"
-SHAPES_PATH   = DATA_DIR / "shapes.ttl"
-ONTOLOGY_PATH = DATA_DIR / "ontology.ttl"
 
 # Host público deste servidor, sem barra final. Só entra em jogo quando o
 # store não expõe URL pública (modo local): é o que impede um backend de dev
@@ -108,17 +77,14 @@ CONTENT_SIGNAL = os.environ.get(
     "CONTENT_SIGNAL", "ai-train=yes, search=yes, ai-input=yes").strip()
 
 # Store = estado mutável. Em modo local, raiz = PHIDRO_WEB (layout:
-# data/uploads.ttl, photos/<phash>/...); em modo gcs, raiz é o
+# data/images.ttl, photos/<phash>/...); em modo gcs, raiz é o
 # bucket GCS. Os "keys" são strings relativas, mesmas em ambos os modos.
+# Catálogos (data/<dump>, ver CATALOG_DUMPS): images.ttl (mídia
+# ph:StillImage/ph:MotionImage), identities.ttl (pessoas schema:Person — fonte
+# única), lists.ttl (álbuns schema:Collection), tours.ttl (passeios +
+# associações + rotas).
 STORE = make_store_from_env(WEB)
 
-# Keys de estado mutável (usados como `STORE.read_text(...)` etc.)
-# Catálogos separados: images.ttl (mídia ph:StillImage/ph:MotionImage),
-# identities.ttl (pessoas schema:Person — fonte única), tours.ttl (passeios +
-# associações + rotas). Antes tudo vinha em tours.ttl + uploads.ttl.
-KEY_IMAGES   = "data/images.ttl"
-KEY_IDENTITIES = "data/identities.ttl"
-KEY_TOURS    = "data/tours.ttl"
 # routes.json é pré-bakado por scripts/build-routes.py mas também é atualizado
 # incrementalmente aqui (upsert/remove de 1 rota por upload/delete de tour).
 # Vira estado mutável: servido bucket-first, com o arquivo bakeado no
@@ -153,20 +119,21 @@ PES_NS = "https://id.pedalhidrografi.co/pessoas/"
 # de mídia: as Collections vivem em lists.ttl (não mais inline em images.ttl).
 # IRI: https://id.pedalhidrografi.co/listas/<slug>.
 LST_NS = "https://id.pedalhidrografi.co/listas/"
-KEY_LISTS = "data/lists.ttl"
-# Mídia (foto/vídeo) — content-addressed pelo hash; o host mudou pra resolvível,
-# mas o discriminador image_/video_ (e o hash como identidade) fica no local name
-# (blobs, dedup e delete seguem intactos — só o prefixo do IRI muda).
-# IRI: https://id.pedalhidrografi.co/midia/image_<phash16> | .../video_<vhash16>.
+# Mídia (foto/vídeo) — content-addressed: o local name é o hash SOZINHO (opaco,
+# sem discriminador; o tipo vem da classe). IRI: .../midia/<hash16>.
 MED_NS = "https://id.pedalhidrografi.co/midia/"
-# Atividade de envio (ph:Upload) — provenance server-side. IRI: .../envio/<ts>.
-ENV_NS = "https://id.pedalhidrografi.co/envio/"
 # Passeio (ph:Tour) — id agora é um slug aleatório Crockford (não mais o id
 # numérico legado). IRI: https://id.pedalhidrografi.co/passeio/<slug8>. O "tour_id"
 # no código passa a ser esse slug (localname após o prefixo).
 PAS_NS = "https://id.pedalhidrografi.co/passeio/"
 # Série de eventos (schema:EventSeries). IRI: .../serie/<ES> (PH/BT/BP/S/SESC).
 SER_NS = "https://id.pedalhidrografi.co/serie/"
+
+
+def _is_hash16(s):
+    """pHash/vHash de mídia: exatamente 16 hex MINÚSCULOS (identidade do IRI
+    med:<hash> e componente de path dos blobs — nunca aceitar outra coisa)."""
+    return bool(s) and len(s) == 16 and all(c in "0123456789abcdef" for c in s)
 
 
 def _intensity_for(kj):
@@ -227,8 +194,8 @@ def _conditional(resp):
     resp.add_etag()
     return resp.make_conditional(request)
 
-# Todas as mutações fazem read-modify-write num único catálogo TTL
-# compartilhado (uploads.ttl / tours.ttl / data_graphs.ttl) sem CAS. Sem
+# Todas as mutações fazem read-modify-write nos catálogos TTL compartilhados
+# (images/identities/lists/tours.ttl, ver CATALOG_DUMPS) sem CAS. Sem
 # serialização, dois POSTs concorrentes (o servidor Flask é threaded, e o
 # form de upload manda os cards em paralelo) intercalam: o segundo writer
 # sobrescreve os triples do primeiro (lost update) ou um leitor pega o
@@ -767,11 +734,10 @@ class _mutating:
         return False
 
 
-# Dumps que compõem o universo de validação. Era descoberto seguindo os
-# void:dataDump do manifesto (data_graphs.ttl); hoje a lista é fixa —
-# tours.ttl traz tours/pessoas/séries (referenciados por sh:class) e
-# uploads.ttl traz imagens + vídeos. shapes/ontology entram à parte no
-# validador. O manifesto vira só um shim estático servido pro frontend.
+# Dumps do catálogo (lista fixa — o manifesto data_graphs.ttl é só um shim
+# estático pro frontend): tours.ttl (passeios/séries/edições), images.ttl
+# (fotos + vídeos), identities.ttl (pessoas), lists.ttl (álbuns).
+# shapes/ontology entram à parte no validador.
 CATALOG_DUMPS = ("tours.ttl", "images.ttl", "identities.ttl", "lists.ttl")
 
 
@@ -830,63 +796,17 @@ def _validation_universe(data, catalog, exclude, own_subjects, inverse_preds=())
     return merged
 
 
-def validate_image_ttl(ttl_text):
-    """Verifica que o TTL contém exatamente 1 ph:Image e satisfaz as shapes.
-    Retorna (ok, phash, errors). `errors` traz só violations (warnings passam)
-    cujo focusNode está no TTL recebido — ruído do catálogo (passeios velhos
-    com warnings, etc.) não bloqueia o upload."""
-    v = _load_validator()
-    from rdflib import URIRef, Namespace
-    data = v["Graph"]().parse(data=ttl_text, format="turtle")
-
-    RDFT = URIRef("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
-    images = list(data.subjects(RDFT, URIRef(PH_NS + "StillImage")))
-    if len(images) != 1:
-        return False, None, [
-            f"TTL deve conter exatamente 1 ph:Image (achou {len(images)})"
-        ]
-    image_iri = str(images[0])
-    # IRI de mídia é opaco: med:<hash> (sem discriminador image_/video_ — o tipo
-    # vem da CLASSE). phash = pHash de 64 bits → exatamente 16 hex (evita cunhar
-    # diretórios photos/<phash>/ de tamanho arbitrário).
-    if not image_iri.startswith(MED_NS):
-        return False, None, [
-            f"IRI da Image deve começar com med: (atual: {image_iri})"
-        ]
-    phash = image_iri[len(MED_NS):]
-    if len(phash) != 16 or not all(c in "0123456789abcdef" for c in phash.lower()):
-        return False, phash, [f"phash inválido na IRI (esperado 16 hex): {phash}"]
-
-    img_uri = URIRef(image_iri)
-    catalog = _load_catalog()
-    # Guarda de colisão CROSS-TYPE: sem o discriminador, um phash igual a um
-    # vhash existente viraria o MESMO IRI. Rejeita antes de sobrescrever o vídeo.
-    if (img_uri, RDFT, URIRef(PH_NS + "MotionImage")) in catalog:
-        return False, phash, [
-            f"colisão: med:{phash} já existe como VÍDEO (ph:MotionImage) — "
-            f"phash colidiu com um vhash. Não dá pra reusar o IRI."
-        ]
-    # Mescla data + ontology + catálogo, MAS exclui triples do catálogo cujo
-    # subject é a imagem em curso (ou bnodes alcançáveis a partir dela). Sem
-    # isso, re-upload da mesma foto sobrepõe os triples antigos aos novos, e
-    # SHACL flagra cardinalidade > 1 em `dcterms:date` etc.
-    # Exclui o próprio sujeito + seus nós derivados (hash, locationCreated).
-    exclude = {img_uri} | _derived_subjects(catalog, img_uri)
-    # Universo de validação: fragmento + ontologia + tipos dos nós referenciados
-    # (ver _validation_universe). A colisão cross-type e o `exclude` seguem
-    # calculados sobre o catálogo COMPLETO (dedup/re-upload inalterados).
-    own_subjects = set(data.subjects())
-    merged = _validation_universe(data, catalog, exclude, own_subjects)
+def _shacl_errors(v, merged, own_subjects):
+    """Roda o pyshacl sobre `merged` (ver _validation_universe) e devolve as
+    mensagens das VIOLATIONS cujo focusNode é sujeito do fragmento recebido
+    (ou sem focusNode). Warnings passam, e ruído do catálogo (passeios velhos
+    com warnings etc.) não bloqueia o upload em curso. Lista vazia = ok."""
     with _validate_lock:   # pyshacl não é thread-safe (parser SPARQL) — ver _validate_lock
         conforms, results_graph, _txt = v["pyshacl"].validate(
             merged, shacl_graph=v["shapes"], inference="rdfs", advanced=True)
     if conforms:
-        return True, phash, []
-
-    # Reporta apenas violations cujo focusNode é um sujeito do TTL recebido.
-    # Catálogo (tours.ttl) pode ter warnings legítimos; não são problema do
-    # upload em curso.
-    own_subjects = set(data.subjects())
+        return []
+    from rdflib import Namespace
     SH = Namespace("http://www.w3.org/ns/shacl#")
     errors = []
     for r in results_graph.subjects(SH.resultSeverity, SH.Violation):
@@ -894,9 +814,91 @@ def validate_image_ttl(ttl_text):
         if focus is None or focus in own_subjects:
             msg = next(results_graph.objects(r, SH.resultMessage), None)
             errors.append(str(msg) if msg else "(sem mensagem)")
-    if not errors:
-        return True, phash, []
-    return False, phash, errors
+    return errors
+
+
+# Classe de mídia → (classe do OUTRO tipo, nome no erro de contagem, "da/do X"
+# no erro de prefixo, nome do hash, nome do hash do outro tipo, rótulo do outro).
+_MEDIA_KINDS = {
+    "StillImage": ("MotionImage", "ph:Image", "da Image", "phash", "vhash", "VÍDEO"),
+    "MotionImage": ("StillImage", "ph:Video", "do Video", "vhash", "phash", "FOTO"),
+}
+
+
+def _validate_media_ttl(ttl_text, cls):
+    """Verifica que o TTL contém exatamente 1 mídia da classe `cls` (StillImage
+    | MotionImage) com IRI med:<hash16> e satisfaz as shapes. Retorna
+    (ok, hash, errors) — ver _shacl_errors pro que conta como erro."""
+    other, noun, iri_label, hname, other_hname, other_label = _MEDIA_KINDS[cls]
+    v = _load_validator()
+    from rdflib import RDF, URIRef
+    data = v["Graph"]().parse(data=ttl_text, format="turtle")
+
+    found = list(data.subjects(RDF.type, URIRef(PH_NS + cls)))
+    if len(found) != 1:
+        return False, None, [
+            f"TTL deve conter exatamente 1 {noun} (achou {len(found)})"
+        ]
+    iri = str(found[0])
+    # IRI de mídia é opaco: med:<hash> (sem discriminador image_/video_ — o tipo
+    # vem da CLASSE). pHash/vHash de 64 bits → exatamente 16 hex (evita cunhar
+    # diretórios photos/<phash>/ de tamanho arbitrário).
+    if not iri.startswith(MED_NS):
+        return False, None, [
+            f"IRI {iri_label} deve começar com med: (atual: {iri})"
+        ]
+    h = iri[len(MED_NS):]
+    if not _is_hash16(h.lower()):
+        return False, h, [f"{hname} inválido na IRI (esperado 16 hex): {h}"]
+
+    uri = URIRef(iri)
+    catalog = _load_catalog()
+    # Guarda de colisão CROSS-TYPE: sem o discriminador, um phash igual a um
+    # vhash existente (ou vice-versa) viraria o MESMO IRI. Rejeita antes de
+    # sobrescrever a mídia do outro tipo.
+    if (uri, RDF.type, URIRef(PH_NS + other)) in catalog:
+        return False, h, [
+            f"colisão: med:{h} já existe como {other_label} (ph:{other}) — "
+            f"{hname} colidiu com um {other_hname}. Não dá pra reusar o IRI."
+        ]
+    # Exclui do catálogo o próprio sujeito + seus nós derivados (hash,
+    # locationCreated): sem isso, re-upload da mesma mídia sobrepõe os triples
+    # antigos aos novos e o SHACL flagra cardinalidade > 1 em `dcterms:date`
+    # etc. A colisão e o `exclude` usam o catálogo COMPLETO; o pyshacl só vê o
+    # universo referenciado (ver _validation_universe).
+    exclude = {uri} | _derived_subjects(catalog, uri)
+    own_subjects = set(data.subjects())
+    errors = _shacl_errors(
+        v, _validation_universe(data, catalog, exclude, own_subjects), own_subjects)
+    return not errors, h, errors
+
+
+def validate_image_ttl(ttl_text):
+    """1 ph:StillImage → (ok, phash, errors). Ver _validate_media_ttl."""
+    return _validate_media_ttl(ttl_text, "StillImage")
+
+
+def validate_video_ttl(ttl_text):
+    """1 ph:MotionImage → (ok, vhash, errors). Ver _validate_media_ttl."""
+    return _validate_media_ttl(ttl_text, "MotionImage")
+
+
+def _persist_error(e, **extra):
+    """500 de falha gravando o catálogo. A resposta leva só str(e); o stack
+    só existe no log."""
+    traceback.print_exc()
+    return jsonify(error=f"persistência ttl: {e}", **extra), 500
+
+
+def _request_ttl():
+    """O `ttl` de um POST multipart — campo de formulário ou arquivo. Acessar
+    request.form/files dispara a transferência do corpo inteiro."""
+    ttl_text = request.form.get("ttl")
+    if not ttl_text:
+        f = request.files.get("ttl")
+        if f:
+            ttl_text = f.read().decode("utf-8", errors="replace")
+    return ttl_text
 
 
 def _upload_filename():
@@ -1349,50 +1351,55 @@ def _route_new_collections(graph):
 PROV_GEN_URI = "http://www.w3.org/ns/prov#generated"
 
 
-def upsert_image_in_uploads(image_ttl, phash, audit_ttl):
-    """Mescla os blocos da imagem + da activity no único `uploads.ttl`,
-    sobrescrevendo qualquer dado prévio para essa mesma imagem."""
-    v = _load_validator()
-    Graph = v["Graph"]
+def _purge_media_with_activities(catalog, media_uri):
+    """Purga a mídia (+ nós derivados) e as activities ph:Upload que a geraram
+    (prov:generated). Retorna nº de triples removidas."""
     from rdflib import URIRef
-    image_iri = URIRef(MED_NS + phash)
+    n = _purge_subject(catalog, media_uri)
+    for s in list(catalog.subjects(URIRef(PROV_GEN_URI), media_uri)):
+        n += _purge_subject(catalog, s)
+    return n
+
+
+def _upsert_media(media_iri, ttl, drop_activities=False, route_persons=True):
+    """Substitui as triples da mídia (sujeito + nós derivados) em images.ttl
+    pelo `ttl` recebido; os blobs não são tocados. `drop_activities` purga
+    também as ph:Upload que a geraram (o upload traz a activity nova no próprio
+    `ttl`; a edição de metadados preserva a antiga). Pessoas novas inline
+    (autora criada on-the-fly) vão pra identities.ttl se `route_persons`;
+    schema:Collection novas inline, sempre pra lists.ttl."""
+    from rdflib import URIRef
+    media_uri = URIRef(media_iri)
     # Parse do fragmento ANTES de tocar o grafo vivo: um TTL malformado não
     # pode deixar o catálogo em memória meio-purgado.
-    incoming = Graph().parse(data=image_ttl + audit_ttl, format="turtle")
+    incoming = _load_validator()["Graph"]().parse(data=ttl, format="turtle")
     with _mutating("images.ttl") as catalog:
-        # 1) Tira da imagem (+ nós derivados de hash/loc).
-        _purge_subject(catalog, image_iri)
-        # 2) Tira qualquer ph:Upload activity que tenha gerado essa imagem.
-        for s in list(catalog.subjects(URIRef(PROV_GEN_URI), image_iri)):
-            _purge_subject(catalog, s)
-        # 3) Mescla os novos blocos (imagem + nova activity).
+        if drop_activities:
+            _purge_media_with_activities(catalog, media_uri)
+        else:
+            _purge_subject(catalog, media_uri)
         catalog += incoming
-        # 4) Desvia pessoas novas (autora criada on-the-fly) pra identities.ttl
-        #    e listas novas inline pra lists.ttl.
-        _route_new_persons(catalog)
+        if route_persons:
+            _route_new_persons(catalog)
         _route_new_collections(catalog)
 
 
 def remove_image_from_uploads(phash):
     """Remove triples da imagem + da sua activity de envio. Retorna nº de triples."""
     from rdflib import URIRef
-    image_iri = URIRef(MED_NS + phash)
     with _mutating("images.ttl") as catalog:
-        n = _purge_subject(catalog, image_iri)
-        for s in list(catalog.subjects(URIRef(PROV_GEN_URI), image_iri)):
-            n += _purge_subject(catalog, s)
-    return n
+        return _purge_media_with_activities(catalog, URIRef(MED_NS + phash))
 
 
 # ── Media metadata patch (edição, sem blobs) ─────────────────────────────
 # Análogo ao synthesize_tour_patch, mas pra med:<hash> (foto ou vídeo) em
-# uploads.ttl. Usado por /update-image e /update-video (edição de metadados +
+# images.ttl. Usado por /update-image e /update-video (edição de metadados +
 # listas pelo popup e pelo modo de edição do form) — NÃO toca nos blobs nem
 # regenera a activity ph:Upload (sujeito à parte, preservado).
 def synthesize_media_patch(media_iri, patch_ttl, remove_preds):
     """Transforma um patch por-predicado (só os predicados afirmados no patch
     sobre a mídia + os listados em `remove_preds`) no documento full-replace
-    equivalente. O estado atual da mídia em uploads.ttl é copiado verbatim; os
+    equivalente. O estado atual da mídia em images.ttl é copiado verbatim; os
     predicados a substituir (e a closure `<iri>_*` dos objetos derivados
     descartados) são removidos; o patch inteiro é somado (inclusive sujeitos
     auxiliares novos, ex.: schema:Collection inline). SHACL valida o ESTADO
@@ -1429,25 +1436,9 @@ def synthesize_media_patch(media_iri, patch_ttl, remove_preds):
     return result.serialize(format="turtle")
 
 
-def upsert_media_node(media_iri, node_ttl):
-    """Substitui as triples da mídia (sujeito + nós derivados) em images.ttl
-    pelo node_ttl, PRESERVANDO os blobs e a activity ph:Upload (sujeito à parte).
-    node_ttl pode trazer schema:Collection novos inline — desviados pra lists.ttl
-    por _route_new_collections, nunca persistidos em images.ttl."""
-    v = _load_validator()
-    Graph = v["Graph"]
-    from rdflib import URIRef
-    media_uri = URIRef(media_iri)
-    incoming = Graph().parse(data=node_ttl, format="turtle")
-    with _mutating("images.ttl") as catalog:
-        _purge_subject(catalog, media_uri)
-        catalog += incoming
-        _route_new_collections(catalog)   # listas novas inline → lists.ttl
-
-
 # ── Tour upserts ─────────────────────────────────────────────────────────
 # Mesma mecânica de validação/merge das imagens, mas pra pas:<slug>
-# e gravando em tours.ttl em vez de uploads.ttl. Pra dar suporte ao form
+# e gravando em tours.ttl em vez de images.ttl. Pra dar suporte ao form
 # upload_tour.html, que cria/edita 1 tour por vez.
 
 def _single_tour_id(data):
@@ -1491,7 +1482,7 @@ def validate_tour_ttl(ttl_text):
     Retorna (ok, tour_id, errors). `tour_id` é o slug (sufixo após `pas:`).
     """
     v = _load_validator()
-    from rdflib import URIRef, Namespace
+    from rdflib import URIRef
     data = v["Graph"]().parse(data=ttl_text, format="turtle")
 
     tour_id, id_errors = _single_tour_id(data)
@@ -1511,24 +1502,8 @@ def validate_tour_ttl(ttl_text):
         data, catalog, exclude, own_subjects,
         inverse_preds=(URIRef(PH_NS + "inSeriesEdition"),))
 
-    with _validate_lock:   # pyshacl não é thread-safe (parser SPARQL) — ver _validate_lock
-        conforms, results_graph, _txt = v["pyshacl"].validate(
-            merged, shacl_graph=v["shapes"], inference="rdfs", advanced=True)
-    if conforms:
-        return True, tour_id, []
-
-    own_subjects = set(data.subjects())
-    SH = Namespace("http://www.w3.org/ns/shacl#")
-    errors = []
-    for r in results_graph.subjects(SH.resultSeverity, SH.Violation):
-        focus = next(results_graph.objects(r, SH.focusNode), None)
-        if focus is None or focus in own_subjects:
-            msg = next(results_graph.objects(r, SH.resultMessage), None)
-            errors.append(str(msg) if msg else "(sem mensagem)")
-    if not errors:
-        # Só warnings (severidade != Violation) — tratamos como ok.
-        return True, tour_id, []
-    return False, tour_id, errors
+    errors = _shacl_errors(v, merged, own_subjects)
+    return not errors, tour_id, errors
 
 
 def upsert_tour_in_tours_ttl(tour_ttl, tour_id):
@@ -2100,6 +2075,22 @@ def _render_terms_markdown():
     return "\n".join(out)
 
 
+# Base do estilo escuro das páginas geradas (/terms, /serie/<es>); cada página
+# acrescenta a largura do .wrap, a margem do footer e as próprias regras.
+_DOC_PAGE_CSS = """\
+:root{color-scheme:dark}
+body{margin:0;background:#12141a;color:#e6e8ee;font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;padding:0 1rem 4rem}
+.wrap{margin:0 auto}
+header{padding:2rem 0 1rem;border-bottom:1px solid #2a2e39}
+h1{margin:0 0 .3rem;font-size:1.6rem}
+code{background:#1c2029;padding:.08em .35em;border-radius:4px;color:#cfe3ff;font-size:.92em}
+a{color:#7fb2ff}
+p{margin:.35rem 0 .5rem;color:#c2c6d2}
+.lede{color:#c2c6d2}
+.ttl-link{margin-top:.8rem;font-size:.9rem}
+footer{color:#7d8296;font-size:.82rem}"""
+
+
 def _render_terms_html():
     """Página humana do vocabulário ph: — gerada de ontology.ttl (bucket-first).
     Cada termo ganha um âncora = seu localname, então o fragmento do IRI
@@ -2135,25 +2126,17 @@ def _render_terms_html():
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{esc(title)}</title>
 <style>
-:root{{color-scheme:dark}}
-body{{margin:0;background:#12141a;color:#e6e8ee;font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;padding:0 1rem 4rem}}
-.wrap{{max-width:820px;margin:0 auto}}
-header{{padding:2rem 0 1rem;border-bottom:1px solid #2a2e39}}
-h1{{margin:0 0 .3rem;font-size:1.6rem}}
+{_DOC_PAGE_CSS}
+.wrap{{max-width:820px}}
+footer{{margin-top:3rem}}
 h2{{margin:2.4rem 0 .6rem;font-size:1.15rem;color:#9fd3c7;border-bottom:1px solid #2a2e39;padding-bottom:.3rem}}
 h3{{margin:0 0 .35rem;font-size:1rem;font-weight:600}}
-code{{background:#1c2029;padding:.08em .35em;border-radius:4px;color:#cfe3ff;font-size:.92em}}
-a{{color:#7fb2ff}}
-p{{margin:.35rem 0 .5rem;color:#c2c6d2}}
-.lede{{color:#c2c6d2}}
 .term{{padding:.9rem 0;border-bottom:1px solid #21252f;scroll-margin-top:1rem}}
 .meta{{display:flex;flex-direction:column;gap:.15rem;margin-top:.3rem}}
 .row{{display:flex;gap:.5rem;font-size:.86rem}}
 .k{{color:#7d8296;min-width:9.5rem;flex:0 0 auto}}
 .v{{color:#d7dbe6;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}}
 .dep{{color:#f2a5a5;font-size:.72rem;border:1px solid #6a3a3a;border-radius:4px;padding:.05em .4em;vertical-align:middle}}
-.ttl-link{{margin-top:.8rem;font-size:.9rem}}
-footer{{margin-top:3rem;color:#7d8296;font-size:.82rem}}
 </style></head><body><div class="wrap">
 <header>
 <h1>{esc(title)}</h1>
@@ -2230,7 +2213,7 @@ def list_page(slug):
     if fmt != "ttl":
         from urllib.parse import quote
         return redirect(f"/imagens/lista/{quote(slug, safe='')}", code=303)
-    from rdflib import URIRef, Literal
+    from rdflib import URIRef
     Graph = _load_validator()["Graph"]
     ISPARTOF = URIRef(SCHEMA_NS + "isPartOf")
     HASPART = URIRef(SCHEMA_NS + "hasPart")
@@ -2375,12 +2358,8 @@ def _render_series_html(g, series_iri, es, editions):
     """Página humana de uma série de eventos — lista as edições (mais recente
     primeiro), cada uma linkando pro passeio que a realizou. Mesmo estilo
     escuro de _render_terms_html; best-effort (nunca falha o request)."""
-    from rdflib import URIRef, Namespace
+    from rdflib import Namespace
     DCT = Namespace("http://purl.org/dc/terms/")
-    SCHEMA = Namespace(SCHEMA_NS)
-    PH = Namespace(PH_NS)
-    INSERIES = PH.inSeriesEdition
-    SEQ = PH.sequenceInSeries
 
     def esc(s):
         return (str(s).replace("&", "&amp;").replace("<", "&lt;")
@@ -2405,21 +2384,14 @@ def _render_series_html(g, series_iri, es, editions):
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{esc(title)} — série</title>
 <style>
-:root{{color-scheme:dark}}
-body{{margin:0;background:#12141a;color:#e6e8ee;font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;padding:0 1rem 4rem}}
-.wrap{{max-width:640px;margin:0 auto}}
-header{{padding:2rem 0 1rem;border-bottom:1px solid #2a2e39}}
-h1{{margin:0 0 .3rem;font-size:1.6rem}}
-code{{background:#1c2029;padding:.08em .35em;border-radius:4px;color:#cfe3ff;font-size:.92em}}
-a{{color:#7fb2ff;text-decoration:none}}
+{_DOC_PAGE_CSS}
+.wrap{{max-width:640px}}
+footer{{margin-top:2rem}}
+a{{text-decoration:none}}
 a:hover{{text-decoration:underline}}
-p{{margin:.35rem 0 .5rem;color:#c2c6d2}}
-.lede{{color:#c2c6d2}}
 .row{{display:flex;gap:.8rem;padding:.55rem 0;border-bottom:1px solid #21252f;font-size:.92rem}}
 .k{{min-width:5.5rem;flex:0 0 auto;font-weight:600}}
 .v{{color:#d7dbe6}}
-.ttl-link{{margin-top:.8rem;font-size:.9rem}}
-footer{{margin-top:2rem;color:#7d8296;font-size:.82rem}}
 </style></head><body><div class="wrap">
 <header>
 <h1>{esc(title)}</h1>
@@ -2794,8 +2766,7 @@ def album_og_jpg(spec):
     catálogo (não vira renderizador genérico); cache em memória, sem gravar
     no store (um GET não enche o bucket)."""
     hashes = spec.split("-")
-    if not 1 <= len(hashes) <= 3 or \
-            not all(re.fullmatch(r"[0-9a-f]{16}", h) for h in hashes):
+    if not 1 <= len(hashes) <= 3 or not all(_is_hash16(h) for h in hashes):
         abort(404)
     with _media_og_lock:
         jpg = _media_og_cache.get(spec)
@@ -2829,7 +2800,7 @@ def media_page(local):
         if local.startswith(pfx):
             local = local[len(pfx):]
             break
-    if len(local) != 16 or not all(c in "0123456789abcdef" for c in local.lower()):
+    if not _is_hash16(local.lower()):
         abort(404)
     fmt = _negotiated_format(request)
     if fmt == "md":   # Accept: text/markdown → ficha da mídia (ver _render_media_markdown)
@@ -2917,10 +2888,10 @@ def get_data_ttl(filename):
     """Handler único pra /data/*.ttl — bucket-first, container fallback.
 
     Inclui os catálogos mutáveis (images/identities/lists.ttl), a fatia
-    derivada images-geo.ttl, o manifesto data_graphs.ttl e os estáticos
-    overrideables (shapes.ttl, ontology.ttl, tours.ttl). Quando o arquivo
-    não existe em nenhum dos dois lugares, devolve um seed razoável pros
-    catálogos e o manifesto, ou 404 pros demais.
+    derivada images-geo.ttl, o manifesto data_graphs.ttl (DATA_GRAPHS_SHIM,
+    sempre) e os estáticos overrideables (shapes.ttl, ontology.ttl,
+    tours.ttl). Quando o arquivo não existe em nenhum dos dois lugares,
+    devolve catálogo vazio pros mutáveis, ou 404 pros demais.
     """
     # Mapa de IRIs de passeio (JSON, estático): o app precisa dele client-side
     # pra resolver deep links ?tour=<id-numérico> antigos → slug (a Cloudflare
@@ -2945,13 +2916,13 @@ def get_data_ttl(filename):
         abort(404)
     if filename == "images-geo.ttl":
         text = _images_geo_text()
+    elif filename == "data_graphs.ttl":
+        text = DATA_GRAPHS_SHIM   # manifesto estático — não mora no store
     else:
         text = _load_dump_text(filename)
     if text is None:
         if filename in ("images.ttl", "identities.ttl", "lists.ttl"):
             text = ""             # catálogo vazio — válido
-        elif filename == "data_graphs.ttl":
-            text = DATA_GRAPHS_SHIM  # manifesto estático (tours + images + identities)
         else:
             abort(404)
     # robots.txt agora PERMITE o crawl dos dumps que as páginas compõem
@@ -4407,9 +4378,6 @@ def _render_tour_index(tour_id):
     from rdflib import Namespace, RDF, URIRef
 
     PH = Namespace(PH_NS)
-    SCHEMA = Namespace("https://schema.org/")
-    DCT = Namespace("http://purl.org/dc/terms/")
-    PROV = Namespace("http://www.w3.org/ns/prov#")
 
     g = _tours_graph()
     t = URIRef(PAS_NS + tour_id)
@@ -5200,7 +5168,7 @@ def subir_page():
 @app.get("/<path:p>")
 def web_files(p):
     """Estáticos de web/ — inclui ./data/{shapes,ontology,tours}.ttl e tudo
-    o que não é mutável. Os mutáveis (uploads, data_graphs, photos/*) têm
+    o que não é mutável. Os mutáveis (/data/*, photos/*, clips/*…) têm
     handlers próprios acima e nunca caem aqui."""
     if (WEB / p).is_file():
         # Accept: text/markdown numa página do app (galeria, censo, forms):
@@ -5234,11 +5202,7 @@ def upload_image():
     # `ttl` pode vir como campo de formulário ou como arquivo. (O acesso a
     # request.form/files aqui dispara a transferência/parse do corpo inteiro —
     # de propósito FORA dos locks, pra sobrepor entre uploads concorrentes.)
-    ttl_text = request.form.get("ttl")
-    if not ttl_text:
-        f = request.files.get("ttl")
-        if f:
-            ttl_text = f.read().decode("utf-8", errors="replace")
+    ttl_text = _request_ttl()
     if not ttl_text:
         return jsonify(error="ttl ausente"), 400
 
@@ -5306,14 +5270,12 @@ def upload_image():
             else:
                 upload_local = _upload_filename()[:-len(".ttl")]   # phd:upload_TIMESTAMP
                 audit_block  = _build_audit_ttl(upload_local, phash)
-                upsert_image_in_uploads(ttl_text, phash, audit_block)
+                _upsert_media(MED_NS + phash, ttl_text + audit_block,
+                              drop_activities=True)
                 _invalidate_catalog()
     except Exception as e:  # noqa: BLE001
-        traceback.print_exc()   # o 500 devolve só str(e); o stack só existe aqui
         _cleanup_orphans()
-        return jsonify(
-            error=f"persistência ttl: {e}", phash=phash, files=written,
-        ), 500
+        return _persist_error(e, phash=phash, files=written)
     if collision:
         _cleanup_orphans()
         return jsonify(
@@ -5322,77 +5284,6 @@ def upload_image():
         ), 409
     print(f"[upload-image] phash={phash} files={written} activity={upload_local}")
     return jsonify(phash=phash, files=written, activity=upload_local, ok=True)
-
-
-def validate_video_ttl(ttl_text):
-    """Espelha validate_image_ttl pra ph:Video: verifica que tem exatamente
-    1 ph:Video com IRI phd:video_<vhash16>, e dispara SHACL contra shapes+
-    ontology+catálogo (catálogo é mesclado MENOS os triples do próprio vídeo
-    em curso, pra que re-uploads não disparem violações de cardinalidade).
-    Retorna (ok, vhash, errors)."""
-    v = _load_validator()
-    from rdflib import URIRef, Namespace
-    data = v["Graph"]().parse(data=ttl_text, format="turtle")
-
-    RDFT = URIRef("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
-    videos = list(data.subjects(RDFT, URIRef(PH_NS + "MotionImage")))
-    if len(videos) != 1:
-        return False, None, [
-            f"TTL deve conter exatamente 1 ph:Video (achou {len(videos)})"
-        ]
-    video_iri = str(videos[0])
-    # IRI opaco med:<hash> (tipo vem da CLASSE, não do prefixo).
-    if not video_iri.startswith(MED_NS):
-        return False, None, [
-            f"IRI do Video deve começar com med: (atual: {video_iri})"
-        ]
-    vhash = video_iri[len(MED_NS):]
-    if len(vhash) != 16 or not all(c in "0123456789abcdef" for c in vhash.lower()):
-        return False, vhash, [f"vhash inválido na IRI (esperado 16 hex): {vhash}"]
-
-    vid_uri = URIRef(video_iri)
-    catalog = _load_catalog()
-    # Guarda de colisão CROSS-TYPE: vhash igual a um phash existente viraria o
-    # MESMO IRI. Rejeita antes de sobrescrever a foto.
-    if (vid_uri, RDFT, URIRef(PH_NS + "StillImage")) in catalog:
-        return False, vhash, [
-            f"colisão: med:{vhash} já existe como FOTO (ph:StillImage) — "
-            f"vhash colidiu com um phash. Não dá pra reusar o IRI."
-        ]
-    # Exclui o próprio sujeito + seus nós derivados (locationCreated).
-    exclude = {vid_uri} | _derived_subjects(catalog, vid_uri)
-    own_subjects = set(data.subjects())
-    merged = _validation_universe(data, catalog, exclude, own_subjects)
-    with _validate_lock:   # pyshacl não é thread-safe (parser SPARQL) — ver _validate_lock
-        conforms, results_graph, _txt = v["pyshacl"].validate(
-            merged, shacl_graph=v["shapes"], inference="rdfs", advanced=True)
-    if conforms:
-        return True, vhash, []
-
-    own_subjects = set(data.subjects())
-    SH = Namespace("http://www.w3.org/ns/shacl#")
-    errors = []
-    for r in results_graph.subjects(SH.resultSeverity, SH.Violation):
-        focus = next(results_graph.objects(r, SH.focusNode), None)
-        if focus is None or focus in own_subjects:
-            msg = next(results_graph.objects(r, SH.resultMessage), None)
-            errors.append(str(msg) if msg else "(sem mensagem)")
-    if not errors:
-        return True, vhash, []
-    return False, vhash, errors
-
-
-def upsert_video_in_uploads(ttl_text, vid_id):
-    """Substitui as triples do vídeo (+ nós derivados) em images.ttl pelo TTL
-    recebido; pessoas/listas novas inline vão pros catálogos delas."""
-    from rdflib import URIRef
-    Graph = _load_validator()["Graph"]
-    incoming = Graph().parse(data=ttl_text, format="turtle")
-    with _mutating("images.ttl") as catalog:
-        _purge_subject(catalog, URIRef(MED_NS + vid_id))   # vídeo + nós derivados (geo)
-        catalog += incoming
-        _route_new_persons(catalog)        # autora nova → identities.ttl
-        _route_new_collections(catalog)    # lista nova inline → lists.ttl
 
 
 # NOTA: sem @serialized, pelo mesmo motivo do /upload-image (ver a nota lá):
@@ -5428,10 +5319,6 @@ _CLIP_VARIANTS = (
 _CLIP_EXT_FAMILY = {"webm": "webm", "m4a": "mp4", "mp4": "mp4", "m4v": "mp4",
                     "mov": "mp4", "jpg": "jpg", "jpeg": "jpg"}
 _last_staging_sweep = 0.0
-
-
-def _is_vhash(s):
-    return bool(s) and len(s) == 16 and all(c in "0123456789abcdef" for c in s)
 
 
 def _clip_keys(vid_id):
@@ -5543,7 +5430,7 @@ def _sweep_staging(max_age_s=STAGING_MAX_AGE_S):
     n = 0
     for key in keys:
         vid_id = key.rsplit("/", 1)[-1]
-        if not _is_vhash(vid_id):
+        if not _is_hash16(vid_id):
             continue
         try:
             stamp = datetime.fromisoformat((STORE.read_text(key) or "").strip())
@@ -5582,7 +5469,7 @@ def stage_video(vid_id):
     > 32 MiB em HTTP/1) sobe em várias, e o /upload-video com `staged=1`
     confere que todos os arquivos que o TTL referencia chegaram."""
     vid_id = (vid_id or "").strip().lower()
-    if not _is_vhash(vid_id):
+    if not _is_hash16(vid_id):
         return jsonify(error="id inválido (esperado vhash de 16 hex)"), 400
     if not any(request.files.get(field) for field, _ in _CLIP_VARIANTS):
         return jsonify(error="nenhum arquivo do clipe no envio"), 400
@@ -5607,7 +5494,7 @@ def discard_staged_video(vid_id):
     """Apaga um pré-envio não confirmado (card removido / aba fechada). Só
     mexe em vhash COM marcador e SEM entrada no catálogo."""
     vid_id = (vid_id or "").strip().lower()
-    if not _is_vhash(vid_id):
+    if not _is_hash16(vid_id):
         return jsonify(error="id inválido"), 400
     marker = STAGING_PREFIX + vid_id
     if not STORE.exists(marker):
@@ -5635,16 +5522,12 @@ def upload_video():
     Valida com SHACL (MotionImageShape), persiste os arquivos em `clips/<id>.*`
     e mescla os triples em `data/images.ttl` (que serve imagens E vídeos — o
     tipo vem da CLASSE StillImage/MotionImage, não do IRI)."""
-    ttl_text = request.form.get("ttl")
-    if not ttl_text:
-        f = request.files.get("ttl")
-        if f:
-            ttl_text = f.read().decode("utf-8", errors="replace")
+    ttl_text = _request_ttl()
     if not ttl_text:
         return jsonify(error="ttl ausente"), 400
 
     vid_id = (request.form.get("id") or "").strip().lower()
-    if not vid_id or len(vid_id) != 16 or not all(c in "0123456789abcdef" for c in vid_id):
+    if not _is_hash16(vid_id):
         return jsonify(error="id inválido (esperado vhash de 16 hex)"), 400
 
     staged = (request.form.get("staged") or "").strip().lower() in ("1", "true")
@@ -5722,12 +5605,11 @@ def upload_video():
             if (_vid_uri, _RDF.type, _still) in _load_catalog():
                 collision = True
             else:
-                upsert_video_in_uploads(ttl_text, vid_id)
+                _upsert_media(MED_NS + vid_id, ttl_text)
                 _invalidate_catalog()
     except Exception as e:  # noqa: BLE001
-        traceback.print_exc()   # o 500 devolve só str(e); o stack só existe aqui
         _cleanup_orphans()
-        return jsonify(error=f"persistência ttl: {e}", id=vid_id, files=written), 500
+        return _persist_error(e, id=vid_id, files=written)
     if collision:
         _cleanup_orphans()
         return jsonify(
@@ -5771,14 +5653,13 @@ def remove_video_from_uploads(vhash):
 @serialized
 def delete_video(vhash):
     vhash = (vhash or "").strip().lower()
-    if not vhash or len(vhash) != 16 or not all(c in "0123456789abcdef" for c in vhash):
+    if not _is_hash16(vhash):
         return jsonify(error="vhash inválido"), 400
     try:
         paths, removed_triples = remove_video_from_uploads(vhash)
         _invalidate_catalog()
     except Exception as e:  # noqa: BLE001
-        traceback.print_exc()   # o 500 devolve só str(e); o stack só existe aqui
-        return jsonify(error=f"persistência ttl: {e}", vhash=vhash), 500
+        return _persist_error(e, vhash=vhash)
     removed_files = 0
     for rel in paths:
         # `rel` é relativo a web/clips/ (ex.: "audio/IMG_X.m4a", "IMG_X.360p.mp4").
@@ -5804,10 +5685,10 @@ def delete_video(vhash):
 @serialized
 def delete_image(phash):
     phash = (phash or "").strip().lower()
-    if len(phash) != 16 or not all(c in "0123456789abcdef" for c in phash):
+    if not _is_hash16(phash):
         return jsonify(error="phash inválido (esperado 16 hex)"), 400
     prefix = f"photos/{phash}/"
-    removed_files = len(STORE.list_keys(prefix)) if hasattr(STORE, "list_keys") else 0
+    removed_files = len(STORE.list_keys(prefix))
     # Triples primeiro, blobs depois (mesma ordem do delete-video): se a
     # purga do TTL falhar, os arquivos ainda existem e o catálogo continua
     # consistente — um retry conserta. Na ordem inversa, uma falha deixava
@@ -5816,10 +5697,7 @@ def delete_image(phash):
         removed_triples = remove_image_from_uploads(phash)
         _invalidate_catalog()
     except Exception as e:  # noqa: BLE001
-        traceback.print_exc()   # o 500 devolve só str(e); o stack só existe aqui
-        return jsonify(
-            error=f"persistência ttl: {e}", phash=phash, files=0,
-        ), 500
+        return _persist_error(e, phash=phash, files=0)
     try:
         STORE.delete_prefix(prefix)
     except Exception as e:  # noqa: BLE001
@@ -5835,13 +5713,9 @@ def _do_update_media(kind, hash_):
     schema:Collection inline) + `remove` (CURIEs de predicados a limpar)."""
     from rdflib import URIRef
     hash_ = (hash_ or "").strip().lower()
-    if len(hash_) != 16 or not all(c in "0123456789abcdef" for c in hash_):
+    if not _is_hash16(hash_):
         return jsonify(error=f"{kind} hash inválido (esperado 16 hex)"), 400
-    ttl_text = request.form.get("ttl")
-    if not ttl_text:
-        f = request.files.get("ttl")
-        if f:
-            ttl_text = f.read().decode("utf-8", errors="replace")
+    ttl_text = _request_ttl()
     if not ttl_text:
         return jsonify(error="ttl ausente"), 400
 
@@ -5866,11 +5740,10 @@ def _do_update_media(kind, hash_):
         return jsonify(error="shacl", details=errors), 400
 
     try:
-        upsert_media_node(media_iri, result_ttl)
+        _upsert_media(media_iri, result_ttl, route_persons=False)
         _invalidate_catalog()
     except Exception as e:  # noqa: BLE001
-        traceback.print_exc()   # o 500 devolve só str(e); o stack só existe aqui
-        return jsonify(error=f"persistência ttl: {e}"), 500
+        return _persist_error(e)
     print(f"[update-{kind}] {hash_} remove={request.form.get('remove','')!r}")
     return jsonify(ok=True, **{("phash" if kind == "image" else "vhash"): hash_})
 
@@ -6014,8 +5887,6 @@ def update_person(slug):
         if not _re.match(r"^https?://", u):
             return jsonify(error=f"URL inválida (precisa http/https): {u}"), 400
 
-    v = _load_validator()
-    Graph = v["Graph"]
     person = URIRef(PES_NS + slug)
     RDFT = URIRef("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
     # schema.org aparece nas duas formas (https/http) no acervo — trata ambas.
@@ -6087,11 +5958,7 @@ def upload_tour():
 
     Sem auth — mesma política do resto da API.
     """
-    ttl_text = request.form.get("ttl")
-    if not ttl_text:
-        f = request.files.get("ttl")
-        if f:
-            ttl_text = f.read().decode("utf-8", errors="replace")
+    ttl_text = _request_ttl()
     if not ttl_text:
         return jsonify(error="ttl ausente"), 400
 
@@ -6229,16 +6096,13 @@ def upload_tour():
                 try:
                     STORE.delete(key)
                 except Exception as e2:  # noqa: BLE001
-                    traceback.print_exc()   # o 500 devolve só str(e); o stack só existe aqui
                     print(f"[upload-tour] aviso limpando anúncio órfão de {tour_id}: {e2}")
                 if art_variants_written:
                     # Retratam o upload que não entrou: o próximo pedido
                     # re-deriva do original que o catálogo segue apontando.
                     with _art_dir_lock(tour_id):
                         _drop_art_variants(tour_id)
-            return jsonify(
-                error=f"persistência ttl: {e}", tour_id=tour_id,
-            ), 500
+            return _persist_error(e, tour_id=tour_id)
 
     # Fora do lock: sincroniza a geometria da rota (best-effort, IO de rede).
     # O try/except garante que NENHUMA falha aqui (import, storage, bug)
@@ -6266,7 +6130,7 @@ def delete_tour(tour_id):
     if not tour_id or not all(c.isalnum() or c in "_-" for c in tour_id):
         return jsonify(error="tour_id inválido"), 400
     asset_prefix = f"tour_assets/{tour_id}/"
-    removed_assets = len(STORE.list_keys(asset_prefix)) if hasattr(STORE, "list_keys") else 0
+    removed_assets = len(STORE.list_keys(asset_prefix))
     # Triples primeiro, assets depois (mesma ordem do delete-image): se a
     # purga do TTL falhar, os assets ainda existem e `schema:image` continua
     # apontando pra algo válido — um retry conserta. Na ordem inversa, uma
@@ -6276,11 +6140,7 @@ def delete_tour(tour_id):
         removed_triples = remove_tour_from_tours_ttl(tour_id)
         _invalidate_catalog()
     except Exception as e:  # noqa: BLE001
-        traceback.print_exc()   # o 500 devolve só str(e); o stack só existe aqui
-        return jsonify(
-            error=f"persistência ttl: {e}", tour_id=tour_id,
-            assets=0,
-        ), 500
+        return _persist_error(e, tour_id=tour_id, assets=0)
     try:
         STORE.delete_prefix(asset_prefix)
     except Exception as e:  # noqa: BLE001

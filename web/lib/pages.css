@@ -1,0 +1,11 @@
+/* Tokens de cor comuns às páginas dos modais (forms, censo, galeria, pessoas,
+   memória, custos) — a paleta mora num lugar só. Linkado ANTES do <style> de
+   cada página: o que ela declarar depois (tokens próprios, o override de
+   impressão) ganha. Só tokens aqui — regras de verdade mudariam a cascata. */
+:root {
+  --bg: #fafbfc; --panel: #ffffff; --surface: #eef1f4;
+  --text: #101820; --muted: #4a5867;
+  --accent: #c2410c; --accent-hover: #9a3412; --border: #c6ced6;
+  /* estados (verde/amarelo/vermelho) */
+  --ok: #1a7f4b; --warn: #9c6a10; --err: #b3261e;
+}
