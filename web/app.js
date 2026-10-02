@@ -2082,7 +2082,6 @@ const viarioLayer = makeOsmFgbLayer({
 // `uploads.ttl` (imagens) e `tours.ttl` (passeios). N3.js parseia tudo
 // no browser; a fonte pode ser o servidor (mesma origem) ou um kit local (.zip).
 const PHOTOS_DIR_REL    = 'photos/';                       // <phash>/{original,large,thumb}.jpg
-const TOURS_TTL_REL     = 'data/tours.ttl';                // catálogo de passeios (opcional)
 
 // Origem: 'server' | 'local'. Default 'server' (mesma origem — o backend
 // serve/redireciona as fotos). 'local' usa um kit .zip importado e vale só na
@@ -2330,21 +2329,6 @@ function conePath(cx, cy, r, bearing, fov) {
   const y2 = (cy - r * Math.cos(a2)).toFixed(1);
   const largeArc = fov > 180 ? 1 : 0;
   return `M${cx},${cy} L${x1},${y1} A${r},${r} 0 ${largeArc} 1 ${x2},${y2} Z`;
-}
-
-// Deriva rumo + campo de visão dos metadados EXIF (saída do exifr).
-function cameraFromExif(meta) {
-  let bearing = null;
-  let fov = null;
-  const dir = meta && meta.GPSImgDirection;
-  if (Number.isFinite(dir)) bearing = ((dir % 360) + 360) % 360;
-  const f35 = meta && meta.FocalLengthIn35mmFilm;
-  if (Number.isFinite(f35) && f35 > 0) {
-    const portrait = [5, 6, 7, 8].includes(meta.Orientation);
-    const frame = portrait ? 24 : 36;
-    fov = (2 * Math.atan(frame / (2 * f35)) * 180) / Math.PI;
-  }
-  return { bearing, fov };
 }
 
 // divIcon da foto. Com bússola → cone translúcido + thumbnail no vértice;
@@ -3021,9 +3005,7 @@ function stopClipsIntensityLoop() {
 // Rampas independentes pra opacidade do vídeo e pro volume do áudio.
 // Separar permite que o fade sonoro seja mais longo que o visual (a
 // transição auditiva fica perceptualmente mais suave). Cada uma cancela
-// a anterior do mesmo tipo se chamada de novo.
-let clipsOpacityRaf = null;
-let clipsVolumeRaf  = null;
+// a anterior do mesmo tipo se chamada de novo (_opacitySlot/_volumeSlot).
 function fadeProp(v, prop, target, durationMs, rafSlot) {
   if (rafSlot.id) cancelAnimationFrame(rafSlot.id);
   return new Promise((resolve) => {
@@ -3490,70 +3472,6 @@ function stopClipsGhost() {
 // própria no boot. (`spotlight.enabled` é forçado pra false no boot, então o
 // fantasma nunca auto-inicia — fica só na ação do usuário.)
 
-// ── Detecção automática do pedal de uma foto ─────────────────────────────
-// Usa as rotas já carregadas na barra lateral: casa pela data (chave quase
-// única, pedais são semanais) e, na falta, pela proximidade do traçado.
-function rideFromEntry(e) {
-  const num = e.number;
-  return {
-    date: e.date || null,
-    code: num && num.value ? `${num.source} ${num.value}` : null,
-    name: e.name || null,
-  };
-}
-function dateKey(d) {
-  return (
-    d.getFullYear() +
-    '-' +
-    String(d.getMonth() + 1).padStart(2, '0') +
-    '-' +
-    String(d.getDate()).padStart(2, '0')
-  );
-}
-function detectRideByDate(dateObj) {
-  const cand = [dateKey(dateObj)];
-  if (dateObj.getHours() < 6) {
-    // foto de madrugada → provavelmente o pedal da véspera
-    const prev = new Date(dateObj);
-    prev.setDate(prev.getDate() - 1);
-    cand.push(dateKey(prev));
-  }
-  for (const r of routes.values()) {
-    if (r.entry.date && cand.includes(r.entry.date)) {
-      return rideFromEntry(r.entry);
-    }
-  }
-  return null;
-}
-function detectRideByGps(lat, lng) {
-  const here = L.latLng(lat, lng);
-  let best = null;
-  let bestD = Infinity;
-  for (const r of routes.values()) {
-    const lls = r.entry.latlngs;
-    if (!lls || !lls.length) continue;
-    for (const ll of lls) {
-      const d = here.distanceTo(L.latLng(ll[0], ll[1]));
-      if (d < bestD) {
-        bestD = d;
-        best = r.entry;
-      }
-    }
-  }
-  return bestD < 250 && best ? rideFromEntry(best) : null;
-}
-// dateObj: Date local da captura (EXIF). Devolve {date,code,name} ou null.
-function detectRide(dateObj, lat, lng) {
-  let ride = null;
-  if (dateObj instanceof Date && !isNaN(dateObj)) {
-    ride = detectRideByDate(dateObj);
-  }
-  if (!ride && Number.isFinite(lat) && Number.isFinite(lng)) {
-    ride = detectRideByGps(lat, lng);
-  }
-  return ride;
-}
-
 
 // ─── Carregamento do TTL + parsing ────────────────────────────────────────
 // N3.js servido localmente em web/lib/n3.min.js (UMD; expõe window.N3).
@@ -3572,13 +3490,11 @@ async function ensureN3() {
 }
 
 const PH_NS  = 'https://id.pedalhidrografi.co/terms#';
-const PHD_NS = 'https://pedalhidrografi.co/data/';
 const MED_NS = 'https://id.pedalhidrografi.co/midia/';    // mídia (image_/video_ + hash)
 const LST_NS = 'https://id.pedalhidrografi.co/listas/';   // listas/álbuns (schema:Collection)
 const SCHEMA = 'https://schema.org/';
 const DCT    = 'http://purl.org/dc/terms/';
 const PROV   = 'http://www.w3.org/ns/prov#';
-const NFO    = 'http://www.semanticdesktop.org/ontologies/2007/03/22/nfo#';
 const EXIF   = 'http://www.w3.org/2003/12/exif/ns#';
 const RDFT   = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
 
@@ -5092,20 +5008,9 @@ function buildStoreZip(entries /* [{ name, blob, crc }] */) {
   return new Blob([...parts, ...central, eocd.buffer], { type: 'application/zip' });
 }
 
-// ─── Envio de fotos pelo usuário (apenas na sessão) ──────────────────────────
-// Botão que abre o seletor de arquivos; lê o GPS do EXIF de cada foto no
-// próprio navegador e a coloca no mapa. HEIC (iPhone) é convertido em JPEG
-// via heic2any. Nada é salvo no servidor — recarregar a página limpa tudo.
-// As bibliotecas exifr/heic2any são carregadas sob demanda para não pesar
-// o carregamento normal da página.
-const HEIC2ANY_URL =
-  'https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js';
+// ─── Scripts sob demanda ─────────────────────────────────────────────────────
 const JSZIP_URL =
   'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js';
-// Envio ao acervo agora acontece pela upload_images.html (POST /upload-image
-// no backend). Aqui no app o upload é apenas preview de sessão.
-let uploadedMarkers = [];
-let uploadedData = [];
 
 function loadScript(src) {
   return new Promise((resolve, reject) => {
@@ -5116,205 +5021,10 @@ function loadScript(src) {
     document.head.appendChild(s);
   });
 }
-// exifr VENDORADO em web/lib/ (era jsdelivr): bloqueadores/ETP do Firefox e uso
-// offline derrubavam o import do CDN, e com ele o "soltar foto no mapa" por GPS.
-let _exifrMod = null;
-async function ensureExifr() {
-  if (!_exifrMod) _exifrMod = await import('./lib/exifr.esm.js').then((m) => m.default || m);
-  return _exifrMod;
-}
-async function ensureHeic2any() {
-  if (!window.heic2any) await loadScript(HEIC2ANY_URL);
-}
 async function ensureJSZip() {
   if (!window.JSZip) await loadScript(JSZIP_URL);
   return window.JSZip;
 }
-function isHeic(f) {
-  return /image\/hei[cf]/i.test(f.type) || /\.(heic|heif)$/i.test(f.name);
-}
-// Tipo MIME confiável — alguns navegadores deixam f.type vazio para HEIC.
-function fileContentType(f) {
-  if (f.type) return f.type;
-  const ext = (f.name.split('.').pop() || '').toLowerCase();
-  return (
-    { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
-      heic: 'image/heic', heif: 'image/heif' }[ext] || 'application/octet-stream'
-  );
-}
-
-async function handlePhotoUpload(fileList) {
-  const files = [...(fileList || [])];
-  if (files.length === 0) return;
-  showToast(`Processando ${files.length} imagem(ns)…`);
-  let exifrLib;
-  try {
-    exifrLib = await ensureExifr();
-  } catch {
-    showToast('Não foi possível carregar o leitor de EXIF.');
-    return;
-  }
-  if (files.some(isHeic)) {
-    try {
-      await ensureHeic2any();
-    } catch {
-      showToast('Não foi possível carregar o conversor HEIC.');
-    }
-  }
-
-  let added = 0;
-  let noGps = 0;
-  let failed = 0;
-  for (const f of files) {
-    try {
-      const meta = await exifrLib.parse(f, {
-        gps: true,
-        exif: true,
-        ifd0: true,
-        translateValues: false,
-      });
-      const lat = meta?.latitude;
-      const lng = meta?.longitude;
-      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-        noGps++;
-        continue;
-      }
-      let url;
-      if (isHeic(f)) {
-        if (!window.heic2any) {
-          failed++;
-          continue;
-        }
-        const out = await window.heic2any({
-          blob: f,
-          toType: 'image/jpeg',
-          quality: 0.7,
-        });
-        url = URL.createObjectURL(Array.isArray(out) ? out[0] : out);
-      } else {
-        url = URL.createObjectURL(f);
-      }
-      const cam = cameraFromExif(meta);
-      const ride = detectRide(meta?.DateTimeOriginal, lat, lng);
-      addUploadedPhoto({
-        url,
-        file: f,
-        orig: f.name,
-        ride,
-        lat: Math.round(lat * 1e6) / 1e6,
-        lng: Math.round(lng * 1e6) / 1e6,
-        alt: Number.isFinite(meta?.GPSAltitude)
-          ? Math.round(meta.GPSAltitude * 10) / 10
-          : null,
-        datetime:
-          meta?.DateTimeOriginal instanceof Date
-            ? meta.DateTimeOriginal.toISOString()
-            : null,
-        bearing: cam.bearing,
-        fov: cam.fov,
-      });
-      added++;
-    } catch (err) {
-      console.warn('[upload] falha em', f.name, err);
-      failed++;
-    }
-  }
-
-  if (added > 0) {
-    map.fitBounds(L.latLngBounds(uploadedMarkers.map((m) => m.getLatLng())), {
-      maxZoom: 15,
-      padding: [40, 40],
-    });
-  }
-  renderUploadChip();
-  const parts = [`${added} adicionada(s)`];
-  if (noGps) parts.push(`${noGps} sem GPS`);
-  if (failed) parts.push(`${failed} com erro`);
-  showToast(parts.join(' · '));
-}
-
-function addUploadedPhoto(p) {
-  const icon = photoDivIcon(p.url, p.bearing, p.fov, 'photo-dot-upload', p.url);
-  const m = L.marker([p.lat, p.lng], { icon });
-  const when = p.datetime ? new Date(p.datetime).toLocaleString('pt-BR') : '';
-  const rideText = p.ride
-    ? (p.ride.code && p.ride.name
-        ? `${p.ride.code}: ${p.ride.name}`
-        : (p.ride.code || p.ride.name || p.ride.date))
-    : 'Imagem enviada · apenas nesta sessão';
-  m.bindPopup(
-    `<div class="photo-popup">` +
-      `<img src="${p.url}" alt="${escapeHtml(p.orig)}" />` +
-      `<div class="photo-ride">${escapeHtml(rideText)}</div>` +
-      `<div class="photo-meta">${escapeHtml(p.orig)}` +
-      (when ? ` · ${escapeHtml(when)}` : '') +
-      (Number.isFinite(p.alt) ? ` · ${p.alt} m` : '') +
-      (Number.isFinite(p.bearing)
-        ? ` · ${Math.round(p.bearing)}° ${cardinal(p.bearing)}`
-        : '') +
-      `</div></div>`,
-    { maxWidth: 440, className: 'photo-popup-wrap', autoPan: false },
-  );
-  m.addTo(map);
-  uploadedMarkers.push(m);
-  uploadedData.push(p);
-}
-
-function clearUploadedPhotos() {
-  for (const m of uploadedMarkers) map.removeLayer(m);
-  for (const p of uploadedData) {
-    try {
-      URL.revokeObjectURL(p.url);
-    } catch {}
-  }
-  uploadedMarkers = [];
-  uploadedData = [];
-  renderUploadChip();
-}
-
-// Exporta os pontos da sessão como JSON simples — útil pra triagem manual.
-// Para entrar no acervo, suba via upload_images.html (POST /upload-image).
-function exportUploadedPhotos() {
-  if (uploadedData.length === 0) return;
-  const payload = {
-    generatedAt: new Date().toISOString(),
-    count: uploadedData.length,
-    photos: uploadedData.map((p) => ({
-      file: `photos/${p.orig.replace(/\.[^.]+$/, '')}.jpg`,
-      orig: p.orig,
-      lat: p.lat,
-      lng: p.lng,
-      alt: p.alt,
-      datetime: p.datetime,
-      ride: null,
-    })),
-  };
-  const blob = new Blob([JSON.stringify(payload, null, 2)], {
-    type: 'application/json',
-  });
-  saveFile(blob, 'photos-upload.json');
-}
-
-function renderUploadChip() {
-  let chip = document.getElementById('upload-status-chip');
-  if (uploadedMarkers.length === 0) {
-    if (chip) chip.remove();
-    return;
-  }
-  if (!chip) {
-    chip = document.createElement('div');
-    chip.id = 'upload-status-chip';
-    chip.className = 'map-chip';
-    document.getElementById('map').appendChild(chip);
-  }
-  chip.innerHTML =
-    `<span>📷 ${uploadedMarkers.length} imagem(ns) (apenas nesta sessão)</span>` +
-    `<button type="button" data-act="export">Exportar</button>` +
-    `<button type="button" data-act="clear">Limpar</button>`;
-  chip.querySelector('[data-act="export"]').onclick = exportUploadedPhotos;
-  chip.querySelector('[data-act="clear"]').onclick = clearUploadedPhotos;
-}
-
 // ─── Estado dos formulários embutidos (contrato phidro-form-state) ─────────
 // Os forms que rodam nas folhas (subir.html, upload_images.html,
 // upload_tour.html) avisam o app a cada mudança — e uma vez no load — com
@@ -5394,7 +5104,6 @@ function scheduleBackgroundReload() {
 // "Enviar imagens" abre o upload_images.html dentro de um iframe modal:
 // isola o estado da página (CDN imports, Tom Select, etc.) e devolve um
 // uploadModal limpo a cada abertura.
-const uploadBtn        = document.getElementById('upload-btn');
 const uploadModal      = document.getElementById('upload-modal');
 const uploadIframe     = document.getElementById('upload-iframe');
 let _uploadDirty = false;   // o form avisou (phidro-media-changed) que salvou/editou algo
@@ -5427,12 +5136,10 @@ function openUploadModal(page = 'upload_images.html') {
     }
   }
   uploadModal.hidden = false;
-  uploadBtn?.setAttribute('aria-pressed', 'true');
   subirImagensBtn?.setAttribute('aria-pressed', String(shown === '/subir'));
 }
 function closeUploadModal() {
   if (uploadModal) uploadModal.hidden = true;
-  uploadBtn?.setAttribute('aria-pressed', 'false');
   subirImagensBtn?.setAttribute('aria-pressed', 'false');
   // Pede pro form limpar os cards — evita acumular fotos já enviadas (ou
   // abandonadas) entre uma abertura e outra do modal. NUNCA com envio em
@@ -5456,7 +5163,6 @@ function requestCloseUploadModal() {
   closeUploadModal();
 }
 if (uploadModal) _modalClosers.set(uploadModal, requestCloseUploadModal);
-uploadBtn?.addEventListener('click', () => openUploadModal());
 // Shell nativo: a fila do aparelho (plugin AmoraUpload — ver o subir.html)
 // conclui envios com a folha fechada, ou com o /subir já descarregado. Daqui
 // o app só OBSERVA: concluído → recarrega o mapa como num
@@ -5568,7 +5274,6 @@ document.addEventListener('keydown', (e) => {
 // página interna em vez do censo. Re-set explícito é cheap e idempotente.
 const censoModal      = document.getElementById('censo-modal');
 const censoIframe     = document.getElementById('censo-iframe');
-const censoLink       = document.getElementById('censo-link');
 const CENSO_URL = './censo.html';
 function openCensoModal() {
   if (!censoModal) return;
@@ -5593,13 +5298,6 @@ function openCensoModal() {
 function closeCensoModal() {
   if (censoModal) censoModal.hidden = true;
 }
-censoLink?.addEventListener('click', (e) => {
-  // Modifier keys / middle click → deixa o link funcionar normalmente
-  // (abrir em nova aba, etc.).
-  if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey || e.button === 1) return;
-  e.preventDefault();
-  openCensoModal();
-});
 censoModal?.addEventListener('click', (e) => {
   if (e.target === censoModal) closeCensoModal();
 });
@@ -5633,7 +5331,6 @@ window.addEventListener('message', (e) => {
 });
 
 // Galeria de imagens em iframe — mesma mecânica do Censo.
-const imagensBtn        = document.getElementById('imagens-btn');
 const imagensModal      = document.getElementById('imagens-modal');
 const imagensIframe     = document.getElementById('imagens-iframe');
 const IMAGENS_URL = './imagens.html';
@@ -5649,11 +5346,9 @@ function openImagensModal() {
   }
   if (needsReset) imagensIframe.src = IMAGENS_URL;
   imagensModal.hidden = false;
-  imagensBtn?.setAttribute('aria-pressed', 'true');
 }
 function closeImagensModal() {
   if (imagensModal) imagensModal.hidden = true;
-  imagensBtn?.setAttribute('aria-pressed', 'false');
 }
 // Abre a galeria já navegada + focada numa mídia específica (usado pelo
 // "🔍 Ver grande" do popup de foto/vídeo). Com a galeria já carregada no
@@ -5672,7 +5367,6 @@ function openImagensModalToMedia(hash) {
     imagensIframe.src = `${IMAGENS_URL}?pick=${encodeURIComponent(hash)}`;
   }
   imagensModal.hidden = false;
-  imagensBtn?.setAttribute('aria-pressed', 'true');
 }
 // Compartilha um link. No toque abre a folha de compartilhar do sistema (é o
 // caminho pro WhatsApp no iPhone) — navigator.share tem que ser chamado AINDA
@@ -5698,7 +5392,6 @@ function shareLink(url, label = 'Link', title = '') {
   }
   copy();
 }
-imagensBtn?.addEventListener('click', openImagensModal);
 imagensModal?.addEventListener('click', (e) => {
   if (e.target === imagensModal) closeImagensModal();
 });
@@ -5936,7 +5629,6 @@ document.getElementById('sidebar')?.prepend(
 );
 
 // ─── Modal de Configurações ───────────────────────────────────────────────
-const settingsBtn        = document.getElementById('settings-btn');
 const settingsModal      = document.getElementById('settings-modal');
 const settingsClose      = document.getElementById('settings-close');
 const photosImportBtn    = document.getElementById('photos-import-btn');
@@ -6325,20 +6017,11 @@ function openSettings() {
     syncSettingsControl(el);
   }
   settingsModal.hidden = false;
-  settingsBtn?.setAttribute('aria-pressed', 'true');
 }
 function closeSettings() {
   if (settingsModal) settingsModal.hidden = true;
-  settingsBtn?.setAttribute('aria-pressed', 'false');
 }
 
-settingsBtn?.addEventListener('click', () => {
-  if (settingsModal && !settingsModal.hidden) {
-    closeSettings();
-    return;
-  }
-  openSettings();
-});
 settingsClose?.addEventListener('click', closeSettings);
 settingsModal?.addEventListener('click', (e) => {
   if (e.target === settingsModal) closeSettings();
@@ -6908,17 +6591,6 @@ function setupMapRotation() {
   });
   new NorthControl().addTo(map);
 }
-
-const locateBtn = document.getElementById('locate-btn');
-locateBtn?.addEventListener('click', () => {
-  if (!locateControl) {
-    showToast('Geolocalização não disponível neste navegador.');
-    return;
-  }
-  // Toggle behavior: tap once to start tracking, tap again to stop.
-  if (locateControl._active) locateControl.stop();
-  else locateControl.start();
-});
 
 // ─── Localização ao vivo ──────────────────────────────────────────────────
 // Compartilhamento de posição em tempo (quase) real: opt-in, pseudônimo,
@@ -8386,15 +8058,12 @@ function closeOtherMobileDialogs(except) {
   }
   if (except !== 'help' && helpModal && !helpModal.hidden) {
     helpModal.hidden = true;
-    helpBtn?.setAttribute('aria-pressed', 'false');
   }
   if (except !== 'settings' && settingsModal && !settingsModal.hidden) {
     settingsModal.hidden = true;
-    settingsBtn?.setAttribute('aria-pressed', 'false');
   }
   if (except !== 'upload' && uploadModal && !uploadModal.hidden) {
     uploadModal.hidden = true;
-    uploadBtn?.setAttribute('aria-pressed', 'false');
   }
   if (except !== 'tour' && tourModal && !tourModal.hidden) {
     tourModal.hidden = true;
@@ -8407,7 +8076,6 @@ function closeOtherMobileDialogs(except) {
   }
   if (except !== 'imagens' && imagensModal && !imagensModal.hidden) {
     imagensModal.hidden = true;
-    imagensBtn?.setAttribute('aria-pressed', 'false');
   }
   if (except !== 'share') {
     const shareModal = document.getElementById('share-name-modal');
@@ -9601,13 +9269,11 @@ document.addEventListener('click', (e) => {
 // pra nomes e devolve HTML pronto pra render no modal.
 async function _renderTourSummary(tourId) {
   const PH    = 'https://id.pedalhidrografi.co/terms#';
-  const PHD   = 'https://pedalhidrografi.co/data/';
   const PAS   = 'https://id.pedalhidrografi.co/passeio/';
   const SCHEMA = 'https://schema.org/';
   const DCT   = 'http://purl.org/dc/terms/';
   const RDFT  = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
   const PROV  = 'http://www.w3.org/ns/prov#';
-  const QUDT  = 'http://qudt.org/schema/qudt/';
 
   const tourIri = `${PAS}${tourId}`;
   let quads;
@@ -10013,7 +9679,6 @@ const traceSave = document.getElementById('trace-save');
 const traceView = document.getElementById('trace-view');
 const traceTrash = document.getElementById('trace-trash');
 const traceReverse = document.getElementById('trace-reverse');
-const traceCount = document.getElementById('trace-count');   // ausente desde a remoção do label "# pontos"
 // Modo "Ver": dentro da edição, oculta os pontos e suaviza a linha pra
 // pré-visualizar o traçado limpo. O botão Cancelar vira "Editar".
 let previewMode = false;
@@ -13757,15 +13422,6 @@ map.on('click', () => {
   closeGeoSearch();
 });
 
-function totalDistanceMeters() {
-  const latlngs = assembleLatLngs();
-  let total = 0;
-  for (let i = 1; i < latlngs.length; i++) {
-    total += latlngs[i - 1].distanceTo(latlngs[i]); // Leaflet's haversine
-  }
-  return total;
-}
-
 // ─── FABDEM (1°×1° COG tiles hospedadas no R2, fabdem.pedalhidrografi.co) ────
 // Range-fetch só dos tiles (512²) que cobrem cada ponto/bbox. geotiff.js
 // (3.0.5, MIT) é VENDORADO em lib/geotiff/ e carregado sob demanda — do CDN,
@@ -13774,7 +13430,6 @@ function totalDistanceMeters() {
 // RAIZ do bucket (sem segmento /fabdem/) — nomes Bristol direto na base.
 // A abertura/leitura de TODO DEM passa pela seção "Leitura de COGs" abaixo.
 const FABDEM_BASE_URL = 'https://fabdem.pedalhidrografi.co/';
-const FABDEM_TILE_DEG = 1;
 const FABDEM_ARCSEC   = 1 / 3600;            // ~30 m no equador
 const GEOTIFF_URL     = './lib/geotiff/geotiff.js';
 
@@ -13831,12 +13486,6 @@ function bilinearAt(px, u, v, nodata) {
     acc += val * w; wsum += w;
   }
   return wsum > 0 ? acc / wsum : null;
-}
-
-// Elevação (m) num ponto, BILINEAR — null sem tile/nodata. Em lote, prefira
-// sampleFabdemBatch (um tile lido serve a todos os pontos dele).
-async function sampleFabdemAt(lat, lng) {
-  return (await sampleFabdemBatch([[lat, lng]]))[0];
 }
 
 // Muitos pontos: agrupa por tile 1°×1° e amostra só os tiles 512² do COG que
@@ -14650,29 +14299,6 @@ async function sampleElevationChain(missing, gen, signal) {
       return;
     }
   }
-}
-
-function elevationForPath(path) {
-  // Returns { gainMeters, lossMeters, missing } where missing is the count of
-  // points without a cached elevation.
-  let gain = 0;
-  let loss = 0;
-  let missing = 0;
-  let prev = null;
-  for (const [lat, lng] of path) {
-    const e = elevationCache.get(elevKey(lat, lng));
-    if (!Number.isFinite(e)) {
-      missing++;
-      continue;
-    }
-    if (prev != null) {
-      const d = e - prev;
-      if (d > 0) gain += d;
-      else loss += -d;
-    }
-    prev = e;
-  }
-  return { gain, loss, missing };
 }
 
 // ─── Speed simulation ────────────────────────────────────────────────────────
@@ -15897,10 +15523,6 @@ function updateTraceControls() {
   traceRedo.disabled = historyIndex >= drawHistory.length - 1;
   if (traceTrash) traceTrash.disabled = trackpoints.length === 0;
   if (traceReverse) traceReverse.disabled = trackpoints.length < 2;
-  if (traceCount) {
-    const n = trackpoints.length;
-    traceCount.textContent = `${n} ponto${n === 1 ? '' : 's'}`;
-  }
 }
 
 // ─── Rascunho persistente do traçado (localStorage) ─────────────────────────
@@ -17268,25 +16890,36 @@ function doSave() {
 }
 
 // ─── Instructions modal ──────────────────────────────────────────────────────
-const helpBtn = document.getElementById('help-btn');
 const helpModal = document.getElementById('help-modal');
 const helpClose = document.getElementById('help-close');
 function setHelpOpen(open) {
   if (!helpModal) return;
   helpModal.hidden = !open;
-  helpBtn?.setAttribute('aria-pressed', String(open));
 }
-helpBtn?.addEventListener('click', () => {
-  if (helpModal && !helpModal.hidden) {
-    setHelpOpen(false);
-    return;
-  }
-  closeOtherMobileDialogs('help');
-  setHelpOpen(true);
-});
 helpClose?.addEventListener('click', () => setHelpOpen(false));
 helpModal?.addEventListener('click', (e) => {
   if (e.target === helpModal) setHelpOpen(false);
+});
+// Novidades: o histórico mora em changelog.html (fora do shell — era mais da
+// metade do index.html); baixa na primeira abertura. Offline vem do precache.
+const helpChangelog = document.getElementById('help-changelog');
+helpChangelog?.addEventListener('toggle', async () => {
+  if (!helpChangelog.open || helpChangelog.dataset.loaded) return;
+  helpChangelog.dataset.loaded = '1';
+  const slot = helpChangelog.querySelector('.help-changelog-slot');
+  try {
+    const res = await fetch('./changelog.html');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const doc = new DOMParser().parseFromString(await res.text(), 'text/html');
+    const dl = doc.querySelector('dl.changelog');
+    if (!dl) throw new Error('changelog.html sem <dl class="changelog">');
+    slot?.replaceWith(document.adoptNode(dl));
+  } catch (err) {
+    console.warn('[ajuda] changelog:', err);
+    delete helpChangelog.dataset.loaded;   // tenta de novo na próxima abertura
+    if (slot) slot.innerHTML = 'Não deu pra carregar agora — '
+      + '<a href="./changelog.html" target="_blank" rel="noopener">abrir o histórico</a>.';
+  }
 });
 
 // ─── Edit GPX (load a .gpx into the drawing tool) ────────────────────────────

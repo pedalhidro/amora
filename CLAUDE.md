@@ -84,16 +84,16 @@ one optional hosted deploy target, not a dependency.
   (`tryOpenMediaFromHash` → `galleryShowMedia`, que ESPERA os catálogos de
   foto e clipe, avisa se a mídia não tem GPS e abre o popup no `moveend` do
   flyTo) — embutida, segue por postMessage; a galeria só habilita o botão
-  quando `rec.geo` (`lib/media-query.js` marca quem tem `schema:locationCreated`). O pipeline vem de `lib/media-pipeline.js` — **CÓPIA VERBATIM dos
-  helpers do form completo** (pHash/vHash, variantes, EXIF, moov, motores de
-  transcodificação), gerada por marcador de função; o form completo NÃO
-  importa de lá ainda — mexeu num helper lá, regenere o módulo, senão os dois
-  forms divergem e a dedup quebra. O FIM do módulo é uma seção NÃO verbatim
-  de variantes enxutas só do /subir (`scaledJpeg`, `compressToTargetLean`,
-  `copyExifSegmentFromHead`, `probeVideoDuration`, `processClipFile`). O
-  /subir importa como `./lib/media-pipeline.js?api=N`: o .js fica até 4 h no
+  quando `rec.geo` (`lib/media-query.js` marca quem tem `schema:locationCreated`). O pipeline vem de `lib/media-pipeline.js` — **FONTE ÚNICA do
+  pipeline de mídia dos DOIS forms** (pHash/vHash, variantes, EXIF, moov,
+  motores de transcodificação): o `upload_images.html` e o /subir importam de
+  lá (até a v424 o form completo tinha uma cópia inline de ~1.000 linhas e a
+  dedup dependia de as duas não divergirem). O FIM do módulo são variantes
+  enxutas só do /subir (`scaledJpeg`, `compressToTargetLean`,
+  `copyExifSegmentFromHead`, `probeVideoDuration`, `processClipFile`). Os dois
+  importam como `./lib/media-pipeline.js?api=N`: o .js fica até 4 h no
   cache HTTP da Cloudflare e HTML novo + módulo velho = erro de link, página
-  morta — suba o N quando o /subir passar a importar um nome novo),
+  morta — suba o N do form que passar a importar um nome novo),
   `censo.html` (aggregated tour metrics + roster, opened as a modal
   iframe from the main app), `upload_videos.html` (permanent redirect
   stub → `upload_images.html`), and the `data/`, `photos/`, `clips/`,
@@ -112,7 +112,9 @@ one optional hosted deploy target, not a dependency.
   `/data/data_graphs.ttl` is served from a static shim (`DATA_GRAPHS_SHIM`).
   (`scripts/migrate-split-catalogs.py` is the one-shot that carved
   `uploads.ttl`→`images.ttl`+`identities.ttl` and re-typed the media classes;
-  `uploads.ttl` is now obsolete.)
+  `uploads.ttl` is now obsolete — and `GET /data/uploads.ttl` is a hard 404:
+  a stale July-2026 copy left in the bucket still carried media deleted
+  later, GPS included, and was publicly served until v425.)
   `phidro.plist` (launchd), `requirements.txt`, `README.md`. Runs locally
   (macOS/Linux) or on Cloud Run. (Was `backend/pi/` — the Raspberry Pi
   deploy was retired; the systemd unit + `pi-deploy.sh` were removed.)
@@ -1254,9 +1256,12 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
 - **Bump `sw.js` `VERSION`** on *any* change to files in `web/` —
   otherwise the service worker serves stale cached copies and the change
   won't reach users. It's a monotonic `phidro-vN` integer counter; just
-  increment. For user-visible changes, also add an entry to the collapsed
-  changelog `<details class="help-changelog">` at the top of the Ajuda
-  modal in `index.html` (dated, keyed to the new vN). Since v416 this is
+  increment. For user-visible changes, also add an entry at the top of the
+  `<dl class="changelog">` in `web/changelog.html` (dated, keyed to the new
+  vN). That page IS the changelog: the Ajuda modal's
+  `<details id="help-changelog">` in `index.html` only holds a placeholder
+  and app.js fetches the `<dl>` on first open (it was ~110 KB, more than half
+  of the shell, shipped on every `/passeio/` page too). Since v416 this is
   STRICT: shell and pages are served cache-first from the version's precache.
 - **Service worker = one precache per deploy (v416).** Every file that
   `index.html`/`app.js` loads at boot goes in `SHELL_ASSETS` — ONE atomic

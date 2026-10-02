@@ -1,19 +1,15 @@
 // ============================================================================
-// media-pipeline.js — o pipeline de mídia do upload_images.html como módulo ES.
+// media-pipeline.js — o pipeline de mídia dos dois forms de envio, como módulo ES.
 //
-// CÓPIA VERBATIM dos helpers do formulário completo (web/upload_images.html),
-// gerada mecanicamente por marcador de função — pHash de foto e de vídeo,
-// variantes JPEG + cópia do EXIF, fuso, extração de GPS/data do moov,
-// transcodificação (WebCodecs via mediabunny → MediaRecorder passe único →
-// sequencial). Consumidor: web/subir.html (envio simplificado). O formulário
-// completo AINDA carrega as suas próprias cópias inline (é um script de 3.600
-// linhas que não foi refatorado pra importar daqui) — ao mudar um helper lá,
-// regenere/atualize este arquivo, senão os dois forms divergem (o pHash TEM
-// que sair idêntico nos dois, é a base da dedup).
+// pHash de foto e de vídeo, variantes JPEG + cópia do EXIF, fuso, extração de
+// GPS/data do moov, transcodificação (WebCodecs via mediabunny → MediaRecorder
+// passe único → sequencial). Consumidores: web/upload_images.html (form
+// completo) e web/subir.html (envio simplificado) — FONTE ÚNICA: o pHash TEM
+// que sair idêntico nos dois, é a base da dedup. Exportou um nome novo? Suba o
+// `?api=N` do import de quem passou a usá-lo (ver o comentário no subir.html).
 //
-// Só o que não existe lá em forma reutilizável foi escrito aqui, no fim:
-// `processClipFile` (a cadeia de motores do processClip, sem o card) e
-// `probeVideoDuration`.
+// No fim, o que só o /subir usa: `processClipFile` (a cadeia de motores do
+// processClip, sem o card), `probeVideoDuration` e as variantes enxutas.
 // ============================================================================
 
 function pad(n) { return String(n).padStart(2, '0'); }
@@ -1107,13 +1103,14 @@ export {
   recorderFormats, clipFileName, blessMediaForGesture, isGestureError, MEDIA_NEEDS_GESTURE,
   transcodeAtShortSide, transcodeClip, loadMediabunny, fastTranscodeCodec,
   abortError, isAbortError, transcodeClipFast, extractAudio, makeLimiter,
+  VIDEO_BITRATE,
 };
 
 // ===================== Variantes enxutas (subir.html) ===================
-// NÃO são cópias do formulário completo: helpers novos, só do envio
-// simplificado, pra caber no orçamento de memória de um iPhone ao lado do mapa.
-// Os de cima continuam VERBATIM — em especial o caminho do pHash (decode
-// full-res + computePHash), do qual a dedup depende nos dois forms.
+// Helpers só do envio simplificado, pra caber no orçamento de memória de um
+// iPhone ao lado do mapa. Têm que dar o MESMO resultado dos de cima — em
+// especial o caminho do pHash (decode full-res + computePHash), do qual a
+// dedup depende nos dois forms.
 
 // Desenha reduzido (lado maior ≤ maxDim), encoda JPEG e ZERA o canvas na hora
 // (width = height = 0 solta o backing store sem esperar o GC). Mesmo resultado

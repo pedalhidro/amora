@@ -655,12 +655,12 @@ async function loadTours() {
 
 // Conta as mídias (ph:StillImage + ph:MotionImage) de images.ttl por passeio, via
 // ph:capturedDuring. Retorna Map<tourIri, {photos, videos}>. Best-effort:
-// num host estático sem uploads.ttl, devolve mapa vazio (coluna fica "—").
+// num host estático sem images.ttl, devolve mapa vazio (coluna fica "—").
 async function loadMediaCounts() {
   let text;
   try {
     const res = await fetch('./data/images.ttl', { cache: 'no-cache' });
-    if (!res.ok) throw new Error(`uploads.ttl HTTP ${res.status}`);
+    if (!res.ok) throw new Error(`images.ttl HTTP ${res.status}`);
     text = await res.text();
   } catch (_) {
     return new Map();

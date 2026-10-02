@@ -25,7 +25,7 @@
 // origin) e v371/v372 saíram na `deploy` (busca de endereços, ⇄ inverter).
 // v373 fica acima de tudo que já circulou, que é o que importa: se a VERSION
 // não crescer, o service worker serve cache velho.
-const VERSION = 'phidro-v424';
+const VERSION = 'phidro-v425';
 const STATIC_CACHE = `${VERSION}-static`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 const DATA_CACHE = 'phidro-data-v1';
@@ -94,13 +94,14 @@ const SHELL_ASSETS = [
 // Páginas dos modais (iframes) + o que elas carregam. Best-effort: a que falhar
 // baixa na primeira abertura online e fica neste deploy.
 const PAGE_ASSETS = [
+  './changelog.html',               // Novidades da Ajuda (baixado na 1ª abertura)
   './imagens.html',
   './pessoas.html',
   './censo.html',
   './subir.html',
   './upload_images.html',
   './upload_tour.html',
-  './lib/media-pipeline.js',        // import do subir.html
+  './lib/media-pipeline.js',        // import do subir.html e do upload_images.html
   './lib/exifr.esm.js',             // autofill de EXIF (app, subir, upload)
   './lib/tom-select.complete.min.js',
   './lib/tom-select.min.css',

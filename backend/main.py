@@ -2916,10 +2916,11 @@ def _images_geo_text():
 def get_data_ttl(filename):
     """Handler único pra /data/*.ttl — bucket-first, container fallback.
 
-    Inclui os mutáveis (uploads.ttl, data_graphs.ttl) e os estáticos
+    Inclui os catálogos mutáveis (images/identities/lists.ttl), a fatia
+    derivada images-geo.ttl, o manifesto data_graphs.ttl e os estáticos
     overrideables (shapes.ttl, ontology.ttl, tours.ttl). Quando o arquivo
     não existe em nenhum dos dois lugares, devolve um seed razoável pros
-    dois mutáveis ou 404 pros demais.
+    catálogos e o manifesto, ou 404 pros demais.
     """
     # Mapa de IRIs de passeio (JSON, estático): o app precisa dele client-side
     # pra resolver deep links ?tour=<id-numérico> antigos → slug (a Cloudflare
@@ -2937,13 +2938,18 @@ def get_data_ttl(filename):
     # IsADirectoryError → 500 feio. Só servimos *.ttl de nome simples.
     if not filename.endswith(".ttl") or "/" in filename or ".." in filename:
         abort(404)
+    # uploads.ttl é o catálogo de ANTES da divisão images/identities: a cópia
+    # que sobrou no bucket (07/2026) ainda trazia mídia excluída depois — com
+    # GPS. Nunca servir, mesmo que o objeto volte a existir no store.
+    if filename == "uploads.ttl":
+        abort(404)
     if filename == "images-geo.ttl":
         text = _images_geo_text()
     else:
         text = _load_dump_text(filename)
     if text is None:
-        if filename in ("images.ttl", "identities.ttl", "uploads.ttl", "lists.ttl"):
-            text = ""             # catálogo vazio — válido (uploads.ttl: legado)
+        if filename in ("images.ttl", "identities.ttl", "lists.ttl"):
+            text = ""             # catálogo vazio — válido
         elif filename == "data_graphs.ttl":
             text = DATA_GRAPHS_SHIM  # manifesto estático (tours + images + identities)
         else:
