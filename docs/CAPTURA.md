@@ -61,7 +61,6 @@ de graça.
 | `scripts/audit-captura.py` | O motor. Cruza `tours.ttl` + `images.ttl` + o acervo do Drive e diz o que falta. `--sync` grava os passes de coleta no catálogo; `--slug-map` emite o mapa slug→pessoa pra revisão. |
 | `scripts/backfill-activities.py` | Casa cada passeio com a gravação GPS no RideWithGPS, grava `ph:linkActivity` e backfilla saída/chegada/movimento/energia medida. |
 | `scripts/ingest-drive.py` | Sobe pro amora os originais do acervo que têm EXIF/GPS (fase 1 — ver abaixo). |
-| `scripts/migrate-captura-fixes.py` | Reparos pontuais de catálogo (arte em host local, datatype de sequência). Idempotente. |
 
 O acervo do Drive é lido em **modo estritamente somente-leitura**, e só os
 metadados (nome, tamanho, mtime). Os arquivos são *stubs* do Google Drive: abrir

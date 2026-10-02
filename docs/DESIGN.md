@@ -1,17 +1,14 @@
 # Photos-RDF — Design Notes
 
 Notes accumulated across the design of the photos/tours RDF substrate:
-the active vocabulary at [../../web/data/ontology.ttl](../../web/data/ontology.ttl)
-and shapes at [../../web/data/shapes.ttl](../../web/data/shapes.ttl) (both
-moved out of this folder so the backend can read them directly),
-[data/initial-data.ttl](data/initial-data.ttl) (seed graph),
-[data/tours.csv](data/tours.csv) (historical seed — converted to
-[../../web/data/tours.ttl](../../web/data/tours.ttl) by the now-removed
-`build-tours.py`; today the catalog is maintained via the Tour CRUD
-endpoints), and the legacy kit-export form at
-[upload-form.html](upload-form.html). The production upload path is
-[../../web/upload_images.html](../../web/upload_images.html), served by the
-backend.
+the active vocabulary at [../web/data/ontology.ttl](../web/data/ontology.ttl)
+and shapes at [../web/data/shapes.ttl](../web/data/shapes.ttl), and the
+catalog in [../web/data/tours.ttl](../web/data/tours.ttl), maintained via the
+Tour CRUD endpoints. The production upload path is
+[../web/upload_images.html](../web/upload_images.html), served by the
+backend. (These notes were written in the former `research/photos-rdf/` lab —
+seed graph, `tours.csv`, the legacy kit-export `upload-form.html` — removed
+in 10/2026; git history has it.)
 
 ## 1. Vocabulary strategy
 
@@ -171,22 +168,21 @@ declared with `schema:alternateName` carrying the raw nickname.
 `Bicipassarinhadas`, `Pedais Hidrográficos Suados`, `Bicicletografia`) — update
 in the script if better titles emerge.
 
-## 5. Upload form (upload-form.html — legacy / kit-export)
+## 5. Upload form
 
 The production upload path is `web/upload_images.html`, served by the
-backend (POSTs each card to `/upload-image`). The `upload-form.html` in
-this folder is the older "build a ZIP kit" variant: same UI primitives,
-but the output is a downloadable archive instead of live POSTs. It's
-retained for batch-export experiments. The design notes below describe
-both — the per-card lifecycle, EXIF propagation, defaults panel, etc. all
-apply to the production form too unless noted.
+backend (POSTs each card to `/upload-image`). These notes were written for
+its predecessor, the "build a ZIP kit" `upload-form.html` (removed with
+`research/`): same UI primitives, but the output was a downloadable archive
+instead of live POSTs. The per-card lifecycle, EXIF propagation, defaults
+panel, etc. apply to the production form unless noted.
 
 Browser-only, dependency-light, but loads several modules from CDN at runtime
 (see deps below). Needs HTTP (the catalog fetch breaks on `file://`).
 
 ```sh
-python3 -m http.server -d research/photos-rdf 8000
-# → http://localhost:8000/upload-form.html
+python3 -m http.server -d web 8000
+# → http://localhost:8000/upload_images.html (uploads need the backend)
 ```
 
 ### CDN dependencies
