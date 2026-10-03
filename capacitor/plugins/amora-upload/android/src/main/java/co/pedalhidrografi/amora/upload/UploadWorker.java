@@ -14,7 +14,9 @@ import android.util.Log;
 import androidx.annotation.NonNull;
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
+import android.os.SystemClock;
 import androidx.work.Constraints;
+import androidx.work.Data;
 import androidx.work.ExistingWorkPolicy;
 import androidx.work.ForegroundInfo;
 import androidx.work.NetworkType;
@@ -47,6 +49,10 @@ public class UploadWorker extends Worker {
     static final String CHANNEL = "amora-upload";
     static final int NOTIF_ID = 0x4A01;
     static final int SUMMARY_ID = 0x4A02;
+    static final String KEY_WARM = "warm";
+    /** Aquecido: quanto esperar pelo próximo job antes de encerrar o dreno. */
+    static final long WARM_IDLE_MS = 90_000;        // até o 1º job (o JS está preparando)
+    static final long WARM_IDLE_NEXT_MS = 30_000;   // entre um job e o próximo
 
     private long lastNotify = 0;
     private int doneCount = 0;
@@ -56,7 +62,18 @@ public class UploadWorker extends Worker {
     }
 
     /** Garante que um dreno vai rodar (chamado depois de enqueue, fora da thread da ponte). */
-    static void kick(Context ctx) {
+    static void kick(Context ctx) { kick(ctx, false); }
+
+    /**
+     * `warm` = chamado com o app NA FRENTE (a escolha acabou de voltar), antes
+     * de haver job: o Android 12+ só deixa INICIAR serviço de primeiro plano
+     * com o app visível, e o preparo no JS (hash, variantes) leva segundos —
+     * quem escolhe e bloqueia a tela em seguida pegava o worker nascendo em
+     * segundo plano (ForegroundServiceStartNotAllowedException: sem notificação,
+     * e o envio virava job comum, que o sistema pode cortar). Aquecido, o
+     * dreno sobe pro primeiro plano na hora e espera os jobs chegarem.
+     */
+    static void kick(Context ctx, boolean warm) {
         WorkManager wm = WorkManager.getInstance(ctx);
         ExistingWorkPolicy policy = ExistingWorkPolicy.APPEND_OR_REPLACE;
         try {
@@ -74,6 +91,7 @@ public class UploadWorker extends Worker {
         OneTimeWorkRequest req = new OneTimeWorkRequest.Builder(UploadWorker.class)
             .setConstraints(new Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
             .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
+            .setInputData(new Data.Builder().putBoolean(KEY_WARM, warm).build())
             .build();
         wm.enqueueUniqueWork(NOW, policy, req);
     }
@@ -93,9 +111,25 @@ public class UploadWorker extends Worker {
         Store store = Store.get(ctx);
         String ua = userAgent(ctx);
         boolean foreground = false;
+        boolean warm = getInputData().getBoolean(KEY_WARM, false);
+        if (warm) {
+            foreground = true;
+            promote(0, 0);   // agora, com o app ainda visível
+        }
+        long idleUntil = System.currentTimeMillis() + WARM_IDLE_MS;
         while (!isStopped()) {
             final String id = store.claimNext(System.currentTimeMillis());
-            if (id == null) break;
+            if (id == null) {
+                // Aquecido: a página ainda está preparando o resto do lote.
+                if (warm && System.currentTimeMillis() < idleUntil) {
+                    SystemClock.sleep(1000);
+                    continue;
+                }
+                break;
+            }
+            // Depois do 1º envio, espera menos pelo próximo: a notificação de
+            // "preparando" não pode ficar 90 s na barra depois do fim do lote.
+            idleUntil = System.currentTimeMillis() + WARM_IDLE_NEXT_MS;
             if (!foreground) {
                 foreground = true;
                 promote(0, 0);
@@ -184,7 +218,8 @@ public class UploadWorker extends Worker {
         NotificationCompat.Builder b = new NotificationCompat.Builder(ctx, CHANNEL)
             .setSmallIcon(android.R.drawable.stat_sys_upload)
             .setContentTitle("Enviando pro amora")
-            .setContentText(pending == 1 ? "1 arquivo na fila" : pending + " arquivos na fila")
+            .setContentText(pending == 0 ? "Preparando os arquivos…"
+                : pending == 1 ? "1 arquivo na fila" : pending + " arquivos na fila")
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setSilent(true)

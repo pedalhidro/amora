@@ -21,9 +21,33 @@ pra produção — é exatamente este kit.
       `https://amora.pedalhidrografi.co/privacidade.html`.
 - [ ] Contas: Play Console (US$ 25, uma vez) — em verificação desde
       01/10/2026; Apple Developer (US$ 99/ano) — a criar.
-- [ ] Chave de assinatura do Android (upload key) — gerar UMA vez e guardar com
-      backup; perder a chave = não conseguir mais atualizar o app (o Play App
-      Signing permite trocar a de upload, com pedido ao suporte).
+- [x] Chave de upload do Android gerada em 02/10/2026 no workbox:
+      `~/keys/amora-upload.jks` (alias `amora-upload`, PKCS12, RSA 4096, até
+      2054; SHA-256 `44:AD:2C:FE:…:F1:DC:5E:7A`), senha em
+      `~/keys/amora-upload.pass`. **Fora do git.**
+- [ ] **Backup** do `.jks` + senha num gerenciador de senhas — perder os dois
+      = pedir ao suporte do Play pra trocar a chave de upload.
+
+## Gerar uma versão (AAB assinado)
+
+Numa cópia limpa do `capacitor/` (o `android/` gerado tem caminhos de outra
+máquina no `local.properties`), com o `server.url` de produção do repo:
+
+```sh
+# 1. versionCode SEMPRE maior que o da última enviada (e versionName legível)
+#    em android/app/build.gradle (gerado/gitignorado — editar na cópia)
+npm install && npx cap sync android
+cd android && ./gradlew bundleRelease
+# 2. assinar com a chave de upload (a senha sai do arquivo, nunca da linha de comando)
+jarsigner -sigalg SHA256withRSA -digestalg SHA-256 \
+  -keystore ~/keys/amora-upload.jks -storepass:file ~/keys/amora-upload.pass \
+  app/build/outputs/bundle/release/app-release.aab amora-upload
+jarsigner -verify app/build/outputs/bundle/release/app-release.aab   # "jar verified."
+```
+
+| Versão | versionCode | Data | Arquivo | Faixa |
+|---|---|---|---|---|
+| 1.0 | 1 | 02/10/2026 | `~/amora-release/amora-1.0-1.aab` | teste interno |
 
 ## Textos comuns
 

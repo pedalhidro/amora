@@ -7286,6 +7286,16 @@ const LIVE_NATIVE_WATCHER_KEY = 'phidro:liveNativeWatcherId';
 // global injetado (window.Capacitor.Plugins) — sem import, então este mesmo
 // código roda inalterado num browser comum (onde o plugin simplesmente não
 // existe e caímos no watchPosition). Cada fix chama window.phidroLivePush.
+// Resolve quando a permissão de localização foi respondida (o fix em si não
+// importa — timeout/sem sinal também resolvem). Negada: o addWatcher a seguir
+// devolve NOT_AUTHORIZED e o onNativeWatchError avisa, como antes.
+function ensureAndroidLocationPermission() {
+  return new Promise((resolve) => {
+    if (!navigator.geolocation) { resolve(); return; }
+    navigator.geolocation.getCurrentPosition(() => resolve(), () => resolve(),
+      { enableHighAccuracy: false, maximumAge: 600000, timeout: 8000 });
+  });
+}
 function startNativeBackgroundWatch() {
   const BG = window.Capacitor?.Plugins?.BackgroundGeolocation;
   if (!BG) return Promise.resolve(false);
@@ -7295,6 +7305,12 @@ function startNativeBackgroundWatch() {
   _liveNativeLastCbMs = Date.now();
   _liveNativeStarting = (async () => {
     try {
+      // Android 14+: o plugin sobe o serviço de primeiro plano (tipo location)
+      // ANTES de pedir a permissão — sem ela, SecurityException, o serviço não
+      // sobe e a transmissão para assim que o app sai da tela (só na 1ª vez,
+      // com a permissão ainda não dada). Pede antes, pelo geolocation do
+      // WebView (o Capacitor converte no pedido de permissão do Android).
+      if (window.Capacitor?.getPlatform?.() === 'android') await ensureAndroidLocationPermission();
       const id = await BG.addWatcher({
         backgroundTitle: 'Pedal Hidrográfico',
         backgroundMessage: 'Compartilhando sua localização ao vivo',

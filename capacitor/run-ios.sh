@@ -158,8 +158,28 @@ apply_app_delegate() {
   echo "AppDelegate: envio em segundo plano (amora-upload)."
 }
 
+# ─── Alvo mínimo: iOS 15 ─────────────────────────────────────────────────────
+# O Xcode 27 só compila pra iOS ≥ 15, e o template do Capacitor 6 gera tudo em
+# 13.0 (Podfile, projeto do App e os pods, que herdam do podspec de cada
+# plugin — o assertDeploymentTarget do Capacitor só sobe os < 13). Sem isso o
+# build falha antes de compilar uma linha. Idempotente; roda ANTES do
+# `cap sync` (que faz o pod install).
+IOS_MIN="15.0"
+apply_deployment_target() {
+  local podfile="ios/App/Podfile" pbx="ios/App/App.xcodeproj/project.pbxproj"
+  [[ -f "$podfile" && -f "$pbx" ]] || { echo "Projeto ios/ incompleto." >&2; exit 1; }
+  perl -pi -e "s/^platform :ios, '[0-9.]+'/platform :ios, '$IOS_MIN'/" "$podfile"
+  if ! grep -q "amora: alvo mínimo" "$podfile"; then
+    perl -0pi -e "s/(  assertDeploymentTarget\(installer\)\n)/\1  # amora: alvo mínimo (run-ios.sh) — pods abaixo de $IOS_MIN sobem pra ele\n  installer.pods_project.targets.each do |t|\n    t.build_configurations.each do |c|\n      v = c.build_settings['IPHONEOS_DEPLOYMENT_TARGET'].to_f\n      c.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '$IOS_MIN' if v != 0.0 \&\& v < $IOS_MIN\n    end\n  end\n/" "$podfile"
+  fi
+  IOS_MIN="$IOS_MIN" perl -pi -e 's/(IPHONEOS_DEPLOYMENT_TARGET = )([0-9.]+);/$1 . ($2 < $ENV{IOS_MIN} ? $ENV{IOS_MIN} : $2) . ";"/e' "$pbx"
+  grep -q "amora: alvo mínimo" "$podfile" || { echo "Patch do Podfile falhou." >&2; exit 1; }
+  echo "Alvo mínimo: iOS $IOS_MIN (Podfile, pods e projeto do App)."
+}
+
 # Copia web assets (a tela sem conexão do www/) + config/plugins nativos pro
 # projeto ios/, e só DEPOIS mexe no Info.plist e no AppDelegate.
+apply_deployment_target
 npx cap sync ios
 apply_info_plist
 apply_app_delegate

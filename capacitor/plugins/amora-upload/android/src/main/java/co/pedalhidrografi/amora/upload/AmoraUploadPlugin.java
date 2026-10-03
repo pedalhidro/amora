@@ -181,6 +181,10 @@ public class AmoraUploadPlugin extends Plugin implements Store.Listener {
             getBridge().releaseCall(call);
             return;
         }
+        // A escolha acabou de voltar: o app está na frente — o único momento em
+        // que o Android deixa o dreno virar serviço de primeiro plano antes de
+        // o JS terminar o preparo (ver UploadWorker.kick(ctx, warm)).
+        io.execute(() -> UploadWorker.kick(getContext(), true));
         copyIo.execute(() -> copyPicked(call, uris));
     }
 
