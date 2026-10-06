@@ -5496,6 +5496,102 @@ document.getElementById('subir-imagens-galeria')?.addEventListener('click', () =
   closeSubirModal();
   openImagensModal();
 });
+// 🎨 Arte de anúncio: editor de pôster sobre o PRÓPRIO mapa (lib/poster.js —
+// o #map vira o palco no tamanho da arte; ver o cabeçalho de lá). Importado
+// só na 1ª abertura; está no SHELL_ASSETS do SW, então é sempre o do mesmo
+// deploy que este app.js.
+let _poster = null;
+// Rascunho do Traçar (formato do snapshot()) → estado de compartilhamento
+// ({wp, sg}) que o /save-route guarda — o passo "Publicar" da arte salva a
+// rota no servidor antes de ligá-la ao passeio no Censo. `sid`: a rota salva
+// de onde o rascunho veio (re-salvar atualiza ela).
+function draftShareState(name) {
+  const d = readStoredDraft(TRACE_DRAFT_KEY);
+  if (!d) return null;
+  const rm = ['straight', ...ROUTED_MODES].includes(d.rm) ? d.rm : 'straight';
+  const state = {
+    v: SHARE_STATE_VERSION, rm, n: name || d.n || '',
+    wp: d.wp.map((w) => {
+      const out = [+w.lat.toFixed(5), +w.lng.toFixed(5)];
+      if (w.name || w.isPoi) {
+        out.push(w.name || '', w.isPoi ? 1 : 0);
+        if (w.isPoi && w.sym && w.sym !== 'Flag, Blue') out.push(w.sym);
+      }
+      return out;
+    }),
+  };
+  if (rm !== 'straight') {
+    state.sg = d.wp.slice(1).map((w) => (Array.isArray(w.path) && w.path.length >= 2
+      ? encodePolyline(simplifyForShare(w.path)) : ''));
+  }
+  return { state, sid: d.sid || null };
+}
+// Ajustar a rota da arte no Traçar: abre o editor com a rota salva (ou o
+// rascunho) e uma faixa "🎨 Voltar pra arte", que reabre a arte com o
+// rascunho como rota.
+async function editRouteForPoster(saved) {
+  if (!drawingMode) enterDrawingMode();
+  if (saved?.id) await loadSavedRoute(saved.id, saved.name);
+  else restoreTraceDraft();
+  showActionToast({
+    id: 'poster-back',
+    text: 'Desenhe ou ajuste a rota da arte.',
+    action: '🎨 Voltar pra arte',
+    onAction: () => { hideActionToast('poster-back'); openPosterEditor({ routeSrc: 'draft', step: 1 }); },
+  });
+}
+// Próximo número de uma série, pelos passeios com rota (sugestão no passo 2).
+function nextSeriesNumber(code) {
+  let max = 0;
+  for (const { entry } of routes.values()) {
+    for (const n of entryNumbers(entry)) {
+      const v = parseInt(n.value, 10);
+      if (n.source === code && Number.isFinite(v) && v > max) max = v;
+    }
+  }
+  return max ? max + 1 : null;
+}
+async function openPosterEditor(opts = {}) {
+  closeSubirModal();
+  hideActionToast('poster-back');
+  try {
+    _poster ??= import('./lib/poster.js').then((m) => m.createPoster({
+      map,
+      decodePolyline: decodePolylineSafe,
+      readTraceDraft: () => readStoredDraft(TRACE_DRAFT_KEY),
+      draftShareState,
+      editRoute: editRouteForPoster,
+      nextSeriesNumber,
+      onTourChanged: () => { _tourDirty = true; scheduleBackgroundReload(); },
+      // Passeio que usa a rota salva (routes.json espelha o slug dela no `id`
+      // das entradas provider "amora") — o mais recente, pra pré-preencher a caixa.
+      findTourEntry: (slug, id) => {
+        let best = null;
+        for (const { entry: e } of routes.values()) {
+          if (e?.provider !== 'amora' || !(e.id === slug || (id && e.id === id))) continue;
+          if (!best || (e.dateMs ?? 0) > (best.dateMs ?? 0)) best = e;
+        }
+        return best;
+      },
+      needsShareTap,
+      showActionToast,
+      hideActionToast,
+      beforeOpen: () => {
+        if (drawingMode) exitDrawingMode();   // o rascunho fica guardado (e vira opção de rota)
+        closePhotoPreview();
+        if (!routeModal.hidden) closeRouteModal();
+        closeOtherMobileDialogs('poster');
+      },
+      afterClose: () => syncSheetsInert(),
+    }));
+    (await _poster).open(opts);
+  } catch (err) {
+    _poster = null;
+    console.error('[poster]', err);
+    showToast(`Não deu pra abrir o editor de arte: ${err.message}`);
+  }
+}
+document.getElementById('subir-poster')?.addEventListener('click', () => openPosterEditor());
 document.getElementById('subir-custos')?.addEventListener('click', () => {
   closeSubirModal();
   // Página própria (não modal): abre em aba nova pra não derrubar o mapa.

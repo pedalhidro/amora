@@ -3284,3 +3284,233 @@ body:has(#media-lists-editor:not([hidden])) .photo-nav-arrow { display: none; }
   border-radius: 6px; padding: 7px 14px; font-weight: 600; cursor: pointer;
 }
 .share-name-body #share-name-confirm:hover { filter: brightness(1.08); }
+
+/* ─── Arte de anúncio (lib/poster.js) ─────────────────────────────────────
+   O #map vira o palco: o JS dá a ele o tamanho real da arte (1080×1350…) e
+   um transform: scale() pra caber ao lado do painel. Tudo que não é fundo de
+   mapa sai de cena: barra, lista de rotas, controles do Leaflet e o pane dos
+   marcadores (fotos, números de rota, pessoas ao vivo, popups). O painel é
+   um passo-a-passo (6 passos) com Voltar/Próximo fixos no pé. */
+body.poster-mode { background: #24282c; overflow: hidden; }
+body.poster-mode .topbar,
+body.poster-mode #sidebar,
+body.poster-mode .leaflet-control-container,
+body.poster-mode .leaflet-norotate-pane,
+body.poster-mode #trace-controls,
+body.poster-mode #geo-search-panel,
+body.poster-mode #route-tooltip,
+body.poster-mode .clips-ghost-video { display: none !important; }
+body.poster-mode #map { box-shadow: 0 8px 32px rgba(0, 0, 0, 0.55); z-index: 1; }
+.poster-art, .poster-ui { position: absolute; left: 0; top: 0; pointer-events: none; }
+.poster-art { z-index: 650; }
+.poster-ui { z-index: 700; overflow: visible; }
+.poster-ui [data-op] { pointer-events: all; cursor: move; touch-action: none; }
+.poster-ui polyline[data-op] { pointer-events: stroke; }
+.poster-ui .poster-hit { fill: transparent; stroke: transparent; }
+.poster-ui .poster-outline, .poster-ui .poster-guide { fill: none; stroke: #fff; mix-blend-mode: difference; }
+.poster-ui .poster-handle { fill: #fff; stroke: var(--accent); }
+.poster-ui .poster-handle.h-curve { fill: var(--accent); stroke: #fff; }
+.poster-ui .h-pt, .poster-ui .h-curve { cursor: grab; }
+.poster-ui .h-k { cursor: nwse-resize; }
+.poster-ui .h-w { cursor: ew-resize; }
+.poster-ui .h-h { cursor: ns-resize; }
+
+.poster-panel {
+  position: fixed;
+  top: 0; right: 0; bottom: 0;
+  width: 380px;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border-left: 1px solid var(--border);
+  z-index: 1500;                   /* abaixo dos modais (5000): ⚙ da Câmera Topográfica etc. */
+  font-size: 13px;
+}
+.poster-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: max(8px, env(safe-area-inset-top, 8px)) 10px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.poster-head .secondary-btn { padding: 6px 10px; font-size: 14px; }
+.poster-collapse { display: none; }
+.poster-steps { flex: 1; display: flex; justify-content: center; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.poster-steps button {
+  width: 32px; height: 32px;
+  border: 2px solid var(--border);
+  border-radius: 50%;
+  background: var(--panel);
+  color: var(--muted);
+  font: inherit; font-weight: 700;
+  cursor: pointer;
+}
+.poster-steps button.done { border-color: var(--accent); color: var(--accent); }
+.poster-steps button[aria-current="step"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+.poster-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 4px 12px 16px; }
+.poster-step-title { margin: 8px 0 4px; font-size: 16px; }
+.poster-step-title:focus { outline: none; }
+/* Regras de display das classes abaixo (flex/grid) venceriam o [hidden]. */
+.poster-panel [hidden] { display: none !important; }
+.poster-step h3 { margin: 14px 0 2px; font-size: 13px; }
+.poster-foot {
+  display: flex;
+  gap: 8px;
+  padding: 8px 12px max(8px, env(safe-area-inset-bottom, 8px));
+  border-top: 1px solid var(--border);
+}
+.poster-foot button { flex: 1; min-height: 44px; font-size: 15px; }
+.poster-foot button[hidden] { display: none; }
+.poster-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.poster-row > label:first-child:not(.poster-inline) { min-width: 86px; color: var(--muted); }
+.poster-row input[type="range"] { flex: 1 1 90px; min-width: 70px; }
+.poster-row input[type="number"] { width: 64px; }
+.poster-row input[type="text"], .poster-row textarea, .poster-row select { flex: 1 1 160px; min-width: 0; font: inherit; }
+.poster-row output { min-width: 42px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.poster-row .secondary-btn, .poster-row .primary-btn { padding: 7px 11px; font-size: 13px; }
+.poster-inline { display: inline-flex; align-items: center; gap: 4px; color: var(--text); }
+.poster-field { display: flex; flex-direction: column; gap: 4px; margin: 10px 0; color: var(--muted); font-size: 12px; flex: 1 1 0; min-width: 0; }
+.poster-field small { font-size: 11px; }
+.poster-field input, .poster-field select, .poster-field textarea, .poster-search {
+  width: 100%;
+  min-height: 40px;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit; font-size: 14px;
+}
+.poster-field textarea { min-height: 0; resize: vertical; line-height: 1.4; }
+.poster-pair { display: flex; gap: 8px; }
+.poster-pair .poster-narrow { flex: 0 0 34%; }
+.poster-count { float: right; font-variant-numeric: tabular-nums; }
+.poster-count.over { color: #b91c1c; font-weight: 700; }
+.poster-hint { margin: 6px 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
+.poster-danger { color: #b91c1c; }
+.poster-wide-btn { width: 100%; min-height: 44px; margin: 8px 0 2px; }
+.poster-big { width: 100%; min-height: 48px; margin: 10px 0 2px; font-size: 15px; }
+.poster-big:disabled { opacity: 0.45; cursor: not-allowed; }
+.poster-sq { min-width: 44px; font-size: 18px !important; }
+.poster-search { margin: 4px 0 6px; }
+.poster-route-list { display: flex; flex-direction: column; gap: 4px; }
+.poster-route {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
+  min-height: 48px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit; text-align: left;
+  cursor: pointer;
+}
+.poster-route[aria-selected="true"] { border: 2px solid var(--accent); background: #fff7ed; }
+.poster-route-name { font-weight: 600; }
+.poster-route-meta { color: var(--muted); font-size: 11px; }
+.poster-banner {
+  margin: 8px 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--surface);
+  line-height: 1.45;
+}
+.poster-banner[hidden] { display: none; }
+.poster-banner .secondary-btn { display: block; margin-top: 6px; }
+.poster-themes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 8px 0; }
+.poster-theme {
+  min-height: 44px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: linear-gradient(var(--fill) 62%, var(--band) 62%);
+  color: var(--txt);
+  font: inherit; font-size: 12px; font-weight: 700;
+  cursor: pointer;
+}
+.poster-kinds { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 8px 0; }
+.poster-kind { min-height: 44px; border-left: 6px solid var(--kind, #fff) !important; }
+.poster-sel {
+  margin: 6px 0 8px;
+  padding: 8px 10px;
+  border: 1px solid #fdba74;
+  border-radius: 8px;
+  background: #fff7ed;
+}
+.poster-sel[hidden] { display: none; }
+.poster-sel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.poster-sel-head .secondary-btn { padding: 6px 12px; }
+.poster-place { margin: 6px 0; padding: 6px 8px; border-radius: 6px; background: #fde68a; font-weight: 600; }
+.poster-more summary { cursor: pointer; color: var(--muted); padding: 6px 0; }
+.poster-chips { display: flex; flex-wrap: wrap; gap: 5px; margin: 6px 0; }
+.poster-chip {
+  max-width: 100%;
+  min-height: 32px;
+  padding: 4px 10px 4px 7px;
+  border: 1px solid var(--border);
+  border-left: 6px solid var(--kind, var(--border));
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit; font-size: 12px;
+  cursor: pointer;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.poster-chip.active { outline: 2px solid var(--accent); outline-offset: 1px; }
+.poster-swatches { display: inline-flex; gap: 4px; }
+.poster-swatch { width: 24px; height: 24px; padding: 0; border: 1px solid var(--border); border-radius: 50%; cursor: pointer; }
+.poster-check { margin: 6px 0; padding: 0; list-style: none; }
+.poster-check li { margin: 4px 0; line-height: 1.4; }
+.poster-check li.ok > span:first-child { color: #15803d; font-weight: 700; }
+.poster-check li.todo { color: #b45309; }
+.poster-result { margin: 4px 0; line-height: 1.45; }
+.poster-result.ok { color: #15803d; }
+.poster-result.err { color: #b91c1c; }
+/* O painel de camadas do mapa mora no passo 3 enquanto o editor está aberto
+   (o JS o move pra dentro e o devolve ao sair). */
+body.poster-mode .poster-layers .layer-panel {
+  position: static !important;
+  transform: none !important;
+  display: block !important;
+  float: none;
+  width: auto;
+  min-width: 0;
+  max-height: none !important;
+  margin: 0 !important;
+  padding: 4px 0 0 !important;
+  border: none !important;
+  border-radius: 0;
+  box-shadow: none;
+  overflow: visible;
+}
+body.poster-mode .poster-layers .layer-panel > .close-dot,
+body.poster-mode .poster-layers .layer-panel-title { display: none !important; }
+.poster-layers-wrap summary { cursor: pointer; padding: 8px 0; font-weight: 600; }
+@media (pointer: coarse) {
+  .poster-row .secondary-btn, .poster-row .primary-btn { min-height: 40px; }
+  .poster-row input[type="range"] { min-height: 32px; }
+}
+@media (max-width: 760px) {
+  /* Folha de baixo: mais baixa nos passos de mexer na arte (rota, mapa,
+     rótulos), mais alta nos de formulário. Sobe junto com o teclado
+     (--poster-kb, do visualViewport). */
+  .poster-panel {
+    top: auto; left: 0;
+    bottom: var(--poster-kb, 0px);
+    width: auto;
+    height: 44vh; height: 44dvh;
+    max-height: calc(100dvh - var(--poster-kb, 0px) - 80px);
+    border-left: none;
+    border-top: 1px solid var(--border);
+    border-radius: 12px 12px 0 0;
+    box-shadow: 0 -4px 18px rgba(0, 0, 0, 0.25);
+  }
+  .poster-panel[data-size="tall"] { height: 62vh; height: 62dvh; }
+  .poster-head { padding-top: 8px; }
+  .poster-collapse { display: inline-block; }
+  .poster-steps { gap: 4px; }
+  .poster-steps button { width: 34px; height: 34px; }
+  .poster-panel.collapsed { height: auto; }
+  .poster-panel.collapsed .poster-body { display: none; }
+  /* 16 px: menos que isso o Safari dá zoom na página ao focar o campo. */
+  .poster-panel input, .poster-panel select, .poster-panel textarea { font-size: 16px; }
+}

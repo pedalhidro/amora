@@ -25,7 +25,7 @@
 // origin) e v371/v372 saíram na `deploy` (busca de endereços, ⇄ inverter).
 // v373 fica acima de tudo que já circulou, que é o que importa: se a VERSION
 // não crescer, o service worker serve cache velho.
-const VERSION = 'phidro-v427';
+const VERSION = 'phidro-v428';
 const STATIC_CACHE = `${VERSION}-static`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 const DATA_CACHE = 'phidro-data-v1';
@@ -70,6 +70,7 @@ const SHELL_ASSETS = [
   './style.css',
   './app.js',
   './lib/utils.js',                 // import do app.js
+  './lib/poster.js',                // import() do app.js (🎨 Arte de anúncio) — versão casada com o app.js
   './lib/n3.min.js',                // parser dos TTL (ensureN3): sem ele, nada de fotos/passeios
   './lib/media-query.js',
   './lib/leaflet/leaflet.css',
@@ -109,6 +110,10 @@ const PAGE_ASSETS = [
   './lib/energy-worker.js',
   './lib/graph-engine.js',          // importScripts()'d pelo energy-worker e pelo viario-graph-worker
   './lib/viario-graph-worker.js',   // decode + Dijkstra do grafo do viário (Traçar "pelo viário")
+  './fonts/chunkfive-400.woff2',    // fontes da arte de anúncio (lib/poster.js)
+  './fonts/fredoka-600.woff2',
+  './fonts/open-sans-400.woff2',
+  './fonts/open-sans-700.woff2',
 ];
 // Dados pro PRIMEIRO boot offline: na 1ª visita a página carrega antes de o SW
 // existir, então nada disso passou por ele. Só entram se faltarem no DATA_CACHE

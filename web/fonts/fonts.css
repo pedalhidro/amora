@@ -29,3 +29,39 @@
   font-display: swap;
   src: url('./ibm-plex-mono-700.woff2') format('woff2');
 }
+
+/* Fontes da arte de anúncio (lib/poster.js) — todas OFL 1.1, subset latin.
+   Só baixam quando o editor as pede (document.fonts.load): o resto do app
+   segue só com a Plex. Escolhidas pelo anúncio-modelo (PH 111, feito no
+   Canva): ChunkFive no título (vendorada de github.com/theleagueof/chunk,
+   OTF → woff2 via fontTools), Open Sans no subtítulo e Fredoka no lugar da
+   Genty Sans dos rótulos (a Genty não é livre; a Fredoka é a arredondada
+   livre mais próxima). Fredoka/Open Sans: Fontsource (Google Fonts). */
+@font-face {
+  font-family: 'ChunkFive';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./chunkfive-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Fredoka';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('./fredoka-600.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Open Sans';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./open-sans-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Open Sans';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('./open-sans-700.woff2') format('woff2');
+}

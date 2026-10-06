@@ -33,6 +33,8 @@ one optional hosted deploy target, not a dependency.
   `streamFgbFeatures`), then that same FGB's lines rasterized into a
   ~30 m grid mask (`rasterizeRoads`). **There is no Overpass anywhere
   any more** — see "OSM layers come from FlatGeobuf" below),
+  `poster.js` (🎨 Arte de anúncio — editor de pôster, import() do app.js; ver
+  "Arte de anúncio" em Conventions),
   `media-pipeline.js` (módulo ES com o pipeline de mídia do `upload_images.html`,
   consumido por `subir.html` — ver acima),
   `flatgeobuf-geojson.min.js` (FGB reader, flatgeobuf 4.4.0),
@@ -1173,6 +1175,64 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
   Leaflet: `bubblingMouseEvents:false` só vale em layer que ESCUTA o evento —
   por isso a linha do rascunho tem um listener de click vazio (sem ele o
   clique na linha vazava pro mapa e criava ponto no fim).
+- **Arte de anúncio (`lib/poster.js`, ☰ ações → 🎨).** Passo a passo pensado
+  pro celular (`STEPS`: 1 rota · 2 informações · 3 mapa · 4 rótulos · 5 texto
+  do post · 6 publicar; Voltar/Próximo no pé, folha mais baixa nos passos de
+  mexer na arte, que sobe junto com o teclado via `visualViewport`). Usa o
+  PRÓPRIO mapa como palco: o `#map` ganha o tamanho real da arte em px de
+  CSS (1080×1350 / 1080×1080 / 1080×1920) + `transform: scale(s)` — o Leaflet
+  1.9 e a pinça do leaflet-rotate descontam a escala do contêiner, então as
+  camadas visíveis, a ordem e a rotação vêm de graça e px de tela = px da arte
+  (WYSIWYG). Enquanto aberto: `body.poster-mode` esconde barra/lista/controles
+  e o `norotatePane` (marcadores, popups); o `.layer-panel` é MOVIDO pro painel
+  do editor e devolvido ao sair; zoomSnap 0.05 e `map._zoomAnimated = false`
+  (com animação os rótulos, desenhados no canvas da arte, ficavam 250 ms atrás);
+  cliques no mapa são engolidos na captura do documento (nada de popup de rota
+  / foto perto do toque). Ao sair, tamanho, opções e vista voltam. A arte
+  (rótulos, caixa, logos, créditos) é UM canvas desenhado pela mesma
+  `renderArt` da exportação; um `<svg>` por cima tem só alvos de toque e alças
+  (nós por chave, atualizados no lugar — recriar o nó debaixo do dedo soltaria
+  o arraste). Rótulos são presos ao CHÃO (`a`/`b` = pontas, `c` = ponto da
+  curva em t=½, lat/lng) e sempre lidos da esquerda pra direita; caixa e logos
+  presos à arte. Texto letra a letra com avanço = largura do prefixo (mantém
+  o kerning); a sombra sai pelo truque do shadowOffset (letra fora da tela) —
+  sem depender de `ctx.filter` (suporte irregular no Safari). **Exportar** (`composeMap`) percorre
+  os panes e desenha cada `<img>`/`<canvas>`/`<svg>` com a cadeia de
+  transforms/opacidade de CSS até o mapa (o rotate do rotatePane incluso);
+  tile sem crossOrigin é rebuscado em CORS (host sem ACAO fica de fora, com
+  aviso); tiles transbordam ½ px (emenda). Estado inteiro em
+  `phidro:poster:v1` (logos em data URL; sem cota, salva sem elas). Fontes
+  OFL vendoradas em `fonts/` (ChunkFive, Fredoka — no lugar da Genty Sans do
+  modelo, que não é livre —, Open Sans). Cores-padrão dos rótulos (do
+  anúncio-modelo PH 111): rio `#ffbd59`, morro `#ff751f`, anomalia `#c2ffe1`,
+  saída/chegada `#c1ff72`. `poster.js` está no `SHELL_ASSETS` (versão casada
+  com o app.js); o app passa o que o módulo precisa por `createPoster(ctx)`.
+  Regras do passo a passo: o toque na arte só edita o que o passo edita
+  (`STEPS[].hits` — no passo do mapa todo toque move o mapa); os 3 textos da
+  caixa são VINCULADOS (`bind: title|name|when`) às informações do passo 2 até
+  alguém escrever por cima; legenda e descrição da imagem (alt) são geradas
+  até serem editadas (`captionEdited`/`altEdited`); rótulo novo fica
+  "posicionando" (o próximo toque no mapa o centra ali) e some se sair sem
+  texto. O rascunho do Traçar guarda o caminho de cada ponto em `path` (não
+  `pathFromPrev` — é o formato do `snapshot()`); `draftShareState` (app.js) o
+  converte pro formato do `/save-route`. **Publicar**: rota em rascunho é
+  salva primeiro (`/save-route`, nome único → slug); o passeio vai pelo
+  `POST /upload-tour` de sempre (título, `dcterms:date`, edição da série,
+  `ph:departureLocation`/`ph:arrivalLocation`, `ph:linkRoute` provider
+  `ph:amora` com o host PÚBLICO — nunca localhost — e a arte em JPEG no campo
+  `announcement`); `censo.key` (série/número) amarra o tourId — salvar de
+  novo a mesma edição é patch, outra edição é passeio novo (não sobrescreve o
+  da semana passada); "Usar os dados dele" (passo 2) liga a arte a um passeio
+  que JÁ existe (patch nele). Colisão de edição vira mensagem clara. **sabiá**
+  (repo irmão): o botão abre `sabia.pedalhidrografi.co/#amora=<base64url
+  JSON>` ({v:1, source, title, text, images:[{url, alt}], event:{title,
+  start, place, text}, link}) numa aba nova (âncora target=_blank — é o que
+  sai do app da tela de início/shell nativo); a arte vai pela URL pública que
+  o `/upload-tour` devolveu (`storage.googleapis.com/phidro-state/…`, CORS
+  aberto) — o composer do sabiá só aceita imagem desse bucket e de
+  amora.pedalhidrografi.co. Nada é publicado do amora: quem publica é a
+  pessoa, no sabiá. Mudou o formato do payload → mude o `importFromAmora` do
+  sabiá junto.
 - **Memória e rede do roteamento (Traçar).** `touchRoutingMemory` /
   `releaseRoutingMemory` soltam o worker do grafo, os tiles de DEM, o LRU do
   FGB e os produtos do viário 30 s depois de sair do editor (ou 5 min parado
