@@ -5582,7 +5582,7 @@ async function openPosterEditor(opts = {}) {
         if (!routeModal.hidden) closeRouteModal();
         closeOtherMobileDialogs('poster');
       },
-      afterClose: () => syncSheetsInert(),
+      afterClose: () => { syncSheetsInert(); fitTopbarActions(); },
     }));
     (await _poster).open(opts);
   } catch (err) {
@@ -8103,6 +8103,7 @@ function applyHeaderVisibility(hidden) {
     headerToggle.setAttribute('aria-label', hidden ? 'Mostrar cabeçalho' : 'Ocultar cabeçalho');
     headerToggle.setAttribute('title', hidden ? 'Mostrar cabeçalho' : 'Ocultar cabeçalho');
   }
+  if (!hidden) fitTopbarActions();   // oculta, a barra não tinha largura pra medir
 }
 applyHeaderVisibility(storage.get(HEADER_HIDDEN_KEY) === '1');
 headerToggle?.addEventListener('click', () => {
@@ -8239,6 +8240,7 @@ window.addEventListener('resize', () => {
   _wasMobileViewport = nowMobile;
   updateMenuBtnPressed();
   updateTitleAlignment();
+  fitTopbarActions();
 });
 
 // Título "amora: ajudante bicigeoenergético": alinhado à esquerda por padrão,
@@ -8259,6 +8261,39 @@ function updateTitleAlignment() {
   titleH1.classList.toggle('title-wrapped', wrapped);
 }
 updateTitleAlignment();
+
+// Botões da barra de cima numa linha só no celular. Abaixo de 760px o CSS
+// deixa a faixa quebrar, e a largura dos botões depende da fonte e dos emojis
+// de cada aparelho — no Galaxy S24 (360px, emojis/fonte do Android mais
+// largos) os 5 botões viravam 2 linhas, ~40px a menos de mapa. Então MEDE: se
+// quebrou, encurta o rótulo mais longo ("enviar imgs" → "enviar", .tb-c1); se
+// ainda quebra (fonte grande nas configurações do aparelho), só os ícones
+// (.tb-c2 — os botões têm aria-label/title).
+function fitTopbarActions() {
+  const nav = document.querySelector('.topbar-actions');
+  if (!nav) return;
+  nav.classList.remove('tb-c1', 'tb-c2');
+  // matchMedia direto (não isMobileViewport): o applyHeaderVisibility do boot
+  // chama isto antes de aquele const existir (TDZ derrubava o módulo).
+  if (!window.matchMedia('(max-width: 760px)').matches || document.body.classList.contains('header-hidden')) return;
+  const kids = [...nav.children].filter((el) => el.getClientRects().length);
+  if (kids.length < 2) return;
+  const wraps = () => kids[kids.length - 1].getBoundingClientRect().top
+    >= kids[0].getBoundingClientRect().bottom - 2;
+  if (wraps()) nav.classList.add('tb-c1');
+  if (wraps()) nav.classList.add('tb-c2');
+}
+// Rótulo de um botão da barra: ícone + texto num <span class="tb-txt"> (que o
+// modo só-ícones esconde) — e re-mede a barra.
+function setTopbarLabel(btn, icon, text) {
+  const span = document.createElement('span');
+  span.className = 'tb-txt';
+  span.textContent = text;
+  btn.replaceChildren(`${icon} `, span);
+  fitTopbarActions();
+}
+fitTopbarActions();
+document.fonts?.ready.then(fitTopbarActions);
 
 function updateMenuBtnPressed() {
   const visible = isMobileViewport()
@@ -10078,7 +10113,7 @@ function enterDrawingMode() {
     document.body.classList.add('layers-hidden');
     if (layersBtn) layersBtn.setAttribute('aria-pressed', 'false');
   }
-  traceBtn.textContent = '🗺︎ cancelar';
+  setTopbarLabel(traceBtn, '🗺︎', 'cancelar');
   traceBtn.setAttribute('aria-label', 'Cancelar');
   traceBtn.setAttribute('title', 'Cancelar (Esc) — o traçado fica guardado');
   traceBtn.setAttribute('aria-pressed', 'true');
@@ -10120,7 +10155,7 @@ function enterPreviewMode() {
   }
   traceControls.hidden = true;
   // Cancelar → Editar; mantém aria-pressed='true' (laranja).
-  traceBtn.textContent = '✎🗺︎ editar';
+  setTopbarLabel(traceBtn, '✎🗺︎', 'editar');
   traceBtn.setAttribute('aria-label', 'Editar');
   traceBtn.setAttribute('title', 'Voltar a editar');
 }
@@ -10131,7 +10166,7 @@ function exitPreviewMode() {
   document.body.classList.remove('trace-preview');
   updateDraftPolyline();   // restaura a geometria exata (des-suaviza)
   traceControls.hidden = false;
-  traceBtn.textContent = '🗺︎ cancelar';
+  setTopbarLabel(traceBtn, '🗺︎', 'cancelar');
   traceBtn.setAttribute('aria-label', 'Cancelar');
   traceBtn.setAttribute('title', 'Cancelar (Esc) — o traçado fica guardado');
 }
@@ -10191,7 +10226,7 @@ function exitDrawingMode() {
     if (layersBtn) layersBtn.setAttribute('aria-pressed', 'true');
     layersWasVisible = false;
   }
-  traceBtn.textContent = '🗺︎ traçar';
+  setTopbarLabel(traceBtn, '🗺︎', 'traçar');
   traceBtn.setAttribute('aria-label', 'Traçar GPX');
   traceBtn.setAttribute('title', 'Traçar GPX');
   traceBtn.removeAttribute('aria-pressed');

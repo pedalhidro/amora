@@ -252,6 +252,10 @@ body.header-hidden .leaflet-top {
    (Traçar · Ajuda · Ajustes · Camadas), que cabem numa única linha mesmo no
    iPhone em retrato; forçar a quebra aqui só dividia em duas linhas à toa. */
 .topbar-break { display: none; }
+/* Barra apertada (fitTopbarActions mede e liga): 1º encurta "enviar imgs",
+   depois só os ícones. */
+.topbar-actions.tb-c1 .tb-more,
+.topbar-actions.tb-c2 .tb-txt { display: none; }
 
 /* Esconde o rodapé de atribuição do Leaflet em qualquer viewport. Os créditos
    do OSM ficam no modal de Instruções e nas tiles de cada provedor, o que
@@ -1197,6 +1201,14 @@ body.modal-open { overflow: hidden; }
     padding-top: max(6px, env(safe-area-inset-top));
     padding-left: max(14px, env(safe-area-inset-left));
     padding-right: max(14px, env(safe-area-inset-right));
+  }
+  /* Vem depois das regras do celular e as atropelava: a barra ficava com 14px
+     de cada lado no lugar dos 6px pensados pra caber os botões numa linha. */
+  @media (max-width: 760px) {
+    .topbar {
+      padding-left: max(6px, env(safe-area-inset-left));
+      padding-right: max(6px, env(safe-area-inset-right));
+    }
   }
 }
 
