@@ -45,7 +45,7 @@ const PUBLIC_ORIGIN = /^(localhost|127\.0\.0\.1|\[::1\])$|\.localhost$/.test(loc
 const STEPS = [
   { id: 'route',   title: 'Rota',          hits: [],                 size: 'short' },
   { id: 'info',    title: 'Informações',   hits: ['box', 'image'],   size: 'tall' },
-  { id: 'map',     title: 'Mapa',          hits: [],                 size: 'short' },
+  { id: 'map',     title: 'Mapa',          hits: ['deco'],           size: 'short' },
   { id: 'labels',  title: 'Rótulos',       hits: ['label'],          size: 'short' },
   { id: 'text',    title: 'Texto do post', hits: [],                 size: 'tall' },
   { id: 'publish', title: 'Publicar',      hits: [],                 size: 'tall' },
@@ -140,6 +140,10 @@ function defaultState() {
     box: defaultBox(FORMATS['4x5'].w),
     labels: [],
     images: [],
+    // Rosa (agulha pro SUL, com "S") e escala gráfica: presas à arte, arrastáveis
+    // no passo do mapa. x/y = centro da agulha / ponta esquerda da barra.
+    compass: { on: true, x: 90, y: FORMATS['4x5'].h - 200, size: 60 },
+    scale: { on: true, x: 34, y: FORMATS['4x5'].h - 54 },
     caption: '', captionEdited: false,
     alt: '', altEdited: false,
     // Passeio do Censo desta arte: `key` (série/número) amarra o tourId — mudou
@@ -164,6 +168,8 @@ function loadState() {
     route: { ...d.route, ...(s.route || {}) },
     info: { ...d.info, ...(s.info || {}) },
     censo: { ...d.censo, ...(s.censo || {}) },
+    compass: { ...d.compass, ...(s.compass || {}) },
+    scale: { ...d.scale, ...(s.scale || {}) },
     labels: (Array.isArray(s.labels) ? s.labels : [])
       .filter((l) => l && isLL(l.a) && isLL(l.b))
       .map((l) => ({ ...textStyle(), ...l, c: isLL(l.c) ? l.c : null, id: l.id || uid() })),
@@ -650,6 +656,10 @@ export function createPoster(ctx) {
           <div class="poster-row"><label>Cor da linha</label><input type="color" data-k="route.color" aria-label="Cor da linha da rota">
             <label class="poster-inline"><input type="checkbox" data-k="route.casing"> contorno</label>
             <input type="color" data-k="route.casingColor" aria-label="Cor do contorno"></div>
+          <div class="poster-row"><label class="poster-inline"><input type="checkbox" data-k="compass.on"> Rosa (aponta pro S)</label>
+            <input type="range" min="16" max="120" step="1" data-k="compass.size" aria-label="Tamanho da rosa"></div>
+          <div class="poster-row"><label class="poster-inline"><input type="checkbox" data-k="scale.on"> Escala</label></div>
+          <p class="poster-hint">A rosa e a escala dá pra arrastar na arte.</p>
           <details class="poster-layers-wrap"><summary>⧉ Camadas do fundo</summary><div class="poster-layers"></div></details>
         </section>
 
@@ -956,6 +966,9 @@ export function createPoster(ctx) {
     set('route.color', r.color);
     set('route.casing', r.casing);
     set('route.casingColor', r.casingColor);
+    set('compass.on', state.compass.on);
+    set('compass.size', state.compass.size);
+    set('scale.on', state.scale.on);
     q('[data-k="route.width"]').nextElementSibling.textContent = `${r.width} px`;
     syncBearing();
   }
@@ -1128,9 +1141,91 @@ export function createPoster(ctx) {
   // Desenha a arte inteira em `g` (o canvas da prévia ou o da exportação: os
   // dois têm o tamanho da arte). Devolve o layout pro <svg> de interação. Na
   // prévia, um rótulo ainda sem texto aparece como o nome do tipo, apagadinho.
+  // Agulha apontando pro SUL GEOGRÁFICO (convenção do coletivo), com "S" na
+  // ponta. A direção sai do próprio mapa (um ponto 0,01° ao sul do centro), então
+  // acompanha o giro. Devolve a caixa ocupada (área de toque).
+  function drawCompass(g) {
+    const c = state.compass;
+    const r = clamp(num(c.size, 60), 16, 160);
+    const { w: W, h: H } = dims();
+    const ll = map.containerPointToLatLng(L.point(W / 2, H / 2));
+    const P = map.latLngToContainerPoint(ll);
+    const Q = map.latLngToContainerPoint([ll.lat - 0.01, ll.lng]);
+    const len = Math.hypot(Q.x - P.x, Q.y - P.y) || 1;
+    const ux = (Q.x - P.x) / len, uy = (Q.y - P.y) / len;   // sul na tela
+    const px = -uy, py = ux;
+    const at = (a, b) => [c.x + ux * a + px * b, c.y + uy * a + py * b];
+    g.save();
+    g.lineJoin = 'round';
+    g.shadowColor = 'rgba(0,0,0,0.6)';
+    g.shadowBlur = r * 0.12;
+    g.shadowOffsetX = r * 0.05;
+    g.shadowOffsetY = r * 0.05;
+    const kite = (tipA, color) => {
+      g.beginPath();
+      g.moveTo(...at(tipA, 0));
+      g.lineTo(...at(0, r * 0.36));
+      g.lineTo(...at(0, -r * 0.36));
+      g.closePath();
+      g.fillStyle = color;
+      g.fill();
+    };
+    kite(-r * 0.75, 'rgba(255,255,255,0.45)');   // cauda (norte), apagadinha
+    kite(r, '#ffffff');                           // ponta (sul)
+    g.shadowColor = 'transparent';
+    g.lineWidth = Math.max(1.5, r * 0.05);
+    g.strokeStyle = 'rgba(0,0,0,0.75)';
+    g.beginPath();
+    g.moveTo(...at(r, 0)); g.lineTo(...at(0, r * 0.36)); g.lineTo(...at(-r * 0.75, 0)); g.lineTo(...at(0, -r * 0.36)); g.closePath();
+    g.stroke();
+    g.restore();
+    // "S" além da ponta, sempre de pé.
+    const st = textStyle({ font: 'fredoka', size: r * 0.62, color: '#ffffff' });
+    const [sx, sy] = at(r + st.size * 0.62, 0);
+    const w = runWidth('S', st);
+    drawGlyphs(g, placeGlyphs('S', st, { len: w, at: (t) => ({ x: sx - w / 2 + t, y: sy + st.size * 0.35, a: 0 }) }).glyphs, st);
+    const ext = r + st.size * 1.1;
+    return { x: c.x - ext, y: c.y - ext, w: ext * 2, h: ext * 2 };
+  }
+  // Escala gráfica: metros por px medidos no centro da arte (o mapa gira, mas
+  // distância horizontal na tela continua métrica) e o maior valor "redondo"
+  // que cabe em ~240 px; 4 trechos alternando branco e preto.
+  function drawScale(g) {
+    const sc = state.scale;
+    const { w: W, h: H } = dims();
+    const a = map.containerPointToLatLng(L.point(W / 2 - 50, H / 2));
+    const b = map.containerPointToLatLng(L.point(W / 2 + 50, H / 2));
+    const mpp = map.distance(a, b) / 100;
+    if (!(mpp > 0)) return null;
+    const NICE = [10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000, 2500, 5000, 10000, 20000, 25000, 50000, 100000, 200000];
+    const meters = NICE.filter((m) => m / mpp <= 240).pop() || NICE[0];
+    const len = meters / mpp;
+    const hgt = 10;
+    g.save();
+    g.shadowColor = 'rgba(0,0,0,0.55)';
+    g.shadowBlur = 4;
+    g.fillStyle = '#ffffff';
+    g.fillRect(sc.x, sc.y - hgt, len, hgt);
+    g.shadowColor = 'transparent';
+    g.fillStyle = '#111111';
+    for (let i = 1; i < 4; i += 2) g.fillRect(sc.x + (len * i) / 4, sc.y - hgt, len / 4, hgt);
+    g.lineWidth = 1.5;
+    g.strokeStyle = '#111111';
+    g.strokeRect(sc.x, sc.y - hgt, len, hgt);
+    g.restore();
+    const label = meters >= 1000 ? `${String(meters / 1000).replace('.', ',')} km` : `${meters} m`;
+    const st = textStyle({ font: 'fredoka', size: 22, color: '#ffffff' });
+    const put = (text, cx) => {
+      const w = runWidth(text, st);
+      drawGlyphs(g, placeGlyphs(text, st, { len: w, at: (t) => ({ x: cx - w / 2 + t, y: sc.y - hgt - 8, a: 0 }) }).glyphs, st);
+    };
+    put('0', sc.x);
+    put(label, sc.x + len);
+    return { x: sc.x - 14, y: sc.y - hgt - 32, w: len + 60, h: hgt + 40 };
+  }
   function renderArt(g, { preview = false } = {}) {
     const { w: W, h: H } = dims();
-    const out = { labels: new Map(), box: null };
+    const out = { labels: new Map(), box: null, deco: {} };
     for (const lb of state.labels) {
       if (!lb.text.trim()) {
         if (!preview || sel?.id !== lb.id) continue;
@@ -1184,6 +1279,8 @@ export function createPoster(ctx) {
       const img = imageEl(im);
       if (img.complete && img.naturalWidth) g.drawImage(img, im.x, im.y, im.w, im.h);
     }
+    if (state.compass.on) out.deco.compass = drawCompass(g);
+    if (state.scale.on) out.deco.scale = drawScale(g);
     if (state.attribution) {
       const text = attributionText();
       if (text) {
@@ -1246,6 +1343,12 @@ export function createPoster(ctx) {
         if (!r) continue;
         uiNode('box', `t:${t.id}`, 'rect', { x: b.x + r.x * b.k, y: b.y + r.y * b.k, width: r.w * b.k, height: r.h * b.k,
           'data-op': 'text', 'data-id': t.id, class: 'poster-hit' });
+      }
+    }
+    if (hitsOn('deco')) {
+      for (const k of ['compass', 'scale']) {
+        const r = lay.deco?.[k];
+        if (r) uiNode('images', `d:${k}`, 'rect', { x: r.x, y: r.y, width: r.w, height: r.h, 'data-op': k, 'data-id': k, class: 'poster-hit' });
       }
     }
     if (hitsOn('image')) {
@@ -1343,6 +1446,15 @@ export function createPoster(ctx) {
     e.stopPropagation();
     e.preventDefault();
     const { op, id } = t.dataset;
+    if (op === 'compass' || op === 'scale') {
+      const o = state[op];
+      drag = { op, id, x0: e.clientX, y0: e.clientY, pid: e.pointerId, snap: { x: o.x, y: o.y }, moved: false };
+      try { t.setPointerCapture(e.pointerId); } catch { /* os listeners de window bastam */ }
+      window.addEventListener('pointermove', onDragMove);
+      window.addEventListener('pointerup', onDragEnd);
+      window.addEventListener('pointercancel', onDragEnd);
+      return;
+    }
     const type = op.startsWith('label') ? 'label' : op.startsWith('image') ? 'image' : op === 'text' ? 'text' : 'box';
     if (!(sel && sel.type === type && sel.id === id) && !(type === 'box' && sel?.type === 'text' && op !== 'box')) {
       select({ type, id });
@@ -1409,6 +1521,7 @@ export function createPoster(ctx) {
         break;
       }
       case 'image': { const im = findImage(drag.id); im.x = s.x + dx; im.y = s.y + dy; break; }
+      case 'compass': case 'scale': state[drag.op].x = s.x + dx; state[drag.op].y = s.y + dy; break;
       case 'image-k': {
         const im = findImage(drag.id);
         const k = ((p.x - s.x) * s.w + (p.y - s.y) * s.h) / (s.w * s.w + s.h * s.h);
@@ -1929,7 +2042,8 @@ export function createPoster(ctx) {
     else if (act === 'sabia') openSabia();
     else if (act === 'reset') {
       if (!confirm('Começar uma arte nova? Rota, informações, rótulos e textos saem; a caixa, os logos e o formato ficam.')) return;
-      const keep = { format: state.format, box: state.box, images: state.images, attribution: state.attribution, route: { ...state.route, src: '' } };
+      const keep = { format: state.format, box: state.box, images: state.images, attribution: state.attribution,
+        compass: state.compass, scale: state.scale, route: { ...state.route, src: '' } };
       state = { ...defaultState(), ...keep };
       select(null);
       loadRoute();
@@ -1961,6 +2075,7 @@ export function createPoster(ctx) {
       b.x = clamp(b.x, 0, Math.max(0, W - b.w * b.k));
       b.y = clamp(b.y, 0, Math.max(0, H - b.h * b.k));
       for (const im of state.images) { im.x = clamp(im.x, 0, Math.max(0, W - im.w)); im.y = clamp(im.y, 0, Math.max(0, H - im.h)); }
+      for (const o of [state.compass, state.scale]) { o.x = clamp(o.x, 20, W - 20); o.y = clamp(o.y, 40, H - 20); }
       layout();
     } else if (k === 'bearing') {
       map.setBearing?.(v);
@@ -1974,6 +2089,9 @@ export function createPoster(ctx) {
       state.altEdited = true;
     } else if (k === 'routeName') {
       state.routeName = String(v);
+    } else if (k.startsWith('compass.') || k.startsWith('scale.')) {
+      const [obj, prop] = k.split('.');
+      state[obj][prop] = v;
     } else if (k === 'attribution') {
       state.attribution = v;
     } else return;
