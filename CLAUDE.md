@@ -398,6 +398,46 @@ agente pode receber o HTML cacheado — ou bypassar o cache pra
 `Accept: text/markdown`, ou ligar o "Markdown for Agents" da zona (coexiste:
 a CF só converte HTML e passa o `text/markdown` da origem intacto).
 
+**Fediverso (ActivityPub) — a conta `@amora@amora.pedalhidrografi.co`, fase
+SÓ LEITURA.** `backend/activitypub.py` monta os documentos (funções puras, como
+o `rwgps.py`; entra no `COPY` do Dockerfile); as rotas ficam no main.py:
+`GET /.well-known/webfinger`, `/ap/actor` (browser → 303 pra home), `/ap/outbox`
+(um `Create`/`Note` por passeio datado, 20 por página), `/ap/followers` e
+`/ap/following` (vazias), `/.well-known/nodeinfo` + `/nodeinfo/2.1`, e
+`POST /ap/inbox` (só loga e responde 202 — Follow ainda NÃO é aceito, não há
+entrega aos seguidores nem assinatura HTTP). `/passeio/<slug>` com
+`Accept: application/activity+json` (ou `ld+json` com o profile do AS, ou
+`?format=as`) devolve o Note; o HTML do passeio leva um `Link rel=alternate`
+pra ele. Regras que NÃO se desfazem depois que houver seguidores:
+- **O `id` dos objetos AS mora no amora, não em `id.`**: Mastodon & cia exigem
+  que o `id` esteja no host que o serviu, e o 303 de `id.pedalhidrografi.co`
+  não serve. Ator = `<SITE_URL>ap/actor`; Note = `<SITE_URL>passeio/<slug8>`
+  (o slug8, identidade imutável — nunca o legível, e sem 303 pra ele no ramo
+  AS); o IRI `id.…` entra só como `seeAlso`.
+- **AS fica FORA do `_negotiated_format`** (exceção consciente ao "negociador
+  único"): `_wants_activitystreams()` é checado só nos handlers que têm
+  representação AS. Um `'as'` caindo num ramo que só conhece ttl/md/html faria
+  o par `/imagens/lista` ↔ `/listas` 303ar em loop. (`application/ld+json`
+  puro continua caindo no Turtle, como antes.)
+- O ator é `Person` (não `Organization`) por compatibilidade — é o tipo que
+  todo servidor aceita seguir. A chave pública só aparece com `AP_PRIVATE_KEY`
+  (PEM; aceita numa linha com `\n` literais) no ambiente — ainda não vai pelo
+  `deploy-cloudrun.sh`; quando entrar, via Secret Manager, nunca no bucket
+  (que é public-read). `AP_USERNAME` muda o nome da conta.
+- O `published` de um Note é a data do passeio limitada ao agora; a fase de
+  entrega vai gravar o instante do anúncio e passar a usá-lo.
+- **Lote de envio (`ph:uploadBatch`)**: `/subir` e `upload_images.html` mandam
+  `batch` (16 chars Crockford, `randPersonSlug(16)`) em todo POST de mídia — no
+  /subir vive com a sessão (`b` no `phidro:subirSessao`; vai também nos fields
+  da fila nativa), no form completo vale por abertura (limpar a grade troca).
+  O backend grava no `env:` `ph:Upload` (`_request_batch` /
+  `_build_audit_ttl`); valor ausente ou fora de `[A-Za-z0-9_-]{8,64}` = sem
+  lote, sem erro. **Vídeo agora também ganha a activity `ph:Upload`** (era só
+  foto) e o `/delete-video` a purga junto. Plano: um lote vira UM anúncio
+  depois de ~20 min quieto, com opt-in por lote no /subir; os passeios também
+  são anunciados; scripts de ingestão nunca mandam `batch`, então nunca
+  anunciam.
+
 ## Architecture
 
 The app is fully static and works offline (service worker). It reads

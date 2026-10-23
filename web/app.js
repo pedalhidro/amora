@@ -3603,7 +3603,7 @@ function buildModelFromQuads(quads) {
     else if (p === 'http://purl.org/pav/providedBy') {
       if (!provs.has(s)) provs.set(s, new Set()); provs.get(s).add(ov);
     }
-    // ph:Upload activity (adicionado pelo backend em cada /upload-image).
+    // ph:Upload activity (adicionado pelo backend em cada /upload-image e /upload-video).
     else if (p === PROV + 'startedAtTime') {
       const a = uploadProps.get(s) || {}; a.startedAt = ov; uploadProps.set(s, a);
     }

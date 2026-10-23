@@ -314,6 +314,13 @@ ph:Upload a owl:Class ;
         "Atividade server-side: o ato de receber + persistir um ph:Image. Cada upload aparece como uma activity própria, com timestamp do envio."@pt ;
     rdfs:subClassOf prov:Activity .
 
+ph:uploadBatch a owl:DatatypeProperty ;
+    rdfs:label "lote de envio"@pt ;
+    rdfs:comment
+        "Identificador opaco do lote de envio que o cliente mandou junto com a mídia (uma sessão do /subir, uma abertura do formulário completo). Envios com o mesmo valor saíram juntos — é o que agrupa um lote num único anúncio no fediverso. Ausente em envios de clientes antigos e de scripts."@pt ;
+    rdfs:domain ph:Upload ;
+    rdfs:range xsd:string .
+
 ph:anonymized a owl:DatatypeProperty ;
     rdfs:label "anonimizada"@pt ;
     rdfs:comment

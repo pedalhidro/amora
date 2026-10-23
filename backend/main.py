@@ -901,6 +901,18 @@ def _request_ttl():
     return ttl_text
 
 
+_BATCH_RE = re.compile(r"[A-Za-z0-9_-]{8,64}")
+
+
+def _request_batch():
+    """`batch` de um POST de mídia: o lote de envio do cliente (uma sessão do
+    /subir, uma abertura do form completo). Vai pra ph:uploadBatch da activity
+    ph:Upload — é o que agrupa um lote pro anúncio no fediverso. Ausente ou
+    fora do formato (cliente antigo em cache, script) = None, sem erro."""
+    b = (request.form.get("batch") or "").strip()
+    return b if _BATCH_RE.fullmatch(b) else None
+
+
 def _upload_filename():
     """Timestamp único (microssegundos) — `upload_20260526T012345-678901Z.ttl`."""
     ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S-%f")
@@ -1043,9 +1055,10 @@ def _ensure_tour_slug(ttl_text, tour_id):
             + f'"{_ttl_escape(slug)}" .\n')
 
 
-def _build_audit_ttl(upload_local, phash):
-    """Bloco PROV server-side anexado ao TTL do upload. A atividade de envio vira
-    env:<ts> (resolvível) e aponta pra mídia em med:<phash>."""
+def _build_audit_ttl(upload_local, phash, batch=None):
+    """Bloco PROV server-side anexado ao TTL do upload (foto OU vídeo). A
+    atividade de envio vira env:<ts> (resolvível) e aponta pra mídia em
+    med:<phash>; `batch` (ver _request_batch) vira ph:uploadBatch."""
     ts = datetime.now(timezone.utc).isoformat(timespec="microseconds")
     ts = ts.replace("+00:00", "Z")
     # env:<ts> — descarta o prefixo `upload_` do local (o path `/envio/` já diz).
@@ -1060,7 +1073,8 @@ def _build_audit_ttl(upload_local, phash):
         "\n"
         f"env:{env_local} a ph:Upload ;\n"
         f"    prov:startedAtTime \"{ts}\"^^xsd:dateTime ;\n"
-        f"    prov:generated med:{phash} .\n"
+        + (f"    ph:uploadBatch \"{batch}\" ;\n" if batch else "")
+        + f"    prov:generated med:{phash} .\n"
     )
 
 
@@ -2263,6 +2277,17 @@ def tour_page(slug):
         legacy = _tour_iri_map().get("byOldId", {}).get(slug)
         if legacy:
             return redirect(f"/passeio/{by_id.get(legacy, legacy)}", code=303)
+    if _wants_activitystreams(request):
+        # Fediverso: o Note do passeio, com id no slug8 (identidade imutável)
+        # qualquer que seja a forma da URL — sem 303 pro slug legível.
+        try:
+            note = _ap_tour_note(tour_id)
+        except Exception as e:  # noqa: BLE001
+            print(f"[tour-page] note AS falhou pra {tour_id}: {e}")
+            abort(500)
+        if note is None:
+            abort(404)
+        return _as_response(note)
     fmt = _negotiated_format(request)
     if fmt == "ttl":
         ttl = _resource_slice_ttl(PAS_NS + tour_id, "tours.ttl")
@@ -2290,8 +2315,12 @@ def tour_page(slug):
         print(f"[tour-page] render falhou pra {tour_id}: {e}")
         page = None
     if page is not None:
-        return _negotiated(Response(page, mimetype="text/html",
-                                    headers={"Cache-Control": "no-cache"}))
+        resp = Response(page, mimetype="text/html",
+                        headers={"Cache-Control": "no-cache"})
+        # Colar a URL do passeio no Mastodon: ele acha o Note por aqui também.
+        resp.headers.add("Link", f'<{_ap_config().tour_note_id(tour_id)}>; '
+                                 'rel="alternate"; type="application/activity+json"')
+        return _negotiated(resp)
     # Passeio desconhecido (ou render falhou): cai pro deep link antigo — o
     # app abre com o toast de "não encontrado" em vez de um 404 seco.
     return redirect(f"/?tour={slug}", code=303)
@@ -4637,6 +4666,143 @@ def _tours_sorted():
     return facts
 
 
+# ── Fediverso (ActivityPub) — fase só-leitura ──────────────────────────────
+# O amora como conta do fediverso: @amora@<host do SITE_URL>. Os documentos
+# são montados em activitypub.py (funções puras); aqui ficam as rotas. Por ora
+# SÓ LEITURA: dá pra achar a conta, ver o perfil e abrir um passeio colando a
+# URL dele no Mastodon/Pixelfed; não há entrega aos seguidores nem Follow (a
+# inbox só registra). A chave pública só entra no ator com AP_PRIVATE_KEY.
+#
+# ActivityStreams fica FORA do _negotiated_format de propósito: só os recursos
+# que têm representação AS a pedem (ver _wants_activitystreams); nos outros o
+# pedido segue a negociação de sempre — um 'as' caindo num ramo que só conhece
+# ttl/md/html faria o par álbum/lista (/imagens/lista ↔ /listas) 303ar em loop.
+AP_USERNAME = (os.environ.get("AP_USERNAME") or "amora").strip()
+
+
+@functools.lru_cache(maxsize=1)
+def _ap_config():
+    import activitypub
+    return activitypub.Config(
+        site_url=SITE_URL, username=AP_USERNAME,
+        public_key_pem=activitypub.public_key_from_private(
+            os.environ.get("AP_PRIVATE_KEY")))
+
+
+def _wants_activitystreams(request):
+    import activitypub
+    return activitypub.wants_activitystreams(
+        request.headers.get("Accept", ""), request.args.get("format", ""))
+
+
+def _as_response(doc, mimetype="application/activity+json", vary=True):
+    """JSON-LD do fediverso. CORS aberto (WebFinger pede; o resto é público de
+    qualquer jeito). `vary` = a URL também serve HTML/Turtle (Vary: Accept)."""
+    resp = Response(json.dumps(doc, ensure_ascii=False), mimetype=mimetype,
+                    headers={"Cache-Control": "no-cache",
+                             "Access-Control-Allow-Origin": "*"})
+    return _negotiated(resp) if vary else _conditional(resp)
+
+
+def _ap_note_of(d):
+    import activitypub
+    art = (_art_variant_url(d["img_url"], "web", absolute=True)
+           or d["img_url"]) if d["img_url"] else None
+    return activitypub.tour_note(_ap_config(), d, art)
+
+
+def _ap_tour_note(tour_id):
+    """Note do passeio pas:<tour_id> — None se não existe."""
+    from rdflib import Namespace, RDF, URIRef
+    g = _tours_graph()
+    t = URIRef(PAS_NS + tour_id)
+    if (t, RDF.type, Namespace(PH_NS).Tour) not in g:
+        return None
+    return _ap_note_of(_tour_facts(g, t))
+
+
+@app.get("/.well-known/webfinger")
+def ap_webfinger():
+    import activitypub
+    resource = request.args.get("resource", "")
+    if not resource:
+        return jsonify(error="resource ausente"), 400
+    doc = activitypub.webfinger(_ap_config(), resource)
+    if doc is None:
+        abort(404)
+    return _as_response(doc, mimetype=activitypub.JRD_MIME, vary=False)
+
+
+@app.get("/ap/actor")
+def ap_actor():
+    """O ator. Browser (prefere text/html) vai pra home; o resto leva o JSON."""
+    import activitypub
+    best = request.accept_mimetypes.best_match(
+        [activitypub.AS_MIME, "application/json", "text/html"])
+    if best == "text/html" and not _wants_activitystreams(request):
+        return redirect(SITE_URL, code=303)
+    return _as_response(activitypub.actor(_ap_config()))
+
+
+@app.get("/ap/outbox")
+def ap_outbox():
+    """Outbox: um Create por passeio datado, mais recentes primeiro."""
+    import activitypub
+    page = request.args.get("page")
+    try:
+        page = int(page) if page is not None else None
+    except ValueError:
+        abort(400)
+    if page is not None and page < 1:
+        abort(400)
+    notes = [_ap_note_of(d) for d in _tours_sorted() if d["dt"] is not None]
+    return _as_response(activitypub.outbox(_ap_config(), notes, page), vary=False)
+
+
+@app.get("/ap/followers")
+@app.get("/ap/following")
+def ap_collections():
+    import activitypub
+    cfg = _ap_config()
+    cid = cfg.followers if request.path.endswith("followers") else cfg.following
+    return _as_response(activitypub.empty_collection(cid), vary=False)
+
+
+@app.post("/ap/inbox")
+def ap_inbox():
+    """Inbox — fase só-leitura: registra o tipo e quem mandou e responde 202
+    (um erro faria o servidor de origem re-tentar por dias). Follow ainda não
+    é aceito: o pedido de quem tentar seguir fica pendente lá."""
+    if (request.content_length or 0) > 256 * 1024:
+        abort(413)
+    try:
+        act = json.loads(request.get_data(cache=False) or b"{}")
+    except ValueError:
+        abort(400)
+    if not isinstance(act, dict):
+        abort(400)
+    print(f"[ap-inbox] {str(act.get('type'))[:40]} de {str(act.get('actor'))[:200]}")
+    return "", 202
+
+
+@app.get("/.well-known/nodeinfo")
+def ap_nodeinfo_links():
+    import activitypub
+    return _as_response(activitypub.nodeinfo_links(_ap_config()),
+                        mimetype="application/json", vary=False)
+
+
+@app.get("/nodeinfo/2.1")
+def ap_nodeinfo():
+    import activitypub
+    from rdflib import Namespace, RDF
+    n = sum(1 for _ in _tours_graph().subjects(RDF.type, Namespace(PH_NS).Tour))
+    return _as_response(
+        activitypub.nodeinfo(n),
+        mimetype='application/json; profile="http://nodeinfo.diaspora.software/ns/schema/2.1#"',
+        vary=False)
+
+
 def _tour_md_meta_line(d):
     """Linha de fatos de um passeio (data · energia · gente · rota · IG) pras
     listas em Markdown (home, Memória)."""
@@ -5205,6 +5371,7 @@ def upload_image():
     ttl_text = _request_ttl()
     if not ttl_text:
         return jsonify(error="ttl ausente"), 400
+    batch = _request_batch()
 
     # Validação FORA do _state_lock. O parse/merge (por-call, local) roda
     # concorrente; só a chamada pyshacl.validate() lá dentro serializa sob
@@ -5269,7 +5436,7 @@ def upload_image():
                 collision = True
             else:
                 upload_local = _upload_filename()[:-len(".ttl")]   # phd:upload_TIMESTAMP
-                audit_block  = _build_audit_ttl(upload_local, phash)
+                audit_block  = _build_audit_ttl(upload_local, phash, batch)
                 _upsert_media(MED_NS + phash, ttl_text + audit_block,
                               drop_activities=True)
                 _invalidate_catalog()
@@ -5529,6 +5696,7 @@ def upload_video():
     vid_id = (request.form.get("id") or "").strip().lower()
     if not _is_hash16(vid_id):
         return jsonify(error="id inválido (esperado vhash de 16 hex)"), 400
+    batch = _request_batch()
 
     staged = (request.form.get("staged") or "").strip().lower() in ("1", "true")
     # Audio é obrigatório (a SHACL MotionImageShape exige ph:audio).
@@ -5605,7 +5773,12 @@ def upload_video():
             if (_vid_uri, _RDF.type, _still) in _load_catalog():
                 collision = True
             else:
-                _upsert_media(MED_NS + vid_id, ttl_text)
+                # Vídeo também ganha a activity ph:Upload (era só foto) — é
+                # ela que carrega o lote; um re-envio substitui a anterior.
+                upload_local = _upload_filename()[:-len(".ttl")]
+                _upsert_media(MED_NS + vid_id,
+                              ttl_text + _build_audit_ttl(upload_local, vid_id, batch),
+                              drop_activities=True)
                 _invalidate_catalog()
     except Exception as e:  # noqa: BLE001
         _cleanup_orphans()
@@ -5634,7 +5807,7 @@ def upload_video():
 
 def remove_video_from_uploads(vhash):
     """Lê os caminhos dos arquivos do vídeo, purga triples (vídeo + bnodes
-    alcançáveis), persiste, e devolve (paths, n_triples) — pra que o caller
+    alcançáveis + a activity de envio), persiste, e devolve (paths, n_triples) — pra que o caller
     delete os blobs no STORE."""
     from rdflib import URIRef
     vid_iri = URIRef(MED_NS + vhash)
@@ -5645,7 +5818,9 @@ def remove_video_from_uploads(vhash):
                      SCHEMA + "thumbnail"):
             for o in catalog.objects(vid_iri, URIRef(pred)):
                 paths.append(str(o))
-        n = _purge_subject(catalog, vid_iri)
+        # Com a activity ph:Upload que o gerou (vídeo também ganha uma desde
+        # o lote de envio — sem isto ela ficava órfã apontando pro nada).
+        n = _purge_media_with_activities(catalog, vid_iri)
     return paths, n
 
 

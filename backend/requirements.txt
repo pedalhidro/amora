@@ -25,3 +25,7 @@ flatgeobuf>=0.2,<1
 # lê woff2. brotli é a descompressão do woff2.
 fonttools>=4.53,<5
 brotli>=1,<2
+# Fediverso (backend/activitypub.py): deriva a chave pública do ator da
+# AP_PRIVATE_KEY (e, na fase de entrega, assina os POSTs). Já vinha como
+# dependência do google-auth; listada porque o código usa direto.
+cryptography>=42

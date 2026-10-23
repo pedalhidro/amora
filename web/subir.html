@@ -353,6 +353,10 @@ const LICENSE = 'https://creativecommons.org/licenses/by-sa/4.0/';
 const AUTHOR_KEY = 'phidro:subirAutora';
 const SESSION_KEY = 'phidro:subirSessao';
 const SESSION_MAX_AGE_MS = 12 * 3600 * 1000;
+// Lote de envio: vai em cada POST (`batch` → ph:uploadBatch da activity
+// ph:Upload) e agrupa o que subiu junto — um lote vira UM anúncio no
+// fediverso. Vive com a sessão: recarregar mantém, sessão nova troca.
+let batchId = randPersonSlug(16);
 // 720p só em aparelho sem toque — o mesmo default do checkbox HD do form
 // completo (celular transcoda devagar e quase nunca precisa do HD).
 const WANT_HD = !COARSE;
@@ -766,7 +770,7 @@ function saveSession() {
       h: i.phash, k: i.kind, n: i.name, a: i.album?.key || null, m: Number.isFinite(i.dateMs) ? i.dateMs : null,
       g: hasGeo(i), d: hasDate(i), t: i.tour ? { iri: i.tour.iri, ms: i.tour.ms, title: i.tour.title } : null,
     }));
-    const data = { v: 1, t: Date.now(), cur: curAlbum?.key || null, albums: [...albums.values()], sent };
+    const data = { v: 1, t: Date.now(), b: batchId, cur: curAlbum?.key || null, albums: [...albums.values()], sent };
     sessionStorage.setItem(SESSION_KEY, JSON.stringify(data));
   } catch (_) {}
 }
@@ -775,6 +779,7 @@ function restoreSession() {
   let data = null;
   try { data = JSON.parse(sessionStorage.getItem(SESSION_KEY) || 'null'); } catch (_) {}
   if (!data || data.v !== 1 || !(Date.now() - data.t < SESSION_MAX_AGE_MS)) { clearSession(); return 0; }
+  if (/^[0-9a-z]{16}$/.test(data.b || '')) batchId = data.b;
   for (const a of data.albums || []) if (a?.key && a.iri) albums.set(a.key, a);
   for (const s of data.sent || []) {
     if (!/^[0-9a-f]{16}$/.test(s?.h || '')) continue;
@@ -1064,6 +1069,7 @@ async function postPhoto(item) {
   if (nativeUpload) return enqueuePhoto(item, ttl, ttlGeo);
   const fd = new FormData();
   fd.append('ttl', ttl);
+  fd.append('batch', batchId);
   fd.append('original', item.file, `original.${originalFormat(item.file).ext}`);
   fd.append('large', item.largeBlob, 'large.jpg');
   fd.append('thumb', item.thumbBlob, 'thumb.jpg');
@@ -1113,6 +1119,7 @@ async function postVideo(item) {
   const fd = new FormData();
   fd.append('ttl', buildVideoTtl(item, item.author, result));
   fd.append('id', vid);
+  fd.append('batch', batchId);
   fd.append('audio', result.audio, clipFileName(vid, 'audio', result.audio));
   const thumb = result.thumb || item.thumbBlob;
   if (thumb) { fd.append('thumb', thumb, `${vid}.thumb.jpg`); item.thumbBlob = thumb; }
@@ -1293,6 +1300,7 @@ function resetSession() {
   clearTimeout(_retryTimer); _retryTimer = 0;
   items.length = 0; sentItems.length = 0; batchHashes.length = 0; nativeItems.clear();
   albums.clear(); curAlbum = null; runItems = new Set(); runSkip = 0;
+  batchId = randPersonSlug(16);
   collageMode = 'all'; collageSample = [];
   if (_collageUrl) URL.revokeObjectURL(_collageUrl);
   _collageUrl = null; _collageBlob = null; _shareAgain = false;
@@ -1823,7 +1831,7 @@ async function enqueuePhoto(item, ttl, ttlGeo) {
       { field: 'large', filename: 'large.jpg', contentType: 'image/jpeg', source: { blobId: b.large } },
       { field: 'thumb', filename: 'thumb.jpg', contentType: 'image/jpeg', source: { blobId: b.thumb } },
     ];
-    return await enqueueNative(item, './upload-image', { ttl }, files,
+    return await enqueueNative(item, './upload-image', { ttl, batch: batchId }, files,
       nativeMeta(item, { hasGeo: ttlGeo }), () => photoSent(item, ttlGeo));
   } catch (e) {
     return fail(item, e, { kind: 'native' });
@@ -1845,7 +1853,7 @@ async function enqueueVideo(item, ttl, result) {
     await add('video720', result.blob720, clipFileName(vid, '720p', result.blob720));
     if (thumb) item.thumbBlob = thumb;
     const engine = result.engine;
-    const r = await enqueueNative(item, './upload-video', { ttl, id: vid }, files,
+    const r = await enqueueNative(item, './upload-video', { ttl, id: vid, batch: batchId }, files,
       nativeMeta(item, { hasGeo: !!item.gps }), () => videoSent(item, engine));
     item.clip = null;   // os webms estão no disco do aparelho
     return r;

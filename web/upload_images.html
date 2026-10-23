@@ -639,6 +639,10 @@ const COMPRESS_TARGET_BYTES = 500 * 1024;
 const PHASH_DUP_THRESHOLD   = 5;
 
 let cardCounter = 0;
+// Lote de envio: vai em cada POST (`batch` → ph:uploadBatch da activity
+// ph:Upload) e agrupa o que subiu junto — um lote vira UM anúncio no
+// fediverso. Um por abertura do form; limpar a grade começa outro.
+let uploadBatch = randPersonSlug(16);
 let pickerBusy  = false;   // guarda contra re-entrada do handler de #files
 
 // ===================== Estado do form → app-pai =========================
@@ -2490,6 +2494,7 @@ function clearAllCards() {
   for (const c of [...cards]) removeCard(c);   // remove cada card + sua miniatura
   thumbGridEl.replaceChildren();               // garante grade vazia
   cardCounter = 0;
+  uploadBatch = randPersonSlug(16);            // grade zerada = lote novo
   clearNotices();
   $('#filesStatus').textContent = 'Nenhum arquivo.';
   setUploadAllStatus('');
@@ -2815,6 +2820,7 @@ async function uploadImageCard(card) {
     }
     const fd = new FormData();
     fd.append('ttl', ttl);
+    fd.append('batch', uploadBatch);
     fd.append('original', variants.original.blob, variants.original.name);
     fd.append('large',    variants.large.blob,    variants.large.name);
     fd.append('thumb',    variants.thumb.blob,    variants.thumb.name);
@@ -2938,6 +2944,7 @@ async function uploadVideoCard(card) {
       const fd = new FormData();
       fd.append('ttl', ttl);
       fd.append('id',  card.clipId);
+      fd.append('batch', uploadBatch);
       if (useStaged) fd.append('staged', '1');
       else appendClipBlobs(fd, card, result, p);
       setCardStatus(card, useStaged ? 'gravando no catálogo (arquivos já no servidor)…' : 'enviando…', 'warn');

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "amora — API HTTP do Pedal Hidrográfico",
-    "version": "2026-09-27",
+    "version": "2026-10-23",
     "summary": "Leitura do acervo do Pedal Hidrográfico (passeios, pessoas, mídias, séries, listas) e dos dumps RDF, com content negotiation HTML | Markdown | Turtle nas mesmas URLs.",
     "description": "amora é o mapa-PWA do Pedal Hidrográfico, coletivo de ciclismo urbano da Grande São Paulo. Este documento descreve a API HTTP de LEITURA que o backend Flask expõe — é o que um agente precisa. Convenções:\n\n- **Content negotiation** nas páginas de recurso: `Accept: text/markdown` devolve a página em Markdown limpo (com `x-markdown-tokens` e `Content-Signal`); `Accept: text/turtle` devolve as triples RDF do recurso; qualquer outro Accept (`*/*`, `text/html`) devolve HTML. `?format=md|ttl|html` força a representação.\n- **IRIs dereferenciáveis**: as coisas moram em `https://id.pedalhidrografi.co/<tipo>/<slug>`; a Cloudflare faz 303 (preservando o path) pra este host, onde os handlers `/passeio`, `/pessoas`, `/serie`, `/midia`, `/listas`, `/terms` respondem.\n- **Dados abertos**: os catálogos inteiros estão em `/data/*.ttl` (manifesto VoID em `/data/data_graphs.ttl`); mídia em geral CC BY-SA 4.0 (cada item carrega sua licença).\n- Os endpoints de escrita (upload/edição/exclusão) existem, sem autenticação por desenho (acesso confiável), mas são das ferramentas do próprio coletivo e ficam fora deste documento.\n- Servidores: a instância pública em `https://amora.pedalhidrografi.co`; o mesmo backend roda self-hosted em qualquer origem (`servers[1]`).",
     "contact": {"name": "Pedal Hidrográfico", "url": "https://pedalhidrografi.co/"},
@@ -18,7 +18,8 @@
     {"name": "recursos", "description": "Coisas com IRI dereferenciável (HTML | Markdown | Turtle)."},
     {"name": "dados", "description": "Dumps RDF, geometria das rotas, feeds e as artes dos passeios em tamanho de exibição."},
     {"name": "rotas salvas", "description": "Biblioteca de traçados do editor de rotas."},
-    {"name": "descoberta", "description": "Catálogo de APIs, OpenAPI, llms.txt, saúde."}
+    {"name": "descoberta", "description": "Catálogo de APIs, OpenAPI, llms.txt, saúde."},
+    {"name": "fediverso", "description": "A conta @amora no fediverso (ActivityPub, JSON-LD ActivityStreams 2.0) — por ora só leitura: perfil, outbox com um Note por passeio, nodeinfo."}
   ],
   "paths": {
     "/": {
@@ -34,7 +35,7 @@
       "get": {
         "tags": ["recursos"],
         "summary": "Um passeio (ph:Tour)",
-        "description": "Aceita o slug legível (`schema:identifier`, mintado do título) ou o slug8 (identidade; 303 pro legível quando existe); id numérico legado → 303. HTML: o app pré-renderizado com `<article>` + JSON-LD NewsArticle. Markdown: título, data, arte do chamado, narrativa, ficha (série/edição, energias estimada e medida em kJ, saída → chegada, tempo em movimento, participantes, rota, Instagram, elaboradores) e ponteiros pros dados. Turtle: as triples do passeio fatiadas de `tours.ttl` (sujeito `https://id.pedalhidrografi.co/passeio/<slug8>`).",
+        "description": "Aceita o slug legível (`schema:identifier`, mintado do título) ou o slug8 (identidade; 303 pro legível quando existe); id numérico legado → 303. HTML: o app pré-renderizado com `<article>` + JSON-LD NewsArticle. Markdown: título, data, arte do chamado, narrativa, ficha (série/edição, energias estimada e medida em kJ, saída → chegada, tempo em movimento, participantes, rota, Instagram, elaboradores) e ponteiros pros dados. Turtle: as triples do passeio fatiadas de `tours.ttl` (sujeito `https://id.pedalhidrografi.co/passeio/<slug8>`). ActivityStreams (`Accept: application/activity+json`, ou `?format=as`): o Note do passeio pro fediverso, com `id` `https://amora.pedalhidrografi.co/passeio/<slug8>` em qualquer forma da URL.",
         "parameters": [{"$ref": "#/components/parameters/slug"}, {"$ref": "#/components/parameters/format"}],
         "responses": {"200": {"$ref": "#/components/responses/Negotiated"}, "303": {"description": "Forma não canônica (slug8 com legível disponível, id legado) → URL canônica."}, "404": {"description": "Passeio desconhecido (Markdown/Turtle). Em HTML, um passeio desconhecido degrada pro app com aviso."}}
       }
@@ -179,6 +180,24 @@
     },
     "/openapi.json": {
       "get": {"tags": ["descoberta"], "summary": "Este documento", "responses": {"200": {"description": "OpenAPI 3.1.", "content": {"application/json": {"schema": {"type": "object"}}}}}}
+    },
+    "/.well-known/webfinger": {
+      "get": {"tags": ["fediverso"], "summary": "WebFinger (RFC 7033) da conta `acct:amora@amora.pedalhidrografi.co`", "parameters": [{"name": "resource", "in": "query", "required": true, "description": "`acct:amora@<host>` ou o id do ator.", "schema": {"type": "string"}}], "responses": {"200": {"description": "JRD apontando pro ator.", "content": {"application/jrd+json": {"schema": {"type": "object"}}}}, "400": {"description": "`resource` ausente."}, "404": {"description": "Não é esta conta."}}}
+    },
+    "/ap/actor": {
+      "get": {"tags": ["fediverso"], "summary": "O ator (perfil da conta)", "description": "Browser (prefere text/html) → 303 pra home.", "responses": {"200": {"description": "Ator ActivityStreams.", "content": {"application/activity+json": {"schema": {"type": "object"}}}}, "303": {"description": "Pedido de browser → a home."}}}
+    },
+    "/ap/outbox": {
+      "get": {"tags": ["fediverso"], "summary": "Outbox — um Create/Note por passeio datado, mais recentes primeiro", "parameters": [{"name": "page", "in": "query", "required": false, "description": "Página (1, 2, …; 20 itens). Sem ela: só o cabeçalho da coleção.", "schema": {"type": "integer", "minimum": 1}}], "responses": {"200": {"description": "OrderedCollection | OrderedCollectionPage.", "content": {"application/activity+json": {"schema": {"type": "object"}}}}, "400": {"description": "`page` inválida."}}}
+    },
+    "/ap/followers": {
+      "get": {"tags": ["fediverso"], "summary": "Seguidores (vazio na fase só-leitura)", "responses": {"200": {"description": "OrderedCollection.", "content": {"application/activity+json": {"schema": {"type": "object"}}}}}}
+    },
+    "/.well-known/nodeinfo": {
+      "get": {"tags": ["fediverso"], "summary": "Descoberta do nodeinfo", "responses": {"200": {"description": "Links pro nodeinfo 2.1.", "content": {"application/json": {"schema": {"type": "object"}}}}}}
+    },
+    "/nodeinfo/2.1": {
+      "get": {"tags": ["fediverso"], "summary": "Nodeinfo 2.1 (software, protocolos, nº de passeios)", "responses": {"200": {"description": "Nodeinfo.", "content": {"application/json": {"schema": {"type": "object"}}}}}}
     }
   },
   "components": {
