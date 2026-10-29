@@ -549,6 +549,19 @@ Key flows:
   (`/api/rail-status`) has NO CORS, so the popup shows only the written bike
   rule and links to busão. Stations only at zoom ≥ 12; colours from the data
   pass a hex-only filter (`railColor`) before going into a style attribute.
+- **Bicicletários / Paraciclos** (`bicicletarios`, `paraciclos`): read AT
+  RUNTIME from busão too (`data/bike-parking.geojson`, OSM + GeoSampa via its
+  `scripts/parking.mjs`; CORS open) — props `kind`/`access`/`name`/
+  `operator`/`capacity`/`covered`/`hours`/`biometric`/`osm`. Open/closed,
+  access labels and SP holidays come from busão's OWN modules, vendored
+  VERBATIM in `web/lib/busao/` (`parking.js`, `schedule.js`, `time.js`,
+  GPL-3.0, in `SHELL_ASSETS`): re-sync by copying the three from its
+  `public/js/`, never edit them. Icons copy busão's (house = bicicletário,
+  circle = paraciclo, colour = access now, bar = closed), recoloured each
+  minute while on. Markers live in two NON-rotating panes (`bikeParkingBici`
+  591 / `bikeParkingPara` 590, just under the photos) — so these rows are
+  content layers, outside `DEFAULT_LAYER_ORDER`; only in-view markers are
+  added, bicicletários from zoom 12 and paraciclos from 14, like busão.
 - **Onde comer** (`onde-comer`): places to eat read AT RUNTIME from the wiki
   page `pedalhidrografi.co/wiki/Onde_comer` through Kartographer's API
   (`prop=mapdata`, `origin=*`) — the wiki page is the single source, no copy

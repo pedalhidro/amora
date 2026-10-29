@@ -1462,6 +1462,145 @@ function tryOpenComerFromHash() {
   return true;
 }
 
+// ─── Bicicletários e paraciclos (dados do Bici Busão Sampa) ──────────────────
+// Onde deixar a bike, como no busao.bicisampa.info: lido AO VIVO de lá
+// (data/bike-parking.geojson, gerado de OSM + GeoSampa pelo scripts/parking.mjs
+// do repo danlessa/bicibusaosampa; CORS aberto) — sem cópia no amora, como o
+// metrô. Propriedades: kind (bicicletario|paraciclo), access (livre|cadastro|
+// pago|clientes), name, operator, capacity, covered, hours ("24h" ou agenda
+// semanal), biometric, osm ("node/123"). Aberto/fechado, os rótulos de acesso
+// e os feriados de SP vêm dos módulos do PRÓPRIO busão, vendorados VERBATIM em
+// lib/busao/ (parking.js, schedule.js, time.js — GPL-3.0): re-sincronizar
+// copiando os três de public/js/ de lá, sem editar. Ícones = os de lá
+// (círculo = paraciclo, casinha = bicicletário, cor = acesso agora, barra =
+// fechado). Marcadores em panes que NÃO giram, logo abaixo das fotos; só os da
+// vista e só de perto, como lá: bicicletários do zoom 12, paraciclos do 14.
+const PARKING_URL = BUSAO_BASE + 'data/bike-parking.geojson';
+const PARKING_MIN_ZOOM = { bicicletario: 12, paraciclo: 14 };
+const PARKING_COLORS = { livre: '#16a34a', cadastro: '#2563eb', pago: '#db2777', clientes: '#78716c', closed: '#dc2626' };
+const PARKING_SHAPES = {
+  paraciclo: { size: 20, outline: '<circle cx="12" cy="12" r="10"/>', stand: 0 },
+  bicicletario: { size: 25, outline: '<path d="M12 1.6 22.6 10.2V21a1.4 1.4 0 0 1-1.4 1.4H2.8A1.4 1.4 0 0 1 1.4 21V10.2Z"/>', stand: 1.6 },
+};
+const PARKING_LABEL = { bicicletario: 'Bicicletário', paraciclo: 'Paraciclo' };
+const parkingSvg = (kind, fill, closed = false) => {
+  const { size, outline, stand } = PARKING_SHAPES[kind];
+  return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" aria-hidden="true">`
+    + `<g fill="${fill}" stroke="#1c1917" stroke-width="1.6">${outline}</g>`
+    + `<path d="M8.6 16.4V11.4a3.4 3.4 0 0 1 6.8 0v5M6.6 16.6h10.8" transform="translate(0 ${stand})" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/>`
+    + (closed ? '<path d="M4.5 19.5 19.5 4.5" stroke="#1c1917" stroke-width="4.2" stroke-linecap="round"/><path d="M4.5 19.5 19.5 4.5" stroke="#fff" stroke-width="2" stroke-linecap="round"/>' : '')
+    + '</svg>';
+};
+const PARKING_PANE = { paraciclo: 'bikeParkingPara', bicicletario: 'bikeParkingBici' };
+map.createPane(PARKING_PANE.paraciclo, NOROTATE_PANE).style.zIndex = '590';
+map.createPane(PARKING_PANE.bicicletario, NOROTATE_PANE).style.zIndex = '591';
+const PARKING_ATTRIBUTION = '© OpenStreetMap, GeoSampa · bicicletários e paraciclos: <a href="https://busao.bicisampa.info/">Bici Busão Sampa</a>';
+const parkingLayers = {
+  bicicletario: L.layerGroup([], { attribution: PARKING_ATTRIBUTION }),
+  paraciclo: L.layerGroup([], { attribution: PARKING_ATTRIBUTION }),
+};
+const parkingMarkers = [];   // { marker, props }
+const parkingIcons = new Map();
+let _parkingLoad = null, _parkingMod = null, _parkingTimer = null;
+
+function parkingIcon(kind, colorKey) {
+  const key = `${kind}|${colorKey}`;
+  if (!parkingIcons.has(key)) {
+    parkingIcons.set(key, L.divIcon({
+      className: 'parking-icon',
+      html: parkingSvg(kind, PARKING_COLORS[colorKey] || PARKING_COLORS.clientes, colorKey === 'closed'),
+      iconSize: [36, 36],   // alvo de toque em volta do ícone
+      iconAnchor: [18, 18],
+    }));
+  }
+  return parkingIcons.get(key);
+}
+
+function parkingPopupHtml(p) {
+  const s = _parkingMod.parkingStatus(p);
+  const acc = _parkingMod.ACCESS[p.access];
+  const facts = [p.operator, p.capacity && `${p.capacity} vagas`, p.covered && 'coberto'].filter(Boolean);
+  const source = /^(node|way|relation)\/\d+$/.test(p.osm || '')
+    ? `<a href="https://www.openstreetmap.org/${p.osm}" target="_blank" rel="noopener">OpenStreetMap</a>`
+    : 'GeoSampa (Prefeitura de SP)';
+  return `<div class="parking-popup"><strong>${escapeHtml(p.name || PARKING_LABEL[p.kind])}</strong>`
+    + (facts.length ? `<p class="parking-facts">${escapeHtml(facts.join(' · '))}</p>` : '')
+    + (acc ? `<p><span class="parking-dot" style="background:${PARKING_COLORS[p.access]}"></span><b>${escapeHtml(acc.label)}</b><br>${escapeHtml(acc.detail)}${p.biometric ? ' Entrada com biometria.' : ''}</p>` : '')
+    + (s.detail ? `<p>${s.open === false ? `<span class="parking-dot" style="background:${PARKING_COLORS.closed}"></span>` : ''}${escapeHtml(s.detail)}</p>` : '')
+    + `<p class="parking-src">Fonte: ${source} · <a href="https://busao.bicisampa.info/" target="_blank" rel="noopener">busao.bicisampa.info ↗</a></p></div>`;
+}
+
+// Recolore só os que abriram/fecharam desde a última chamada.
+function renderParking() {
+  if (!_parkingMod) return;
+  const now = new Date();
+  for (const { marker, props } of parkingMarkers) {
+    const icon = parkingIcon(props.kind, _parkingMod.parkingStatus(props, now).colorKey);
+    if (marker.options.icon !== icon) marker.setIcon(icon);
+  }
+}
+
+// Só os da vista (com folga) e acima do zoom mínimo de cada tipo.
+function syncParking() {
+  if (!parkingMarkers.length) return;
+  const view = map.getBounds().pad(0.25), z = map.getZoom();
+  for (const { marker, props } of parkingMarkers) {
+    const group = parkingLayers[props.kind];
+    const want = map.hasLayer(group) && z >= PARKING_MIN_ZOOM[props.kind] && view.contains(marker.getLatLng());
+    if (want && !group.hasLayer(marker)) group.addLayer(marker);
+    else if (!want && group.hasLayer(marker)) group.removeLayer(marker);
+  }
+}
+map.on('moveend zoomend rotateend', syncParking);
+
+function loadParking() {
+  if (_parkingLoad) return _parkingLoad;
+  _parkingLoad = Promise.all([
+    import('./lib/busao/parking.js'),
+    fetch(PARKING_URL).then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); }),
+  ]).then(([mod, geo]) => {
+    _parkingMod = mod;
+    for (const f of geo.features || []) {
+      const p = f.properties || {}, c = f.geometry?.coordinates;
+      if (!PARKING_SHAPES[p.kind] || f.geometry?.type !== 'Point' || !Array.isArray(c)) continue;
+      const marker = L.marker([c[1], c[0]], {
+        pane: PARKING_PANE[p.kind], keyboard: false, icon: parkingIcon(p.kind, p.access),
+      });
+      marker.bindTooltip(escapeHtml(p.name || PARKING_LABEL[p.kind]), { direction: 'top', offset: [0, -10] });
+      marker.bindPopup(() => parkingPopupHtml(p), { maxWidth: 280 });
+      // O editor de traçado é dono do clique.
+      marker.on('click', () => { if (drawingMode) marker.closePopup(); });
+      parkingMarkers.push({ marker, props: p });
+    }
+    renderParking();
+    syncParking();
+  }).catch((err) => {
+    _parkingLoad = null;          // o próximo liga/desliga tenta de novo
+    console.warn('[bike-parking]', err);
+    showToast(`Falha ao carregar bicicletários e paraciclos: ${err.message}`);
+  });
+  return _parkingLoad;
+}
+
+for (const kind of Object.keys(parkingLayers)) {
+  parkingLayers[kind].on('add', () => {
+    loadParking();
+    syncParking();
+    // Só pra quem acabou de ligar (não a cada boot com a camada já ligada).
+    if (!_restoringLayers && map.getZoom() < PARKING_MIN_ZOOM[kind]) {
+      showToast(`${PARKING_LABEL[kind]}s aparecem a partir do zoom ${PARKING_MIN_ZOOM[kind]} — aproxime o mapa.`);
+    }
+    // A cor diz "aberto agora": recalcula a cada minuto enquanto alguma camada está ligada.
+    _parkingTimer ??= setInterval(renderParking, 60_000);
+  });
+  parkingLayers[kind].on('remove', () => {
+    if (!Object.values(parkingLayers).some((g) => map.hasLayer(g))) {
+      clearInterval(_parkingTimer);
+      _parkingTimer = null;
+    }
+  });
+}
+
 // ─── Combined layer panel ────────────────────────────────────────────────────
 // A single flat list of layers — each an independent visibility checkbox plus
 // an opacity slider. There is deliberately NO "base vs overlay" distinction:
@@ -1576,6 +1715,24 @@ const OVERLAY_LAYERS = [
     defaultVisible: false,
     defaultPct: COMER_DEFAULT_PCT,
     setOpacity: (frac) => { map.getPane(LAYER_PANE('onde-comer')).style.opacity = String(frac); },
+  },
+  // Onde deixar a bike (busao.bicisampa.info — ver PARKING_URL). Marcadores
+  // em panes que não giram (fora do empilhamento); opacidade no pane.
+  {
+    id: 'bicicletarios',
+    label: 'Bicicletários',
+    layer: parkingLayers.bicicletario,
+    defaultVisible: false,
+    defaultPct: 100,
+    setOpacity: (frac) => { map.getPane(PARKING_PANE.bicicletario).style.opacity = String(frac); },
+  },
+  {
+    id: 'paraciclos',
+    label: 'Paraciclos',
+    layer: parkingLayers.paraciclo,
+    defaultVisible: false,
+    defaultPct: 100,
+    setOpacity: (frac) => { map.getPane(PARKING_PANE.paraciclo).style.opacity = String(frac); },
   },
   // Viário do OSM (todo highway=*), branco com 3 m de largura real.
   {

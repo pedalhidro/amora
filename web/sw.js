@@ -25,7 +25,7 @@
 // origin) e v371/v372 saíram na `deploy` (busca de endereços, ⇄ inverter).
 // v373 fica acima de tudo que já circulou, que é o que importa: se a VERSION
 // não crescer, o service worker serve cache velho.
-const VERSION = 'phidro-v431';
+const VERSION = 'phidro-v432';
 const STATIC_CACHE = `${VERSION}-static`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 const DATA_CACHE = 'phidro-data-v1';
@@ -71,6 +71,9 @@ const SHELL_ASSETS = [
   './app.js',
   './lib/utils.js',                 // import do app.js
   './lib/poster.js',                // import() do app.js (🎨 Arte de anúncio) — versão casada com o app.js
+  './lib/busao/parking.js',         // import() do app.js (bicicletários/paraciclos) — vendorados do busão
+  './lib/busao/schedule.js',
+  './lib/busao/time.js',
   './lib/n3.min.js',                // parser dos TTL (ensureN3): sem ele, nada de fotos/passeios
   './lib/media-query.js',
   './lib/leaflet/leaflet.css',

@@ -2465,6 +2465,19 @@ body.trace-preview .tp-label { display: none !important; }
 .comer-popup .comer-bike { color: #333; }
 .comer-popup .comer-note { color: #888; font-size: 11px; }
 
+/* Bicicletários e paraciclos (ícones do busao.bicisampa.info). Sem sombra
+   CSS nos ícones: o celular redesenha todos a cada pan/zoom. */
+.parking-icon { display: grid; place-items: center; }
+.parking-icon svg { display: block; overflow: visible; }
+.parking-popup { font-size: 12px; line-height: 1.4; }
+.parking-popup p { margin: 5px 0 0; }
+.parking-popup .parking-facts, .parking-popup .parking-src { color: #666; }
+.parking-popup .parking-src { font-size: 11px; }
+.parking-popup .parking-dot {
+  display: inline-block; width: 9px; height: 9px; margin-right: 5px;
+  border-radius: 50%; vertical-align: -1px; box-shadow: 0 0 0 1px #1c1917;
+}
+
 /* Popup de feição do OpenInfraMap (clique numa linha/estação/torre). */
 .oim-popup { font-size: 12px; line-height: 1.35; }
 .oim-popup .oim-kind { color: #666; font-style: italic; }
