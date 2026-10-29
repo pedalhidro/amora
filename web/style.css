@@ -2458,6 +2458,13 @@ body.trace-preview .tp-label { display: none !important; }
 .rail-popup .rail-op { color: #666; }
 .rail-popup .rail-bike { margin: 6px 0 4px; color: #333; }
 
+/* Popup de lugar do Onde comer (wiki). */
+.comer-popup { font-size: 12px; line-height: 1.4; }
+.comer-popup p { margin: 5px 0 0; }
+.comer-popup .comer-reg, .comer-popup .comer-where { color: #666; }
+.comer-popup .comer-bike { color: #333; }
+.comer-popup .comer-note { color: #888; font-size: 11px; }
+
 /* Popup de feição do OpenInfraMap (clique numa linha/estação/torre). */
 .oim-popup { font-size: 12px; line-height: 1.35; }
 .oim-popup .oim-kind { color: #666; font-style: italic; }

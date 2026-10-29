@@ -1,0 +1,13 @@
+<includeonly>{{#invoke:Onde comer|mapa}}</includeonly><noinclude>
+Mapa com todos os <code><nowiki>{{Lugar para comer}}</nowiki></code> da página onde está. O fundo usa a Topografia colorida do Pedal Hidrográfico, adicionada por [[MediaWiki:Common.js]].
+
+Parâmetro opcional: <code>altura</code> em pixels (padrão 420).
+
+<pre>
+{{Mapa onde comer}}
+</pre>
+
+O mapa lê a versão '''salva''' da página: depois de adicionar um lugar, ele aparece no mapa só depois de salvar.
+
+[[Categoria:Predefinições]]
+</noinclude>

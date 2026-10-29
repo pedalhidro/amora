@@ -1,0 +1,28 @@
+<includeonly>{{#invoke:Onde comer|lugar}}</includeonly><noinclude>
+Ficha de um lugar para comer na página [[Onde comer]]. Cada chamada vira um título, três linhas de informação e um ponto no mapa do topo da página e no [https://amora.pedalhidrografi.co amora] (camada "Onde comer").
+
+Só o <code>nome</code> é obrigatório. Campo vazio aparece como ''(a preencher)''.
+
+<pre>
+{{Lugar para comer
+| nome        = Nome do lugar
+| endereço    = Rua Tal, 123, Bairro
+| metrô       = Estação mais perto (opcional)
+| coordenadas = -23.5462, -46.6424
+| instagram   = perfil (sem @)
+| tipo        = o que serve: vegano, buffet, prato do dia...
+| bicicleta   = onde fica a bike: entra junto, paraciclo, área externa...
+}}
+</pre>
+
+; coordenadas
+: No Google Maps: toque e segure (no computador, clique com o botão direito) em cima do lugar; os números aparecem no topo, toque neles para copiar e cole aqui. Também vale <code>lat = </code> e <code>lon = </code> separados. Sem coordenadas o lugar fica na lista, mas não no mapa.
+; aproximado
+: Escreva <code>aproximado = sim</code> se o ponto é só a rua, não a porta.
+; site
+: Link do site, se houver (começando com https://).
+
+Por baixo é o [[Módulo:Onde comer]]. O amora lê os pontos pela API do mapa; mudanças na lista de campos devem acompanhar o código de lá ([https://github.com/pedalhidro/amora/tree/main/docs/wiki/onde-comer docs/wiki/onde-comer]).
+
+[[Categoria:Predefinições]]
+</noinclude>

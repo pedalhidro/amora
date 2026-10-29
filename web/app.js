@@ -240,6 +240,7 @@ const DEFAULT_LAYER_ORDER = [
   // OpenInfraMap — acima da hidrografia, abaixo das rotas do coletivo.
   'oim-water', 'oim-petroleum', 'oim-telecoms', 'oim-power',
   'metro-trens',               // metrô e trens (Bici Busão Sampa), logo abaixo das rotas
+  'onde-comer',                // lugares para comer (wiki do Pedal), acima do metrô
   'routes',                    // linhas das rotas, no topo das camadas de mapa
   'route-highlight',           // rota destacada (1,5×), acima das rotas normais
 ];
@@ -1339,6 +1340,128 @@ function loadRail() {
 railLayer.on('add', () => { loadRail(); railSyncStations(); });
 map.getPane(LAYER_PANE('metro-trens')).style.opacity = String(RAIL_DEFAULT_PCT / 100);
 
+// ─── Onde comer (wiki do Pedal) ──────────────────────────────────────────────
+// Lugares para comer indicados por quem pedala, lidos AO VIVO da página "Onde
+// comer" do wiki (pedalhidrografi.co/wiki/Onde_comer) — a página é a fonte, não
+// há cópia no amora. Lá cada lugar é um {{Lugar para comer}}; o Módulo:Onde
+// comer monta as feições e o Kartographer as publica na API (prop=mapdata, CORS
+// aberto com origin=*). O contrato das propriedades (id, nome, regiao,
+// endereco, metro, tipo, bicicleta, instagram, site, aproximado) e as fontes do
+// módulo/predefinições estão em docs/wiki/onde-comer/ — mudou lá, mude aqui.
+// Cada lugar vem em dois grupos (o <maplink> da ficha e o <mapframe> do topo,
+// o único que traz a região): junta por id. Baixado só quando a camada liga.
+// Deep link: /#comer=<id> (o "no amora" de cada ficha do wiki).
+const WIKI_BASE = 'https://pedalhidrografi.co/';
+const COMER_PAGE = 'Onde_comer';
+const COMER_COLOR = '#d9480f';
+const COMER_DEFAULT_PCT = 100;
+const comerLayer = L.featureGroup([], {
+  attribution: `Onde comer: <a href="${WIKI_BASE}wiki/${COMER_PAGE}" target="_blank" rel="noopener">wiki do Pedal Hidrográfico</a>`,
+});
+const comerMarkers = new Map();   // id → circleMarker
+let _comerLoad = null;
+
+// mapdata = { query: { pages: [{ mapdata: ['<JSON {grupo: [feição | {features}]}>'] }] } }
+function comerPlaces(resp) {
+  const byId = new Map();
+  for (const pg of resp?.query?.pages || []) {
+    for (const raw of pg.mapdata || []) {
+      let groups;
+      try { groups = JSON.parse(raw); } catch { continue; }
+      for (const g of Object.values(groups || {})) {
+        for (const item of Array.isArray(g) ? g : [g]) {
+          for (const f of item?.features || [item]) {
+            const p = f?.properties, c = f?.geometry?.coordinates;
+            if (f?.geometry?.type !== 'Point' || !p?.id || !Array.isArray(c)) continue;
+            const lat = Number(c[1]), lon = Number(c[0]);
+            if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+            byId.set(p.id, { ...byId.get(p.id), ...p, lat, lon });
+          }
+        }
+      }
+    }
+  }
+  return [...byId.values()];
+}
+
+function comerPopupHtml(p) {
+  const wikiUrl = `${WIKI_BASE}wiki/${COMER_PAGE}#${encodeURIComponent(p.id)}`;
+  const where = [p.endereco, p.metro ? `metrô ${p.metro}` : ''].filter(Boolean).join(' · ');
+  const links = [];
+  if (/^[\w.]+$/.test(p.instagram || '')) {
+    links.push(`<a href="https://www.instagram.com/${p.instagram}/" target="_blank" rel="noopener">@${escapeHtml(p.instagram)}</a>`);
+  }
+  if (/^https?:\/\//.test(p.site || '')) {
+    links.push(`<a href="${escapeHtml(p.site)}" target="_blank" rel="noopener">site</a>`);
+  }
+  links.push(`<a href="${wikiUrl}" target="_blank" rel="noopener">ver/editar no wiki ↗</a>`);
+  return `<div class="comer-popup"><strong>${escapeHtml(p.nome || p.id)}</strong>`
+    + (p.regiao ? ` <span class="comer-reg">· ${escapeHtml(p.regiao)}</span>` : '')
+    + (p.tipo ? `<p>${escapeHtml(p.tipo)}</p>` : '')
+    + `<p class="comer-bike">🚲 ${p.bicicleta ? escapeHtml(p.bicicleta) : '<em>sem info da bicicleta ainda</em>'}</p>`
+    + (where ? `<p class="comer-where">${escapeHtml(where)}${p.aproximado ? ' <em>(posição aproximada)</em>' : ''}</p>` : '')
+    + `<p class="comer-links">${links.join(' · ')}</p>`
+    + '<p class="comer-note">Horários mudam: confira antes de sair.</p></div>';
+}
+
+function loadComer() {
+  if (_comerLoad) return _comerLoad;
+  const qs = new URLSearchParams({
+    action: 'query', prop: 'mapdata', titles: COMER_PAGE, mpdlimit: 'max',
+    format: 'json', formatversion: '2', origin: '*',
+  });
+  _comerLoad = fetch(`${WIKI_BASE}w/api.php?${qs}`)
+    .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+    .then((resp) => {
+      const pane = LAYER_PANE('onde-comer');
+      comerLayer.clearLayers();
+      comerMarkers.clear();
+      const places = comerPlaces(resp);
+      if (!places.length) showToast('Onde comer: nenhum lugar com coordenadas no wiki ainda.');
+      for (const p of places) {
+        const m = L.circleMarker([p.lat, p.lon], {
+          pane, radius: 7, color: '#fff', weight: 2, fillColor: COMER_COLOR, fillOpacity: 1,
+        });
+        m.bindTooltip(escapeHtml(p.nome || p.id), { direction: 'top', offset: [0, -7] });
+        m.bindPopup(() => comerPopupHtml(p), { maxWidth: 280 });
+        // O editor de traçado é dono do clique.
+        m.on('click', () => { if (drawingMode) m.closePopup(); });
+        m.addTo(comerLayer);
+        comerMarkers.set(p.id, m);
+      }
+    })
+    .catch((err) => {
+      _comerLoad = null;            // o próximo liga/desliga tenta de novo
+      console.warn('[onde-comer]', err);
+      showToast(`Falha ao carregar Onde comer: ${err.message}`);
+    });
+  return _comerLoad;
+}
+comerLayer.on('add', () => { loadComer(); });
+map.getPane(LAYER_PANE('onde-comer')).style.opacity = String(COMER_DEFAULT_PCT / 100);
+
+// /#comer=<id>: liga a camada (pelo checkbox, que persiste como um clique) e
+// voa até o lugar com o popup aberto.
+function tryOpenComerFromHash() {
+  const id = new URLSearchParams(location.hash.replace(/^#/, '')).get('comer');
+  if (!id) return false;
+  window.history.replaceState(null, '', location.pathname + location.search);
+  const cb = document.querySelector('.layer-panel .layer-row[data-id="onde-comer"] input[type="checkbox"]');
+  if (cb && !cb.checked) {
+    cb.checked = true;
+    cb.dispatchEvent(new Event('change', { bubbles: true }));
+  } else if (!map.hasLayer(comerLayer)) {
+    comerLayer.addTo(map);
+  }
+  loadComer().then(() => {
+    const m = comerMarkers.get(id.trim());
+    if (!m) { showToast('Esse lugar não está mais no Onde comer do wiki.'); return; }
+    map.once('moveend', () => m.openPopup());
+    map.flyTo(m.getLatLng(), Math.max(map.getZoom(), 16));
+  });
+  return true;
+}
+
 // ─── Combined layer panel ────────────────────────────────────────────────────
 // A single flat list of layers — each an independent visibility checkbox plus
 // an opacity slider. There is deliberately NO "base vs overlay" distinction:
@@ -1443,6 +1566,16 @@ const OVERLAY_LAYERS = [
     defaultVisible: false,
     defaultPct: RAIL_DEFAULT_PCT,
     setOpacity: (frac) => { map.getPane(LAYER_PANE('metro-trens')).style.opacity = String(frac); },
+  },
+  // Onde comer — lugares da página do wiki (ver WIKI_BASE/COMER_PAGE), lidos
+  // ao vivo pela API do Kartographer. Opacidade no pane.
+  {
+    id: 'onde-comer',
+    label: 'Onde comer (wiki)',
+    layer: comerLayer,
+    defaultVisible: false,
+    defaultPct: COMER_DEFAULT_PCT,
+    setOpacity: (frac) => { map.getPane(LAYER_PANE('onde-comer')).style.opacity = String(frac); },
   },
   // Viário do OSM (todo highway=*), branco com 3 m de largura real.
   {
@@ -8435,6 +8568,7 @@ boot()
       .catch((err) => console.warn('[share] hash load failed:', err));
     if (!tryOpenTourFromPath()) tryOpenTourFromQuery();
     tryOpenMediaFromHash();
+    tryOpenComerFromHash();
   });
 
 // Deep link de MÍDIA por fragmento (#midia=<hash>) — plantado pelo "📍 Ver no
@@ -9242,7 +9376,7 @@ function saveSessionState(patch) {
 // fragmento da URL depois.
 const _bootHasDeepLink = /^\/passeio\//.test(location.pathname)
   || new URLSearchParams(location.search).has('tour')
-  || /(^|[#&])(st|rt|midia)=/.test(location.hash);
+  || /(^|[#&])(st|rt|midia|comer)=/.test(location.hash);
 function restoreSessionView() {
   if (_bootHasDeepLink) return;
   const s = readSessionState();

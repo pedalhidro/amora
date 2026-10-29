@@ -1,0 +1,132 @@
+Lugares para comer antes ou depois do pedal, indicados por quem pedala junto. O nome abre o Google Maps; "ver no mapa" mostra o ponto aqui. Conhece outro? [[#Como sugerir um lugar|Adicione]].
+
+Os horários mudam. Confira no Instagram antes de sair.
+
+{{Mapa onde comer}}
+
+== Centro ==
+
+{{Lugar para comer
+| nome        = VHMOR
+| endereço    = Galeria Metrópole, Av. São Luís, 187
+| metrô       = República
+| coordenadas = -23.54624, -46.64241
+| instagram   = vhmorbistro
+| tipo        = bistrô vegano; café da manhã, prato do dia, bolos e salgados
+| bicicleta   = fica dentro de uma galeria; dá para almoçar com a bike do lado.
+}}
+
+{{Lugar para comer
+| nome        = Pratada
+| endereço    = Rua General Jardim, 160, Vila Buarque
+| metrô       = República
+| coordenadas = -23.54466, -46.64609
+| instagram   = pratada.sp
+| tipo        = vegano, prato do dia com sobremesa incluída
+| bicicleta   = dá para entrar com a bike.
+}}
+
+== Vila Mariana, Vila Clementino e Paraíso ==
+Os lugares ficam perto dos metrôs Santa Cruz e Ana Rosa.
+
+{{Lugar para comer
+| nome        = Ges Yu
+| endereço    = Rua Loefgren, 1428, Vila Clementino
+| coordenadas = -23.59952, -46.63948
+| instagram   = gesyurestaurante
+| tipo        = buffet livre vegano e vegetariano (buffets separados), com sobremesa e bebida incluídas
+| bicicleta   = tem uma área externa onde dá para deixar a bike.
+}}
+
+{{Lugar para comer
+| nome        = Lagoa Tropical
+| endereço    = Rua Borges Lagoa, 406, Vila Clementino
+| coordenadas = -23.59730, -46.64069
+| instagram   = lagoatropical
+| tipo        = buffet vegetariano, com saladas, pratos quentes, sucos e sobremesas
+| bicicleta   =
+}}
+
+{{Lugar para comer
+| nome        = Prime Dog
+| endereço    = Rua Vergueiro, 1960, Vila Mariana
+| metrô       = Ana Rosa
+| coordenadas = -23.57949, -46.63993
+| instagram   = prime_dog
+| tipo        = lanchonete com muitas opções veganas e vegetarianas (também serve carne); hot dog, hambúrguer e PF
+| bicicleta   = tem paraciclo na calçada.
+}}
+
+{{Lugar para comer
+| nome        = Salad Days
+| endereço    = Rua Arujá, 57, Paraíso
+| coordenadas = -23.57597, -46.63846
+| aproximado  = sim
+| instagram   = saladdaysvegan
+| tipo        = hamburgueria vegana
+| bicicleta   = dá para entrar com a bike.
+}}
+
+{{Lugar para comer
+| nome        = Tofu com Alecrim
+| endereço    = Rua Santa Cruz, 660, Vila Mariana
+| coordenadas = -23.59728, -46.63018
+| instagram   = tofucomalecrim
+| tipo        = vegano, à la carte e prato do dia
+| bicicleta   =
+}}
+
+{{Lugar para comer
+| nome        = Vegg's
+| endereço    = Rua Padre Machado, 51, Vila Mariana
+| coordenadas = -23.60151, -46.63622
+| instagram   = veggs.vegano
+| tipo        = buffet vegano
+| bicicleta   = tem paraciclo.
+}}
+
+== Pinheiros e Vila Madalena ==
+
+{{Lugar para comer
+| nome        = Curry's
+| endereço    = Rua Henrique Schaumann, 657, Pinheiros
+| metrô       = Fradique Coutinho
+| coordenadas = -23.55953, -46.68155
+| instagram   = currysculinariaindiana
+| tipo        = indiano, com opções vegetarianas e veganas
+| bicicleta   = dá para entrar com a bike.
+}}
+
+{{Lugar para comer
+| nome        = Camélia Òdòdó
+| endereço    = Rua Girassol, 451B, Vila Madalena
+| coordenadas = -23.55504, -46.68961
+| instagram   = camelia_ododo
+| tipo        = vegano e vegetariano, à la carte, com deck ao ar livre
+| bicicleta   = tem paraciclo na calçada.
+}}
+
+== Outras regiões ==
+''Ainda sem sugestões.''
+
+== Como sugerir um lugar ==
+Clique em '''Editar''', copie o bloco abaixo para baixo da região certa (ou crie uma região nova com <code>== Nome da região ==</code>) e preencha o que souber. Só o nome é obrigatório; o resto pode ficar vazio que alguém completa depois.
+
+<pre>
+{{Lugar para comer
+| nome        =
+| endereço    =
+| metrô       =
+| coordenadas =
+| instagram   =
+| tipo        =
+| bicicleta   =
+}}
+</pre>
+
+* '''coordenadas:''' no Google Maps, toque e segure em cima do lugar (no computador, botão direito). Os números aparecem no topo; toque neles para copiar e cole aqui, do jeito que vierem (ex.: <code>-23.5462, -46.6424</code>). Sem coordenadas o lugar aparece na lista, mas não no mapa.
+* '''instagram:''' só o nome do perfil, sem @.
+* '''bicicleta:''' o que importa para quem chega pedalando: dá para entrar com a bike, tem paraciclo, área externa...
+* Se o ponto marca só a rua e não a porta, acrescente <code>| aproximado = sim</code>.
+
+Os mesmos lugares aparecem no mapa do [https://amora.pedalhidrografi.co amora], na camada "Onde comer". Detalhes dos campos em [[Predefinição:Lugar para comer]].

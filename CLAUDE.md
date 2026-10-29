@@ -549,6 +549,16 @@ Key flows:
   (`/api/rail-status`) has NO CORS, so the popup shows only the written bike
   rule and links to busão. Stations only at zoom ≥ 12; colours from the data
   pass a hex-only filter (`railColor`) before going into a style attribute.
+- **Onde comer** (`onde-comer`): places to eat read AT RUNTIME from the wiki
+  page `pedalhidrografi.co/wiki/Onde_comer` through Kartographer's API
+  (`prop=mapdata`, `origin=*`) — the wiki page is the single source, no copy
+  in amora. Each place there is a `{{Lugar para comer}}`; `Módulo:Onde comer`
+  (Lua) builds the features, and the property names are a CONTRACT with
+  `comerPlaces`/`comerPopupHtml`. Deep link `/#comer=<id>`. The wiki-side
+  sources (module, templates, the `MediaWiki:Common.js` that puts Topografia
+  colorida on every Kartographer map and replaces its broken pins) are
+  versioned in `docs/wiki/onde-comer/` — read its README before touching
+  either side.
 - **Display.** `web/app.js` fetches `./data/data_graphs.ttl`, follows each
   `void:dataDump` IRI to load the constituent graphs (currently `tours.ttl`
   and `uploads.ttl`), parses them with the bundled N3.js
