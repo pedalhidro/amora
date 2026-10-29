@@ -88,6 +88,15 @@ local function slug(s)
 	return s
 end
 
+-- Busca pelo nome + endereço: abre a ficha do lugar no Google Maps (com
+-- horários e fotos), não só um alfinete na coordenada.
+local function gmapsUrl(title, endereco)
+	local q = { title }
+	if endereco then q[#q + 1] = endereco end
+	q[#q + 1] = 'São Paulo'
+	return 'https://www.google.com/maps/search/?api=1&query=' .. mw.uri.encode(table.concat(q, ', '), 'QUERY')
+end
+
 local function feature(args, regiao)
 	local nome = pick(args, 'nome')
 	if not nome then return nil end
@@ -116,7 +125,18 @@ local function feature(args, regiao)
 	if props.tipo then desc[#desc + 1] = props.tipo end
 	if props.bicicleta then desc[#desc + 1] = '🚲 ' .. props.bicicleta end
 	if props.endereco then desc[#desc + 1] = props.endereco end
-	if #desc > 0 then props.description = table.concat(desc, '<br>') end
+	-- O popup do Kartographer renderiza a description como wikitexto: links
+	-- viram links. (O amora não lê a description — monta o popup dele.)
+	local links = {}
+	if props.instagram then
+		links[#links + 1] = string.format('[https://www.instagram.com/%s/ @%s]', props.instagram, props.instagram)
+	end
+	if props.site then links[#links + 1] = '[' .. props.site .. ' site]' end
+	links[#links + 1] = '[' .. gmapsUrl(props.title, props.endereco) .. ' Google Maps]'
+	if lat then links[#links + 1] = '[' .. AMORA .. props.id .. ' no amora]' end
+	links[#links + 1] = '[[#' .. props.id .. '|↓ na lista]]'
+	desc[#desc + 1] = table.concat(links, ' · ')
+	props.description = table.concat(desc, '<br>')
 	local f = { type = 'Feature', properties = props }
 	if lat then f.geometry = { type = 'Point', coordinates = { lon, lat } } end
 	return f
@@ -130,10 +150,7 @@ function p.lugar(frame)
 	end
 	local P = f.properties
 	local nome = pick(args, 'nome')
-	local q = { P.title }
-	if P.endereco then q[#q + 1] = P.endereco end
-	q[#q + 1] = 'São Paulo'
-	local gmaps = 'https://www.google.com/maps/search/?api=1&query=' .. mw.uri.encode(table.concat(q, ', '), 'QUERY')
+	local gmaps = gmapsUrl(P.title, P.endereco)
 
 	local out = {}
 	out[#out + 1] = string.format('<h3 id="%s">[%s %s]</h3>', P.id, gmaps, nome)
