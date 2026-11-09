@@ -150,6 +150,7 @@
     <link rel="stylesheet" href="fonts/fonts.css" />
     <link rel="stylesheet" href="lib/leaflet/leaflet.css" />
     <link rel="stylesheet" href="lib/locatecontrol/L.Control.Locate.min.css" />
+    <link rel="stylesheet" href="lib/tokens.css" />
     <link rel="stylesheet" href="style.css" />
   </head>
   <body class="rotas-page">
@@ -160,22 +161,22 @@
       <nav class="topbar-actions">
       <input type="file" id="photos-import-input" accept=".ttl,.zip,text/turtle,application/zip" hidden />
       <input type="file" id="edit-gpx-input" accept=".gpx,application/gpx+xml,application/octet-stream" hidden />
-      <button id="subir-btn" type="button" class="secondary-btn" title="Ações" aria-label="Ações">☰ <span class="tb-txt">ações</span></button>
-      <button id="subir-imagens-btn" type="button" class="secondary-btn" title="Enviar imagens (envio simplificado)" aria-label="Enviar imagens" aria-pressed="false">📤 <span class="tb-txt">enviar<span class="tb-more"> imgs</span></span></button>
-      <button id="trace-btn" type="button" class="secondary-btn" title="Traçar GPX" aria-label="Traçar GPX">🗺︎ <span class="tb-txt">traçar</span></button>
+      <button id="subir-btn" type="button" class="secondary-btn" title="Ações" aria-label="Ações"><svg class="icon" data-icon="menu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l16 0"/><path d="M4 12l16 0"/><path d="M4 18l16 0"/></svg> <span class="tb-txt">ações</span></button>
+      <button id="subir-imagens-btn" type="button" class="secondary-btn" title="Enviar imagens (envio simplificado)" aria-label="Enviar imagens" aria-pressed="false"><svg class="icon" data-icon="upload" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2"/><path d="M7 9l5 -5l5 5"/><path d="M12 4l0 12"/></svg> <span class="tb-txt">enviar<span class="tb-more"> imgs</span></span></button>
+      <button id="trace-btn" type="button" class="secondary-btn" title="Traçar GPX" aria-label="Traçar GPX"><svg class="icon" data-icon="trace" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 19a2 2 0 1 0 4 0a2 2 0 0 0 -4 0"/><path d="M19 7a2 2 0 1 0 0 -4a2 2 0 0 0 0 4"/><path d="M11 19h5.5a3.5 3.5 0 0 0 0 -7h-8a3.5 3.5 0 0 1 0 -7h4.5"/></svg> <span class="tb-txt">traçar</span></button>
       <!-- <a> de verdade (não button): a Memória é uma página própria e
            indexável — link rastreável por crawlers (veio do menu Ações). -->
-      <a id="memoria-btn" class="secondary-btn" href="./memoria" target="_blank" rel="noopener" title="Memória Hidrográfica (abre em aba nova)" aria-label="Memória Hidrográfica (abre em aba nova)">🕰 <span class="tb-txt">memória</span></a>
+      <a id="memoria-btn" class="secondary-btn" href="./memoria" target="_blank" rel="noopener" title="Memória Hidrográfica (abre em aba nova)" aria-label="Memória Hidrográfica (abre em aba nova)"><svg class="icon" data-icon="memory" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 8l0 4l2 2"/><path d="M3.05 11a9 9 0 1 1 .5 4m-.5 5v-5h5"/></svg> <span class="tb-txt">memória</span></a>
       <span class="topbar-break" aria-hidden="true"></span>
-      <button id="layers-btn" type="button" class="secondary-btn" title="Mostrar/ocultar camadas" aria-label="Mostrar/ocultar camadas" aria-pressed="true">⧉ <span class="tb-txt">camadas</span></button>
+      <button id="layers-btn" type="button" class="secondary-btn" title="Mostrar/ocultar camadas" aria-label="Mostrar/ocultar camadas" aria-pressed="true"><span class="icon-swap"><svg class="icon" data-icon="layers" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4l-8 4l8 4l8 -4l-8 -4"/><path d="M4 12l8 4l8 -4"/><path d="M4 16l8 4l8 -4"/></svg><svg class="icon" data-icon="layers" data-style="filled" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.894 15.553a1 1 0 0 1 -.447 1.341l-8 4a1 1 0 0 1 -.894 0l-8 -4a1 1 0 0 1 .894 -1.788l7.553 3.774l7.554 -3.775a1 1 0 0 1 1.341 .447m0 -4a1 1 0 0 1 -.447 1.341l-8 4a1 1 0 0 1 -.894 0l-8 -4a1 1 0 0 1 .894 -1.788l7.552 3.775l7.554 -3.775a1 1 0 0 1 1.341 .447m-8.887 -8.552q .056 0 .111 .007l.111 .02l.086 .024l.012 .006l.012 .002l.029 .014l.05 .019l.016 .009l.012 .005l8 4a1 1 0 0 1 0 1.788l-8 4a1 1 0 0 1 -.894 0l-8 -4a1 1 0 0 1 0 -1.788l8 -4l.011 -.005l.018 -.01l.078 -.032l.011 -.002l.013 -.006l.086 -.024l.11 -.02l.056 -.005z"/></svg></span> <span class="tb-txt">camadas</span></button>
       </nav>
     </header>
 
     <main id="map">
-      <button id="header-toggle" type="button" class="header-toggle leaflet-bar leaflet-control" title="Ocultar cabeçalho" aria-label="Ocultar cabeçalho" aria-pressed="false">☰▲</button>
+      <button id="header-toggle" type="button" class="header-toggle leaflet-bar leaflet-control" title="Ocultar cabeçalho" aria-label="Ocultar cabeçalho" aria-pressed="false"><svg class="icon" data-icon="header-collapse" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 18v-12a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2"/><path d="M4 9h16"/><path d="M10 16l2 -2l2 2"/></svg></button>
       <div id="trace-controls" class="trace-controls" hidden>
-        <button type="button" id="trace-undo" disabled title="Desfazer (Cmd/Ctrl+Z)" aria-label="Desfazer">↶</button>
-        <button type="button" id="trace-redo" disabled title="Refazer (Cmd/Ctrl+Shift+Z)" aria-label="Refazer">↷</button>
+        <button type="button" id="trace-undo" disabled title="Desfazer (Cmd/Ctrl+Z)" aria-label="Desfazer"><svg class="icon" data-icon="undo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14l-4 -4l4 -4"/><path d="M5 10h11a4 4 0 1 1 0 8h-1"/></svg></button>
+        <button type="button" id="trace-redo" disabled title="Refazer (Cmd/Ctrl+Shift+Z)" aria-label="Refazer"><svg class="icon" data-icon="redo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 14l4 -4l-4 -4"/><path d="M19 10h-11a4 4 0 1 0 0 8h1"/></svg></button>
         <label class="trace-toggle" title="Como conectar pontos consecutivos">
           <select id="trace-routing-mode" aria-label="Modo de roteamento">
             <option value="straight">Reta (menor distância)</option>
@@ -185,18 +186,18 @@
             <option value="energy_road">Menor energia pelo viário</option>
           </select>
         </label>
-        <button type="button" id="params-btn" class="params-btn" title="Parâmetros da simulação" aria-label="Parâmetros">⚙</button>
-        <button type="button" id="trace-trash" disabled title="Descartar o traçado (apaga o rascunho guardado)" aria-label="Descartar o traçado">🗑</button>
-        <button type="button" id="trace-reverse" disabled title="Inverter o sentido da rota (chegada vira partida)" aria-label="Inverter sentido">⇄ <span class="tb-label">Inverter</span></button>
-        <button type="button" id="trace-load" class="trace-load" title="Carregar rota — do servidor ou de um arquivo .gpx" aria-label="Carregar rota">📂 <span class="tb-label">Carregar</span></button>
-        <button type="button" id="trace-save" class="trace-save" title="Salvar GPX" aria-label="Salvar GPX">⤓🗺︎ <span class="tb-label">Salvar</span></button>
-        <button type="button" id="trace-view" class="trace-view" title="Ver — oculta os pontos e suaviza o traçado" aria-label="Ver">👁 <span class="tb-label">Ver</span></button>
+        <button type="button" id="params-btn" class="params-btn" title="Parâmetros da simulação" aria-label="Parâmetros"><svg class="icon" data-icon="settings" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065"/><path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0"/></svg></button>
+        <button type="button" id="trace-trash" disabled title="Descartar o traçado (apaga o rascunho guardado)" aria-label="Descartar o traçado"><svg class="icon" data-icon="trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7l16 0"/><path d="M10 11l0 6"/><path d="M14 11l0 6"/><path d="M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2 -2l1 -12"/><path d="M9 7v-3a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v3"/></svg></button>
+        <button type="button" id="trace-reverse" disabled title="Inverter o sentido da rota (chegada vira partida)" aria-label="Inverter sentido"><svg class="icon" data-icon="swap" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 10h14l-4 -4"/><path d="M17 14h-14l4 4"/></svg> <span class="tb-label">Inverter</span></button>
+        <button type="button" id="trace-load" class="trace-load" title="Carregar rota — do servidor ou de um arquivo .gpx" aria-label="Carregar rota"><svg class="icon" data-icon="folder-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19l2.757 -7.351a1 1 0 0 1 .936 -.649h12.307a1 1 0 0 1 .986 1.164l-.996 5.211a2 2 0 0 1 -1.964 1.625h-14.026a2 2 0 0 1 -2 -2v-11a2 2 0 0 1 2 -2h4l3 3h7a2 2 0 0 1 2 2v2"/></svg> <span class="tb-label">Carregar</span></button>
+        <button type="button" id="trace-save" class="trace-save" title="Salvar GPX" aria-label="Salvar GPX"><svg class="icon" data-icon="save" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 4h10l4 4v10a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2v-12a2 2 0 0 1 2 -2"/><path d="M10 14a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M14 4l0 4l-6 0l0 -4"/></svg> <span class="tb-label">Salvar</span></button>
+        <button type="button" id="trace-view" class="trace-view" title="Ver — oculta os pontos e suaviza o traçado" aria-label="Ver"><svg class="icon" data-icon="view" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 12a2 2 0 1 0 4 0a2 2 0 0 0 -4 0"/><path d="M21 12c-2.4 4 -5.4 6 -9 6c-3.6 0 -6.6 -2 -9 -6c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6"/></svg> <span class="tb-label">Ver</span></button>
         <span class="trace-break" aria-hidden="true"></span>
         <span class="trace-metrics" id="trace-metrics" role="status" aria-live="polite">0,00 km · 0,0 kJ</span>
       </div>
       <!-- Busca de endereços (geocoding). O botão é estacionado via JS na
            coluna de controles top-left do Leaflet, abaixo do zoom. -->
-      <button id="geo-search-btn" type="button" class="geo-search-btn leaflet-bar leaflet-control" title="Buscar endereço" aria-label="Buscar endereço" aria-pressed="false">🔍</button>
+      <button id="geo-search-btn" type="button" class="geo-search-btn leaflet-bar leaflet-control" title="Buscar endereço" aria-label="Buscar endereço" aria-pressed="false"><svg class="icon" data-icon="search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10a7 7 0 1 0 14 0a7 7 0 1 0 -14 0"/><path d="M21 21l-6 -6"/></svg></button>
       <div id="geo-search-panel" class="geo-search-panel" hidden>
         <div class="geo-search-row">
           <input type="search" id="geo-search-input" placeholder="Buscar endereço ou lugar…" autocomplete="off" enterkeyhint="search" aria-label="Buscar endereço" />
@@ -218,7 +219,7 @@
           <input type="range" id="range-to" aria-label="Data final" />
         </div>
         <span class="range-value" id="range-to-value"></span>
-        <button type="button" id="date-reset" class="linkbtn" title="Resetar filtro" aria-label="Resetar filtro">↺</button>
+        <button type="button" id="date-reset" class="linkbtn" title="Resetar filtro" aria-label="Resetar filtro"><svg class="icon" data-icon="reset" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19.95 11a8 8 0 1 0 -.5 4m.5 5v-5h-5"/></svg></button>
       </section>
 
       <ul id="routes-list"></ul>
@@ -239,28 +240,28 @@
             <p class="help-changelog-slot">Carregando…</p>
           </details>
           <h3>Mapa</h3>
-          <p>Arraste para mover, scroll/pinça para zoom. Para <strong>girar</strong>: dois dedos girando (celular) ou Shift + roda do mouse (computador); a bússola que aparece à esquerda volta o norte pra cima. O painel de camadas (canto sup. direito) controla visibilidade e opacidade de cada camada — base (OSM ou satélite), sobreposições (Topografia colorida, SARA Brasil 1930, rotas cadastradas) e duas camadas customizáveis (XYZ e WMS — clique no ✎ para colar uma URL).</p>
+          <p>Arraste para mover, scroll/pinça para zoom. Para <strong>girar</strong>: dois dedos girando (celular) ou Shift + roda do mouse (computador); a bússola que aparece à esquerda volta o norte pra cima. O painel de camadas (canto sup. direito) controla visibilidade e opacidade de cada camada — base (OSM ou satélite), sobreposições (Topografia colorida, SARA Brasil 1930, rotas cadastradas) e duas camadas customizáveis (XYZ e WMS — clique no <svg class="icon" data-icon="edit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4"/><path d="M13.5 6.5l4 4"/></svg> para colar uma URL).</p>
 
-          <h3>Rotas cadastradas</h3>
+          <h3>Rotas do Censo Hidrográfico</h3>
           <p>A barra lateral lista as rotas em ordem decrescente de data. Use o filtro de data para mostrar só as rotas dentro de uma janela. Clique numa rota para abrir o post do Instagram + atalho para abrir no RideWithGPS, ou para entrar no editor (<em>Editar este traçado</em>) com aquela rota carregada.</p>
 
           <h3>Editar um GPX existente</h3>
-          <p><strong>📂 Carregar</strong> abre uma rota cadastrada no servidor ou um <code>.gpx</code> local no editor. Se for um arquivo gerado por este app, parâmetros de simulação e waypoints originais voltam exatamente como estavam.</p>
+          <p><strong><svg class="icon" data-icon="folder-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19l2.757 -7.351a1 1 0 0 1 .936 -.649h12.307a1 1 0 0 1 .986 1.164l-.996 5.211a2 2 0 0 1 -1.964 1.625h-14.026a2 2 0 0 1 -2 -2v-11a2 2 0 0 1 2 -2h4l3 3h7a2 2 0 0 1 2 2v2"/></svg> Carregar</strong> abre uma rota cadastrada no servidor ou um <code>.gpx</code> local no editor. Se for um arquivo gerado por este app, parâmetros de simulação e waypoints originais voltam exatamente como estavam.</p>
 
           <h3>Traçar um GPX novo</h3>
           <ul>
             <li><strong>Traçar GPX</strong> abre o modo de edição: clique no mapa para adicionar pontos, arraste-os para mover.</li>
             <li>No celular: toque no mapa acrescenta um ponto; pra inserir um no meio, <strong>segure o dedo na linha</strong> (e arraste pra posicionar) — pan e pinça na linha só movem o mapa. O <strong>ⓘ</strong> da barra explica cada botão e mostra o detalhamento da simulação.</li>
             <li>O seletor à direita escolhe como conectar pontos consecutivos: <em>Reta</em> (linha entre pontos, menor distância), <em>OSM ciclismo / a pé</em> (rota via OpenStreetMap) ou <em>Menor energia</em> (terreno ou viário).</li>
-            <li><strong>Undo / Redo</strong> (também ⌘/Ctrl+Z e ⌘/Ctrl+Shift+Z), <strong>Cancelar</strong> (Esc) — fecha o editor <em>sem perder o traçado</em>: ele fica guardado no navegador e volta no próximo Traçar. Pra descartar de verdade, use o <strong>🗑</strong> da barra.</li>
-            <li><strong>Salvar</strong> pede um nome — que vira o endereço da rota no servidor. <strong>Exportar GPX</strong> baixa o <code>.gpx</code>, que inclui os parâmetros de simulação, a lista de waypoints e o modo de roteamento de cada trecho como extensões — invisíveis para Garmin/Strava/RWGPS, mas usados ao reabrir aqui. <strong>☁ Salvar no servidor</strong> grava/atualiza a rota; <strong>Copiar link</strong>/<strong>QR</strong> também salvam e compartilham o link por nome (<code>/route/&lt;nome&gt;</code>).</li>
+            <li><strong>Undo / Redo</strong> (também ⌘/Ctrl+Z e ⌘/Ctrl+Shift+Z), <strong>Cancelar</strong> (Esc) — fecha o editor <em>sem perder o traçado</em>: ele fica guardado no navegador e volta no próximo Traçar. Pra descartar de verdade, use o <strong><svg class="icon" data-icon="trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7l16 0"/><path d="M10 11l0 6"/><path d="M14 11l0 6"/><path d="M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2 -2l1 -12"/><path d="M9 7v-3a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v3"/></svg></strong> da barra.</li>
+            <li><strong>Salvar</strong> pede um nome — que vira o endereço da rota no servidor. <strong>Exportar GPX</strong> baixa o <code>.gpx</code>, que inclui os parâmetros de simulação, a lista de waypoints e o modo de roteamento de cada trecho como extensões — invisíveis para Garmin/Strava/RWGPS, mas usados ao reabrir aqui. <strong><svg class="icon" data-icon="cloud-save" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 18a4.6 4.4 0 0 1 0 -9a5 4.5 0 0 1 11 2h1a3.5 3.5 0 0 1 0 7h-1"/><path d="M9 15l3 -3l3 3"/><path d="M12 12l0 9"/></svg> Salvar no servidor</strong> grava/atualiza a rota; <strong>Copiar link</strong>/<strong>QR</strong> também salvam e compartilham o link por nome (<code>/route/&lt;nome&gt;</code>).</li>
           </ul>
 
           <h3>POIs / cues</h3>
           <p>Clique em um ponto da edição → popup permite renomear, marcar como POI e escolher um símbolo Garmin. POIs viram <code>&lt;wpt&gt;</code> no GPX e aparecem como pinos no Edge.</p>
 
           <h3>Simulação de energia</h3>
-          <p>O cabeçalho do editor mostra distância, altimetria (↑/↓), tempo de movimento + tempo total, velocidade média e energia gasta pelo ciclista (kJ). Clique em <strong>⚙ Parâmetros</strong> para ajustar massa, Crr, CdA, ρ, potência por terreno (subida / plano / descida), ε (recuperação em descida), eficiência de movimento e limiar de plano. Os parâmetros podem ser salvos / carregados como JSON-LD com vocabulário QUDT (RDF).</p>
+          <p>O cabeçalho do editor mostra distância, altimetria (↑/↓), tempo de movimento + tempo total, velocidade média e energia gasta pelo ciclista (kJ). Clique em <strong><svg class="icon" data-icon="settings" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065"/><path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0"/></svg> Parâmetros</strong> para ajustar massa, Crr, CdA, ρ, potência por terreno (subida / plano / descida), ε (recuperação em descida), eficiência de movimento e limiar de plano. Os parâmetros podem ser salvos / carregados como JSON-LD com vocabulário QUDT (RDF).</p>
 
           <h3>Limitações conhecidas</h3>
           <ul>
@@ -273,7 +274,7 @@
           <ul>
             <li>Tiles base: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a> (ODbL).</li>
             <li>Satélite: <a href="https://www.esri.com" target="_blank" rel="noopener">Esri World Imagery</a> — Maxar, Earthstar Geographics, GIS User Community.</li>
-            <li>Topografia colorida: rasterização própria (Pedal Hidrográfico) sobre o MDT LiDAR de São Paulo — dados brutos pela <a href="https://geosampa.prefeitura.sp.gov.br" target="_blank" rel="noopener">PMSP/GeoSampa</a> (2017) e processamento em MDT pelo <a href="https://centrodametropole.fflch.usp.br" target="_blank" rel="noopener">CEM-USP</a> — e sobre o <a href="https://www.igc.sp.gov.br" target="_blank" rel="noopener">MDT do IGC-SP</a> 1:10.000 (2010, Instituto Geográfico e Cartográfico do Estado de São Paulo).</li>
+            <li>Topografia Colorida Grande Sampa: rasterização própria (Pedal Hidrográfico) sobre o MDT LiDAR de São Paulo — dados brutos pela <a href="https://geosampa.prefeitura.sp.gov.br" target="_blank" rel="noopener">PMSP/GeoSampa</a> (2017) e processamento em MDT pelo <a href="https://centrodametropole.fflch.usp.br" target="_blank" rel="noopener">CEM-USP</a> — e sobre o <a href="https://www.igc.sp.gov.br" target="_blank" rel="noopener">MDT do IGC-SP</a> 1:10.000 (2010, Instituto Geográfico e Cartográfico do Estado de São Paulo).</li>
             <li>SARA Brasil 1930: mosaico aerofotográfico do <a href="https://geosampa.prefeitura.sp.gov.br" target="_blank" rel="noopener">GeoSampa</a> (Prefeitura de São Paulo).</li>
             <li>Elevação: <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo</a> (FABDEM / Copernicus DEM).</li>
             <li>Roteamento ciclismo/a-pé: <a href="https://project-osrm.org" target="_blank" rel="noopener">OSRM</a> sobre OSM.</li>
@@ -330,8 +331,8 @@
             <button type="button" id="save-cancel">Cancelar</button>
             <button type="button" id="save-copy-link" title="Salvar no servidor e copiar o link por nome">Copiar link</button>
             <button type="button" id="save-qr" title="Salvar no servidor e mostrar o QR do link">QR</button>
-            <button type="button" id="save-server" title="Salvar/atualizar a rota no servidor com esse nome">☁ Salvar no servidor</button>
-            <button type="button" id="save-confirm" class="primary-btn" title="Baixar o arquivo .gpx" aria-label="Exportar GPX">⤓🗺︎ Exportar GPX</button>
+            <button type="button" id="save-server" title="Salvar/atualizar a rota no servidor com esse nome"><svg class="icon" data-icon="cloud-save" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 18a4.6 4.4 0 0 1 0 -9a5 4.5 0 0 1 11 2h1a3.5 3.5 0 0 1 0 7h-1"/><path d="M9 15l3 -3l3 3"/><path d="M12 12l0 9"/></svg> Salvar no servidor</button>
+            <button type="button" id="save-confirm" class="primary-btn" title="Baixar o arquivo .gpx" aria-label="Exportar GPX"><svg class="icon" data-icon="export" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M11.5 21h-4.5a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v5m-5 6h7m-3 -3l3 3l-3 3"/></svg> Exportar GPX</button>
           </div>
         </div>
       </div>
@@ -345,7 +346,7 @@
           <button class="close" id="saved-routes-close" type="button" aria-label="Fechar">&times;</button>
         </header>
         <div class="save-body">
-          <button type="button" id="saved-routes-local" class="secondary-btn" title="Carregar um arquivo .gpx deste aparelho">📂🗺︎ Carregar arquivo GPX…</button>
+          <button type="button" id="saved-routes-local" class="secondary-btn" title="Carregar um arquivo .gpx deste aparelho"><svg class="icon" data-icon="folder-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19l2.757 -7.351a1 1 0 0 1 .936 -.649h12.307a1 1 0 0 1 .986 1.164l-.996 5.211a2 2 0 0 1 -1.964 1.625h-14.026a2 2 0 0 1 -2 -2v-11a2 2 0 0 1 2 -2h4l3 3h7a2 2 0 0 1 2 2v2"/></svg> Carregar arquivo GPX…</button>
           <p class="muted saved-routes-server-head">Rotas salvas no servidor</p>
           <p class="muted" id="saved-routes-empty" hidden>Nenhuma rota salva no servidor ainda.</p>
           <ul id="saved-routes-list" class="saved-routes-list"></ul>
@@ -371,7 +372,7 @@
               <option value="energy_road">Menor energia pelo viário</option>
             </select>
           </label>
-          <p class="muted">Em <strong>Reta</strong>, o traço inteiro é preservado (geometria exata) — num GPX denso, ~150 dos pontos viram pontos editáveis e o resto segue como o desenho entre eles. Os modos roteados reamostram para ~100 pontos e recalculam o caminho entre eles, usando os mesmos parâmetros da barra de edição (⚙).</p>
+          <p class="muted">Em <strong>Reta</strong>, o traço inteiro é preservado (geometria exata) — num GPX denso, ~150 dos pontos viram pontos editáveis e o resto segue como o desenho entre eles. Os modos roteados reamostram para ~100 pontos e recalculam o caminho entre eles, usando os mesmos parâmetros da barra de edição (<svg class="icon" data-icon="settings" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065"/><path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0"/></svg>).</p>
           <div class="settings-actions">
             <button type="button" id="gpx-connect-confirm">Carregar</button>
           </div>
@@ -383,7 +384,7 @@
     <div id="share-name-modal" class="modal" hidden>
       <div class="modal-content share-name-content">
         <header>
-          <h2>📍 Compartilhar localização</h2>
+          <h2><svg class="icon" data-icon="location" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 11a3 3 0 1 0 6 0a3 3 0 0 0 -6 0"/><path d="M17.657 16.657l-4.243 4.243a2 2 0 0 1 -2.827 0l-4.244 -4.243a8 8 0 1 1 11.314 0"/></svg> Compartilhar localização</h2>
           <button class="close" id="share-name-close" type="button" aria-label="Fechar">&times;</button>
         </header>
         <div class="share-name-body">
@@ -402,7 +403,7 @@
             <input type="checkbox" id="share-name-awake" checked></label>
           <p class="muted share-name-note" id="share-name-native-note" hidden>No app a transmissão continua com a tela apagada.</p>
           <div class="settings-actions">
-            <button type="button" id="share-name-confirm">📍 Compartilhar</button>
+            <button type="button" id="share-name-confirm"><svg class="icon" data-icon="location" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 11a3 3 0 1 0 6 0a3 3 0 0 0 -6 0"/><path d="M17.657 16.657l-4.243 4.243a2 2 0 0 1 -2.827 0l-4.244 -4.243a8 8 0 1 1 11.314 0"/></svg> Compartilhar</button>
           </div>
         </div>
       </div>
@@ -478,7 +479,7 @@
             <span class="param-input"><span id="param-beta-readout" class="param-readout">—</span> kJ/m</span>
           </div>
 
-          <h3 style="margin: 1.2rem 0 .35rem; font-size: .95rem; border-top: 1px dashed #ccc; padding-top: .75rem">Elevação &amp; roteamento por energia</h3>
+          <h3 style="margin: 1.2rem 0 .35rem; font-size: .95rem; border-top: 1px dashed var(--ui-border-dashed); padding-top: .75rem">Elevação &amp; roteamento por energia</h3>
           <button type="button" id="open-datasources" class="ds-open-btn" title="Escolher as fontes de elevação (FABDEM / DEM de SP / DEM custom) e de viário (FlatGeobuf da América do Sul / rede custom)">Fontes de dados: DEM e rede viária…</button>
           <p class="muted" style="margin: .4rem 0 .2rem">O custo de roteamento usa o modelo de energia <strong>v2</strong> derivado dos parâmetros físicos acima (massa, Crr, CdA, ρ, eficiência da transmissão e a velocidade de plano vinda da potência) — os antigos α/β/η foram removidos.</p>
           <label class="param-row" title="Quanto expandir a bbox dos dois endpoints antes de pedir o DEM">
@@ -514,7 +515,7 @@
             <span class="param-input"><input type="checkbox" id="param-use-portals"></span>
           </label>
 
-          <h3 style="margin: 1.2rem 0 .35rem; font-size: .95rem; border-top: 1px dashed #ccc; padding-top: .75rem">Comparação com carro (SUV)</h3>
+          <h3 style="margin: 1.2rem 0 .35rem; font-size: .95rem; border-top: 1px dashed var(--ui-border-dashed); padding-top: .75rem">Comparação com carro (SUV)</h3>
           <label class="param-row" title="Mostra, ao editar o traçado, quanto um SUV equivalente gastaria (kJ) na mesma rota e quantas vezes a bike é mais eficiente.">
             <span class="param-label">Mostrar comparação com SUV</span>
             <span class="param-input"><input type="checkbox" id="param-suv-compare-enabled"></span>
@@ -711,10 +712,10 @@
             </div>
             <p class="muted" id="photos-source-status">—</p>
             <div class="settings-actions">
-              <button type="button" id="photos-import-btn">📂 Importar (.ttl / .zip)</button>
-              <button type="button" id="photos-export-ttl-btn">⬇ Baixar .ttl</button>
-              <button type="button" id="photos-export-kit-btn">⬇ Baixar kit (.zip)</button>
-              <button type="button" id="photos-reload-btn">↻ Recarregar</button>
+              <button type="button" id="photos-import-btn"><svg class="icon" data-icon="folder-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19l2.757 -7.351a1 1 0 0 1 .936 -.649h12.307a1 1 0 0 1 .986 1.164l-.996 5.211a2 2 0 0 1 -1.964 1.625h-14.026a2 2 0 0 1 -2 -2v-11a2 2 0 0 1 2 -2h4l3 3h7a2 2 0 0 1 2 2v2"/></svg> Importar (.ttl / .zip)</button>
+              <button type="button" id="photos-export-ttl-btn"><svg class="icon" data-icon="download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2"/><path d="M7 11l5 5l5 -5"/><path d="M12 4l0 12"/></svg> Baixar .ttl</button>
+              <button type="button" id="photos-export-kit-btn"><svg class="icon" data-icon="download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2"/><path d="M7 11l5 5l5 -5"/><path d="M12 4l0 12"/></svg> Baixar kit (.zip)</button>
+              <button type="button" id="photos-reload-btn"><svg class="icon" data-icon="reload" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4"/><path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4"/></svg> Recarregar</button>
             </div>
           </section>
 
@@ -826,7 +827,7 @@
           <!-- Localização ao vivo — compartilha a própria posição com todos, efêmera -->
           <section class="settings-section" data-section="liveLocation">
             <h3>Localização ao vivo</h3>
-            <p class="muted">Veja onde estão (e por onde passaram nas últimas 3 h) as pessoas que estão compartilhando — e, se quiser, compartilhe a sua. Opt-in e pseudônimo. Nada fica salvo: as posições só vivem na memória do servidor e o rastro de cada pessoa some sozinho ~3 h depois do último ponto. No navegador a transmissão funciona com a tela ligada e o app aberto; com a tela apagada ela pausa (limite da plataforma — o app nativo cobre esse caso). Para só ver (sem transmitir), use a camada <strong>“Pessoas ao vivo”</strong> no painel de camadas 🗺️.</p>
+            <p class="muted">Veja onde estão (e por onde passaram nas últimas 3 h) as pessoas que estão compartilhando — e, se quiser, compartilhe a sua. Opt-in e pseudônimo. Nada fica salvo: as posições só vivem na memória do servidor e o rastro de cada pessoa some sozinho ~3 h depois do último ponto. No navegador a transmissão funciona com a tela ligada e o app aberto; com a tela apagada ela pausa (limite da plataforma — o app nativo cobre esse caso). Para só ver (sem transmitir), use a camada <strong>“Pessoas ao vivo”</strong> no painel de camadas <svg class="icon" data-icon="layers" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4l-8 4l8 4l8 -4l-8 -4"/><path d="M4 12l8 4l8 -4"/><path d="M4 16l8 4l8 -4"/></svg>.</p>
             <label class="settings-row">
               <span>Transmitir minha localização</span>
               <input type="checkbox" data-setting="liveLocation.enabled">
@@ -918,9 +919,9 @@
             </label>
           </section>
 
-          <!-- Vídeo fantasma — clipes em laço quando Animação está ligada -->
+          <!-- Vídeo animado — clipes em laço quando Animação está ligada -->
           <section class="settings-section" data-section="clipsGhost">
-            <h3>Vídeo fantasma</h3>
+            <h3>Vídeo animado</h3>
             <p class="muted">Comportamento dos clipes em laço sobre o mapa quando Animação está ligada.</p>
             <label class="settings-row">
               <span>Tocar vídeo</span>
@@ -952,10 +953,10 @@
             <h3>Configurações — exportar / importar</h3>
             <p class="muted">JSON-LD com todos os parâmetros acima.</p>
             <div class="settings-actions">
-              <button type="button" id="settings-export-btn">⬇ Exportar JSON-LD</button>
-              <button type="button" id="settings-import-btn">📂 Importar JSON-LD</button>
+              <button type="button" id="settings-export-btn"><svg class="icon" data-icon="download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2"/><path d="M7 11l5 5l5 -5"/><path d="M12 4l0 12"/></svg> Exportar JSON-LD</button>
+              <button type="button" id="settings-import-btn"><svg class="icon" data-icon="folder-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19l2.757 -7.351a1 1 0 0 1 .936 -.649h12.307a1 1 0 0 1 .986 1.164l-.996 5.211a2 2 0 0 1 -1.964 1.625h-14.026a2 2 0 0 1 -2 -2v-11a2 2 0 0 1 2 -2h4l3 3h7a2 2 0 0 1 2 2v2"/></svg> Importar JSON-LD</button>
               <input type="file" id="settings-import-input" accept=".jsonld,.json,application/ld+json,application/json" hidden />
-              <button type="button" id="settings-reset-btn">↺ Restaurar padrões</button>
+              <button type="button" id="settings-reset-btn"><svg class="icon" data-icon="reset" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19.95 11a8 8 0 1 0 -.5 4m.5 5v-5h-5"/></svg> Restaurar padrões</button>
             </div>
           </section>
         </div>
@@ -966,20 +967,20 @@
     <div id="subir-modal" class="modal" hidden>
       <div class="modal-content subir-modal-content">
         <header>
-          <h2>☰ Ações</h2>
+          <h2><svg class="icon" data-icon="menu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l16 0"/><path d="M4 12l16 0"/><path d="M4 18l16 0"/></svg> Ações</h2>
           <button class="close" id="subir-modal-close" type="button" aria-label="Fechar">&times;</button>
         </header>
         <div class="subir-modal-body">
-          <button type="button" id="subir-upload-media" class="subir-action">🗂 Enviar imagens (formulário completo)</button>
-          <button type="button" id="subir-new-tour" class="subir-action">🚵 Cadastrar passeio</button>
-          <button type="button" id="subir-poster" class="subir-action">🎨 Arte de anúncio</button>
-          <button type="button" id="subir-imagens-galeria" class="subir-action">🖼 Galeria de imagens</button>
-          <button type="button" id="subir-censo" class="subir-action">📊 Censo hidrográfico</button>
-          <button type="button" id="subir-custos" class="subir-action">💸 Custos</button>
-          <button type="button" id="subir-download-gpx" class="subir-action">📥 Baixar rotas (GPX)</button>
-          <button type="button" id="subir-share-loc" class="subir-action">📍 Compartilhar localização</button>
-          <button type="button" id="subir-settings" class="subir-action">⚙ Ajustes</button>
-          <button type="button" id="subir-help" class="subir-action">❓ Ajuda</button>
+          <button type="button" id="subir-upload-media" class="subir-action"><svg class="icon" data-icon="files" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3v4a1 1 0 0 0 1 1h4"/><path d="M18 17h-7a2 2 0 0 1 -2 -2v-10a2 2 0 0 1 2 -2h4l5 5v7a2 2 0 0 1 -2 2"/><path d="M16 17v2a2 2 0 0 1 -2 2h-7a2 2 0 0 1 -2 -2v-10a2 2 0 0 1 2 -2h2"/></svg> Enviar imagens (formulário completo)</button>
+          <button type="button" id="subir-new-tour" class="subir-action"><svg class="icon" data-icon="bike" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 18a3 3 0 1 0 6 0a3 3 0 0 0 -6 0"/><path d="M16 18a3 3 0 1 0 6 0a3 3 0 0 0 -6 0"/><path d="M12 19v-4l-3 -3l5 -4l2 3h3"/><path d="M13.007 5a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/></svg> Cadastrar passeio</button>
+          <button type="button" id="subir-poster" class="subir-action"><svg class="icon" data-icon="palette" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21a9 9 0 0 1 0 -18c4.97 0 9 3.582 9 8c0 1.06 -.474 2.078 -1.318 2.828c-.844 .75 -1.989 1.172 -3.182 1.172h-2.5a2 2 0 0 0 -1 3.75a1.3 1.3 0 0 1 -1 2.25"/><path d="M7.5 10.5a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"/><path d="M11.5 7.5a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"/><path d="M15.5 10.5a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"/></svg> Arte de anúncio</button>
+          <button type="button" id="subir-imagens-galeria" class="subir-action"><svg class="icon" data-icon="gallery" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 8h.01"/><path d="M3 6a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v12a3 3 0 0 1 -3 3h-12a3 3 0 0 1 -3 -3v-12"/><path d="M3 16l5 -5c.928 -.893 2.072 -.893 3 0l5 5"/><path d="M14 14l1 -1c.928 -.893 2.072 -.893 3 0l3 3"/></svg> Galeria de imagens</button>
+          <button type="button" id="subir-censo" class="subir-action"><svg class="icon" data-icon="chart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 13a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v6a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -6"/><path d="M15 9a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v10a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -10"/><path d="M9 5a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v14a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -14"/><path d="M4 20h14"/></svg> Censo hidrográfico</button>
+          <button type="button" id="subir-custos" class="subir-action"><svg class="icon" data-icon="coin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M14.8 9a2 2 0 0 0 -1.8 -1h-2a2 2 0 1 0 0 4h2a2 2 0 1 1 0 4h-2a2 2 0 0 1 -1.8 -1"/><path d="M12 7v10"/></svg> Custos</button>
+          <button type="button" id="subir-download-gpx" class="subir-action"><svg class="icon" data-icon="gpx" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21h-10a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2"/><path d="M12 17v-6"/><path d="M9.5 14.5l2.5 2.5l2.5 -2.5"/></svg> Baixar rotas (GPX)</button>
+          <button type="button" id="subir-share-loc" class="subir-action"><svg class="icon" data-icon="location" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 11a3 3 0 1 0 6 0a3 3 0 0 0 -6 0"/><path d="M17.657 16.657l-4.243 4.243a2 2 0 0 1 -2.827 0l-4.244 -4.243a8 8 0 1 1 11.314 0"/></svg> Compartilhar localização</button>
+          <button type="button" id="subir-settings" class="subir-action"><svg class="icon" data-icon="settings" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065"/><path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0"/></svg> Ajustes</button>
+          <button type="button" id="subir-help" class="subir-action"><svg class="icon" data-icon="help" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0"/><path d="M12 16v.01"/><path d="M12 13a2 2 0 0 0 .914 -3.782a1.98 1.98 0 0 0 -2.414 .483"/></svg> Ajuda</button>
         </div>
       </div>
     </div>

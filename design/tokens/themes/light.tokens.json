@@ -1,0 +1,1067 @@
+{
+  "$description": "Interface no modo claro: as cores que um dia mudam com o esquema. O amora ainda não tem modo escuro; quando tiver, cada token aqui ganha o par em dark.tokens.json.",
+  "ui": {
+    "surface": {
+      "page": {
+        "$value": "{ref.color.slate.fafbfc}",
+        "$type": "color",
+        "$description": "Fundo da página.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "background"
+            ]
+          }
+        }
+      },
+      "panel": {
+        "$value": "{ref.color.white}",
+        "$type": "color",
+        "$description": "Painéis, folhas e modais.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "background"
+            ]
+          }
+        }
+      },
+      "control": {
+        "$value": "{ref.color.slate.eef1f4}",
+        "$type": "color",
+        "$description": "Fundo de campos e botões: um pouco mais escuro que o painel.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "background"
+            ]
+          }
+        }
+      },
+      "paper": {
+        "$value": "{ref.color.white}",
+        "$type": "color",
+        "$description": "Fundo branco de verdade, para conteúdo que precisa dele: o QR, o iframe dos formulários.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "background"
+            ]
+          }
+        }
+      },
+      "map-button": {
+        "$value": "{ref.color.white}",
+        "$type": "color",
+        "$description": "Botões soltos sobre o mapa.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "background"
+            ]
+          }
+        }
+      },
+      "map-button-hover": {
+        "$value": "{ref.color.gray.f4f4f4}",
+        "$type": "color",
+        "$description": "Botão sobre o mapa com o ponteiro em cima.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "background"
+            ]
+          }
+        }
+      },
+      "map-button-pressed": {
+        "$value": "{ref.color.blue.d8ecff}",
+        "$type": "color",
+        "$description": "Botão sobre o mapa ligado.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "background"
+            ]
+          }
+        }
+      },
+      "scrim": {
+        "$value": "{ref.color.alpha.black-55}",
+        "$type": "color",
+        "$description": "Véu atrás de um modal.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "background"
+            ]
+          }
+        }
+      },
+      "scrim-light": {
+        "$value": "{ref.color.alpha.ink-22}",
+        "$type": "color",
+        "$description": "Véu leve, atrás do modal de envio.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "background"
+            ]
+          }
+        }
+      },
+      "tint-faint": {
+        "$value": "{ref.color.alpha.black-02}",
+        "$type": "color",
+        "$description": "Agrupa uma seção sem separar do painel.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "background"
+            ]
+          }
+        }
+      },
+      "tint": {
+        "$value": "{ref.color.alpha.black-03}",
+        "$type": "color",
+        "$description": "Fundo de uma faixa dentro do painel.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "background"
+            ]
+          }
+        }
+      },
+      "tint-strong": {
+        "$value": "{ref.color.alpha.black-05}",
+        "$type": "color",
+        "$description": "Campo ou item levemente destacado.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "background"
+            ]
+          }
+        }
+      },
+      "button-tint": {
+        "$value": "{ref.color.alpha.black-08}",
+        "$type": "color",
+        "$description": "Botão discreto sobre um chip.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "background"
+            ]
+          }
+        }
+      },
+      "button-tint-hover": {
+        "$value": "{ref.color.alpha.black-15}",
+        "$type": "color",
+        "$description": "Botão discreto com o ponteiro em cima.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "background"
+            ]
+          }
+        }
+      },
+      "neutral-soft": {
+        "$value": "{ref.color.alpha.gray-15}",
+        "$type": "color",
+        "$description": "Botões e código na ficha da foto.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "background"
+            ]
+          }
+        }
+      },
+      "neutral-hover": {
+        "$value": "{ref.color.alpha.gray-25}",
+        "$type": "color",
+        "$description": "Botões da ficha da foto com o ponteiro em cima.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "background"
+            ]
+          }
+        }
+      },
+      "fade": {
+        "$value": "{ref.color.alpha.white-00}",
+        "$type": "color",
+        "$description": "Início do degradê \"tem mais abaixo\" no modal.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "background"
+            ]
+          }
+        }
+      },
+      "video": {
+        "$value": "{ref.color.black}",
+        "$type": "color",
+        "$description": "Fundo atrás do vídeo.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "background"
+            ]
+          }
+        }
+      }
+    },
+    "content": {
+      "primary": {
+        "$value": "{ref.color.slate.101820}",
+        "$type": "color",
+        "$description": "Texto principal.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "text"
+            ],
+            "contrast": [
+              {
+                "against": "ui.surface.panel",
+                "min": 4.5
+              },
+              {
+                "against": "ui.surface.control",
+                "min": 4.5
+              }
+            ]
+          }
+        }
+      },
+      "muted": {
+        "$value": "{ref.color.slate.4a5867}",
+        "$type": "color",
+        "$description": "Texto secundário.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "text"
+            ],
+            "contrast": [
+              {
+                "against": "ui.surface.panel",
+                "min": 4.5
+              }
+            ]
+          }
+        }
+      },
+      "on-color": {
+        "$value": "{ref.color.white}",
+        "$type": "color",
+        "$description": "Texto e símbolos sobre fundo colorido: botões primários, toasts, bolinhas.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "border",
+              "text"
+            ],
+            "contrast": [
+              {
+                "against": "ui.accent.default",
+                "min": 4.5
+              },
+              {
+                "against": "ui.status.error",
+                "min": 4.5
+              }
+            ]
+          }
+        }
+      },
+      "plain": {
+        "$value": "{ref.color.gray.333333}",
+        "$type": "color",
+        "$description": "Texto dos botões sobre o mapa e destaque nos popups.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "text"
+            ],
+            "contrast": [
+              {
+                "against": "ui.surface.map-button",
+                "min": 4.5
+              }
+            ]
+          }
+        }
+      },
+      "popup-heading": {
+        "$value": "{ref.color.gray.444444}",
+        "$type": "color",
+        "$description": "Cabeçalho das tabelas de popup.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "text"
+            ]
+          }
+        }
+      },
+      "popup-soft": {
+        "$value": "{ref.color.gray.666666}",
+        "$type": "color",
+        "$description": "Texto secundário nos popups do mapa.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "text"
+            ],
+            "contrast": [
+              {
+                "against": "ui.surface.paper",
+                "min": 4.5
+              }
+            ]
+          }
+        }
+      },
+      "popup-note": {
+        "$value": "{ref.color.gray.888888}",
+        "$type": "color",
+        "$description": "Observação em popup.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "text"
+            ]
+          }
+        }
+      },
+      "chip-shadow": {
+        "$value": "{ref.color.alpha.black-60}",
+        "$type": "color",
+        "$description": "Sombra do texto nos chips de linha.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "text-shadow"
+            ]
+          }
+        }
+      },
+      "media-shadow": {
+        "$value": "{ref.color.alpha.black-80}",
+        "$type": "color",
+        "$description": "Sombra do texto sobre foto ou vídeo.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "text-shadow"
+            ]
+          }
+        }
+      }
+    },
+    "accent": {
+      "default": {
+        "$value": "{ref.color.orange.c2410c}",
+        "$type": "color",
+        "$description": "A cor de ação do app: links, seleção, botão primário.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "background",
+              "border",
+              "outline",
+              "text"
+            ],
+            "contrast": [
+              {
+                "against": "ui.surface.panel",
+                "min": 4.5
+              }
+            ]
+          }
+        }
+      },
+      "hover": {
+        "$value": "{ref.color.orange.9a3412}",
+        "$type": "color",
+        "$description": "A cor de ação com o ponteiro em cima.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "background",
+              "text"
+            ]
+          }
+        }
+      }
+    },
+    "border": {
+      "default": {
+        "$value": "{ref.color.slate.c6ced6}",
+        "$type": "color",
+        "$description": "Bordas de painel, campo e botão.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "border"
+            ]
+          }
+        }
+      },
+      "dashed": {
+        "$value": "{ref.color.gray.cccccc}",
+        "$type": "color",
+        "$description": "Separador tracejado dentro de um formulário.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "border"
+            ]
+          }
+        }
+      },
+      "input": {
+        "$value": "{ref.color.alpha.black-20}",
+        "$type": "color",
+        "$description": "Borda de campo sobre popover.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "border"
+            ]
+          }
+        }
+      },
+      "popover": {
+        "$value": "{ref.color.alpha.black-15}",
+        "$type": "color",
+        "$description": "Borda de popover.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "border"
+            ]
+          }
+        }
+      },
+      "popover-divider": {
+        "$value": "{ref.color.alpha.black-10}",
+        "$type": "color",
+        "$description": "Divisor dentro de popover.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "border"
+            ]
+          }
+        }
+      },
+      "neutral-soft": {
+        "$value": "{ref.color.alpha.gray-30}",
+        "$type": "color",
+        "$description": "Borda dos botões da ficha da foto.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "border"
+            ]
+          }
+        }
+      }
+    },
+    "state": {
+      "hover": {
+        "$value": "{ref.color.alpha.sky-18}",
+        "$type": "color",
+        "$description": "Hover de botão secundário.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "background"
+            ]
+          }
+        }
+      },
+      "hover-soft": {
+        "$value": "{ref.color.alpha.sky-12}",
+        "$type": "color",
+        "$description": "Hover em ações de configuração.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "background"
+            ]
+          }
+        }
+      },
+      "hover-faint": {
+        "$value": "{ref.color.alpha.sky-08}",
+        "$type": "color",
+        "$description": "Hover de item de lista.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "background"
+            ]
+          }
+        }
+      },
+      "selected": {
+        "$value": "{ref.color.alpha.sky-16}",
+        "$type": "color",
+        "$description": "Item de lista ou navegação escolhido.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "background"
+            ]
+          }
+        }
+      },
+      "hover-bar": {
+        "$value": "{ref.color.alpha.tangerine-18}",
+        "$type": "color",
+        "$description": "Hover e estado ligado dos botões da barra.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "background"
+            ]
+          }
+        }
+      },
+      "filter-active": {
+        "$value": "{ref.color.cyan.0e7490}",
+        "$type": "color",
+        "$description": "Filtro personalizado aplicado.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "border",
+              "text"
+            ]
+          }
+        }
+      }
+    },
+    "status": {
+      "ok": {
+        "$value": "{ref.color.green.1a7f4b}",
+        "$type": "color",
+        "$description": "Deu certo.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "text"
+            ],
+            "contrast": [
+              {
+                "against": "ui.surface.panel",
+                "min": 4.5
+              }
+            ]
+          }
+        }
+      },
+      "ok-border": {
+        "$value": "{ref.color.green.2f7d43}",
+        "$type": "color",
+        "$description": "Borda do botão de salvar.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "border"
+            ]
+          }
+        }
+      },
+      "ok-border-hover": {
+        "$value": "{ref.color.green.2f9e44}",
+        "$type": "color",
+        "$description": "Borda do botão de salvar com o ponteiro em cima.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "border"
+            ]
+          }
+        }
+      },
+      "ok-tint": {
+        "$value": "{ref.color.alpha.green-12}",
+        "$type": "color",
+        "$description": "Hover do botão de salvar.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "background"
+            ]
+          }
+        }
+      },
+      "warn": {
+        "$value": "{ref.color.amber.9c6a10}",
+        "$type": "color",
+        "$description": "Atenção.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "text"
+            ],
+            "contrast": [
+              {
+                "against": "ui.surface.panel",
+                "min": 4.5
+              }
+            ]
+          }
+        }
+      },
+      "error": {
+        "$value": "{ref.color.red.b3261e}",
+        "$type": "color",
+        "$description": "Erro.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "text"
+            ],
+            "contrast": [
+              {
+                "against": "ui.surface.panel",
+                "min": 4.5
+              }
+            ]
+          }
+        }
+      },
+      "danger": {
+        "$value": "{ref.color.orange.b3431e}",
+        "$type": "color",
+        "$description": "Ação que apaga, em botão discreto.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "border",
+              "text"
+            ]
+          }
+        }
+      }
+    },
+    "action": {
+      "delete": {
+        "$value": "{ref.color.orange.ff5722}",
+        "$type": "color",
+        "$description": "Botão de excluir mídia.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "background",
+              "border"
+            ]
+          }
+        }
+      },
+      "delete-hover": {
+        "$value": "{ref.color.orange.e74c1c}",
+        "$type": "color",
+        "$description": "Botão de excluir mídia com o ponteiro em cima.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "background",
+              "border"
+            ]
+          }
+        }
+      },
+      "view": {
+        "$value": "{ref.color.blue.1d5c96}",
+        "$type": "color",
+        "$description": "Botão de alternar a vista do traçado.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "text"
+            ]
+          }
+        }
+      },
+      "view-border": {
+        "$value": "{ref.color.blue.2d6ea8}",
+        "$type": "color",
+        "$description": "Borda do botão de alternar a vista do traçado.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "border"
+            ]
+          }
+        }
+      }
+    },
+    "dot": {
+      "close": {
+        "$value": "{ref.color.red.ff5f57}",
+        "$type": "color",
+        "$description": "Bolinha vermelha de fechar.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "background"
+            ]
+          }
+        }
+      },
+      "maximize": {
+        "$value": "{ref.color.green.28c840}",
+        "$type": "color",
+        "$description": "Bolinha verde de maximizar.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "background"
+            ]
+          }
+        }
+      },
+      "border": {
+        "$value": "{ref.color.alpha.black-22}",
+        "$type": "color",
+        "$description": "Borda das bolinhas de janela.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "border"
+            ]
+          }
+        }
+      },
+      "shine": {
+        "$value": "{ref.color.alpha.white-35}",
+        "$type": "color",
+        "$description": "Brilho das bolinhas de janela.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "shadow"
+            ]
+          }
+        }
+      },
+      "glyph-shadow": {
+        "$value": "{ref.color.alpha.black-35}",
+        "$type": "color",
+        "$description": "Sombra do × nas bolinhas de janela.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "text-shadow"
+            ]
+          }
+        }
+      },
+      "maximize-glyph": {
+        "$value": "{ref.color.alpha.black-55}",
+        "$type": "color",
+        "$description": "Símbolo dentro da bolinha de maximizar.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "text"
+            ]
+          }
+        }
+      }
+    },
+    "tooltip": {
+      "surface": {
+        "$value": "{ref.color.alpha.night-92}",
+        "$type": "color",
+        "$description": "Dica escura sobre o mapa.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "background"
+            ]
+          }
+        }
+      },
+      "surface-label": {
+        "$value": "{ref.color.alpha.night-90}",
+        "$type": "color",
+        "$description": "Rótulo de ponto do traçado.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "background"
+            ]
+          }
+        }
+      },
+      "surface-live": {
+        "$value": "{ref.color.alpha.night-82}",
+        "$type": "color",
+        "$description": "Rótulo de pessoa ao vivo.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "background"
+            ]
+          }
+        }
+      },
+      "content": {
+        "$value": "{ref.color.white}",
+        "$type": "color",
+        "$description": "Texto das dicas escuras.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "text"
+            ],
+            "contrast": [
+              {
+                "against": "ui.tooltip.surface",
+                "min": 4.5
+              }
+            ]
+          }
+        }
+      },
+      "content-soft": {
+        "$value": "{ref.color.slate.97a3b1}",
+        "$type": "color",
+        "$description": "Texto secundário das dicas escuras.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "text"
+            ]
+          }
+        }
+      },
+      "border": {
+        "$value": "{ref.color.alpha.white-18}",
+        "$type": "color",
+        "$description": "Borda das dicas escuras.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "border"
+            ]
+          }
+        }
+      }
+    },
+    "photo": {
+      "nav-bg": {
+        "$value": "{ref.color.alpha.charcoal-42}",
+        "$type": "color",
+        "$description": "Setas de anterior/próxima sobre a foto.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "background"
+            ]
+          }
+        }
+      },
+      "nav-bg-hover": {
+        "$value": "{ref.color.alpha.charcoal-72}",
+        "$type": "color",
+        "$description": "Setas sobre a foto com o ponteiro em cima.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "background"
+            ]
+          }
+        }
+      }
+    },
+    "poster": {
+      "handle": {
+        "$value": "{ref.color.white}",
+        "$type": "color",
+        "$description": "Alças e contornos de edição da arte.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "fill",
+              "line"
+            ]
+          }
+        }
+      },
+      "backdrop": {
+        "$value": "{ref.color.slate.24282c}",
+        "$type": "color",
+        "$description": "Fundo atrás da arte no editor.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "background"
+            ]
+          }
+        }
+      },
+      "panel-shadow": {
+        "$value": "{ref.color.alpha.black-25}",
+        "$type": "color",
+        "$description": "Sombra do painel do editor.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "shadow"
+            ]
+          }
+        }
+      },
+      "selected": {
+        "$value": "{ref.color.orange.fff7ed}",
+        "$type": "color",
+        "$description": "Item escolhido no editor.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "background"
+            ]
+          }
+        }
+      },
+      "selected-border": {
+        "$value": "{ref.color.orange.fdba74}",
+        "$type": "color",
+        "$description": "Borda do item escolhido no editor.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "border"
+            ]
+          }
+        }
+      },
+      "placeholder": {
+        "$value": "{ref.color.amber.fde68a}",
+        "$type": "color",
+        "$description": "Marca de texto a preencher.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "background"
+            ]
+          }
+        }
+      },
+      "ok": {
+        "$value": "{ref.color.green.15803d}",
+        "$type": "color",
+        "$description": "Passo pronto.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "text"
+            ]
+          }
+        }
+      },
+      "todo": {
+        "$value": "{ref.color.amber.b45309}",
+        "$type": "color",
+        "$description": "Passo pendente.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "text"
+            ]
+          }
+        }
+      },
+      "error": {
+        "$value": "{ref.color.red.b91c1c}",
+        "$type": "color",
+        "$description": "Erro no editor.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "text"
+            ]
+          }
+        }
+      }
+    },
+    "shadow": {
+      "color-panel": {
+        "$value": "{ref.color.alpha.ink-18}",
+        "$type": "color",
+        "$description": "Sombra de painéis e modais.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "shadow"
+            ]
+          }
+        }
+      },
+      "color-control": {
+        "$value": "{ref.color.alpha.ink-15}",
+        "$type": "color",
+        "$description": "Sombra de controles.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "shadow"
+            ]
+          }
+        }
+      },
+      "color-label": {
+        "$value": "{ref.color.alpha.ink-16}",
+        "$type": "color",
+        "$description": "Sombra de rótulos sobre o mapa.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "shadow"
+            ]
+          }
+        }
+      },
+      "color-tooltip": {
+        "$value": "{ref.color.alpha.black-50}",
+        "$type": "color",
+        "$description": "Sombra das dicas escuras.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "shadow"
+            ]
+          }
+        }
+      },
+      "color-stage": {
+        "$value": "{ref.color.alpha.black-55}",
+        "$type": "color",
+        "$description": "Sombra da arte no editor.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "shadow"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

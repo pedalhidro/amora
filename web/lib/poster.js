@@ -954,7 +954,7 @@ export function createPoster(ctx) {
   }
 
   // ─── Passo 3: mapa ─────────────────────────────────────────────────────────
-  // Camada "Rotas cadastradas" (todas as rotas do coletivo) ligada: no passo
+  // Camada "Rotas do Censo Hidrográfico" (todas as rotas do coletivo) ligada: no passo
   // do mapa, um toque a desliga — no celular o painel de camadas é miúdo.
   const routesLayerCb = () => document.querySelector('.layer-row input[type="checkbox"][data-id="routes"]');
   function syncMapControls() {

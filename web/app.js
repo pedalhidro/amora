@@ -24,6 +24,8 @@ import {
   showToast,
   storage,
 } from './lib/utils.js';
+import { tokens } from './lib/tokens.js';
+import { icon as uiIcon } from './lib/icons.js';
 
 // ─── Settings ────────────────────────────────────────────────────────────────
 // Tudo aqui é tunável pelo modal de Configurações (gear no topbar). Defaults
@@ -231,7 +233,6 @@ const DEFAULT_LAYER_ORDER = [
   'rmsampa',                   // topografia colorida
   'sara1930',                  // SARA 1930 (histórico)
   'mapa1850',                  // Mapa de 1850 (histórico)
-  'mtpi-v1', 'mtpi-v2',        // MTPI global (índice de posição topográfica multiescala)
   'enchente-1929',             // mancha da enchente (acima dos mapas de relevo/históricos)
   'custom-wms', 'custom-xyz',  // camadas custom do usuário
   'osm-viario',                // todas as vias em branco — sob cicloinfra/águas
@@ -239,8 +240,10 @@ const DEFAULT_LAYER_ORDER = [
   'osm-overpass',
   // OpenInfraMap — acima da hidrografia, abaixo das rotas do coletivo.
   'oim-water', 'oim-petroleum', 'oim-telecoms', 'oim-power',
+  'onibus-bici',               // ônibus que levam bicicleta (Bici Busão Sampa), sob o metrô
   'metro-trens',               // metrô e trens (Bici Busão Sampa), logo abaixo das rotas
   'onde-comer',                // lugares para comer (wiki do Pedal), acima do metrô
+  'saved-routes',              // rotas salvas no Traçar, logo abaixo das do censo
   'routes',                    // linhas das rotas, no topo das camadas de mapa
   'route-highlight',           // rota destacada (1,5×), acima das rotas normais
 ];
@@ -556,7 +559,7 @@ map.on('popupclose', (e) => {
 // crossOrigin: '' (CORS anônimo) nas camadas cujo host manda
 // Access-Control-Allow-Origin: * em TODA resposta — conferido com curl
 // (com/sem Origin, cache HIT/MISS) em OSM a/b/c, arcgisonline e telhas
-// (rmsampa-v2, 1850) e mtpi.pedalhidrografi.co (MTPI v1/v2). Resposta CORS é legível: o SW guarda os tiles
+// (rmsampa-v2, 1850). Resposta CORS é legível: o SW guarda os tiles
 // (TILE_CACHE) pro mapa offline; <img> no-cors dava resposta OPACA, que o SW
 // não guarda. NÃO ligar num host sem ACAO — o tile deixaria de carregar
 // (o WMS do GeoSampa só manda ACAO quando há Origin e sem Vary: Origin — fica
@@ -622,30 +625,6 @@ const sara1930 = L.tileLayer.wms(
   },
 );
 
-// MTPI global (índice de posição topográfica multiescala), v1 (escalas de
-// 3/30/300 km) e v2 (30/300/3000 km) — os mesmos WebP do cameratopo, no R2
-// pelo domínio próprio mtpi.pedalhidrografi.co (CORS liberado). Substituem os
-// antigos MTPI Pindorama 90m / Bacia do Paraná 30m do telhas.
-// Tiles nativos até z10 (z11 dá 404); acima o Leaflet reamplia. São tiles de
-// DADO, então em tela retina pedem o zoom seguinte em meia caixa — o mesmo
-// esquema da rmsampa (tileSize 128 + zoomOffset 1, nativo −1 pra não passar
-// do z10). Os tiles saem com Cache-Control immutable de 1 ano: o `?r=N` é o
-// mesmo do cameratopo e TEM que subir a cada re-render do MTPI.
-const MTPI_TILE_REV = 2;
-const mtpiRetina = L.Browser.retina;
-const makeMtpiLayer = (version, id) => L.tileLayer(
-  `https://mtpi.pedalhidrografi.co/${version}/xyz/{z}/{x}/{y}.webp?r=${MTPI_TILE_REV}`, {
-    maxZoom: 19,
-    maxNativeZoom: mtpiRetina ? 9 : 10,
-    tileSize: mtpiRetina ? 128 : 256,
-    zoomOffset: mtpiRetina ? 1 : 0,
-    crossOrigin: TILE_CORS,             // mtpi manda ACAO: * (curl) → TILE_CACHE do SW
-    pane: LAYER_PANE(id),
-    attribution: `MTPI global ${version} · Pedal Hidrográfico`,
-  });
-const mtpiV1 = makeMtpiLayer('v1', 'mtpi-v1');
-const mtpiV2 = makeMtpiLayer('v2', 'mtpi-v2');
-
 // Mapa histórico georreferenciado de São Paulo (1850), tiles XYZ em
 // telhas.pedalhidrografi.co. Tiles nativos até z18; maxNativeZoom escala acima.
 const mapa1850 = L.tileLayer('https://telhas.pedalhidrografi.co/1850/{z}/{x}/{y}.png', {
@@ -664,8 +643,8 @@ const mapa1850 = L.tileLayer('https://telhas.pedalhidrografi.co/1850/{z}/{x}/{y}
 // lê como oceano. Decisão do coletivo; use estas constantes em vez de um azul
 // numa camada nova de água. (A "Morros e Águas" fica de fora: o verde/ocre
 // dela espelha de propósito a folha de estilo JOSM homônima.)
-const WATER_COLOR = '#867627';
-const WATER_COLOR_DARK = '#4a4115';      // contornos sobre o WATER_COLOR
+const WATER_COLOR = tokens.map.water.fill;
+const WATER_COLOR_DARK = tokens.map.water.outline;      // contornos sobre o WATER_COLOR
 
 // ─── OpenInfraMap: energia, água, telecom, petróleo e gás ────────────────────
 // Infraestrutura do OSM como o openinframap.org a recorta e serve. O site NÃO
@@ -831,6 +810,8 @@ const oimNum = (v) => { const n = Number(v); return Number.isFinite(n) ? n : nul
 // Maior tensão (kV) entre voltage, voltage_2…; 0 se nenhuma.
 const oimMaxVoltage = (p) => Math.max(0, ...[p.voltage, p.voltage_2, p.voltage_3, p.voltage_4]
   .map(oimNum).filter((n) => n != null));
+// cores-de-dados: início — as paletas do próprio OpenInfraMap são dados de
+// terceiros, não papéis do amora (docs/DESIGN-VISUAL.md).
 // Paleta de tensões do OpenInfraMap (kV → cor; sem tensão = cinza).
 const OIM_VOLTAGE_COLORS = [[0, '#7A7A85'], [10, '#6E97B8'], [25, '#55B555'], [52, '#B59F10'],
   [132, '#B55D00'], [220, '#C73030'], [310, '#B54EB2'], [550, '#00C1CF']];
@@ -970,6 +951,7 @@ const OIM_THEMES = {
       style: (p, z) => ({ fill: '#6B6B6B', radius: oimLerp(z, 10, 1, 16, 3.5) }) },
   ],
 };
+// cores-de-dados: fim
 
 // Pinta um tile. `scale` = px CSS por unidade do tile; (dx, dy) = deslocamento
 // em px CSS do canto (≠ 0 só no overzoom, quando o tile é um pedaço do pai).
@@ -1269,7 +1251,7 @@ const railLayer = L.layerGroup([railTracks], {
   attribution: '© OpenStreetMap · linhas: <a href="https://busao.bicisampa.info/">Bici Busão Sampa</a>',
 });
 // Cor vinda de outro site entra num atributo style: só aceita hex.
-const railColor = (c) => (/^#[0-9a-f]{3,8}$/i.test(c || '') ? c : '#555');
+const railColor = (c) => (/^#[0-9a-f]{3,8}$/i.test(c || '') ? c : tokens.map.rail.unknown);
 let _railLoad = null, _railLines = null, _railBikeSummary = '';
 
 function railLineRow(line) {
@@ -1312,7 +1294,7 @@ function loadRail() {
         const parts = g.type === 'MultiLineString' ? g.coordinates : g.type === 'LineString' ? [g.coordinates] : [];
         const latlngs = parts.map((part) => part.map(([lon, lat]) => [lat, lon]));
         // Contorno branco por baixo: a cor oficial some no relevo colorido sem ele.
-        L.polyline(latlngs, { pane, color: '#fff', weight: 6, opacity: 0.9, interactive: false }).addTo(railTracks);
+        L.polyline(latlngs, { pane, color: tokens.map.line.casing, weight: 6, opacity: 0.9, interactive: false }).addTo(railTracks);
         const track = L.polyline(latlngs, { pane, color: railColor(line.color), weight: 3.5, opacity: 1 });
         track.bindTooltip(escapeHtml(line.name), { sticky: true, className: 'osm-tip' });
         railOnClick(track, () => railPopupHtml('', [line]));
@@ -1320,9 +1302,9 @@ function loadRail() {
       } else if (p.kind === 'station' && g?.type === 'Point') {
         const lines = (p.refs || []).map((r) => _railLines.get(String(r))).filter(Boolean);
         const [lon, lat] = g.coordinates;
-        const ring = lines.length === 1 ? railColor(lines[0].color) : '#222';
+        const ring = lines.length === 1 ? railColor(lines[0].color) : tokens.map.rail.interchange;
         const st = L.circleMarker([lat, lon], {
-          pane, radius: 5, color: ring, weight: 2.5, fillColor: '#fff', fillOpacity: 1,
+          pane, radius: 5, color: ring, weight: 2.5, fillColor: tokens.map.rail.station, fillOpacity: 1,
         });
         st.bindTooltip(escapeHtml(p.name || ''), { direction: 'top', offset: [0, -6] });
         railOnClick(st, () => railPopupHtml(p.name, lines));
@@ -1340,6 +1322,133 @@ function loadRail() {
 railLayer.on('add', () => { loadRail(); railSyncStations(); });
 map.getPane(LAYER_PANE('metro-trens')).style.opacity = String(RAIL_DEFAULT_PCT / 100);
 
+// ─── Ônibus com bicicleta (dados do Bici Busão Sampa) ────────────────────────
+// Itinerários das linhas que levam bici: SPTrans (superarticulados de 23 m) e
+// seletivos da EMTU. Como no metrô, NÃO há cópia no amora: bike-buses.json e
+// emtu-seletivo.json dão as linhas e a regra escrita (`lines[].code`,
+// `rules.summary`); bus-routes.geojson e emtu-routes.geojson, os traçados
+// (LineString por sentido — `code`, `sentido`, `headsign`, `name`). Mudou o
+// formato lá, mude aqui. A posição ao vivo dos ônibus fica no próprio busão.
+// Baixados só quando a camada liga; opacidade no pane.
+const BUS_BIKE_DEFAULT_PCT = 100;
+const BUS_BIKE_COLOR = { sptrans: tokens.map.bus.sptrans, emtu: tokens.map.bus.emtu };
+const busBikeLayer = L.featureGroup([], {
+  attribution: '© OpenStreetMap, SPTrans, EMTU · linhas: <a href="https://busao.bicisampa.info/">Bici Busão Sampa</a>',
+});
+let _busBikeLoad = null;
+
+function busBikePopupHtml(p, color, summary) {
+  return `<div class="rail-popup"><div class="rail-row"><span class="rail-chip" style="background:${color}">${escapeHtml(p.code)}</span>`
+    + `${escapeHtml(p.name || '')}</div>`
+    + (p.headsign ? `<div class="rail-row"><span class="rail-op">sentido ${escapeHtml(p.headsign)}</span></div>` : '')
+    + (summary ? `<p class="rail-bike">🚲 ${escapeHtml(summary)}</p>` : '')
+    + '<a href="https://busao.bicisampa.info/" target="_blank" rel="noopener">bici liberada agora? busao.bicisampa.info ↗</a>'
+    + '</div>';
+}
+function loadBusBike() {
+  if (_busBikeLoad) return _busBikeLoad;
+  const get = (f) => fetch(BUSAO_BASE + f).then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); });
+  const none = { lines: [], rules: {}, features: [] };
+  _busBikeLoad = Promise.all([
+    get('data/bike-buses.json'), get('data/bus-routes.geojson'),
+    // EMTU é o complemento: se falhar, a SPTrans ainda aparece.
+    get('data/emtu-seletivo.json').catch(() => none), get('data/emtu-routes.geojson').catch(() => none),
+  ]).then(([spCfg, spGeo, emtuCfg, emtuGeo]) => {
+    const pane = LAYER_PANE('onibus-bici');
+    const lines = [];
+    for (const [cfg, geo, color] of [[spCfg, spGeo, BUS_BIKE_COLOR.sptrans], [emtuCfg, emtuGeo, BUS_BIKE_COLOR.emtu]]) {
+      const codes = new Set((cfg.lines || []).map((l) => l.code));
+      for (const f of geo.features || []) {
+        const p = f.properties || {};
+        if (f.geometry?.type !== 'LineString' || !codes.has(p.code)) continue;
+        lines.push({ p, color, summary: cfg.rules?.summary || '', latlngs: f.geometry.coordinates.map(([lon, lat]) => [lat, lon]) });
+      }
+    }
+    // Contornos ANTES de todas as linhas: várias linhas dividem a mesma rua, e
+    // o contorno de uma não pode cobrir a cor da vizinha.
+    for (const l of lines) L.polyline(l.latlngs, { pane, color: tokens.map.line.casing, weight: 5, opacity: 0.8, interactive: false }).addTo(busBikeLayer);
+    for (const l of lines) {
+      const route = L.polyline(l.latlngs, { pane, color: l.color, weight: 3, opacity: 1 });
+      route.bindTooltip(`${escapeHtml(l.p.code)}${l.p.headsign ? ` → ${escapeHtml(l.p.headsign)}` : ''}`, { sticky: true, className: 'osm-tip' });
+      railOnClick(route, () => busBikePopupHtml(l.p, l.color, l.summary));
+      route.addTo(busBikeLayer);
+    }
+  }).catch((err) => {
+    _busBikeLoad = null;          // o próximo liga/desliga tenta de novo
+    console.warn('[onibus-bici]', err);
+    showToast(`Falha ao carregar os ônibus com bicicleta: ${err.message}`);
+  });
+  return _busBikeLoad;
+}
+busBikeLayer.on('add', () => { loadBusBike(); });
+map.getPane(LAYER_PANE('onibus-bici')).style.opacity = String(BUS_BIKE_DEFAULT_PCT / 100);
+
+// ─── Rotas salvas no Amora (biblioteca do Traçar) ────────────────────────────
+// As rotas do GET /saved-routes?detail=1 — a mesma listagem do modal Carregar,
+// com o traçado menos reamostrado (a miniatura de 80 pontos corta esquina
+// demais no mapa). Sem backend same-origin a camada fica vazia, com aviso.
+// O clique abre o resumo; "Abrir no Traçar" carrega a rota no editor.
+const SAVED_ROUTES_DEFAULT_PCT = 100;
+const SAVED_ROUTE_COLOR = tokens.map.route.saved;
+const savedRoutesLayer = L.featureGroup();
+let _savedRoutesLoad = null, _savedRoutesLayerGen = 0;
+
+function savedRoutePopupNode(r) {
+  const box = document.createElement('div');
+  box.className = 'rail-popup';
+  const nf = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
+  const facts = [
+    Number.isFinite(r.distMeters) ? `${nf.format(r.distMeters / 1000)} km` : null,
+    Number.isFinite(r.stats?.ascentM) ? `↑ ${Math.round(r.stats.ascentM)} m` : null,
+    Number.isFinite(r.stats?.energyKj) ? `${Math.round(r.stats.energyKj)} kJ` : null,
+  ].filter(Boolean).join(' · ');
+  box.innerHTML = `<strong>${escapeHtml(r.name || r.slug || 'Rota salva')}</strong>`
+    + (facts ? `<div class="rail-row"><span class="rail-op">${facts}</span></div>` : '')
+    + '<p class="rail-bike"><button type="button" class="secondary-btn saved-route-open">Abrir no Traçar</button></p>'
+    + (r.slug ? `<a href="${escapeHtml(savedRouteShareUrl(r.slug))}" target="_blank" rel="noopener">link da rota ↗</a>` : '');
+  box.querySelector('.saved-route-open').addEventListener('click', () => {
+    map.closePopup();
+    loadSavedRoute(r.id, r.name);
+  });
+  return box;
+}
+function loadSavedRoutesLayer() {
+  if (_savedRoutesLoad) return _savedRoutesLoad;
+  const gen = ++_savedRoutesLayerGen;
+  _savedRoutesLoad = fetch('./saved-routes?detail=1', { cache: 'no-store' }).then((r) => {
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.json();
+  }).then((data) => {
+    if (gen !== _savedRoutesLayerGen) return;
+    savedRoutesLayer.clearLayers();
+    const pane = LAYER_PANE('saved-routes');
+    const routes = (data.routes || []).filter((r) => r.preview?.length >= 2);
+    for (const r of routes) L.polyline(r.preview, { pane, color: tokens.map.line.casing, weight: 6, opacity: 0.8, interactive: false }).addTo(savedRoutesLayer);
+    for (const r of routes) {
+      const line = L.polyline(r.preview, { pane, color: SAVED_ROUTE_COLOR, weight: 3.5, opacity: 1 });
+      line.bindTooltip(escapeHtml(r.name || r.slug || ''), { sticky: true, className: 'osm-tip' });
+      line.on('click', (e) => {
+        if (drawingMode) return;
+        L.popup({ maxWidth: 300 }).setLatLng(e.latlng).setContent(savedRoutePopupNode(r)).openOn(map);
+      });
+      line.addTo(savedRoutesLayer);
+    }
+  }).catch((err) => {
+    if (gen !== _savedRoutesLayerGen) return;
+    _savedRoutesLoad = null;      // o próximo liga/desliga tenta de novo
+    console.warn('[saved-routes]', err);
+    showToast(`Falha ao carregar as rotas salvas: ${err.message}`);
+  });
+  return _savedRoutesLoad;
+}
+// Depois de salvar/excluir: a próxima ligada rebusca; ligada agora, rebusca já.
+function refreshSavedRoutesLayer() {
+  _savedRoutesLoad = null;
+  if (map.hasLayer(savedRoutesLayer)) loadSavedRoutesLayer();
+}
+savedRoutesLayer.on('add', () => { loadSavedRoutesLayer(); });
+map.getPane(LAYER_PANE('saved-routes')).style.opacity = String(SAVED_ROUTES_DEFAULT_PCT / 100);
+
 // ─── Onde comer (wiki do Pedal) ──────────────────────────────────────────────
 // Lugares para comer indicados por quem pedala, lidos AO VIVO da página "Onde
 // comer" do wiki (pedalhidrografi.co/wiki/Onde_comer) — a página é a fonte, não
@@ -1353,7 +1462,7 @@ map.getPane(LAYER_PANE('metro-trens')).style.opacity = String(RAIL_DEFAULT_PCT /
 // Deep link: /#comer=<id> (o "no amora" de cada ficha do wiki).
 const WIKI_BASE = 'https://pedalhidrografi.co/';
 const COMER_PAGE = 'Onde_comer';
-const COMER_COLOR = '#d9480f';
+const COMER_COLOR = tokens.map.food.marker;
 const COMER_DEFAULT_PCT = 100;
 const comerLayer = L.featureGroup([], {
   attribution: `Onde comer: <a href="${WIKI_BASE}wiki/${COMER_PAGE}" target="_blank" rel="noopener">wiki do Pedal Hidrográfico</a>`,
@@ -1420,7 +1529,7 @@ function loadComer() {
       if (!places.length) showToast('Onde comer: nenhum lugar com coordenadas no wiki ainda.');
       for (const p of places) {
         const m = L.circleMarker([p.lat, p.lon], {
-          pane, radius: 7, color: '#fff', weight: 2, fillColor: COMER_COLOR, fillOpacity: 1,
+          pane, radius: 7, color: tokens.map.marker.outline, weight: 2, fillColor: COMER_COLOR, fillOpacity: 1,
         });
         m.bindTooltip(escapeHtml(p.nome || p.id), { direction: 'top', offset: [0, -7] });
         m.bindPopup(() => comerPopupHtml(p), { maxWidth: 280 });
@@ -1477,7 +1586,7 @@ function tryOpenComerFromHash() {
 // vista e só de perto, como lá: bicicletários do zoom 12, paraciclos do 14.
 const PARKING_URL = BUSAO_BASE + 'data/bike-parking.geojson';
 const PARKING_MIN_ZOOM = { bicicletario: 12, paraciclo: 14 };
-const PARKING_COLORS = { livre: '#16a34a', cadastro: '#2563eb', pago: '#db2777', clientes: '#78716c', closed: '#dc2626' };
+const PARKING_COLORS = { livre: tokens.map.parking.livre, cadastro: tokens.map.parking.cadastro, pago: tokens.map.parking.pago, clientes: tokens.map.parking.clientes, closed: tokens.map.parking.closed };
 const PARKING_SHAPES = {
   paraciclo: { size: 20, outline: '<circle cx="12" cy="12" r="10"/>', stand: 0 },
   bicicletario: { size: 25, outline: '<path d="M12 1.6 22.6 10.2V21a1.4 1.4 0 0 1-1.4 1.4H2.8A1.4 1.4 0 0 1 1.4 21V10.2Z"/>', stand: 1.6 },
@@ -1486,9 +1595,9 @@ const PARKING_LABEL = { bicicletario: 'Bicicletário', paraciclo: 'Paraciclo' };
 const parkingSvg = (kind, fill, closed = false) => {
   const { size, outline, stand } = PARKING_SHAPES[kind];
   return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" aria-hidden="true">`
-    + `<g fill="${fill}" stroke="#1c1917" stroke-width="1.6">${outline}</g>`
-    + `<path d="M8.6 16.4V11.4a3.4 3.4 0 0 1 6.8 0v5M6.6 16.6h10.8" transform="translate(0 ${stand})" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/>`
-    + (closed ? '<path d="M4.5 19.5 19.5 4.5" stroke="#1c1917" stroke-width="4.2" stroke-linecap="round"/><path d="M4.5 19.5 19.5 4.5" stroke="#fff" stroke-width="2" stroke-linecap="round"/>' : '')
+    + `<g fill="${fill}" stroke="${tokens.map.parking.ink}" stroke-width="1.6">${outline}</g>`
+    + `<path d="M8.6 16.4V11.4a3.4 3.4 0 0 1 6.8 0v5M6.6 16.6h10.8" transform="translate(0 ${stand})" fill="none" stroke="${tokens.map.parking.symbol}" stroke-width="2.2" stroke-linecap="round"/>`
+    + (closed ? `<path d="M4.5 19.5 19.5 4.5" stroke="${tokens.map.parking.ink}" stroke-width="4.2" stroke-linecap="round"/><path d="M4.5 19.5 19.5 4.5" stroke="${tokens.map.parking.symbol}" stroke-width="2" stroke-linecap="round"/>` : '')
     + '</svg>';
 };
 const PARKING_PANE = { paraciclo: 'bikeParkingPara', bicicletario: 'bikeParkingBici' };
@@ -1627,13 +1736,13 @@ const OVERLAY_LAYERS = [
     trash: true,
     trashAction: () => clearRouteHighlight(),
   },
-  { id: 'rmsampa',  label: 'Topografia colorida', layer: rmsampa,  defaultVisible: true,  defaultPct: 85 },
+  { id: 'rmsampa',  label: 'Topografia Colorida Grande Sampa', layer: rmsampa,  defaultVisible: true,  defaultPct: 85 },
   // Câmera Topográfica: relevo do FABDEM renderizado no cliente (cmocean.phase
   // × declividade), re-renderizado a cada pan/zoom. Botão de engrenagem abre o
   // modal de parâmetros (min/max elevação, declividade máx., γ, estimar).
   {
     id: 'camera-topo',
-    label: 'Câmera Topográfica',
+    label: 'Relevo Colorido Câmera Topográfica',
     defaultVisible: false,
     defaultPct: settings.cameraTopo.opacityPct,
     gear: true,
@@ -1644,13 +1753,11 @@ const OVERLAY_LAYERS = [
   },
   { id: 'sara1930', label: 'SARA 1930',           layer: sara1930, defaultVisible: false, defaultPct: 85 },
   { id: 'mapa1850', label: 'Mapa 1850',           layer: mapa1850, defaultVisible: false, defaultPct: 85 },
-  { id: 'mtpi-v1', label: 'MTPI v1 (3/30/300 km)',    layer: mtpiV1, defaultVisible: false, defaultPct: 100 },
-  { id: 'mtpi-v2', label: 'MTPI v2 (30/300/3000 km)', layer: mtpiV2, defaultVisible: false, defaultPct: 100 },
   // Mancha da enchente de 1929: relevo atual até 724 m ligado às calhas (ver
   // ENCHENTE_1929_URL). Opacidade no pane — contorno e preenchimento juntos.
   {
     id: 'enchente-1929',
-    label: 'Enchente de 1929 (cota 724 m)',
+    label: 'Enchente 1929',
     layer: enchente1929,
     defaultVisible: false,
     defaultPct: ENCHENTE_1929_DEFAULT_PCT,
@@ -1660,7 +1767,7 @@ const OVERLAY_LAYERS = [
   // because routes are a Map of polylines + markers, not a single tileLayer.
   {
     id: 'routes',
-    label: 'Rotas cadastradas',
+    label: 'Rotas do Censo Hidrográfico',
     defaultVisible: true,
     defaultPct: 100,
     show: () => setRoutesGloballyVisible(true),
@@ -1705,6 +1812,24 @@ const OVERLAY_LAYERS = [
     defaultVisible: false,
     defaultPct: RAIL_DEFAULT_PCT,
     setOpacity: (frac) => { map.getPane(LAYER_PANE('metro-trens')).style.opacity = String(frac); },
+  },
+  // Ônibus que levam bicicleta (busao.bicisampa.info — ver loadBusBike).
+  {
+    id: 'onibus-bici',
+    label: 'Ônibus com bicicleta',
+    layer: busBikeLayer,
+    defaultVisible: false,
+    defaultPct: BUS_BIKE_DEFAULT_PCT,
+    setOpacity: (frac) => { map.getPane(LAYER_PANE('onibus-bici')).style.opacity = String(frac); },
+  },
+  // Biblioteca do editor de traçado (GET /saved-routes — ver loadSavedRoutesLayer).
+  {
+    id: 'saved-routes',
+    label: 'Rotas salvas no Amora',
+    layer: savedRoutesLayer,
+    defaultVisible: false,
+    defaultPct: SAVED_ROUTES_DEFAULT_PCT,
+    setOpacity: (frac) => { map.getPane(LAYER_PANE('saved-routes')).style.opacity = String(frac); },
   },
   // Onde comer — lugares da página do wiki (ver WIKI_BASE/COMER_PAGE), lidos
   // ao vivo pela API do Kartographer. Opacidade no pane.
@@ -1756,12 +1881,12 @@ const OVERLAY_LAYERS = [
     hide: () => hidePhotos(),
     setOpacity: (frac) => setPhotosOpacity(frac),
   },
-  // Vídeo fantasma — o checkbox espelha `settings.clipsGhost.enabled`
+  // Vídeo animado — o checkbox espelha `settings.clipsGhost.enabled`
   // (start/stop da reprodução); o slider controla a opacidade visual do
   // <video> sobreposto. Animação (botão da topbar) é o switch global.
   {
     id: 'clips-ghost',
-    label: 'Vídeo fantasma',
+    label: 'Vídeo animado',
     defaultVisible: true,
     defaultPct: 70,
     show: () => {
@@ -1814,7 +1939,7 @@ const OVERLAY_LAYERS = [
   // in localStorage so the layer is restored on reload.
   {
     id: 'custom-xyz',
-    label: 'XYZ custom',
+    label: 'Custom XYZ',
     defaultVisible: false,
     defaultPct: 80,
     editable: true,
@@ -1825,7 +1950,7 @@ const OVERLAY_LAYERS = [
   },
   {
     id: 'custom-wms',
-    label: 'WMS custom',
+    label: 'Custom WMS',
     defaultVisible: false,
     defaultPct: 80,
     editable: true,
@@ -1835,6 +1960,32 @@ const OVERLAY_LAYERS = [
     edit: () => promptCustomWmsConfig(),
   },
 ];
+
+// Grupos do painel de camadas, na ordem em que aparecem. É só apresentação: o
+// empilhamento no mapa continua sendo `layerOrder` (o modo "↕ Ordenar camadas"
+// mostra a pilha inteira). Camada nova entra num grupo, senão não aparece — o
+// aviso no console logo abaixo pega o esquecimento.
+const LAYER_GROUPS = [
+  { id: 'amora', label: 'Amora', open: true,
+    ids: ['photos', 'clips-ghost', 'live-people', 'audio-loop'] },
+  { id: 'pedal', label: 'Pedal Hidrográfico', open: true,
+    ids: ['osm-overpass', 'rmsampa', 'camera-topo', 'routes', 'route-highlight', 'saved-routes', 'onde-comer'] },
+  { id: 'infra-material', label: 'Infraestrutura material',
+    ids: ['oim-power', 'oim-water', 'oim-telecoms', 'oim-petroleum'] },
+  { id: 'infra-bici', label: 'Infraestrutura bicicletável',
+    ids: ['bicicletarios', 'paraciclos', 'onibus-bici', 'metro-trens', 'osm-cicloinfra', 'osm-viario'] },
+  { id: 'historicos', label: 'Mapas históricos e especiais',
+    ids: ['mapa1850', 'sara1930', 'enchente-1929'] },
+  { id: 'bases', label: 'Mapas base', ids: ['satellite', 'osm'] },
+  { id: 'custom', label: 'Personalizado', ids: ['custom-xyz', 'custom-wms'] },
+];
+{
+  const grouped = LAYER_GROUPS.flatMap((g) => g.ids);
+  for (const l of [...BASE_LAYERS, ...OVERLAY_LAYERS]) {
+    const n = grouped.filter((id) => id === l.id).length;
+    if (n !== 1) console.error(`[camadas] "${l.id}" está em ${n} grupos — tem que estar em exatamente 1`);
+  }
+}
 
 // ─── Camadas OSM servidas por FlatGeobuf ─────────────────────────────────────
 // "Morros e Águas" e "Cicloinfra OSM" consultavam o Overpass a cada pan/zoom.
@@ -1933,7 +2084,7 @@ function mercY(lat) {
 // o backing store custava 9× a área da tela.
 const PACKED_MAX_DPR = 2;
 const PackedLinesLayer = L.Layer.extend({
-  initialize(lines, { pane, color = '#fff', widthM = 1, opacity = 1 } = {}) {
+  initialize(lines, { pane, color = tokens.map.road.viario, widthM = 1, opacity = 1 } = {}) {
     this._lines = lines;
     L.setOptions(this, { pane, color, widthM, opacity });
   },
@@ -2258,9 +2409,9 @@ function makeOsmFgbLayer({ id, label, sources,
 }
 
 // Estilo da "Morros e Águas" — espelha a folha de estilo JOSM homônima:
-//   waterway=river                verde  #A6C045 w5  (tracejado se em túnel)
-//   waterway=stream/canal/vala/…  ocre   #DDB84F w3  (tracejado se em túnel)
-//   natural=ridge                 laranja #EF7A30 w3
+//   waterway=river                verde  w5  (tracejado se em túnel)
+//   waterway=stream/canal/vala/…  ocre   w3  (tracejado se em túnel)
+//   natural=ridge                 laranja w3   (cores: papéis map.hidro)
 // Numa bbox grande (DETAIL_MAIN) só rio, canal e crista sobrevivem: vala,
 // dreno e córrego viram renda ilegível nessa escala e respondem pela maior
 // parte das feições (no extrato do Uruguai, 8.365 de 28.577 linhas eram
@@ -2269,16 +2420,16 @@ function hidroStyleFor(p, detail) {
   // `tunnel=culvert` (córrego canalizado) e `tunnel=yes` tracejam; `no` não.
   // Com o Overpass bastava a chave existir — `tunnel=no` tracejava à toa.
   const tunnel = !!p.tunnel && p.tunnel !== 'no';
-  if (p.natural === 'ridge') return { color: '#EF7A30', weight: 3 };
+  if (p.natural === 'ridge') return { color: tokens.map.hidro.ridge, weight: 3 };
   if (p.waterway === 'river') {
-    return { color: '#A6C045', weight: 5, dashArray: tunnel ? '4 6' : null };
+    return { color: tokens.map.hidro.river, weight: 5, dashArray: tunnel ? '4 6' : null };
   }
   const main = p.waterway === 'canal' || p.waterway === 'riverbank';
   if (detail === DETAIL_MAIN && !main) return null;
   if (p.waterway) {
-    return { color: '#DDB84F', weight: 3, dashArray: tunnel ? '4 4' : null };
+    return { color: tokens.map.hidro.stream, weight: 3, dashArray: tunnel ? '4 4' : null };
   }
-  return detail === DETAIL_MAIN ? null : { color: '#888', weight: 2 };
+  return detail === DETAIL_MAIN ? null : { color: tokens.map.hidro.other, weight: 2 };
 }
 
 function hidroTipFor(p) {
@@ -2354,7 +2505,7 @@ const viarioLayer = makeOsmFgbLayer({
   sources: [{
     packed: true,
     load: (bb, opts) => streamFgbPackedLines(VIARIO_FGB_URL, bb, opts),
-    style: { color: '#fff', widthM: VIARIO_LAYER_WIDTH_M },
+    style: { color: tokens.map.road.viario, widthM: VIARIO_LAYER_WIDTH_M },
   }],
 });
 
@@ -3029,7 +3180,7 @@ function applyPhotoAnim() {
     for (const m of photoMarkers) m._spotIntensity = 0;
     scheduleRelax(false);
   }
-  // Mantém os ícones ✨ (linhas "Imagens contribuídas" / "Vídeo fantasma" do
+  // Mantém os ícones ✨ (linhas "Imagens contribuídas" / "Vídeo animado" do
   // painel de camadas) em sincronia.
   for (const b of document.querySelectorAll('.layer-anim-toggle')) {
     b.setAttribute('aria-pressed', String(settings.spotlight.enabled));
@@ -3436,7 +3587,7 @@ function makeClipMarkers(clips) {
     const thumbUrl = c.thumb ? CLIPS_DIR + c.thumb.split('/').map(encodeURIComponent).join('/') : '';
     const bg = thumbUrl
       ? `background-image: url('${thumbUrl}'); background-size: cover; background-position: center;`
-      : 'background-color: rgba(255,87,34,0.35);';
+      : `background-color: ${tokens.map.video.placeholder};`;
     const icon = L.divIcon({
       className: 'photo-dot-wrap',
       html:
@@ -4567,7 +4718,7 @@ function revealMediaMarker(marker) {
 // (`.clip-marker`, branco/verde/laranja durante a animação). Cada uma segue
 // um controle diferente:
 //   • dot estático  → camada "Imagens contribuídas" (photosVisible)
-//   • anel pulsante → "Vídeo fantasma" / Animação (clipsAnimationActive)
+//   • anel pulsante → "Vídeo animado" / Animação (clipsAnimationActive)
 // Por isso o Leaflet marker fica no mapa quando QUALQUER um dos dois está
 // ligado; quando só a animação está ligada, escondemos o dot estático via
 // CSS (`.clip-dot-hidden`) e deixamos só o anel pulsar.
@@ -6572,18 +6723,18 @@ function styleForCycloinfra(p, detail) {
   const kind = classifyCycloinfra(p);
   // Ciclovia (segregada): contínua + grossa. Ciclofaixa (pintada na via):
   // tracejada + fina. Caminho compartilhado: pontilhado.
-  if (kind === 'ciclovia') return { color: '#00BFA6', weight: 4 };
+  if (kind === 'ciclovia') return { color: tokens.map.cicloinfra.line, weight: 4 };
   // Numa bbox grande, só a malha segregada — ciclofaixa e caminho
   // compartilhado são tracejados finos que somem visualmente nessa escala e
   // respondem pelo grosso das feições.
   if (detail === DETAIL_MAIN) return null;
   if (kind === 'caminho compartilhado') {
-    return { color: '#00BFA6', weight: 3, dashArray: '2 5' };
+    return { color: tokens.map.cicloinfra.line, weight: 3, dashArray: '2 5' };
   }
   if (kind === 'ciclofaixa') {
-    return { color: '#00BFA6', weight: 3, dashArray: '6 4' };
+    return { color: tokens.map.cicloinfra.line, weight: 3, dashArray: '6 4' };
   }
-  return { color: '#00BFA6', weight: 2 };
+  return { color: tokens.map.cicloinfra.line, weight: 2 };
 }
 
 function cicloinfraTipFor(p) {
@@ -6613,7 +6764,7 @@ function ensureCustomXyz(url) {
     maxZoom: 22,
     opacity: 0.8,
     pane: LAYER_PANE('custom-xyz'),
-    attribution: 'XYZ custom',
+    attribution: 'Custom XYZ',
   });
   localStorage.setItem('phidro:customXyz', url);
   return customXyzLayer;
@@ -6655,7 +6806,7 @@ function promptCustomXyzUrl() {
   // Tick the checkbox in case it was unchecked
   const cb = document.querySelector('input[type="checkbox"][data-id="custom-xyz"]');
   if (cb) cb.checked = true;
-  showToast(`XYZ custom carregado`);
+  showToast(`Custom XYZ carregado`);
 }
 
 function ensureCustomWms(cfg) {
@@ -6675,7 +6826,7 @@ function ensureCustomWms(cfg) {
     opacity: 0.8,
     maxZoom: 22,
     pane: LAYER_PANE('custom-wms'),
-    attribution: 'WMS custom',
+    attribution: 'Custom WMS',
   });
   localStorage.setItem('phidro:customWms', JSON.stringify(cfg));
   return customWmsLayer;
@@ -6721,7 +6872,7 @@ function promptCustomWmsConfig() {
   if (customWmsLayer && !map.hasLayer(customWmsLayer)) customWmsLayer.addTo(map);
   const cb = document.querySelector('input[type="checkbox"][data-id="custom-wms"]');
   if (cb) cb.checked = true;
-  showToast(`WMS custom carregado`);
+  showToast(`Custom WMS carregado`);
 }
 
 // "Where am I" control (leaflet-locatecontrol). Adds the small target icon
@@ -6929,7 +7080,7 @@ function setupMapRotation() {
       a.setAttribute('aria-label', a.title);
       // Agulha: metade norte vermelha, sul cinza (a do plugin, em SVG inline).
       a.innerHTML = '<svg class="north-needle" viewBox="0 0 29 29" width="26" height="26" aria-hidden="true">'
-        + '<path d="M10.5 14l4-8 4 8h-8z" fill="#c0392b"/><path d="M10.5 16l4 8 4-8h-8z" fill="#999"/></svg>';
+        + `<path d="M10.5 14l4-8 4 8h-8z" fill="${tokens.map.compass.north}"/><path d="M10.5 16l4 8 4-8h-8z" fill="${tokens.map.compass.south}"/></svg>`;
       this._bar = bar;
       this._needle = a.firstChild;
       L.DomEvent.disableClickPropagation(bar);
@@ -6986,7 +7137,9 @@ function liveId() {
 function liveColorForId(id) {
   let h = 0;
   for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  // cores-de-dados: início — matiz calculado do token de cada pessoa
   return `hsl(${h % 360}, 72%, 48%)`;
+  // cores-de-dados: fim
 }
 
 let _liveWatchId = null;       // id do navigator.geolocation.watchPosition
@@ -7054,7 +7207,7 @@ function liveArrowTransform(heading) {
 // de rumo. Classe própria (.live-person), distinta do .photo-dot. `stale`
 // (sem fix recente) tira o pulso "ao vivo" via .is-stale.
 function personDivIcon(p, mine, stale, color) {
-  color = color || (mine ? '#1e88e5' : liveColorForId(p.id));
+  color = color || (mine ? tokens.map.live.me : liveColorForId(p.id));
   const initial = (p.name || '').trim().charAt(0).toUpperCase() || '•';
   const heading = Number.isFinite(p.heading) ? p.heading : null;
   const arrow = heading != null
@@ -7116,7 +7269,7 @@ function liveAgeOf(ts) {
 function livePersonStyle(e) {
   const ov = _personOverrides[e.last.id] || {};
   return {
-    color: ov.color || (e.mine ? '#1e88e5' : liveColorForId(e.last.id)),
+    color: ov.color || (e.mine ? tokens.map.live.me : liveColorForId(e.last.id)),
     opMul: Number.isFinite(ov.opacity) ? Math.max(0, Math.min(1, ov.opacity)) : 1,
     showHistory: ov.hideHistory !== true,
     age: liveAgeOf(e.last.ts),
@@ -7244,7 +7397,7 @@ function openLivePersonControls(token) {
   const ov = _personOverrides[token] || (_personOverrides[token] = {});
   const p = e.last || {};
   const mine = token === liveId();
-  const curColor = ov.color || (mine ? '#1e88e5' : liveColorForId(token));
+  const curColor = ov.color || (mine ? tokens.map.live.me : liveColorForId(token));
   const op = Number.isFinite(ov.opacity) ? Math.round(ov.opacity * 100) : 100;
   const showHist = ov.hideHistory !== true;
   const html =
@@ -8061,6 +8214,7 @@ applyLiveLocation();
 // fotos via showPhotos(), o resto começa oculto), então no restore só
 // precisamos forçar as camadas que diferem do default.
 const LAYER_STATE_KEY = 'phidro:layerState';   // { [id]: { on, pct } }
+const LAYER_GROUPS_KEY = 'phidro:layerGroups'; // { [grupo]: aberto? }
 // Estas NUNCA auto-restauram visibilidade no boot: custom-* exigem URL;
 // audio-loop tocaria sozinho (autoplay bloqueado/indesejado). Seguem
 // controláveis manualmente na sessão.
@@ -8114,15 +8268,31 @@ layerPanel.onAdd = function () {
   const div = L.DomUtil.create('div', 'leaflet-bar layer-panel');
   const ALL_LAYERS = [...BASE_LAYERS, ...OVERLAY_LAYERS];
   const byId = (id) => ALL_LAYERS.find((x) => x.id === id);
-  // Camadas de mapa (têm pane reordenável → estão em layerOrder) ganham setas
-  // ↑/↓ pra reordenar o empilhamento, exibidas em ordem topo→fundo. Camadas de
-  // conteúdo (fotos/clipes/pessoas/áudio — panes fixos, desenhadas por cima)
-  // vão agrupadas no fim, sem setas. Isto substitui o antigo modal de ordem.
-  const stackIds = () => layerOrder.slice().reverse();            // topo→fundo
-  const contentIds = () => OVERLAY_LAYERS.map((l) => l.id).filter((id) => !layerOrder.includes(id));
+  // A pilha do mapa (layerOrder), do topo pro fundo: o que o modo Ordenar lista.
+  const stackIds = () => layerOrder.slice().reverse();
 
   const rowsBox = L.DomUtil.create('div', 'layer-rows', div);
   const rowEls = {};
+
+  // Grupos recolhíveis (<details>); aberto/fechado fica em localStorage.
+  const groupsOpen = (() => {
+    try { return JSON.parse(localStorage.getItem(LAYER_GROUPS_KEY)) || {}; } catch { return {}; }
+  })();
+  const groupBodies = {};
+  for (const g of LAYER_GROUPS) {
+    const det = L.DomUtil.create('details', 'layer-group', rowsBox);
+    det.dataset.group = g.id;
+    det.open = groupsOpen[g.id] ?? !!g.open;
+    const sum = L.DomUtil.create('summary', 'layer-group-title', det);
+    sum.innerHTML = `${uiIcon('chevron-right', 'layer-group-chevron')}<span>${escapeHtml(g.label)}</span>`;
+    groupBodies[g.id] = L.DomUtil.create('div', 'layer-group-body', det);
+    det.addEventListener('toggle', () => {
+      groupsOpen[g.id] = det.open;
+      try { localStorage.setItem(LAYER_GROUPS_KEY, JSON.stringify(groupsOpen)); } catch { /* quota */ }
+    });
+  }
+  // A lista plana do modo Ordenar: as MESMAS linhas, movidas pra cá.
+  const stackBox = L.DomUtil.create('div', 'layer-stack', rowsBox);
 
   // Reordena o empilhamento movendo `id` em layerOrder (+1 = pro topo/frente).
   function moveLayer(id, delta) {
@@ -8135,13 +8305,21 @@ layerPanel.onAdd = function () {
   }
 
   // Recoloca as linhas (movendo os nós, sem recriar — preserva checkbox/slider
-  // e seus handlers) e atualiza o disabled das setas nas pontas.
+  // e seus handlers): nos grupos, ou na pilha plana enquanto ordena.
   function layoutRows() {
-    for (const id of stackIds())   { if (rowEls[id]) rowsBox.appendChild(rowEls[id]); }
-    for (const id of contentIds()) { if (rowEls[id]) rowsBox.appendChild(rowEls[id]); }
+    const ordering = div.classList.contains('is-ordering');
+    for (const g of LAYER_GROUPS) {
+      for (const id of g.ids) {
+        if (!rowEls[id]) continue;
+        const inStack = ordering && layerOrder.includes(id);
+        if (!inStack) groupBodies[g.id].appendChild(rowEls[id]);
+      }
+    }
+    if (!ordering) return;
     const stack = stackIds();
     stack.forEach((id, di) => {
       const el = rowEls[id]; if (!el) return;
+      stackBox.appendChild(el);
       el.querySelector('.layer-move-up')?.toggleAttribute('disabled', di === 0);
       el.querySelector('.layer-move-down')?.toggleAttribute('disabled', di === stack.length - 1);
     });
@@ -8155,7 +8333,7 @@ layerPanel.onAdd = function () {
     if (l.id === 'route-highlight') row.classList.add('layer-row-hidden');
     // Botões da linha num mini-grid fixo 3 colunas (sempre 3 col → checkboxes
     // alinhados; a ação fica sempre na col 3 → ✨ de "Imagens contribuídas" e
-    // "Vídeo fantasma" no mesmo x):
+    // "Vídeo animado" no mesmo x):
     //   col1=▲   col2=▼ (ou 🔽 filtro em "Imagens contribuídas", que não tem
     //   setas)   col3=ação (☰/📍/✨/✎/⚙/🗑)
     const btns = [];
@@ -8163,24 +8341,24 @@ layerPanel.onAdd = function () {
       // O nome da camada no rótulo: o leitor de tela lia só "Empilhar acima"
       // em todas as linhas. (No toque as setas só aparecem no modo ↕ Ordenar.)
       const nm = escapeHtml(l.label);
-      btns.push(`<button type="button" class="layer-move-up btn-up" title="Empilhar acima" aria-label="Empilhar acima — ${nm}">▲</button>`);
-      btns.push(`<button type="button" class="layer-move-down btn-down" title="Empilhar abaixo" aria-label="Empilhar abaixo — ${nm}">▼</button>`);
+      btns.push(`<button type="button" class="layer-move-up btn-up" title="Empilhar acima" aria-label="Empilhar acima — ${nm}">${uiIcon('chevron-up')}</button>`);
+      btns.push(`<button type="button" class="layer-move-down btn-down" title="Empilhar abaixo" aria-label="Empilhar abaixo — ${nm}">${uiIcon('chevron-down')}</button>`);
     }
     // Ação secundária (col3): filtro de mídias na camada "Imagens contribuídas".
     if (l.id === 'photos')
-      btns.push('<button type="button" class="layer-action layer-filter-toggle btn-filter" title="Filtrar imagens/vídeos por lista ou SPARQL" aria-label="Filtrar imagens" aria-expanded="false"><svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true"><path d="M1 2.5h14L9.5 9v4.2l-3 1.8V9L1 2.5z" fill="currentColor"/></svg></button>');
+      btns.push(`<button type="button" class="layer-action layer-filter-toggle btn-filter" title="Filtrar imagens/vídeos por lista ou SPARQL" aria-label="Filtrar imagens" aria-expanded="false">${uiIcon('filter')}</button>`);
     if (l.id === 'routes')
-      btns.push('<button type="button" id="routes-panel-toggle" class="layer-action btn-action" title="Mostrar rotas" aria-label="Mostrar rotas" aria-pressed="false">☰</button>');
+      btns.push(`<button type="button" id="routes-panel-toggle" class="layer-action btn-action" title="Mostrar rotas" aria-label="Mostrar rotas" aria-pressed="false">${uiIcon('list')}</button>`);
     else if (l.id === 'live-people')
-      btns.push('<button type="button" id="share-loc-btn" class="layer-action btn-action" title="Compartilhar minha localização ao vivo" aria-label="Compartilhar localização" aria-pressed="false">📍</button>');
+      btns.push(`<button type="button" id="share-loc-btn" class="layer-action btn-action" title="Compartilhar minha localização ao vivo" aria-label="Compartilhar localização" aria-pressed="false">${uiIcon('location')}</button>`);
     else if (l.id === 'photos' || l.id === 'clips-ghost')
-      btns.push('<button type="button" class="layer-action layer-anim-toggle btn-action" title="Ligar/desligar animação dos marcadores + vídeo fantasma" aria-label="Animação" aria-pressed="false">✨</button>');
+      btns.push(`<button type="button" class="layer-action layer-anim-toggle btn-action" title="Ligar/desligar animação dos marcadores + vídeo animado" aria-label="Animação" aria-pressed="false">${uiIcon('sparkles')}</button>`);
     else if (l.editable)
-      btns.push('<button type="button" class="layer-action layer-action-edit btn-action" title="Editar URL" aria-label="Editar URL">✎</button>');
+      btns.push(`<button type="button" class="layer-action layer-action-edit btn-action" title="Editar URL" aria-label="Editar URL">${uiIcon('edit')}</button>`);
     else if (l.gear)
-      btns.push('<button type="button" class="layer-action layer-action-edit btn-action" title="Configurar" aria-label="Configurar">⚙</button>');
+      btns.push(`<button type="button" class="layer-action layer-action-edit btn-action" title="Configurar" aria-label="Configurar">${uiIcon('settings')}</button>`);
     else if (l.trash)
-      btns.push('<button type="button" class="layer-action layer-action-trash btn-action" title="Remover destaque" aria-label="Remover destaque">🗑</button>');
+      btns.push(`<button type="button" class="layer-action layer-action-trash btn-action" title="Remover destaque" aria-label="Remover destaque">${uiIcon('trash')}</button>`);
     const buttons = `<span class="layer-btns">${btns.join('')}</span>`;
     const opacity = l.noOpacity ? ''
       : `<input type="range" class="opacity-slider" data-id="${l.id}" min="0" max="100" value="${l.defaultPct}" aria-label="Opacidade — ${l.label}" />`
@@ -8226,29 +8404,34 @@ layerPanel.onAdd = function () {
     return row;
   }
 
-  for (const id of stackIds())   { const l = byId(id); if (l) rowEls[id] = makeRow(l, true); }
-  for (const id of contentIds()) { const l = byId(id); if (l) rowEls[id] = makeRow(l, false); }
+  for (const l of ALL_LAYERS) rowEls[l.id] = makeRow(l, layerOrder.includes(l.id));
   layoutRows();
 
-  // No toque (CSS, pointer: coarse) as setas ▲▼ ficam escondidas até ligar
-  // "↕ Ordenar": a 2 px do ☰/📍, um toque torto reordenava (e persistia) a
-  // pilha. No mouse o botão não aparece e as setas seguem sempre visíveis.
+  // As setas ▲▼ só aparecem no modo "↕ Ordenar", que troca os grupos pela
+  // pilha plana: um grupo mistura camadas de pontos distantes da pilha, então
+  // subir/descer só faz sentido vendo a pilha inteira. (E, no toque, a 2 px do
+  // ☰/📍, um toque torto reordenava — e persistia — a pilha.)
   const orderToggle = L.DomUtil.create('button', 'layer-order-toggle', div);
   orderToggle.type = 'button';
-  orderToggle.textContent = '↕ Ordenar camadas';
+  const ORDER_LABEL = {
+    off: `${uiIcon('sort')} Ordenar camadas`,
+    on: `${uiIcon('check')} Pronto`,
+  };
+  orderToggle.innerHTML = ORDER_LABEL.off;
   orderToggle.setAttribute('aria-pressed', 'false');
   orderToggle.addEventListener('click', () => {
     const on = !div.classList.contains('is-ordering');
     div.classList.toggle('is-ordering', on);
     orderToggle.setAttribute('aria-pressed', String(on));
-    orderToggle.textContent = on ? '✓ Pronto' : '↕ Ordenar camadas';
+    orderToggle.innerHTML = on ? ORDER_LABEL.on : ORDER_LABEL.off;
+    layoutRows();
   });
 
   // Reset da ordem de empilhamento (substitui o botão "Restaurar padrão" do
   // antigo modal).
   const reset = L.DomUtil.create('button', 'layer-order-reset-inline', div);
   reset.type = 'button';
-  reset.textContent = '↺ Ordem padrão';
+  reset.innerHTML = `${uiIcon('reset')} Ordem padrão`;
   reset.addEventListener('click', () => {
     layerOrder = DEFAULT_LAYER_ORDER.slice();
     applyLayerOrder();
@@ -8261,11 +8444,11 @@ layerPanel.onAdd = function () {
   panelTitle.textContent = 'Camadas';
 
   // "☰ Rotas" de tamanho de dedo na faixa do título (só no toque — CSS): no
-  // celular o ☰ de 18 px da linha "Rotas cadastradas" era o ÚNICO jeito de abrir
+  // celular o ☰ de 18 px da linha "Rotas do Censo Hidrográfico" era o ÚNICO jeito de abrir
   // a lista de rotas, colado nas setas de reordenar.
   const routesBtn = L.DomUtil.create('button', 'layer-routes-btn', div);
   routesBtn.type = 'button';
-  routesBtn.textContent = '☰ Rotas';
+  routesBtn.innerHTML = `${uiIcon('list')} Rotas`;
   routesBtn.title = 'Mostrar a lista de rotas';
   routesBtn.setAttribute('aria-pressed', 'false');
   routesBtn.addEventListener('click', (e) => {
@@ -8293,7 +8476,7 @@ layerPanel.addTo(map);
 showPhotos();
 // NB: restoreLayerState() é chamado MAIS PARA BAIXO (após `routesGloballyVisible`
 // ser declarado) — chamar aqui caía na temporal dead zone desse `let` e o
-// toggle de "Rotas cadastradas" não pegava no boot.
+// toggle de "Rotas do Censo Hidrográfico" não pegava no boot.
 
 // ─── State ───────────────────────────────────────────────────────────────────
 const routesList = document.getElementById('routes-list');
@@ -8388,7 +8571,7 @@ if (headerToggle && leafletTopLeft) {
 function applyHeaderVisibility(hidden) {
   document.body.classList.toggle('header-hidden', hidden);
   if (headerToggle) {
-    headerToggle.textContent = hidden ? '☰▼' : '☰▲';
+    headerToggle.innerHTML = uiIcon(hidden ? 'header-expand' : 'header-collapse');
     headerToggle.setAttribute('aria-pressed', String(hidden));
     headerToggle.setAttribute('aria-label', hidden ? 'Mostrar cabeçalho' : 'Ocultar cabeçalho');
     headerToggle.setAttribute('title', hidden ? 'Mostrar cabeçalho' : 'Ocultar cabeçalho');
@@ -8489,7 +8672,7 @@ if (!isMobileViewport()) {
 }
 updateMenuBtnPressed();
 
-// O toggle das rotas agora mora no ícone ☰ da linha "Rotas cadastradas" no
+// O toggle das rotas agora mora no ícone ☰ da linha "Rotas do Censo Hidrográfico" no
 // painel de camadas (ver makeRow). A lógica fica aqui pra reaproveitar o
 // estado + a persistência da sidebar.
 function toggleRoutesSidebar() {
@@ -8575,11 +8758,12 @@ function fitTopbarActions() {
 }
 // Rótulo de um botão da barra: ícone + texto num <span class="tb-txt"> (que o
 // modo só-ícones esconde) — e re-mede a barra.
-function setTopbarLabel(btn, icon, text) {
+function setTopbarLabel(btn, iconName, text) {
   const span = document.createElement('span');
   span.className = 'tb-txt';
   span.textContent = text;
-  btn.replaceChildren(`${icon} `, span);
+  btn.innerHTML = `${uiIcon(iconName)} `;
+  btn.append(span);
   fitTopbarActions();
 }
 fitTopbarActions();
@@ -8955,7 +9139,7 @@ async function boot() {
     // Both live in the reorderable 'routes' pane (number badges stay markers,
     // so they remain above everything).
     const casing = L.polyline(entry.latlngs, {
-      color: '#1a1a1a',
+      color: tokens.map.route.casing,
       weight: 3.5,
       opacity: 0.55,
       lineCap: 'round',
@@ -8963,7 +9147,7 @@ async function boot() {
       pane: LAYER_PANE('routes'),
     });
     const layer = L.polyline(entry.latlngs, {
-      color: '#ffffff',
+      color: tokens.map.route.line,
       weight: 1.75,
       opacity: 1,
       lineCap: 'round',
@@ -8986,7 +9170,7 @@ async function boot() {
     // o traço mesmo transparente). No Traçar o toque passa direto pro mapa
     // (vira ponto), igual à linha branca sem handler.
     const hit = L.polyline(entry.latlngs, {
-      color: '#000',
+      color: tokens.map.route.hit,
       weight: ROUTE_HIT_WEIGHT,
       opacity: 0,
       lineCap: 'round',
@@ -9013,7 +9197,7 @@ async function boot() {
       badge.on('click', () => openRouteModal(key));
     }
 
-    // Só adiciona ao mapa se a camada "Rotas cadastradas" está visível. Sem
+    // Só adiciona ao mapa se a camada "Rotas do Censo Hidrográfico" está visível. Sem
     // isto, rotas recém-construídas entram no mapa direto, e o filtro de data
     // (setRouteVisible) faz early-return pras que já estão `visible:true`, então
     // nunca reconcilia contra routesGloballyVisible — e o toggle "off" salvo de
@@ -9136,11 +9320,11 @@ function highlightRoute(r) {
   // Remember original style once so repeated hovers don't drift.
   if (!r._hoverOrig) {
     r._hoverOrig = {
-      color: r.layer.options.color || '#ffffff',
+      color: r.layer.options.color || tokens.map.route.line,
       weight: r.layer.options.weight || 3.5,
     };
   }
-  r.layer.setStyle({ color: '#ffb547', weight: 6 });
+  r.layer.setStyle({ color: tokens.map.route.hover, weight: 6 });
   if (r.layer.bringToFront) r.layer.bringToFront();
 }
 function unhighlightRoute(r) {
@@ -9432,7 +9616,7 @@ let routesOpacityPct = 100;
 
 // Restaura a visibilidade/opacidade das camadas escolhidas em sessões
 // anteriores. Roda AQUI (e não logo após o painel) de propósito: o estado de
-// boot de cada camada == seu defaultVisible, mas a camada "Rotas cadastradas"
+// boot de cada camada == seu defaultVisible, mas a camada "Rotas do Censo Hidrográfico"
 // guarda o estado em `routesGloballyVisible`/`routesOpacityPct` (declarados
 // logo acima) — restaurar antes disso esbarrava na temporal dead zone desses
 // `let` e o hide() das rotas era engolido. As rotas carregam async depois e
@@ -9484,8 +9668,8 @@ function addRouteHighlight(key) {
   if (!dup) {
     const pane = LAYER_PANE('route-highlight');
     const base = { lineCap: 'round', lineJoin: 'round', pane, interactive: false };
-    const casing = L.polyline(r.entry.latlngs, { ...base, color: '#1a1a1a', weight: 5.25, opacity: 0.55 });
-    const line   = L.polyline(r.entry.latlngs, { ...base, color: '#ffffff', weight: 2.6,  opacity: 1 });
+    const casing = L.polyline(r.entry.latlngs, { ...base, color: tokens.map.route.casing, weight: 5.25, opacity: 0.55 });
+    const line   = L.polyline(r.entry.latlngs, { ...base, color: tokens.map.route.line, weight: 2.6,  opacity: 1 });
     casing._phKey = key; line._phKey = key;
     routeHighlightGroup.addLayer(casing);
     routeHighlightGroup.addLayer(line);
@@ -10404,7 +10588,7 @@ function enterDrawingMode() {
     document.body.classList.add('layers-hidden');
     if (layersBtn) layersBtn.setAttribute('aria-pressed', 'false');
   }
-  setTopbarLabel(traceBtn, '🗺︎', 'cancelar');
+  setTopbarLabel(traceBtn, 'trace', 'cancelar');
   traceBtn.setAttribute('aria-label', 'Cancelar');
   traceBtn.setAttribute('title', 'Cancelar (Esc) — o traçado fica guardado');
   traceBtn.setAttribute('aria-pressed', 'true');
@@ -10446,7 +10630,7 @@ function enterPreviewMode() {
   }
   traceControls.hidden = true;
   // Cancelar → Editar; mantém aria-pressed='true' (laranja).
-  setTopbarLabel(traceBtn, '✎🗺︎', 'editar');
+  setTopbarLabel(traceBtn, 'edit', 'editar');
   traceBtn.setAttribute('aria-label', 'Editar');
   traceBtn.setAttribute('title', 'Voltar a editar');
 }
@@ -10457,7 +10641,7 @@ function exitPreviewMode() {
   document.body.classList.remove('trace-preview');
   updateDraftPolyline();   // restaura a geometria exata (des-suaviza)
   traceControls.hidden = false;
-  setTopbarLabel(traceBtn, '🗺︎', 'cancelar');
+  setTopbarLabel(traceBtn, 'trace', 'cancelar');
   traceBtn.setAttribute('aria-label', 'Cancelar');
   traceBtn.setAttribute('title', 'Cancelar (Esc) — o traçado fica guardado');
 }
@@ -10517,7 +10701,7 @@ function exitDrawingMode() {
     if (layersBtn) layersBtn.setAttribute('aria-pressed', 'true');
     layersWasVisible = false;
   }
-  setTopbarLabel(traceBtn, '🗺︎', 'traçar');
+  setTopbarLabel(traceBtn, 'trace', 'traçar');
   traceBtn.setAttribute('aria-label', 'Traçar GPX');
   traceBtn.setAttribute('title', 'Traçar GPX');
   traceBtn.removeAttribute('aria-pressed');
@@ -13224,7 +13408,7 @@ function updateDraftPolyline() {
     // line to insert an intermediate waypoint would ALSO append a stray
     // point at the end of the trace.
     draftCasing = L.polyline(latlngs, {
-      color: '#1a1a1a',
+      color: tokens.map.route.casing,
       weight: 7,
       opacity: 0.55,
       lineCap: 'round',
@@ -13233,7 +13417,7 @@ function updateDraftPolyline() {
       className: 'draft-line',
     }).addTo(map);
     draftPolyline = L.polyline(latlngs, {
-      color: '#ffffff',
+      color: tokens.map.route.line,
       weight: 3.5,
       opacity: 1,
       lineCap: 'round',
@@ -13351,7 +13535,7 @@ function startLineInsert(e, target, pointerId) {
     zIndexOffset: 2000,
   }).addTo(map);
   const preview = L.polyline([], {
-    color: '#ffffff',
+    color: tokens.map.route.line,
     weight: 2,
     opacity: 0.8,
     dashArray: '4 5',
@@ -17236,7 +17420,7 @@ function svgToPngBlob(svgString, size) {
       const canvas = document.createElement('canvas');
       canvas.width = canvas.height = size;
       const ctx = canvas.getContext('2d');
-      ctx.fillStyle = '#fff';
+      ctx.fillStyle = tokens.ui.surface.paper;
       ctx.fillRect(0, 0, size, size);
       ctx.drawImage(img, 0, 0, size, size);
       canvas.toBlob((blob) => {
@@ -17440,6 +17624,7 @@ async function saveRouteToServer() {
   defaultSaveName = name;
   syncLineageMeta();          // desfazer na mesma linhagem mantém o vínculo
   scheduleTraceDraftSave();   // o rascunho passa a apontar pra rota salva
+  refreshSavedRoutesLayer();
   return data;
 }
 
@@ -17785,6 +17970,7 @@ async function deleteSavedRoute(id, name) {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     if (currentSavedRouteId === id) currentSavedRouteId = null;
     openSavedRoutesModal(); // refresh a lista
+    refreshSavedRoutesLayer();
   } catch (err) {
     alert(`Falha ao excluir: ${err.message}`);
   }

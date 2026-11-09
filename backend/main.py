@@ -3391,12 +3391,13 @@ def _entry_slug(entry):
 
 
 _PREVIEW_MAX_PTS = 80   # pontos por miniatura no modal Carregar
+_MAP_LAYER_MAX_PTS = 800   # /saved-routes?detail=1 — a camada "Rotas salvas" no mapa
 
 
-def _route_preview_and_dist(state):
+def _route_preview_and_dist(state, max_pts=_PREVIEW_MAX_PTS, digits=4):
     """(preview, distMeters) da geometria de uma rota salva — preview é a
-    polyline decodificada (wp + sg) reamostrada a ≤_PREVIEW_MAX_PTS e
-    arredondada a 4 casas (~11 m, suficiente pra miniatura); distMeters é o
+    polyline decodificada (wp + sg) reamostrada a ≤max_pts e
+    arredondada a `digits` casas (4 ≈ 11 m, suficiente pra miniatura); distMeters é o
     haversine sobre a geometria CHEIA. Computado na listagem (barato pro
     catálogo pequeno; nada é persistido por um GET). (None, None) se o
     estado não decodifica."""
@@ -3410,10 +3411,10 @@ def _route_preview_and_dist(state):
         a, b = latlngs[i - 1], latlngs[i]
         dist += rwgps.haversine_meters(a[0], a[1], b[0], b[1])
     pts = latlngs
-    if len(pts) > _PREVIEW_MAX_PTS:
-        stride = (len(pts) - 1) / (_PREVIEW_MAX_PTS - 1)
-        pts = [pts[round(i * stride)] for i in range(_PREVIEW_MAX_PTS)]
-    return [[round(la, 4), round(lo, 4)] for la, lo in pts], round(dist)
+    if len(pts) > max_pts:
+        stride = (len(pts) - 1) / (max_pts - 1)
+        pts = [pts[round(i * stride)] for i in range(max_pts)]
+    return [[round(la, digits), round(lo, digits)] for la, lo in pts], round(dist)
 
 
 @app.get("/saved-routes")
@@ -3422,13 +3423,15 @@ def list_saved_routes():
     metadados, o que o modal Carregar mostra nos cards: `preview` (polyline
     reamostrada pra miniatura), `distMeters` (da geometria) e `stats`
     (subida acumulada etc., gravada pelo editor no save — o estado salvo não
-    tem elevação, então o servidor não tem como derivá-la)."""
+    tem elevação, então o servidor não tem como derivá-la). Com `?detail=1`
+    o `preview` vem bem menos reamostrado: é o traçado da camada do mapa."""
+    preview_opts = {"max_pts": _MAP_LAYER_MAX_PTS, "digits": 5} if request.args.get("detail") else {}
     cat = _read_saved_routes()
     items = []
     for rid, r in cat.get("routes", {}).items():
         if not isinstance(r, dict):
             continue
-        preview, dist = _route_preview_and_dist(r.get("state") or {})
+        preview, dist = _route_preview_and_dist(r.get("state") or {}, **preview_opts)
         items.append({
             "id": rid,
             "name": r.get("name") or "",

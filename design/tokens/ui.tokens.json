@@ -1,0 +1,279 @@
+{
+  "$description": "Interface que não muda entre claro e escuro: ordem de empilhamento e sombra composta.",
+  "ui": {
+    "layer": {
+      "modal": {
+        "$value": 5000,
+        "$type": "number",
+        "$description": "Modais.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "z-index"
+            ]
+          }
+        }
+      },
+      "inner-top": {
+        "$value": 30,
+        "$type": "number",
+        "$description": "Bolinhas de fechar, dentro do componente.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "z-index"
+            ]
+          }
+        }
+      },
+      "inner-header": {
+        "$value": 20,
+        "$type": "number",
+        "$description": "Cabeçalho que fica preso, dentro do modal.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "z-index"
+            ]
+          }
+        }
+      },
+      "sheet": {
+        "$value": 5500,
+        "$type": "number",
+        "$description": "Sidebar e painel de camadas como folhas.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "z-index"
+            ]
+          }
+        }
+      },
+      "inner-fade": {
+        "$value": 25,
+        "$type": "number",
+        "$description": "Degradê \"tem mais\", dentro do modal.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "z-index"
+            ]
+          }
+        }
+      },
+      "overlay": {
+        "$value": 6000,
+        "$type": "number",
+        "$description": "Toasts, setas da foto, popovers.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "z-index"
+            ]
+          }
+        }
+      },
+      "ghost-video": {
+        "$value": 400,
+        "$type": "number",
+        "$description": "Vídeo sobre o mapa, abaixo dos popups do Leaflet.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "z-index"
+            ]
+          }
+        }
+      },
+      "tooltip": {
+        "$value": 6500,
+        "$type": "number",
+        "$description": "Dica da rota.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "z-index"
+            ]
+          }
+        }
+      },
+      "overlay-raised": {
+        "$value": 6100,
+        "$type": "number",
+        "$description": "Toasts com ação.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "z-index"
+            ]
+          }
+        }
+      },
+      "modal-raised": {
+        "$value": 5001,
+        "$type": "number",
+        "$description": "Modal aberto sobre outro modal (o QR).",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "z-index"
+            ]
+          }
+        }
+      },
+      "map-control": {
+        "$value": 1000,
+        "$type": "number",
+        "$description": "Controles presos ao mapa.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "z-index"
+            ]
+          }
+        }
+      },
+      "map-control-raised": {
+        "$value": 1100,
+        "$type": "number",
+        "$description": "Busca de endereço, sobre os controles.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "z-index"
+            ]
+          }
+        }
+      },
+      "marker-hover": {
+        "$value": 1000,
+        "$type": "number",
+        "$description": "Bolinha com o ponteiro em cima.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "z-index"
+            ]
+          }
+        }
+      },
+      "inner-close": {
+        "$value": 10,
+        "$type": "number",
+        "$description": "Fechar do popup.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "z-index"
+            ]
+          }
+        }
+      },
+      "marker-active": {
+        "$value": 1001,
+        "$type": "number",
+        "$description": "Bolinha em destaque.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "z-index"
+            ]
+          }
+        }
+      },
+      "inner-back": {
+        "$value": 1,
+        "$type": "number",
+        "$description": "Fundo, dentro do componente.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "z-index"
+            ]
+          }
+        }
+      },
+      "inner-front": {
+        "$value": 2,
+        "$type": "number",
+        "$description": "Frente, dentro do componente.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "z-index"
+            ]
+          }
+        }
+      },
+      "inner-actions": {
+        "$value": 5,
+        "$type": "number",
+        "$description": "Ações presas no pé.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "z-index"
+            ]
+          }
+        }
+      },
+      "poster-art": {
+        "$value": 650,
+        "$type": "number",
+        "$description": "Arte do editor.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "z-index"
+            ]
+          }
+        }
+      },
+      "poster-ui": {
+        "$value": 700,
+        "$type": "number",
+        "$description": "Alças de edição sobre a arte.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "z-index"
+            ]
+          }
+        }
+      },
+      "poster-panel": {
+        "$value": 1500,
+        "$type": "number",
+        "$description": "Painel do editor.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "z-index"
+            ]
+          }
+        }
+      }
+    },
+    "shadow": {
+      "elevated": {
+        "$type": "shadow",
+        "$value": {
+          "offsetX": "{ref.space.0}",
+          "offsetY": "{ref.space.4}",
+          "blur": "{ref.space.16}",
+          "spread": "{ref.space.0}",
+          "color": "{ref.color.alpha.ink-14}"
+        },
+        "$description": "Sombra de elevação comum.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "shadow"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

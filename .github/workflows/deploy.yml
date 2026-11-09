@@ -65,6 +65,8 @@ on:
     paths-ignore:
       - 'eink/**'
       - 'docs/**'
+      - 'design/**'
+      - 'test/**'
       - 'research/**'
       - '**.md'
       - '.vscode/**'

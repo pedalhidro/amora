@@ -1,0 +1,29 @@
+{
+  "$description": "O app fora da página: barra do navegador e tela de abertura.",
+  "brand": {
+    "theme": {
+      "$type": "color",
+      "$value": "{ref.color.white}",
+      "$description": "theme-color do index.html e do manifesto.",
+      "$extensions": {
+        "info.pedalhidrografi": {
+          "usage": [
+            "theme-color"
+          ]
+        }
+      }
+    },
+    "splash": {
+      "$type": "color",
+      "$value": "{ref.color.white}",
+      "$description": "background_color do manifesto.",
+      "$extensions": {
+        "info.pedalhidrografi": {
+          "usage": [
+            "theme-color"
+          ]
+        }
+      }
+    }
+  }
+}

@@ -137,6 +137,7 @@
       "get": {
         "tags": ["rotas salvas"],
         "summary": "Lista das rotas salvas no editor de traçado (mais novas primeiro)",
+        "parameters": [{"name": "detail", "in": "query", "required": false, "description": "Com qualquer valor, `preview` vem com até 800 pontos em vez de 80 (o traçado da camada do mapa).", "schema": {"type": "string"}}],
         "responses": {"200": {"description": "`{routes: [{id, name, slug, created, updated, points, stats, preview, distMeters}]}`.", "content": {"application/json": {"schema": {"type": "object", "properties": {"routes": {"type": "array", "items": {"type": "object", "properties": {"id": {"type": "string"}, "name": {"type": "string"}, "slug": {"type": "string"}, "created": {"type": ["string", "null"]}, "updated": {"type": ["string", "null"]}, "points": {"type": ["integer", "null"]}, "stats": {"type": ["object", "null"]}, "preview": {"type": ["array", "null"]}, "distMeters": {"type": ["number", "null"]}}}}}}}}}}
       }
     },

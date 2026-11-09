@@ -1,0 +1,12 @@
+{
+  "name": "amora",
+  "private": true,
+  "description": "Ferramentas de design do amora. O site não tem build: os arquivos gerados são commitados.",
+  "license": "AGPL-3.0-only",
+  "scripts": {
+    "test": "node --test \"test/*.test.mjs\"",
+    "build:tokens": "node scripts/build-tokens.mjs",
+    "icons:fetch": "node scripts/fetch-icons.mjs",
+    "build:icons": "node scripts/build-icons.mjs"
+  }
+}

@@ -25,7 +25,7 @@
 // origin) e v371/v372 saíram na `deploy` (busca de endereços, ⇄ inverter).
 // v373 fica acima de tudo que já circulou, que é o que importa: se a VERSION
 // não crescer, o service worker serve cache velho.
-const VERSION = 'phidro-v432';
+const VERSION = 'phidro-v436';
 const STATIC_CACHE = `${VERSION}-static`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 const DATA_CACHE = 'phidro-data-v1';
@@ -67,9 +67,12 @@ const abs = (rel) => new URL(rel, SCOPE).href;
 const SHELL_ASSETS = [
   './index.html',
   './manifest.json',
+  './lib/tokens.css',               // gerado de design/tokens (linkado antes do style.css)
   './style.css',
   './app.js',
   './lib/utils.js',                 // import do app.js
+  './lib/tokens.js',                // import do app.js (gerado de design/tokens)
+  './lib/icons.js',                 // import do app.js (gerado de design/icons)
   './lib/poster.js',                // import() do app.js (🎨 Arte de anúncio) — versão casada com o app.js
   './lib/busao/parking.js',         // import() do app.js (bicicletários/paraciclos) — vendorados do busão
   './lib/busao/schedule.js',
@@ -99,7 +102,6 @@ const SHELL_ASSETS = [
 // baixa na primeira abertura online e fica neste deploy.
 const PAGE_ASSETS = [
   './changelog.html',               // Novidades da Ajuda (baixado na 1ª abertura)
-  './lib/pages.css',                // tokens de cor compartilhados das páginas embutidas
   './imagens.html',
   './pessoas.html',
   './censo.html',
@@ -249,7 +251,6 @@ const TILE_HOSTS = [
   /(^|\.)server\.arcgisonline\.com$/,
   /(^|\.)telhas\.pedalhidrografi\.co$/,
   /(^|\.)cameratopo\.pedalhidrografi\.co$/,
-  /^mtpi\.pedalhidrografi\.co$/,          // MTPI global v1/v2 (WebP no R2)
   /(^|\.)raster\.geosampa\.prefeitura\.sp\.gov\.br$/,
   // Tiles VETORIAIS (MVT) do OpenInfraMap — energia/água/telecom/petróleo e
   // gás. Vêm por fetch() (destination vazio), não por <img>: entram pelo
@@ -261,7 +262,7 @@ const TILE_HOSTS = [
 // query de typeahead é única, então cachear não compra nada; hosts fora das
 // listas passam direto pra rede, sem bloqueio.)
 const RUNTIME_HOSTS = [
-  /^busao\.bicisampa\.info$/,               // metrô e trens (rail.geojson + rail-lines.json)
+  /^busao\.bicisampa\.info$/,               // metrô, trens, ônibus e bicicletários
   /^pedalhidrografi\.co$/,                  // wiki: API do Kartographer (camada Onde comer)
   /(^|\.)api\.open-meteo\.com$/,
   /(^|\.)routing\.openstreetmap\.de$/,

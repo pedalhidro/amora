@@ -143,6 +143,8 @@ people over a network, you must offer them its source.
 
 Bundled third-party code keeps its own license: Leaflet and flatgeobuf
 (BSD-2-Clause), leaflet-rotate (GPL-3.0), N3.js, exifr, qrcode.js and
-leaflet.locatecontrol and geotiff.js (MIT), Tom Select (Apache-2.0), mediabunny (MPL-2.0).
+leaflet.locatecontrol, geotiff.js and the Tabler icons (MIT), Tom Select (Apache-2.0), mediabunny (MPL-2.0).
+The design-token and icon build scripts are adapted from
+[bicibusaosampa](https://github.com/pedalhidro/bicibusaosampa) (GPL-3.0-or-later).
 The vendored web fonts (IBM Plex Mono, and ChunkFive, Fredoka and Open Sans
 for the announcement-art editor) are under the SIL Open Font License 1.1.

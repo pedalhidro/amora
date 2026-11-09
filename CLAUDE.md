@@ -270,6 +270,9 @@ one optional hosted deploy target, not a dependency.
   legacy `build-photos.py` / `build-routes.mjs` / `gen-synthetic-rdf.py`
   were removed in 10/2026 once production showed none of the old patterns —
   git history has them if a restore ever reintroduces old data.
+- `design/` + `test/` + `package.json` — a fonte dos tokens de design e dos ícones
+  e as regras deles (`npm test`, zero dependências). Saem do container. Ver
+  "Design tokens" em Conventions e `docs/DESIGN-VISUAL.md`.
 - `docs/` — design-reference notes not loaded at runtime. `DESIGN.md`
   (RDF substrate / ontology design rationale), `ICON_DESIGN.md` (PWA
   icon decisions) and `CAPTURA.md` (**captura de dados**: os três funis
@@ -549,6 +552,15 @@ Key flows:
   (`/api/rail-status`) has NO CORS, so the popup shows only the written bike
   rule and links to busão. Stations only at zoom ≥ 12; colours from the data
   pass a hex-only filter (`railColor`) before going into a style attribute.
+- **Ônibus com bicicleta** (`onibus-bici`): read AT RUNTIME from busão too —
+  `data/bike-buses.json` + `emtu-seletivo.json` (`lines[].code`,
+  `rules.summary`) and `data/bus-routes.geojson` + `emtu-routes.geojson`
+  (LineString per direction: `code`, `name`, `headsign`). Only codes listed in
+  the JSON are drawn. EMTU failing still leaves SPTrans. Busão's `lane` offset
+  is not used, so lines sharing a street overlap.
+- **Rotas salvas no Amora** (`saved-routes`): `GET /saved-routes?detail=1`
+  (the Carregar modal's listing with `preview` resampled to ≤800 points, not
+  80). `refreshSavedRoutesLayer` runs after save/delete.
 - **Bicicletários / Paraciclos** (`bicicletarios`, `paraciclos`): read AT
   RUNTIME from busão too (`data/bike-parking.geojson`, OSM + GeoSampa via its
   `scripts/parking.mjs`; CORS open) — props `kind`/`access`/`name`/
@@ -579,11 +591,15 @@ Key flows:
   AND `ph:Video` (videos use the same `photoDivIcon` markup as photos with
   a red-orange border modifier `.photo-dot-video`; both participate in the
   same density-based clustering via `relaxPhotoMarkers`). GPS from
-  `schema:locationCreated`, popup from triples. The **layer panel** gained
-  per-row action icons (fixed column: ▲/▼ to stack inline — the old ordering
-  modal was removed — plus an action icon: ☰ Rotas / 📍 Compartilhar / ✨
-  Animação / ⬆ Enviar / ✎ or ⚙ config / 🗑) and persists per-layer
-  visibility + opacity across sessions. The **Destacar rota ★** button in a
+  `schema:locationCreated`, popup from triples. The **layer panel** is
+  grouped: `LAYER_GROUPS` (next to `OVERLAY_LAYERS`) lists the seven
+  collapsible `<details>` sections, and a layer that is in no group does not
+  appear (a boot-time `console.error` catches it). Groups are presentation
+  only — stacking is still `layerOrder`; "↕ Ordenar camadas" swaps the groups
+  for the flat stack with the ▲/▼ arrows, moving the SAME row nodes. Per-row
+  action icons (☰ Rotas / 📍 Compartilhar / ✨ Animação / ⬆ Enviar / ✎ or ⚙
+  config / 🗑); per-layer visibility + opacity and each group's open state
+  (`phidro:layerGroups`) persist across sessions. The **Destacar rota ★** button in a
   route's modal draws a ~1.5×-thicker copy and materializes the **Rota
   destacada** layer (hidden until a highlight exists; its 🗑 clears it —
   `addRouteHighlight` / `clearRouteHighlight` / `setRouteHighlightRow`). In the
@@ -857,7 +873,7 @@ Key flows:
   `POST /delete-image/<phash>`, `POST /delete-video/<vhash>`,
   `POST /delete-tour/<tour_id>`. Rotas salvas (biblioteca do editor de
   traçado, `web/saved_routes.json`): `GET /saved-routes` (lista resumida,
-  mais novas primeiro), `GET /saved-route/<id|slug>` (estado completo, formato
+  mais novas primeiro; `?detail=1` = traçado da camada do mapa), `GET /saved-route/<id|slug>` (estado completo, formato
   de compartilhamento, + `id`/`slug` da rota), `POST /save-route` (upsert;
   body `{name, state, id?}`; o NOME é obrigatório e ÚNICO — vira o slug do
   link; colisão com outra rota → 409; responde logo depois do JSON write +
@@ -954,6 +970,18 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
 
 ## Conventions — please follow
 
+- **Design tokens (`docs/DESIGN-VISUAL.md`).** Cor e z-index do app são tokens
+  DTCG em `design/tokens/`; `npm run build:tokens` gera `web/lib/tokens.css`
+  (linkado antes do `style.css`) e `web/lib/tokens.js` (`tokens.map.…` no
+  `app.js`, pra canvas/SVG/Leaflet), que são commitados — o site segue sem
+  build. Nada de literal de cor no `style.css`, `index.html` e `app.js`: `npm
+  test` recusa. Exceção declarada entre os comentários `cores-de-dados: início`
+  e `fim` (paletas do OpenInfraMap, cor calculada). Páginas embutidas e
+  `lib/poster.js` ainda não migraram: leem os nomes curtos (`--bg`, `--text`…),
+  aliases gerados no `tokens.css`. Ícones: Tabler por significado
+  (`design/icons/vocabulary.json`, `npm run build:icons` → `web/lib/icons.js` +
+  os `<svg>` escritos no `index.html`); no JS, `uiIcon('swap')`. Texto de botão
+  com ícone se troca com `innerHTML`/`setTopbarLabel`, nunca `textContent`.
 - **Água é `WATER_COLOR` (`#867627`), não azul.** Decisão do coletivo: rio
   do interior carregado de sedimento é amarelo/marrom/preto; azul lê como
   oceano. Toda camada de água nova (preenchimento, linha, ponto) usa
@@ -1303,7 +1331,8 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
   `turtleEscape`, `TTL_PREFIXES`, `slugifyList` — tem que seguir igual ao do
   app.js, os slugs de álbum dependem disso —, `randPersonSlug`, loaders de
   N3/Tom Select/scripts, `setupEmbeddedPage`, helpers do form de passeio) e os
-  tokens de cor em `lib/pages.css` (só tokens, linkado ANTES do `<style>` de
+  tokens de cor em `lib/tokens.css` (gerado — ver "Design tokens" em Conventions;
+  só tokens, linkado ANTES do `<style>` de
   cada página). As páginas importam `./lib/utils.js?api=N` — suba o N de quem
   passar a importar um nome novo (mesmo motivo do `media-pipeline.js`); o
   app.js importa sem query (vem do mesmo precache). Não recopie esses helpers
@@ -1356,7 +1385,7 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
   302, FIFO 3000; `large.jpg` goes to the network and falls back to the
   thumb offline; `original.*`, clip video/audio and `tour_assets/` are never
   cached), `phidro-tiles-v1` (only layers with `crossOrigin: ''` on hosts that
-  ALWAYS send ACAO — osm, satellite, rmsampa, mtpi*, 1850; not sara1930, whose
+  ALWAYS send ACAO — osm, satellite, rmsampa, 1850; not sara1930, whose
   WMS only sends it with an Origin), `phidro-cdn-v1`, `phidro-graph-v1` (the
   baked viário graph, cache-first, HEAD-revalidated ≤ 1×/24 h, one shared
   in-flight GET) and the FGB block cache. Install copies data/graph/CDN
@@ -1496,6 +1525,8 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
   browser surfaces syntax errors immediately. No standalone JS tooling here.
 - Bump `web/sw.js` `VERSION` if any file under `web/` changed.
 - `python -m py_compile backend/main.py`
+- `npm test` (tokens, cores, ícones) se mexeu em `web/style.css`, `web/index.html`,
+  `web/app.js` ou `design/`.
 - Ontology / shapes / data: parse with `rdflib` after editing `*.ttl`.
 
 ## Build & deploy
@@ -1513,8 +1544,8 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
 - **Every push to `main` deploys to production** (amora.pedalhidrografi.co):
   `.github/workflows/deploy.yml` runs `deploy-cloudrun.sh --no-catalog-push`
   via keyless WIF (code + shapes/ontology only — never catalogs or state).
-  Pushes touching only `docs/`, `research/`, `eink/`, `*.md`, `.vscode/` or
-  `.github/` skip it; the Actions tab has a manual "Run workflow" button. So
+  Pushes touching only `docs/`, `design/`, `test/`, `research/`, `eink/`, `*.md`,
+  `.vscode/` or `.github/` skip it; the Actions tab has a manual "Run workflow" button. So
   don't push half-done `web/` work to `main` — use a branch. The manual script
   below is still the path for `--state`/`--state-only` syncs.
 - `bash scripts/deploy-cloudrun.sh` — build + deploy backend to Cloud Run

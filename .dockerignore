@@ -30,6 +30,9 @@ capacitor/
 ignore/
 features/
 docs/
+design/
+test/
+package.json
 .sync-state/
 
 # Python lixo

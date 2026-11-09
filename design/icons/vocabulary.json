@@ -1,0 +1,164 @@
+{
+  "$description": "Os ícones da interface, por significado. O código pede o significado (uiIcon(\"swap\")), nunca o nome na biblioteca.",
+  "library": "tabler",
+  "version": "3.49.0",
+  "icons": {
+    "menu": {
+      "name": "menu-2",
+      "description": "Menu de ações."
+    },
+    "upload": {
+      "name": "upload",
+      "description": "Enviar imagens."
+    },
+    "trace": {
+      "name": "route",
+      "description": "Abrir o editor de traçado."
+    },
+    "memory": {
+      "name": "history",
+      "description": "Memória Hidrográfica."
+    },
+    "layers": {
+      "name": "stack-2",
+      "filled": "stack-2",
+      "description": "Camadas do mapa. Preenchido: painel aberto."
+    },
+    "header-collapse": {
+      "name": "layout-navbar-collapse",
+      "description": "Ocultar o cabeçalho."
+    },
+    "header-expand": {
+      "name": "layout-navbar-expand",
+      "description": "Mostrar o cabeçalho."
+    },
+    "undo": {
+      "name": "arrow-back-up",
+      "description": "Desfazer."
+    },
+    "redo": {
+      "name": "arrow-forward-up",
+      "description": "Refazer."
+    },
+    "settings": {
+      "name": "settings",
+      "description": "Ajustes e parâmetros."
+    },
+    "trash": {
+      "name": "trash",
+      "description": "Apagar."
+    },
+    "swap": {
+      "name": "arrows-exchange",
+      "description": "Inverter o sentido."
+    },
+    "folder-open": {
+      "name": "folder-open",
+      "description": "Carregar de um arquivo ou da biblioteca."
+    },
+    "save": {
+      "name": "device-floppy",
+      "description": "Salvar o traçado."
+    },
+    "export": {
+      "name": "file-export",
+      "description": "Exportar um arquivo."
+    },
+    "cloud-save": {
+      "name": "cloud-upload",
+      "description": "Salvar no servidor."
+    },
+    "download": {
+      "name": "download",
+      "description": "Baixar."
+    },
+    "view": {
+      "name": "eye",
+      "description": "Ver sem os pontos de edição."
+    },
+    "search": {
+      "name": "search",
+      "description": "Buscar endereço."
+    },
+    "reset": {
+      "name": "rotate",
+      "description": "Voltar ao padrão."
+    },
+    "reload": {
+      "name": "refresh",
+      "description": "Recarregar."
+    },
+    "location": {
+      "name": "map-pin",
+      "description": "Compartilhar localização."
+    },
+    "files": {
+      "name": "files",
+      "description": "Enviar pelo formulário completo."
+    },
+    "bike": {
+      "name": "bike",
+      "description": "Cadastrar passeio."
+    },
+    "palette": {
+      "name": "palette",
+      "description": "Arte de anúncio."
+    },
+    "gallery": {
+      "name": "photo",
+      "description": "Galeria de imagens."
+    },
+    "chart": {
+      "name": "chart-bar",
+      "description": "Censo hidrográfico."
+    },
+    "coin": {
+      "name": "coin",
+      "description": "Custos."
+    },
+    "gpx": {
+      "name": "file-download",
+      "description": "Baixar rotas em GPX."
+    },
+    "help": {
+      "name": "help-circle",
+      "description": "Ajuda."
+    },
+    "filter": {
+      "name": "filter",
+      "description": "Filtrar imagens."
+    },
+    "sparkles": {
+      "name": "sparkles",
+      "description": "Animação dos marcadores."
+    },
+    "edit": {
+      "name": "pencil",
+      "description": "Editar a URL de uma camada."
+    },
+    "list": {
+      "name": "list",
+      "description": "Lista de rotas."
+    },
+    "chevron-right": {
+      "name": "chevron-right",
+      "description": "Abrir e fechar um grupo de camadas."
+    },
+    "chevron-up": {
+      "name": "chevron-up",
+      "description": "Empilhar acima."
+    },
+    "chevron-down": {
+      "name": "chevron-down",
+      "description": "Empilhar abaixo."
+    },
+    "sort": {
+      "name": "arrows-sort",
+      "description": "Ordenar camadas."
+    },
+    "check": {
+      "name": "check",
+      "description": "Concluir."
+    }
+  }
+}

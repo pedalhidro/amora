@@ -1,0 +1,709 @@
+{
+  "$description": "Simbologia do mapa. Não muda com o esquema de cor.",
+  "map": {
+    "route": {
+      "accent": {
+        "$value": "{ref.color.coral.ff5b3a}",
+        "$type": "color",
+        "$description": "Destaque de rota nos elementos da interface.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "line"
+            ]
+          }
+        }
+      },
+      "hover-ui": {
+        "$value": "{ref.color.yellow.ffd03a}",
+        "$type": "color",
+        "$description": "Rota com o ponteiro em cima, nos elementos da interface.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "line"
+            ]
+          }
+        }
+      },
+      "casing": {
+        "$value": "{ref.color.gray.1a1a1a}",
+        "$type": "color",
+        "$description": "Contorno escuro das rotas e do traçado.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "line"
+            ]
+          }
+        }
+      },
+      "line": {
+        "$value": "{ref.color.white}",
+        "$type": "color",
+        "$description": "Linha branca das rotas e do traçado.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "line"
+            ]
+          }
+        }
+      },
+      "hit": {
+        "$value": "{ref.color.black}",
+        "$type": "color",
+        "$description": "Faixa de toque invisível sobre a rota.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "line"
+            ]
+          }
+        }
+      },
+      "hover": {
+        "$value": "{ref.color.orange.ffb547}",
+        "$type": "color",
+        "$description": "Rota com o ponteiro em cima.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "line"
+            ]
+          }
+        }
+      },
+      "saved": {
+        "$value": "{ref.color.violet.7c3aed}",
+        "$type": "color",
+        "$description": "Rotas salvas no Traçar.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "line"
+            ]
+          }
+        }
+      },
+      "number": {
+        "$value": "{ref.color.gray.111111}",
+        "$type": "color",
+        "$description": "Número da rota no mapa.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "text"
+            ]
+          }
+        }
+      },
+      "number-halo": {
+        "$value": "{ref.color.white}",
+        "$type": "color",
+        "$description": "Halo do número da rota.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "text-shadow"
+            ]
+          }
+        }
+      }
+    },
+    "thumb": {
+      "outline": {
+        "$value": "{ref.color.white}",
+        "$type": "color",
+        "$description": "Contorno na miniatura de rota.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "line"
+            ]
+          }
+        }
+      },
+      "start": {
+        "$value": "{ref.color.green.2e8b57}",
+        "$type": "color",
+        "$description": "Início do traçado na miniatura.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "fill"
+            ]
+          }
+        }
+      },
+      "end": {
+        "$value": "{ref.color.orange.b3431e}",
+        "$type": "color",
+        "$description": "Fim do traçado na miniatura.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "fill"
+            ]
+          }
+        }
+      }
+    },
+    "trace": {
+      "point": {
+        "$value": "{ref.color.white}",
+        "$type": "color",
+        "$description": "Ponto do traçado.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "background"
+            ]
+          }
+        }
+      },
+      "point-border": {
+        "$value": "{ref.color.gray.1a1a1a}",
+        "$type": "color",
+        "$description": "Borda do ponto do traçado.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "border"
+            ]
+          }
+        }
+      },
+      "point-halo": {
+        "$value": "{ref.color.alpha.white-60}",
+        "$type": "color",
+        "$description": "Halo do ponto do traçado.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "shadow"
+            ]
+          }
+        }
+      },
+      "poi-bg": {
+        "$value": "{ref.color.alpha.white-92}",
+        "$type": "color",
+        "$description": "Fundo do ponto de interesse.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "background"
+            ]
+          }
+        }
+      },
+      "poi-shadow": {
+        "$value": "{ref.color.alpha.black-45}",
+        "$type": "color",
+        "$description": "Sombra do ponto de interesse.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "shadow"
+            ]
+          }
+        }
+      }
+    },
+    "marker": {
+      "outline": {
+        "$value": "{ref.color.white}",
+        "$type": "color",
+        "$description": "Contorno claro de marcadores.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "border",
+              "line",
+              "shadow"
+            ]
+          }
+        }
+      },
+      "outline-stale": {
+        "$value": "{ref.color.alpha.white-60}",
+        "$type": "color",
+        "$description": "Contorno de pessoa com localização antiga.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "border"
+            ]
+          }
+        }
+      },
+      "shadow": {
+        "$value": "{ref.color.alpha.black-55}",
+        "$type": "color",
+        "$description": "Sombra de marcadores.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "shadow"
+            ]
+          }
+        }
+      },
+      "shadow-soft": {
+        "$value": "{ref.color.alpha.black-50}",
+        "$type": "color",
+        "$description": "Sombra das bolinhas de foto.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "shadow"
+            ]
+          }
+        }
+      },
+      "shadow-video": {
+        "$value": "{ref.color.alpha.black-35}",
+        "$type": "color",
+        "$description": "Sombra extra das bolinhas de vídeo.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "shadow"
+            ]
+          }
+        }
+      },
+      "shadow-me": {
+        "$value": "{ref.color.alpha.black-60}",
+        "$type": "color",
+        "$description": "Sombra do marcador da própria pessoa.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "shadow"
+            ]
+          }
+        }
+      },
+      "text-halo": {
+        "$value": "{ref.color.alpha.black-50}",
+        "$type": "color",
+        "$description": "Sombra da inicial no marcador.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "text-shadow"
+            ]
+          }
+        }
+      }
+    },
+    "photo": {
+      "cone": {
+        "$value": "{ref.color.white}",
+        "$type": "color",
+        "$description": "Cone de direção da foto.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "fill"
+            ]
+          }
+        }
+      },
+      "active": {
+        "$value": "{ref.color.yellow.ffd23f}",
+        "$type": "color",
+        "$description": "Anel da foto em destaque.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "shadow"
+            ]
+          }
+        }
+      },
+      "active-glow": {
+        "$value": "{ref.color.alpha.yellow-85}",
+        "$type": "color",
+        "$description": "Brilho da foto em destaque.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "shadow"
+            ]
+          }
+        }
+      }
+    },
+    "video": {
+      "marker": {
+        "$value": "{ref.color.orange.ff5722}",
+        "$type": "color",
+        "$description": "Borda da bolinha de vídeo.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "border"
+            ]
+          }
+        }
+      },
+      "placeholder": {
+        "$value": "{ref.color.alpha.orange-35}",
+        "$type": "color",
+        "$description": "Bolinha de vídeo sem miniatura.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "background"
+            ]
+          }
+        }
+      }
+    },
+    "clip": {
+      "intro": {
+        "$value": "{ref.color.green.4caf50}",
+        "$type": "color",
+        "$description": "Marcador do clipe na entrada da animação.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "background",
+              "border"
+            ]
+          }
+        }
+      }
+    },
+    "live": {
+      "me": {
+        "$value": "{ref.color.blue.1e88e5}",
+        "$type": "color",
+        "$description": "A própria pessoa na localização ao vivo.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "background",
+              "border",
+              "fill",
+              "line"
+            ]
+          }
+        }
+      }
+    },
+    "line": {
+      "casing": {
+        "$value": "{ref.color.white}",
+        "$type": "color",
+        "$description": "Contorno branco de linhas sobre o relevo: metrô, ônibus, rotas salvas.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "line"
+            ]
+          }
+        }
+      }
+    },
+    "rail": {
+      "unknown": {
+        "$value": "{ref.color.gray.555555}",
+        "$type": "color",
+        "$description": "Linha de trilho sem cor conhecida.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "line"
+            ]
+          }
+        }
+      },
+      "interchange": {
+        "$value": "{ref.color.gray.222222}",
+        "$type": "color",
+        "$description": "Anel de estação de integração.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "line"
+            ]
+          }
+        }
+      },
+      "station": {
+        "$value": "{ref.color.white}",
+        "$type": "color",
+        "$description": "Miolo da estação.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "fill"
+            ]
+          }
+        }
+      }
+    },
+    "bus": {
+      "sptrans": {
+        "$value": "{ref.color.green.16a34a}",
+        "$type": "color",
+        "$description": "Itinerário SPTrans que leva bici.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "line"
+            ]
+          }
+        }
+      },
+      "emtu": {
+        "$value": "{ref.color.cyan.0e7490}",
+        "$type": "color",
+        "$description": "Itinerário EMTU seletivo.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "line"
+            ]
+          }
+        }
+      }
+    },
+    "food": {
+      "marker": {
+        "$value": "{ref.color.orange.d9480f}",
+        "$type": "color",
+        "$description": "Lugar para comer.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "fill"
+            ]
+          }
+        }
+      }
+    },
+    "parking": {
+      "livre": {
+        "$value": "{ref.color.green.16a34a}",
+        "$type": "color",
+        "$description": "Estacionamento de bici livre.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "fill"
+            ]
+          }
+        }
+      },
+      "cadastro": {
+        "$value": "{ref.color.blue.2563eb}",
+        "$type": "color",
+        "$description": "Estacionamento com cadastro.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "fill"
+            ]
+          }
+        }
+      },
+      "pago": {
+        "$value": "{ref.color.pink.db2777}",
+        "$type": "color",
+        "$description": "Estacionamento pago.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "fill"
+            ]
+          }
+        }
+      },
+      "clientes": {
+        "$value": "{ref.color.stone.78716c}",
+        "$type": "color",
+        "$description": "Estacionamento só para clientes.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "fill"
+            ]
+          }
+        }
+      },
+      "closed": {
+        "$value": "{ref.color.red.dc2626}",
+        "$type": "color",
+        "$description": "Fechado agora.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "fill"
+            ]
+          }
+        }
+      },
+      "ink": {
+        "$value": "{ref.color.stone.1c1917}",
+        "$type": "color",
+        "$description": "Contorno do ícone de estacionamento.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "line",
+              "shadow"
+            ]
+          }
+        }
+      },
+      "symbol": {
+        "$value": "{ref.color.white}",
+        "$type": "color",
+        "$description": "Símbolo dentro do ícone de estacionamento.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "line"
+            ]
+          }
+        }
+      }
+    },
+    "road": {
+      "viario": {
+        "$value": "{ref.color.white}",
+        "$type": "color",
+        "$description": "Camada Viário OSM.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "line"
+            ]
+          }
+        }
+      }
+    },
+    "water": {
+      "fill": {
+        "$value": "{ref.color.ochre.867627}",
+        "$type": "color",
+        "$description": "Água: rio do interior carregado de sedimento (decisão do coletivo, não azul).",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "fill",
+              "line"
+            ]
+          }
+        }
+      },
+      "outline": {
+        "$value": "{ref.color.ochre.4a4115}",
+        "$type": "color",
+        "$description": "Contorno sobre a cor de água.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "line"
+            ]
+          }
+        }
+      }
+    },
+    "hidro": {
+      "ridge": {
+        "$value": "{ref.color.orange.ef7a30}",
+        "$type": "color",
+        "$description": "Morros e Águas: crista.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "line"
+            ]
+          }
+        }
+      },
+      "river": {
+        "$value": "{ref.color.green.a6c045}",
+        "$type": "color",
+        "$description": "Morros e Águas: rio e canal.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "line"
+            ]
+          }
+        }
+      },
+      "stream": {
+        "$value": "{ref.color.yellow.ddb84f}",
+        "$type": "color",
+        "$description": "Morros e Águas: córrego.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "line"
+            ]
+          }
+        }
+      },
+      "other": {
+        "$value": "{ref.color.gray.888888}",
+        "$type": "color",
+        "$description": "Morros e Águas: demais cursos.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "line"
+            ]
+          }
+        }
+      }
+    },
+    "cicloinfra": {
+      "line": {
+        "$value": "{ref.color.teal.00bfa6}",
+        "$type": "color",
+        "$description": "Cicloinfra OSM.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "line"
+            ]
+          }
+        }
+      }
+    },
+    "compass": {
+      "north": {
+        "$value": "{ref.color.red.c0392b}",
+        "$type": "color",
+        "$description": "Ponta norte da bússola.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "fill"
+            ]
+          }
+        }
+      },
+      "south": {
+        "$value": "{ref.color.gray.999999}",
+        "$type": "color",
+        "$description": "Ponta sul da bússola.",
+        "$extensions": {
+          "info.pedalhidrografi": {
+            "usage": [
+              "fill"
+            ]
+          }
+        }
+      }
+    }
+  }
+}
