@@ -268,6 +268,11 @@ one optional hosted deploy target, not a dependency.
   paralelo** (`prewarm`, 32 threads): lidos um a um materializam a ~250 KB/s
   (latência por arquivo), em paralelo ~5× mais; `ingest-whatsapp` pré-baixa
   em lotes de 256),
+  `media_ledger.py` (**o livro-razão da sincronização** — pra cada arquivo de
+  origem, o que foi feito dele: `status` responde "o amora reflete o acervo?"
+  por pasta, `semear` monta as lápides do que foi apagado antes de o livro
+  existir, `retidos`/`liberar`/`excluir` resolvem o que ficou retido; as duas
+  ingestões gravam nele. Ver "Livro-razão" em Conventions),
   `mock_location.sh` (empurra posições de
   teste da localização ao vivo pro backend — random walk, 1 ponto/3 s; bate no
   remoto amora por padrão, `--local` p/ 127.0.0.1:8080; curl não precisa de
@@ -1454,6 +1459,27 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
   trava esperando alguém ser cadastrado; a resolução é um join via
   `schema:alternateName`. `ph:mediaCount` é a versão velha disso, está
   `owl:deprecated`, e **não se escreve mais nele**. Ver `docs/CAPTURA.md`.
+- **Livro-razão da sincronização (`scripts/media_ledger.py`, estado em
+  `.sync-state/`).** `media-ledger.jsonl` (só acrescenta; a última linha de
+  cada origem é o estado dela) e `media-seen.json` (todo hash que o amora já
+  teve). Fica FORA dos catálogos e do git de propósito: o repo é público e os
+  nomes de arquivo carregam nome de gente — e um registro guardado nas triples
+  da mídia morreria junto com ela, fazendo a foto apagada por privacidade subir
+  de novo. Regras: a chave é `drive:<item-id>` (xattr
+  `com.google.drivefs.item-id#S`, lido via ctypes — sobrevive a renomear
+  pasta) ou `photos:<uuid>`, nunca o caminho; só `ingested`/`duplicate`/
+  `excluded` encerram um arquivo (não é relido) — "sem GPS", erro e `held` são
+  notas, reavaliadas a cada rodada; a sincronização é só aditiva (apagou no
+  amora → respeitado; sumiu na origem → relatado, nunca propagado); **lápide**
+  = hash que o amora já teve e não tem mais, e um arquivo novo a ≤
+  `LAPIDE_HAMMING` (10 — mais largo que os 5 da dedup, porque errar pra menos
+  republica foto apagada) de uma lápide fica `held` até alguém `liberar`;
+  **falha fechada**: `--apply` sem livro PARA (clone novo/worktree tem
+  `.sync-state/` vazio — o 1º uso é `semear` + `--iniciar-livro`), catálogo que
+  não baixa do servidor PARA (sem fallback pro `images.ttl` do repo), arquivo
+  sem id do Drive não sobe. Dry-run nunca grava no livro. Quem escrever uma
+  ingestão nova (as do Fotos) usa `L.abre_livro` / `L.prepara` /
+  `L.estado_da_origem` / `livro.registra` como as duas existentes.
 - **Predicados que penduram em nó aninhado têm `rdfs:domain` da CLASSE DO NÓ.**
   O validador roda com `inference="rdfs"`: um `rdfs:domain ph:Tour` num
   predicado do nó do passe tiparia `pas:<slug>_sweep` como `ph:Tour`, jogando-o

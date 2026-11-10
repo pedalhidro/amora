@@ -134,6 +134,37 @@ Ordem importa, e é de graça: **ingira os 516 originais primeiro**. Como o pHas
 colidem no mesmo IRI — então, com os originais já lá, as cópias deduplicam
 contra eles e **a versão com GPS vence**.
 
+## O livro-razão: como saber que o amora reflete o acervo
+
+`scripts/media_ledger.py` guarda, **fora dos catálogos e fora do git**
+(`.sync-state/`, por máquina), o que foi feito de cada arquivo do acervo:
+subiu (`med:<hash>`), era duplicata (de qual mídia), ficou retido, foi
+excluído à mão. A chave é o id do arquivo no Google Drive — sobrevive a
+renomear a pasta.
+
+```sh
+python scripts/media_ledger.py status     # por pasta: pendente / subiu / duplicata / retida…
+python scripts/media_ledger.py retidos    # o que parece mídia apagada no amora
+python scripts/media_ledger.py liberar drive:<id>    # pode subir
+python scripts/media_ledger.py excluir drive:<id>    # nunca sobe
+```
+
+Três promessas, testadas ponta a ponta num backend de teste:
+
+- **Apagou no amora, fica apagado.** O arquivo de origem tem registro, então
+  não é reenviado. E uma *outra* cópia da mesma foto (a do zap, recomprimida,
+  com outro id) bate numa **lápide** — um hash que o amora já teve e não tem
+  mais — e fica retida até alguém liberar.
+- **Sumiu do Drive, nada acontece no amora.** Só aparece no `status`.
+- **Sem livro, não sobe nada.** Num clone novo, rode `media_ledger.py semear`
+  (monta as lápides a partir dos blobs que já existiram, no disco e nas versões
+  antigas do bucket — em 11/2026 eram 26) e a primeira ingestão com
+  `--iniciar-livro`. Se o livro existe em outra cópia do repo, copie o
+  `.sync-state/` de lá em vez de começar outro.
+
+Cada `duplicata` anota se a origem tinha GPS e a mídia do amora não: é a lista
+de quem merece ganhar a coordenada do original.
+
 Antes de rodar a fase 2, resolva a autoria: `scripts/whatsapp-slug-map.json`
 (gerado por `--slug-map`) tem 19 slugs que já resolvem pra uma pessoa e ~130
 que precisam de revisão humana — incluindo quase-homônimos que são a mesma

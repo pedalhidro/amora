@@ -108,6 +108,10 @@ def _importa_audit():
 
 A = _importa_audit()
 
+# Livro-razão da sincronização (o que já subiu, o que foi apagado no amora).
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import media_ledger as L  # noqa: E402
+
 
 # ═════════════════════════════════════════════════════════════════════════
 # 1. pHash — o coração, e a única parte que NÃO pode errar
@@ -557,8 +561,10 @@ def hashes_no_servidor(servidor: str) -> dict[str, set[str]]:
     """Os hashes que o amora já tem, POR CLASSE ('StillImage' / 'MotionImage').
     A dedup por Hamming só compara foto com foto (o form mantém os dois
     conjuntos separados — achado nº 4); a colisão exata foto×vídeo é o backend
-    quem recusa (409). Busca no SERVIDOR (é ele o dono do catálogo); se não
-    der, cai no images.ttl local e avisa."""
+    quem recusa (409). Busca no SERVIDOR (é ele o dono do catálogo) e, se não
+    der, PARA: cair no images.ttl do repo (meses pra trás) fazia a dedup
+    comparar com um catálogo velho — e o livro-razão leria as mídias novas
+    como "apagadas"."""
     g = rdflib.Graph()
     try:
         req = urllib.request.Request(f"{servidor}/data/images.ttl",
@@ -566,8 +572,7 @@ def hashes_no_servidor(servidor: str) -> dict[str, set[str]]:
         with urllib.request.urlopen(req, timeout=60, context=A._contexto_ssl()) as r:
             g.parse(data=r.read().decode("utf-8"), format="turtle")
     except Exception as e:                  # noqa: BLE001
-        print(f"  ⚠ não li o catálogo do servidor ({e}); usando o images.ttl local")
-        g.parse(DATA / "images.ttl", format="turtle")
+        raise SystemExit(f"não consegui ler o catálogo de mídia de {servidor}: {e}")
     hs = {"StillImage": set(), "MotionImage": set()}
     for classe in hs:
         for s in g.subjects(rdflib.RDF.type, rdflib.URIRef(PH_NS + classe)):
@@ -608,6 +613,7 @@ class Item:
     slug_bruto: str | None = None    # o apelido cru do acervo (pode não ter pessoa)
     pessoa_slug: str | None = None
     variantes: dict = None
+    src: str | None = None           # chave no livro-razão (drive:<item-id>)
 
 
 def mapa_pessoas() -> dict[str, str]:
@@ -636,6 +642,8 @@ def main() -> None:
                     help="envia pra valer (sem isto é dry-run: não sai nada da máquina)")
     ap.add_argument("--limit", type=int, help="processa no máximo N imagens")
     ap.add_argument("--pasta", help="só as pastas do acervo cujo nome contém isto")
+    ap.add_argument("--iniciar-livro", action="store_true",
+                    help="com --apply: cria o livro-razão se ele ainda não existe nesta máquina")
     a = ap.parse_args()
 
     servidor = a.servidor.rstrip("/")
@@ -678,8 +686,50 @@ def main() -> None:
     if not cands:
         sys.exit("nenhuma imagem original encontrada com esses filtros.")
 
+    # ── Livro-razão: o que já tem desfecho não é nem lido de novo ──────────
+    por_classe = hashes_no_servidor(servidor)
+    conhecidos = por_classe["StillImage"]
+    vivos = set().union(*por_classe.values())
+    com_geo = L.hashes_com_geo(g)
+    livro = L.abre_livro(a.apply, a.iniciar_livro)
+    lapides = L.prepara(por_classe, grava=a.apply, livro=livro)
+    acervo_raiz = Path(a.acervo)
+
+    def anota(it, outcome, **kw):
+        if livro is not None and a.apply and it.src:
+            st = it.caminho.stat()
+            livro.registra(it.src, outcome, fase="drive", kind="image",
+                           path=os.path.relpath(it.caminho, acervo_raiz),
+                           size=st.st_size, mtime=int(st.st_mtime),
+                           tour=it.tour_slug, **kw)
+
+    no_livro, sem_id, restam = {}, [], []
+    for it in cands:
+        it.src = L.chave_drive(it.caminho)
+        if it.src is None:
+            sem_id.append(it)
+            if a.apply:
+                continue                    # sem id não dá pra rastrear: não sobe
+        est, _ = L.estado_da_origem(it.src, livro, vivos)
+        if est in ("subiu", "duplicata", "excluida", "apagada-no-amora"):
+            no_livro[est] = no_livro.get(est, 0) + 1
+            continue
+        restam.append(it)
+    n_cands = len(cands)
+    cands = restam
+    if no_livro:
+        print("\njá resolvidas no livro-razão (não relidas): "
+              + ", ".join(f"{v} {k}" for k, v in sorted(no_livro.items())))
+    if sem_id:
+        print(f"⚠ {len(sem_id)} arquivos sem id do Drive"
+              + (" — NÃO sobem (não dá pra rastrear)" if a.apply else ""))
+    if not cands:
+        print("\nnada a fazer: toda candidata já tem desfecho no livro-razão.")
+        return
+
     total_b = sum(c.caminho.stat().st_size for c in cands)   # stat NÃO baixa
-    print(f"\n{len(cands)} imagens originais em {len({c.pasta for c in cands})} pastas")
+    print(f"\n{len(cands)} imagens originais em {len({c.pasta for c in cands})} pastas"
+          + (f" (de {n_cands} candidatas)" if n_cands != len(cands) else ""))
     print(f"BAIXANDO ~{total_b / 1024**3:.2f} GiB do Drive (os arquivos são stubs; "
           f"ler o EXIF materializa)\n")
 
@@ -687,23 +737,25 @@ def main() -> None:
     print("lendo EXIF…", flush=True)
     exif = le_exif([c.caminho for c in cands])
 
-    por_classe = hashes_no_servidor(servidor)
-    conhecidos = por_classe["StillImage"]
-    print(f"catálogo do amora: {len(conhecidos)} fotos + {len(por_classe['MotionImage'])} vídeos já lá\n")
+    print(f"catálogo do amora: {len(conhecidos)} fotos + {len(por_classe['MotionImage'])} vídeos já lá"
+          f" · {len(lapides)} lápides (mídia apagada)\n")
 
     sem_gps, gps_invalido, sem_pessoa, sem_tour, dups, erros, prontos = [], [], [], [], [], [], []
+    retidos = []
     com_gps = 0
     for i, it in enumerate(cands, 1):
         meta = exif.get(str(it.caminho), {})
         lat, lon = meta.get("GPSLatitude"), meta.get("GPSLongitude")
         if lat is None or lon is None:
             sem_gps.append(it)
+            anota(it, "skipped", reason="sem-gps")   # nota: a fase 2 ainda pode pegar
             continue
         # Achado nº 1: câmera que grava a tag GPS sem ter fix escreve
         # exatamente 0,0 (Ilha Nula, Golfo da Guiné) — e a checagem acima só
         # pegava ausência. Fora de faixa / NaN entram no mesmo balaio.
         if not gps_valido(lat, lon):
             gps_invalido.append(it)
+            anota(it, "skipped", reason="gps-invalido")
             continue
         com_gps += 1
         ext = ext_original(it.caminho)
@@ -711,6 +763,7 @@ def main() -> None:
             # O backend só aceita jpg/png/heic/heif como `original`; qualquer
             # outra coisa iria pro bucket com a extensão errada. Ver formato_original.
             erros.append((it, f"formato não suportado no original: .{ext}"))
+            anota(it, "error", reason=f"formato .{ext}")
             continue
         if ext in ("heic", "heif") and not TEM_HEIC:
             erros.append((it, "HEIC sem decoder (pip install pillow-heif)"))
@@ -720,6 +773,7 @@ def main() -> None:
             it.phash = phash(img, icc)
         except Exception as e:              # noqa: BLE001
             erros.append((it, f"decode: {e}"))
+            anota(it, "error", reason=f"decode: {e}"[:120])
             continue
 
         it.lat, it.lon = float(lat), float(lon)
@@ -730,7 +784,19 @@ def main() -> None:
         antigo = ja_existe(it.phash, conhecidos)
         if antigo:
             dups.append((it, antigo))
+            # alvo_geo=False = o amora tem esta foto SEM coordenada e o original
+            # tem: é a lista de quem merece ganhar o GPS ("original é melhor").
+            anota(it, "duplicate", media=antigo, hash=it.phash,
+                  dist=hamming(it.phash, antigo), src_gps=True,
+                  alvo_geo=antigo in com_geo)
             continue
+        # Parece uma mídia que foi APAGADA no amora? Então não sobe sozinha.
+        if not (livro and it.src in livro.liberados):
+            lp = L.lapide_proxima(it.phash, "image", lapides)
+            if lp:
+                retidos.append((it, lp))
+                anota(it, "held", reason="lapide", media=lp[0], dist=lp[1], hash=it.phash)
+                continue
         if not it.pessoa_slug:
             sem_pessoa.append(it)
         if not it.tour_slug:
@@ -741,11 +807,14 @@ def main() -> None:
                 it.variantes = monta_variantes(it.caminho, img, icc)
             except Exception as e:          # noqa: BLE001
                 erros.append((it, f"variantes: {e}"))
+                anota(it, "error", reason=f"variantes: {e}"[:120])
                 continue
             ok, msg = envia(it, servidor)
             if not ok:
                 erros.append((it, msg))
+                anota(it, "error", reason=str(msg)[:120])
                 continue
+            anota(it, "ingested", media=it.phash, hash=it.phash, src_gps=True)
             conhecidos.add(it.phash)        # o próximo do lote já vê este
             print(f"  [{i}/{len(cands)}] ✓ {it.caminho.name[:44]:46} {msg}")
         else:
@@ -763,6 +832,11 @@ def main() -> None:
     if gps_invalido:
         print(f"  GPS 0/0 ou inválido … {len(gps_invalido)}  (puladas — tag sem fix)")
     print(f"  já no amora (dedup) … {len(dups)}")
+    if retidos:
+        print(f"  RETIDAS ……………… {len(retidos)}  (parecem mídia apagada no amora — "
+              f"`media_ledger.py retidos`)")
+        for it, (lap, d) in retidos[:8]:
+            print(f"      {it.caminho.name[:40]:42} ~ {lap} ({d} bits)")
     print(f"  {'ENVIADAS' if a.apply else 'a enviar (dry-run)'} …………… {len(prontos)}")
     if sem_tour:
         print(f"  sem passeio casado …… {len(sem_tour)}  (entram sem ph:capturedDuring)")

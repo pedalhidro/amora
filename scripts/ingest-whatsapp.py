@@ -77,6 +77,7 @@ def _importa(nome_mod: str, arquivo: str):
 # por sua vez importa o audit-captura (varredura, casamento pasta→passeio).
 I = _importa("ingest_drive", "ingest-drive.py")
 A = I.A
+L = I.L          # livro-razão (scripts/media_ledger.py)
 
 import rdflib  # noqa: E402  (depois dos imports dinâmicos, como o ingest-drive)
 
@@ -111,6 +112,7 @@ class Item:
     duracao: float = 0.0
     original: bool = False          # original sem GPS (fase 1 pulou) — data vem do EXIF
     variantes: dict = field(default_factory=dict)
+    src: str | None = None          # chave no livro-razão (drive:<item-id>)
 
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -334,6 +336,8 @@ def main() -> None:
                     help="inclui também os ORIGINAIS que a fase 1 pulou por não terem GPS "
                          "(têm data de captura no EXIF → dcterms:date real; sem marcador)")
     ap.add_argument("--so-videos", action="store_true", help="só os MP4")
+    ap.add_argument("--iniciar-livro", action="store_true",
+                    help="com --apply: cria o livro-razão se ele ainda não existe nesta máquina")
     a = ap.parse_args()
 
     servidor = a.servidor.rstrip("/")
@@ -358,9 +362,12 @@ def main() -> None:
         if p is None and pa.whatsapp_paths:
             sem_passeio.add(pa.nome)
             continue                         # sem passeio não há o que ancorar: fica pra depois
-        fontes = [(c, sl, False) for c, sl in pa.whatsapp_paths]
+        # ORIGINAIS PRIMEIRO: a dedup é "quem chega primeiro fica", e o original
+        # (com data de captura de verdade) tem que ganhar da cópia do zap.
+        fontes = []
         if a.originais:
             fontes += [(c, sl, True) for c, sl in pa.originais_paths]
+        fontes += [(c, sl, False) for c, sl in pa.whatsapp_paths]
         for caminho, slug, original in fontes:
             ext = caminho.suffix.lower()
             if ext in A.IMAGE_EXT and quer_img:
@@ -393,15 +400,55 @@ def main() -> None:
     if not cands:
         sys.exit("nenhum arquivo do WhatsApp com esses filtros.")
 
+    # ── Livro-razão: o que já tem desfecho não é nem lido de novo ──────────
+    por_classe = I.hashes_no_servidor(servidor)
+    fotos, videos = por_classe["StillImage"], por_classe["MotionImage"]
+    vivos = fotos | videos
+    com_geo = L.hashes_com_geo(g)
+    livro = L.abre_livro(a.apply, a.iniciar_livro)
+    lapides = L.prepara(por_classe, grava=a.apply, livro=livro)
+    acervo_raiz = Path(a.acervo)
+
+    def anota(it, outcome, **kw):
+        if livro is not None and a.apply and it.src:
+            st = it.caminho.stat()
+            livro.registra(it.src, outcome, fase="whatsapp", kind=it.kind,
+                           path=os.path.relpath(it.caminho, acervo_raiz),
+                           size=st.st_size, mtime=int(st.st_mtime),
+                           tour=it.tour_slug, **kw)
+
+    no_livro, sem_id, restam = {}, [], []
+    for it in cands:
+        it.src = L.chave_drive(it.caminho)
+        if it.src is None:
+            sem_id.append(it)
+            if a.apply:
+                continue                    # sem id não dá pra rastrear: não sobe
+        est, _ = L.estado_da_origem(it.src, livro, vivos)
+        if est in ("subiu", "duplicata", "excluida", "apagada-no-amora"):
+            no_livro[est] = no_livro.get(est, 0) + 1
+            continue
+        restam.append(it)
+    n_cands = len(cands)
+    cands = restam
+    if no_livro:
+        print("\njá resolvidos no livro-razão (não relidos): "
+              + ", ".join(f"{v} {k}" for k, v in sorted(no_livro.items())))
+    if sem_id:
+        print(f"⚠ {len(sem_id)} arquivos sem id do Drive"
+              + (" — NÃO sobem (não dá pra rastrear)" if a.apply else ""))
+    if not cands:
+        print("\nnada a fazer: todo candidato já tem desfecho no livro-razão.")
+        return
+
     total_b = sum(c.caminho.stat().st_size for c in cands)
     n_img = sum(1 for c in cands if c.kind == "image")
     n_vid = len(cands) - n_img
-    print(f"\n{n_img} imagens + {n_vid} vídeos em {len({c.pasta for c in cands})} pastas")
+    print(f"\n{n_img} imagens + {n_vid} vídeos em {len({c.pasta for c in cands})} pastas"
+          + (f" (de {n_cands} candidatos)" if n_cands != len(cands) else ""))
     print(f"BAIXANDO ~{total_b / 1024**3:.2f} GiB do Drive\n")
-
-    por_classe = I.hashes_no_servidor(servidor)
-    fotos, videos = por_classe["StillImage"], por_classe["MotionImage"]
-    print(f"catálogo do amora: {len(fotos)} fotos + {len(videos)} vídeos já lá\n")
+    print(f"catálogo do amora: {len(fotos)} fotos + {len(videos)} vídeos já lá"
+          f" · {len(lapides)} lápides (mídia apagada)\n")
 
     originais = [c for c in cands if c.original and c.kind == "image"]
     exif = {}
@@ -419,7 +466,7 @@ def main() -> None:
         if fase1:
             print(f"  {len(fase1)} originais COM GPS pulados (são da fase 1: ingest-drive.py)")
 
-    dups, erros, prontos, sem_pessoa = [], [], [], []
+    dups, erros, prontos, sem_pessoa, retidos = [], [], [], [], []
     LOTE = 256                                  # pré-baixa em lotes (não o acervo inteiro de uma vez)
     for i, it in enumerate(cands, 1):
         if (i - 1) % LOTE == 0:
@@ -435,11 +482,22 @@ def main() -> None:
                 it.hash = vhash(it.caminho, it.duracao)
         except Exception as e:              # noqa: BLE001
             erros.append((it, f"hash: {e}"))
+            anota(it, "error", reason=f"hash: {e}"[:120])
             continue
         antigo = I.ja_existe(it.hash, conhecidos)
         if antigo:
             dups.append((it, antigo))
+            anota(it, "duplicate", media=antigo, hash=it.hash,
+                  dist=I.hamming(it.hash, antigo), src_gps=False,
+                  alvo_geo=antigo in com_geo)
             continue
+        # Parece uma mídia que foi APAGADA no amora? Então não sobe sozinha.
+        if not (livro and it.src in livro.liberados):
+            lp = L.lapide_proxima(it.hash, it.kind, lapides)
+            if lp:
+                retidos.append((it, lp))
+                anota(it, "held", reason="lapide", media=lp[0], dist=lp[1], hash=it.hash)
+                continue
         if not it.pessoa_slug:
             sem_pessoa.append(it)
 
@@ -461,8 +519,10 @@ def main() -> None:
                 ok, msg = False, f"variantes: {e}"
             if not ok:
                 erros.append((it, msg))
+                anota(it, "error", reason=str(msg)[:120])
                 print(f"  [{i}/{len(cands)}] ✗ {it.caminho.name[:44]:46} {msg[:90]}")
                 continue
+            anota(it, "ingested", media=it.hash, hash=it.hash, src_gps=False)
             conhecidos.add(it.hash)
             print(f"  [{i}/{len(cands)}] ✓ {it.caminho.name[:44]:46} med:{it.hash} {rot}")
         else:
@@ -473,6 +533,11 @@ def main() -> None:
     print("\n" + "─" * 72)
     print(f"  candidatos ……………… {len(cands)}  ({n_img} imagens, {n_vid} vídeos)")
     print(f"  já no amora (dedup) … {len(dups)}")
+    if retidos:
+        print(f"  RETIDOS ……………… {len(retidos)}  (parecem mídia apagada no amora — "
+              f"`media_ledger.py retidos`)")
+        for it, (lap, d) in retidos[:8]:
+            print(f"      {it.caminho.name[:40]:42} ~ {lap} ({d} bits)")
     print(f"  {'ENVIADOS' if a.apply else 'a enviar (dry-run)'} …………… {len(prontos)}")
     if sem_pessoa:
         print(f"  sem pessoa mapeada …… {len(sem_pessoa)}  (entram só com schema:creditText)")
