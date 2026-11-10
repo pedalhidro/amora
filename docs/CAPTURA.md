@@ -160,6 +160,18 @@ vários deles a pasta do Drive foi criada, com a arte do chamado na raiz, e a
 Esse é o buraco pra fechar primeiro, porque é o único ainda recuperável —
 enquanto a memória (e o WhatsApp) das pessoas aguentar.
 
+**Mídia solta na raiz da pasta (11/2026).** Nas pastas mais novas, criadas por
+quem colabora, não há subpasta `midia/`: os arquivos do pedal foram largados na
+raiz, ao lado da arte do chamado. A auditoria e as duas ingestões só olhavam
+dentro de `midia*/` e não viam 317 arquivos (246 do zap + 71 originais de
+câmera, quase todos em `2026-10-24 Pedal pela Democracia` e no PH 117). Agora
+um arquivo da raiz conta como mídia quando tem **nome** de mídia — do WhatsApp,
+ou de câmera/celular (`IMG_…`, `DSC…`, `PA243145.JPG`…; `_midia_solta` em
+`audit-captura.py`). O resto da raiz segue sendo arte. Fica de fora, por não
+dar pra saber pelo nome, uma vintena de arquivos com nome de UUID (PH 7, PH 8,
+PH 76). O casamento pasta↔passeio é por DATA (±1 dia): pasta com data errada
+se conserta renomeando a pasta no Drive, não no código.
+
 ## Cinco eventos existem no Drive e não no catálogo
 
 Não são lacunas de captura; são buracos de catálogo. Os dois primeiros ainda

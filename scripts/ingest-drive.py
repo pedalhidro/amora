@@ -644,7 +644,7 @@ def main() -> None:
     print("═" * 72)
 
     pastas = A.ler_acervo(Path(a.acervo), quieto=True)
-    passeios, g = A.carregar_catalogos()
+    passeios, g = A.carregar_catalogos(servidor)   # do servidor: o repo fica pra trás
     A.casar(passeios, pastas)
     por_pasta = {p.pasta.nome: p for p in passeios if p.pasta}
     pessoas = mapa_pessoas()

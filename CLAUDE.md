@@ -235,7 +235,12 @@ one optional hosted deploy target, not a dependency.
   `POST /upload-tour mode=patch`, `--slug-map` emite
   `scripts/whatsapp-slug-map.json` pra revisão humana. Lê o Drive em modo
   SOMENTE-LEITURA e só metadados — os arquivos são stubs do Google Drive e
-  abrir um força download; ler os 8 mil puxaria ~13 GiB. Ver `docs/CAPTURA.md`),
+  abrir um força download; ler os 8 mil puxaria ~13 GiB. A varredura
+  (`ler_acervo`, compartilhada com as duas ingestões) conta a mídia das
+  subpastas `midia*/` E a mídia solta na raiz da pasta do passeio quando o
+  arquivo tem NOME de mídia — do WhatsApp ou de câmera (`_midia_solta`); o
+  resto da raiz é arte do chamado. Pasta↔passeio casa por DATA (±1 dia).
+  Ver `docs/CAPTURA.md`),
   `import-activities-censo.py` (importa `ph:linkActivity` da planilha do censo,
   casando por URL da rota → data exata → data ±1; NUNCA por número de edição,
   que colide),
