@@ -90,7 +90,7 @@ RE_CARIMBO = re.compile(
     r"WhatsApp\s+(?:Image|Video|Audio|Ptt)\s+(\d{4}-\d{2}-\d{2})\s+at\s+(\d{2})\.(\d{2})\.(\d{2})",
     re.I)
 
-PREFIXOS = I.PREFIXOS + "@prefix pav:     <http://purl.org/pav/> .\n"
+PREFIXOS = I.PREFIXOS          # (o pav: já vem de lá)
 
 VIDEO_BITRATE_360 = "700k"
 AUDIO_BITRATE_CLIP = "128k"
@@ -271,11 +271,29 @@ def _props_comuns(it: Item) -> list[str]:
     return props
 
 
-def monta_ttl_imagem(it: Item) -> str:
-    ident = f"med:{it.hash}"
-    props = ["a ph:StillImage",              # SEM ph:GeoreferencedImage: não há GPS
-             f"nfo:hasHash {ident}_hash",
-             *_props_comuns(it)]
+def monta_ttl_imagem(it: Item, alvo: str | None = None, herda: dict | None = None) -> str:
+    """Com `alvo` + `herda` é uma SUBSTITUIÇÃO (ver ingest-drive.py: "Original
+    é sempre melhor"): o IRI é o da mídia que já está no amora; data-hora do
+    EXIF entra, a parte social e a coordenada (se a antiga tinha) são herdadas."""
+    h = alvo or it.hash
+    ident = f"med:{h}"
+    geo = herda["geo"] if herda else None
+    if herda is None:
+        props = ["a ph:StillImage",          # SEM ph:GeoreferencedImage: não há GPS
+                 f"nfo:hasHash {ident}_hash",
+                 *_props_comuns(it)]
+    else:
+        props = ["a ph:StillImage" + (", ph:GeoreferencedImage" if geo else ""),
+                 f"nfo:hasHash {ident}_hash"]
+        if it.data and "T" in it.data:       # data-hora REAL do EXIF
+            props.append(f'dcterms:date "{it.data}"^^xsd:dateTime')
+        elif herda["data"]:
+            props.append(f"dcterms:date {herda['data']}")
+        elif it.data:
+            props.append(f'dcterms:date "{it.data}"^^xsd:date')
+        if geo:
+            props.append(f"schema:locationCreated {ident}_geo")
+        props += I.props_herdados(herda, it.pessoa_slug, it.tour_slug, it.slug_bruto)
     if it.original:
         _, mime = I.formato_original(it.caminho)
         if mime != "image/jpeg":
@@ -283,7 +301,11 @@ def monta_ttl_imagem(it: Item) -> str:
     corpo = " ;\n".join(f"    {p}" for p in props)
     derivados = (f"{ident}_hash a nfo:FileHash ;\n"
                  f'    nfo:hashAlgorithm "pHash" ;\n'
-                 f'    nfo:hashValue "{it.hash}" .')
+                 f'    nfo:hashValue "{h}" .')
+    if geo:
+        derivados += (f"\n\n{ident}_geo a schema:GeoCoordinates ;\n"
+                      f'    schema:latitude "{geo[0]:.6f}"^^xsd:decimal ;\n'
+                      f'    schema:longitude "{geo[1]:.6f}"^^xsd:decimal .')
     return f"{PREFIXOS}\n{ident}\n{corpo} .\n\n{derivados}\n"
 
 
@@ -338,6 +360,8 @@ def main() -> None:
     ap.add_argument("--so-videos", action="store_true", help="só os MP4")
     ap.add_argument("--iniciar-livro", action="store_true",
                     help="com --apply: cria o livro-razão se ele ainda não existe nesta máquina")
+    ap.add_argument("--sem-substituir", action="store_true",
+                    help="não troca a cópia pior que já está no amora pelo original")
     a = ap.parse_args()
 
     servidor = a.servidor.rstrip("/")
@@ -467,6 +491,7 @@ def main() -> None:
             print(f"  {len(fase1)} originais COM GPS pulados (são da fase 1: ingest-drive.py)")
 
     dups, erros, prontos, sem_pessoa, retidos = [], [], [], [], []
+    subst, substituidas = [], set()      # originais que tomaram o lugar de uma cópia pior
     LOTE = 256                                  # pré-baixa em lotes (não o acervo inteiro de uma vez)
     for i, it in enumerate(cands, 1):
         if (i - 1) % LOTE == 0:
@@ -486,6 +511,33 @@ def main() -> None:
             continue
         antigo = I.ja_existe(it.hash, conhecidos)
         if antigo:
+            # Original (sem GPS, mas com EXIF) × a cópia do zap que já está no
+            # amora: o original toma o lugar dela. Só fotos; vídeo fica duplicata.
+            h = None
+            if it.kind == "image" and it.original and not a.sem_substituir \
+                    and antigo not in substituidas:
+                h = I.herdado(g, antigo)
+            mot = I.motivo_substituir(h, False, bool(it.data and "T" in it.data))
+            if mot:
+                if a.apply:
+                    try:
+                        it.variantes = I.monta_variantes(it.caminho, img, icc)
+                        ok, msg = envia(servidor, "/upload-image",
+                                        {"ttl": monta_ttl_imagem(it, alvo=antigo, herda=h)},
+                                        it.variantes)
+                    except Exception as e:      # noqa: BLE001
+                        ok, msg = False, f"variantes: {e}"
+                    if not ok:
+                        erros.append((it, msg))
+                        anota(it, "error", reason=str(msg)[:120])
+                        continue
+                    anota(it, "ingested", media=antigo, hash=it.hash, src_gps=False,
+                          replaced=mot, dist=I.hamming(it.hash, antigo))
+                substituidas.add(antigo)
+                subst.append((it, antigo, mot))
+                print(f"  [{i}/{len(cands)}] {'⇄' if a.apply else '~'} {it.caminho.name[:44]:46} "
+                      f"substitui med:{antigo} ({mot})")
+                continue
             dups.append((it, antigo))
             anota(it, "duplicate", media=antigo, hash=it.hash,
                   dist=I.hamming(it.hash, antigo), src_gps=False,
@@ -533,6 +585,9 @@ def main() -> None:
     print("\n" + "─" * 72)
     print(f"  candidatos ……………… {len(cands)}  ({n_img} imagens, {n_vid} vídeos)")
     print(f"  já no amora (dedup) … {len(dups)}")
+    if subst:
+        print(f"  {'SUBSTITUÍRAM' if a.apply else 'substituiriam'} a cópia … {len(subst)}  "
+              f"(original no lugar da versão pior)")
     if retidos:
         print(f"  RETIDOS ……………… {len(retidos)}  (parecem mídia apagada no amora — "
               f"`media_ledger.py retidos`)")

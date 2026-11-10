@@ -162,8 +162,12 @@ Três promessas, testadas ponta a ponta num backend de teste:
   `--iniciar-livro`. Se o livro existe em outra cópia do repo, copie o
   `.sync-state/` de lá em vez de começar outro.
 
-Cada `duplicata` anota se a origem tinha GPS e a mídia do amora não: é a lista
-de quem merece ganhar a coordenada do original.
+**O original substitui a cópia.** Se o amora já tem a foto numa versão pior (a
+do zap: sem GPS, só com o dia) e chega o original, ele toma o lugar dela — no
+MESMO endereço (`/midia/<hash>`), com os álbuns, o crédito e o passeio que a
+cópia tinha, mais a hora e a coordenada do EXIF. A ordem de ingestão deixa de
+importar: zap primeiro e original depois dá no mesmo que o contrário. Só fotos
+(vídeo duplicado fica como duplicata). `--sem-substituir` desliga.
 
 Antes de rodar a fase 2, resolva a autoria: `scripts/whatsapp-slug-map.json`
 (gerado por `--slug-map`) tem 19 slugs que já resolvem pra uma pessoa e ~130

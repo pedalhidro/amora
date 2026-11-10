@@ -469,6 +469,7 @@ PREFIXOS = """@prefix dcterms: <http://purl.org/dc/terms/> .
 @prefix pes:     <https://id.pedalhidrografi.co/pessoas/> .
 @prefix pas:     <https://id.pedalhidrografi.co/passeio/> .
 @prefix med:     <https://id.pedalhidrografi.co/midia/> .
+@prefix pav:     <http://purl.org/pav/> .
 @prefix prov:    <http://www.w3.org/ns/prov#> .
 @prefix schema:  <https://schema.org/> .
 @prefix xsd:     <http://www.w3.org/2001/XMLSchema#> .
@@ -481,28 +482,119 @@ def _dec(v) -> str:
     return str(int(f)) if f.is_integer() else repr(f)
 
 
-def monta_ttl(item: "Item") -> str:
+# ── "Original é sempre melhor": substituir a cópia que já está no amora ──────
+# Quando um ORIGINAL (com EXIF) chega e o amora já tem a mesma foto numa versão
+# pior — a cópia do zap, sem GPS, só com o dia —, o original toma o LUGAR dela:
+# mesmo IRI (med:<hash da que já está>), blobs e metadados novos. O IRI fica
+# porque é ele que os links, os álbuns e o livro-razão apontam; apagar e subir
+# de novo quebraria os três e ainda criaria uma lápide que seguraria as outras
+# cópias da mesma foto. O /upload-image é purge-and-replace, então o que a
+# mídia antiga tinha e o original não traz (álbuns, autoria, crédito, passeio)
+# é HERDADO aqui.
+_PES_NS = "https://id.pedalhidrografi.co/pessoas/"
+_PAS_NS = "https://id.pedalhidrografi.co/passeio/"
+_PROV_ATTR = rdflib.URIRef("http://www.w3.org/ns/prov#wasAttributedTo")
+_PAV_PROV = rdflib.URIRef("http://purl.org/pav/providedBy")
+_SCHEMA = rdflib.Namespace("https://schema.org/")
+_DCT = rdflib.Namespace("http://purl.org/dc/terms/")
+_XSD_DATETIME = rdflib.URIRef("http://www.w3.org/2001/XMLSchema#dateTime")
+
+
+def herdado(g, alvo: str) -> dict | None:
+    """O que a mídia `alvo` (hash) tem no catálogo, ou None se ela não está no
+    retrato do catálogo (ex.: subiu neste mesmo lote)."""
+    m = rdflib.URIRef(MED_NS + alvo)
+    if (m, rdflib.RDF.type, None) not in g:
+        return None
+    d = g.value(m, _DCT.date)
+    geo = g.value(m, _SCHEMA.locationCreated)
+    lat = g.value(geo, _SCHEMA.latitude) if geo is not None else None
+    lon = g.value(geo, _SCHEMA.longitude) if geo is not None else None
+    return {
+        "listas": sorted(str(o) for o in g.objects(m, _SCHEMA.isPartOf)),
+        "autores": sorted(str(o) for o in g.objects(m, _PROV_ATTR)),
+        "provedores": sorted(str(o) for o in g.objects(m, _PAV_PROV)),
+        "credito": str(g.value(m, _SCHEMA.creditText) or "") or None,
+        "tour": str(g.value(m, rdflib.URIRef(PH_NS + "capturedDuring")) or "") or None,
+        "licenca": str(g.value(m, _DCT.license) or "") or None,
+        "data": d.n3() if d is not None else None,          # literal tipado, como está
+        "tem_datahora": d is not None and d.datatype == _XSD_DATETIME,
+        "geo": (float(lat), float(lon)) if lat is not None and lon is not None else None,
+        # Só o ingest-whatsapp grava schema:datePublished: marca a cópia do zap.
+        "do_zap": (m, _SCHEMA.datePublished, None) in g,
+    }
+
+
+def motivo_substituir(h: dict | None, tem_gps: bool, tem_datahora: bool) -> str | None:
+    """Por que o original deve tomar o lugar da mídia que já está lá (ou None =
+    é só uma duplicata)."""
+    if h is None:
+        return None
+    if tem_gps and not h["geo"]:
+        return "ganha-gps"
+    if tem_datahora and not h["tem_datahora"]:
+        return "ganha-hora"
+    if h["do_zap"]:
+        return "original-no-lugar-do-zap"
+    return None
+
+
+def props_herdados(h: dict, pessoa_slug: str | None, tour_slug: str | None,
+                   slug_bruto: str | None) -> list[str]:
+    """Licença, passeio, autoria, crédito e álbuns da substituição: a união do
+    que a mídia antiga tinha com o que o original traz. NÃO leva o
+    schema:datePublished — era o carimbo de compartilhamento da cópia do zap,
+    e é a ausência dele que impede uma segunda substituição."""
+    props = [f"dcterms:license <{h['licenca'] or LICENCA_PADRAO}>"]
+    tour = h["tour"] or (_PAS_NS + tour_slug if tour_slug else None)
+    if tour:
+        props.append(f"ph:capturedDuring <{tour}>")
+    pes = _PES_NS + pessoa_slug if pessoa_slug else None
+    for a in sorted(set(h["autores"]) | ({pes} if pes else set())):
+        props.append(f"prov:wasAttributedTo <{a}>")
+    for a in h["provedores"]:
+        props.append(f"pav:providedBy <{a}>")
+    credito = h["credito"] or slug_bruto
+    if credito:
+        esc = credito.replace(chr(92), chr(92) * 2).replace('"', chr(92) + '"')
+        props.append(f'schema:creditText "{esc}"')
+    for lista in h["listas"]:
+        props.append(f"schema:isPartOf <{lista}>")
+    return props
+
+
+def monta_ttl(item: "Item", alvo: str | None = None, herda: dict | None = None) -> str:
     """Espelha buildImageBlock()/buildSingleImageTtl() do form. Os nós aninhados
     são IRIs DERIVADAS (<id>_hash, <id>_geo), nunca bnodes: é isso que deixa a
-    purga do backend ser aritmética de prefixo."""
-    ident = f"med:{item.phash}"
+    purga do backend ser aritmética de prefixo.
+
+    Com `alvo` + `herda` é uma SUBSTITUIÇÃO: o IRI (e o hash gravado) é o da
+    mídia que já está no amora, e a parte social vem de props_herdados."""
+    h = alvo or item.phash
+    ident = f"med:{h}"
     props = [
         # Tem GPS por construção (é o critério de entrada) → sempre georreferenciada.
         "a ph:StillImage, ph:GeoreferencedImage",
         f"nfo:hasHash {ident}_hash",
-        f"dcterms:license <{LICENCA_PADRAO}>",
     ]
+    if herda is None:
+        props.append(f"dcterms:license <{LICENCA_PADRAO}>")
     if item.data:
         props.append(f'dcterms:date "{item.data}"^^xsd:dateTime')
+    elif herda and herda["data"]:
+        props.append(f"dcterms:date {herda['data']}")
     props.append(f"schema:locationCreated {ident}_geo")
     if item.bearing is not None:
         props.append(f'exif:gpsImgDirection "{_dec(item.bearing)}"^^xsd:decimal')
     if item.focal is not None:
         props.append(f'exif:focalLengthIn35mmFilm "{_dec(item.focal)}"^^xsd:decimal')
-    if item.tour_slug:
-        props.append(f"ph:capturedDuring pas:{item.tour_slug}")
-    if item.pessoa_slug:
-        props.append(f"prov:wasAttributedTo pes:{item.pessoa_slug}")
+    if herda is not None:
+        props += props_herdados(herda, item.pessoa_slug, item.tour_slug, item.slug_bruto)
+    else:
+        if item.tour_slug:
+            props.append(f"ph:capturedDuring pas:{item.tour_slug}")
+        if item.pessoa_slug:
+            props.append(f"prov:wasAttributedTo pes:{item.pessoa_slug}")
     _, mime = formato_original(item.caminho)
     if mime != "image/jpeg":
         props.append(f'schema:encodingFormat "{mime}"')
@@ -511,7 +603,7 @@ def monta_ttl(item: "Item") -> str:
     derivados = (
         f"{ident}_hash a nfo:FileHash ;\n"
         f'    nfo:hashAlgorithm "pHash" ;\n'
-        f'    nfo:hashValue "{item.phash}" .\n\n'
+        f'    nfo:hashValue "{h}" .\n\n'
         f"{ident}_geo a schema:GeoCoordinates ;\n"
         f'    schema:latitude "{item.lat:.6f}"^^xsd:decimal ;\n'
         f'    schema:longitude "{item.lon:.6f}"^^xsd:decimal .'
@@ -536,8 +628,9 @@ def _multipart(campos: dict[str, str],
     return bytes(corpo), {"Content-Type": f"multipart/form-data; boundary={bnd}"}
 
 
-def envia(item: "Item", servidor: str) -> tuple[bool, str]:
-    ttl = monta_ttl(item)
+def envia(item: "Item", servidor: str, alvo: str | None = None,
+          herda: dict | None = None) -> tuple[bool, str]:
+    ttl = monta_ttl(item, alvo, herda)
     body, headers = _multipart({"ttl": ttl}, item.variantes)
     headers["User-Agent"] = A.USER_AGENT
     req = urllib.request.Request(f"{servidor}/upload-image", data=body,
@@ -644,6 +737,9 @@ def main() -> None:
     ap.add_argument("--pasta", help="só as pastas do acervo cujo nome contém isto")
     ap.add_argument("--iniciar-livro", action="store_true",
                     help="com --apply: cria o livro-razão se ele ainda não existe nesta máquina")
+    ap.add_argument("--sem-substituir", action="store_true",
+                    help="não troca a cópia pior que já está no amora pelo original "
+                         "(o padrão é substituir: mesmo IRI, blobs e metadados do original)")
     a = ap.parse_args()
 
     servidor = a.servidor.rstrip("/")
@@ -742,6 +838,7 @@ def main() -> None:
 
     sem_gps, gps_invalido, sem_pessoa, sem_tour, dups, erros, prontos = [], [], [], [], [], [], []
     retidos = []
+    subst, substituidas = [], set()      # originais que tomaram o lugar de uma cópia pior
     com_gps = 0
     for i, it in enumerate(cands, 1):
         meta = exif.get(str(it.caminho), {})
@@ -783,6 +880,30 @@ def main() -> None:
 
         antigo = ja_existe(it.phash, conhecidos)
         if antigo:
+            # O amora já tem esta foto. Numa versão PIOR (cópia do zap, sem
+            # GPS, sem hora)? Então o original toma o lugar dela.
+            h = None if (a.sem_substituir or antigo in substituidas) else herdado(g, antigo)
+            mot = motivo_substituir(h, True, bool(it.data))
+            if mot:
+                if a.apply:
+                    try:
+                        it.variantes = monta_variantes(it.caminho, img, icc)
+                    except Exception as e:      # noqa: BLE001
+                        erros.append((it, f"variantes: {e}"))
+                        anota(it, "error", reason=f"variantes: {e}"[:120])
+                        continue
+                    ok, msg = envia(it, servidor, alvo=antigo, herda=h)
+                    if not ok:
+                        erros.append((it, msg))
+                        anota(it, "error", reason=str(msg)[:120])
+                        continue
+                    anota(it, "ingested", media=antigo, hash=it.phash, src_gps=True,
+                          replaced=mot, dist=hamming(it.phash, antigo))
+                substituidas.add(antigo)
+                subst.append((it, antigo, mot))
+                print(f"  [{i}/{len(cands)}] {'⇄' if a.apply else '~'} {it.caminho.name[:44]:46} "
+                      f"substitui med:{antigo} ({mot})")
+                continue
             dups.append((it, antigo))
             # alvo_geo=False = o amora tem esta foto SEM coordenada e o original
             # tem: é a lista de quem merece ganhar o GPS ("original é melhor").
@@ -832,6 +953,11 @@ def main() -> None:
     if gps_invalido:
         print(f"  GPS 0/0 ou inválido … {len(gps_invalido)}  (puladas — tag sem fix)")
     print(f"  já no amora (dedup) … {len(dups)}")
+    if subst:
+        print(f"  {'SUBSTITUÍRAM' if a.apply else 'substituiriam'} a cópia … {len(subst)}  "
+              f"(original no lugar da versão pior: "
+              + ", ".join(f"{v} {k}" for k, v in sorted(
+                  __import__('collections').Counter(m for _, _, m in subst).items())) + ")")
     if retidos:
         print(f"  RETIDAS ……………… {len(retidos)}  (parecem mídia apagada no amora — "
               f"`media_ledger.py retidos`)")

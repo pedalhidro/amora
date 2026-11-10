@@ -1480,6 +1480,25 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
   sem id do Drive não sobe. Dry-run nunca grava no livro. Quem escrever uma
   ingestão nova (as do Fotos) usa `L.abre_livro` / `L.prepara` /
   `L.estado_da_origem` / `livro.registra` como as duas existentes.
+- **"Original é sempre melhor": o original SUBSTITUI a cópia, no mesmo IRI.**
+  Quando uma ingestão acha que o amora já tem a foto (Hamming ≤ 5) numa versão
+  pior — sem coordenada e o original tem GPS (`ganha-gps`), só com o dia e o
+  original tem hora (`ganha-hora`), ou veio do zap (`schema:datePublished`, que
+  só o `ingest-whatsapp.py` grava) —, o original toma o lugar dela:
+  `/upload-image` com o TTL de `med:<hash DA QUE JÁ ESTÁ>` (o endpoint é
+  purge-and-replace e regrava os blobs). O IRI fica porque links, álbuns e o
+  livro-razão apontam pra ele; apagar e subir de novo quebraria os três e
+  criaria uma lápide segurando as outras cópias da mesma foto. Como é
+  purge-and-replace, o que a mídia antiga tinha é HERDADO (`herdado` /
+  `props_herdados` em `ingest-drive.py`: licença, passeio, autoria, crédito,
+  álbuns, e a coordenada se o original não traz uma); o
+  `schema:datePublished` NÃO é herdado — é a ausência dele (mais a data-hora/
+  GPS já presentes) que impede uma segunda substituição. Só fotos: vídeo
+  duplicado segue como duplicata. No livro vira `ingested` com `replaced:
+  <motivo>` e `media` = o hash antigo. `--sem-substituir` desliga. Limites:
+  `thumb`/`large` têm cache imutável de 1 ano na mesma chave (quem já viu a
+  cópia segue vendo a versão antiga) e um `original.jpg` antigo sobra no bucket
+  quando o original novo é `.heic`.
 - **Predicados que penduram em nó aninhado têm `rdfs:domain` da CLASSE DO NÓ.**
   O validador roda com `inference="rdfs"`: um `rdfs:domain ph:Tour` num
   predicado do nó do passe tiparia `pas:<slug>_sweep` como `ph:Tour`, jogando-o
