@@ -119,6 +119,16 @@ que faz o mapa desenhar um marcador. Mídia sem GPS entra como `ph:StillImage`
 **sem** o mixin — e some do mapa sozinha, sem nenhum caso especial no
 `app.js`. O SHACL também já aceita (`schema:locationCreated` é `sh:Warning`).
 
+**A data é só o dia.** Do arquivo do zap sabemos em que passeio foi, não a que
+horas. Ele entra com `dcterms:date "AAAA-MM-DD"^^xsd:date` — o dia do passeio,
+sem hora. (Até 11/2026 o `ingest-whatsapp.py` gravaria a data **e a hora** da
+saída como `xsd:dateTime`: uma hora inventada, indistinguível de um EXIF de
+verdade. Nunca chegou a rodar em produção.) Os leitores tratam o dia sozinho
+como 23:59 daquele dia — a mídia aparece no fim do dia, depois das fotos com
+hora — e mídia sem data nenhuma herda o dia do `ph:capturedDuring`. A regra
+está em `effectiveDate` (`web/lib/media-query.js`); ver "Data de mídia tem
+três estados" no `CLAUDE.md`.
+
 Ordem importa, e é de graça: **ingira os 516 originais primeiro**. Como o pHash
 *é* o IRI e o WhatsApp só recomprime a imagem, uma cópia de zap e o original
 colidem no mesmo IRI — então, com os originais já lá, as cópias deduplicam

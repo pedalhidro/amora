@@ -31,7 +31,7 @@
   fieldset { border: 1px solid var(--border); padding: 1rem; margin: 1rem 0; border-radius: 8px; background: var(--panel); }
   legend { font-weight: 600; padding: 0 .4rem; color: var(--text); }
   label { display: block; margin: .6rem 0 .2rem; font-size: .9rem; color: var(--text); }
-  input[type="file"], input[type="text"], input[type="number"], input[type="datetime-local"], select {
+  input[type="file"], input[type="text"], input[type="number"], input[type="datetime-local"], input[type="date"], input[type="time"], select {
     width: 100%; padding: .45rem; box-sizing: border-box; font-size: 1rem; font-family: inherit;
     background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 5px;
   }
@@ -213,7 +213,7 @@
     text-transform: uppercase; margin: 0 0 .25rem; letter-spacing: .04em;
   }
   .card label { font-size: .75rem; margin: .3rem 0 .1rem; }
-  .card input[type="datetime-local"], .card input[type="number"], .card select { padding: .25rem .35rem; font-size: .85rem; }
+  .card input[type="datetime-local"], .card input[type="date"], .card input[type="time"], .card input[type="number"], .card select { padding: .25rem .35rem; font-size: .85rem; }
   .card .row { display: flex; gap: .4rem; }
   .card .row > div { flex: 1; min-width: 0; }
   .card .tour-auto-status { font-size: .7rem; margin-top: .1rem; }
@@ -907,7 +907,7 @@ async function extractMediaFields(iri) {
   if (!res.ok) throw new Error('images.ttl indisponível (' + res.status + ')');
   const text = await res.text();
   const latOf = new Map(), lonOf = new Map();
-  const f = { kind: 'image', hash, iri, date: '', offset: null, lat: '', lon: '',
+  const f = { kind: 'image', hash, iri, day: '', time: '', offset: null, lat: '', lon: '',
     bearing: '', focal: '', tour: '', authors: [], providers: [], lists: [],
     license: '', anon: false, comp: false, found: false };
   let locTarget = null;
@@ -918,7 +918,12 @@ async function extractMediaFields(iri) {
     if (s !== iri) continue;
     f.found = true;
     if (p === RDF_TYPE && o === PH_NS + 'MotionImage') f.kind = 'video';   // tipo pela classe
-    else if (p === DCT_DATE) { f.offset = xsdOffset(o); f.date = o.slice(0, 16); }
+    else if (p === DCT_DATE) {
+      // xsd:dateTime → dia + hora (com os segundos); xsd:date → só o dia (a
+      // hora fica vazia: é mídia cujo horário ninguém sabe, ex.: do zap).
+      const dm = /^(\d{4}-\d{2}-\d{2})(?:T(\d{2}:\d{2}(?::\d{2})?))?/.exec(o);
+      if (dm) { f.day = dm[1]; f.time = dm[2] || ''; if (dm[2]) f.offset = xsdOffset(o); }
+    }
     else if (p === SCHEMA + 'locationCreated') locTarget = o;
     else if (p === EXIF + 'gpsImgDirection') f.bearing = o;
     else if (p === EXIF + 'focalLengthIn35mmFilm') f.focal = o;
@@ -957,8 +962,11 @@ async function startEditMode(iri) {
   card.innerHTML =
     `<div class="card-section">` +
       `<h4>Editar — <code>${escapeHtml(shortIRI(iri))}</code></h4>` +
-      `<label>Data/hora</label>` +
-      `<input type="datetime-local" data-e="date" value="${escapeHtml(f.date)}" step="1">` +
+      `<label>Data e hora <small>— a hora é opcional: sem ela a mídia vale pelo dia (e entra no fim dele)</small></label>` +
+      `<div ${grid}>` +
+        `<input type="date" data-e="day" aria-label="Dia" value="${escapeHtml(f.day)}">` +
+        `<input type="time" data-e="time" aria-label="Hora (opcional)" value="${escapeHtml(f.time)}" step="1">` +
+      `</div>` +
       `<div ${grid}>` +
         `<div><label>Latitude</label><input type="number" data-e="lat" step="any" value="${escapeHtml(f.lat)}"></div>` +
         `<div><label>Longitude</label><input type="number" data-e="lon" step="any" value="${escapeHtml(f.lon)}"></div>` +
@@ -1025,7 +1033,19 @@ async function startEditMode(iri) {
 
 async function saveMediaEdit(f, card, authorTs, providerTs, listTs, orig) {
   const val = (sel) => $(`[data-e="${sel}"]`, card).value.trim();
-  const dateXsd = localToXsdDateTime(val('date'), f.offset);
+  // Dia + hora → xsd:dateTime; só o dia → xsd:date (NUNCA se inventa uma
+  // hora — os leitores tratam o dia sozinho como 23:59); nada → sem data.
+  const day = val('day'), time = val('time');
+  if (time && !day) throw new Error('Hora sem dia: preencha a data (ou apague a hora)');
+  let dateLit = null;
+  if (day && time) {
+    const x = localToXsdDateTime(`${day}T${time}`, f.offset);
+    if (!x) throw new Error('Data/hora inválida');
+    dateLit = `"${x}"^^xsd:dateTime`;
+  } else if (day) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new Error('Data inválida');
+    dateLit = `"${day}"^^xsd:date`;
+  }
   const lat = num(val('lat')), lon = num(val('lon'));
   const tour = val('tour'), license = val('license');
   const authors = authorTs.getValue(), providers = providerTs.getValue(), lists = listTs.getValue();
@@ -1047,7 +1067,7 @@ async function saveMediaEdit(f, card, authorTs, providerTs, listTs, orig) {
   const P = [`a ${baseType}${hasGeo ? ', ph:GeoreferencedImage' : ''}`,
              `dcterms:license <${license}>`];
   const remove = [];
-  if (dateXsd) P.push(`dcterms:date "${dateXsd}"^^xsd:dateTime`); else remove.push('dcterms:date');
+  if (dateLit) P.push(`dcterms:date ${dateLit}`); else remove.push('dcterms:date');
   // GPS — só mexe se mudou (evita orfanar o nó de geo antigo).
   const gpsChanged = String(lat) !== String(orig.lat) || String(lon) !== String(orig.lon);
   let geoNode = '';
@@ -1170,6 +1190,22 @@ function activateCard(card) {
   return Promise.resolve();
 }
 
+// ===================== Data do card ====================================
+// "ou só o dia" (AAAA-MM-DD) — só vale com Data/hora vazio.
+function cardDayOnly(elem) {
+  const day = ($('[data-field="day"]', elem)?.value || '').trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : '';
+}
+// O literal do dcterms:date do card: Data/hora → xsd:dateTime; senão o dia
+// sozinho → xsd:date (hora NUNCA inventada — os leitores tratam como 23:59
+// daquele dia); nada → null (a mídia herda o dia do passeio, se tiver um).
+function cardDateLiteral(elem, tzOffset) {
+  const x = localToXsdDateTime($('[data-field="date"]', elem).value, tzOffset);
+  if (x) return `"${x}"^^xsd:dateTime`;
+  const day = cardDayOnly(elem);
+  return day ? `"${day}"^^xsd:date` : null;
+}
+
 // ===================== Auto-detecção do passeio ========================
 function autoDetectTour(card) {
   if (card.skipAutoDetect) return;
@@ -1177,7 +1213,17 @@ function autoDetectTour(card) {
   const dateInput  = $('[data-field="date"]',  card.elem);
   const tourSelect = $('[data-field="tour"]',  card.elem);
   const status     = $('.tour-auto-status',    card.elem);
-  if (!dateInput.value) { status.textContent = ''; return; }
+  if (!dateInput.value) {
+    // Sem hora, só o dia: casa pelo DIA-calendário do passeio (em -03:00).
+    const day = cardDayOnly(card.elem);
+    if (!day) { status.textContent = ''; return; }
+    const sameDay = tourCatalog.filter((t) => new Date(t.ms - 3 * 3600e3).toISOString().slice(0, 10) === day);
+    if (!sameDay.length) { status.innerHTML = `<span class="warn">Nenhum passeio nesse dia.</span>`; return; }
+    tourSelect.value = sameDay[0].value;
+    status.innerHTML = `<span class="ok">Detectado: ${escapeHtml(sameDay[0].label)}</span>` +
+      (sameDay.length > 1 ? ` <span class="warn">(${sameDay.length - 1} outros)</span>` : '');
+    return;
+  }
   const ms = new Date(dateInput.value).getTime();
   if (isNaN(ms)) return;
   const matches = tourCatalog.filter(t =>
@@ -1214,6 +1260,7 @@ function buildCardElem(displayIdx, file, thumbBlob) {
            avisa), mas NÃO vira marcador no mapa (ph:GeoreferencedImage exige
            coordenada). -->
       <label class="fi"><span>Data/hora</span><input type="datetime-local" data-field="date" step="1"></label>
+      <label class="fi" title="Use quando não souber a hora (ex.: foto que veio do WhatsApp). Vale só se Data/hora estiver vazio."><span>ou só o dia</span><input type="date" data-field="day"></label>
       <div class="fi-row">
         <label class="fi"><span>Lat</span><input type="number" data-field="lat" step="any" min="-90" max="90"></label>
         <label class="fi"><span>Lon</span><input type="number" data-field="lon" step="any" min="-180" max="180"></label>
@@ -1342,6 +1389,7 @@ function buildVideoCardElem(displayIdx, file) {
            avisa), mas NÃO vira marcador no mapa (ph:GeoreferencedImage exige
            coordenada). -->
       <label class="fi"><span>Data/hora</span><input type="datetime-local" data-field="date" step="1"></label>
+      <label class="fi" title="Use quando não souber a hora (ex.: foto que veio do WhatsApp). Vale só se Data/hora estiver vazio."><span>ou só o dia</span><input type="date" data-field="day"></label>
       <div class="fi-row">
         <label class="fi"><span>Lat</span><input type="number" data-field="lat" step="any" min="-90" max="90"></label>
         <label class="fi"><span>Lon</span><input type="number" data-field="lon" step="any" min="-180" max="180"></label>
@@ -2056,6 +2104,7 @@ function acceptImageCard(pre, defaults) {
   const dateInput = $('[data-field="date"]', elem);
   dateInput.addEventListener('change', () => autoDetectTour(card));
   dateInput.addEventListener('input',  () => autoDetectTour(card));
+  $('[data-field="day"]', elem).addEventListener('change', () => autoDetectTour(card));
   // Remove (com "Desfazer") / envia este card (tela acesa até terminar)
   $('.card-remove', elem).addEventListener('click', () => removeCardWithUndo(card));
   $('.card-send',   elem).addEventListener('click', () => sendCardFromTap(card));
@@ -2189,6 +2238,7 @@ async function createVideoCard(file, defaults) {
   const dateInput = $('[data-field="date"]', elem);
   dateInput.addEventListener('change', () => autoDetectTour(card));
   dateInput.addEventListener('input',  () => autoDetectTour(card));
+  $('[data-field="day"]', elem).addEventListener('change', () => autoDetectTour(card));
   $('.card-remove', elem).addEventListener('click', () => removeCardWithUndo(card));
   $('.card-send',   elem).addEventListener('click', () => sendCardFromTap(card));
   $('.pick-on-map', elem).addEventListener('click', () => {
@@ -2551,7 +2601,7 @@ function originalFormat(card) {
 
 function buildImageBlock(card) {
   const elem    = card.elem;
-  const dateXsd = localToXsdDateTime($('[data-field="date"]',    elem).value, card.exifTzOffset);
+  const dateLit = cardDateLiteral(elem, card.exifTzOffset);
   const lat     = num($('[data-field="lat"]',     elem).value);
   const lon     = num($('[data-field="lon"]',     elem).value);
   const bearing = num($('[data-field="bearing"]', elem).value);
@@ -2579,7 +2629,7 @@ function buildImageBlock(card) {
     `nfo:hasHash ${id}_hash`,
     `dcterms:license <${license}>`,
   ];
-  if (dateXsd) props.push(`dcterms:date "${dateXsd}"^^xsd:dateTime`);
+  if (dateLit) props.push(`dcterms:date ${dateLit}`);
   if (hasGeo)  props.push(`schema:locationCreated ${id}_geo`);
   if (bearing !== '') props.push(`exif:gpsImgDirection "${bearing}"^^xsd:decimal`);
   if (focal   !== '') props.push(`exif:focalLengthIn35mmFilm "${focal}"^^xsd:decimal`);
@@ -2644,7 +2694,7 @@ function buildNewListDecls(listIris) {
 // miniatura, sem schema:thumbnail; sem blob 720p, sem ph:video720p).
 function buildClipBlock(card, r) {
   const elem = card.elem;
-  const dateXsd = localToXsdDateTime($('[data-field="date"]', elem).value);
+  const dateLit = cardDateLiteral(elem);
   // Vírgula → ponto antes de emitir xsd:decimal — ver buildImageBlock.
   const lat   = num($('[data-field="lat"]', elem).value);
   const lon   = num($('[data-field="lon"]', elem).value);
@@ -2677,7 +2727,7 @@ function buildClipBlock(card, r) {
     `ph:audio "${clipFileName(id, 'audio', r.audio)}"`,
   ];
   if (r.thumb) props.push(`schema:thumbnail "${clipFileName(id, 'thumb')}"`);
-  if (dateXsd) props.push(`dcterms:date "${dateXsd}"^^xsd:dateTime`);
+  if (dateLit) props.push(`dcterms:date ${dateLit}`);
   if (hasGeo)  props.push(`schema:locationCreated ${iri}_geo`);
   const resolutions = ['"audio"'];
   if (!audioOnly && r.blob360) {

@@ -79,6 +79,30 @@
     return isNaN(d.getTime()) ? null : d.getUTCDay();
   }
 
+  // ── data EFETIVA da mídia ─────────────────────────────────────────────────
+  // dcterms:date de mídia tem três estados:
+  //   xsd:dateTime — o instante real (EXIF / moov);
+  //   xsd:date     — só o DIA é conhecido (mídia do zap: o dia é o do passeio,
+  //                  a hora ninguém sabe — e não se inventa uma);
+  //   ausente      — vale o dia do passeio (ph:capturedDuring), se houver.
+  // Nos dois últimos a mídia vale pelo dia, às 23:59 de São Paulo: na ordem
+  // "mais novas primeiro" fica ACIMA das fotos com hora do mesmo dia. Leitores
+  // usam `datetime` (sempre um instante ISO com fuso, ou null) pra ordenar,
+  // filtrar e agrupar, e `dateOnly` pra NÃO mostrar o 23:59 como se fosse a
+  // hora da foto. `raw` é o literal gravado (null = veio do passeio).
+  // Espelhos: _album_sequence (backend/main.py). Mudou aqui, mude lá.
+  var DAY_ONLY_RE = /^(\d{4}-\d{2}-\d{2})(?:Z|[+-]\d{2}:\d{2})?$/;
+  var UNTIMED_SUFFIX = 'T23:59:00-03:00';
+  function effectiveDate(raw, tourDate) {
+    raw = raw ? String(raw) : '';
+    var m = DAY_ONLY_RE.exec(raw);
+    if (m) return { datetime: m[1] + UNTIMED_SUFFIX, dateOnly: true, raw: raw };
+    if (raw) return { datetime: raw, dateOnly: false, raw: raw };
+    var t = /^\d{4}-\d{2}-\d{2}/.exec(tourDate ? String(tourDate) : '');
+    if (t) return { datetime: t[0] + UNTIMED_SUFFIX, dateOnly: true, raw: null };
+    return { datetime: null, dateOnly: false, raw: null };
+  }
+
   // ── engine (lazy) ─────────────────────────────────────────────────────────
   var _engine = null, _enginePromise = null;
   function ensureEngine() {
@@ -188,9 +212,15 @@
       store.getQuads(null, RDFT, nn(NS.ph + cls), null).forEach(function (q) {
         var iri = q.subject.value;
         var tourIri = obj1(iri, NS.ph + 'capturedDuring');
+        var when = effectiveDate(obj1(iri, NS.dcterms + 'date'),
+          (tourIri && tours[tourIri]) ? tours[tourIri].date : null);
         var rec = {
           iri: iri, kind: kind,
-          datetime: obj1(iri, NS.dcterms + 'date'),
+          // Data EFETIVA (ver effectiveDate): instante ISO ou null. dateOnly =
+          // só o dia é conhecido (não mostrar hora); dateRaw = o literal gravado.
+          datetime: when.datetime,
+          dateOnly: when.dateOnly,
+          dateRaw: when.raw,
           tourIri: tourIri,
           tourLabel: tourIri ? tourLabel(tourIri) : null,
           energyKj: (tourIri && tours[tourIri]) ? tours[tourIri].energyKj : null,
@@ -199,7 +229,7 @@
           authors: objs(iri, NS.prov + 'wasAttributedTo').map(function (p) { return people[p] || short(p); }),
           uploaders: objs(iri, NS.pav + 'providedBy').map(function (p) { return people[p] || short(p); }),
           lists: objs(iri, NS.schema + 'isPartOf'),
-          weekday: weekdayOf(obj1(iri, NS.dcterms + 'date')),
+          weekday: weekdayOf(when.datetime),
           // Tem coordenada → tem marcador no mapa (só mídia georreferenciada
           // vira marcador; a galeria usa isto pra só oferecer "Ver no mapa"
           // quando faz sentido).
@@ -255,11 +285,14 @@
     ];
     var W = [];
     W.push('{ ?m a ph:StillImage } UNION { ?m a ph:MotionImage }');
-    // Data é OPCIONAL: mídia sem EXIF (ex.: baixada do zap) entra sem
-    // dcterms:date e ainda assim deve aparecer na galeria — no grupo
-    // "sem-data", no fim (DESC(?d) põe ?d não-ligado por último). Facetas de
-    // data continuam excluindo essas (FILTER sobre ?d não-ligado = falso).
-    W.push('OPTIONAL { ?m dcterms:date ?d }');
+    // Data EFETIVA (?d), como o effectiveDate dos records: a da própria mídia
+    // (xsd:dateTime, ou xsd:date quando só o dia é conhecido) e, na falta
+    // dela, a do passeio. Só mídia sem data E sem passeio datado fica com ?d
+    // não-ligado — vai pro grupo "sem-data", no fim, e fora das facetas de
+    // data (FILTER sobre ?d não-ligado = falso).
+    W.push('OPTIONAL { ?m dcterms:date ?dm }');
+    W.push('OPTIONAL { ?m ph:capturedDuring ?dtour . ?dtour a ph:Tour ; dcterms:date ?dt }');
+    W.push('BIND(COALESCE(?dm, ?dt) AS ?d)');
 
     if (facets.lists && facets.lists.length) {
       W.push(valuesBlock('list', facets.lists));
@@ -306,9 +339,11 @@
       W.push('OPTIONAL { ?m ph:capturedDuring ?gt }');
       W.push('BIND(COALESCE(?gt, "sem-passeio") AS ?group)');
     } else if (g === 'year') {
-      W.push('BIND(COALESCE(STR(YEAR(?d)), "sem-data") AS ?group)');
+      // Pelo texto gravado, não YEAR()/MONTH(): essas só valem pra
+      // xsd:dateTime, e ?d também pode ser xsd:date.
+      W.push('BIND(COALESCE(SUBSTR(STR(?d), 1, 4), "sem-data") AS ?group)');
     } else if (g === 'month') {
-      W.push('BIND(COALESCE(CONCAT(STR(YEAR(?d)), "-", IF(MONTH(?d) < 10, "0", ""), STR(MONTH(?d))), "sem-data") AS ?group)');
+      W.push('BIND(COALESCE(SUBSTR(STR(?d), 1, 7), "sem-data") AS ?group)');
     } else if (g === 'day') {
       W.push('BIND(COALESCE(SUBSTR(STR(?d), 1, 10), "sem-data") AS ?group)');
     } else {
@@ -399,5 +434,6 @@
     facetRows: facetRows,
     listMembershipQuery: listMembershipQuery,
     weekdayOf: weekdayOf,
+    effectiveDate: effectiveDate,
   };
 })(window);

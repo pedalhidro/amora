@@ -10,9 +10,10 @@ compartilhou, navegáveis na galeria e no modal do passeio.
 
 O que se sabe de verdade sobre cada arquivo, e é só isso que vai pro TTL:
   · o passeio ......... a pasta do acervo casa com o tours.ttl (audit-captura)
-  · quando ............ dcterms:date = a data/hora DO PASSEIO (ph:departedAt ou
-                        a dcterms:date do tour) — o carimbo no nome do arquivo é
-                        a hora do COMPARTILHAMENTO, não da captura, e vai pra
+  · quando ............ dcterms:date = o DIA do passeio, como xsd:date — só o
+                        dia, sem hora inventada (os leitores tratam como 23:59
+                        daquele dia). O carimbo no nome do arquivo é a hora do
+                        COMPARTILHAMENTO, não da captura, e vai pra
                         schema:datePublished, que é o que ele é.
   · quem compartilhou . o slug do acervo vai SEMPRE como literal em
                         schema:creditText (é o join com identities.ttl via
@@ -125,16 +126,16 @@ def carimbo_compartilhamento(nome: str) -> str | None:
 
 
 def data_do_passeio(g: rdflib.Graph, tour_iri: str) -> str | None:
-    """ph:departedAt (a saída de verdade) ou, sem ele, a dcterms:date do tour —
-    ambos xsd:dateTime já com offset no catálogo."""
+    """O DIA-calendário do passeio (AAAA-MM-DD), que vira um xsd:date na mídia.
+
+    Só o dia: do arquivo do zap a gente sabe em que passeio foi, não a que
+    horas. Antes isto devolvia a data E A HORA da saída — uma hora inventada,
+    indistinguível de um EXIF de verdade. Os leitores (effectiveDate em
+    web/lib/media-query.js) tratam o dia sozinho como 23:59 daquele dia."""
     t = rdflib.URIRef(tour_iri)
-    v = g.value(t, PH.departedAt) or g.value(t, DCTERMS.date)
-    if v is None:
-        return None
-    s = str(v)
-    if "T" not in s:                       # data pura → meia-noite de SP (raro)
-        s += "T00:00:00-03:00"
-    return s
+    v = g.value(t, DCTERMS.date) or g.value(t, PH.departedAt)
+    m = re.match(r"\d{4}-\d{2}-\d{2}", str(v or ""))
+    return m.group(0) if m else None
 
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -252,7 +253,10 @@ def _turtle_str(s: str) -> str:
 def _props_comuns(it: Item) -> list[str]:
     props = [f"dcterms:license <{I.LICENCA_PADRAO}>"]
     if it.data:
-        props.append(f'dcterms:date "{it.data}"^^xsd:dateTime')
+        # "AAAA-MM-DD" = só o dia do passeio (xsd:date); com 'T' = instante
+        # real do EXIF de um original sem GPS (xsd:dateTime).
+        tipo = "dateTime" if "T" in it.data else "date"
+        props.append(f'dcterms:date "{it.data}"^^xsd:{tipo}')
     if it.publicado:
         props.append(f'schema:datePublished "{it.publicado}"^^xsd:dateTime')
     if it.tour_slug:

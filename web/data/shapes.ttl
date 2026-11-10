@@ -23,8 +23,12 @@ ph:VisualMediaShape a sh:NodeShape ;
         sh:severity sh:Warning ;
         sh:minCount 1 ;
         sh:maxCount 1 ;
-        sh:datatype xsd:dateTime ;
-        sh:message "Ideal: mídia com um único timestamp (dcterms:date). Sem ele, a mídia não participa de filtros/navegação temporais."@pt ;
+        # xsd:dateTime = instante real (EXIF/moov). xsd:date = só o DIA é
+        # conhecido (mídia do zap: o dia é o do passeio; a hora não se
+        # inventa). Leitores tratam o dia sozinho — e a mídia sem data mas com
+        # ph:capturedDuring — como 23:59 (-03:00) daquele dia.
+        sh:or ( [ sh:datatype xsd:dateTime ] [ sh:datatype xsd:date ] ) ;
+        sh:message "Ideal: mídia com uma única data (dcterms:date) — xsd:dateTime, ou xsd:date quando só o dia é conhecido. Sem ela, vale o dia do passeio (ph:capturedDuring); sem os dois, a mídia não participa de filtros/navegação temporais."@pt ;
     ] ;
     sh:property [
         sh:path schema:locationCreated ;

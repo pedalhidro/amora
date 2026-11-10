@@ -39,7 +39,7 @@ import time
 import uuid
 from pathlib import Path
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from flask import Flask, Response, abort, jsonify, redirect, request, send_from_directory
 
 from storage import make_store_from_env
@@ -2522,6 +2522,46 @@ def album_page(slug, n=None):
 # galeria (canonicalRowOrder / groupRows / groupOrderStr em imagens.html; o
 # agrupamento de buildQueryFromFacets em lib/media-query.js)? Mude
 # _album_sequence junto.
+# Mídia sem hora conhecida (xsd:date, ou sem data e herdando o dia do passeio)
+# vale 23:59 de São Paulo — espelho do UNTIMED_SUFFIX de lib/media-query.js.
+_UNTIMED_TZ = timezone(timedelta(hours=-3))
+_DAY_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})")
+
+
+
+def _media_instant(cat, m):
+    """Instante (epoch s) da data EFETIVA de uma mídia, ou None — espelho do
+    effectiveDate (lib/media-query.js) + canonicalRowOrder (imagens.html):
+    xsd:dateTime pelo instante (sem fuso = UTC); xsd:date (só o dia) e mídia
+    sem data mas com passeio datado = 23:59 -03:00 daquele dia."""
+    from datetime import date
+    from rdflib import Namespace, RDF
+    PH = Namespace(PH_NS)
+    DCT = Namespace("http://purl.org/dc/terms/")
+
+    def end_of_day(y, mo, dd):   # o UNTIMED_SUFFIX do JS: T23:59:00-03:00
+        return datetime(y, mo, dd, 23, 59, tzinfo=_UNTIMED_TZ).timestamp()
+
+    d = cat.value(m, DCT.date)
+    if d is not None:
+        v = d.toPython()
+        if isinstance(v, datetime):
+            return (v if v.tzinfo else v.replace(tzinfo=timezone.utc)).timestamp()
+        if isinstance(v, date):   # xsd:date — só o dia é conhecido
+            return end_of_day(v.year, v.month, v.day)
+        return None
+    # Sem data própria: o dia do passeio (se é um ph:Tour datado).
+    t = cat.value(m, PH.capturedDuring)
+    if t is not None and (t, RDF.type, PH.Tour) in cat:
+        mm = _DAY_RE.match(str(cat.value(t, DCT.date) or ""))
+        if mm:
+            try:
+                return end_of_day(int(mm[1]), int(mm[2]), int(mm[3]))
+            except ValueError:
+                return None
+    return None
+
+
 _MEDIA_OG_W, _MEDIA_OG_H = 1200, 630
 _MEDIA_OG_CACHE_MAX = 64
 _media_og_cache = {}   # spec → JPEG (LRU simples por ordem de inserção)
@@ -2534,9 +2574,10 @@ def _album_sequence(cat, list_iri):
     canonicalRowOrder (data desc pelo instante, sem data no fim, desempate
     pelo IRI), agrupados por passeio, grupos pela data do passeio desc (sem
     passeio/data no fim; empate mantém a ordem de 1ª aparição — o sort do JS
-    é estável), achatado."""
+    é estável), achatado. O instante é o da data EFETIVA (effectiveDate em
+    lib/media-query.js): xsd:date (só o dia) ou mídia sem data mas com
+    passeio datado = 23:59 -03:00 daquele dia."""
     import functools
-    from datetime import date
     from rdflib import Namespace, RDF, URIRef
     SCHEMA = Namespace(SCHEMA_NS)
     PH = Namespace(PH_NS)
@@ -2546,16 +2587,7 @@ def _album_sequence(cat, list_iri):
              if (m, RDF.type, PH.StillImage) in cat
              or (m, RDF.type, PH.MotionImage) in cat]
 
-    def instant(m):   # pelo instante; sem fuso = UTC (como canonicalRowOrder)
-        d = cat.value(m, DCT.date)
-        v = d.toPython() if d is not None else None
-        if isinstance(v, datetime):
-            return (v if v.tzinfo else v.replace(tzinfo=timezone.utc)).timestamp()
-        if isinstance(v, date):
-            return datetime(v.year, v.month, v.day, tzinfo=timezone.utc).timestamp()
-        return None
-
-    rows = sorted(((instant(m), str(m), m) for m in media),
+    rows = sorted(((_media_instant(cat, m), str(m), m) for m in media),
                   key=lambda r: (r[0] is None, -(r[0] or 0.0), r[1]))
     groups = {}   # chave → [iri], na ordem de 1ª aparição
     for _, iri, m in rows:
@@ -2630,7 +2662,7 @@ def _album_share_meta(slug, n=None):
             bits.append(_tour_display_title(cat, tour))
         d = cat.value(m, DCT.date)
         v = d.toPython() if d is not None else None
-        if isinstance(v, datetime):
+        if hasattr(v, "strftime"):   # xsd:dateTime ou xsd:date (só o dia)
             bits.append(v.strftime("%d/%m/%Y"))
         return {
             "title": f"{name} · {n}/{len(seq)}",
@@ -4824,9 +4856,11 @@ def _render_list_markdown(slug):
         else:
             kind = "mídia"
         local = str(m)[len(MED_NS):] if str(m).startswith(MED_NS) else str(m)
+        # Ordem pela data EFETIVA (só-o-dia e sem-data-com-passeio valem o
+        # fim do dia); o texto mostrado segue sendo o literal gravado.
         members.append((str(cat.value(m, DCT.date) or ""), kind, local,
-                        cat.value(m, PH.capturedDuring)))
-    members.sort(key=lambda x: (x[0], x[2]), reverse=True)
+                        cat.value(m, PH.capturedDuring), _media_instant(cat, m)))
+    members.sort(key=lambda x: (x[4] is not None, x[4] or 0.0, x[2]), reverse=True)
     n = len(members)
     out = [f"# {name}", "",
            f"Lista/álbum do acervo do Pedal Hidrográfico (`lst:{slug}`) · {n} "
@@ -4834,7 +4868,7 @@ def _render_list_markdown(slug):
     if desc:
         out += [str(desc).strip(), ""]
     out += ["## Mídias", ""]
-    for date, kind, local, tour in members:
+    for date, kind, local, tour, _inst in members:
         line = f"- [{kind} {local}]({SITE_URL}midia/{local})"
         if date:
             line += f" — {date[:10]}"

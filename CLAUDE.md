@@ -250,7 +250,8 @@ one optional hosted deploy target, not a dependency.
   rede com certifi + UA próprio), `ingest-whatsapp.py` (**fase 2**: os
   ~6.400 JPEGs + ~1.300 MP4s do WhatsApp, sem EXIF — entram como
   `ph:StillImage` SEM `ph:GeoreferencedImage` (nunca viram marcador),
-  `dcterms:date` = data/hora DO PASSEIO (`ph:departedAt` ou a do tour),
+  `dcterms:date` = o DIA do passeio como `xsd:date` — só o dia, sem hora
+  inventada (ver "Data de mídia tem três estados" em Conventions),
   `schema:datePublished` = carimbo de compartilhamento do nome do arquivo,
   `schema:creditText` = slug cru de quem compartilhou (join via
   `schema:alternateName`, como o `ph:sweepContributor`), e
@@ -1131,6 +1132,24 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
   e gravam blobs FORA do `_state_lock`; só o RMW do catálogo, com
   re-checagem TOCTOU da colisão cross-type, roda sob o lock. Não reintroduzir
   `@serialized` num handler que lê `request.files`.
+- **Data de mídia tem três estados; a hora nunca é inventada.** `dcterms:date`
+  de `ph:Image` é `xsd:dateTime` (instante real — EXIF/moov), `xsd:date` (só o
+  DIA é conhecido — mídia do zap: o dia é o do passeio) ou ausente. Nos dois
+  últimos a mídia vale pelo dia (o próprio, ou o do `ph:capturedDuring`) às
+  **23:59 -03:00**: na ordem "mais novas primeiro" fica acima das fotos com
+  hora do mesmo dia; "sem data" é só quem não tem data NEM passeio datado. A
+  regra mora em `effectiveDate` (`lib/media-query.js`): os records levam
+  `datetime` (instante efetivo, pra ordenar/filtrar/agrupar), `dateOnly` (não
+  mostrar hora — `fmtRecWhen` na galeria, `fmtMediaWhen` no app.js) e
+  `dateRaw` (o literal). Espelhos que mudam JUNTO: o SPARQL de
+  `buildQueryFromFacets` (COALESCE com a data do passeio; grupos por SUBSTR,
+  não YEAR/MONTH, que só valem pra dateTime), `_album_sequence` no backend e
+  o `mediaEffectiveDate` do app.js (delega ao `effectiveDate`). Quem ESCREVE:
+  a edição de mídia (`upload_images.html?edit=`) tem dia + hora opcional (só
+  o dia → `xsd:date`), os cards de envio têm "ou só o dia" (vale com
+  Data/hora vazio; `cardDateLiteral`), e `ingest-whatsapp.py` grava o dia do
+  passeio como `xsd:date`. O `/subir` não tem campo de data: arquivo sem EXIF
+  sobe sem data e sem passeio (corrige-se no ✎ editar). Nunca gravar a hora do passeio como se fosse a da foto.
 - **Álbum = `/imagens/lista/<slug>[/<n>]`.** O backend (`album_page`) serve o
   `imagens.html` nesse path com as tags de **preview de link** (og:/twitter:)
   do álbum ou da n-ésima mídia injetadas depois do `<title>` (o `<title>` fica

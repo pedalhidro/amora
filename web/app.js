@@ -3495,9 +3495,7 @@ async function loadClipsCatalog() {
 // (que é populado pelo loadPhotos, em paralelo com loadClipsCatalog no boot).
 function renderClipPopupHtml(c) {
   const dur = Number.isFinite(c.duration) ? `${c.duration.toFixed(1)} s` : '—';
-  const whenHuman = c.datetime
-    ? new Date(c.datetime).toLocaleString('pt-BR', { dateStyle: 'medium', timeStyle: 'short' })
-    : '—';
+  const whenHuman = fmtMediaWhen(c, { dateStyle: 'medium', timeStyle: 'short' }) || '—';
   // Mesmo render do Passeio do popup de foto: "CODE: Title" (ex.: "PH 92:
   // Crista do Lauzane…"), com link `.ride-link` que abre o modal da rota
   // na sidebar (delegação já existe pra .photo-popup a.ride-link).
@@ -3979,6 +3977,27 @@ async function parseTtlToQuads(text) {
 }
 
 // Constrói o modelo (tours, persons, photos) a partir de uma lista de quads.
+// Data EFETIVA de uma mídia — { datetime, dateOnly } (ver effectiveDate em
+// lib/media-query.js, que é quem define a regra: xsd:date ou mídia sem data
+// herdando o dia do passeio valem 23:59 daquele dia e NÃO têm hora pra
+// mostrar). media-query.js é script clássico carregado antes do app.js; se
+// faltar (cache misto), a mídia fica com o literal cru, como era.
+function mediaEffectiveDate(raw, tourDate) {
+  const fn = window.PhidroMediaQuery && window.PhidroMediaQuery.effectiveDate;
+  return fn ? fn(raw, tourDate) : { datetime: raw || null, dateOnly: false, raw: raw || null };
+}
+// "Quando" legível de uma mídia: dia + hora, ou só o dia quando a hora não é
+// conhecida (o dia sai do texto, ao meio-dia local — não do instante).
+function fmtMediaWhen(m, opts) {
+  if (!m || !m.datetime) return '';
+  if (m.dateOnly) {
+    const d = new Date(String(m.datetime).slice(0, 10) + 'T12:00:00');
+    return isNaN(d) ? '' : d.toLocaleDateString('pt-BR', opts && opts.dateStyle ? { dateStyle: opts.dateStyle } : undefined);
+  }
+  const d = new Date(m.datetime);
+  return isNaN(d) ? '' : d.toLocaleString('pt-BR', opts);
+}
+
 function buildModelFromQuads(quads) {
   const types = new Map(), titles = new Map(), dates = new Map();
   const names = new Map(), elev = new Map();
@@ -4133,7 +4152,8 @@ function buildModelFromQuads(quads) {
     const authorNames = authorIris.map(personName);
     const providerIris = [...(provs.get(s) || [])];
     const providerNames = providerIris.map(personName);
-    const datetime = dates.get(s) || null;
+    const when = mediaEffectiveDate(dates.get(s), t ? t.date : null);
+    const datetime = when.datetime;
     let fov = null;
     const f35 = focals.get(s);
     if (Number.isFinite(f35) && f35 > 0) {
@@ -4153,6 +4173,7 @@ function buildModelFromQuads(quads) {
       fov,
       orig:      titles.get(s) || (phash ? `image_${phash}` : s),
       datetime,
+      dateOnly:  when.dateOnly,   // só o dia é conhecido: não mostrar hora
       ride,
       authors:     authorNames,
       authorIris:  authorIris,
@@ -4188,8 +4209,10 @@ function buildModelFromQuads(quads) {
     const m = /^PT([\d.]+)S$/.exec(clipDur.get(s) || '');
     if (m) duration = parseFloat(m[1]);
     // `date` (AAAA-MM-DD) casa com o `ride.date` das fotos na tira do passeio;
-    // `datetime` guarda o xsd:dateTime inteiro pro popup ("Quando").
-    const dateXsd = dates.get(s) || null;
+    // `datetime` guarda o instante pro popup ("Quando") — a data EFETIVA
+    // (clipe só com o dia, ou sem data, herda o dia do passeio).
+    const clipWhen = mediaEffectiveDate(dates.get(s), tourCatalog.get(tours.get(s))?.date);
+    const dateXsd = clipWhen.datetime;
     clips.push({
       iri: s,
       vhash: s.startsWith(MED_NS) ? s.slice(MED_NS.length) : null,
@@ -4201,6 +4224,7 @@ function buildModelFromQuads(quads) {
       duration,
       date: dateXsd ? dateXsd.slice(0, 10) : null,
       datetime: dateXsd,
+      dateOnly: clipWhen.dateOnly,
       tourIri: tours.get(s),
       license: licenses.get(s),
       lists: [...(listsOf.get(s) || [])],
@@ -4379,10 +4403,8 @@ function setClipsFromModel() {
 // Dado curto: { rótulo, conteúdo HTML }. Vira <dl>.
 function _photoDetailRows(ph) {
   const rows = [];
-  if (ph.datetime) {
-    const dt = new Date(ph.datetime);
-    if (!isNaN(dt)) rows.push(['Quando', escapeHtml(dt.toLocaleString('pt-BR'))]);
-  }
+  const whenTxt = fmtMediaWhen(ph);
+  if (whenTxt) rows.push(['Quando', escapeHtml(whenTxt)]);
   if (ph.ride) {
     // Ex.: "PH 92: Crista do Lauzane…" ou "PH 92 & PH-S 6: O Trem e o Meteoro".
     const label = ph.ride.code && ph.ride.name
@@ -5126,7 +5148,8 @@ function mediaA11yLabel(kind, m, { ride = true } = {}) {
   }
   if (m.datetime) {
     const d = new Date(m.datetime);
-    if (!isNaN(d)) parts.push(ride ? d.toLocaleDateString('pt-BR')
+    if (!isNaN(d)) parts.push(m.dateOnly ? fmtMediaWhen(m)
+      : ride ? d.toLocaleDateString('pt-BR')
       : d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }));
   }
   if (m.authors?.length) parts.push(`por ${m.authors.join(', ')}`);
