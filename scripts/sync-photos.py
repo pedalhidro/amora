@@ -343,13 +343,70 @@ def candidatas(ctx: Contexto, p, com_hash: bool = True) -> tuple[list[dict], Cou
             "decisao": dec["decisao"] if dec else ("aprovar" if (album_ok and grupo != "longe") else None),
             "via": "revisão" if dec else ("álbum" if (album_ok and grupo != "longe") else None),
             "albuns": album_ok, "confianca": conf,
+            # Bandeira na folha de contato: está num álbum aprovado, mas o GPS
+            # cai longe da rota — pode ser de casa ou do caminho.
+            "alerta": "do álbum, mas LONGE da rota — confira" if (album_ok and grupo == "longe") else None,
         })
     ctx.salva_cache()
     return out, fora
 
 
+def candidatas_sem_passeio(ctx: Contexto, com_hash: bool = True) -> list[dict]:
+    """As de álbum aprovado que NÃO caem na janela de nenhum passeio. Não há
+    rota contra a qual conferir, e a coordenada (se houver) pode ser de
+    qualquer lugar — então o álbum NÃO as aprova sozinho: cada uma pede um
+    "sim" na folha de contato (`revisar --sem-passeio`). Sobem sem passeio."""
+    em_janela = set()
+    for p in ctx.passeios:
+        ini, fim, _ = janela(ctx.g, p)
+        em_janela.update(f.uuid for f in ctx.na_janela(ini, fim))
+    out = []
+    for f in ctx.fotos:
+        if f.uuid in em_janela:
+            continue
+        album_ok = sorted(ctx.albuns_ok.intersection(f.albums or []))
+        if not album_ok or f.screenshot or f.hidden or f.shared:
+            continue
+        if ctx.livro and L.chave_photos(f.uuid) in ctx.livro.terminal:
+            continue
+        ex = f.exif_info
+        tem_camera = bool(ex and ex.camera_make)
+        camera = f"{ex.camera_make} {ex.camera_model or ''}".strip() if tem_camera else "(sem câmera)"
+        autora = autora_da_camera(ctx.cameras, camera) if tem_camera else None
+        gps = (f.latitude, f.longitude) if f.latitude is not None and f.longitude is not None else None
+        previas = f.path_derivatives or []
+        estado, alvo = "video" if f.ismovie else "sem-previa", None
+        if com_hash and not f.ismovie and previas:
+            h = ctx.hash_previa(f)
+            if h:
+                antigo = I.ja_existe(h, ctx.por_classe["StillImage"])
+                if antigo:
+                    mot = I.motivo_substituir(I.herdado(ctx.g, antigo), gps is not None, True)
+                    estado, alvo = ("substitui" if mot else "ja-esta"), antigo
+                elif L.lapide_proxima(h, "image", ctx.lapides):
+                    estado, alvo = "lapide", L.lapide_proxima(h, "image", ctx.lapides)[0]
+                else:
+                    estado = "nova"
+        dec = ctx.revisao.get(f.uuid)
+        out.append({
+            "uuid": f.uuid, "nome": f.original_filename, "data": f.date.isoformat(),
+            "hora": f.date.astimezone(TZ_SP).strftime("%d/%m/%Y %H:%M"),
+            "kind": "video" if f.ismovie else "image", "camera": camera, "autora": autora,
+            "autora_nome": (ctx.nomes.get(autora) or autora) if autora else None,
+            "gps": gps, "dist_m": None, "grupo": "fora-de-janela", "estado": estado, "alvo": alvo,
+            "editada": bool(f.hasadjustments), "local": bool(f.path),
+            "previa": previas[0] if previas else None,
+            "decisao": dec["decisao"] if dec else None, "via": "revisão" if dec else None,
+            "albuns": album_ok, "confianca": None,
+            "alerta": "fora da janela de qualquer passeio" + (" · tem GPS" if gps else ""),
+        })
+    ctx.salva_cache()
+    return out
+
+
 GRUPOS = [("na-rota", "Na rota do passeio"), ("sem-rota", "Com GPS (passeio sem rota)"),
-          ("longe", "Com GPS, longe da rota"), ("sem-gps", "Sem GPS (só a hora sustenta)")]
+          ("longe", "Com GPS, longe da rota"), ("sem-gps", "Sem GPS (só a hora sustenta)"),
+          ("fora-de-janela", "De álbum aprovado, fora da janela de qualquer passeio (sobem sem passeio)")]
 ESTADOS = {"nova": "nova", "substitui": "substitui a cópia do amora", "ja-esta": "já está no amora",
            "lapide": "parece mídia apagada", "video": "vídeo", "sem-previa": "sem prévia local"}
 
@@ -428,6 +485,8 @@ PAGINA = """<!doctype html><html lang="pt-BR"><meta charset="utf-8">
   .t.oculta { display: none; }
   .tag { display: inline-block; border: 1px solid var(--bd); border-radius: 4px; padding: 0 4px; font-size: 11px; }
   .tag.sub { border-color: var(--ok); } .tag.lap { border-color: var(--no); }
+  .alerta { display: block; margin-top: 2px; font-size: 11px; font-weight: 600; color: #b45309; }
+  .t.com-alerta { outline: 2px dashed #d97706; outline-offset: -2px; }
 </style>
 <h1>__TITULO__</h1>
 <p class="sub">__SUB__ · Clique na foto: <b>sobe</b> → <b>não sobe</b> → sem decisão. Nada sai desta máquina aqui:
@@ -451,14 +510,15 @@ function tile(c) {
   const tag = c.estado === 'substitui' ? '<span class="tag sub">substitui a cópia do amora</span>'
     : c.estado === 'lapide' ? '<span class="tag lap">parece mídia apagada</span>'
     : c.estado === 'nova' ? '' : `<span class="tag">${esc(ESTADOS[c.estado])}</span>`;
-  return `<div class="t" data-u="${c.uuid}" data-cam="${esc(c.camera)}" title="${esc(c.nome)}">` +
+  return `<div class="t${c.alerta ? ' com-alerta' : ''}" data-u="${c.uuid}" data-cam="${esc(c.camera)}" title="${esc(c.nome)}">` +
     `<img loading="lazy" src="/previa/${c.uuid}" alt="">` +
     `<div class="leg">${c.hora}${c.kind === 'video' ? ' ▶' : ''}${c.editada ? ' ✎' : ''} · ${esc(c.camera)}` +
-    `<div class="est">${c.dist_m != null ? c.dist_m + ' m da rota · ' : ''}${tag}</div></div></div>`;
+    `<div class="est">${c.dist_m != null ? c.dist_m + ' m da rota · ' : ''}${tag}</div>` +
+    (c.alerta ? `<span class="alerta">⚠ ${esc(c.alerta)}</span>` : '') + `</div></div>`;
 }
 $('#grupos').innerHTML = GRUPOS.map(([k, rot]) => {
   const g = DADOS.filter((c) => c.grupo === k);
-  return g.length ? `<h2>${rot} — ${g.length} <button data-todas="${k}">marcar as novas como "sobe"</button> <button data-limpa="${k}">limpar</button></h2><div class="grade">${g.map(tile).join('')}</div>` : '';
+  return g.length ? `<h2>${rot} — ${g.length} <button data-todas="${k}">marcar as novas como "sobe" (menos as ⚠)</button> <button data-limpa="${k}">limpar</button></h2><div class="grade">${g.map(tile).join('')}</div>` : '';
 }).join('');
 function pinta() {
   for (const el of document.querySelectorAll('.t')) {
@@ -478,7 +538,8 @@ document.addEventListener('click', (e) => {
     for (const c of DADOS) {
       if (c.grupo !== k || !camOn.has(c.camera)) continue;
       if (b.dataset.limpa) dec[c.uuid] = null;
-      else if (!dec[c.uuid] && (c.estado === 'nova' || c.estado === 'substitui' || c.estado === 'video')) dec[c.uuid] = 'aprovar';
+      // As com bandeira (⚠) nunca entram no "marcar todas": pedem um clique próprio.
+      else if (!c.alerta && !dec[c.uuid] && (c.estado === 'nova' || c.estado === 'substitui' || c.estado === 'video')) dec[c.uuid] = 'aprovar';
     }
     pinta();
   }
@@ -496,24 +557,35 @@ pinta();
 
 
 def cmd_revisar(a) -> None:
+    if bool(a.passeio) == bool(a.sem_passeio):
+        sys.exit("escolha UM: --passeio <edição> ou --sem-passeio.")
     ctx = Contexto(a.biblioteca, a.servidor.rstrip("/"))
-    p = ctx.passeio(a.passeio)
     print("calculando as candidatas (hash das prévias)…", file=sys.stderr, flush=True)
-    cs, fora = candidatas(ctx, p)
-    if not cs:
-        sys.exit(f"nenhuma candidata pro {p.edicao}.")
+    if a.sem_passeio:
+        p, fora = None, Counter()
+        cs = candidatas_sem_passeio(ctx)
+        if not cs:
+            sys.exit("nenhuma foto de álbum aprovado fora da janela dos passeios.")
+        titulo = "Álbuns aprovados — fora da janela de qualquer passeio"
+        sub = f"{len(cs)} itens · sobem SEM passeio, só os que você marcar"
+    else:
+        p = ctx.passeio(a.passeio)
+        cs, fora = candidatas(ctx, p)
+        if not cs:
+            sys.exit(f"nenhuma candidata pro {p.edicao}.")
+        ini, fim, conf = janela(ctx.g, p)
+        titulo = f"{p.edicao} — {p.titulo}"
+        sub = (f"{len(cs)} candidatas · janela {ini.astimezone(TZ_SP):%d/%m/%Y %H:%M}–"
+               f"{fim.astimezone(TZ_SP):%H:%M}" + (" (só o dia é conhecido)" if conf == "dia" else ""))
     previas = {c["uuid"]: c["previa"] for c in cs if c["previa"]}
-    ini, fim, conf = janela(ctx.g, p)
-    sub = (f"{len(cs)} candidatas · janela {ini.astimezone(TZ_SP):%d/%m/%Y %H:%M}–"
-           f"{fim.astimezone(TZ_SP):%H:%M}" + (" (só o dia é conhecido)" if conf == "dia" else ""))
     dados = [{k: c[k] for k in ("uuid", "nome", "hora", "kind", "camera", "autora_nome", "dist_m",
-                                "grupo", "estado", "editada", "decisao")} for c in cs]
-    pagina = (PAGINA.replace("__TITULO__", html.escape(f"{p.edicao} — {p.titulo}"))
+                                "grupo", "estado", "editada", "decisao", "alerta")} for c in cs]
+    pagina = (PAGINA.replace("__TITULO__", html.escape(titulo))
               .replace("__SUB__", html.escape(sub))
               .replace("__DADOS__", json.dumps(dados, ensure_ascii=False).replace("</", "<\\/"))
               .replace("__GRUPOS__", json.dumps(GRUPOS, ensure_ascii=False))
               .replace("__ESTADOS__", json.dumps(ESTADOS, ensure_ascii=False))).encode("utf-8")
-    tour_slug = p.slug
+    tour_slug = p.slug if p else ""
 
     class H(BaseHTTPRequestHandler):
         def log_message(self, *_):       # silencioso
@@ -552,7 +624,7 @@ def cmd_revisar(a) -> None:
                 self._manda(400, json.dumps({"erro": str(e)}).encode(), "application/json")
 
     srv = ThreadingHTTPServer(("127.0.0.1", a.porta), H)      # SÓ loopback
-    print(f"\nfolha de contato do {p.edicao}: http://127.0.0.1:{a.porta}/   (Ctrl-C pra fechar)")
+    print(f"\nfolha de contato ({titulo}): http://127.0.0.1:{a.porta}/   (Ctrl-C pra fechar)")
     print(f"decisões → {REVISAO}")
     if fora:
         print("fora da folha: " + ", ".join(f"{v} {k}" for k, v in fora.most_common()))
@@ -572,7 +644,7 @@ def cmd_revisar(a) -> None:
 LIMITE_REQ = 31 * 1024 * 1024       # o Cloud Run recusa corpo > 32 MiB
 
 
-def fila(ctx: Contexto, so_passeio=None, incluir_fora: bool = False) -> tuple[list[tuple], Counter]:
+def fila(ctx: Contexto, so_passeio=None) -> tuple[list[tuple], Counter]:
     """[(foto do Fotos, candidata, passeio | None)] do que está aprovado (pela
     revisão ou por álbum) e ainda sem desfecho no livro. Foto de álbum aprovado
     que não cai na janela de passeio nenhum entra SEM passeio."""
@@ -595,31 +667,16 @@ def fila(ctx: Contexto, so_passeio=None, incluir_fora: bool = False) -> tuple[li
             else:
                 resumo["sem decisão (não sobem)"] += 1
     if not so_passeio and ctx.albuns_ok:
-        for f in ctx.fotos:
-            if f.uuid in vistos or not ctx.albuns_ok.intersection(f.albums or []):
+        for c in candidatas_sem_passeio(ctx, com_hash=False):
+            if c["uuid"] in vistos:
                 continue
-            if f.screenshot or f.hidden or f.shared:
-                continue
-            if ctx.livro and L.chave_photos(f.uuid) in ctx.livro.terminal:
-                continue
-            dec = ctx.revisao.get(f.uuid)
-            if dec and dec["decisao"] == "rejeitar":
-                continue
-            # Em álbum aprovado, mas fora da janela de QUALQUER passeio: não dá
-            # pra conferir contra rota nenhuma, e a coordenada (se tiver) pode
-            # ser de qualquer lugar. Só sobe com --fora-de-janela, depois de
-            # alguém olhar a lista (`candidatas` não cobre estas).
-            if not incluir_fora:
-                resumo["de álbum aprovado, mas fora da janela de qualquer passeio (NÃO sobem sem --fora-de-janela)"] += 1
-                continue
-            ex = f.exif_info
-            tem_camera = bool(ex and ex.camera_make)
-            camera = f"{ex.camera_make} {ex.camera_model or ''}".strip() if tem_camera else "(sem câmera)"
-            out.append((f, {"uuid": f.uuid, "nome": f.original_filename,
-                            "kind": "video" if f.ismovie else "image", "camera": camera,
-                            "autora": autora_da_camera(ctx.cameras, camera) if tem_camera else None,
-                            "editada": bool(f.hasadjustments), "via": "álbum"}, None))
-            resumo["de álbum aprovado, fora da janela de qualquer passeio (sobem sem passeio)"] += 1
+            if c["decisao"] == "aprovar":
+                out.append((por_uuid[c["uuid"]], c, None))
+                resumo["de álbum aprovado, fora de qualquer passeio, com SIM na revisão (sobem sem passeio)"] += 1
+            elif c["decisao"] == "rejeitar":
+                resumo["rejeitadas na revisão"] += 1
+            else:
+                resumo["de álbum aprovado, fora da janela de qualquer passeio (pedem um sim: revisar --sem-passeio)"] += 1
     return out, resumo
 
 
@@ -713,7 +770,7 @@ def cmd_enviar(a) -> None:
     ctx = Contexto(a.biblioteca, a.servidor.rstrip("/"))
     servidor = ctx.servidor
     so = ctx.passeio(a.passeio) if a.passeio else None
-    itens, resumo = fila(ctx, so, a.fora_de_janela)
+    itens, resumo = fila(ctx, so)
     if a.sem_videos:
         itens = [x for x in itens if x[1]["kind"] == "image"]
     if a.uuid:
@@ -960,9 +1017,6 @@ def main() -> None:
     s.add_argument("--limite", type=int, help="no máximo N fotos")
     s.add_argument("--uuid", action="append", help="só esta(s) foto(s) da fila (repetível)")
     s.add_argument("--sem-videos", action="store_true", help="só as fotos")
-    s.add_argument("--fora-de-janela", action="store_true",
-                   help="inclui as de álbum aprovado que não caem na janela de nenhum passeio "
-                        "(sobem sem passeio — confira antes)")
     s.add_argument("--apply", action="store_true", help="baixa e envia pra valer (default: dry-run)")
     s.add_argument("--iniciar-livro", action="store_true",
                    help="com --apply: cria o livro-razão se ele ainda não existe nesta máquina")
@@ -970,11 +1024,12 @@ def main() -> None:
         s = sub.add_parser(nome)
         s.add_argument("--biblioteca", default=os.environ.get("PHIDRO_PHOTOS_LIB", BIBLIOTECA_PADRAO))
         s.add_argument("--servidor", default=os.environ.get("PHIDRO_SERVER", A.SERVIDOR_PADRAO))
-        s.add_argument("--passeio", required=(nome == "revisar"),
-                       help="edição (PH/56) ou slug do passeio")
+        s.add_argument("--passeio", help="edição (PH/56) ou slug do passeio")
         if nome == "candidatas":
             s.add_argument("--json", type=Path)
         else:
+            s.add_argument("--sem-passeio", action="store_true",
+                           help="as de álbum aprovado que não caem na janela de nenhum passeio")
             s.add_argument("--porta", type=int, default=8791)
     a = ap.parse_args()
     {"candidatas": cmd_candidatas, "revisar": cmd_revisar, "enviar": cmd_enviar}[a.cmd](a)

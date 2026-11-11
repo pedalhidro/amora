@@ -91,6 +91,7 @@ TZ_SP = timezone(timedelta(hours=-3))
 FOLGA_S = 10 * 60          # antes da saída / depois da chegada
 COBERTURA_MIN = 0.6        # a gravação tem que cobrir ≥ isto da janela do passeio
 DESVIO_MAX_M = 200         # mediana da distância rastro→rota acima disto = não é este passeio
+FORA_MAX = 0.3             # mais que isto das mídias fora da gravação = relógio de câmera suspeito
 BURACO_S = 180             # pausa na gravação maior que isto não é atravessada
 RAIO_M = 60                # --hora: a gravação "passa pelo ponto" a até isto dele
 PASSAGEM_S = 300           # --hora: mais que isto longe do ponto = OUTRA passagem
@@ -477,6 +478,8 @@ def main() -> None:
                          "hora que foi posicionada à mão")
     ap.add_argument("--ajuste", type=float, default=0.0, metavar="SEG",
                     help="soma SEG segundos à hora das mídias (relógio da câmera errado) — exige --passeio")
+    ap.add_argument("--sem-guarda-relogio", action="store_true",
+                    help="aplica mesmo quando muitas mídias do passeio caem fora da gravação")
     ap.add_argument("--usuario", default=BK.USUARIO_PADRAO, help="conta do RideWithGPS dona das gravações")
     ap.add_argument("--sem-rede", action="store_true", help="só os trips já em cache (ignore/rwgps-trips/)")
     a = ap.parse_args()
@@ -541,17 +544,29 @@ def main() -> None:
         pts = r["pontos"]
         ts = [q[0] for q in pts]
         c = Counter()
+        do_passeio = []
         for h, kind, t in cand:
             pos = posicao_em(pts, ts, t + a.ajuste)
             if isinstance(pos, str):
                 c[pos] += 1
             else:
                 c["posicionáveis"] += 1
-                planos.append((p, h, kind, pos))
+                do_passeio.append((p, h, kind, pos))
+        # Guarda de relógio: se boa parte das mídias do passeio cai FORA da
+        # gravação, o relógio de alguma câmera está errado — e as que caíram
+        # dentro podem estar deslocadas também. O passeio inteiro fica de fora
+        # (resolva com --ajuste, ou force com --sem-guarda-relogio).
+        fora = c["fora da gravação"]
+        suspeito = (not a.sem_guarda_relogio and len(cand) >= 3 and fora / len(cand) > FORA_MAX)
+        if suspeito:
+            c["retidas (relógio suspeito)"] = c.pop("posicionáveis", 0)
+        else:
+            planos += do_passeio
         tot.update(c)
         print(f"  {p.data.date()} {p.edicao:13} {len(cand):4} mídias — "
               + ", ".join(f"{v} {k}" for k, v in c.most_common())
-              + f"   [trip {r['trip']}, cobre {r['cobertura']:.0%}]")
+              + f"   [trip {r['trip']}, cobre {r['cobertura']:.0%}]"
+              + ("  ⚠ relógio suspeito: nada aplicado" if suspeito else ""))
 
     print("─" * 72)
     for k, v in tot.most_common():
