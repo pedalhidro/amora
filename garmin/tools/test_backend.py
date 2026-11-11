@@ -96,6 +96,37 @@ def main():
             assert len(msgs["record_mesgs"]) >= min_recs
         assert c.get("/garmin/course/r/nao-existe.fit").status_code == 404
 
+        # ── freio do RideWithGPS ─────────────────────────────────────────
+        # Passeios com rota no RideWithGPS: a geometria cheia é buscada lá.
+        import garmin
+        rw = [r for r in json.loads((tmp / "routes.json").read_text())["routes"]
+              if r.get("provider") == "rwgps" and r.get("latlngs") and r.get("slug")]
+        assert len(rw) >= 3
+        calls = []
+        gpx = ('<gpx><trk><trkseg>' + ''.join(
+            f'<trkpt lat="{-23.5 - i * 1e-4}" lon="-46.6"><ele>{760 + i}</ele></trkpt>'
+            for i in range(300)) + '</trkseg></trk></gpx>')
+
+        def fake_get(url, accept=None):
+            calls.append(url)
+            return (200, gpx)
+        rwgps.http_get = fake_get
+        garmin._geom_cache.clear()
+        garmin._rwgps_gate[0] = 0.0
+        fit = lambda slug: c.get(f"/garmin/course/t/{slug}.fit")  # noqa: E731
+        full = fit(rw[0]["slug"])                 # 1º pedido: busca no RideWithGPS
+        assert full.status_code == 200 and len(calls) == 1
+        assert fit(rw[0]["slug"]).data[14:] != b"" and len(calls) == 1      # cache
+        held = fit(rw[1]["slug"])                 # outra rota, em seguida: freio
+        assert held.status_code == 200 and len(calls) == 1
+        garmin._rwgps_gate[0] = 0.0               # passou o intervalo
+        assert fit(rw[1]["slug"]).status_code == 200 and len(calls) == 2
+        rwgps.http_get = lambda url, accept=None: (calls.append(url), (503, ""))[1]
+        garmin._rwgps_gate[0] = 0.0
+        assert fit(rw[2]["slug"]).status_code == 200 and len(calls) == 3    # falhou
+        garmin._rwgps_gate[0] = 0.0
+        assert fit(rw[2]["slug"]).status_code == 200 and len(calls) == 3    # não insiste
+
         # ── pareamento + envio ───────────────────────────────────────────
         send = lambda **kw: c.post("/garmin/send", json=kw)  # noqa: E731
         assert send(code="xx", k="r", id=route_slug).status_code == 400

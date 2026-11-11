@@ -56,6 +56,13 @@ _geom_lock = threading.Lock()
 _geom_cache = {}                # (provider, id) -> (instante, dict geometria)
 GEOM_CACHE_MAX = 256            # > nº de passeios: um crawl do /garmin/course
                                 # não fica rebuscando o RideWithGPS
+# O /garmin/course é público e sem auth, e a geometria cheia de um passeio do
+# RideWithGPS é buscada LÁ com as credenciais do coletivo. O cache acima some
+# a cada cold start do Cloud Run, então sem um freio um crawler varrendo os
+# passeios viraria uma rajada de fetches autenticados a cada instância nova.
+RWGPS_MIN_GAP_S = 5             # no máx. 1 fetch a cada 5 s (o resto: traçado grosso)
+GEOM_FAIL_TTL_S = 600           # rota que falhou: não insiste por 10 min
+_rwgps_gate = [0.0]             # instante do último fetch iniciado
 
 
 def norm_code(code):
@@ -251,8 +258,9 @@ def register(app, m):
         resolução disponível. routes.json guarda ≤ 400 pontos por rota (um
         ponto a cada ~100 m num pedal de 40 km) — grosso demais pra navegar
         esquina a esquina —, então: rota do amora → o estado salvo (geometria
-        cheia); RideWithGPS → rebusca o GPX (com altitude), cacheado; se a
-        rede falhar, cai no traçado do routes.json."""
+        cheia); RideWithGPS → rebusca o GPX (com altitude), cacheado e com
+        freio (RWGPS_MIN_GAP_S); se a rede falhar ou o freio segurar, cai no
+        traçado do routes.json."""
         import rwgps
         r = it["route"]
         key = (r.get("provider") or "rwgps", str(r.get("id") or ""))
@@ -264,11 +272,19 @@ def register(app, m):
                 except Exception as e:  # noqa: BLE001
                     print(f"[garmin] rota amora {key[1]} não decodifica: {e}")
             return {"latlngs": r["latlngs"], "pois": r.get("pois") or []}
+        coarse = {"latlngs": r["latlngs"], "pois": r.get("pois") or []}
         now = time.time()
         with _geom_lock:
             hit = _geom_cache.get(key)
-            if hit and now - hit[0] < GEOM_TTL_S:
-                return hit[1]
+            if hit is not None:
+                age = now - hit[0]
+                if hit[1] is not None and age < GEOM_TTL_S:
+                    return hit[1]
+                if hit[1] is None and age < GEOM_FAIL_TTL_S:
+                    return coarse           # falhou há pouco: não insiste
+            if now - _rwgps_gate[0] < RWGPS_MIN_GAP_S:
+                return coarse               # freio: fica o traçado do routes.json
+            _rwgps_gate[0] = now
         geom = None
         try:
             status, text = rwgps.http_get(rwgps.decorate_rwgps(
@@ -281,14 +297,12 @@ def register(app, m):
                         "eles": eles if all(isinstance(e, (int, float)) for e in eles) else None}
         except Exception as e:  # noqa: BLE001
             print(f"[garmin] GPX do RideWithGPS {key[1]} falhou: {e}")
-        if geom is None:
-            return {"latlngs": r["latlngs"], "pois": r.get("pois") or []}
         with _geom_lock:
             _geom_cache.pop(key, None)          # reinsere no fim (mais novo)
-            _geom_cache[key] = (now, geom)
+            _geom_cache[key] = (now, geom)      # None = falha (GEOM_FAIL_TTL_S)
             while len(_geom_cache) > GEOM_CACHE_MAX:
                 _geom_cache.pop(next(iter(_geom_cache)))   # o mais antigo
-        return geom
+        return geom if geom is not None else coarse
 
     def _geometry(it):
         if it["k"] == "t":

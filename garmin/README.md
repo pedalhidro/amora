@@ -143,8 +143,11 @@ código" com o campo vazio despareia.
   até 10 itens por código, 30 dias. Em memória ela sumiria quando o Cloud Run
   escala pra zero entre o envio no celular e a abertura do app no aparelho.
 - O percurso de um passeio usa a geometria cheia: rota do amora → o estado
-  salvo; RideWithGPS → rebusca o GPX (com altitude, cache de 6 h); só cai nos
-  ≤ 400 pontos do `routes.json` se isso falhar.
+  salvo; RideWithGPS → rebusca o GPX (com altitude, cache de 6 h); cai nos
+  ≤ 400 pontos do `routes.json` se isso falhar ou se o freio segurar. O
+  freio: no máximo um fetch no RideWithGPS a cada 5 s e 10 min sem insistir
+  numa rota que falhou — o endpoint é público, a busca usa as credenciais do
+  coletivo e o cache some a cada cold start.
 - Rotas salvas do amora não têm elevação, então o percurso delas sai **sem
   altitude** (sem perfil de subida no aparelho) e **sem** pontos de percurso
   com kJ por subida.
