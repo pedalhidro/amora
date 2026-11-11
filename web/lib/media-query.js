@@ -8,8 +8,12 @@
  * SPARQL 1.1 completo, ~1,6 MB do jsdelivr) só é baixado, sob demanda, pra
  * consulta SPARQL escrita à mão (Avançado da galeria, filtro SPARQL do mapa).
  *
- * Carregado como <script> clássico (NÃO módulo) por app.js e imagens.html;
- * publica window.PhidroMediaQuery. Requer window.N3 já carregado.
+ * Carregado como <script> clássico (NÃO módulo) por index.html, imagens.html,
+ * georef.html e memoria.html, e por importScripts no lib/gallery-worker.js;
+ * publica window.PhidroMediaQuery (self.… no worker). Requer N3 já carregado
+ * na hora de CHAMAR o que parseia ou monta store. A galeria e o worker dela
+ * carregam `media-query.js?api=N` — suba o N (nos dois) quando passarem a
+ * usar um nome novo daqui (mesmo motivo do `?api=` do lib/utils.js).
  */
 (function (global) {
   'use strict';
@@ -164,20 +168,119 @@
     return set;
   }
 
-  // ── records (dados dos tiles + catálogos de facetas) ──────────────────────
-  function buildMediaRecords(store) {
+  // ── índice leve do catálogo (sem N3.Store) ───────────────────────────────
+  // O que buildMediaRecords lê do catálogo são ~20 predicados. Um N3.Store
+  // indexa TUDO (os 126 mil quads de 11/2026, mais da metade nunca lida: nós
+  // _geo/_hash, os env: de cada envio…) em três índices — medido com o catálogo
+  // de produção, montar o store + ler os records dele custava mais que o
+  // próprio parse (0,6 s num desktop, 2,7 s num celular) e travava a página
+  // a cada abertura e a cada recarga depois de uma edição. O índice guarda só
+  // sujeito → predicado → valores dos predicados de RECORD_PREDICATES e os
+  // sujeitos de cada rdf:type, na ordem do documento. O N3.Store continua
+  // sendo o que a consulta SPARQL (Avançado, filtro do mapa) precisa.
+  var RECORD_PREDICATES = [
+    NS.dcterms + 'title', NS.dcterms + 'date',
+    NS.ph + 'energyEstimate', NS.ph + 'inSeriesEdition', NS.ph + 'inEventSeries',
+    NS.ph + 'sequenceInSeries', NS.ph + 'capturedDuring', NS.ph + 'estimatedCaptureTime',
+    NS.ph + 'video360p', NS.ph + 'video720p', NS.ph + 'audio',
+    NS.schema + 'name', NS.schema + 'alternateName', NS.schema + 'isPartOf',
+    NS.schema + 'locationCreated', NS.schema + 'encodingFormat', NS.schema + 'thumbnail',
+    NS.schema + 'duration',
+    NS.prov + 'wasAttributedTo', NS.pav + 'providedBy',
+  ];
+  var RDF_TYPE = NS.rdf + 'type';
+  function makeIndex() {
+    var want = new Set(RECORD_PREDICATES);
+    var sp = new Map();       // sujeito → Map(predicado → [valores])
+    var byType = new Map();   // classe → Set(sujeitos)
+    return {
+      _phIndex: true, sp: sp, byType: byType, preds: want,
+      add: function (q) {
+        var p = q.predicate.value;
+        if (p === RDF_TYPE) {
+          var set = byType.get(q.object.value);
+          if (!set) byType.set(q.object.value, set = new Set());
+          set.add(q.subject.value);
+          return;
+        }
+        // Só sujeito IRI, como o store é consultado (namedNode(s)).
+        if (!want.has(p) || q.subject.termType !== 'NamedNode') return;
+        var s = q.subject.value;
+        var byP = sp.get(s);
+        if (!byP) sp.set(s, byP = new Map());
+        var vals = byP.get(p);
+        if (!vals) byP.set(p, vals = []);
+        var v = q.object.value;
+        if (vals.indexOf(v) < 0) vals.push(v);   // triple repetida em dois dumps
+      },
+    };
+  }
+  function indexQuads(quads) {
+    var idx = makeIndex();
+    for (var i = 0; i < (quads ? quads.length : 0); i++) idx.add(quads[i]);
+    return idx;
+  }
+  // Turtle → Promise<índice>, sem guardar os quads: o parser entrega um a um
+  // (com callback o N3 tokeniza num microtask — por isso a Promise; o último
+  // callback vem sem quad).
+  function parseToIndex(text) {
+    return new Promise(function (resolve, reject) {
+      var idx = makeIndex(), done = false;
+      new global.N3.Parser().parse(text, function (e, quad) {
+        if (done) return;
+        if (e) { done = true; reject(e); return; }
+        if (quad) idx.add(quad);
+        else { done = true; resolve(idx); }
+      });
+    });
+  }
+  // Leitura uniforme das duas fontes (N3.Store | índice leve).
+  var NO_VALUES = [];
+  function sourceReader(src) {
+    if (src && src._phIndex) {
+      return {
+        objs: function (s, p) {
+          if (!src.preds.has(p)) throw new Error('predicado fora de RECORD_PREDICATES: ' + p);
+          var byP = src.sp.get(s);
+          return (byP && byP.get(p)) || NO_VALUES;
+        },
+        ofType: function (cls) { var set = src.byType.get(cls); return set ? Array.from(set) : []; },
+      };
+    }
     var DF = global.N3.DataFactory;
     var nn = function (iri) { return DF.namedNode(iri); };
-    var RDFT = nn(NS.rdf + 'type');
-    function objs(s, p) {
-      return store.getObjects(nn(s), nn(p), null).map(function (t) { return t.value; });
-    }
+    var RDFT = nn(RDF_TYPE);
+    return {
+      objs: function (s, p) {
+        return src.getObjects(nn(s), nn(p), null).map(function (t) { return t.value; });
+      },
+      ofType: function (cls) {
+        return src.getQuads(null, RDFT, nn(cls), null).map(function (q) { return q.subject.value; });
+      },
+    };
+  }
+
+  // Rótulo do passeio: "<série nº> — <título>". Função à parte porque o model
+  // que vem do worker (structured clone) não carrega funções — quem recebe
+  // refaz a dele com isto.
+  function makeTourLabel(tours) {
+    return function (t) {
+      var o = tours[t]; if (!o) return short(t);
+      return o.code ? (o.code + ' — ' + o.title) : o.title;
+    };
+  }
+
+  // ── records (dados dos tiles + catálogos de facetas) ──────────────────────
+  // `src` = N3.Store ou o índice leve (indexQuads / parseToIndex). Predicado
+  // novo lido aqui entra em RECORD_PREDICATES (o índice recusa o que não tem).
+  function buildMediaRecords(src) {
+    var reader = sourceReader(src);
+    var objs = reader.objs, ofType = reader.ofType;
     function obj1(s, p) { var a = objs(s, p); return a.length ? a[0] : null; }
 
     // Passeios: rótulo (série + título) + energia (kJ) pra faceta quilojaules.
     var tours = {};
-    store.getQuads(null, RDFT, nn(NS.ph + 'Tour'), null).forEach(function (q) {
-      var t = q.subject.value;
+    ofType(NS.ph + 'Tour').forEach(function (t) {
       tours[t] = {
         title: obj1(t, NS.dcterms + 'title') || short(t),
         date: (obj1(t, NS.dcterms + 'date') || '').slice(0, 10),
@@ -196,32 +299,28 @@
       parts.sort();
       if (parts.length) tours[t].code = parts.join(' & ');
     });
-    var tourLabel = function (t) {
-      var o = tours[t]; if (!o) return short(t);
-      return o.code ? (o.code + ' — ' + o.title) : o.title;
-    };
+    var tourLabel = makeTourLabel(tours);
 
     // Pessoas e listas (catálogos p/ opções de faceta).
     var people = {};
-    store.getQuads(null, RDFT, nn(NS.schema + 'Person'), null).forEach(function (q) {
-      var p = q.subject.value;
+    ofType(NS.schema + 'Person').forEach(function (p) {
       people[p] = obj1(p, NS.schema + 'name') || obj1(p, NS.schema + 'alternateName') || short(p);
     });
     var lists = {};
-    store.getQuads(null, RDFT, nn(NS.schema + 'Collection'), null).forEach(function (q) {
-      var l = q.subject.value;
+    ofType(NS.schema + 'Collection').forEach(function (l) {
       lists[l] = obj1(l, NS.schema + 'name') || short(l);
     });
 
     var records = [];
     [['StillImage', 'image'], ['MotionImage', 'video']].forEach(function (pair) {
       var cls = pair[0], kind = pair[1];
-      store.getQuads(null, RDFT, nn(NS.ph + cls), null).forEach(function (q) {
-        var iri = q.subject.value;
+      ofType(NS.ph + cls).forEach(function (iri) {
         var tourIri = obj1(iri, NS.ph + 'capturedDuring');
         var when = effectiveDate(obj1(iri, NS.dcterms + 'date'),
           (tourIri && tours[tourIri]) ? tours[tourIri].date : null,
           obj1(iri, NS.ph + 'estimatedCaptureTime'));
+        var authorIris = objs(iri, NS.prov + 'wasAttributedTo').slice();
+        var uploaderIris = objs(iri, NS.pav + 'providedBy').slice();
         var rec = {
           iri: iri, kind: kind,
           // Data EFETIVA (ver effectiveDate): instante ISO ou null. dateOnly =
@@ -233,11 +332,11 @@
           tourIri: tourIri,
           tourLabel: tourIri ? tourLabel(tourIri) : null,
           energyKj: (tourIri && tours[tourIri]) ? tours[tourIri].energyKj : null,
-          authorIris: objs(iri, NS.prov + 'wasAttributedTo'),
-          uploaderIris: objs(iri, NS.pav + 'providedBy'),
-          authors: objs(iri, NS.prov + 'wasAttributedTo').map(function (p) { return people[p] || short(p); }),
-          uploaders: objs(iri, NS.pav + 'providedBy').map(function (p) { return people[p] || short(p); }),
-          lists: objs(iri, NS.schema + 'isPartOf'),
+          authorIris: authorIris,
+          uploaderIris: uploaderIris,
+          authors: authorIris.map(function (p) { return people[p] || short(p); }),
+          uploaders: uploaderIris.map(function (p) { return people[p] || short(p); }),
+          lists: objs(iri, NS.schema + 'isPartOf').slice(),
           weekday: weekdayOf(when.datetime),
           // Tem coordenada → tem marcador no mapa (só mídia georreferenciada
           // vira marcador; a galeria usa isto pra só oferecer "Ver no mapa"
@@ -267,6 +366,51 @@
       });
     });
     return { records: records, tours: tours, people: people, lists: lists, tourLabel: tourLabel };
+  }
+
+  // ── carga do catálogo (manifesto VoID → dumps) ───────────────────────────
+  // Texto Turtle de todos os grafos, concatenado: segue cada void:dataDump do
+  // manifesto (URL relativa a ele); sem manifesto, os dumps conhecidos. Os
+  // dumps baixam em PARALELO e entram na ordem do manifesto. `base` = a URL
+  // contra a qual ./data/… resolve (document.baseURI — NÃO location.href, que
+  // ignora o <base> das páginas servidas em /imagens/lista/…). Roda na página
+  // e no worker da galeria (lib/gallery-worker.js): só fetch + N3.
+  async function fetchCatalogText(base) {
+    var VOID_DUMP = 'http://rdfs.org/ns/void#dataDump';
+    var urls = null;
+    try {
+      var manifestUrl = new URL('./data/data_graphs.ttl', base).href;
+      var res = await fetch(manifestUrl, { cache: 'no-cache' });
+      if (!res.ok) throw new Error('data_graphs.ttl HTTP ' + res.status);
+      var mQuads = new global.N3.Parser().parse(await res.text());
+      urls = [];
+      mQuads.forEach(function (q) {
+        if (q.predicate.value === VOID_DUMP) urls.push(new URL(q.object.value, manifestUrl).href);
+      });
+      if (!urls.length) throw new Error('manifesto sem void:dataDump');
+    } catch (e) {
+      console.warn('[media-query] manifesto indisponível, usando fallback:', e.message);
+      urls = ['tours.ttl', 'images.ttl', 'identities.ttl', 'lists.ttl'].map(function (f) {
+        return new URL('./data/' + f, base).href;
+      });
+    }
+    var parts = await Promise.all(urls.map(function (u) {
+      return fetch(u, { cache: 'no-cache' })
+        .then(function (r) {
+          if (!r.ok) { console.warn('[media-query] ' + u + ': HTTP ' + r.status); return null; }
+          return r.text();
+        })
+        .catch(function (err) { console.warn('[media-query] ' + u + ': ' + err.message); return null; });
+    }));
+    return parts.filter(function (t) { return t != null; }).join('\n\n');
+  }
+  // Catálogo → model da galeria, pelo índice leve. Devolve só DADOS (records,
+  // tours, people, lists): atravessa o postMessage do worker; quem recebe põe
+  // o tourLabel (makeTourLabel).
+  async function loadMediaModel(base) {
+    var idx = await parseToIndex(await fetchCatalogText(base));
+    var m = buildMediaRecords(idx);
+    return { records: m.records, tours: m.tours, people: m.people, lists: m.lists };
   }
 
   // ── facetas → SPARQL (visível/editável) ───────────────────────────────────
@@ -444,10 +588,16 @@
     runQuery: runQuery,
     queryMediaIris: queryMediaIris,
     buildMediaRecords: buildMediaRecords,
+    indexQuads: indexQuads,
+    parseToIndex: parseToIndex,
+    makeTourLabel: makeTourLabel,
+    fetchCatalogText: fetchCatalogText,
+    loadMediaModel: loadMediaModel,
     buildQueryFromFacets: buildQueryFromFacets,
     facetRows: facetRows,
     listMembershipQuery: listMembershipQuery,
     weekdayOf: weekdayOf,
     effectiveDate: effectiveDate,
   };
-})(window);
+// `self` no worker da galeria (lá não há window).
+})(typeof window !== 'undefined' ? window : self);

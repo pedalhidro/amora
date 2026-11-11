@@ -1254,8 +1254,9 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
   `pointerup` e o click que vem depois cairia no lightbox (fechava a foto,
   ou clicava num link do painel): `_lbOpenedAt` engole esse click fantasma.
 - **Tiles da galeria (`imagens.html`) usam o `thumb.jpg`**; o `large.jpg`
-  (2400 px) só com tile grande e, em aparelho de toque, poucos na tela
-  (`wantLargeTiles`).
+  (2400 px) só com tile grande (`wantLargeTiles`) e só nos poucos que PARARAM
+  na tela (`LARGE_MAX_TILES`: 11 no toque, 48 no desktop — desde a v441 o
+  desktop segue a mesma regra, ver "Galeria com milhares de mídias").
   Não voltar ao `srcset "… large.jpg 2x"`: DPR 2–3 (todo celular) escolhia o
   large em TODO tile, e o WebKit decodifica em tamanho cheio o que está
   visível (sem subamostrar abaixo de 5 MP, ~17 MB cada) — o álbum de 64 fotos
@@ -1268,6 +1269,33 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
   grade tem no máximo 9 colunas. A **tira de fotos do modal do passeio**
   segue a mesma regra: só miniaturas (`large.jpg` só no visualizador) — ela
   derrubava o Safari nos passeios grandes.
+- **Galeria com milhares de mídias (v441; medido com as 8.375 de 11/2026).**
+  Quatro regras que seguram a galeria leve — não desfazer:
+  - **O catálogo carrega num worker** (`lib/gallery-worker.js` →
+    `MQ.loadMediaModel`): download + parse do Turtle + records fora da thread
+    da página (eram 1,9 s de página travada num desktop e 7,3 s num celular —
+    e do APP junto: o iframe da galeria divide a thread com o mapa). Os
+    records saem de um **índice leve** (`RECORD_PREDICATES` em
+    `media-query.js`), não de um N3.Store: predicado novo lido por
+    `buildMediaRecords` entra nessa lista (o índice recusa o que não tem). O
+    N3.Store só é montado no 1º uso da consulta Avançado (`ensureStore`).
+    Worker ausente/quebrado → o mesmo caminho roda na página. A galeria e o
+    worker carregam `media-query.js?api=N` — suba o N nos dois juntos.
+  - **Só os tiles perto da tela são renderizados** (`content-visibility: auto`
+    no `.group > .tiles` — não no grupo: o cabeçalho fica de fora, com a
+    altura real) e a altura de cada grade pulada é calculada
+    (`syncGroupHeights`; exata na grade quadrada). Quem mudar o tamanho dos
+    tiles (zoom, layout, resize) passa por `applyGalleryLayout` ou chama
+    `syncGroupHeights`, senão a barra de rolagem e a linha do tempo mentem.
+  - **O `<img>` do tile entra depois** (`hydrateTile`: por grupo quando chega
+    a uma tela de distância; em levas nos contêineres grandes). Criar os 8 mil
+    `<img>` junto com a grade era 70–75 % de todo render. Quem lê a grade lê os
+    TILES (todos no DOM desde o render), pelo `tileIndex()` — nunca
+    `querySelector` por IRI nem "todos os `<img>`".
+  - **`large.jpg` só no que PAROU na tela, com teto, também no desktop**
+    (48 tiles; 11 no toque). Numa tela Retina o zoom padrão já passa do limiar
+    do large, e com "todo tile de large, lazy" 4 s de rolagem pediam 830
+    `large.jpg` (332 MB).
 - **Galeria sem Comunica na visão padrão.** As facetas filtram em JS
   (`MQ.facetRows`, em `lib/media-query.js`) — tem que continuar EQUIVALENTE ao
   `buildQueryFromFacets` (mude os dois juntos); o Comunica só carrega no
