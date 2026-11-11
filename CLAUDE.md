@@ -294,6 +294,21 @@ one optional hosted deploy target, not a dependency.
   PhotoKit não funciona a partir do VS Code (o app não declara uso do Fotos e
   o macOS nega sem perguntar). Vídeos sobem pelo caminho de vídeo do
   `ingest-whatsapp.py` (vhash, 360p, hora e GPS do arquivo)),
+  `georef-tracks.py` (**posicionar pela HORA**: mídia com hora de verdade
+  (`xsd:dateTime`) e SEM coordenada ganha a posição da gravação GPS do passeio
+  naquele instante, marcada `ph:coordinateSource ph:interpolatedFromTrack`;
+  dry-run por padrão, `--apply` grava via `/update-image|video` (patch),
+  `--desfazer --passeio X` tira só as interpoladas, `--ajuste SEG` corrige
+  relógio de câmera. A gravação é um trip do RideWithGPS da conta de quem
+  mantém o acervo (os Strava do catálogo são quase todos de outras pessoas —
+  inacessíveis), escolhido por cobrir ≥ 60 % da janela saída…chegada, CORTADO
+  nessa janela (± 10 min — fora dela é o caminho de casa de uma pessoa só) e
+  guardado só em `ignore/tracks/`: nada do rastro é publicado. Só preenche o
+  que está vazio; buraco > 3 min na gravação não é atravessado; passeio sem
+  `ph:departedAt`/`ph:arrivedAt` fica de fora. Gotcha: a listagem
+  `/users/<id>/trips.json` hoje devolve a conta inteira numa LISTA (o
+  `listar_trips` do `backfill-activities.py` ainda espera `{results}` e
+  quebra), e `departed_at` vem ora ISO, ora número),
   `mock_location.sh` (empurra posições de
   teste da localização ao vivo pro backend — random walk, 1 ponto/3 s; bate no
   remoto amora por padrão, `--local` p/ 127.0.0.1:8080; curl não precisa de
