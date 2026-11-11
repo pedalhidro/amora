@@ -96,7 +96,10 @@ cobra a mais: num pedal de 363 km gravado num Edge 1040, 5 m sem deadband dá
 ## 2 · Pessoas ao vivo (campo de dados)
 
 - **Ver:** a pessoa mais próxima (distância, seta relativa ao seu rumo,
-  apelido) e quantas mais estão no mapa. Lê `POST /garmin/live` a cada 15 s,
+  apelido, há quanto tempo é aquela posição — "há 30 s", "há 2 min") e
+  quantas mais estão no mapa. Posição com mais de 3 min fica em cinza. Se uma
+  leitura volta vazia, a última lista fica na tela por 5 min antes de virar
+  "ninguém ao vivo". Lê `POST /garmin/live` a cada 15 s,
   com a atividade gravando ou o campo na tela. Ver **não envia** a sua posição:
   o servidor devolve lat/lng de cada pessoa e a distância é calculada no
   aparelho.

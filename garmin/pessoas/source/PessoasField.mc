@@ -16,7 +16,7 @@ import Toybox.WatchUi;
 //! Privacidade, como no amora: transmitir nasce desligado; ver não manda
 //! posição nenhuma; a barra de estado diz sempre se está transmitindo.
 class PessoasField extends WatchUi.DataField {
-    private const STALE_S = 180;          // pessoa sem atualização: "há N min"
+    private const STALE_S = 180;          // posição velha: distância em cinza
 
     private var _client as LiveClient;
     private var _share as Boolean = false;
@@ -210,9 +210,18 @@ class PessoasField extends WatchUi.DataField {
         var name = (best[0] instanceof Lang.String) ? best[0] as String : "?";
         var age = (best[3] instanceof Lang.Number) ? (best[3] as Number) + (now - _client.peersAt) : 0;
         var top = 2;
-        var line1 = name;
+        // Em cima: quem é, quantas mais e HÁ QUANTO TEMPO é essa posição — na
+        // forma mais longa que couber no campo.
+        var ago = ageLabel(age);
+        var line1 = name + " · " + ago;
         if (_client.total > 1) {
-            line1 = name + " +" + (_client.total - 1).format("%d");
+            var withCount = name + " +" + (_client.total - 1).format("%d") + " · " + ago;
+            if (dc.getTextWidthInPixels(withCount, small) <= w - 4) {
+                line1 = withCount;
+            }
+        }
+        if (dc.getTextWidthInPixels(line1, small) > w - 4) {
+            line1 = ago;
         }
         dc.drawText(cx, top, small, line1, Graphics.TEXT_JUSTIFY_CENTER);
 
@@ -220,7 +229,9 @@ class PessoasField extends WatchUi.DataField {
         var bodyH = h - 3 - bodyTop - (h >= 70 ? smallH : 0);
         var text = distLabel(bestGeo[0]);
         if (age > STALE_S) {
-            text = text + " (" + (age / 60).format("%d") + " min)";
+            // Posição velha: a pessoa pode não estar mais ali.
+            dc.setColor(bg == Graphics.COLOR_BLACK ? Graphics.COLOR_LT_GRAY : Graphics.COLOR_DK_GRAY,
+                        Graphics.COLOR_TRANSPARENT);
         }
         var font = pickFont(dc, text, w - bodyH - 8, bodyH);
         var fh = dc.getFontHeight(font);
@@ -236,6 +247,19 @@ class PessoasField extends WatchUi.DataField {
         } else {
             dc.drawText(cx, bodyTop + (bodyH - fh) / 2, font, text, Graphics.TEXT_JUSTIFY_CENTER);
         }
+    }
+
+    //! "há 30 s", "há 2 min", "há 1 h".
+    private function ageLabel(s as Number) as String {
+        if (s < 0) {
+            s = 0;
+        }
+        if (s < 60) {
+            return "há " + s.format("%d") + " s";
+        } else if (s < 3600) {
+            return "há " + (s / 60).format("%d") + " min";
+        }
+        return "há " + (s / 3600).format("%d") + " h";
     }
 
     private function statusLine(now as Number) as String {

@@ -19,6 +19,11 @@ class LiveClient {
     private const QUEUE_MAX = 40;        // fixes guardados sem conexão
     private const QUEUE_GAP_S = 20;      // espaçamento mínimo entre eles
     private const WATCHDOG_S = 90;       // retorno que nunca veio
+    //! Uma leitura que volta VAZIA não apaga na hora quem estava na tela: a
+    //! lista do servidor vive em memória e some quando ele reinicia (ou a
+    //! pessoa passa um tempo sem sinal). Segura a última lista por 5 min — a
+    //! idade de cada posição continua contando na tela.
+    private const HOLD_S = 300;
 
     var server as String = "https://amora.pedalhidrografi.co";
     var name as String = "";
@@ -185,10 +190,14 @@ class LiveClient {
             var p = data["p"];
             var n = data["n"];
             if (p instanceof Lang.Array) {
+                var t = Time.now().value();
+                lastError = 0;
+                if (p.size() == 0 && peers.size() > 0 && t - peersAt < HOLD_S) {
+                    return;              // segura a última lista (ver HOLD_S)
+                }
                 peers = p;
                 total = (n instanceof Lang.Number) ? n : p.size();
-                peersAt = Time.now().value();
-                lastError = 0;
+                peersAt = t;
                 return;
             }
         }
