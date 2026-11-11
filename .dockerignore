@@ -27,6 +27,8 @@ research/
 scripts/
 eink/
 capacitor/
+garmin/
+web/garmin_queue.json
 ignore/
 features/
 docs/
