@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<iq:manifest version="3" xmlns:iq="http://www.garmin.com/xml/connectiq">
+    <!-- Campo de dados "Pessoas ao vivo": quem está transmitindo a posição no
+         amora, e (opcional, desligado por padrão) transmite a sua.
+         minApiLevel 5.0.0: é a partir dela que um campo de dados pode fazer
+         requisição web em primeiro plano. SEM a permissão Background: com ela
+         e sem código anotado, o compilador carrega o app inteiro também como
+         processo de segundo plano. -->
+    <iq:application id="14c2c9c5c4c84b578b289ddc4bba19e4" type="datafield"
+                    name="@Strings.AppName" entry="PessoasApp"
+                    launcherIcon="@Drawables.LauncherIcon" minApiLevel="5.0.0">
+        <iq:products>
+            <iq:product id="edge1040"/>
+            <iq:product id="fr955"/>
+        </iq:products>
+        <iq:permissions>
+            <iq:uses-permission id="Communications"/>
+            <iq:uses-permission id="Positioning"/>
+        </iq:permissions>
+        <iq:languages/>
+        <iq:barrels/>
+    </iq:application>
+</iq:manifest>

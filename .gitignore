@@ -16,6 +16,12 @@ web/clips/
 # máquina, não versionado.
 .sync-state/
 web/tour_assets/
+# Fila "enviadas por você" dos apps Garmin (backend/garmin.py) — estado de runtime.
+web/garmin_queue.json
+# Apps Garmin (Connect IQ): saída do compilador e chave de desenvolvedor.
+garmin/*/bin/
+garmin/developer_key.*
+garmin/tools/out/
 sampasimu/
 ignore/
 

@@ -1,0 +1,27 @@
+<strings xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://developer.garmin.com/downloads/connect-iq/resources.xsd">
+    <string id="AppName">Quilojaules</string>
+
+    <!-- Rótulos dos campos gravados no .fit (Garmin Connect) -->
+    <string id="FitModel">Energia do modelo</string>
+    <string id="FitLapModel">Energia do modelo (volta)</string>
+    <string id="FitLapMeasured">Energia medida (volta)</string>
+    <string id="FitTotalModel">Energia do modelo (total)</string>
+    <string id="FitTotalMeasured">Energia medida (total)</string>
+    <string id="UnitKj">kJ</string>
+    <string id="FitEstPower">Potência estimada (30 s)</string>
+    <string id="UnitW">W</string>
+
+    <!-- Configurações (Garmin Connect / Connect IQ no celular) -->
+    <string id="SetBudget">Orçamento de energia (kJ; 0 = sem)</string>
+    <string id="SetMass">Massa pessoa + bicicleta (kg)</string>
+    <string id="SetPFlat">Potência no plano (W)</string>
+    <string id="SetCda">Área de arrasto CdA (m²)</string>
+    <string id="SetCrr">Resistência de rolamento Crr</string>
+    <string id="SetRho">Densidade do ar (kg/m³)</string>
+    <string id="SetKeff">Eficiência da transmissão (0–1)</string>
+    <string id="SetClimb">Limiar de subida (%)</string>
+    <string id="SetDeadband">Deadband de altitude (m)</string>
+    <string id="SetStep">Passo do perfil (m)</string>
+    <string id="GroupModel">Modelo de energia</string>
+    <string id="GroupModelDesc">Os padrões são os do amora. Mude só se souber o que está fazendo: os kJ do passeio no site usam estes mesmos valores.</string>
+</strings>
