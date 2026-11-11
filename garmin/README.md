@@ -191,6 +191,12 @@ node garmin/tools/kj_parity.mjs pedal.json           # idem, num pedal de verdad
 
 ## Limites conhecidos do Connect IQ (conferidos na documentação do SDK)
 
+- **A pilha de um campo de dados é curta.** O que conta é a soma das
+  variáveis locais das funções abertas ao mesmo tempo: o radar do campo
+  Pessoas morreu de "Stack Overflow Error" no simulador com ~90 locais em três
+  funções aninhadas. Desenho = fila de funções pequenas, estado compartilhado
+  em campos do objeto (ver o comentário em `PessoasField.mc`).
+
 - Forerunner 955 = API 5.2: nada marcado "desde 6.0" (por isso o corpo da
   requisição vai em `parameters`, não em `:body`).
 - Percurso baixado por app: **FIT** nos dois aparelhos; GPX só no Edge.

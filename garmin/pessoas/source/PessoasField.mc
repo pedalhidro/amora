@@ -153,137 +153,153 @@ class PessoasField extends WatchUi.DataField {
     }
 
     // ── Tela ────────────────────────────────────────────────────────────
+    //
+    // A PILHA de um campo de dados é curta: o que conta é a soma das variáveis
+    // locais de todas as funções abertas ao mesmo tempo. A 1ª versão do radar
+    // morreu de "Stack Overflow Error" no simulador com uma função de ~45
+    // locais chamada por outra de ~18, chamada pelo onUpdate (~20). Por isso o
+    // desenho é uma FILA de funções pequenas, chamadas uma depois da outra, e o
+    // que elas compartilham (cores, centro/raio/escala do radar, a pessoa mais
+    // próxima) mora em campos do objeto — não em argumentos nem em locais.
+    // Ao mexer aqui: função nova e curta, nunca mais locais numa que já existe.
+
+    private var _fg as Graphics.ColorType = Graphics.COLOR_WHITE;
+    private var _gray as Graphics.ColorType = Graphics.COLOR_LT_GRAY;
+    private var _now as Number = 0;
+    private var _best as Array? = null;       // a mais próxima: [nome, lat, lng, idade]
+    private var _bestDist as Float = -1.0;    // m (< 0 = não há)
+    private var _bestBrg as Float = 0.0;      // rumo até ela, graus
+    private var _rcx as Number = 0;           // radar: centro (px)…
+    private var _rcy as Number = 0;
+    private var _rr as Number = 0;            // …raio (px)…
+    private var _rRange as Float = 500.0;     // …alcance (m)…
+    private var _rScale as Float = 1.0;       // …e escala (px por metro)
+    private var _rMini as Boolean = false;
 
     function onUpdate(dc as Graphics.Dc) as Void {
         var bg = getBackgroundColor();
-        var fg = (bg == Graphics.COLOR_BLACK) ? Graphics.COLOR_WHITE : Graphics.COLOR_BLACK;
-        dc.setColor(fg, bg);
+        _fg = (bg == Graphics.COLOR_BLACK) ? Graphics.COLOR_WHITE : Graphics.COLOR_BLACK;
+        _gray = (bg == Graphics.COLOR_BLACK) ? Graphics.COLOR_LT_GRAY : Graphics.COLOR_DK_GRAY;
+        _now = Time.now().value();
+        dc.setColor(_fg, bg);
         dc.clear();
-        dc.setColor(fg, Graphics.COLOR_TRANSPARENT);
-
+        findNearest();
         var w = dc.getWidth();
         var h = dc.getHeight();
-        var cx = w / 2;
-        var small = Graphics.FONT_XTINY;
-        var smallH = dc.getFontHeight(small);
-        var now = Time.now().value();
-
-        // Barra de estado na base: sempre diz se está transmitindo.
-        var status = statusLine(now);
-        var sharing = _share && _running;
-        dc.setColor(sharing ? Graphics.COLOR_DK_GREEN : Graphics.COLOR_DK_GRAY,
-                    Graphics.COLOR_TRANSPARENT);
-        dc.fillRectangle(0, h - 3, w, 3);
-        dc.setColor(fg, Graphics.COLOR_TRANSPARENT);
-        if (h >= 70) {
-            dc.drawText(cx, h - 3 - smallH, small, status, Graphics.TEXT_JUSTIFY_CENTER);
+        if (w >= RADAR_MIN_W && h >= RADAR_MIN_H) {
+            // Radar completo: linha de cima + radar com nomes + estado.
+            _client.wantRoute = true;
+            drawStatus(dc, true);
+            drawTopLine(dc);
+            layoutFull(dc);
+            drawRadar(dc);
+        } else if (w >= MINI_MIN_W && h >= MINI_MIN_H) {
+            // Radar mini: círculo à esquerda, distância e idade ao lado.
+            _client.wantRoute = true;
+            drawStatus(dc, false);
+            layoutMini(dc);
+            drawRadar(dc);
+            drawMiniText(dc);
+        } else {
+            drawStatus(dc, h >= 70);
+            drawCompact(dc);
         }
+    }
 
-        // A pessoa mais próxima.
-        var best = null as Array?;
-        var bestGeo = null as Array<Float>?;
+    // ── A pessoa mais próxima ───────────────────────────────────────────
+
+    private function findNearest() as Void {
+        _best = null;
+        _bestDist = -1.0;
         var peers = _client.peers;
         for (var i = 0; i < peers.size(); i++) {
             var p = peers[i];
             if (!(p instanceof Lang.Array) || p.size() < 4) {
                 continue;
             }
-            var la = p[1];
-            var lo = p[2];
-            if (!(la instanceof Lang.Float || la instanceof Lang.Double || la instanceof Lang.Number)
-                    || !(lo instanceof Lang.Float || lo instanceof Lang.Double || lo instanceof Lang.Number)) {
-                continue;
-            }
-            var geo = toPeer(la, lo);
-            if (geo != null && (bestGeo == null || geo[0] < bestGeo[0])) {
-                best = p;
-                bestGeo = geo;
+            var geo = peerGeo(p);
+            if (geo != null && (_bestDist < 0.0 || geo[0] < _bestDist)) {
+                _best = p;
+                _bestDist = geo[0];
+                _bestBrg = geo[1];
             }
         }
+    }
 
-        if (w >= RADAR_MIN_W && h >= RADAR_MIN_H) {
-            _client.wantRoute = true;
-            drawRadar(dc, fg, bg, now, best, bestGeo);
-            return;
+    //! [distância, rumo] até a pessoa `p`, ou null (sem a minha posição).
+    private function peerGeo(p as Array) as Array<Float>? {
+        var la = p[1];
+        var lo = p[2];
+        if (!(la instanceof Lang.Float || la instanceof Lang.Double || la instanceof Lang.Number)
+                || !(lo instanceof Lang.Float || lo instanceof Lang.Double || lo instanceof Lang.Number)) {
+            return null;
         }
-        if (w >= MINI_MIN_W && h >= MINI_MIN_H) {
-            _client.wantRoute = true;
-            // A barra de estado de cima escreveu o texto dela; o mini usa o
-            // campo todo, então limpa e deixa só a faixa colorida.
-            dc.setColor(fg, bg);
-            dc.clear();
-            dc.setColor(sharing ? Graphics.COLOR_DK_GREEN : Graphics.COLOR_DK_GRAY,
-                        Graphics.COLOR_TRANSPARENT);
-            dc.fillRectangle(0, h - 3, w, 3);
-            drawMiniRadar(dc, fg, bg, now, best, bestGeo);
-            return;
-        }
+        return toPeer(la, lo);
+    }
 
-        if (peers.size() == 0) {
-            var msg = (_client.peersAt == 0) ? "..." : "ninguém ao vivo";
-            dc.drawText(cx, (h - dc.getFontHeight(Graphics.FONT_SMALL)) / 2 - (h >= 70 ? smallH / 2 : 0),
-                        Graphics.FONT_SMALL, msg, Graphics.TEXT_JUSTIFY_CENTER);
-            return;
+    //! Idade (s) da posição de uma pessoa da lista, agora.
+    private function peerAge(p as Array?) as Number {
+        if (p != null && p[3] instanceof Lang.Number) {
+            return (p[3] as Number) + (_now - _client.peersAt);
         }
-        if (best == null || bestGeo == null) {
-            // Há pessoas, mas ainda não sei onde EU estou.
-            dc.drawText(cx, (h - dc.getFontHeight(Graphics.FONT_SMALL)) / 2,
-                        Graphics.FONT_SMALL, _client.total.format("%d") + " ao vivo",
-                        Graphics.TEXT_JUSTIFY_CENTER);
-            return;
-        }
+        return 0;
+    }
 
-        var name = (best[0] instanceof Lang.String) ? best[0] as String : "?";
-        var age = (best[3] instanceof Lang.Number) ? (best[3] as Number) + (now - _client.peersAt) : 0;
-        var top = 2;
-        // Em cima: quem é, quantas mais e HÁ QUANTO TEMPO é essa posição — na
-        // forma mais longa que couber no campo.
-        var ago = ageLabel(age);
-        var line1 = name + " · " + ago;
-        if (_client.total > 1) {
-            var withCount = name + " +" + (_client.total - 1).format("%d") + " · " + ago;
-            if (dc.getTextWidthInPixels(withCount, small) <= w - 4) {
-                line1 = withCount;
+    private function bestName() as String {
+        var b = _best;
+        return (b != null && b[0] instanceof Lang.String) ? b[0] as String : "?";
+    }
+
+    // ── Peças comuns ────────────────────────────────────────────────────
+
+    //! Faixa de estado na base (verde = transmitindo) e, se couber, o texto.
+    private function drawStatus(dc as Graphics.Dc, withText as Boolean) as Void {
+        var w = dc.getWidth();
+        var h = dc.getHeight();
+        dc.setColor((_share && _running) ? Graphics.COLOR_DK_GREEN : Graphics.COLOR_DK_GRAY,
+                    Graphics.COLOR_TRANSPARENT);
+        dc.fillRectangle(0, h - 3, w, 3);
+        dc.setColor(_fg, Graphics.COLOR_TRANSPARENT);
+        if (withText) {
+            dc.drawText(w / 2, h - 3 - dc.getFontHeight(Graphics.FONT_XTINY), Graphics.FONT_XTINY,
+                        statusLine(_now), Graphics.TEXT_JUSTIFY_CENTER);
+        }
+    }
+
+    //! Linha de cima do radar completo: quem, a quanto, há quanto tempo.
+    private function drawTopLine(dc as Graphics.Dc) as Void {
+        var w = dc.getWidth();
+        var small = Graphics.FONT_XTINY;
+        var line = "";
+        if (_bestDist >= 0.0) {
+            var dist = distLabel(_bestDist);
+            var ago = ageLabel(peerAge(_best));
+            line = bestName() + " · " + dist + " · " + ago;
+            if (dc.getTextWidthInPixels(line, small) > w - 4) {
+                line = dist + " · " + ago;
             }
-        }
-        if (dc.getTextWidthInPixels(line1, small) > w - 4) {
-            line1 = ago;
-        }
-        dc.drawText(cx, top, small, line1, Graphics.TEXT_JUSTIFY_CENTER);
-
-        var bodyTop = top + smallH;
-        var bodyH = h - 3 - bodyTop - (h >= 70 ? smallH : 0);
-        var text = distLabel(bestGeo[0]);
-        if (age > STALE_S) {
-            // Posição velha: a pessoa pode não estar mais ali.
-            dc.setColor(bg == Graphics.COLOR_BLACK ? Graphics.COLOR_LT_GRAY : Graphics.COLOR_DK_GRAY,
-                        Graphics.COLOR_TRANSPARENT);
-        }
-        var font = pickFont(dc, text, w - bodyH - 8, bodyH);
-        var fh = dc.getFontHeight(font);
-        var tw = dc.getTextWidthInPixels(text, font);
-        var arrowR = (bodyH < 40 ? bodyH : 40) / 2 - 2;
-        var gap = 6;
-        var x0 = (w - (tw + gap + 2 * arrowR)) / 2;
-        if (arrowR >= 6 && _heading != null) {
-            drawArrow(dc, x0 + arrowR, bodyTop + bodyH / 2, arrowR,
-                      bestGeo[1] - (_heading as Number).toFloat());
-            dc.drawText(x0 + 2 * arrowR + gap, bodyTop + (bodyH - fh) / 2, font, text,
-                        Graphics.TEXT_JUSTIFY_LEFT);
+            if (dc.getTextWidthInPixels(line, small) > w - 4) {
+                line = dist;
+            }
+        } else if (_client.peers.size() == 0) {
+            line = (_client.peersAt == 0) ? "..." : "ninguém ao vivo";
         } else {
-            dc.drawText(cx, bodyTop + (bodyH - fh) / 2, font, text, Graphics.TEXT_JUSTIFY_CENTER);
+            line = _client.total.format("%d") + " ao vivo";
         }
+        dc.setColor(_fg, Graphics.COLOR_TRANSPARENT);
+        dc.drawText(w / 2, 2, small, line, Graphics.TEXT_JUSTIFY_CENTER);
     }
 
     // ── Radar ───────────────────────────────────────────────────────────
     //
     // Você no centro, com o SUL SEMPRE PRA CIMA (a agulha do coletivo aponta
     // pro sul; o radar não gira com o seu rumo — quem gira é a seta do centro).
-    // As pessoas são pontos na posição relativa de verdade; dois anéis dão a
-    // escala (o de fora é o alcance, escolhido pra caber a pessoa mais
-    // próxima); quem está além do alcance vira um anel oco na borda. A linha
-    // laranja é o traçado do próximo passeio. Não é o mapa do aparelho — um
-    // campo de dados não tem acesso a ele.
+    // Na tela: x = centro − leste·escala, y = centro + norte·escala. As pessoas
+    // são pontos na posição relativa de verdade; dois anéis dão a escala (o de
+    // fora é o alcance, escolhido pra caber a pessoa mais próxima); quem está
+    // além do alcance vira um anel oco na borda. A linha laranja é o traçado
+    // do próximo passeio. Não é o mapa do aparelho — um campo de dados não tem
+    // acesso a ele.
 
     //! Alcance "redondo" que contém a distância d (m).
     private function radarRange(d as Float) as Float {
@@ -296,172 +312,110 @@ class PessoasField extends WatchUi.DataField {
         return 100000.0;
     }
 
-    //! Radar completo: linha de cima + radar com nomes + barra de estado.
-    private function drawRadar(dc as Graphics.Dc, fg as Graphics.ColorType, bg as Graphics.ColorType,
-                               now as Number, best as Array?, bestGeo as Array<Float>?) as Void {
-        var w = dc.getWidth();
-        var h = dc.getHeight();
-        var cx = w / 2;
-        var small = Graphics.FONT_XTINY;
-        var smallH = dc.getFontHeight(small);
-        var peers = _client.peers;
-
-        // Linha de cima: quem é a mais próxima, a quanto e há quanto tempo.
-        var line = "";
-        if (best != null && bestGeo != null) {
-            var nm = (best[0] instanceof Lang.String) ? best[0] as String : "?";
-            var age = (best[3] instanceof Lang.Number) ? (best[3] as Number) + (now - _client.peersAt) : 0;
-            var dist = distLabel(bestGeo[0]);
-            var ago = ageLabel(age);
-            line = nm + " · " + dist + " · " + ago;
-            if (dc.getTextWidthInPixels(line, small) > w - 4) {
-                line = dist + " · " + ago;
-            }
-            if (dc.getTextWidthInPixels(line, small) > w - 4) {
-                line = dist;
-            }
-        } else if (peers.size() == 0) {
-            line = (_client.peersAt == 0) ? "..." : "ninguém ao vivo";
-        } else {
-            line = _client.total.format("%d") + " ao vivo";
-        }
-        dc.setColor(fg, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(cx, 2, small, line, Graphics.TEXT_JUSTIFY_CENTER);
-
-        // Área do radar: entre a linha de cima e a barra de estado.
-        var top = 2 + smallH + 2;
-        var bottom = h - 3 - smallH - 2;
-        var r = ((w < bottom - top) ? w : (bottom - top)) / 2 - 6;
-        if (r < 30) {
-            return;
-        }
-        var range = (bestGeo != null) ? radarRange(bestGeo[0]) : 500.0;
-        plotRadar(dc, cx, (top + bottom) / 2, r, range, fg, bg, now, best, false);
+    private function setScale() as Void {
+        _rRange = (_bestDist >= 0.0) ? radarRange(_bestDist) : 500.0;
+        _rScale = (_rr > 0 ? _rr : 1).toFloat() / _rRange;
     }
 
-    //! Radar mini (telas de muitos campos): o círculo ocupa a altura do campo,
-    //! à esquerda; ao lado, a distância da pessoa mais próxima, a idade da
-    //! posição e o alcance do anel. Sem nomes no círculo — não cabem.
-    private function drawMiniRadar(dc as Graphics.Dc, fg as Graphics.ColorType, bg as Graphics.ColorType,
-                                   now as Number, best as Array?, bestGeo as Array<Float>?) as Void {
+    //! Radar completo: entre a linha de cima e a barra de estado.
+    private function layoutFull(dc as Graphics.Dc) as Void {
+        var w = dc.getWidth();
+        var smallH = dc.getFontHeight(Graphics.FONT_XTINY);
+        var top = 2 + smallH + 2;
+        var bottom = dc.getHeight() - 3 - smallH - 2;
+        _rr = ((w < bottom - top) ? w : (bottom - top)) / 2 - 6;
+        _rcx = w / 2;
+        _rcy = (top + bottom) / 2;
+        _rMini = false;
+        setScale();
+    }
+
+    //! Radar mini: o círculo ocupa a altura do campo, à esquerda se sobrar
+    //! uma coluna de texto (≥ 36 px), senão no meio.
+    private function layoutMini(dc as Graphics.Dc) as Void {
         var w = dc.getWidth();
         var h = dc.getHeight();
-        var small = Graphics.FONT_XTINY;
-        var smallH = dc.getFontHeight(small);
-        var gray = (bg == Graphics.COLOR_BLACK) ? Graphics.COLOR_LT_GRAY : Graphics.COLOR_DK_GRAY;
-
-        var d = h - 8;                     // diâmetro: a altura, menos a faixa e a folga
+        var d = h - 8;
         if (d > w - 4) {
             d = w - 4;
         }
-        var r = d / 2;
-        if (r < 18) {
-            return;
-        }
-        var colW = w - d - 8;              // coluna de texto à direita do círculo
-        var cx = (colW >= 36) ? 3 + r : w / 2;
-        var cy = (h - 3) / 2;
-        var range = (bestGeo != null) ? radarRange(bestGeo[0]) : 500.0;
-        plotRadar(dc, cx, cy, r, range, fg, bg, now, best, true);
-
-        if (colW < 36) {
-            return;                        // campo quase quadrado: só o círculo
-        }
-        var tx = 3 + d + 5;
-        var lines = [] as Array<String>;
-        if (best != null && bestGeo != null) {
-            var age = (best[3] instanceof Lang.Number) ? (best[3] as Number) + (now - _client.peersAt) : 0;
-            lines.add(distLabel(bestGeo[0]));
-            lines.add(ageShort(age));
-        } else if (_client.peers.size() == 0) {
-            lines.add((_client.peersAt == 0) ? "..." : "0");
-        } else {
-            lines.add(_client.total.format("%d"));
-        }
-        var maxLines = (h - 6) / smallH;
-        var y = (h - 3 - ((lines.size() < maxLines ? lines.size() : maxLines) * smallH)) / 2;
-        dc.setColor(fg, Graphics.COLOR_TRANSPARENT);
-        for (var i = 0; i < lines.size() && i < maxLines; i++) {
-            if (i == 1) {
-                dc.setColor(gray, Graphics.COLOR_TRANSPARENT);   // a idade, mais apagada
-            }
-            if (dc.getTextWidthInPixels(lines[i], small) <= colW + 3) {
-                dc.drawText(tx, y, small, lines[i], Graphics.TEXT_JUSTIFY_LEFT);
-            }
-            y += smallH;
-        }
+        _rr = d / 2;
+        _rcx = (w - d - 8 >= 36) ? 3 + _rr : w / 2;
+        _rcy = (h - 3) / 2;
+        _rMini = true;
+        setScale();
     }
 
-    //! O desenho do radar em si, centrado em (cx, cy) com raio r px e alcance
-    //! `range` m. `mini` = sem nomes, sem rótulo de alcance, traços menores.
-    private function plotRadar(dc as Graphics.Dc, cx as Number, cy as Number, r as Number,
-                               range as Float, fg as Graphics.ColorType, bg as Graphics.ColorType,
-                               now as Number, best as Array?, mini as Boolean) as Void {
-        var small = Graphics.FONT_XTINY;
-        var smallH = dc.getFontHeight(small);
-        var gray = (bg == Graphics.COLOR_BLACK) ? Graphics.COLOR_LT_GRAY : Graphics.COLOR_DK_GRAY;
-        var peers = _client.peers;
-        var scale = r.toFloat() / range;            // px por metro
-
-        // Anéis (+ alcance, no radar completo).
-        dc.setColor(gray, Graphics.COLOR_TRANSPARENT);
-        dc.setPenWidth(1);
-        dc.drawCircle(cx, cy, r);
-        dc.drawCircle(cx, cy, r / 2);
-        if (!mini) {
-            dc.drawText(cx, cy + r - smallH - 1, small, distLabel(range), Graphics.TEXT_JUSTIFY_CENTER);
+    private function drawRadar(dc as Graphics.Dc) as Void {
+        if (_rr < 18) {
+            return;
         }
+        radarRings(dc);
+        if (_lat == null || _lng == null) {
+            dc.setColor(_fg, Graphics.COLOR_TRANSPARENT);
+            dc.drawText(_rcx, _rcy - dc.getFontHeight(Graphics.FONT_XTINY) / 2, Graphics.FONT_XTINY,
+                        _rMini ? "GPS?" : "sem GPS", Graphics.TEXT_JUSTIFY_CENTER);
+            return;
+        }
+        radarRoute(dc);
+        radarPeers(dc);
+        radarMe(dc);
+    }
 
+    //! Anéis; no radar completo, também o alcance e o "S" no topo.
+    private function radarRings(dc as Graphics.Dc) as Void {
+        dc.setColor(_gray, Graphics.COLOR_TRANSPARENT);
+        dc.setPenWidth(1);
+        dc.drawCircle(_rcx, _rcy, _rr);
+        dc.drawCircle(_rcx, _rcy, _rr / 2);
+        if (_rMini) {
+            return;
+        }
+        var small = Graphics.FONT_XTINY;
+        dc.drawText(_rcx, _rcy + _rr - dc.getFontHeight(small) - 1, small, distLabel(_rRange),
+                    Graphics.TEXT_JUSTIFY_CENTER);
+        dc.drawText(_rcx, _rcy - _rr, small, "S",
+                    Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
+    }
+
+    //! Traçado do próximo passeio (LiveClient.routeE/N, em metros).
+    private function radarRoute(dc as Graphics.Dc) as Void {
+        var re = _client.routeE;
+        var rn = _client.routeN;
+        var myLat = _lat;
+        var myLng = _lng;
+        if (re.size() < 2 || myLat == null || myLng == null) {
+            return;
+        }
+        var meE = ((myLng - _client.routeLng0) * _client.routeKx).toFloat();
+        var meN = ((myLat - _client.routeLat0) * 110540.0d).toFloat();
+        var lim2 = 9.0 * _rr * _rr;                 // trecho todo além de 3 raios: pula
+        dc.setColor(Graphics.COLOR_ORANGE, Graphics.COLOR_TRANSPARENT);
+        dc.setPenWidth(_rMini ? 2 : 3);
+        var ax = (meE - re[0]) * _rScale;           // tela, a partir do centro
+        var ay = (rn[0] - meN) * _rScale;
+        for (var i = 1; i < re.size(); i++) {
+            var bx = (meE - re[i]) * _rScale;
+            var by = (rn[i] - meN) * _rScale;
+            if (ax * ax + ay * ay <= lim2 || bx * bx + by * by <= lim2) {
+                dc.drawLine(_rcx + ax.toNumber(), _rcy + ay.toNumber(),
+                            _rcx + bx.toNumber(), _rcy + by.toNumber());
+            }
+            ax = bx;
+            ay = by;
+        }
+        dc.setPenWidth(1);
+    }
+
+    //! As pessoas: ponto (a mais próxima, azul e maior), cinza se a posição é
+    //! velha, anel oco na borda se está além do alcance.
+    private function radarPeers(dc as Graphics.Dc) as Void {
         var myLat = _lat;
         var myLng = _lng;
         if (myLat == null || myLng == null) {
-            dc.setColor(fg, Graphics.COLOR_TRANSPARENT);
-            dc.drawText(cx, cy - smallH / 2, small, mini ? "GPS?" : "sem GPS", Graphics.TEXT_JUSTIFY_CENTER);
             return;
         }
-
-        // Sul pra cima, fixo: (leste, norte) → (x pra direita, y pra cima) com
-        // uma rotação de 180° — o leste cai à esquerda, o oeste à direita.
-        var hd = _heading;
-        var cosT = -1.0;
-        var sinT = 0.0;
-
-        // "S" no topo do anel (no mini não cabe: fica só a convenção).
-        if (!mini) {
-            dc.drawText(cx, cy - r, small, "S",
-                        Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
-        }
-
-        // Traçado do próximo passeio.
-        var re = _client.routeE;
-        var rn = _client.routeN;
-        if (re.size() >= 2) {
-            var meE = ((myLng - _client.routeLng0) * _client.routeKx).toFloat();
-            var meN = ((myLat - _client.routeLat0) * 110540.0d).toFloat();
-            var lim = 3.0 * r;                      // trecho todo fora daqui: pula
-            var lim2 = lim * lim;
-            dc.setColor(Graphics.COLOR_ORANGE, Graphics.COLOR_TRANSPARENT);
-            dc.setPenWidth(mini ? 2 : 3);
-            var e0 = re[0] - meE;
-            var n0 = rn[0] - meN;
-            var ax = (e0 * cosT - n0 * sinT) * scale;
-            var ay = (e0 * sinT + n0 * cosT) * scale;
-            for (var i = 1; i < re.size(); i++) {
-                var e1 = re[i] - meE;
-                var n1 = rn[i] - meN;
-                var bx = (e1 * cosT - n1 * sinT) * scale;
-                var by = (e1 * sinT + n1 * cosT) * scale;
-                if (ax * ax + ay * ay <= lim2 || bx * bx + by * by <= lim2) {
-                    dc.drawLine(cx + ax.toNumber(), cy - ay.toNumber(),
-                                cx + bx.toNumber(), cy - by.toNumber());
-                }
-                ax = bx;
-                ay = by;
-            }
-            dc.setPenWidth(1);
-        }
-
-        // As pessoas.
+        var peers = _client.peers;
         var kx = 111320.0d * Math.cos(Math.toRadians(myLat));
         var labels = 0;
         for (var j = 0; j < peers.size(); j++) {
@@ -475,43 +429,142 @@ class PessoasField extends WatchUi.DataField {
                     || !(lo instanceof Lang.Float || lo instanceof Lang.Double || lo instanceof Lang.Number)) {
                 continue;
             }
-            var pe = ((lo.toDouble() - myLng) * kx).toFloat();
-            var pn = ((la.toDouble() - myLat) * 110540.0d).toFloat();
-            var px = (pe * cosT - pn * sinT) * scale;
-            var py = (pe * sinT + pn * cosT) * scale;
+            var px = ((myLng - lo.toDouble()) * kx).toFloat() * _rScale;
+            var py = ((la.toDouble() - myLat) * 110540.0d).toFloat() * _rScale;
             var dpx = Math.sqrt(px * px + py * py).toFloat();
-            var pAge = (p[3] instanceof Lang.Number) ? (p[3] as Number) + (now - _client.peersAt) : 0;
-            var nearest = (p == best);
-            var color = (pAge > STALE_S) ? gray : (nearest ? Graphics.COLOR_BLUE : fg);
-            dc.setColor(color, Graphics.COLOR_TRANSPARENT);
-            if (dpx > r) {
-                // Além do alcance: anel oco na borda, na direção certa.
-                var k = r.toFloat() / dpx;
-                dc.drawCircle(cx + (px * k).toNumber(), cy - (py * k).toNumber(), mini ? 3 : 4);
+            var nearest = (p == _best);
+            dc.setColor((peerAge(p) > STALE_S) ? _gray : (nearest ? Graphics.COLOR_BLUE : _fg),
+                        Graphics.COLOR_TRANSPARENT);
+            if (dpx > _rr) {
+                dc.drawCircle(_rcx + (px * _rr / dpx).toNumber(), _rcy + (py * _rr / dpx).toNumber(),
+                              _rMini ? 3 : 4);
                 continue;
             }
-            var sx = cx + px.toNumber();
-            var sy = cy - py.toNumber();
-            dc.fillCircle(sx, sy, mini ? (nearest ? 5 : 3) : (nearest ? 7 : 5));
-            if (!mini && (nearest || labels < 3) && p[0] instanceof Lang.String) {
-                var label = p[0] as String;
-                if (label.length() > 8) {
-                    var cutLabel = label.substring(0, 8);
-                    label = (cutLabel != null) ? cutLabel : label;
-                }
-                dc.drawText(sx + 10, sy - smallH / 2, small, label, Graphics.TEXT_JUSTIFY_LEFT);
+            dc.fillCircle(_rcx + px.toNumber(), _rcy + py.toNumber(),
+                          _rMini ? (nearest ? 5 : 3) : (nearest ? 7 : 5));
+            if (!_rMini && (nearest || labels < 3)) {
+                peerLabel(dc, p, _rcx + px.toNumber() + 10, _rcy + py.toNumber());
                 labels += 1;
             }
         }
+    }
 
-        // Você: seta no SEU rumo (com o sul pra cima, rumo norte = seta pra
-        // baixo — por isso os 180°); sem rumo, um ponto.
-        dc.setColor(fg, Graphics.COLOR_TRANSPARENT);
-        if (hd != null) {
-            drawArrow(dc, cx, cy, mini ? 7 : 11, hd.toFloat() + 180.0);
-        } else {
-            dc.fillCircle(cx, cy, mini ? 3 : 5);
+    //! Nome (até 8 letras) ao lado do ponto de uma pessoa.
+    private function peerLabel(dc as Graphics.Dc, p as Array, x as Number, y as Number) as Void {
+        var label = p[0];
+        if (!(label instanceof Lang.String)) {
+            return;
         }
+        if (label.length() > 8) {
+            var cut = label.substring(0, 8);
+            if (cut != null) {
+                label = cut;
+            }
+        }
+        dc.drawText(x, y - dc.getFontHeight(Graphics.FONT_XTINY) / 2, Graphics.FONT_XTINY, label,
+                    Graphics.TEXT_JUSTIFY_LEFT);
+    }
+
+    //! Você: seta no SEU rumo (com o sul pra cima, rumo norte = seta pra
+    //! baixo — por isso os 180°); sem rumo, um ponto.
+    private function radarMe(dc as Graphics.Dc) as Void {
+        var hd = _heading;
+        dc.setColor(_fg, Graphics.COLOR_TRANSPARENT);
+        if (hd != null) {
+            drawArrow(dc, _rcx, _rcy, _rMini ? 7 : 11, hd.toFloat() + 180.0);
+        } else {
+            dc.fillCircle(_rcx, _rcy, _rMini ? 3 : 5);
+        }
+    }
+
+    //! Texto ao lado do radar mini: distância e idade da mais próxima (ou
+    //! quantas pessoas há). Só desenha se sobrar uma coluna de ≥ 36 px.
+    private function drawMiniText(dc as Graphics.Dc) as Void {
+        var h = dc.getHeight();
+        var colW = dc.getWidth() - 2 * _rr - 8;
+        if (colW < 36) {
+            return;
+        }
+        var small = Graphics.FONT_XTINY;
+        var smallH = dc.getFontHeight(small);
+        var tx = 3 + 2 * _rr + 5;
+        var first = "";
+        var second = "";
+        if (_bestDist >= 0.0) {
+            first = distLabel(_bestDist);
+            second = ageShort(peerAge(_best));
+        } else if (_client.peers.size() == 0) {
+            first = (_client.peersAt == 0) ? "..." : "0";
+        } else {
+            first = _client.total.format("%d");
+        }
+        var two = second.length() > 0 && h - 6 >= 2 * smallH;
+        var y = (h - 3 - (two ? 2 : 1) * smallH) / 2;
+        dc.setColor(_fg, Graphics.COLOR_TRANSPARENT);
+        if (dc.getTextWidthInPixels(first, small) <= colW + 3) {
+            dc.drawText(tx, y, small, first, Graphics.TEXT_JUSTIFY_LEFT);
+        }
+        if (two && dc.getTextWidthInPixels(second, small) <= colW + 3) {
+            dc.setColor(_gray, Graphics.COLOR_TRANSPARENT);   // a idade, mais apagada
+            dc.drawText(tx, y + smallH, small, second, Graphics.TEXT_JUSTIFY_LEFT);
+        }
+    }
+
+    // ── Resumo (campo pequeno demais pro radar) ─────────────────────────
+
+    private function drawCompact(dc as Graphics.Dc) as Void {
+        var w = dc.getWidth();
+        var h = dc.getHeight();
+        var small = Graphics.FONT_XTINY;
+        var smallH = dc.getFontHeight(small);
+        if (_client.peers.size() == 0 || _bestDist < 0.0) {
+            // Ninguém — ou há gente, mas ainda não sei onde EU estou.
+            var msg = (_client.peers.size() > 0) ? _client.total.format("%d") + " ao vivo"
+                : ((_client.peersAt == 0) ? "..." : "ninguém ao vivo");
+            dc.drawText(w / 2, (h - dc.getFontHeight(Graphics.FONT_SMALL)) / 2 - (h >= 70 ? smallH / 2 : 0),
+                        Graphics.FONT_SMALL, msg, Graphics.TEXT_JUSTIFY_CENTER);
+            return;
+        }
+        // Em cima: quem é, quantas mais e HÁ QUANTO TEMPO é essa posição — na
+        // forma mais longa que couber no campo.
+        var age = peerAge(_best);
+        var line = compactTopLine(dc, age);
+        dc.drawText(w / 2, 2, small, line, Graphics.TEXT_JUSTIFY_CENTER);
+
+        var bodyTop = 2 + smallH;
+        var bodyH = h - 3 - bodyTop - (h >= 70 ? smallH : 0);
+        var text = distLabel(_bestDist);
+        if (age > STALE_S) {
+            dc.setColor(_gray, Graphics.COLOR_TRANSPARENT);   // a pessoa pode não estar mais ali
+        }
+        var font = pickFont(dc, text, w - bodyH - 8, bodyH);
+        var ty = bodyTop + (bodyH - dc.getFontHeight(font)) / 2;
+        var arrowR = (bodyH < 40 ? bodyH : 40) / 2 - 2;
+        var hd = _heading;
+        if (arrowR >= 6 && hd != null) {
+            var x0 = (w - (dc.getTextWidthInPixels(text, font) + 6 + 2 * arrowR)) / 2;
+            drawArrow(dc, x0 + arrowR, bodyTop + bodyH / 2, arrowR, _bestBrg - hd.toFloat());
+            dc.drawText(x0 + 2 * arrowR + 6, ty, font, text, Graphics.TEXT_JUSTIFY_LEFT);
+        } else {
+            dc.drawText(w / 2, ty, font, text, Graphics.TEXT_JUSTIFY_CENTER);
+        }
+    }
+
+    private function compactTopLine(dc as Graphics.Dc, age as Number) as String {
+        var w = dc.getWidth();
+        var small = Graphics.FONT_XTINY;
+        var ago = ageLabel(age);
+        var line = bestName() + " · " + ago;
+        if (_client.total > 1) {
+            var withCount = bestName() + " +" + (_client.total - 1).format("%d") + " · " + ago;
+            if (dc.getTextWidthInPixels(withCount, small) <= w - 4) {
+                line = withCount;
+            }
+        }
+        if (dc.getTextWidthInPixels(line, small) > w - 4) {
+            line = ago;
+        }
+        return line;
     }
 
     //! Idade curta pro radar mini: "30 s", "2 min", "1 h".
