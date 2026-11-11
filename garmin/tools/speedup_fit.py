@@ -37,6 +37,51 @@ MESG_EVENT, MESG_ACTIVITY = 21, 34
 SINT32_INVALID = 0x7FFFFFFF
 
 
+def write_activity(dst, out, t0):
+    """Grava um .fit de ATIVIDADE de bicicleta com 1 registro por segundo.
+
+    `out`: [{lat, lng (semicírculos ou None), dist (m, acumulada), alt (m),
+    power, hr, cad}] — um item por segundo; `t0`: instante do 1º registro, em
+    segundos da época FIT. Devolve (nº de registros, distância total)."""
+    n = len(out)
+    t_end = t0 + n - 1
+    total = out[-1]["dist"]
+    elapsed_ms = max(1, (n - 1) * 1000)
+
+    w = _Writer()
+    w.define(0, MESG_FILE_ID, [(0, _ENUM), (1, _UINT16), (2, _UINT16), (3, _UINT32Z), (4, _UINT32)])
+    w.data(0, 4, 255, 1, (t0 & 0xFFFFFFFF) or 1, t0)              # type 4 = activity
+    w.define(1, MESG_EVENT, [(253, _UINT32), (0, _ENUM), (1, _ENUM), (4, _UINT8)])
+    w.data(1, t0, 0, 0, 0)                                         # timer start
+    # timestamp, lat, long, altitude, distance, enhanced_speed, power, hr, cadence
+    w.define(2, MESG_RECORD, [(253, _UINT32), (0, _SINT32), (1, _SINT32), (2, _UINT16),
+                              (5, _UINT32), (73, _UINT32), (7, _UINT16), (3, _UINT8), (4, _UINT8)])
+    prev = 0.0
+    for k, r in enumerate(out):
+        speed = max(0.0, r["dist"] - prev)                         # m por registro = m/s
+        prev = r["dist"]
+        w.data(2, t0 + k,
+               r["lat"] if r["lat"] is not None else SINT32_INVALID,
+               r["lng"] if r["lng"] is not None else SINT32_INVALID,
+               max(0, min(0xFFFE, round((r["alt"] + 500.0) * 5.0))),
+               round(r["dist"] * 100), round(speed * 1000),
+               min(65000, r["power"]) if r["power"] is not None else 0xFFFF,
+               min(254, r["hr"]) if r["hr"] is not None else 0xFF,
+               min(254, r["cad"]) if r["cad"] is not None else 0xFF)
+    w.data(1, t_end, 0, 4, 0)                                      # timer stop_all
+    summary = [(254, _UINT16), (253, _UINT32), (0, _ENUM), (1, _ENUM), (2, _UINT32),
+               (7, _UINT32), (8, _UINT32), (9, _UINT32)]
+    w.define(3, MESG_LAP, summary)
+    w.data(3, 0, t_end, 9, 1, t0, elapsed_ms, elapsed_ms, round(total * 100))    # lap / stop
+    w.define(4, MESG_SESSION, summary + [(5, _ENUM), (6, _ENUM), (25, _UINT16), (26, _UINT16)])
+    w.data(4, 0, t_end, 8, 1, t0, elapsed_ms, elapsed_ms, round(total * 100), 2, 0, 0, 1)
+    w.define(5, MESG_ACTIVITY, [(253, _UINT32), (0, _UINT32), (1, _UINT16), (2, _ENUM),
+                                (3, _ENUM), (4, _ENUM)])
+    w.data(5, t_end, elapsed_ms, 1, 0, 26, 1)                      # manual / activity / stop
+    Path(dst).write_bytes(w.finish())
+    return n, total
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("src")
@@ -79,42 +124,7 @@ def main():
         })
 
     t0 = int(recs[0]["timestamp"].timestamp()) - FIT_EPOCH_OFFSET
-    n = len(out)
-    t_end = t0 + n - 1
-    total = out[-1]["dist"]
-    elapsed_ms = max(1, (n - 1) * 1000)
-
-    w = _Writer()
-    w.define(0, MESG_FILE_ID, [(0, _ENUM), (1, _UINT16), (2, _UINT16), (3, _UINT32Z), (4, _UINT32)])
-    w.data(0, 4, 255, 1, (t0 & 0xFFFFFFFF) or 1, t0)              # type 4 = activity
-    w.define(1, MESG_EVENT, [(253, _UINT32), (0, _ENUM), (1, _ENUM), (4, _UINT8)])
-    w.data(1, t0, 0, 0, 0)                                         # timer start
-    # timestamp, lat, long, altitude, distance, enhanced_speed, power, hr, cadence
-    w.define(2, MESG_RECORD, [(253, _UINT32), (0, _SINT32), (1, _SINT32), (2, _UINT16),
-                              (5, _UINT32), (73, _UINT32), (7, _UINT16), (3, _UINT8), (4, _UINT8)])
-    prev = 0.0
-    for k, r in enumerate(out):
-        speed = max(0.0, r["dist"] - prev)                         # m por registro = m/s
-        prev = r["dist"]
-        w.data(2, t0 + k,
-               r["lat"] if r["lat"] is not None else SINT32_INVALID,
-               r["lng"] if r["lng"] is not None else SINT32_INVALID,
-               max(0, min(0xFFFE, round((r["alt"] + 500.0) * 5.0))),
-               round(r["dist"] * 100), round(speed * 1000),
-               min(65000, r["power"]) if r["power"] is not None else 0xFFFF,
-               min(254, r["hr"]) if r["hr"] is not None else 0xFF,
-               min(254, r["cad"]) if r["cad"] is not None else 0xFF)
-    w.data(1, t_end, 0, 4, 0)                                      # timer stop_all
-    summary = [(254, _UINT16), (253, _UINT32), (0, _ENUM), (1, _ENUM), (2, _UINT32),
-               (7, _UINT32), (8, _UINT32), (9, _UINT32)]
-    w.define(3, MESG_LAP, summary)
-    w.data(3, 0, t_end, 9, 1, t0, elapsed_ms, elapsed_ms, round(total * 100))    # lap / stop
-    w.define(4, MESG_SESSION, summary + [(5, _ENUM), (6, _ENUM), (25, _UINT16), (26, _UINT16)])
-    w.data(4, 0, t_end, 8, 1, t0, elapsed_ms, elapsed_ms, round(total * 100), 2, 0, 0, 1)
-    w.define(5, MESG_ACTIVITY, [(253, _UINT32), (0, _UINT32), (1, _UINT16), (2, _ENUM),
-                                (3, _ENUM), (4, _ENUM)])
-    w.data(5, t_end, elapsed_ms, 1, 0, 26, 1)                      # manual / activity / stop
-    Path(a.dst).write_bytes(w.finish())
+    n, total = write_activity(a.dst, out, t0)
 
     mins = (recs[-1]["timestamp"] - recs[0]["timestamp"]).total_seconds() / 60
     print(f"{a.dst}: {n} registros ({n / 60:.1f} min no simulador) = {mins:.0f} min de pedal, "

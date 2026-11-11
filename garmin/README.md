@@ -169,6 +169,7 @@ python -m venv .venv && .venv/bin/pip install -r backend/requirements.txt garmin
 .venv/bin/python garmin/tools/check_fit_course.py    # FIT conferido com o decodificador oficial
 .venv/bin/python garmin/tools/test_backend.py        # endpoints /garmin/…, sem rede
 node garmin/tools/kj_parity.mjs                      # modelo × simulateRide do amora (sintético)
+.venv/bin/python garmin/tools/course_to_ride.py percurso.fit pedal.fit   # pedal simulado ao longo de um percurso, pro simulador
 .venv/bin/python garmin/tools/fit_to_json.py pedal.fit > pedal.json
 node garmin/tools/kj_parity.mjs pedal.json           # idem, num pedal de verdade
 ```
