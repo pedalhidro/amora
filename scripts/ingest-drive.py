@@ -526,6 +526,10 @@ def herdado(g, alvo: str) -> dict | None:
                      if geo is not None else None,
         # Só o ingest-whatsapp grava schema:datePublished: marca a cópia do zap.
         "do_zap": (m, _SCHEMA.datePublished, None) in g,
+        # Alguém ESCOLHEU publicar esta mídia sem o EXIF (anonimizada) ou
+        # reduzida (comprimida): o original nunca pode tomar o lugar dela.
+        "protegida": any(str(o) == "true" for pred in ("anonymized", "compressed")
+                         for o in g.objects(m, rdflib.URIRef(PH_NS + pred))),
     }
 
 
@@ -552,6 +556,11 @@ def motivo_substituir(h: dict | None, tem_gps: bool, tem_datahora: bool) -> str 
     """Por que o original deve tomar o lugar da mídia que já está lá (ou None =
     é só uma duplicata)."""
     if h is None:
+        return None
+    if h.get("protegida"):
+        # ph:anonymized / ph:compressed: o arquivo publicado foi limpo de
+        # propósito. Substituir pelo original devolveria o EXIF/GPS que a
+        # pessoa tirou — fica como duplicata, sempre.
         return None
     # GPS de verdade ganha de "sem coordenada" E de coordenada aproximada
     # (colocada à mão / interpolada).

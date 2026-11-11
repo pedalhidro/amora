@@ -336,9 +336,12 @@ def candidatas(ctx: Contexto, p, com_hash: bool = True) -> tuple[list[dict], Cou
             "grupo": grupo, "estado": estado, "alvo": alvo,
             "editada": bool(f.hasadjustments), "local": bool(f.path),
             "previa": previas[0] if previas else None,
-            # Decisão: a da revisão, se houver; senão o álbum aprovado vale "sobe".
-            "decisao": dec["decisao"] if dec else ("aprovar" if album_ok else None),
-            "via": "revisão" if dec else ("álbum" if album_ok else None),
+            # Decisão: a da revisão, se houver; senão o álbum aprovado vale "sobe"
+            # — MENOS pra foto com GPS LONGE da rota: ela pode ser de casa, do
+            # caminho, e sobe com o EXIF inteiro. Essa só com um "sim" explícito
+            # na folha de contato, mesmo estando no álbum.
+            "decisao": dec["decisao"] if dec else ("aprovar" if (album_ok and grupo != "longe") else None),
+            "via": "revisão" if dec else ("álbum" if (album_ok and grupo != "longe") else None),
             "albuns": album_ok, "confianca": conf,
         })
     ctx.salva_cache()
@@ -569,7 +572,7 @@ def cmd_revisar(a) -> None:
 LIMITE_REQ = 31 * 1024 * 1024       # o Cloud Run recusa corpo > 32 MiB
 
 
-def fila(ctx: Contexto, so_passeio=None) -> tuple[list[tuple], Counter]:
+def fila(ctx: Contexto, so_passeio=None, incluir_fora: bool = False) -> tuple[list[tuple], Counter]:
     """[(foto do Fotos, candidata, passeio | None)] do que está aprovado (pela
     revisão ou por álbum) e ainda sem desfecho no livro. Foto de álbum aprovado
     que não cai na janela de passeio nenhum entra SEM passeio."""
@@ -587,6 +590,8 @@ def fila(ctx: Contexto, so_passeio=None) -> tuple[list[tuple], Counter]:
             elif c["decisao"] == "aprovar":
                 vistos.add(c["uuid"])
                 out.append((por_uuid[c["uuid"]], c, p))
+            elif c.get("albuns") and c["grupo"] == "longe":
+                resumo["de álbum aprovado, mas com GPS LONGE da rota (pedem um sim na folha de contato)"] += 1
             else:
                 resumo["sem decisão (não sobem)"] += 1
     if not so_passeio and ctx.albuns_ok:
@@ -599,6 +604,13 @@ def fila(ctx: Contexto, so_passeio=None) -> tuple[list[tuple], Counter]:
                 continue
             dec = ctx.revisao.get(f.uuid)
             if dec and dec["decisao"] == "rejeitar":
+                continue
+            # Em álbum aprovado, mas fora da janela de QUALQUER passeio: não dá
+            # pra conferir contra rota nenhuma, e a coordenada (se tiver) pode
+            # ser de qualquer lugar. Só sobe com --fora-de-janela, depois de
+            # alguém olhar a lista (`candidatas` não cobre estas).
+            if not incluir_fora:
+                resumo["de álbum aprovado, mas fora da janela de qualquer passeio (NÃO sobem sem --fora-de-janela)"] += 1
                 continue
             ex = f.exif_info
             tem_camera = bool(ex and ex.camera_make)
@@ -701,7 +713,7 @@ def cmd_enviar(a) -> None:
     ctx = Contexto(a.biblioteca, a.servidor.rstrip("/"))
     servidor = ctx.servidor
     so = ctx.passeio(a.passeio) if a.passeio else None
-    itens, resumo = fila(ctx, so)
+    itens, resumo = fila(ctx, so, a.fora_de_janela)
     if a.sem_videos:
         itens = [x for x in itens if x[1]["kind"] == "image"]
     if a.uuid:
@@ -948,6 +960,9 @@ def main() -> None:
     s.add_argument("--limite", type=int, help="no máximo N fotos")
     s.add_argument("--uuid", action="append", help="só esta(s) foto(s) da fila (repetível)")
     s.add_argument("--sem-videos", action="store_true", help="só as fotos")
+    s.add_argument("--fora-de-janela", action="store_true",
+                   help="inclui as de álbum aprovado que não caem na janela de nenhum passeio "
+                        "(sobem sem passeio — confira antes)")
     s.add_argument("--apply", action="store_true", help="baixa e envia pra valer (default: dry-run)")
     s.add_argument("--iniciar-livro", action="store_true",
                    help="com --apply: cria o livro-razão se ele ainda não existe nesta máquina")

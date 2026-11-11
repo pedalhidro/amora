@@ -90,6 +90,7 @@ TZ_SP = timezone(timedelta(hours=-3))
 
 FOLGA_S = 10 * 60          # antes da saída / depois da chegada
 COBERTURA_MIN = 0.6        # a gravação tem que cobrir ≥ isto da janela do passeio
+DESVIO_MAX_M = 200         # mediana da distância rastro→rota acima disto = não é este passeio
 BURACO_S = 180             # pausa na gravação maior que isto não é atravessada
 RAIO_M = 60                # --hora: a gravação "passa pelo ponto" a até isto dele
 PASSAGEM_S = 300           # --hora: mais que isto longe do ponto = OUTRA passagem
@@ -136,6 +137,45 @@ def _inicio(trip: dict) -> int | None:
     return int(d.timestamp()) if d else None
 
 
+_ROTAS: dict[str, list] | None = None
+
+
+def rota_do_passeio(servidor: str, iri: str) -> list | None:
+    """A rota planejada do passeio (routes.json), pra conferir se a gravação
+    escolhida é mesmo DESTE passeio."""
+    global _ROTAS
+    if _ROTAS is None:
+        _ROTAS = {}
+        try:
+            req = urllib.request.Request(f"{servidor}/routes.json", headers={"User-Agent": A.USER_AGENT})
+            with urllib.request.urlopen(req, timeout=120, context=A._contexto_ssl()) as r:
+                for e in json.loads(r.read().decode("utf-8")).get("routes", []):
+                    if e.get("tourIri") and e.get("latlngs"):
+                        _ROTAS[e["tourIri"]] = e["latlngs"]
+        except Exception as e:                  # noqa: BLE001
+            print(f"  ⚠ não li as rotas ({e}); sigo sem a conferência espacial", file=sys.stderr)
+    return _ROTAS.get(iri)
+
+
+def desvio_da_rota_m(pontos: list, rota: list) -> float:
+    """Mediana da distância (m) dos pontos do rastro à rota planejada."""
+    ds = []
+    for _, lat, lng in pontos[::max(1, len(pontos) // 400)]:
+        kx = 111_320 * math.cos(math.radians(lat))
+        melhor, a = float("inf"), None
+        for la, lo in rota:
+            b = ((lo - lng) * kx, (la - lat) * 110_540)
+            if a is not None:
+                dx, dy = b[0] - a[0], b[1] - a[1]
+                den = dx * dx + dy * dy
+                k = 0.0 if den == 0 else max(0.0, min(1.0, -(a[0] * dx + a[1] * dy) / den))
+                melhor = min(melhor, math.hypot(a[0] + k * dx, a[1] + k * dy))
+            a = b
+        ds.append(melhor)
+    ds.sort()
+    return ds[len(ds) // 2] if ds else float("inf")
+
+
 def indice_de_trips(usuario: str, desde: datetime, sem_rede: bool) -> dict[int, int]:
     """{trip id: início (epoch)} — do cache e, se der, da listagem da conta."""
     idx: dict[int, int] = {}
@@ -164,18 +204,31 @@ def indice_de_trips(usuario: str, desde: datetime, sem_rede: bool) -> dict[int, 
     return idx
 
 
-def rastro_do_passeio(p, jan: tuple[int, int], idx: dict[int, int], sem_rede: bool) -> dict | None:
-    """O rastro CORTADO na janela do passeio: {'trip', 'cobertura', 'pontos': [[t, lat, lng]…]}.
-    Cacheado em ignore/tracks/<slug>.json (chave = a janela: mudou a hora do
-    passeio, refaz)."""
+def rastro_do_passeio(p, jan: tuple[int, int], idx: dict[int, int], sem_rede: bool,
+                      rota: list | None = None) -> dict | None:
+    """O rastro CORTADO na janela do passeio: {'trip', 'cobertura', 'desvio_m',
+    'pontos': [[t, lat, lng]…]}. Cacheado em ignore/tracks/<slug>.json (chave =
+    a janela: mudou a hora do passeio, refaz).
+
+    Com `rota` (a planejada), confere que a gravação é DESTE passeio: a escolha
+    do trip é só pelo horário, e quem gravou pode ter feito outra coisa naquela
+    hora. Mediana rastro→rota > DESVIO_MAX_M = não serve (devolve None)."""
     arq = TRACKS / f"{p.slug}.json"
+    d = None
     if arq.exists():
         try:
             d = json.loads(arq.read_text(encoding="utf-8"))
-            if d.get("janela") == list(jan):
-                return d if d.get("pontos") else None
+            if d.get("janela") != list(jan):
+                d = None
         except ValueError:
-            pass
+            d = None
+    if d is not None:
+        if not d.get("pontos"):
+            return None
+        if rota and "desvio_m" not in d:
+            d["desvio_m"] = round(desvio_da_rota_m(d["pontos"], rota))
+            arq.write_text(json.dumps(d), encoding="utf-8")
+        return None if (rota and d.get("desvio_m", 0) > DESVIO_MAX_M) else d
     sai, che = jan
     cands = [i for i, t0 in idx.items() if sai - 8 * 3600 <= t0 <= che]
     melhor = None
@@ -203,9 +256,13 @@ def rastro_do_passeio(p, jan: tuple[int, int], idx: dict[int, int], sem_rede: bo
                 ralo.append([q.t, round(q.lat, 6), round(q.lng, 6)])
                 ult = q
         out = {"janela": list(jan), "trip": tid, "cobertura": round(cob, 3), "pontos": ralo}
+        if rota and ralo:
+            out["desvio_m"] = round(desvio_da_rota_m(ralo, rota))
     TRACKS.mkdir(parents=True, exist_ok=True)
     arq.write_text(json.dumps(out), encoding="utf-8")
-    return out if out["pontos"] else None
+    if not out["pontos"] or (rota and out.get("desvio_m", 0) > DESVIO_MAX_M):
+        return None
+    return out
 
 
 def posicao_em(pontos: list, ts: list[int], t: float) -> tuple[float, float] | str:
@@ -302,7 +359,7 @@ def modo_hora(a, servidor: str, passeios, g) -> None:
     tot, planos = Counter(), []           # planos: (hash, kind, tem_geo, epoch | None=remover)
     for p, ms in sorted(trabalho, key=lambda x: x[0].data, reverse=True):
         jan = janela(g, p)
-        r = rastro_do_passeio(p, jan, idx, a.sem_rede) if jan else None
+        r = rastro_do_passeio(p, jan, idx, a.sem_rede, rota_do_passeio(servidor, p.iri)) if jan else None
         c = Counter()
         for h, kind, real, pos, tem_geo, est in ms:
             if est is not None and (real or not pos):
@@ -475,10 +532,11 @@ def main() -> None:
             tot["passeio sem saída/chegada"] += len(cand)
             print(f"  {p.data.date()} {p.edicao:13} {len(cand):4} mídias — passeio sem hora de saída/chegada")
             continue
-        r = rastro_do_passeio(p, jan, idx, a.sem_rede)
+        r = rastro_do_passeio(p, jan, idx, a.sem_rede, rota_do_passeio(servidor, p.iri))
         if r is None:
             tot["passeio sem gravação"] += len(cand)
-            print(f"  {p.data.date()} {p.edicao:13} {len(cand):4} mídias — sem gravação que cubra o passeio")
+            print(f"  {p.data.date()} {p.edicao:13} {len(cand):4} mídias — sem gravação que cubra o passeio "
+                  f"E siga a rota dele")
             continue
         pts = r["pontos"]
         ts = [q[0] for q in pts]

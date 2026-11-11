@@ -283,7 +283,9 @@ one optional hosted deploy target, not a dependency.
   baixa do iCloud uma a uma e sobe o aprovado pelo mesmo caminho de dedup /
   substituição / lápide das ingestões do Drive, com chave `photos:<uuid>` no
   livro. Nada sobe sem aprovação — da revisão ou de um álbum listado em
-  `.sync-state/photos-albums.json` (o "Amora" é o do dia a dia). Autoria pela
+  `.sync-state/photos-albums.json` (o "Amora" é o do dia a dia) — menos a
+  foto com GPS LONGE da rota (pode ser de casa; pede um "sim" explícito na
+  folha) e a que não cai na janela de passeio nenhum (`--fora-de-janela`). Autoria pela
   CÂMERA (`.sync-state/photos-cameras.json`; sem câmera no EXIF = sem
   autoria), quem subiu = a dona da biblioteca; foto editada no Fotos sobe na
   versão EDITADA. A comparação com o amora na listagem usa o pHash da PRÉVIA
@@ -302,7 +304,9 @@ one optional hosted deploy target, not a dependency.
   relógio de câmera, `--hora` é o caminho inverso (hora ESTIMADA pra mídia
   posicionada à mão — ver Conventions). A gravação é um trip do RideWithGPS da conta de quem
   mantém o acervo (os Strava do catálogo são quase todos de outras pessoas —
-  inacessíveis), escolhido por cobrir ≥ 60 % da janela saída…chegada, CORTADO
+  inacessíveis), escolhido por cobrir ≥ 60 % da janela saída…chegada E por
+  seguir a rota planejada (mediana rastro→rota ≤ 200 m — a escolha é pelo
+  horário, e em 4 de 75 passeios a gravação era de outra coisa), CORTADO
   nessa janela (± 10 min — fora dela é o caminho de casa de uma pessoa só) e
   guardado só em `ignore/tracks/`: nada do rastro é publicado. Só preenche o
   que está vazio; buraco > 3 min na gravação não é atravessado; passeio sem
@@ -1538,7 +1542,10 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
   hora do vídeo original vem do `CreationDate` (Apple, com fuso); o
   `CreateDate` (mvhd) só vale se cair a ≤ 36 h do passeio — em arquivo que
   passou por app ele é a hora em que foi SALVO. No livro vira `ingested` com `replaced:
-  <motivo>` e `media` = o hash antigo. `--sem-substituir` desliga. Limites:
+  <motivo>` e `media` = o hash antigo. `--sem-substituir` desliga. Mídia
+  `ph:anonymized`/`ph:compressed` NUNCA é substituída (`herdado["protegida"]`):
+  o arquivo publicado foi limpo de propósito, e o original devolveria o EXIF
+  que a pessoa tirou. Limites:
   `thumb`/`large` têm cache imutável de 1 ano na mesma chave (quem já viu a
   cópia segue vendo a versão antiga) e um `original.jpg` antigo sobra no bucket
   quando o original novo é `.heic`.
