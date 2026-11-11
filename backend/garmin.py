@@ -42,7 +42,6 @@ QUEUE_ITEM_TTL_S = 30 * 86400   # um envio some da lista depois de 30 dias
 LIST_NEXT, LIST_RECENT, LIST_ROUTES = 6, 6, 10
 PREVIEW_PTS = 60                # pontos do traçado na ficha (MapView do relógio)
 LIVE_MAX_PEERS = 30             # pessoas por resposta do /garmin/live
-GEOM_TTL_S = 6 * 3600           # cache da geometria cheia buscada no RideWithGPS
 UPCOMING_GRACE_S = 6 * 3600     # passeio que saiu há < 6 h ainda é "próximo"
 
 # São Paulo não tem horário de verão desde 2019: UTC−3 fixo.
@@ -52,17 +51,6 @@ _CODE_RE = re.compile(r"[0-9a-hjkmnp-tv-z]{6}")
 _REF_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9\-]{0,80}")
 
 _queue_lock = threading.Lock()
-_geom_lock = threading.Lock()
-_geom_cache = {}                # (provider, id) -> (instante, dict geometria)
-GEOM_CACHE_MAX = 256            # > nº de passeios: um crawl do /garmin/course
-                                # não fica rebuscando o RideWithGPS
-# O /garmin/course é público e sem auth, e a geometria cheia de um passeio do
-# RideWithGPS é buscada LÁ com as credenciais do coletivo. O cache acima some
-# a cada cold start do Cloud Run, então sem um freio um crawler varrendo os
-# passeios viraria uma rajada de fetches autenticados a cada instância nova.
-RWGPS_MIN_GAP_S = 5             # no máx. 1 fetch a cada 5 s (o resto: traçado grosso)
-GEOM_FAIL_TTL_S = 600           # rota que falhou: não insiste por 10 min
-_rwgps_gate = [0.0]             # instante do último fetch iniciado
 
 
 def norm_code(code):
@@ -254,59 +242,28 @@ def register(app, m):
 
     # ── Geometria cheia (percurso) ──────────────────────────────────────
     def _tour_geometry(it):
-        """{latlngs, pois, eles?} do traçado de um passeio, na melhor
-        resolução disponível. routes.json guarda ≤ 400 pontos por rota (um
-        ponto a cada ~100 m num pedal de 40 km) — grosso demais pra navegar
-        esquina a esquina —, então: rota do amora → o estado salvo (geometria
-        cheia); RideWithGPS → rebusca o GPX (com altitude), cacheado e com
-        freio (RWGPS_MIN_GAP_S); se a rede falhar ou o freio segurar, cai no
-        traçado do routes.json."""
+        """({latlngs, pois}, aproximado?) do traçado de um passeio.
+
+        Só a rota HOSPEDADA NO AMORA tem a geometria cheia aqui (o estado da
+        rota salva). Passeio com rota no RideWithGPS sai com o traçado que o
+        routes.json já guarda — ≤ 400 pontos, um a cada ~100 m num pedal de
+        40 km: serve pra ver o caminho, corta esquina na navegação curva a
+        curva — e é marcado como aproximado. Nada é buscado no RideWithGPS:
+        este endpoint é público e a busca usaria as credenciais do coletivo."""
         import rwgps
         r = it["route"]
-        key = (r.get("provider") or "rwgps", str(r.get("id") or ""))
-        if key[0] == "amora":
-            _rid, entry = m._find_saved_route(key[1])
+        if (r.get("provider") or "rwgps") == "amora":
+            _rid, entry = m._find_saved_route(str(r.get("id") or ""))
             if isinstance(entry, dict) and isinstance(entry.get("state"), dict):
                 try:
-                    return rwgps.amora_route_geometry(entry["state"])
+                    return rwgps.amora_route_geometry(entry["state"]), False
                 except Exception as e:  # noqa: BLE001
-                    print(f"[garmin] rota amora {key[1]} não decodifica: {e}")
-            return {"latlngs": r["latlngs"], "pois": r.get("pois") or []}
-        coarse = {"latlngs": r["latlngs"], "pois": r.get("pois") or []}
-        now = time.time()
-        with _geom_lock:
-            hit = _geom_cache.get(key)
-            if hit is not None:
-                age = now - hit[0]
-                if hit[1] is not None and age < GEOM_TTL_S:
-                    return hit[1]
-                if hit[1] is None and age < GEOM_FAIL_TTL_S:
-                    return coarse           # falhou há pouco: não insiste
-            if now - _rwgps_gate[0] < RWGPS_MIN_GAP_S:
-                return coarse               # freio: fica o traçado do routes.json
-            _rwgps_gate[0] = now
-        geom = None
-        try:
-            status, text = rwgps.http_get(rwgps.decorate_rwgps(
-                f"https://ridewithgps.com/routes/{key[1]}.gpx"))
-            pts = rwgps.parse_gpx_points(text) if status == 200 else []
-            if len(pts) >= 2:
-                eles = [p.get("ele") for p in pts]
-                geom = {"latlngs": [[p["lat"], p["lon"]] for p in pts],
-                        "pois": rwgps.parse_gpx_pois(text),
-                        "eles": eles if all(isinstance(e, (int, float)) for e in eles) else None}
-        except Exception as e:  # noqa: BLE001
-            print(f"[garmin] GPX do RideWithGPS {key[1]} falhou: {e}")
-        with _geom_lock:
-            _geom_cache.pop(key, None)          # reinsere no fim (mais novo)
-            _geom_cache[key] = (now, geom)      # None = falha (GEOM_FAIL_TTL_S)
-            while len(_geom_cache) > GEOM_CACHE_MAX:
-                _geom_cache.pop(next(iter(_geom_cache)))   # o mais antigo
-        return geom if geom is not None else coarse
+                    print(f"[garmin] rota amora {r.get('id')} não decodifica: {e}")
+        return {"latlngs": r["latlngs"], "pois": r.get("pois") or []}, True
 
     def _geometry(it):
         if it["k"] == "t":
-            return _tour_geometry(it)
+            return _tour_geometry(it)[0]
         import rwgps
         return rwgps.amora_route_geometry(it["entry"]["state"])
 
@@ -361,7 +318,9 @@ def register(app, m):
     def garmin_item(kind, ref):
         """Ficha de um passeio (`t`) ou rota salva (`r`): nome, quando, de
         onde sai, km, subida, kJ + faixa do censo e o traçado reamostrado a
-        ≤ 60 pontos pra pré-visualização no mapa do aparelho."""
+        ≤ 60 pontos pra pré-visualização no mapa do aparelho. `approx: true`
+        = o percurso desse passeio é o traçado grosso do routes.json (a rota
+        dele não está hospedada no amora)."""
         it = _find(kind, ref)
         if it is None:
             abort(404)
@@ -370,6 +329,8 @@ def register(app, m):
         if it["k"] == "t":
             latlngs = it["route"]["latlngs"]
             kj, asc = it["kj"], None
+            if _tour_geometry(it)[1]:
+                out["approx"] = True       # rota fora do amora: traçado grosso
             out["when"] = _when_label(it["dt"])
             try:
                 from rdflib import Namespace, URIRef
@@ -403,7 +364,7 @@ def register(app, m):
         try:
             geom = _geometry(it)
             data = fit_course.encode_course(it["n"] or it["id"], geom["latlngs"],
-                                            geom.get("pois"), geom.get("eles"))
+                                            geom.get("pois"))
         except Exception as e:  # noqa: BLE001
             print(f"[garmin] percurso {kind}/{ref} falhou: {e}")
             abort(404)

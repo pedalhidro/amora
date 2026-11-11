@@ -142,15 +142,15 @@ código" com o campo vazio despareia.
 - A fila de envios é o `garmin_queue.json` no store (bucket em produção):
   até 10 itens por código, 30 dias. Em memória ela sumiria quando o Cloud Run
   escala pra zero entre o envio no celular e a abertura do app no aparelho.
-- O percurso de um passeio usa a geometria cheia: rota do amora → o estado
-  salvo; RideWithGPS → rebusca o GPX (com altitude, cache de 6 h); cai nos
-  ≤ 400 pontos do `routes.json` se isso falhar ou se o freio segurar. O
-  freio: no máximo um fetch no RideWithGPS a cada 5 s e 10 min sem insistir
-  numa rota que falhou — o endpoint é público, a busca usa as credenciais do
-  coletivo e o cache some a cada cold start.
-- Rotas salvas do amora não têm elevação, então o percurso delas sai **sem
-  altitude** (sem perfil de subida no aparelho) e **sem** pontos de percurso
-  com kJ por subida.
+- O percurso só tem a geometria cheia quando a rota está **hospedada no
+  amora** (rota salva, ou passeio cuja rota é uma rota salva). Passeio com
+  rota no RideWithGPS sai com o traçado do `routes.json` — ≤ 400 pontos, um a
+  cada ~100 m num pedal de 40 km — e a ficha vem com `approx: true` (o app
+  mostra "traçado aproximado"). O backend não busca nada no RideWithGPS: o
+  endpoint é público e a busca usaria as credenciais do coletivo.
+- Nenhum percurso tem altitude (o estado da rota salva e o `routes.json` não
+  guardam elevação): o aparelho não mostra perfil de subida, e não há pontos
+  de percurso com kJ por subida.
 
 ## O que está testado
 

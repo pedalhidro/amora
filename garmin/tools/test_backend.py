@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Teste dos endpoints /garmin/… (backend/garmin.py) com o test client do
 Flask, sobre uma CÓPIA temporária do estado do repo — nada é escrito em web/
-e nenhuma rede é usada (o fetch do RideWithGPS é trocado por uma falha, que
-é o caminho de fallback).
+e nenhuma rede é usada (o backend não busca nada no RideWithGPS; o teste
+troca o fetch por um erro pra garantir).
 
     pip install -r backend/requirements.txt garmin-fit-sdk
     python garmin/tools/test_backend.py
@@ -52,7 +52,6 @@ def main():
         sys.path.insert(0, str(REPO / "backend"))
         import main as backend
         import rwgps
-        rwgps.http_get = lambda url, accept=None: (503, "")   # sem rede no teste
         c = backend.app.test_client()
 
         # ── lista ────────────────────────────────────────────────────────
@@ -96,36 +95,24 @@ def main():
             assert len(msgs["record_mesgs"]) >= min_recs
         assert c.get("/garmin/course/r/nao-existe.fit").status_code == 404
 
-        # ── freio do RideWithGPS ─────────────────────────────────────────
-        # Passeios com rota no RideWithGPS: a geometria cheia é buscada lá.
-        import garmin
+        # ── nada é buscado no RideWithGPS ────────────────────────────────
+        # Passeio com rota lá: o percurso sai do routes.json (aproximado).
         rw = [r for r in json.loads((tmp / "routes.json").read_text())["routes"]
               if r.get("provider") == "rwgps" and r.get("latlngs") and r.get("slug")]
-        assert len(rw) >= 3
-        calls = []
-        gpx = ('<gpx><trk><trkseg>' + ''.join(
-            f'<trkpt lat="{-23.5 - i * 1e-4}" lon="-46.6"><ele>{760 + i}</ele></trkpt>'
-            for i in range(300)) + '</trkseg></trk></gpx>')
+        am = [r for r in json.loads((tmp / "routes.json").read_text())["routes"]
+              if r.get("provider") == "amora" and r.get("latlngs") and r.get("slug")]
+        assert rw
 
-        def fake_get(url, accept=None):
-            calls.append(url)
-            return (200, gpx)
-        rwgps.http_get = fake_get
-        garmin._geom_cache.clear()
-        garmin._rwgps_gate[0] = 0.0
-        fit = lambda slug: c.get(f"/garmin/course/t/{slug}.fit")  # noqa: E731
-        full = fit(rw[0]["slug"])                 # 1º pedido: busca no RideWithGPS
-        assert full.status_code == 200 and len(calls) == 1
-        assert fit(rw[0]["slug"]).data[14:] != b"" and len(calls) == 1      # cache
-        held = fit(rw[1]["slug"])                 # outra rota, em seguida: freio
-        assert held.status_code == 200 and len(calls) == 1
-        garmin._rwgps_gate[0] = 0.0               # passou o intervalo
-        assert fit(rw[1]["slug"]).status_code == 200 and len(calls) == 2
-        rwgps.http_get = lambda url, accept=None: (calls.append(url), (503, ""))[1]
-        garmin._rwgps_gate[0] = 0.0
-        assert fit(rw[2]["slug"]).status_code == 200 and len(calls) == 3    # falhou
-        garmin._rwgps_gate[0] = 0.0
-        assert fit(rw[2]["slug"]).status_code == 200 and len(calls) == 3    # não insiste
+        def no_network(url, accept=None):
+            raise AssertionError(f"buscou na rede: {url}")
+        rwgps.http_get = no_network
+        assert c.get(f"/garmin/course/t/{rw[0]['slug']}.fit").status_code == 200
+        assert c.get(f"/garmin/item/t/{rw[0]['slug']}").get_json()["approx"] is True
+        assert "approx" not in ri                      # rota salva: geometria cheia
+        saved = {m_["slug"] for m_ in c.get("/saved-routes").get_json()["routes"]}
+        for r in am:                                   # rota amora presente → cheia
+            item = c.get(f"/garmin/item/t/{r['slug']}").get_json()
+            assert ("approx" not in item) == (r["id"] in saved), (r["slug"], item.get("approx"))
 
         # ── pareamento + envio ───────────────────────────────────────────
         send = lambda **kw: c.post("/garmin/send", json=kw)  # noqa: E731
