@@ -10151,6 +10151,11 @@ function openRouteModal(id) {
     metaParts.push(
       `<button type="button" class="linkbtn highlight-route-btn">Destacar rota ★</button>`,
     );
+    if (entry.slug || tourId) {
+      metaParts.push(
+        `<button type="button" class="linkbtn garmin-send-btn" title="Baixar o percurso em .fit (Garmin Connect) ou mandar pro app Amora do aparelho">⌚ Garmin</button>`,
+      );
+    }
   }
   if (entry.date) {
     metaParts.push(
@@ -10187,6 +10192,9 @@ function openRouteModal(id) {
   });
   routeModalMeta.querySelector('.edit-tour-btn')?.addEventListener('click', () => {
     openTourModal(tourId);
+  });
+  routeModalMeta.querySelector('.garmin-send-btn')?.addEventListener('click', () => {
+    garminAction('t', entry.slug || tourId);
   });
 
   // Resumo do passeio: view legível a partir de tours.ttl. Sem tour vinculado,
@@ -17569,6 +17577,100 @@ async function copySavedRouteLink(slug) {
   }
 }
 
+// ── Garmin ─────────────────────────────────────────────────────────────────
+// O ⌚ de um passeio ('t') ou rota salva ('r'):
+//   • sem aparelho pareado → baixa o percurso em .fit (o Garmin Connect
+//     importa; serve pra qualquer pessoa) e oferece "Parear aparelho";
+//   • com aparelho pareado → manda pra lista "enviadas por você" do app Amora
+//     do relógio/ciclocomputador (garmin/amora), que baixa o percurso e
+//     entrega à navegação nativa.
+// O pareamento é por CÓDIGO: o aparelho sorteia 6 caracteres e mostra na tela
+// de início; a pessoa digita aqui uma vez (localStorage). Backend:
+// backend/garmin.py; o SW deixa /garmin/ passar direto pra rede.
+const GARMIN_CODE_KEY = 'phidro:garminCode';
+
+function garminAction(kind, id) {
+  const code = storage.get(GARMIN_CODE_KEY) || '';
+  if (code) sendToGarmin(kind, id, code);
+  else exportGarminFit(kind, id);
+}
+
+async function exportGarminFit(kind, id) {
+  const fname = `${id}.fit`;
+  const type = 'application/vnd.ant.fit';
+  let blob;
+  try {
+    const res = await fetch(`./garmin/course/${kind}/${encodeURIComponent(id)}.fit`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    blob = await res.blob();
+  } catch (err) {
+    showToast(`Não deu pra gerar o .fit (${err.message})`);
+    return;
+  }
+  const done = () => showToastWithAction('Percurso .fit pronto: abra com o Garmin Connect.',
+    'Parear aparelho', () => pairGarmin(kind, id), 10000);
+  // No toque, o arquivo ficou pronto DEPOIS do gesto (fetch): a folha de
+  // compartilhar só abre dentro de um toque — mesmo padrão do .zip de fotos.
+  if (needsShareTap(blob, fname, type)) {
+    showActionToast({
+      id: 'garmin-fit',
+      text: 'Percurso pronto.',
+      action: '💾 Salvar .fit',
+      onAction: () => {
+        hideActionToast('garmin-fit');
+        saveFile(blob, fname, { type })    // síncrono no toque
+          .then((r) => { if (r !== 'cancelled') done(); });
+      },
+    });
+    return;
+  }
+  const r = await saveFile(blob, fname, { type });
+  if (r !== 'cancelled') done();
+}
+
+// Pede o código do aparelho e envia. Vazio = esquece o pareamento (o ⌚ volta
+// a baixar o .fit).
+function pairGarmin(kind, id) {
+  const typed = window.prompt(
+    'Código do aparelho: abra o app Amora no Garmin e digite os 6 caracteres da tela de início.\n'
+    + 'Deixe vazio pra desparear (o ⌚ volta a baixar o arquivo .fit).',
+    storage.get(GARMIN_CODE_KEY) || '');
+  if (typed === null) return;
+  const code = typed.replace(/[\s-]/g, '').toLowerCase();   // "ABC 234" → "abc234"
+  if (!code) {
+    storage.remove(GARMIN_CODE_KEY);
+    showToast('Aparelho despareado.');
+    return;
+  }
+  sendToGarmin(kind, id, code);
+}
+
+async function sendToGarmin(kind, id, code) {
+  const retype = () => pairGarmin(kind, id);
+  try {
+    const res = await fetch('./garmin/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code, k: kind, id }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (res.status === 400) {
+      showToastWithAction('Esse código não parece o do aparelho (são 6 letras e números).', 'Digitar de novo', retype);
+      return;
+    }
+    if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+    storage.set(GARMIN_CODE_KEY, code);
+    const label = code.toUpperCase();
+    if (body.seen) {
+      showToastWithAction(`Enviado pro Garmin ${label}: abra o app Amora no aparelho.`, 'Trocar código', retype);
+    } else {
+      showToastWithAction(`Guardado, mas nenhum aparelho abriu o app Amora com o código ${label} ainda.`, 'Trocar código', retype, 12000);
+    }
+  } catch (err) {
+    showToast(`Não deu pra enviar pro Garmin (${err.message})`);
+  }
+}
+
 // Salva/atualiza a rota atual no servidor. Devolve {id, slug} em caso de
 // sucesso; null quando o usuário precisa agir (sem nome, ou recusou
 // sobrescrever a homônima); LANÇA em erro de rede/servidor, pra quem chama
@@ -17907,7 +18009,17 @@ function renderSavedRoutes(routes) {
     delBtn.title = 'Excluir do servidor';
     delBtn.setAttribute('aria-label', `Excluir ${r.name || r.id} do servidor`);
     delBtn.addEventListener('click', () => deleteSavedRoute(r.id, r.name));
-    actions.append(loadBtn, linkBtn, delBtn);
+    actions.append(loadBtn, linkBtn);
+    if (r.slug) {
+      const garminBtn = document.createElement('button');
+      garminBtn.type = 'button';
+      garminBtn.textContent = '⌚';
+      garminBtn.title = 'Garmin: baixar o percurso em .fit, ou mandar pro app Amora do aparelho';
+      garminBtn.setAttribute('aria-label', `Percurso de ${r.name || r.slug} pro Garmin`);
+      garminBtn.addEventListener('click', () => garminAction('r', r.slug));
+      actions.append(garminBtn);
+    }
+    actions.append(delBtn);
 
     li.append(thumb, nameEl, statsEl, actions);
     savedRoutesList.appendChild(li);

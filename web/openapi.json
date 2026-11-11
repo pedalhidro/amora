@@ -169,6 +169,41 @@
         }
       }
     },
+    "/garmin/list": {
+      "get": {
+        "tags": ["rotas salvas"],
+        "summary": "Lista enxuta de passeios e rotas pros apps Garmin (Connect IQ)",
+        "description": "Só passeios que têm traçado. Chaves curtas de propósito (o aparelho tem pouca memória): cada item é `{k, id, n, s}` — `k` = `t` (passeio) ou `r` (rota salva), `id` = slug, `n` = nome, `s` = linha de fatos pronta (data · km · kJ). `Cache-Control: no-store`.",
+        "parameters": [
+          {"name": "code", "in": "query", "required": false, "description": "Código de pareamento do aparelho (6 caracteres Crockford): inclui `sent`, o que foi mandado pra ele por `POST /garmin/send`.", "schema": {"type": "string"}},
+          {"name": "glance", "in": "query", "required": false, "description": "Com qualquer valor, a resposta é só `{v, next}` com o próximo passeio (ou `null`).", "schema": {"type": "string"}}
+        ],
+        "responses": {"200": {"description": "`{v, next: [item], recent: [item], routes: [item], sent?: [item]}`.", "content": {"application/json": {"schema": {"type": "object"}}}}}
+      }
+    },
+    "/garmin/item/{kind}/{ref}": {
+      "get": {
+        "tags": ["rotas salvas"],
+        "summary": "Ficha de um passeio ou rota salva pros apps Garmin",
+        "parameters": [
+          {"name": "kind", "in": "path", "required": true, "description": "`t` = passeio, `r` = rota salva.", "schema": {"type": "string", "enum": ["t", "r"]}},
+          {"name": "ref", "in": "path", "required": true, "description": "Slug (passeio: legível ou slug8; rota: slug do nome ou id).", "schema": {"type": "string"}}
+        ],
+        "responses": {"200": {"description": "`{v, k, id, n, fit, km, pts, when?, place?, up?, kj?, band?}` — `pts` = traçado reamostrado a ≤ 60 pontos `[lat, lng]`; `fit` = caminho do percurso; `band` = faixa de intensidade do censo.", "content": {"application/json": {"schema": {"type": "object"}}}}, "404": {"description": "Item desconhecido."}}
+      }
+    },
+    "/garmin/course/{kind}/{ref}.fit": {
+      "get": {
+        "tags": ["rotas salvas"],
+        "summary": "Percurso de um passeio ou rota salva no formato FIT (Garmin)",
+        "description": "Arquivo de percurso de bicicleta: traçado (um ponto a cada ≥ 10 m), POIs como pontos de percurso e altitude quando a fonte tem (rotas do RideWithGPS; rotas salvas do amora não têm). Instantes sintéticos. Importável no Garmin Connect.",
+        "parameters": [
+          {"name": "kind", "in": "path", "required": true, "schema": {"type": "string", "enum": ["t", "r"]}},
+          {"name": "ref", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {"200": {"description": "Arquivo .fit.", "content": {"application/vnd.ant.fit": {"schema": {"type": "string", "format": "binary"}}}}, "404": {"description": "Item desconhecido ou sem traçado."}}
+      }
+    },
     "/health": {
       "get": {"tags": ["descoberta"], "summary": "Saúde do serviço", "responses": {"200": {"description": "`ok`."}}}
     },

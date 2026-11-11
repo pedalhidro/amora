@@ -25,7 +25,7 @@
 // origin) e v371/v372 saíram na `deploy` (busca de endereços, ⇄ inverter).
 // v373 fica acima de tudo que já circulou, que é o que importa: se a VERSION
 // não crescer, o service worker serve cache velho.
-const VERSION = 'phidro-v436';
+const VERSION = 'phidro-v437';
 const STATIC_CACHE = `${VERSION}-static`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 const DATA_CACHE = 'phidro-data-v1';
@@ -282,6 +282,11 @@ self.addEventListener('fetch', (event) => {
   // Localização ao vivo: NUNCA cachear. As posições mudam a cada segundo e
   // o GET sai com Cache-Control: no-store — deixa passar direto pra rede.
   if (url.pathname.includes('/live-location')) return;  // cobre /live-locations tb
+
+  // Garmin (/garmin/…): o percurso .fit é gerado na hora a partir da rota
+  // salva, que muda a cada re-salvar — pelo stale-while-revalidate lá de
+  // baixo o "Enviar pro Garmin" baixaria o traçado ANTERIOR. Direto pra rede.
+  if (url.pathname.startsWith('/garmin/')) return;
 
   // Shell nativo (Capacitor): a cópia de um arquivo escolhido na galeria
   // nativa é servida pelo PRÓPRIO app nessa rota, interceptando o request da
