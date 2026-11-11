@@ -6202,6 +6202,15 @@ def delete_tour(tour_id):
                    triples=removed_triples, routes=removed_routes)
 
 
+# ── Garmin (Connect IQ) ──────────────────────────────────────────────────
+# Lista/ficha/percurso FIT pro app do relógio, fila "enviadas por você" e a
+# leitura enxuta das posições ao vivo — tudo em backend/garmin.py, que lê os
+# helpers deste módulo por atributo (por isso o registro fica no fim).
+import sys as _sys  # noqa: E402
+import garmin as _garmin  # noqa: E402
+_garmin.register(app, _sys.modules[__name__])
+
+
 # ── Aquecimento (boot) ───────────────────────────────────────────────────
 # O validador (pyshacl + shapes/ontology) e o catálogo eram carregados na
 # PRIMEIRA mutação — quem subia a primeira foto depois de um deploy/idle do
