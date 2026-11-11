@@ -192,18 +192,6 @@
         "responses": {"200": {"description": "`{v, k, id, n, fit, km, pts, when?, place?, up?, kj?, band?}` — `pts` = traçado reamostrado a ≤ 60 pontos `[lat, lng]`; `fit` = caminho do percurso; `band` = faixa de intensidade do censo.", "content": {"application/json": {"schema": {"type": "object"}}}}, "404": {"description": "Item desconhecido."}}
       }
     },
-    "/garmin/course/{kind}/{ref}.fit": {
-      "get": {
-        "tags": ["rotas salvas"],
-        "summary": "Percurso de um passeio ou rota salva no formato FIT (Garmin)",
-        "description": "Arquivo de percurso de bicicleta: traçado (um ponto a cada ≥ 10 m), POIs como pontos de percurso e altitude quando a fonte tem (rotas do RideWithGPS; rotas salvas do amora não têm). Instantes sintéticos. Importável no Garmin Connect.",
-        "parameters": [
-          {"name": "kind", "in": "path", "required": true, "schema": {"type": "string", "enum": ["t", "r"]}},
-          {"name": "ref", "in": "path", "required": true, "schema": {"type": "string"}}
-        ],
-        "responses": {"200": {"description": "Arquivo .fit.", "content": {"application/vnd.ant.fit": {"schema": {"type": "string", "format": "binary"}}}}, "404": {"description": "Item desconhecido ou sem traçado."}}
-      }
-    },
     "/health": {
       "get": {"tags": ["descoberta"], "summary": "Saúde do serviço", "responses": {"200": {"description": "`ok`."}}}
     },
