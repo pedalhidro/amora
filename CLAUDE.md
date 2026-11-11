@@ -290,7 +290,8 @@ one optional hosted deploy target, not a dependency.
   (AppleScript — `use_photos_export`), que tem que estar ABERTO NORMALMENTE
   (lançado sem janela por um script ele trava e todo AppleEvent dá timeout);
   PhotoKit não funciona a partir do VS Code (o app não declara uso do Fotos e
-  o macOS nega sem perguntar). Vídeos ainda não sobem por aqui),
+  o macOS nega sem perguntar). Vídeos sobem pelo caminho de vídeo do
+  `ingest-whatsapp.py` (vhash, 360p, hora e GPS do arquivo)),
   `mock_location.sh` (empurra posições de
   teste da localização ao vivo pro backend — random walk, 1 ponto/3 s; bate no
   remoto amora por padrão, `--local` p/ 127.0.0.1:8080; curl não precisa de
@@ -1511,8 +1512,14 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
   `props_herdados` em `ingest-drive.py`: licença, passeio, autoria, crédito,
   álbuns, e a coordenada se o original não traz uma); o
   `schema:datePublished` NÃO é herdado — é a ausência dele (mais a data-hora/
-  GPS já presentes) que impede uma segunda substituição. Só fotos: vídeo
-  duplicado segue como duplicata. No livro vira `ingested` com `replaced:
+  GPS já presentes) que impede uma segunda substituição. **Vídeo** também
+  substitui (`/upload-video` com `id` = o vhash antigo), mas o casamento é
+  outro: o vhash separa mal (vídeos DIFERENTES ficam a 13–20 bits; a cópia
+  do zap fica a ~11 do original), então pra substituir vale o critério
+  composto de `gemeo_de_video` — mesma duração (±0,25 s) E Hamming ≤ 12. A
+  hora do vídeo original vem do `CreationDate` (Apple, com fuso); o
+  `CreateDate` (mvhd) só vale se cair a ≤ 36 h do passeio — em arquivo que
+  passou por app ele é a hora em que foi SALVO. No livro vira `ingested` com `replaced:
   <motivo>` e `media` = o hash antigo. `--sem-substituir` desliga. Limites:
   `thumb`/`large` têm cache imutável de 1 ano na mesma chave (quem já viu a
   cópia segue vendo a versão antiga) e um `original.jpg` antigo sobra no bucket

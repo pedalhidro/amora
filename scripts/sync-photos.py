@@ -69,6 +69,7 @@ def _importa(mod: str, arquivo: str):
 
 
 I = _importa("ingest_drive", "ingest-drive.py")   # pHash, dedup, substituição
+W = _importa("ingest_whatsapp", "ingest-whatsapp.py")   # o caminho de vídeo (vhash, transcode)
 A = I.A                                            # catálogos, passeios
 L = I.L                                            # livro-razão
 
@@ -699,20 +700,18 @@ def cmd_enviar(a) -> None:
     servidor = ctx.servidor
     so = ctx.passeio(a.passeio) if a.passeio else None
     itens, resumo = fila(ctx, so)
-    videos = [x for x in itens if x[1]["kind"] == "video"]
-    itens = [x for x in itens if x[1]["kind"] == "image"]
+    if a.sem_videos:
+        itens = [x for x in itens if x[1]["kind"] == "image"]
     if a.uuid:
         itens = [x for x in itens if x[0].uuid in set(a.uuid)]
     if a.limite:
         itens = itens[:a.limite]
 
     print("═" * 72)
-    print(f"  FOTOS → AMORA   {len(itens)} fotos aprovadas na fila"
+    n_vid = sum(1 for x in itens if x[1]["kind"] == "video")
+    print(f"  FOTOS → AMORA   {len(itens) - n_vid} fotos + {n_vid} vídeos aprovados na fila"
           + (f" ({so.edicao})" if so else ""))
     print("═" * 72)
-    if videos:
-        print(f"  {len(videos)} vídeos aprovados ficam pra depois (o caminho de vídeo ainda não lê "
-              f"data/hora e GPS do arquivo)")
     for k, v in resumo.most_common():
         print(f"  {v:5}  {k}")
     por_autora = Counter((ctx.nomes.get(c["autora"]) or c["autora"] or "SEM AUTORIA") for _, c, _ in itens)
@@ -731,6 +730,8 @@ def cmd_enviar(a) -> None:
     livro = L.abre_livro(True, a.iniciar_livro)
     lapides = L.prepara(ctx.por_classe, grava=True, livro=livro)
     fotos_cat = ctx.por_classe["StillImage"]
+    videos_cat = ctx.por_classe["MotionImage"]
+    dur_cat = W.duracoes_dos_videos(ctx.g)
     vivos = set().union(*ctx.por_classe.values())
     provedor = ctx.cameras["padrao"]            # quem mantém a biblioteca é quem sobe
 
@@ -753,7 +754,7 @@ def cmd_enviar(a) -> None:
         tour_slug = p.slug if p else None
 
         def anota(outcome, **kw):
-            livro.registra(src, outcome, fase="photos", kind="image", path=f.original_filename,
+            livro.registra(src, outcome, fase="photos", kind=c["kind"], path=f.original_filename,
                            tour=tour_slug, camera=c["camera"], **kw)
 
         if shutil.disk_usage(tempfile.gettempdir()).free < 2 * 1024**3:
@@ -768,6 +769,74 @@ def cmd_enviar(a) -> None:
                 anota("error", reason=f"download: {e}"[:120])
                 print(rot.format("✗") + f" download: {str(e)[:70]}")
                 continue
+            if c["kind"] == "video":
+                # ── vídeo: o mesmo caminho da ingestão do Drive (vhash, 360p) ──
+                try:
+                    info = W.ffprobe(caminho)
+                    dur = float(info.get("format", {}).get("duration") or 0)
+                    it = W.Item(caminho=caminho, pasta="", kind="video", original=True)
+                    it.hash, it.duracao = W.vhash(caminho, dur), dur
+                except Exception as e:          # noqa: BLE001
+                    erros.append((f, f"hash: {e}"))
+                    anota("error", reason=f"hash: {e}"[:120])
+                    print(rot.format("✗") + f" hash do vídeo: {str(e)[:60]}")
+                    continue
+                mv = W.le_meta_video([caminho]).get(str(caminho), {})
+                it.data = W.data_do_video(mv, p.data if p else None) \
+                    or f.date.replace(microsecond=0).isoformat()
+                lat, lon = mv.get("GPSLatitude"), mv.get("GPSLongitude")
+                if not I.gps_valido(lat, lon):
+                    lat, lon = f.latitude, f.longitude
+                it.gps = (float(lat), float(lon)) if I.gps_valido(lat, lon) else None
+                it.tour_slug, it.pessoa_slug = tour_slug, c["autora"]
+                antigo = I.ja_existe(it.hash, videos_cat) \
+                    or W.gemeo_de_video(it.hash, dur, dur_cat, videos_cat)
+                herda = None
+                if antigo:
+                    herda = None if antigo in substituidas else I.herdado(ctx.g, antigo)
+                    mot = I.motivo_substituir(herda, it.gps is not None, True)
+                    if not mot:
+                        cont["já estava no amora (duplicata)"] += 1
+                        anota("duplicate", media=antigo, hash=it.hash,
+                              dist=I.hamming(it.hash, antigo), src_gps=it.gps is not None)
+                        print(rot.format("=") + f" já está: med:{antigo}")
+                        continue
+                    alvo = antigo
+                else:
+                    if src not in livro.liberados:
+                        lp = L.lapide_proxima(it.hash, "video", lapides)
+                        if lp:
+                            cont["RETIDAS (parecem mídia apagada)"] += 1
+                            anota("held", reason="lapide", media=lp[0], dist=lp[1], hash=it.hash)
+                            print(rot.format("!") + f" retido ~ lápide {lp[0]} ({lp[1]} bits)")
+                            continue
+                    alvo, mot = it.hash, None
+                try:
+                    variantes, it.duracao = W.transcoda_video(caminho, info)
+                    ttl = W.monta_ttl_video(it, alvo=alvo if mot else None, herda=herda if mot else None)
+                    if not mot and c["autora"] and provedor:
+                        # autora = dona da câmera; quem subiu = dona da biblioteca
+                        ttl = ttl.replace(f"pav:providedBy pes:{c['autora']}", f"pav:providedBy pes:{provedor}")
+                    ok, msg = W.envia(servidor, "/upload-video", {"ttl": ttl, "id": alvo}, variantes)
+                except Exception as e:          # noqa: BLE001
+                    ok, msg = False, f"transcode: {str(e)[:160]}"
+                if not ok:
+                    erros.append((f, msg))
+                    anota("error", reason=str(msg)[:120])
+                    print(rot.format("✗") + f" {msg[:80]}")
+                    continue
+                anota("ingested", media=alvo, hash=it.hash, src_gps=it.gps is not None, replaced=mot,
+                      dist=I.hamming(it.hash, alvo) if mot else None)
+                videos_cat.add(alvo)
+                if mot:
+                    substituidas.add(alvo)
+                    cont[f"SUBSTITUÍRAM a cópia do amora ({mot})"] += 1
+                    print(rot.format("⇄") + f" ▶ substitui med:{alvo} ({mot})")
+                else:
+                    cont["NOVAS"] += 1
+                    print(rot.format("✓") + f" ▶ med:{alvo}{'' if it.gps else '  (sem GPS)'}")
+                continue
+
             ext = I.ext_original(caminho)
             if ext not in I.EXT_ORIGINAL_OK or (ext in ("heic", "heif") and not I.TEM_HEIC):
                 erros.append((f, f"formato .{ext}"))
@@ -860,6 +929,7 @@ def main() -> None:
     s.add_argument("--passeio", help="só o que foi aprovado deste passeio (edição ou slug)")
     s.add_argument("--limite", type=int, help="no máximo N fotos")
     s.add_argument("--uuid", action="append", help="só esta(s) foto(s) da fila (repetível)")
+    s.add_argument("--sem-videos", action="store_true", help="só as fotos")
     s.add_argument("--apply", action="store_true", help="baixa e envia pra valer (default: dry-run)")
     s.add_argument("--iniciar-livro", action="store_true",
                    help="com --apply: cria o livro-razão se ele ainda não existe nesta máquina")
