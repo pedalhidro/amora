@@ -189,7 +189,19 @@
           {"name": "kind", "in": "path", "required": true, "description": "`t` = passeio, `r` = rota salva.", "schema": {"type": "string", "enum": ["t", "r"]}},
           {"name": "ref", "in": "path", "required": true, "description": "Slug (passeio: legível ou slug8; rota: slug do nome ou id).", "schema": {"type": "string"}}
         ],
-        "responses": {"200": {"description": "`{v, k, id, n, fit, km, pts, when?, place?, up?, kj?, band?}` — `pts` = traçado reamostrado a ≤ 60 pontos `[lat, lng]`; `fit` = caminho do percurso; `band` = faixa de intensidade do censo.", "content": {"application/json": {"schema": {"type": "object"}}}}, "404": {"description": "Item desconhecido."}}
+        "responses": {"200": {"description": "`{v, k, id, n, fit, km, pts, when?, place?, up?, kj?, band?, approx?}` — `pts` = traçado reamostrado a ≤ 60 pontos `[lat, lng]`; `fit` = caminho do percurso; `band` = faixa de intensidade do censo.", "content": {"application/json": {"schema": {"type": "object"}}}}, "404": {"description": "Item desconhecido."}}
+      }
+    },
+    "/garmin/course/{kind}/{ref}.fit": {
+      "get": {
+        "tags": ["rotas salvas"],
+        "summary": "Percurso de um passeio ou rota salva no formato FIT (Garmin)",
+        "description": "Arquivo de percurso de bicicleta: traçado (um ponto a cada ≥ 10 m), POIs como pontos de percurso, sem altitude, instantes sintéticos. Importável no Garmin Connect. Geometria cheia só pra rota hospedada no amora; passeio com rota no RideWithGPS sai com o traçado reduzido do `routes.json` (≤ 400 pontos) — a ficha `/garmin/item` marca `approx: true`.",
+        "parameters": [
+          {"name": "kind", "in": "path", "required": true, "schema": {"type": "string", "enum": ["t", "r"]}},
+          {"name": "ref", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {"200": {"description": "Arquivo .fit.", "content": {"application/vnd.ant.fit": {"schema": {"type": "string", "format": "binary"}}}}, "404": {"description": "Item desconhecido ou sem traçado."}}
       }
     },
     "/health": {
