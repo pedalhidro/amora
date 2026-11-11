@@ -276,16 +276,23 @@ one optional hosted deploy target, not a dependency.
   existir, `retidos`/`liberar`/`excluir` resolvem o que ficou retido; as duas
   ingestões gravam nele. Ver "Livro-razão" em Conventions),
   `sync-photos.py` (**Fotos da Apple → amora**, só leitura na biblioteca:
-  `candidatas` lista por passeio as fotos na JANELA dele (saída −1 h … chegada
-  +1 h) com câmera no EXIF, agrupadas pela distância à rota (`routes.json`);
+  `candidatas` lista por passeio as fotos na JANELA dele (de 1 h antes da
+  saída ou do horário anunciado até 3 h depois da chegada) com câmera no EXIF, agrupadas pela distância à rota (`routes.json`);
   `revisar --passeio X` sobe uma folha de contato SÓ em 127.0.0.1 (clique =
   sobe / não sobe; decisões em `.sync-state/photos-review.jsonl`); `enviar`
   baixa do iCloud uma a uma e sobe o aprovado pelo mesmo caminho de dedup /
   substituição / lápide das ingestões do Drive, com chave `photos:<uuid>` no
-  livro. Nada sobe sem aprovação — da revisão ou de um álbum listado em
-  `.sync-state/photos-albums.json` (o "Amora" é o do dia a dia) — menos a
-  foto com GPS LONGE da rota (pode ser de casa; pede um "sim" explícito na
-  folha) e a que não cai na janela de passeio nenhum (`--fora-de-janela`). Autoria pela
+  livro. Três coisas aprovam uma foto, nesta ordem: a revisão; um álbum listado em
+  `.sync-state/photos-albums.json` (o "Amora" é o do dia a dia); e a **regra
+  do horário** (`janela_da_regra`, decisão do coletivo de 11/2026): foto com
+  câmera no EXIF feita entre 1 h antes do horário ANUNCIADO (`dcterms:date`;
+  se ele só tem o dia, a saída) e 3 h depois do FIM (`ph:arrivedAt`, senão o
+  começo + `ph:totalDuration`) sobe sem revisão — passeio sem horário ou sem
+  fim conhecido fica de fora (nada de duração inventada). Álbum e horário
+  NUNCA aprovam a foto com GPS LONGE da rota (pode ser de casa; pede um "sim"
+  explícito na folha), o horário também não aprova GPS em passeio sem rota, e
+  a de álbum que não cai na janela de passeio nenhum pede um "sim"
+  (`revisar --sem-passeio`). Autoria pela
   CÂMERA (`.sync-state/photos-cameras.json`; sem câmera no EXIF = sem
   autoria), quem subiu = a dona da biblioteca; foto editada no Fotos sobe na
   versão EDITADA. A comparação com o amora na listagem usa o pHash da PRÉVIA
