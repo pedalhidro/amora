@@ -520,9 +520,32 @@ def herdado(g, alvo: str) -> dict | None:
         "data": d.n3() if d is not None else None,          # literal tipado, como está
         "tem_datahora": d is not None and d.datatype == _XSD_DATETIME,
         "geo": (float(lat), float(lon)) if lat is not None and lon is not None else None,
+        # Origem da coordenada (ph:coordinateSource): None = lida do arquivo;
+        # senão o IRI (colocada à mão / interpolada do rastro) — APROXIMADA.
+        "geo_fonte": (str(g.value(geo, rdflib.URIRef(PH_NS + "coordinateSource")) or "") or None)
+                     if geo is not None else None,
         # Só o ingest-whatsapp grava schema:datePublished: marca a cópia do zap.
         "do_zap": (m, _SCHEMA.datePublished, None) in g,
     }
+
+
+def herdado_agora(servidor: str, alvo: str) -> dict | None:
+    """`herdado`, mas lido do servidor NA HORA da substituição. O retrato do
+    catálogo é do começo da rodada, e o /upload-image é purge-and-replace: uma
+    coordenada colocada à mão (ou um álbum, uma autoria) editada no meio de uma
+    rodada longa seria apagada pelo original que chega depois. Falhou a
+    leitura? Levanta — quem chama registra erro e NÃO substitui."""
+    req = urllib.request.Request(f"{servidor}/midia/{alvo}?format=ttl",
+                                 headers={"User-Agent": A.USER_AGENT, "Accept": "text/turtle"})
+    with urllib.request.urlopen(req, timeout=60, context=A._contexto_ssl()) as r:
+        g = rdflib.Graph().parse(data=r.read().decode("utf-8"), format="turtle")
+    return herdado(g, alvo)
+
+
+def linha_fonte_geo(h: dict | None) -> str:
+    """O trecho ` ;\n    ph:coordinateSource <…>` pro nó _geo quando a coordenada
+    é a HERDADA e ela era aproximada (senão, vazio)."""
+    return f" ;\n    ph:coordinateSource <{h['geo_fonte']}>" if (h and h.get("geo_fonte")) else ""
 
 
 def motivo_substituir(h: dict | None, tem_gps: bool, tem_datahora: bool) -> str | None:
@@ -530,7 +553,9 @@ def motivo_substituir(h: dict | None, tem_gps: bool, tem_datahora: bool) -> str 
     é só uma duplicata)."""
     if h is None:
         return None
-    if tem_gps and not h["geo"]:
+    # GPS de verdade ganha de "sem coordenada" E de coordenada aproximada
+    # (colocada à mão / interpolada).
+    if tem_gps and (not h["geo"] or h["geo_fonte"]):
         return "ganha-gps"
     if tem_datahora and not h["tem_datahora"]:
         return "ganha-hora"
@@ -884,6 +909,14 @@ def main() -> None:
             # GPS, sem hora)? Então o original toma o lugar dela.
             h = None if (a.sem_substituir or antigo in substituidas) else herdado(g, antigo)
             mot = motivo_substituir(h, True, bool(it.data))
+            if mot and a.apply:
+                try:                            # o estado de AGORA da mídia, não o do começo
+                    h = herdado_agora(servidor, antigo)
+                    mot = motivo_substituir(h, True, bool(it.data))
+                except Exception as e:          # noqa: BLE001
+                    erros.append((it, f"relendo a mídia antes de substituir: {e}"))
+                    anota(it, "error", reason=f"reler alvo: {e}"[:120])
+                    continue
             if mot:
                 if a.apply:
                     try:

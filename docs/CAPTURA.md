@@ -109,10 +109,19 @@ O acervo tem **8.174 arquivos** (13,0 GiB). Deles:
   captura (as fotos do pedal de 2025-09-09 aparecem como "2025-09-10 at
   00.46").
 
-**Esses 7.658 nunca serão marcadores no mapa**, e não há truque que conserte
-isso: qualquer coordenada atribuída a eles seria GPS inventado. O que eles
-podem ser é **memória** — mídia ligada ao passeio (`ph:capturedDuring`) e a
-quem compartilhou, navegável na galeria e no modal do passeio.
+Esses arquivos entram como **memória** — mídia ligada ao passeio
+(`ph:capturedDuring`) e a quem compartilhou, navegável na galeria e no modal do
+passeio — e **sem coordenada**: o arquivo não tem nenhuma.
+
+> **Revisão (11/2026).** Este texto dizia que esses arquivos "nunca serão
+> marcadores no mapa", porque qualquer coordenada atribuída a eles seria "GPS
+> inventado". O coletivo decidiu diferente, com uma condição que resolve a
+> objeção: a foto pode ser **posicionada à mão sobre a rota do passeio**, desde
+> que a posição fique **marcada como aproximada** — `ph:coordinateSource
+> ph:placedManually` no nó da coordenada. Ela nunca se confunde com um GPS de
+> verdade (o mapa diz "aproximada"), e dá lugar a ele se o original da foto
+> chegar depois. As ferramentas: "🗺 Posicionar no mapa" na edição da mídia e a
+> página `georef.html`, que faz um passeio inteiro de uma vez.
 
 O modelo já suporta isso sem termo novo: o mixin `ph:GeoreferencedImage` é o
 que faz o mapa desenhar um marcador. Mídia sem GPS entra como `ph:StillImage`

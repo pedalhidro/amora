@@ -96,6 +96,8 @@ one optional hosted deploy target, not a dependency.
   importam como `./lib/media-pipeline.js?api=N`: o .js fica até 4 h no
   cache HTTP da Cloudflare e HTML novo + módulo velho = erro de link, página
   morta — suba o N do form que passar a importar um nome novo),
+  `georef.html` (**posicionar em lote** a mídia sem coordenada de um passeio
+  sobre a rota dele — ver "Coordenada que não veio do arquivo" em Conventions),
   `censo.html` (aggregated tour metrics + roster, opened as a modal
   iframe from the main app), `upload_videos.html` (permanent redirect
   stub → `upload_images.html`), and the `data/`, `photos/`, `clips/`,
@@ -1524,6 +1526,26 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
   `thumb`/`large` têm cache imutável de 1 ano na mesma chave (quem já viu a
   cópia segue vendo a versão antiga) e um `original.jpg` antigo sobra no bucket
   quando o original novo é `.heic`.
+- **Coordenada que não veio do arquivo é marcada (`ph:coordinateSource`).**
+  Mídia sem GPS (a do zap) pode ser posicionada à mão: na edição
+  (`upload_images.html?edit=` → "🗺 Posicionar no mapa") ou em lote na
+  `georef.html` (escolhe o passeio, clica na foto, clica na rota — grava na
+  hora via `/update-image` / `/update-video`, patch). O seletor desenha a rota
+  do passeio (`routes.json`) e o clique gruda na linha a ≤ 36 px de TELA
+  (`SNAP_PX`; "prender à rota" desliga). A marca vai no NÓ `<mídia>_geo`:
+  `ph:coordinateSource ph:placedManually` (ou `ph:interpolatedFromTrack`,
+  reservado pro rastro com hora). AUSENTE = lida do arquivo — o histórico todo,
+  sem backfill. Regras: "à mão" é QUALQUER coordenada que não saiu do arquivo
+  (nos cards de envio compara-se com `card.fileGps` no envio — digitar também
+  conta; na edição toda coordenada nova é à mão); editar outro campo NÃO toca
+  o nó (o patch só mexe em `schema:locationCreated` quando lat/lon mudam);
+  os popups do mapa dizem "aproximada" (`geoSourceKind`/`geoSourceLabel`);
+  e nas ingestões o GPS de verdade ganha da coordenada aproximada
+  (`motivo_substituir` → `ganha-gps`), enquanto um original SEM GPS herda a
+  coordenada COM a marca (`linha_fonte_geo`). A substituição relê a mídia no
+  servidor na hora (`herdado_agora`) — o retrato do começo da rodada perderia
+  uma coordenada colocada no meio dela. A lista "Padrão" segue sendo o filtro
+  default do mapa: posicionar uma foto não a põe lá.
 - **Predicados que penduram em nó aninhado têm `rdfs:domain` da CLASSE DO NÓ.**
   O validador roda com `inference="rdfs"`: um `rdfs:domain ph:Tour` num
   predicado do nó do passe tiparia `pas:<slug>_sweep` como `ph:Tour`, jogando-o

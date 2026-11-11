@@ -307,7 +307,8 @@ def monta_ttl_imagem(it: Item, alvo: str | None = None, herda: dict | None = Non
     if geo:
         derivados += (f"\n\n{ident}_geo a schema:GeoCoordinates ;\n"
                       f'    schema:latitude "{geo[0]:.6f}"^^xsd:decimal ;\n'
-                      f'    schema:longitude "{geo[1]:.6f}"^^xsd:decimal .')
+                      f'    schema:longitude "{geo[1]:.6f}"^^xsd:decimal'
+                      f"{I.linha_fonte_geo(herda)} .")
     return f"{PREFIXOS}\n{ident}\n{corpo} .\n\n{derivados}\n"
 
 
@@ -423,7 +424,8 @@ def monta_ttl_video(it: Item, alvo: str | None = None, herda: dict | None = None
         props.append(f"schema:locationCreated {ident}_geo")
         derivados = (f"\n{ident}_geo a schema:GeoCoordinates ;\n"
                      f'    schema:latitude "{gps[0]:.6f}"^^xsd:decimal ;\n'
-                     f'    schema:longitude "{gps[1]:.6f}"^^xsd:decimal .\n')
+                     f'    schema:longitude "{gps[1]:.6f}"^^xsd:decimal'
+                     f"{I.linha_fonte_geo(herda) if not it.gps else ''} .\n")
     corpo = " ;\n".join(f"    {p}" for p in props)
     return f"{PREFIXOS}\n{ident}\n{corpo} .\n{derivados}"
 
@@ -648,6 +650,14 @@ def main() -> None:
             if it.original and not a.sem_substituir and antigo not in substituidas:
                 h = I.herdado(g, antigo)
             mot = I.motivo_substituir(h, it.gps is not None, bool(it.data and "T" in it.data))
+            if mot and a.apply:
+                try:                            # o estado de AGORA da mídia, não o do começo
+                    h = I.herdado_agora(servidor, antigo)
+                    mot = I.motivo_substituir(h, it.gps is not None, bool(it.data and "T" in it.data))
+                except Exception as e:          # noqa: BLE001
+                    erros.append((it, f"relendo a mídia antes de substituir: {e}"))
+                    anota(it, "error", reason=f"reler alvo: {e}"[:120])
+                    continue
             if mot:
                 if a.apply:
                     try:

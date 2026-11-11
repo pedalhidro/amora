@@ -25,7 +25,7 @@
 // origin) e v371/v372 saíram na `deploy` (busca de endereços, ⇄ inverter).
 // v373 fica acima de tudo que já circulou, que é o que importa: se a VERSION
 // não crescer, o service worker serve cache velho.
-const VERSION = 'phidro-v437';
+const VERSION = 'phidro-v438';
 const STATIC_CACHE = `${VERSION}-static`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 const DATA_CACHE = 'phidro-data-v1';
@@ -108,6 +108,7 @@ const PAGE_ASSETS = [
   './subir.html',
   './upload_images.html',
   './upload_tour.html',
+  './georef.html',                  // posicionar em lote a mídia sem coordenada de um passeio
   './lib/media-pipeline.js',        // import do subir.html e do upload_images.html
   './lib/exifr.esm.js',             // autofill de EXIF (app, subir, upload)
   './lib/tom-select.complete.min.js',

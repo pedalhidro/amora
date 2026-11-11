@@ -556,6 +556,14 @@ ph:GeoCoordinatesShape a sh:NodeShape ;
         sh:minInclusive -180 ;
         sh:maxInclusive 180 ;
         sh:message "Coordenada precisa de longitude (-180 a 180)."@pt ;
+    ] ;
+    sh:property [
+        # Opcional: ausente = coordenada lida do arquivo (EXIF/moov).
+        sh:path ph:coordinateSource ;
+        sh:severity sh:Violation ;
+        sh:maxCount 1 ;
+        sh:in ( ph:placedManually ph:interpolatedFromTrack ) ;
+        sh:message "ph:coordinateSource, quando presente, é ph:placedManually ou ph:interpolatedFromTrack (ausente = veio do arquivo)."@pt ;
     ] .
 
 ph:FileHashShape a sh:NodeShape ;

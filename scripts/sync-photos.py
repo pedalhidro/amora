@@ -634,8 +634,10 @@ def monta_ttl_foto(alvo: str, *, data, gps, bearing, focal, mime, tour_slug, aut
     própria foto, ou o da mídia que ela SUBSTITUI — aí `herda` traz o que a
     antiga tinha). Autora = dona da câmera; quem subiu = dona da biblioteca."""
     ident = f"med:{alvo}"
+    fonte = ""
     if gps is None and herda and herda["geo"]:
         gps = herda["geo"]                    # a antiga tinha coordenada: não se perde
+        fonte = I.linha_fonte_geo(herda)      # …e segue marcada, se era aproximada
     props = ["a ph:StillImage" + (", ph:GeoreferencedImage" if gps else ""),
              f"nfo:hasHash {ident}_hash"]
     if data:
@@ -675,7 +677,7 @@ def monta_ttl_foto(alvo: str, *, data, gps, bearing, focal, mime, tour_slug, aut
     if gps:
         derivados += (f"\n\n{ident}_geo a schema:GeoCoordinates ;\n"
                       f'    schema:latitude "{gps[0]:.6f}"^^xsd:decimal ;\n'
-                      f'    schema:longitude "{gps[1]:.6f}"^^xsd:decimal .')
+                      f'    schema:longitude "{gps[1]:.6f}"^^xsd:decimal{fonte} .')
     return f"{I.PREFIXOS}\n{ident}\n{corpo} .\n\n{derivados}\n"
 
 
@@ -745,6 +747,18 @@ def cmd_enviar(a) -> None:
     cont = Counter()
     substituidas: set[str] = set()
     erros = []
+
+    class RelerFalhou(Exception):
+        pass
+
+    def herdado_do_alvo(alvo: str):
+        # O estado de AGORA da mídia que seria substituída (não o do começo da
+        # rodada): o /upload-* é purge-and-replace, e uma coordenada colocada
+        # à mão ou um álbum editado no meio do caminho se perderiam.
+        try:
+            return I.herdado_agora(servidor, alvo)
+        except Exception as e:                  # noqa: BLE001
+            raise RelerFalhou(str(e))
     for i, (f, c, p) in enumerate(itens, 1):
         src = L.chave_photos(f.uuid)
         est, _ = L.estado_da_origem(src, livro, vivos)
@@ -793,7 +807,7 @@ def cmd_enviar(a) -> None:
                     or W.gemeo_de_video(it.hash, dur, dur_cat, videos_cat)
                 herda = None
                 if antigo:
-                    herda = None if antigo in substituidas else I.herdado(ctx.g, antigo)
+                    herda = None if antigo in substituidas else herdado_do_alvo(antigo)
                     mot = I.motivo_substituir(herda, it.gps is not None, True)
                     if not mot:
                         cont["já estava no amora (duplicata)"] += 1
@@ -865,7 +879,7 @@ def cmd_enviar(a) -> None:
             antigo = I.ja_existe(h, fotos_cat)
             herda = None
             if antigo:
-                herda = None if antigo in substituidas else I.herdado(ctx.g, antigo)
+                herda = None if antigo in substituidas else herdado_do_alvo(antigo)
                 mot = I.motivo_substituir(herda, gps is not None, True)
                 if not mot:
                     cont["já estava no amora (duplicata)"] += 1
@@ -907,6 +921,10 @@ def cmd_enviar(a) -> None:
             else:
                 cont["NOVAS"] += 1
                 print(rot.format("✓") + f" med:{alvo}{'' if gps else '  (sem GPS)'}")
+        except RelerFalhou as e:
+            erros.append((f, f"relendo a mídia antes de substituir: {e}"))
+            anota("error", reason=f"reler alvo: {e}"[:120])
+            print(rot.format("✗") + f" não consegui reler a mídia a substituir: {str(e)[:50]}")
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 

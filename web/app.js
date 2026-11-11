@@ -3554,6 +3554,7 @@ function renderClipPopupHtml(c) {
       playerHtml +
       `<dl class="photo-details">` +
         `<dt>Quando</dt><dd>${whenHuman}</dd>` +
+        (c.geoSource ? `<dt>Posição</dt><dd>${escapeHtml(geoSourceLabel(c.geoSource))}</dd>` : '') +
         `<dt>Duração</dt><dd>${dur}</dd>` +
         `<dt>Passeio</dt><dd>${tourHtml}</dd>` +
         (listNames ? `<dt>Listas</dt><dd>${listNames}</dd>` : '') +
@@ -3998,6 +3999,22 @@ function fmtMediaWhen(m, opts) {
   return isNaN(d) ? '' : d.toLocaleString('pt-BR', opts);
 }
 
+// De onde veio a coordenada da mídia (ph:coordinateSource no nó _geo). Sem o
+// predicado ela foi lida do arquivo (GPS do EXIF/moov) — é exata. Com ele é
+// APROXIMADA: alguém colocou no mapa, ou foi calculada pela hora sobre o
+// rastro do passeio. Os popups dizem isso.
+function geoSourceKind(iri) {
+  if (!iri) return null;
+  if (iri.endsWith('placedManually')) return 'manual';
+  if (iri.endsWith('interpolatedFromTrack')) return 'track';
+  return null;
+}
+function geoSourceLabel(kind) {
+  return kind === 'manual' ? 'aproximada — colocada à mão no mapa'
+    : kind === 'track' ? 'aproximada — calculada pela hora, sobre o rastro do passeio'
+    : '';
+}
+
 function buildModelFromQuads(quads) {
   const types = new Map(), titles = new Map(), dates = new Map();
   const names = new Map(), elev = new Map();
@@ -4016,6 +4033,7 @@ function buildModelFromQuads(quads) {
   const licenses = new Map();
   const origFmts = new Map();   // imageIri → MIME do original (schema:encodingFormat)
   const locOf = new Map(), locLat = new Map(), locLng = new Map();
+  const locSrc = new Map();   // nó _geo → ph:coordinateSource (ausente = veio do arquivo)
   // Pertencimento a listas (álbuns): mídia --schema:isPartOf--> schema:Collection.
   const listsOf = new Map();   // mediaIri → Set(listIri)
   // Activity (ph:Upload) → { startedAt, generated: imageIri }
@@ -4043,6 +4061,7 @@ function buildModelFromQuads(quads) {
     else if (p === SCHEMA + 'longitude')    locLng.set(s, parseFloat(ov));
     else if (p === SCHEMA + 'elevation')    elev.set(s, parseFloat(ov));
     else if (p === SCHEMA + 'locationCreated') locOf.set(s, ov);
+    else if (p === PH_NS + 'coordinateSource') locSrc.set(s, ov);
     else if (p === SCHEMA + 'isPartOf') {
       if (!listsOf.has(s)) listsOf.set(s, new Set()); listsOf.get(s).add(ov);
     }
@@ -4174,6 +4193,7 @@ function buildModelFromQuads(quads) {
       orig:      titles.get(s) || (phash ? `image_${phash}` : s),
       datetime,
       dateOnly:  when.dateOnly,   // só o dia é conhecido: não mostrar hora
+      geoSource: geoSourceKind(locSrc.get(locNode)),   // 'manual' | 'track' | null (= GPS do arquivo)
       ride,
       authors:     authorNames,
       authorIris:  authorIris,
@@ -4225,6 +4245,7 @@ function buildModelFromQuads(quads) {
       date: dateXsd ? dateXsd.slice(0, 10) : null,
       datetime: dateXsd,
       dateOnly: clipWhen.dateOnly,
+      geoSource: geoSourceKind(locSrc.get(locNode)),
       tourIri: tours.get(s),
       license: licenses.get(s),
       lists: [...(listsOf.get(s) || [])],
@@ -4405,6 +4426,7 @@ function _photoDetailRows(ph) {
   const rows = [];
   const whenTxt = fmtMediaWhen(ph);
   if (whenTxt) rows.push(['Quando', escapeHtml(whenTxt)]);
+  if (ph.geoSource) rows.push(['Posição', escapeHtml(geoSourceLabel(ph.geoSource))]);
   if (ph.ride) {
     // Ex.: "PH 92: Crista do Lauzane…" ou "PH 92 & PH-S 6: O Trem e o Meteoro".
     const label = ph.ride.code && ph.ride.name

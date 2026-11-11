@@ -414,10 +414,11 @@
       <strong>Escolher coordenadas no mapa</strong>
       <button type="button" id="map-picker-close" style="font-size:1.1rem;padding:.15rem .5rem">✕</button>
     </div>
-    <small style="color:#666">Clique no mapa pra posicionar — ou arraste o marcador.</small>
+    <small style="color:#666" id="map-picker-hint">Clique no mapa pra posicionar — ou arraste o marcador.</small>
     <div id="map-picker-mapbox" style="flex:1;border:1px solid #ccc;border-radius:4px;"></div>
     <div style="display:flex;gap:.5rem;align-items:center;justify-content:flex-end;">
       <span id="map-picker-coords" style="font-family:'IBM Plex Mono',monospace;font-size:.85rem;color:#444;margin-right:auto;"></span>
+      <label id="map-picker-snap-wrap" style="font-size:.85rem;display:none"><input type="checkbox" id="map-picker-snap" checked> prender à rota</label>
       <button type="button" id="map-picker-cancel">Cancelar</button>
       <button type="button" id="map-picker-confirm">Usar essa posição</button>
     </div>
@@ -971,6 +972,9 @@ async function startEditMode(iri) {
         `<div><label>Latitude</label><input type="number" data-e="lat" step="any" value="${escapeHtml(f.lat)}"></div>` +
         `<div><label>Longitude</label><input type="number" data-e="lon" step="any" value="${escapeHtml(f.lon)}"></div>` +
       `</div>` +
+      `<button type="button" id="edit-pick" style="margin-top:.35rem">🗺 Posicionar no mapa (sobre a rota do passeio)</button>` +
+      `<small style="display:block;color:#666">Coordenada colocada aqui fica marcada como aproximada (não veio do GPS do arquivo). ` +
+        `Várias de uma vez: <a href="./georef.html" target="_blank" rel="noopener">posicionar as fotos de um passeio</a>.</small>` +
       (isImg
         ? `<div ${grid}>` +
             `<div><label>Direção (°)</label><input type="number" data-e="bearing" step="any" min="0" max="359.999" value="${escapeHtml(f.bearing)}"></div>` +
@@ -1008,6 +1012,18 @@ async function startEditMode(iri) {
   if (f.lists.length)     listTs.setValue(f.lists);
 
   const orig = { lat: f.lat, lon: f.lon };
+  $('#edit-pick', card).addEventListener('click', () => {
+    const latI = $('[data-e="lat"]', card), lonI = $('[data-e="lon"]', card);
+    const lat = parseFloat(latI.value), lon = parseFloat(lonI.value);
+    openMapPicker(
+      Number.isFinite(lat) ? lat : null, Number.isFinite(lon) ? lon : null,
+      (newLat, newLon) => {
+        latI.value = newLat.toFixed(6); lonI.value = newLon.toFixed(6);
+        latI.dispatchEvent(new Event('change', { bubbles: true }));
+      },
+      { tour: $('[data-e="tour"]', card).value },
+    );
+  });
   // Alterações não salvas → o app-pai pergunta antes de fechar (phidro-form-state).
   // Liga DEPOIS do prefill: o setValue dos Tom Select dispara `change`.
   setTimeout(() => {
@@ -1074,7 +1090,8 @@ async function saveMediaEdit(f, card, authorTs, providerTs, listTs, orig) {
   if (gpsChanged) {
     if (hasGeo) {
       P.push(`schema:locationCreated ${iriCurie}_geo`);
-      geoNode = `\n${iriCurie}_geo a schema:GeoCoordinates ;\n    schema:latitude "${lat}"^^xsd:decimal ;\n    schema:longitude "${lon}"^^xsd:decimal .`;
+      // Na EDIÇÃO não há arquivo: toda coordenada nova foi posta por alguém.
+      geoNode = `\n${iriCurie}_geo a schema:GeoCoordinates ;\n    schema:latitude "${lat}"^^xsd:decimal ;\n    schema:longitude "${lon}"^^xsd:decimal ;\n    ph:coordinateSource ph:placedManually .`;
     } else {
       remove.push('schema:locationCreated');   // limpou o GPS → some a coordenada (e o tipo georref acima)
     }
@@ -1188,6 +1205,17 @@ function activateCard(card) {
     });
   }
   return Promise.resolve();
+}
+
+// ===================== Origem da coordenada ============================
+// A coordenada que sai no TTL veio do ARQUIVO (GPS do EXIF/moov) ou de alguém
+// (digitada, escolhida no mapa)? No 2º caso o nó _geo leva
+// `ph:coordinateSource ph:placedManually`: é uma posição APROXIMADA, que um
+// original com GPS de verdade substitui. Devolve o trecho pro nó (ou '').
+function geoSourceTtl(card, lat, lon) {
+  const f = card.fileGps;
+  const same = f && Math.abs(f.lat - parseFloat(lat)) < 1e-5 && Math.abs(f.lon - parseFloat(lon)) < 1e-5;
+  return same ? '' : ' ;\n    ph:coordinateSource ph:placedManually';
 }
 
 // ===================== Data do card ====================================
@@ -2124,6 +2152,7 @@ function acceptImageCard(pre, defaults) {
         latI.dispatchEvent(new Event('change', { bubbles: true }));
         lonI.dispatchEvent(new Event('change', { bubbles: true }));
       },
+      { tour: $('[data-field="tour"]', elem).value },
     );
   });
 
@@ -2141,6 +2170,7 @@ function acceptImageCard(pre, defaults) {
       // data/auto-detecção não pode impedir o preenchimento das coordenadas.
       try { if (data.latitude  != null) $('[data-field="lat"]', elem).value = data.latitude.toFixed(6); } catch (_) {}
       try { if (data.longitude != null) $('[data-field="lon"]', elem).value = data.longitude.toFixed(6); } catch (_) {}
+      if (data.latitude != null && data.longitude != null) card.fileGps = { lat: data.latitude, lon: data.longitude };
       try { if (data.GPSImgDirection != null)         $('[data-field="bearing"]', elem).value = data.GPSImgDirection; } catch (_) {}
       try { if (data.FocalLengthIn35mmFormat != null) $('[data-field="focal"]',   elem).value = data.FocalLengthIn35mmFormat; } catch (_) {}
       try {
@@ -2255,6 +2285,7 @@ async function createVideoCard(file, defaults) {
         latI.dispatchEvent(new Event('change', { bubbles: true }));
         lonI.dispatchEvent(new Event('change', { bubbles: true }));
       },
+      { tour: $('[data-field="tour"]', elem).value },
     );
   });
 
@@ -2350,6 +2381,7 @@ async function createVideoCard(file, defaults) {
     if (gps) {
       $('[data-field="lat"]', elem).value = gps.lat.toFixed(6);
       $('[data-field="lon"]', elem).value = gps.lng.toFixed(6);
+      card.fileGps = { lat: gps.lat, lon: gps.lng };
     }
     if (recDate) {
       dateInput.value = recDate;
@@ -2654,7 +2686,7 @@ function buildImageBlock(card) {
     derived +=
       `\n\n${id}_geo a schema:GeoCoordinates ;\n` +
       `    schema:latitude "${lat}"^^xsd:decimal ;\n` +
-      `    schema:longitude "${lon}"^^xsd:decimal .`;
+      `    schema:longitude "${lon}"^^xsd:decimal${geoSourceTtl(card, lat, lon)} .`;
   }
   return { id, ttl: `${id}\n${body} .\n\n${derived}` };
 }
@@ -2747,7 +2779,7 @@ function buildClipBlock(card, r) {
   const derived = hasGeo
     ? `\n\n${iri}_geo a schema:GeoCoordinates ;\n` +
       `    schema:latitude "${lat}"^^xsd:decimal ;\n` +
-      `    schema:longitude "${lon}"^^xsd:decimal .`
+      `    schema:longitude "${lon}"^^xsd:decimal${geoSourceTtl(card, lat, lon)} .`
     : '';
   return { iri, ttl: `${iri}\n${body} .${derived}` };
 }
@@ -3149,12 +3181,58 @@ function _updatePickerCoords(latlng) {
   _pickerCoords.textContent = `${latlng.lat.toFixed(6)}, ${latlng.lng.toFixed(6)}`;
 }
 
-async function openMapPicker(initLat, initLon, onConfirm) {
+// ── A rota do passeio no seletor ─────────────────────────────────────────
+// Mídia sem GPS (a que veio do zap) se posiciona SOBRE a rota do passeio: é
+// onde a foto quase certamente foi tirada. O clique gruda no ponto mais
+// próximo da linha, se cair a ≤ SNAP_PX px dela; "prender à rota" desliga.
+const SNAP_PX = 36;
+let _routesByTour = null;
+async function routeOfTour(tour) {
+  if (!tour) return null;
+  if (!_routesByTour) {
+    _routesByTour = (async () => {
+      const m = new Map();
+      try {
+        const res = await fetch('./routes.json');
+        if (res.ok) for (const e of ((await res.json()).routes || [])) {
+          if (e.tourIri && Array.isArray(e.latlngs) && e.latlngs.length > 1) m.set(e.tourIri, e.latlngs);
+        }
+      } catch (_) { /* sem rotas: o seletor segue livre */ }
+      return m;
+    })();
+  }
+  // O valor do <select> é o termo Turtle do passeio: <IRI> ou pas:<slug>.
+  let iri = String(tour).replace(/^<|>$/g, '');
+  if (iri.startsWith('pas:')) iri = 'https://id.pedalhidrografi.co/passeio/' + iri.slice(4);
+  return (await _routesByTour).get(iri) || null;
+}
+// Ponto mais próximo da rota, em px de tela (o snap tem que valer o mesmo em
+// qualquer zoom). Devolve o LatLng grudado, ou o original se longe/desligado.
+function snapToRoute(latlng) {
+  const r = _picker && _picker.routeLatLngs;
+  if (!r || !$('#map-picker-snap').checked) return latlng;
+  const map = _picker.map, p = map.latLngToLayerPoint(latlng);
+  let best = null, bestD = Infinity, prev = null;
+  for (const ll of r) {
+    const q = map.latLngToLayerPoint(ll);
+    if (prev) {
+      const c = window.L.LineUtil.closestPointOnSegment(p, prev, q), d = p.distanceTo(c);
+      if (d < bestD) { bestD = d; best = c; }
+    }
+    prev = q;
+  }
+  return (best && bestD <= SNAP_PX) ? map.layerPointToLatLng(best) : latlng;
+}
+
+// opts.tour = o passeio da mídia (termo Turtle): desenha a rota dele e liga o snap.
+async function openMapPicker(initLat, initLon, onConfirm, opts = {}) {
   try {
     const L = await ensureLeaflet();
+    const route = opts.route || await routeOfTour(opts.tour);
     _pickerModal.style.display = 'flex';
-    const start = (initLat != null && initLon != null) ? [initLat, initLon] : SP_CENTER;
-    const initialZoom = (initLat != null && initLon != null) ? 16 : 12;
+    const hasInit = initLat != null && initLon != null;
+    const start = hasInit ? [initLat, initLon] : SP_CENTER;
+    const initialZoom = hasInit ? 16 : 12;
     if (!_picker || !_picker.map) {
       const map = L.map($('#map-picker-mapbox'));
       L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -3162,13 +3240,28 @@ async function openMapPicker(initLat, initLon, onConfirm) {
         maxZoom: 19,
       }).addTo(map);
       const marker = L.marker(start, { draggable: true }).addTo(map);
-      map.on('click', (e) => { marker.setLatLng(e.latlng); _updatePickerCoords(e.latlng); });
-      marker.on('dragend', () => _updatePickerCoords(marker.getLatLng()));
+      map.on('click', (e) => { const ll = snapToRoute(e.latlng); marker.setLatLng(ll); _updatePickerCoords(ll); });
+      marker.on('dragend', () => { const ll = snapToRoute(marker.getLatLng()); marker.setLatLng(ll); _updatePickerCoords(ll); });
       _picker = { map, marker };
     }
-    _picker.map.setView(start, initialZoom);
-    _picker.marker.setLatLng(start);
-    _updatePickerCoords({ lat: start[0], lng: start[1] });
+    if (_picker.routeLayer) { _picker.routeLayer.remove(); _picker.routeLayer = null; }
+    _picker.routeLatLngs = (route && route.length > 1) ? route : null;
+    $('#map-picker-snap-wrap').style.display = _picker.routeLatLngs ? '' : 'none';
+    $('#map-picker-hint').textContent = _picker.routeLatLngs
+      ? 'Clique sobre a rota do passeio (a linha) pra posicionar — ou arraste o marcador.'
+      : 'Clique no mapa pra posicionar — ou arraste o marcador.';
+    if (_picker.routeLatLngs) {
+      _picker.routeLayer = L.polyline(_picker.routeLatLngs, { color: '#c2410c', weight: 4, opacity: .85 }).addTo(_picker.map);
+    }
+    if (_picker.routeLatLngs && !hasInit) {
+      _picker.map.fitBounds(_picker.routeLayer.getBounds(), { padding: [24, 24] });
+      _picker.marker.setLatLng(_picker.routeLatLngs[0]);
+      _updatePickerCoords({ lat: _picker.routeLatLngs[0][0], lng: _picker.routeLatLngs[0][1] });
+    } else {
+      _picker.map.setView(start, initialZoom);
+      _picker.marker.setLatLng(start);
+      _updatePickerCoords({ lat: start[0], lng: start[1] });
+    }
     _picker.onConfirm = onConfirm;
     // Leaflet às vezes calcula o tamanho antes do modal estar visível.
     setTimeout(() => _picker.map.invalidateSize(), 50);
