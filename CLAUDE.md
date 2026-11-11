@@ -299,7 +299,8 @@ one optional hosted deploy target, not a dependency.
   naquele instante, marcada `ph:coordinateSource ph:interpolatedFromTrack`;
   dry-run por padrão, `--apply` grava via `/update-image|video` (patch),
   `--desfazer --passeio X` tira só as interpoladas, `--ajuste SEG` corrige
-  relógio de câmera. A gravação é um trip do RideWithGPS da conta de quem
+  relógio de câmera, `--hora` é o caminho inverso (hora ESTIMADA pra mídia
+  posicionada à mão — ver Conventions). A gravação é um trip do RideWithGPS da conta de quem
   mantém o acervo (os Strava do catálogo são quase todos de outras pessoas —
   inacessíveis), escolhido por cobrir ≥ 60 % da janela saída…chegada, CORTADO
   nessa janela (± 10 min — fora dela é o caminho de casa de uma pessoa só) e
@@ -1541,6 +1542,22 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
   `thumb`/`large` têm cache imutável de 1 ano na mesma chave (quem já viu a
   cópia segue vendo a versão antiga) e um `original.jpg` antigo sobra no bucket
   quando o original novo é `.heic`.
+- **Hora estimada mora em `ph:estimatedCaptureTime`, nunca no `dcterms:date`.**
+  O 4º estado da data de mídia: sem hora de verdade (só o dia, ou nada), mas
+  posicionada à mão num passeio que tem gravação GPS → a hora em que a
+  gravação passou por aquele ponto (`georef-tracks.py --hora`; só quando passa
+  UMA vez a ≤ 60 m — ida-e-volta e ponto de encontro de pedal circular ficam
+  sem estimativa). Um `xsd:dateTime` no `dcterms:date` segue querendo dizer
+  hora REAL e sempre ganha. Nos leitores: `effectiveDate(raw, tourDate,
+  estimated)` devolve `datetime` = a estimativa (ordena no lugar certo do dia,
+  não às 23:59) e `estimated: true` → os records/fotos levam `dateEstimated`,
+  e a hora sai com "≈" (`fmtRecWhen`, `fmtMediaWhen`). Espelhos que mudam
+  JUNTO: o SPARQL de `buildQueryFromFacets` (`?dh` = dateTime real, senão a
+  estimada; depois `COALESCE(?dh, ?dm, ?dt)`) e `_media_instant` no backend.
+  O `--hora` também LIMPA a estimativa que ficou velha (a mídia ganhou hora
+  real, ou perdeu a posição à mão). Validação do método irmão (posição pela
+  hora), em 11/2026: 579 mídias com GPS e hora de verdade → mediana de 5 m
+  entre o GPS do arquivo e a posição da gravação, p90 25 m, p95 55 m.
 - **Coordenada que não veio do arquivo é marcada (`ph:coordinateSource`).**
   Mídia sem GPS (a do zap) pode ser posicionada à mão: na edição
   (`upload_images.html?edit=` → "🗺 Posicionar no mapa") ou em lote na

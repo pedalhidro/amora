@@ -3983,9 +3983,10 @@ async function parseTtlToQuads(text) {
 // herdando o dia do passeio valem 23:59 daquele dia e NÃO têm hora pra
 // mostrar). media-query.js é script clássico carregado antes do app.js; se
 // faltar (cache misto), a mídia fica com o literal cru, como era.
-function mediaEffectiveDate(raw, tourDate) {
+function mediaEffectiveDate(raw, tourDate, estimated) {
   const fn = window.PhidroMediaQuery && window.PhidroMediaQuery.effectiveDate;
-  return fn ? fn(raw, tourDate) : { datetime: raw || null, dateOnly: false, raw: raw || null };
+  return fn ? fn(raw, tourDate, estimated)
+    : { datetime: raw || null, dateOnly: false, estimated: false, raw: raw || null };
 }
 // "Quando" legível de uma mídia: dia + hora, ou só o dia quando a hora não é
 // conhecida (o dia sai do texto, ao meio-dia local — não do instante).
@@ -3996,7 +3997,9 @@ function fmtMediaWhen(m, opts) {
     return isNaN(d) ? '' : d.toLocaleDateString('pt-BR', opts && opts.dateStyle ? { dateStyle: opts.dateStyle } : undefined);
   }
   const d = new Date(m.datetime);
-  return isNaN(d) ? '' : d.toLocaleString('pt-BR', opts);
+  if (isNaN(d)) return '';
+  // Hora ESTIMADA (pela posição, sobre a gravação do passeio): vai com ≈.
+  return (m.dateEstimated ? '≈ ' : '') + d.toLocaleString('pt-BR', opts);
 }
 
 // De onde veio a coordenada da mídia (ph:coordinateSource no nó _geo). Sem o
@@ -4034,6 +4037,7 @@ function buildModelFromQuads(quads) {
   const origFmts = new Map();   // imageIri → MIME do original (schema:encodingFormat)
   const locOf = new Map(), locLat = new Map(), locLng = new Map();
   const locSrc = new Map();   // nó _geo → ph:coordinateSource (ausente = veio do arquivo)
+  const estTimes = new Map(); // mídia → ph:estimatedCaptureTime (hora estimada pela posição)
   // Pertencimento a listas (álbuns): mídia --schema:isPartOf--> schema:Collection.
   const listsOf = new Map();   // mediaIri → Set(listIri)
   // Activity (ph:Upload) → { startedAt, generated: imageIri }
@@ -4062,6 +4066,7 @@ function buildModelFromQuads(quads) {
     else if (p === SCHEMA + 'elevation')    elev.set(s, parseFloat(ov));
     else if (p === SCHEMA + 'locationCreated') locOf.set(s, ov);
     else if (p === PH_NS + 'coordinateSource') locSrc.set(s, ov);
+    else if (p === PH_NS + 'estimatedCaptureTime') estTimes.set(s, ov);
     else if (p === SCHEMA + 'isPartOf') {
       if (!listsOf.has(s)) listsOf.set(s, new Set()); listsOf.get(s).add(ov);
     }
@@ -4171,7 +4176,7 @@ function buildModelFromQuads(quads) {
     const authorNames = authorIris.map(personName);
     const providerIris = [...(provs.get(s) || [])];
     const providerNames = providerIris.map(personName);
-    const when = mediaEffectiveDate(dates.get(s), t ? t.date : null);
+    const when = mediaEffectiveDate(dates.get(s), t ? t.date : null, estTimes.get(s));
     const datetime = when.datetime;
     let fov = null;
     const f35 = focals.get(s);
@@ -4193,6 +4198,7 @@ function buildModelFromQuads(quads) {
       orig:      titles.get(s) || (phash ? `image_${phash}` : s),
       datetime,
       dateOnly:  when.dateOnly,   // só o dia é conhecido: não mostrar hora
+      dateEstimated: !!when.estimated,   // hora estimada pela posição: mostrar com ≈
       geoSource: geoSourceKind(locSrc.get(locNode)),   // 'manual' | 'track' | null (= GPS do arquivo)
       ride,
       authors:     authorNames,
@@ -4231,7 +4237,7 @@ function buildModelFromQuads(quads) {
     // `date` (AAAA-MM-DD) casa com o `ride.date` das fotos na tira do passeio;
     // `datetime` guarda o instante pro popup ("Quando") — a data EFETIVA
     // (clipe só com o dia, ou sem data, herda o dia do passeio).
-    const clipWhen = mediaEffectiveDate(dates.get(s), tourCatalog.get(tours.get(s))?.date);
+    const clipWhen = mediaEffectiveDate(dates.get(s), tourCatalog.get(tours.get(s))?.date, estTimes.get(s));
     const dateXsd = clipWhen.datetime;
     clips.push({
       iri: s,
@@ -4245,6 +4251,7 @@ function buildModelFromQuads(quads) {
       date: dateXsd ? dateXsd.slice(0, 10) : null,
       datetime: dateXsd,
       dateOnly: clipWhen.dateOnly,
+      dateEstimated: !!clipWhen.estimated,
       geoSource: geoSourceKind(locSrc.get(locNode)),
       tourIri: tours.get(s),
       license: licenses.get(s),
@@ -4426,6 +4433,7 @@ function _photoDetailRows(ph) {
   const rows = [];
   const whenTxt = fmtMediaWhen(ph);
   if (whenTxt) rows.push(['Quando', escapeHtml(whenTxt)]);
+  if (ph.dateEstimated) rows.push(['Hora', 'estimada — pela posição, sobre o rastro do passeio']);
   if (ph.geoSource) rows.push(['Posição', escapeHtml(geoSourceLabel(ph.geoSource))]);
   if (ph.ride) {
     // Ex.: "PH 92: Crista do Lauzane…" ou "PH 92 & PH-S 6: O Trem e o Meteoro".

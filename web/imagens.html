@@ -794,6 +794,9 @@ function fmtDateTimePt(iso) {
 // (meio-dia local), não do instante — senão outro fuso mostraria o dia vizinho.
 function fmtRecWhen(rec) {
   if (!rec || !rec.datetime) return '—';
+  // Hora ESTIMADA (ph:estimatedCaptureTime): a foto não tinha hora; esta veio
+  // da posição em que foi colocada, sobre a gravação do passeio. Vai com ≈.
+  if (rec.dateEstimated) return '≈ ' + fmtDateTimePt(rec.datetime);
   if (!rec.dateOnly) return fmtDateTimePt(rec.datetime);
   const d = new Date(rec.datetime.slice(0, 10) + 'T12:00:00');
   return isNaN(d) ? rec.datetime.slice(0, 10) : d.toLocaleDateString('pt-BR');
@@ -2189,7 +2192,8 @@ function openLightbox(rec, opts = {}) {
       ? `<a href="${escapeHtml(iri)}" target="_blank" rel="noopener">${escapeHtml(name)}</a>`
       : escapeHtml(name);
   }).join(', ');
-  rows.push(['Data', escapeHtml(fmtRecWhen(rec)) + (rec.dateOnly ? ' <small>(hora desconhecida)</small>' : '')]);
+  rows.push(['Data', escapeHtml(fmtRecWhen(rec)) + (rec.dateOnly ? ' <small>(hora desconhecida)</small>'
+    : rec.dateEstimated ? ' <small>(hora estimada pela posição)</small>' : '')]);
   if (rec.tourLabel) {
     const tourHtml = rec.tourIri
       ? `<a href="${escapeHtml(rec.tourIri)}" target="_blank" rel="noopener">${escapeHtml(rec.tourLabel)}</a>`

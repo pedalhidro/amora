@@ -12,6 +12,17 @@ mapa diz "aproximada — calculada pela hora, sobre o rastro do passeio".
     georef-tracks.py --passeio PH/56      # só um passeio
     georef-tracks.py --apply              # grava (patch em /update-image, /update-video)
     georef-tracks.py --desfazer --passeio PH/56 --apply   # tira as interpoladas
+    georef-tracks.py --hora               # o caminho INVERSO (dry-run): ver abaixo
+    georef-tracks.py --hora --apply
+
+O caminho inverso (`--hora`): a mídia do zap não tem hora, mas depois de
+POSICIONADA À MÃO sobre a rota (georef.html) ela tem um lugar — e a gravação
+diz a que horas o pedal passou por ali. Essa hora entra como
+`ph:estimatedCaptureTime`, NUNCA no `dcterms:date`: é uma estimativa (o mapa e
+a galeria mostram com ≈), e um xsd:dateTime no dcterms:date segue querendo
+dizer "hora de verdade". Só vale quando a gravação passa por ali UMA vez: em
+trecho de ida e volta, ou no ponto de encontro de um pedal circular, não dá
+pra saber em qual das passagens a foto foi tirada — e aí não se estima.
 
 O que é (e o que não é) a gravação:
 
@@ -80,6 +91,10 @@ TZ_SP = timezone(timedelta(hours=-3))
 FOLGA_S = 10 * 60          # antes da saída / depois da chegada
 COBERTURA_MIN = 0.6        # a gravação tem que cobrir ≥ isto da janela do passeio
 BURACO_S = 180             # pausa na gravação maior que isto não é atravessada
+RAIO_M = 60                # --hora: a gravação "passa pelo ponto" a até isto dele
+PASSAGEM_S = 300           # --hora: mais que isto longe do ponto = OUTRA passagem
+ESTIMADA = PH.estimatedCaptureTime
+MANUAL = PH.placedManually
 RALO_S, RALO_M = 5, 10     # um ponto a cada 5 s OU 10 m (o que vier antes)
 
 PREFIXOS = ("@prefix ph: <https://id.pedalhidrografi.co/terms#> .\n"
@@ -211,6 +226,128 @@ def posicao_em(pontos: list, ts: list[int], t: float) -> tuple[float, float] | s
 # 2. As mídias
 # ═════════════════════════════════════════════════════════════════════════
 
+def hora_no_ponto(pontos: list, lat: float, lng: float) -> int | str:
+    """A que horas a gravação passou pelo ponto — ou por que não dá pra dizer."""
+    perto = [(q[0], _dist_m(lat, lng, q[1], q[2])) for q in pontos]
+    perto = [(t, d) for t, d in perto if d <= RAIO_M]
+    if not perto:
+        return "longe da gravação"
+    passagens, atual = [], [perto[0]]
+    for t, d in perto[1:]:
+        if t - atual[-1][0] > PASSAGEM_S:
+            passagens.append(atual)
+            atual = []
+        atual.append((t, d))
+    passagens.append(atual)
+    if len(passagens) > 1:
+        return "ambíguo (a gravação passa mais de uma vez por ali)"
+    return min(passagens[0], key=lambda x: x[1])[0]
+
+
+def midias_para_hora(g, p):
+    """Mídias do passeio pro caminho inverso: [(hash, kind, tem_hora_real,
+    (lat, lng) se colocada À MÃO senão None, hora estimada já gravada | None)]."""
+    out = []
+    for m in g.subjects(PH.capturedDuring, rdflib.URIRef(p.iri)):
+        if not str(m).startswith(MED_NS):
+            continue
+        if (m, rdflib.RDF.type, PH.StillImage) in g:
+            kind = "image"
+        elif (m, rdflib.RDF.type, PH.MotionImage) in g:
+            kind = "video"
+        else:
+            continue
+        d = g.value(m, DCT.date)
+        real = d is not None and d.datatype == XSD_DATETIME
+        geo = g.value(m, SCHEMA.locationCreated)
+        pos = None
+        if geo is not None and g.value(geo, PH.coordinateSource) == MANUAL:
+            la, lo = g.value(geo, SCHEMA.latitude), g.value(geo, SCHEMA.longitude)
+            if la is not None and lo is not None:
+                pos = (float(la), float(lo))
+        est = g.value(m, ESTIMADA)
+        ev = est.toPython() if est is not None else None
+        out.append((str(m)[len(MED_NS):], kind, real, pos, geo is not None,
+                    ev.timestamp() if isinstance(ev, datetime) else None))
+    return out
+
+
+def ttl_hora(h: str, kind: str, tem_geo: bool, t: int) -> str:
+    tipo = ("ph:StillImage" if kind == "image" else "ph:MotionImage") + (", ph:GeoreferencedImage" if tem_geo else "")
+    iso = datetime.fromtimestamp(t, TZ_SP).replace(microsecond=0).isoformat()
+    return (f"{PREFIXOS}\nmed:{h}\n    a {tipo} ;\n"
+            f'    ph:estimatedCaptureTime "{iso}"^^xsd:dateTime .\n')
+
+
+def ttl_tipo(h: str, kind: str, tem_geo: bool) -> str:
+    tipo = ("ph:StillImage" if kind == "image" else "ph:MotionImage") + (", ph:GeoreferencedImage" if tem_geo else "")
+    return f"{PREFIXOS}\nmed:{h}\n    a {tipo} .\n"
+
+
+def modo_hora(a, servidor: str, passeios, g) -> None:
+    """Hora ESTIMADA pra mídia sem hora que foi posicionada à mão."""
+    trabalho = []
+    for p in passeios:
+        ms = midias_para_hora(g, p)
+        # estimar: sem hora real + colocada à mão · limpar: tem estimativa que não vale mais
+        if any((not real and pos) or (est is not None and (real or not pos)) for _, _, real, pos, _, est in ms):
+            trabalho.append((p, ms))
+    if not trabalho:
+        print("nenhuma mídia sem hora posicionada à mão (nem estimativa velha pra limpar).")
+        return
+    idx = indice_de_trips(a.usuario, min(p.data for p, _ in trabalho), a.sem_rede)
+    print("═" * 72)
+    print("  HORA ESTIMADA — mídia sem hora, posicionada à mão, sobre a gravação")
+    print("═" * 72)
+    tot, planos = Counter(), []           # planos: (hash, kind, tem_geo, epoch | None=remover)
+    for p, ms in sorted(trabalho, key=lambda x: x[0].data, reverse=True):
+        jan = janela(g, p)
+        r = rastro_do_passeio(p, jan, idx, a.sem_rede) if jan else None
+        c = Counter()
+        for h, kind, real, pos, tem_geo, est in ms:
+            if est is not None and (real or not pos):
+                c["estimativa velha (a limpar)"] += 1
+                planos.append((h, kind, tem_geo, None))
+                continue
+            if real or not pos:
+                continue
+            if r is None:
+                c["passeio sem gravação" if jan else "passeio sem saída/chegada"] += 1
+                continue
+            t = hora_no_ponto(r["pontos"], pos[0], pos[1])
+            if isinstance(t, str):
+                c[t] += 1
+                if est is not None:       # tinha estimativa, o ponto mudou e ficou sem resposta
+                    planos.append((h, kind, tem_geo, None))
+            elif est is not None and abs(est - t) < 60:
+                c["já estimada (igual)"] += 1
+            else:
+                c["estimáveis"] += 1
+                planos.append((h, kind, tem_geo, t))
+        tot.update(c)
+        print(f"  {p.data.date()} {p.edicao:13} " + ", ".join(f"{v} {k}" for k, v in c.most_common()))
+    print("─" * 72)
+    for k, v in tot.most_common():
+        print(f"  {v:5}  {k}")
+    if not planos:
+        return
+    if not a.apply:
+        print("\n(dry-run: nada foi gravado. Use --apply.)")
+        return
+    ok, falhas = 0, []
+    for h, kind, tem_geo, t in planos:
+        if t is None:
+            bom, msg = _post(servidor, kind, h, ttl_tipo(h, kind, tem_geo), "ph:estimatedCaptureTime")
+        else:
+            bom, msg = _post(servidor, kind, h, ttl_hora(h, kind, tem_geo, t), "")
+        ok += bom
+        if not bom:
+            falhas.append((h, msg))
+    print(f"\n{ok}/{len(planos)} gravadas (ph:estimatedCaptureTime).")
+    for h, msg in falhas[:10]:
+        print(f"  ✗ {h} {msg}")
+
+
 def midias_do_passeio(g, p):
     """[(hash, kind, epoch | None, tem_geo, fonte_geo)] das mídias do passeio."""
     out = []
@@ -278,6 +415,9 @@ def main() -> None:
     ap.add_argument("--apply", action="store_true", help="grava pra valer (default: dry-run)")
     ap.add_argument("--desfazer", action="store_true",
                     help="tira as coordenadas INTERPOLADAS (só elas) — exige --passeio")
+    ap.add_argument("--hora", action="store_true",
+                    help="o caminho inverso: hora ESTIMADA (ph:estimatedCaptureTime) pra mídia sem "
+                         "hora que foi posicionada à mão")
     ap.add_argument("--ajuste", type=float, default=0.0, metavar="SEG",
                     help="soma SEG segundos à hora das mídias (relógio da câmera errado) — exige --passeio")
     ap.add_argument("--usuario", default=BK.USUARIO_PADRAO, help="conta do RideWithGPS dona das gravações")
@@ -293,6 +433,10 @@ def main() -> None:
         passeios = [p for p in passeios if p.edicao.lower() == k or p.slug.lower() == k]
         if not passeios:
             sys.exit(f"passeio não encontrado: {a.passeio}")
+
+    if a.hora:
+        modo_hora(a, servidor, passeios, g)
+        return
 
     if a.desfazer:
         p = passeios[0]

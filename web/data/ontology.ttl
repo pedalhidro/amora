@@ -70,6 +70,13 @@ ph:coordinateSource a owl:ObjectProperty ;
     rdfs:domain schema:GeoCoordinates ;
     rdfs:range ph:CoordinateSource .
 
+ph:estimatedCaptureTime a owl:DatatypeProperty ;
+    rdfs:label "hora estimada da captura"@pt ;
+    rdfs:comment
+        "Hora APROXIMADA em que a mídia foi feita, quando ela não tem hora de verdade (dcterms:date é só o dia, ou falta): o instante em que a gravação GPS do passeio passou pelo ponto onde a mídia foi posicionada à mão. NUNCA substitui o dcterms:date — um xsd:dateTime lá continua querendo dizer hora real (EXIF/moov); esta é uma estimativa, mostrada com ≈."@pt ;
+    rdfs:domain ph:Image ;
+    rdfs:range xsd:dateTime .
+
 ph:availableResolution a owl:DatatypeProperty ;
     rdfs:label "resolução disponível"@pt ;
     rdfs:comment

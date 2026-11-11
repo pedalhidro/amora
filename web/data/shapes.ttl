@@ -31,6 +31,15 @@ ph:VisualMediaShape a sh:NodeShape ;
         sh:message "Ideal: mídia com uma única data (dcterms:date) — xsd:dateTime, ou xsd:date quando só o dia é conhecido. Sem ela, vale o dia do passeio (ph:capturedDuring); sem os dois, a mídia não participa de filtros/navegação temporais."@pt ;
     ] ;
     sh:property [
+        # Hora ESTIMADA (pela posição, sobre a gravação do passeio) — opcional;
+        # só tem efeito quando o dcterms:date não é um xsd:dateTime.
+        sh:path ph:estimatedCaptureTime ;
+        sh:severity sh:Violation ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:dateTime ;
+        sh:message "ph:estimatedCaptureTime, quando presente, é um único xsd:dateTime."@pt ;
+    ] ;
+    sh:property [
         sh:path schema:locationCreated ;
         sh:severity sh:Warning ;
         sh:minCount 1 ;

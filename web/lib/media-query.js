@@ -90,17 +90,24 @@
   // usam `datetime` (sempre um instante ISO com fuso, ou null) pra ordenar,
   // filtrar e agrupar, e `dateOnly` pra NÃO mostrar o 23:59 como se fosse a
   // hora da foto. `raw` é o literal gravado (null = veio do passeio).
-  // Espelhos: _album_sequence (backend/main.py). Mudou aqui, mude lá.
+  //
+  // Um 4º caso, por cima dos dois "sem hora": a mídia tem uma HORA ESTIMADA
+  // (ph:estimatedCaptureTime — o instante em que a gravação do passeio passou
+  // pelo ponto onde ela foi posicionada à mão). Aí `datetime` é a estimativa
+  // (ordena no lugar certo do dia, em vez do 23:59) e `estimated` manda
+  // mostrar a hora com ≈. Um xsd:dateTime de verdade sempre ganha dela.
+  // Espelhos: _media_instant (backend/main.py). Mudou aqui, mude lá.
   var DAY_ONLY_RE = /^(\d{4}-\d{2}-\d{2})(?:Z|[+-]\d{2}:\d{2})?$/;
   var UNTIMED_SUFFIX = 'T23:59:00-03:00';
-  function effectiveDate(raw, tourDate) {
+  function effectiveDate(raw, tourDate, estimated) {
     raw = raw ? String(raw) : '';
     var m = DAY_ONLY_RE.exec(raw);
-    if (m) return { datetime: m[1] + UNTIMED_SUFFIX, dateOnly: true, raw: raw };
-    if (raw) return { datetime: raw, dateOnly: false, raw: raw };
+    if (raw && !m) return { datetime: raw, dateOnly: false, estimated: false, raw: raw };
+    if (estimated) return { datetime: String(estimated), dateOnly: false, estimated: true, raw: raw || null };
+    if (m) return { datetime: m[1] + UNTIMED_SUFFIX, dateOnly: true, estimated: false, raw: raw };
     var t = /^\d{4}-\d{2}-\d{2}/.exec(tourDate ? String(tourDate) : '');
-    if (t) return { datetime: t[0] + UNTIMED_SUFFIX, dateOnly: true, raw: null };
-    return { datetime: null, dateOnly: false, raw: null };
+    if (t) return { datetime: t[0] + UNTIMED_SUFFIX, dateOnly: true, estimated: false, raw: null };
+    return { datetime: null, dateOnly: false, estimated: false, raw: null };
   }
 
   // ── engine (lazy) ─────────────────────────────────────────────────────────
@@ -213,13 +220,15 @@
         var iri = q.subject.value;
         var tourIri = obj1(iri, NS.ph + 'capturedDuring');
         var when = effectiveDate(obj1(iri, NS.dcterms + 'date'),
-          (tourIri && tours[tourIri]) ? tours[tourIri].date : null);
+          (tourIri && tours[tourIri]) ? tours[tourIri].date : null,
+          obj1(iri, NS.ph + 'estimatedCaptureTime'));
         var rec = {
           iri: iri, kind: kind,
           // Data EFETIVA (ver effectiveDate): instante ISO ou null. dateOnly =
           // só o dia é conhecido (não mostrar hora); dateRaw = o literal gravado.
           datetime: when.datetime,
           dateOnly: when.dateOnly,
+          dateEstimated: when.estimated,   // hora ESTIMADA pela posição: mostrar com ≈
           dateRaw: when.raw,
           tourIri: tourIri,
           tourLabel: tourIri ? tourLabel(tourIri) : null,
@@ -290,9 +299,14 @@
     // dela, a do passeio. Só mídia sem data E sem passeio datado fica com ?d
     // não-ligado — vai pro grupo "sem-data", no fim, e fora das facetas de
     // data (FILTER sobre ?d não-ligado = falso).
+    // Ordem de preferência, igual à do effectiveDate: hora de verdade
+    // (xsd:dateTime) → hora ESTIMADA (ph:estimatedCaptureTime) → só o dia →
+    // o dia do passeio. O IF fica não-ligado quando não há nem uma nem outra.
     W.push('OPTIONAL { ?m dcterms:date ?dm }');
+    W.push('OPTIONAL { ?m ph:estimatedCaptureTime ?de }');
     W.push('OPTIONAL { ?m ph:capturedDuring ?dtour . ?dtour a ph:Tour ; dcterms:date ?dt }');
-    W.push('BIND(COALESCE(?dm, ?dt) AS ?d)');
+    W.push('BIND(IF(BOUND(?dm) && DATATYPE(?dm) = xsd:dateTime, ?dm, ?de) AS ?dh)');
+    W.push('BIND(COALESCE(?dh, ?dm, ?dt) AS ?d)');
 
     if (facets.lists && facets.lists.length) {
       W.push(valuesBlock('list', facets.lists));

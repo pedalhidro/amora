@@ -2532,7 +2532,8 @@ _DAY_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})")
 def _media_instant(cat, m):
     """Instante (epoch s) da data EFETIVA de uma mídia, ou None — espelho do
     effectiveDate (lib/media-query.js) + canonicalRowOrder (imagens.html):
-    xsd:dateTime pelo instante (sem fuso = UTC); xsd:date (só o dia) e mídia
+    xsd:dateTime pelo instante (sem fuso = UTC); senão a hora ESTIMADA
+    (ph:estimatedCaptureTime), se houver; senão xsd:date (só o dia) e mídia
     sem data mas com passeio datado = 23:59 -03:00 daquele dia."""
     from datetime import date
     from rdflib import Namespace, RDF
@@ -2542,14 +2543,21 @@ def _media_instant(cat, m):
     def end_of_day(y, mo, dd):   # o UNTIMED_SUFFIX do JS: T23:59:00-03:00
         return datetime(y, mo, dd, 23, 59, tzinfo=_UNTIMED_TZ).timestamp()
 
+    def ts(v):
+        return (v if v.tzinfo else v.replace(tzinfo=timezone.utc)).timestamp()
+
     d = cat.value(m, DCT.date)
-    if d is not None:
-        v = d.toPython()
-        if isinstance(v, datetime):
-            return (v if v.tzinfo else v.replace(tzinfo=timezone.utc)).timestamp()
-        if isinstance(v, date):   # xsd:date — só o dia é conhecido
-            return end_of_day(v.year, v.month, v.day)
-        return None
+    v = d.toPython() if d is not None else None
+    if isinstance(v, datetime):       # hora de verdade (EXIF/moov): sempre ganha
+        return ts(v)
+    if d is not None and not isinstance(v, date):
+        return None                   # literal ilegível (como o NaN do JS)
+    est = cat.value(m, PH.estimatedCaptureTime)
+    ev = est.toPython() if est is not None else None
+    if isinstance(ev, datetime):      # hora ESTIMADA pela posição
+        return ts(ev)
+    if d is not None:                 # xsd:date — só o dia é conhecido
+        return end_of_day(v.year, v.month, v.day)
     # Sem data própria: o dia do passeio (se é um ph:Tour datado).
     t = cat.value(m, PH.capturedDuring)
     if t is not None and (t, RDF.type, PH.Tour) in cat:
