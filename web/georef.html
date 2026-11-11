@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Posicionar fotos no mapa — Pedal Hidrográfico</title>
+<meta name="robots" content="noindex">
+<link rel="stylesheet" href="./lib/tokens.css">
+<link rel="stylesheet" href="./lib/leaflet/leaflet.css">
+<style>
+  /* Posicionar em lote a mídia SEM coordenada de um passeio (a que veio do
+     zap, sem GPS): escolhe a foto, clica na rota. Cada clique grava na hora,
+     no mesmo endpoint da edição (/update-image, /update-video — patch). */
+  html, body { height: 100%; margin: 0; }
+  body { font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--text);
+         display: flex; flex-direction: column; }
+  header { padding: 8px 12px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; border-bottom: 1px solid var(--muted); }
+  header h1 { font-size: 16px; margin: 0; }
+  select, button { font: inherit; }
+  @media (pointer: coarse) { select, button { font-size: 16px; } }
+  #tour { max-width: min(100%, 520px); flex: 1 1 260px; padding: 4px 6px; }
+  #status { font-size: 13px; color: var(--muted); }
+  main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(260px, 38%) 1fr; }
+  #lista { overflow-y: auto; padding: 8px; border-right: 1px solid var(--muted); }
+  #lista h2 { font-size: 13px; margin: 10px 0 6px; font-weight: 600; }
+  #lista h2:first-child { margin-top: 0; }
+  .grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 4px; }
+  .t { position: relative; border: 3px solid transparent; border-radius: 6px; overflow: hidden; cursor: pointer;
+       aspect-ratio: 1; background: color-mix(in srgb, var(--muted) 25%, transparent); padding: 0; }
+  .t img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .t.sel { border-color: var(--accent); }
+  .t.feita { opacity: .55; }
+  .t .v { position: absolute; right: 3px; bottom: 2px; font-size: 12px; color: #fff; text-shadow: 0 0 3px #000; }
+  .t .u { position: absolute; left: 2px; top: 2px; font-size: 11px; padding: 1px 5px; border-radius: 999px; border: 0;
+          background: var(--panel); color: var(--text); cursor: pointer; }
+  #lado { display: flex; flex-direction: column; min-height: 0; }
+  #map { flex: 1; min-height: 240px; }
+  #barra { padding: 6px 10px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; border-top: 1px solid var(--muted); font-size: 13px; }
+  #sel-img { width: 72px; height: 72px; object-fit: cover; border-radius: 6px; background: color-mix(in srgb, var(--muted) 25%, transparent); }
+  #dica { flex: 1 1 200px; }
+  .ponto { background: var(--accent); border: 2px solid #fff; border-radius: 50%; }
+  @media (max-width: 760px) {
+    main { grid-template-columns: 1fr; grid-template-rows: 38% 1fr; }
+    #lista { border-right: 0; border-bottom: 1px solid var(--muted); }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Posicionar fotos no mapa</h1>
+  <select id="tour" aria-label="Passeio"></select>
+  <span id="status">carregando…</span>
+</header>
+<main>
+  <section id="lista" aria-label="Mídia sem posição"></section>
+  <section id="lado">
+    <div id="map"></div>
+    <div id="barra">
+      <img id="sel-img" alt="" hidden>
+      <span id="dica">Escolha um passeio.</span>
+      <label><input type="checkbox" id="snap" checked> prender à rota</label>
+    </div>
+  </section>
+</main>
+
+<script src="./lib/leaflet/leaflet.js"></script>
+<script src="./lib/media-query.js"></script>
+<script type="module">
+import { escapeHtml, TTL_PREFIXES, loadN3, setupEmbeddedPage, EMBEDDED } from './lib/utils.js?api=1';
+
+setupEmbeddedPage(['header h1']);
+const $ = (s, r = document) => r.querySelector(s);
+const MQ = window.PhidroMediaQuery;
+const SCHEMA = 'https://schema.org/';
+const MED_NS = 'https://id.pedalhidrografi.co/midia/';
+const SNAP_PX = 36;                 // clique a até isto da linha gruda nela (px de tela)
+
+let model = null, store = null, routes = new Map();
+let tourIri = null, routeLatLngs = null, routeLayer = null;
+let pend = [], feitas = [];         // records sem posição / posicionados nesta sessão
+let sel = null, busy = false;
+const marks = new Map();            // iri → marcador (posicionados nesta sessão)
+
+// ── estado pro app-pai (contrato phidro-form-state) ────────────────────────
+function formState() {
+  if (!EMBEDDED) return;
+  try {
+    window.parent.postMessage({ type: 'phidro-form-state', busy, dirty: false,
+      label: busy ? 'uma posição sendo gravada' : '' }, window.location.origin);
+  } catch (_) {}
+}
+function mediaChanged(kind, hash) {
+  if (!EMBEDDED) return;
+  try { window.parent.postMessage({ type: 'phidro-media-changed', kind, hash }, window.location.origin); } catch (_) {}
+}
+formState();
+
+// ── mapa ───────────────────────────────────────────────────────────────────
+const map = L.map('map').setView([-23.55, -46.633], 11);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap', maxZoom: 19 }).addTo(map);
+const contexto = L.layerGroup().addTo(map);     // mídia do passeio que JÁ tinha posição
+new ResizeObserver(() => map.invalidateSize()).observe($('#map'));
+
+function snap(latlng) {
+  if (!routeLatLngs || !$('#snap').checked) return latlng;
+  const p = map.latLngToLayerPoint(latlng);
+  let best = null, bestD = Infinity, prev = null;
+  for (const ll of routeLatLngs) {
+    const q = map.latLngToLayerPoint(ll);
+    if (prev) {
+      const c = L.LineUtil.closestPointOnSegment(p, prev, q), d = p.distanceTo(c);
+      if (d < bestD) { bestD = d; best = c; }
+    }
+    prev = q;
+  }
+  return (best && bestD <= SNAP_PX) ? map.layerPointToLatLng(best) : latlng;
+}
+
+map.on('click', async (e) => {
+  if (!sel || busy) return;
+  const ll = snap(e.latlng);
+  await posiciona(sel, ll.lat, ll.lng);
+});
+
+// ── dados ──────────────────────────────────────────────────────────────────
+async function carrega() {
+  const N3 = await loadN3();
+  const quads = [];
+  await Promise.all(['tours.ttl', 'images.ttl', 'identities.ttl'].map(async (f) => {
+    const res = await fetch(`./data/${f}`, { cache: 'no-cache' });
+    if (!res.ok) throw new Error(`${f}: HTTP ${res.status}`);
+    quads.push(...new N3.Parser({ baseIRI: new URL(`./data/${f}`, document.baseURI).href }).parse(await res.text()));
+  }));
+  store = MQ.makeStore(quads);
+  model = MQ.buildMediaRecords(store);
+  try {
+    const res = await fetch('./routes.json');
+    if (res.ok) for (const e of ((await res.json()).routes || [])) {
+      if (e.tourIri && Array.isArray(e.latlngs) && e.latlngs.length > 1) routes.set(e.tourIri, e.latlngs);
+    }
+  } catch (_) { /* sem rotas: posiciona livre */ }
+}
+
+function semPosicao(t) { return model.records.filter((r) => r.tourIri === t && !r.geo); }
+
+function montaSelect() {
+  const conta = new Map();
+  for (const r of model.records) if (r.tourIri && !r.geo) conta.set(r.tourIri, (conta.get(r.tourIri) || 0) + 1);
+  const itens = [...conta.entries()]
+    .map(([t, n]) => ({ t, n, d: (model.tours[t] && model.tours[t].date) || '', rot: model.tourLabel(t) }))
+    .sort((a, b) => b.d.localeCompare(a.d));
+  $('#tour').innerHTML = '<option value="">— escolha o passeio —</option>' + itens.map((i) =>
+    `<option value="${escapeHtml(i.t)}">${escapeHtml(i.d)} · ${escapeHtml(i.rot)} (${i.n} sem posição)</option>`).join('');
+  const total = itens.reduce((s, i) => s + i.n, 0);
+  $('#status').textContent = `${total} mídias sem posição em ${itens.length} passeios`;
+  // ?tour=<slug | IRI>
+  const q = new URLSearchParams(location.search).get('tour');
+  if (q) {
+    const alvo = itens.find((i) => i.t === q || i.t.endsWith('/' + q));
+    if (alvo) { $('#tour').value = alvo.t; abrePasseio(alvo.t); }
+  }
+}
+
+function coordsDe(iri) {
+  const DF = window.N3.DataFactory;
+  const g = store.getObjects(DF.namedNode(iri), DF.namedNode(SCHEMA + 'locationCreated'), null)[0];
+  if (!g) return null;
+  const la = store.getObjects(g, DF.namedNode(SCHEMA + 'latitude'), null)[0];
+  const lo = store.getObjects(g, DF.namedNode(SCHEMA + 'longitude'), null)[0];
+  return (la && lo) ? [parseFloat(la.value), parseFloat(lo.value)] : null;
+}
+
+function abrePasseio(t) {
+  tourIri = t || null;
+  sel = null;
+  feitas = [];
+  for (const m of marks.values()) m.remove();
+  marks.clear();
+  contexto.clearLayers();
+  if (routeLayer) { routeLayer.remove(); routeLayer = null; }
+  routeLatLngs = tourIri ? (routes.get(tourIri) || null) : null;
+  pend = tourIri ? semPosicao(tourIri) : [];
+  if (routeLatLngs) {
+    routeLayer = L.polyline(routeLatLngs, { color: '#c2410c', weight: 4, opacity: .85 }).addTo(map);
+    map.fitBounds(routeLayer.getBounds(), { padding: [24, 24] });
+  }
+  if (tourIri) {
+    for (const r of model.records) {
+      if (r.tourIri !== tourIri || !r.geo) continue;
+      const c = coordsDe(r.iri);
+      if (c) L.circleMarker(c, { radius: 4, color: '#555', weight: 1, fillColor: '#999', fillOpacity: .7 }).addTo(contexto);
+    }
+  }
+  desenha();
+  if (pend.length) seleciona(pend[0]);
+}
+
+function tileHtml(r, feita) {
+  return `<button type="button" class="t${feita ? ' feita' : ''}${sel === r ? ' sel' : ''}" data-iri="${escapeHtml(r.iri)}"` +
+    ` title="${escapeHtml(r.authors && r.authors.length ? r.authors.join(', ') : '')}">` +
+    (r.thumbUrl ? `<img loading="lazy" src="${escapeHtml(r.thumbUrl)}" alt="">` : '') +
+    (r.kind === 'video' ? '<span class="v">▶</span>' : '') +
+    (feita ? '<span class="u" data-desfaz="1" role="button">↩ desfazer</span>' : '') + `</button>`;
+}
+
+function desenha() {
+  const el = $('#lista');
+  if (!tourIri) { el.innerHTML = ''; $('#dica').textContent = 'Escolha um passeio.'; $('#sel-img').hidden = true; return; }
+  el.innerHTML =
+    `<h2>Sem posição — ${pend.length}</h2><div class="grade">${pend.map((r) => tileHtml(r, false)).join('')}</div>` +
+    (feitas.length ? `<h2>Posicionadas agora — ${feitas.length}</h2><div class="grade">${feitas.map((r) => tileHtml(r, true)).join('')}</div>` : '');
+  dica();
+}
+
+function dica() {
+  const img = $('#sel-img');
+  if (sel) { img.src = sel.thumbUrl || ''; img.hidden = !sel.thumbUrl; } else img.hidden = true;
+  $('#dica').textContent = busy ? 'gravando…'
+    : !pend.length ? (feitas.length ? 'Tudo posicionado neste passeio. ✓' : 'Este passeio não tem mídia sem posição.')
+    : sel ? (routeLatLngs ? 'Agora clique na rota (a linha), no lugar onde a foto foi tirada.'
+                          : 'Este passeio não tem rota: clique no mapa, no lugar onde a foto foi tirada.')
+    : 'Escolha uma foto à esquerda.';
+}
+
+function seleciona(r) {
+  sel = r;
+  for (const t of document.querySelectorAll('#lista .t')) t.classList.toggle('sel', t.dataset.iri === (r && r.iri));
+  dica();
+}
+
+$('#lista').addEventListener('click', (e) => {
+  const t = e.target.closest('.t');
+  if (!t || busy) return;
+  const iri = t.dataset.iri;
+  if (e.target.dataset.desfaz) { desfaz(feitas.find((r) => r.iri === iri)); return; }
+  const r = pend.find((x) => x.iri === iri);
+  if (r) seleciona(r);
+});
+$('#tour').addEventListener('change', (e) => { if (!busy) abrePasseio(e.target.value); });
+
+// ── gravar ─────────────────────────────────────────────────────────────────
+// Patch por predicado (o mesmo da edição): só a coordenada e o tipo. O nó _geo
+// leva ph:coordinateSource ph:placedManually — posição APROXIMADA, que um
+// original com GPS de verdade substitui depois.
+async function patch(r, corpo, remove) {
+  const hash = r.iri.slice(MED_NS.length);
+  const fd = new FormData();
+  fd.append('ttl', `${TTL_PREFIXES}\n${corpo}\n`);
+  fd.append('remove', remove || '');
+  const res = await fetch((r.kind === 'image' ? './update-image/' : './update-video/') + encodeURIComponent(hash),
+    { method: 'POST', body: fd });
+  if (!res.ok) {
+    let msg = `HTTP ${res.status}`;
+    try { const j = await res.json(); msg = (j.details && j.details.join('; ')) || j.error || msg; } catch (_) {}
+    throw new Error(msg);
+  }
+  mediaChanged('update-' + r.kind, hash);
+}
+
+function ocupa(v) { busy = v; formState(); dica(); }
+
+async function posiciona(r, lat, lon) {
+  const id = `med:${r.iri.slice(MED_NS.length)}`;
+  const tipo = r.kind === 'image' ? 'ph:StillImage' : 'ph:MotionImage';
+  ocupa(true);
+  try {
+    await patch(r,
+      `${id}\n    a ${tipo}, ph:GeoreferencedImage ;\n    schema:locationCreated ${id}_geo .\n\n` +
+      `${id}_geo a schema:GeoCoordinates ;\n    schema:latitude "${lat.toFixed(6)}"^^xsd:decimal ;\n` +
+      `    schema:longitude "${lon.toFixed(6)}"^^xsd:decimal ;\n    ph:coordinateSource ph:placedManually .`);
+  } catch (e) {
+    ocupa(false);
+    $('#dica').textContent = `Não gravou: ${e.message}`;
+    return;
+  }
+  const i = pend.indexOf(r);
+  pend.splice(i, 1);
+  feitas.unshift(r);
+  marks.set(r.iri, L.marker([lat, lon], { icon: L.divIcon({ className: 'ponto', iconSize: [14, 14] }) }).addTo(map));
+  sel = pend[Math.min(i, pend.length - 1)] || null;      // já pula pra próxima
+  busy = false; formState();
+  desenha();
+}
+
+async function desfaz(r) {
+  if (!r) return;
+  const id = `med:${r.iri.slice(MED_NS.length)}`;
+  ocupa(true);
+  try {
+    await patch(r, `${id}\n    a ${r.kind === 'image' ? 'ph:StillImage' : 'ph:MotionImage'} .`, 'schema:locationCreated');
+  } catch (e) {
+    ocupa(false);
+    $('#dica').textContent = `Não desfez: ${e.message}`;
+    return;
+  }
+  feitas.splice(feitas.indexOf(r), 1);
+  pend.unshift(r);
+  const m = marks.get(r.iri); if (m) { m.remove(); marks.delete(r.iri); }
+  sel = r;
+  busy = false; formState();
+  desenha();
+}
+
+carrega().then(montaSelect).catch((e) => { $('#status').textContent = `Falha ao carregar: ${e.message}`; });
+</script>
+</body>
+</html>

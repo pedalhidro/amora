@@ -23,8 +23,21 @@ ph:VisualMediaShape a sh:NodeShape ;
         sh:severity sh:Warning ;
         sh:minCount 1 ;
         sh:maxCount 1 ;
+        # xsd:dateTime = instante real (EXIF/moov). xsd:date = só o DIA é
+        # conhecido (mídia do zap: o dia é o do passeio; a hora não se
+        # inventa). Leitores tratam o dia sozinho — e a mídia sem data mas com
+        # ph:capturedDuring — como 23:59 (-03:00) daquele dia.
+        sh:or ( [ sh:datatype xsd:dateTime ] [ sh:datatype xsd:date ] ) ;
+        sh:message "Ideal: mídia com uma única data (dcterms:date) — xsd:dateTime, ou xsd:date quando só o dia é conhecido. Sem ela, vale o dia do passeio (ph:capturedDuring); sem os dois, a mídia não participa de filtros/navegação temporais."@pt ;
+    ] ;
+    sh:property [
+        # Hora ESTIMADA (pela posição, sobre a gravação do passeio) — opcional;
+        # só tem efeito quando o dcterms:date não é um xsd:dateTime.
+        sh:path ph:estimatedCaptureTime ;
+        sh:severity sh:Violation ;
+        sh:maxCount 1 ;
         sh:datatype xsd:dateTime ;
-        sh:message "Ideal: mídia com um único timestamp (dcterms:date). Sem ele, a mídia não participa de filtros/navegação temporais."@pt ;
+        sh:message "ph:estimatedCaptureTime, quando presente, é um único xsd:dateTime."@pt ;
     ] ;
     sh:property [
         sh:path schema:locationCreated ;
@@ -552,6 +565,14 @@ ph:GeoCoordinatesShape a sh:NodeShape ;
         sh:minInclusive -180 ;
         sh:maxInclusive 180 ;
         sh:message "Coordenada precisa de longitude (-180 a 180)."@pt ;
+    ] ;
+    sh:property [
+        # Opcional: ausente = coordenada lida do arquivo (EXIF/moov).
+        sh:path ph:coordinateSource ;
+        sh:severity sh:Violation ;
+        sh:maxCount 1 ;
+        sh:in ( ph:placedManually ph:interpolatedFromTrack ) ;
+        sh:message "ph:coordinateSource, quando presente, é ph:placedManually ou ph:interpolatedFromTrack (ausente = veio do arquivo)."@pt ;
     ] .
 
 ph:FileHashShape a sh:NodeShape ;

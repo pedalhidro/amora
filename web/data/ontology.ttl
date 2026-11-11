@@ -46,6 +46,37 @@ ph:GeoreferencedImage a owl:Class ;
         "Mixin: mídia visual (foto OU vídeo) com coordenada GPS — o subconjunto que o mapa renderiza como marcador de foto/vídeo. Usada JUNTO com a subclasse concreta (ex.: `a ph:StillImage, ph:GeoreferencedImage`). Na base ph:Image a coordenada é apenas ideal (sh:Warning); aqui ela vira obrigatória (ph:GeoreferencedImageShape). Os emitters (upload_images.html, build-clips.py) acrescentam este tipo quando a mídia tem GPS."@pt ;
     rdfs:subClassOf ph:Image .
 
+# De onde veio a coordenada de uma mídia. AUSENTE = lida do próprio arquivo
+# (EXIF da foto, moov do vídeo) — o caso histórico, que não precisa de marca.
+ph:CoordinateSource a owl:Class ;
+    rdfs:label "Origem da coordenada"@pt ;
+    rdfs:comment
+        "Como uma coordenada (schema:GeoCoordinates) foi obtida quando NÃO veio do arquivo. Sem ph:coordinateSource, a coordenada foi lida do próprio arquivo (GPS no EXIF/moov)."@pt .
+
+ph:placedManually a ph:CoordinateSource ;
+    rdfs:label "colocada à mão"@pt ;
+    rdfs:comment
+        "Posição APROXIMADA, escolhida por uma pessoa no mapa (em geral sobre a rota do passeio) — a mídia veio sem GPS (ex.: foto do WhatsApp)."@pt .
+
+ph:interpolatedFromTrack a ph:CoordinateSource ;
+    rdfs:label "interpolada do rastro"@pt ;
+    rdfs:comment
+        "Posição calculada a partir da hora da mídia sobre a gravação GPS (com carimbo de tempo) do passeio."@pt .
+
+ph:coordinateSource a owl:ObjectProperty ;
+    rdfs:label "origem da coordenada"@pt ;
+    rdfs:comment
+        "Pendura no NÓ da coordenada (<mídia>_geo), não na mídia: diz que a posição não veio do arquivo. Uma coordenada de GPS de verdade (do original) sempre substitui uma colocada à mão ou interpolada."@pt ;
+    rdfs:domain schema:GeoCoordinates ;
+    rdfs:range ph:CoordinateSource .
+
+ph:estimatedCaptureTime a owl:DatatypeProperty ;
+    rdfs:label "hora estimada da captura"@pt ;
+    rdfs:comment
+        "Hora APROXIMADA em que a mídia foi feita, quando ela não tem hora de verdade (dcterms:date é só o dia, ou falta): o instante em que a gravação GPS do passeio passou pelo ponto onde a mídia foi posicionada à mão. NUNCA substitui o dcterms:date — um xsd:dateTime lá continua querendo dizer hora real (EXIF/moov); esta é uma estimativa, mostrada com ≈."@pt ;
+    rdfs:domain ph:Image ;
+    rdfs:range xsd:dateTime .
+
 ph:availableResolution a owl:DatatypeProperty ;
     rdfs:label "resolução disponível"@pt ;
     rdfs:comment

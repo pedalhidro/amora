@@ -788,6 +788,19 @@ function fmtDateTimePt(iso) {
   if (isNaN(d)) return String(iso);
   return d.toLocaleString('pt-BR');
 }
+// "Quando" de uma mídia. rec.dateOnly = só o DIA é conhecido (mídia do zap, ou
+// sem data e herdando a do passeio — ver effectiveDate em lib/media-query.js):
+// mostra o dia, nunca o 23:59 que só serve pra ordenar. O dia sai do texto
+// (meio-dia local), não do instante — senão outro fuso mostraria o dia vizinho.
+function fmtRecWhen(rec) {
+  if (!rec || !rec.datetime) return '—';
+  // Hora ESTIMADA (ph:estimatedCaptureTime): a foto não tinha hora; esta veio
+  // da posição em que foi colocada, sobre a gravação do passeio. Vai com ≈.
+  if (rec.dateEstimated) return '≈ ' + fmtDateTimePt(rec.datetime);
+  if (!rec.dateOnly) return fmtDateTimePt(rec.datetime);
+  const d = new Date(rec.datetime.slice(0, 10) + 'T12:00:00');
+  return isNaN(d) ? rec.datetime.slice(0, 10) : d.toLocaleDateString('pt-BR');
+}
 
 // N3.js e Tom Select: UMDs vendorados, sob demanda (loadN3/loadTomSelect).
 // JSZip carregado sob demanda (só no download) — mesmo CDN dos outros deps pesados.
@@ -1211,7 +1224,10 @@ function rerender() { if (lastRows) withViewTransition(() => renderGroups(lastRo
 // mídias com a mesma data, ou sem data, saíam embaralhadas) — e o /<n> do
 // álbum precisa de uma ordem exata, que o backend reproduz (_album_sequence)
 // pro preview do link. Sort estável: a mesma mídia em dois grupos mantém a
-// ordem relativa. Data sem fuso conta como UTC (como no backend).
+// ordem relativa. Data sem fuso conta como UTC (como no backend). A data é a
+// EFETIVA do record (lib/media-query.js effectiveDate): mídia só com o dia, ou
+// sem data mas com passeio, vale 23:59 (-03:00) do dia — acima das fotos com
+// hora do mesmo dia; "sem data" = sem data E sem passeio datado.
 function canonicalRowOrder(rows) {
   const instant = (iri) => {
     const s = iri && recordByIri.get(iri) && recordByIri.get(iri).datetime;
@@ -1652,7 +1668,7 @@ function tileHtml(rec, opts) {
       `onerror="this.style.display='none';this.parentElement.classList.add('no-img')">`
     : '';
   const badge = rec.kind === 'video' ? `<span class="badge">▶</span>` : '';
-  const title = escapeHtml(rec.tourLabel || fmtDateTimePt(rec.datetime) || '');
+  const title = escapeHtml(rec.tourLabel || fmtRecWhen(rec) || '');
   const idAttr = opts && opts.id ? ` id="${opts.id}"` : '';   // 1ª do grupo (linha do tempo)
   return (
     `<div class="tile${sel}${noImg}"${idAttr} data-iri="${escapeHtml(rec.iri)}" role="button" tabindex="0" title="${title}">` +
@@ -2176,7 +2192,8 @@ function openLightbox(rec, opts = {}) {
       ? `<a href="${escapeHtml(iri)}" target="_blank" rel="noopener">${escapeHtml(name)}</a>`
       : escapeHtml(name);
   }).join(', ');
-  rows.push(['Data', escapeHtml(fmtDateTimePt(rec.datetime))]);
+  rows.push(['Data', escapeHtml(fmtRecWhen(rec)) + (rec.dateOnly ? ' <small>(hora desconhecida)</small>'
+    : rec.dateEstimated ? ' <small>(hora estimada pela posição)</small>' : '')]);
   if (rec.tourLabel) {
     const tourHtml = rec.tourIri
       ? `<a href="${escapeHtml(rec.tourIri)}" target="_blank" rel="noopener">${escapeHtml(rec.tourLabel)}</a>`

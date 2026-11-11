@@ -96,6 +96,8 @@ one optional hosted deploy target, not a dependency.
   importam como `./lib/media-pipeline.js?api=N`: o .js fica até 4 h no
   cache HTTP da Cloudflare e HTML novo + módulo velho = erro de link, página
   morta — suba o N do form que passar a importar um nome novo),
+  `georef.html` (**posicionar em lote** a mídia sem coordenada de um passeio
+  sobre a rota dele — ver "Coordenada que não veio do arquivo" em Conventions),
   `censo.html` (aggregated tour metrics + roster, opened as a modal
   iframe from the main app), `upload_videos.html` (permanent redirect
   stub → `upload_images.html`), and the `data/`, `photos/`, `clips/`,
@@ -235,7 +237,12 @@ one optional hosted deploy target, not a dependency.
   `POST /upload-tour mode=patch`, `--slug-map` emite
   `scripts/whatsapp-slug-map.json` pra revisão humana. Lê o Drive em modo
   SOMENTE-LEITURA e só metadados — os arquivos são stubs do Google Drive e
-  abrir um força download; ler os 8 mil puxaria ~13 GiB. Ver `docs/CAPTURA.md`),
+  abrir um força download; ler os 8 mil puxaria ~13 GiB. A varredura
+  (`ler_acervo`, compartilhada com as duas ingestões) conta a mídia das
+  subpastas `midia*/` E a mídia solta na raiz da pasta do passeio quando o
+  arquivo tem NOME de mídia — do WhatsApp ou de câmera (`_midia_solta`); o
+  resto da raiz é arte do chamado. Pasta↔passeio casa por DATA (±1 dia).
+  Ver `docs/CAPTURA.md`),
   `import-activities-censo.py` (importa `ph:linkActivity` da planilha do censo,
   casando por URL da rota → data exata → data ±1; NUNCA por número de edição,
   que colide),
@@ -250,7 +257,8 @@ one optional hosted deploy target, not a dependency.
   rede com certifi + UA próprio), `ingest-whatsapp.py` (**fase 2**: os
   ~6.400 JPEGs + ~1.300 MP4s do WhatsApp, sem EXIF — entram como
   `ph:StillImage` SEM `ph:GeoreferencedImage` (nunca viram marcador),
-  `dcterms:date` = data/hora DO PASSEIO (`ph:departedAt` ou a do tour),
+  `dcterms:date` = o DIA do passeio como `xsd:date` — só o dia, sem hora
+  inventada (ver "Data de mídia tem três estados" em Conventions),
   `schema:datePublished` = carimbo de compartilhamento do nome do arquivo,
   `schema:creditText` = slug cru de quem compartilhou (join via
   `schema:alternateName`, como o `ph:sweepContributor`), e
@@ -262,6 +270,50 @@ one optional hosted deploy target, not a dependency.
   paralelo** (`prewarm`, 32 threads): lidos um a um materializam a ~250 KB/s
   (latência por arquivo), em paralelo ~5× mais; `ingest-whatsapp` pré-baixa
   em lotes de 256),
+  `media_ledger.py` (**o livro-razão da sincronização** — pra cada arquivo de
+  origem, o que foi feito dele: `status` responde "o amora reflete o acervo?"
+  por pasta, `semear` monta as lápides do que foi apagado antes de o livro
+  existir, `retidos`/`liberar`/`excluir` resolvem o que ficou retido; as duas
+  ingestões gravam nele. Ver "Livro-razão" em Conventions),
+  `sync-photos.py` (**Fotos da Apple → amora**, só leitura na biblioteca:
+  `candidatas` lista por passeio as fotos na JANELA dele (saída −1 h … chegada
+  +1 h) com câmera no EXIF, agrupadas pela distância à rota (`routes.json`);
+  `revisar --passeio X` sobe uma folha de contato SÓ em 127.0.0.1 (clique =
+  sobe / não sobe; decisões em `.sync-state/photos-review.jsonl`); `enviar`
+  baixa do iCloud uma a uma e sobe o aprovado pelo mesmo caminho de dedup /
+  substituição / lápide das ingestões do Drive, com chave `photos:<uuid>` no
+  livro. Nada sobe sem aprovação — da revisão ou de um álbum listado em
+  `.sync-state/photos-albums.json` (o "Amora" é o do dia a dia) — menos a
+  foto com GPS LONGE da rota (pode ser de casa; pede um "sim" explícito na
+  folha) e a que não cai na janela de passeio nenhum (`--fora-de-janela`). Autoria pela
+  CÂMERA (`.sync-state/photos-cameras.json`; sem câmera no EXIF = sem
+  autoria), quem subiu = a dona da biblioteca; foto editada no Fotos sobe na
+  versão EDITADA. A comparação com o amora na listagem usa o pHash da PRÉVIA
+  local (os originais moram no iCloud); o hash que vale é o do arquivo
+  baixado. Gotchas: precisa de osxphotos ≥ 0.78; o download é pelo app Fotos
+  (AppleScript — `use_photos_export`), que tem que estar ABERTO NORMALMENTE
+  (lançado sem janela por um script ele trava e todo AppleEvent dá timeout);
+  PhotoKit não funciona a partir do VS Code (o app não declara uso do Fotos e
+  o macOS nega sem perguntar). Vídeos sobem pelo caminho de vídeo do
+  `ingest-whatsapp.py` (vhash, 360p, hora e GPS do arquivo)),
+  `georef-tracks.py` (**posicionar pela HORA**: mídia com hora de verdade
+  (`xsd:dateTime`) e SEM coordenada ganha a posição da gravação GPS do passeio
+  naquele instante, marcada `ph:coordinateSource ph:interpolatedFromTrack`;
+  dry-run por padrão, `--apply` grava via `/update-image|video` (patch),
+  `--desfazer --passeio X` tira só as interpoladas, `--ajuste SEG` corrige
+  relógio de câmera, `--hora` é o caminho inverso (hora ESTIMADA pra mídia
+  posicionada à mão — ver Conventions). A gravação é um trip do RideWithGPS da conta de quem
+  mantém o acervo (os Strava do catálogo são quase todos de outras pessoas —
+  inacessíveis), escolhido por cobrir ≥ 60 % da janela saída…chegada E por
+  seguir a rota planejada (mediana rastro→rota ≤ 200 m — a escolha é pelo
+  horário, e em 4 de 75 passeios a gravação era de outra coisa), CORTADO
+  nessa janela (± 10 min — fora dela é o caminho de casa de uma pessoa só) e
+  guardado só em `ignore/tracks/`: nada do rastro é publicado. Só preenche o
+  que está vazio; buraco > 3 min na gravação não é atravessado; passeio sem
+  `ph:departedAt`/`ph:arrivedAt` fica de fora. Gotcha: a listagem
+  `/users/<id>/trips.json` hoje devolve a conta inteira numa LISTA (o
+  `listar_trips` do `backfill-activities.py` ainda espera `{results}` e
+  quebra), e `departed_at` vem ora ISO, ora número),
   `mock_location.sh` (empurra posições de
   teste da localização ao vivo pro backend — random walk, 1 ponto/3 s; bate no
   remoto amora por padrão, `--local` p/ 127.0.0.1:8080; curl não precisa de
@@ -1151,6 +1203,24 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
   e gravam blobs FORA do `_state_lock`; só o RMW do catálogo, com
   re-checagem TOCTOU da colisão cross-type, roda sob o lock. Não reintroduzir
   `@serialized` num handler que lê `request.files`.
+- **Data de mídia tem três estados; a hora nunca é inventada.** `dcterms:date`
+  de `ph:Image` é `xsd:dateTime` (instante real — EXIF/moov), `xsd:date` (só o
+  DIA é conhecido — mídia do zap: o dia é o do passeio) ou ausente. Nos dois
+  últimos a mídia vale pelo dia (o próprio, ou o do `ph:capturedDuring`) às
+  **23:59 -03:00**: na ordem "mais novas primeiro" fica acima das fotos com
+  hora do mesmo dia; "sem data" é só quem não tem data NEM passeio datado. A
+  regra mora em `effectiveDate` (`lib/media-query.js`): os records levam
+  `datetime` (instante efetivo, pra ordenar/filtrar/agrupar), `dateOnly` (não
+  mostrar hora — `fmtRecWhen` na galeria, `fmtMediaWhen` no app.js) e
+  `dateRaw` (o literal). Espelhos que mudam JUNTO: o SPARQL de
+  `buildQueryFromFacets` (COALESCE com a data do passeio; grupos por SUBSTR,
+  não YEAR/MONTH, que só valem pra dateTime), `_album_sequence` no backend e
+  o `mediaEffectiveDate` do app.js (delega ao `effectiveDate`). Quem ESCREVE:
+  a edição de mídia (`upload_images.html?edit=`) tem dia + hora opcional (só
+  o dia → `xsd:date`), os cards de envio têm "ou só o dia" (vale com
+  Data/hora vazio; `cardDateLiteral`), e `ingest-whatsapp.py` grava o dia do
+  passeio como `xsd:date`. O `/subir` não tem campo de data: arquivo sem EXIF
+  sobe sem data e sem passeio (corrige-se no ✎ editar). Nunca gravar a hora do passeio como se fosse a da foto.
 - **Álbum = `/imagens/lista/<slug>[/<n>]`.** O backend (`album_page`) serve o
   `imagens.html` nesse path com as tags de **preview de link** (og:/twitter:)
   do álbum ou da n-ésima mídia injetadas depois do `<title>` (o `<title>` fica
@@ -1450,6 +1520,91 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
   trava esperando alguém ser cadastrado; a resolução é um join via
   `schema:alternateName`. `ph:mediaCount` é a versão velha disso, está
   `owl:deprecated`, e **não se escreve mais nele**. Ver `docs/CAPTURA.md`.
+- **Livro-razão da sincronização (`scripts/media_ledger.py`, estado em
+  `.sync-state/`).** `media-ledger.jsonl` (só acrescenta; a última linha de
+  cada origem é o estado dela) e `media-seen.json` (todo hash que o amora já
+  teve). Fica FORA dos catálogos e do git de propósito: o repo é público e os
+  nomes de arquivo carregam nome de gente — e um registro guardado nas triples
+  da mídia morreria junto com ela, fazendo a foto apagada por privacidade subir
+  de novo. Regras: a chave é `drive:<item-id>` (xattr
+  `com.google.drivefs.item-id#S`, lido via ctypes — sobrevive a renomear
+  pasta) ou `photos:<uuid>`, nunca o caminho; só `ingested`/`duplicate`/
+  `excluded` encerram um arquivo (não é relido) — "sem GPS", erro e `held` são
+  notas, reavaliadas a cada rodada; a sincronização é só aditiva (apagou no
+  amora → respeitado; sumiu na origem → relatado, nunca propagado); **lápide**
+  = hash que o amora já teve e não tem mais, e um arquivo novo a ≤
+  `LAPIDE_HAMMING` (10 — mais largo que os 5 da dedup, porque errar pra menos
+  republica foto apagada) de uma lápide fica `held` até alguém `liberar`;
+  **falha fechada**: `--apply` sem livro PARA (clone novo/worktree tem
+  `.sync-state/` vazio — o 1º uso é `semear` + `--iniciar-livro`), catálogo que
+  não baixa do servidor PARA (sem fallback pro `images.ttl` do repo), arquivo
+  sem id do Drive não sobe. Dry-run nunca grava no livro. Quem escrever uma
+  ingestão nova (as do Fotos) usa `L.abre_livro` / `L.prepara` /
+  `L.estado_da_origem` / `livro.registra` como as duas existentes.
+- **"Original é sempre melhor": o original SUBSTITUI a cópia, no mesmo IRI.**
+  Quando uma ingestão acha que o amora já tem a foto (Hamming ≤ 5) numa versão
+  pior — sem coordenada e o original tem GPS (`ganha-gps`), só com o dia e o
+  original tem hora (`ganha-hora`), ou veio do zap (`schema:datePublished`, que
+  só o `ingest-whatsapp.py` grava) —, o original toma o lugar dela:
+  `/upload-image` com o TTL de `med:<hash DA QUE JÁ ESTÁ>` (o endpoint é
+  purge-and-replace e regrava os blobs). O IRI fica porque links, álbuns e o
+  livro-razão apontam pra ele; apagar e subir de novo quebraria os três e
+  criaria uma lápide segurando as outras cópias da mesma foto. Como é
+  purge-and-replace, o que a mídia antiga tinha é HERDADO (`herdado` /
+  `props_herdados` em `ingest-drive.py`: licença, passeio, autoria, crédito,
+  álbuns, e a coordenada se o original não traz uma); o
+  `schema:datePublished` NÃO é herdado — é a ausência dele (mais a data-hora/
+  GPS já presentes) que impede uma segunda substituição. **Vídeo** também
+  substitui (`/upload-video` com `id` = o vhash antigo), mas o casamento é
+  outro: o vhash separa mal (vídeos DIFERENTES ficam a 13–20 bits; a cópia
+  do zap fica a ~11 do original), então pra substituir vale o critério
+  composto de `gemeo_de_video` — mesma duração (±0,25 s) E Hamming ≤ 12. A
+  hora do vídeo original vem do `CreationDate` (Apple, com fuso); o
+  `CreateDate` (mvhd) só vale se cair a ≤ 36 h do passeio — em arquivo que
+  passou por app ele é a hora em que foi SALVO. No livro vira `ingested` com `replaced:
+  <motivo>` e `media` = o hash antigo. `--sem-substituir` desliga. Mídia
+  `ph:anonymized`/`ph:compressed` NUNCA é substituída (`herdado["protegida"]`):
+  o arquivo publicado foi limpo de propósito, e o original devolveria o EXIF
+  que a pessoa tirou. Limites:
+  `thumb`/`large` têm cache imutável de 1 ano na mesma chave (quem já viu a
+  cópia segue vendo a versão antiga) e um `original.jpg` antigo sobra no bucket
+  quando o original novo é `.heic`.
+- **Hora estimada mora em `ph:estimatedCaptureTime`, nunca no `dcterms:date`.**
+  O 4º estado da data de mídia: sem hora de verdade (só o dia, ou nada), mas
+  posicionada à mão num passeio que tem gravação GPS → a hora em que a
+  gravação passou por aquele ponto (`georef-tracks.py --hora`; só quando passa
+  UMA vez a ≤ 60 m — ida-e-volta e ponto de encontro de pedal circular ficam
+  sem estimativa). Um `xsd:dateTime` no `dcterms:date` segue querendo dizer
+  hora REAL e sempre ganha. Nos leitores: `effectiveDate(raw, tourDate,
+  estimated)` devolve `datetime` = a estimativa (ordena no lugar certo do dia,
+  não às 23:59) e `estimated: true` → os records/fotos levam `dateEstimated`,
+  e a hora sai com "≈" (`fmtRecWhen`, `fmtMediaWhen`). Espelhos que mudam
+  JUNTO: o SPARQL de `buildQueryFromFacets` (`?dh` = dateTime real, senão a
+  estimada; depois `COALESCE(?dh, ?dm, ?dt)`) e `_media_instant` no backend.
+  O `--hora` também LIMPA a estimativa que ficou velha (a mídia ganhou hora
+  real, ou perdeu a posição à mão). Validação do método irmão (posição pela
+  hora), em 11/2026: 579 mídias com GPS e hora de verdade → mediana de 5 m
+  entre o GPS do arquivo e a posição da gravação, p90 25 m, p95 55 m.
+- **Coordenada que não veio do arquivo é marcada (`ph:coordinateSource`).**
+  Mídia sem GPS (a do zap) pode ser posicionada à mão: na edição
+  (`upload_images.html?edit=` → "🗺 Posicionar no mapa") ou em lote na
+  `georef.html` (escolhe o passeio, clica na foto, clica na rota — grava na
+  hora via `/update-image` / `/update-video`, patch). O seletor desenha a rota
+  do passeio (`routes.json`) e o clique gruda na linha a ≤ 36 px de TELA
+  (`SNAP_PX`; "prender à rota" desliga). A marca vai no NÓ `<mídia>_geo`:
+  `ph:coordinateSource ph:placedManually` (ou `ph:interpolatedFromTrack`,
+  reservado pro rastro com hora). AUSENTE = lida do arquivo — o histórico todo,
+  sem backfill. Regras: "à mão" é QUALQUER coordenada que não saiu do arquivo
+  (nos cards de envio compara-se com `card.fileGps` no envio — digitar também
+  conta; na edição toda coordenada nova é à mão); editar outro campo NÃO toca
+  o nó (o patch só mexe em `schema:locationCreated` quando lat/lon mudam);
+  os popups do mapa dizem "aproximada" (`geoSourceKind`/`geoSourceLabel`);
+  e nas ingestões o GPS de verdade ganha da coordenada aproximada
+  (`motivo_substituir` → `ganha-gps`), enquanto um original SEM GPS herda a
+  coordenada COM a marca (`linha_fonte_geo`). A substituição relê a mídia no
+  servidor na hora (`herdado_agora`) — o retrato do começo da rodada perderia
+  uma coordenada colocada no meio dela. A lista "Padrão" segue sendo o filtro
+  default do mapa: posicionar uma foto não a põe lá.
 - **Predicados que penduram em nó aninhado têm `rdfs:domain` da CLASSE DO NÓ.**
   O validador roda com `inference="rdfs"`: um `rdfs:domain ph:Tour` num
   predicado do nó do passe tiparia `pas:<slug>_sweep` como `ph:Tour`, jogando-o

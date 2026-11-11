@@ -10,9 +10,10 @@ compartilhou, navegáveis na galeria e no modal do passeio.
 
 O que se sabe de verdade sobre cada arquivo, e é só isso que vai pro TTL:
   · o passeio ......... a pasta do acervo casa com o tours.ttl (audit-captura)
-  · quando ............ dcterms:date = a data/hora DO PASSEIO (ph:departedAt ou
-                        a dcterms:date do tour) — o carimbo no nome do arquivo é
-                        a hora do COMPARTILHAMENTO, não da captura, e vai pra
+  · quando ............ dcterms:date = o DIA do passeio, como xsd:date — só o
+                        dia, sem hora inventada (os leitores tratam como 23:59
+                        daquele dia). O carimbo no nome do arquivo é a hora do
+                        COMPARTILHAMENTO, não da captura, e vai pra
                         schema:datePublished, que é o que ele é.
   · quem compartilhou . o slug do acervo vai SEMPRE como literal em
                         schema:creditText (é o join com identities.ttl via
@@ -76,6 +77,7 @@ def _importa(nome_mod: str, arquivo: str):
 # por sua vez importa o audit-captura (varredura, casamento pasta→passeio).
 I = _importa("ingest_drive", "ingest-drive.py")
 A = I.A
+L = I.L          # livro-razão (scripts/media_ledger.py)
 
 import rdflib  # noqa: E402  (depois dos imports dinâmicos, como o ingest-drive)
 
@@ -88,7 +90,7 @@ RE_CARIMBO = re.compile(
     r"WhatsApp\s+(?:Image|Video|Audio|Ptt)\s+(\d{4}-\d{2}-\d{2})\s+at\s+(\d{2})\.(\d{2})\.(\d{2})",
     re.I)
 
-PREFIXOS = I.PREFIXOS + "@prefix pav:     <http://purl.org/pav/> .\n"
+PREFIXOS = I.PREFIXOS          # (o pav: já vem de lá)
 
 VIDEO_BITRATE_360 = "700k"
 AUDIO_BITRATE_CLIP = "128k"
@@ -110,6 +112,9 @@ class Item:
     duracao: float = 0.0
     original: bool = False          # original sem GPS (fase 1 pulou) — data vem do EXIF
     variantes: dict = field(default_factory=dict)
+    src: str | None = None          # chave no livro-razão (drive:<item-id>)
+    gps: tuple | None = None        # (lat, lon) — só vídeo ORIGINAL com GPS no arquivo
+    tour_data: datetime | None = None   # a data do passeio (pra conferir a data do vídeo)
 
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -125,16 +130,16 @@ def carimbo_compartilhamento(nome: str) -> str | None:
 
 
 def data_do_passeio(g: rdflib.Graph, tour_iri: str) -> str | None:
-    """ph:departedAt (a saída de verdade) ou, sem ele, a dcterms:date do tour —
-    ambos xsd:dateTime já com offset no catálogo."""
+    """O DIA-calendário do passeio (AAAA-MM-DD), que vira um xsd:date na mídia.
+
+    Só o dia: do arquivo do zap a gente sabe em que passeio foi, não a que
+    horas. Antes isto devolvia a data E A HORA da saída — uma hora inventada,
+    indistinguível de um EXIF de verdade. Os leitores (effectiveDate em
+    web/lib/media-query.js) tratam o dia sozinho como 23:59 daquele dia."""
     t = rdflib.URIRef(tour_iri)
-    v = g.value(t, PH.departedAt) or g.value(t, DCTERMS.date)
-    if v is None:
-        return None
-    s = str(v)
-    if "T" not in s:                       # data pura → meia-noite de SP (raro)
-        s += "T00:00:00-03:00"
-    return s
+    v = g.value(t, DCTERMS.date) or g.value(t, PH.departedAt)
+    m = re.match(r"\d{4}-\d{2}-\d{2}", str(v or ""))
+    return m.group(0) if m else None
 
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -252,7 +257,10 @@ def _turtle_str(s: str) -> str:
 def _props_comuns(it: Item) -> list[str]:
     props = [f"dcterms:license <{I.LICENCA_PADRAO}>"]
     if it.data:
-        props.append(f'dcterms:date "{it.data}"^^xsd:dateTime')
+        # "AAAA-MM-DD" = só o dia do passeio (xsd:date); com 'T' = instante
+        # real do EXIF de um original sem GPS (xsd:dateTime).
+        tipo = "dateTime" if "T" in it.data else "date"
+        props.append(f'dcterms:date "{it.data}"^^xsd:{tipo}')
     if it.publicado:
         props.append(f'schema:datePublished "{it.publicado}"^^xsd:dateTime')
     if it.tour_slug:
@@ -265,11 +273,29 @@ def _props_comuns(it: Item) -> list[str]:
     return props
 
 
-def monta_ttl_imagem(it: Item) -> str:
-    ident = f"med:{it.hash}"
-    props = ["a ph:StillImage",              # SEM ph:GeoreferencedImage: não há GPS
-             f"nfo:hasHash {ident}_hash",
-             *_props_comuns(it)]
+def monta_ttl_imagem(it: Item, alvo: str | None = None, herda: dict | None = None) -> str:
+    """Com `alvo` + `herda` é uma SUBSTITUIÇÃO (ver ingest-drive.py: "Original
+    é sempre melhor"): o IRI é o da mídia que já está no amora; data-hora do
+    EXIF entra, a parte social e a coordenada (se a antiga tinha) são herdadas."""
+    h = alvo or it.hash
+    ident = f"med:{h}"
+    geo = herda["geo"] if herda else None
+    if herda is None:
+        props = ["a ph:StillImage",          # SEM ph:GeoreferencedImage: não há GPS
+                 f"nfo:hasHash {ident}_hash",
+                 *_props_comuns(it)]
+    else:
+        props = ["a ph:StillImage" + (", ph:GeoreferencedImage" if geo else ""),
+                 f"nfo:hasHash {ident}_hash"]
+        if it.data and "T" in it.data:       # data-hora REAL do EXIF
+            props.append(f'dcterms:date "{it.data}"^^xsd:dateTime')
+        elif herda["data"]:
+            props.append(f"dcterms:date {herda['data']}")
+        elif it.data:
+            props.append(f'dcterms:date "{it.data}"^^xsd:date')
+        if geo:
+            props.append(f"schema:locationCreated {ident}_geo")
+        props += I.props_herdados(herda, it.pessoa_slug, it.tour_slug, it.slug_bruto)
     if it.original:
         _, mime = I.formato_original(it.caminho)
         if mime != "image/jpeg":
@@ -277,22 +303,131 @@ def monta_ttl_imagem(it: Item) -> str:
     corpo = " ;\n".join(f"    {p}" for p in props)
     derivados = (f"{ident}_hash a nfo:FileHash ;\n"
                  f'    nfo:hashAlgorithm "pHash" ;\n'
-                 f'    nfo:hashValue "{it.hash}" .')
+                 f'    nfo:hashValue "{h}" .')
+    if geo:
+        derivados += (f"\n\n{ident}_geo a schema:GeoCoordinates ;\n"
+                      f'    schema:latitude "{geo[0]:.6f}"^^xsd:decimal ;\n'
+                      f'    schema:longitude "{geo[1]:.6f}"^^xsd:decimal'
+                      f"{I.linha_fonte_geo(herda)} .")
     return f"{PREFIXOS}\n{ident}\n{corpo} .\n\n{derivados}\n"
 
 
-def monta_ttl_video(it: Item) -> str:
-    ident = f"med:{it.hash}"
+# ── Metadados de vídeo ORIGINAL ──────────────────────────────────────────────
+# Vídeo de celular/câmera traz a hora da gravação e, no iPhone, a coordenada.
+# Dois campos de data, e eles NÃO valem o mesmo:
+#   CreationDate (Apple, com fuso) — a hora da GRAVAÇÃO. Confiável.
+#   CreateDate (mvhd)              — em câmera é a gravação; em arquivo que
+#     passou por app/edição é a hora em que foi SALVO (um vídeo de 10/2024
+#     aparecia como 04/2025). Só vale se cair perto do dia do passeio.
+RE_DATA_QT = re.compile(r"^(\d{4}):(\d{2}):(\d{2}) (\d{2}:\d{2}:\d{2})(?:\.\d+)?(Z|[+-]\d{2}:\d{2})?$")
+
+
+def le_meta_video(caminhos: list[Path]) -> dict[str, dict]:
+    if not caminhos:
+        return {}
+    with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as fh:
+        fh.write("\n".join(str(c) for c in caminhos))
+        arglist = fh.name
+    try:
+        out = subprocess.run(
+            ["exiftool", "-n", "-json", "-api", "QuickTimeUTC=1", "-CreationDate", "-CreateDate",
+             "-GPSLatitude", "-GPSLongitude", "-@", arglist],
+            capture_output=True, text=True, check=False)
+        return {j["SourceFile"]: j for j in json.loads(out.stdout)} if out.stdout.strip() else {}
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+    finally:
+        os.unlink(arglist)
+
+
+def _data_qt(v) -> str | None:
+    m = RE_DATA_QT.match(str(v or ""))
+    if not m or m.group(1) == "0000":
+        return None
+    off = m.group(5) or "-03:00"
+    return f"{m.group(1)}-{m.group(2)}-{m.group(3)}T{m.group(4)}{'+00:00' if off == 'Z' else off}"
+
+
+def data_do_video(meta: dict, tour_data: datetime | None) -> str | None:
+    """xsd:dateTime da gravação, ou None (aí vale só o dia do passeio)."""
+    d = _data_qt(meta.get("CreationDate"))
+    if d:
+        return d
+    d = _data_qt(meta.get("CreateDate"))
+    if d and tour_data is not None:
+        try:
+            quando = datetime.fromisoformat(d)
+            ref = tour_data if tour_data.tzinfo else tour_data.replace(tzinfo=quando.tzinfo)
+            if abs((quando - ref).total_seconds()) <= 36 * 3600:
+                return d
+        except ValueError:
+            pass
+    return None
+
+
+# ── O gêmeo de um vídeo original ─────────────────────────────────────────────
+# O vhash separa mal: vídeos DIFERENTES do acervo ficam a 13–20 bits um do
+# outro, e a cópia do zap de um vídeo fica a ~11 do original (a recompressão
+# desloca os quadros amostrados). Então a régua da dedup (≤ 5) não acha a
+# cópia, e alargá-la sozinha casaria vídeos diferentes. Pra SUBSTITUIÇÃO vale
+# um critério composto: mesma duração (a recompressão não a muda) E hash perto.
+GEMEO_HAMMING = 12
+GEMEO_DUR_S = 0.25
+_RE_DUR = re.compile(r"^PT(?:(\d+)M)?([\d.]+)S$")
+
+
+def duracoes_dos_videos(g) -> dict[str, float]:
+    out = {}
+    for m, d in g.subject_objects(rdflib.URIRef("https://schema.org/duration")):
+        mm = _RE_DUR.match(str(d))
+        if mm and str(m).startswith(I.MED_NS):
+            out[str(m)[len(I.MED_NS):]] = int(mm.group(1) or 0) * 60 + float(mm.group(2))
+    return out
+
+
+def gemeo_de_video(vh: str, dur: float, duracoes: dict[str, float], videos: set[str]) -> str | None:
+    """O vídeo do catálogo que é a mesma gravação (cópia recomprimida), ou None."""
+    melhor = None
+    for h, d in duracoes.items():
+        if h in videos and abs(d - dur) <= GEMEO_DUR_S:
+            dist = I.hamming(vh, h)
+            if dist <= GEMEO_HAMMING and (melhor is None or dist < melhor[1]):
+                melhor = (h, dist)
+    return melhor[0] if melhor else None
+
+
+def monta_ttl_video(it: Item, alvo: str | None = None, herda: dict | None = None) -> str:
+    """Com `alvo` + `herda` é uma SUBSTITUIÇÃO (o original no lugar da cópia do
+    zap): IRI, id e nomes dos blobs são os da mídia que já está no amora."""
+    h = alvo or it.hash
+    ident = f"med:{h}"
+    gps = it.gps or (herda["geo"] if herda else None)
     iso = f"PT{round(it.duracao * 100) / 100}S"
-    props = ["a ph:MotionImage",
+    props = ["a ph:MotionImage" + (", ph:GeoreferencedImage" if gps else ""),
              f'schema:duration "{iso}"^^xsd:duration',
-             f'ph:audio "{it.hash}.audio.webm"',
-             f'schema:thumbnail "{it.hash}.thumb.jpg"',
-             f'ph:video360p "{it.hash}.360p.webm"',
-             'ph:availableResolution "audio", "360p"',
-             *_props_comuns(it)]
+             f'ph:audio "{h}.audio.webm"',
+             f'schema:thumbnail "{h}.thumb.jpg"',
+             f'ph:video360p "{h}.360p.webm"',
+             'ph:availableResolution "audio", "360p"']
+    if herda is None:
+        props += _props_comuns(it)
+    else:
+        if it.data and "T" in it.data:
+            props.append(f'dcterms:date "{it.data}"^^xsd:dateTime')
+        elif herda["data"]:
+            props.append(f"dcterms:date {herda['data']}")
+        elif it.data:
+            props.append(f'dcterms:date "{it.data}"^^xsd:date')
+        props += I.props_herdados(herda, it.pessoa_slug, it.tour_slug, it.slug_bruto)
+    derivados = ""
+    if gps:
+        props.append(f"schema:locationCreated {ident}_geo")
+        derivados = (f"\n{ident}_geo a schema:GeoCoordinates ;\n"
+                     f'    schema:latitude "{gps[0]:.6f}"^^xsd:decimal ;\n'
+                     f'    schema:longitude "{gps[1]:.6f}"^^xsd:decimal'
+                     f"{I.linha_fonte_geo(herda) if not it.gps else ''} .\n")
     corpo = " ;\n".join(f"    {p}" for p in props)
-    return f"{PREFIXOS}\n{ident}\n{corpo} .\n"
+    return f"{PREFIXOS}\n{ident}\n{corpo} .\n{derivados}"
 
 
 def envia(servidor: str, endpoint: str, campos: dict, arquivos: dict) -> tuple[bool, str]:
@@ -330,6 +465,10 @@ def main() -> None:
                     help="inclui também os ORIGINAIS que a fase 1 pulou por não terem GPS "
                          "(têm data de captura no EXIF → dcterms:date real; sem marcador)")
     ap.add_argument("--so-videos", action="store_true", help="só os MP4")
+    ap.add_argument("--iniciar-livro", action="store_true",
+                    help="com --apply: cria o livro-razão se ele ainda não existe nesta máquina")
+    ap.add_argument("--sem-substituir", action="store_true",
+                    help="não troca a cópia pior que já está no amora pelo original")
     a = ap.parse_args()
 
     servidor = a.servidor.rstrip("/")
@@ -338,7 +477,7 @@ def main() -> None:
     print("═" * 72)
 
     pastas = A.ler_acervo(Path(a.acervo), quieto=True)
-    passeios, g = A.carregar_catalogos()
+    passeios, g = A.carregar_catalogos(servidor)   # do servidor: o repo fica pra trás
     A.casar(passeios, pastas)
     por_pasta = {p.pasta.nome: p for p in passeios if p.pasta}
     pessoas = I.mapa_pessoas()
@@ -354,9 +493,12 @@ def main() -> None:
         if p is None and pa.whatsapp_paths:
             sem_passeio.add(pa.nome)
             continue                         # sem passeio não há o que ancorar: fica pra depois
-        fontes = [(c, sl, False) for c, sl in pa.whatsapp_paths]
+        # ORIGINAIS PRIMEIRO: a dedup é "quem chega primeiro fica", e o original
+        # (com data de captura de verdade) tem que ganhar da cópia do zap.
+        fontes = []
         if a.originais:
             fontes += [(c, sl, True) for c, sl in pa.originais_paths]
+        fontes += [(c, sl, False) for c, sl in pa.whatsapp_paths]
         for caminho, slug, original in fontes:
             ext = caminho.suffix.lower()
             if ext in A.IMAGE_EXT and quer_img:
@@ -379,6 +521,7 @@ def main() -> None:
             if a.so_resolvidos and not it.pessoa_slug:
                 continue
             it.tour_slug, it.tour_iri = p.slug, p.iri
+            it.tour_data = p.data
             it.data = data_do_passeio(g, p.iri)
             it.publicado = carimbo_compartilhamento(caminho.name)   # None nos originais
             cands.append(it)
@@ -389,15 +532,55 @@ def main() -> None:
     if not cands:
         sys.exit("nenhum arquivo do WhatsApp com esses filtros.")
 
+    # ── Livro-razão: o que já tem desfecho não é nem lido de novo ──────────
+    por_classe = I.hashes_no_servidor(servidor)
+    fotos, videos = por_classe["StillImage"], por_classe["MotionImage"]
+    vivos = fotos | videos
+    com_geo = L.hashes_com_geo(g)
+    livro = L.abre_livro(a.apply, a.iniciar_livro)
+    lapides = L.prepara(por_classe, grava=a.apply, livro=livro)
+    acervo_raiz = Path(a.acervo)
+
+    def anota(it, outcome, **kw):
+        if livro is not None and a.apply and it.src:
+            st = it.caminho.stat()
+            livro.registra(it.src, outcome, fase="whatsapp", kind=it.kind,
+                           path=os.path.relpath(it.caminho, acervo_raiz),
+                           size=st.st_size, mtime=int(st.st_mtime),
+                           tour=it.tour_slug, **kw)
+
+    no_livro, sem_id, restam = {}, [], []
+    for it in cands:
+        it.src = L.chave_drive(it.caminho)
+        if it.src is None:
+            sem_id.append(it)
+            if a.apply:
+                continue                    # sem id não dá pra rastrear: não sobe
+        est, _ = L.estado_da_origem(it.src, livro, vivos)
+        if est in ("subiu", "duplicata", "excluida", "apagada-no-amora"):
+            no_livro[est] = no_livro.get(est, 0) + 1
+            continue
+        restam.append(it)
+    n_cands = len(cands)
+    cands = restam
+    if no_livro:
+        print("\njá resolvidos no livro-razão (não relidos): "
+              + ", ".join(f"{v} {k}" for k, v in sorted(no_livro.items())))
+    if sem_id:
+        print(f"⚠ {len(sem_id)} arquivos sem id do Drive"
+              + (" — NÃO sobem (não dá pra rastrear)" if a.apply else ""))
+    if not cands:
+        print("\nnada a fazer: todo candidato já tem desfecho no livro-razão.")
+        return
+
     total_b = sum(c.caminho.stat().st_size for c in cands)
     n_img = sum(1 for c in cands if c.kind == "image")
     n_vid = len(cands) - n_img
-    print(f"\n{n_img} imagens + {n_vid} vídeos em {len({c.pasta for c in cands})} pastas")
+    print(f"\n{n_img} imagens + {n_vid} vídeos em {len({c.pasta for c in cands})} pastas"
+          + (f" (de {n_cands} candidatos)" if n_cands != len(cands) else ""))
     print(f"BAIXANDO ~{total_b / 1024**3:.2f} GiB do Drive\n")
-
-    por_classe = I.hashes_no_servidor(servidor)
-    fotos, videos = por_classe["StillImage"], por_classe["MotionImage"]
-    print(f"catálogo do amora: {len(fotos)} fotos + {len(videos)} vídeos já lá\n")
+    print(f"catálogo do amora: {len(fotos)} fotos + {len(videos)} vídeos já lá"
+          f" · {len(lapides)} lápides (mídia apagada)\n")
 
     originais = [c for c in cands if c.original and c.kind == "image"]
     exif = {}
@@ -415,7 +598,26 @@ def main() -> None:
         if fase1:
             print(f"  {len(fase1)} originais COM GPS pulados (são da fase 1: ingest-drive.py)")
 
-    dups, erros, prontos, sem_pessoa = [], [], [], []
+    # Vídeos ORIGINAIS: a hora da gravação e (iPhone) a coordenada vêm do arquivo.
+    vids_orig = [c for c in cands if c.original and c.kind == "video"]
+    if vids_orig:
+        I.prewarm([c.caminho for c in vids_orig])
+        mv = le_meta_video([c.caminho for c in vids_orig])
+        for it in vids_orig:
+            meta = mv.get(str(it.caminho), {})
+            real = data_do_video(meta, it.tour_data)
+            if real:
+                it.data = real
+            if I.gps_valido(meta.get("GPSLatitude"), meta.get("GPSLongitude")):
+                it.gps = (float(meta["GPSLatitude"]), float(meta["GPSLongitude"]))
+        print(f"  {len(vids_orig)} vídeos originais: "
+              f"{sum(1 for c in vids_orig if c.data and 'T' in c.data)} com hora de gravação, "
+              f"{sum(1 for c in vids_orig if c.gps)} com GPS")
+
+    dur_cat = duracoes_dos_videos(g)        # pra achar a cópia do zap de um vídeo original
+
+    dups, erros, prontos, sem_pessoa, retidos = [], [], [], [], []
+    subst, substituidas = [], set()      # originais que tomaram o lugar de uma cópia pior
     LOTE = 256                                  # pré-baixa em lotes (não o acervo inteiro de uma vez)
     for i, it in enumerate(cands, 1):
         if (i - 1) % LOTE == 0:
@@ -431,11 +633,71 @@ def main() -> None:
                 it.hash = vhash(it.caminho, it.duracao)
         except Exception as e:              # noqa: BLE001
             erros.append((it, f"hash: {e}"))
+            anota(it, "error", reason=f"hash: {e}"[:120])
             continue
         antigo = I.ja_existe(it.hash, conhecidos)
+        if not antigo and it.kind == "video" and it.original and not a.sem_substituir:
+            # A dedup não reconhece a cópia do zap de um vídeo (ver gemeo_de_video).
+            gem = gemeo_de_video(it.hash, it.duracao, dur_cat, conhecidos)
+            if gem and gem not in substituidas \
+                    and I.motivo_substituir(I.herdado(g, gem), it.gps is not None,
+                                            bool(it.data and "T" in it.data)):
+                antigo = gem
         if antigo:
+            # ORIGINAL × a cópia pior (do zap) que já está no amora: o original
+            # toma o lugar dela — foto (sem GPS, mas com EXIF) ou vídeo.
+            h = None
+            if it.original and not a.sem_substituir and antigo not in substituidas:
+                h = I.herdado(g, antigo)
+            mot = I.motivo_substituir(h, it.gps is not None, bool(it.data and "T" in it.data))
+            if mot and a.apply:
+                try:                            # o estado de AGORA da mídia, não o do começo
+                    h = I.herdado_agora(servidor, antigo)
+                    mot = I.motivo_substituir(h, it.gps is not None, bool(it.data and "T" in it.data))
+                except Exception as e:          # noqa: BLE001
+                    erros.append((it, f"relendo a mídia antes de substituir: {e}"))
+                    anota(it, "error", reason=f"reler alvo: {e}"[:120])
+                    continue
+            if mot:
+                if a.apply:
+                    try:
+                        if it.kind == "image":
+                            it.variantes = I.monta_variantes(it.caminho, img, icc)
+                            ok, msg = envia(servidor, "/upload-image",
+                                            {"ttl": monta_ttl_imagem(it, alvo=antigo, herda=h)},
+                                            it.variantes)
+                        else:
+                            it.variantes, it.duracao = transcoda_video(it.caminho, info)
+                            ok, msg = envia(servidor, "/upload-video",
+                                            {"ttl": monta_ttl_video(it, alvo=antigo, herda=h),
+                                             "id": antigo}, it.variantes)
+                    except subprocess.CalledProcessError as e:
+                        ok, msg = False, f"ffmpeg: {(e.stderr or b'').decode(errors='replace')[:160]}"
+                    except Exception as e:      # noqa: BLE001
+                        ok, msg = False, f"variantes: {e}"
+                    if not ok:
+                        erros.append((it, msg))
+                        anota(it, "error", reason=str(msg)[:120])
+                        continue
+                    anota(it, "ingested", media=antigo, hash=it.hash, src_gps=it.gps is not None,
+                          replaced=mot, dist=I.hamming(it.hash, antigo))
+                substituidas.add(antigo)
+                subst.append((it, antigo, mot))
+                print(f"  [{i}/{len(cands)}] {'⇄' if a.apply else '~'} {it.caminho.name[:44]:46} "
+                      f"substitui med:{antigo} ({mot})")
+                continue
             dups.append((it, antigo))
+            anota(it, "duplicate", media=antigo, hash=it.hash,
+                  dist=I.hamming(it.hash, antigo), src_gps=False,
+                  alvo_geo=antigo in com_geo)
             continue
+        # Parece uma mídia que foi APAGADA no amora? Então não sobe sozinha.
+        if not (livro and it.src in livro.liberados):
+            lp = L.lapide_proxima(it.hash, it.kind, lapides)
+            if lp:
+                retidos.append((it, lp))
+                anota(it, "held", reason="lapide", media=lp[0], dist=lp[1], hash=it.hash)
+                continue
         if not it.pessoa_slug:
             sem_pessoa.append(it)
 
@@ -457,8 +719,10 @@ def main() -> None:
                 ok, msg = False, f"variantes: {e}"
             if not ok:
                 erros.append((it, msg))
+                anota(it, "error", reason=str(msg)[:120])
                 print(f"  [{i}/{len(cands)}] ✗ {it.caminho.name[:44]:46} {msg[:90]}")
                 continue
+            anota(it, "ingested", media=it.hash, hash=it.hash, src_gps=it.gps is not None)
             conhecidos.add(it.hash)
             print(f"  [{i}/{len(cands)}] ✓ {it.caminho.name[:44]:46} med:{it.hash} {rot}")
         else:
@@ -469,6 +733,14 @@ def main() -> None:
     print("\n" + "─" * 72)
     print(f"  candidatos ……………… {len(cands)}  ({n_img} imagens, {n_vid} vídeos)")
     print(f"  já no amora (dedup) … {len(dups)}")
+    if subst:
+        print(f"  {'SUBSTITUÍRAM' if a.apply else 'substituiriam'} a cópia … {len(subst)}  "
+              f"(original no lugar da versão pior)")
+    if retidos:
+        print(f"  RETIDOS ……………… {len(retidos)}  (parecem mídia apagada no amora — "
+              f"`media_ledger.py retidos`)")
+        for it, (lap, d) in retidos[:8]:
+            print(f"      {it.caminho.name[:40]:42} ~ {lap} ({d} bits)")
     print(f"  {'ENVIADOS' if a.apply else 'a enviar (dry-run)'} …………… {len(prontos)}")
     if sem_pessoa:
         print(f"  sem pessoa mapeada …… {len(sem_pessoa)}  (entram só com schema:creditText)")

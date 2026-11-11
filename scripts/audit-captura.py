@@ -124,11 +124,12 @@ def norm(s: str) -> str:
 #   "2025-03-29 SN Bicipassarinhada Raposo"
 #   "2026-04-11 - Bicipassarinhar 4"
 #   "2026-01-29 Oficina Hidro Cartografia Bordada SESC Consolação"
+#   "2026-11-04 PH117 Bonde Pedra Cachoeira"        (série colada no número)
 RE_PASTA = re.compile(
     r"^(?P<data>\d{4}-\d{2}-\d{2})"
-    r"(?:\s+(?P<serie>PH|BP|BT|SESC|S)\b)?"
+    r"(?:\s+(?P<serie>PH|BP|BT|SESC|S)(?:\b|(?=\d)))?"
     r"(?:\s*-)?"
-    r"(?:\s+(?P<num>\d+))?"
+    r"(?:(?:\s+|(?<=[A-Z])(?=\d))(?P<num>\d+))?"
     r"(?:\s+(?P<sn>SN)\b)?"
     r"\s*-?\s*(?P<titulo>.*)$"
 )
@@ -160,6 +161,7 @@ class PastaAcervo:
     contribuintes: Counter = field(default_factory=Counter)
     mtime_max: float = 0.0
     tem_midia_dir: bool = False
+    midia_na_raiz: int = 0        # mídia solta na raiz (sem subpasta midia/)
     arte_na_raiz: list[str] = field(default_factory=list)
     ignorados: list[str] = field(default_factory=list)   # mídia fora de pasta reconhecida
 
@@ -219,10 +221,20 @@ def ler_acervo(raiz: Path, quieto: bool = False) -> list[PastaAcervo]:
             num=int(m.group("num")) if m.group("num") else None,
             titulo=(m.group("titulo") or "").strip(),
         )
-        # arquivos soltos na raiz da pasta = material do chamado (arte, gdoc)
+        # Arquivos soltos na raiz da pasta são, em regra, material do chamado
+        # (arte, mapa-base, gdoc). MAS nas pastas mais novas — criadas por
+        # quem colabora, sem a subpasta midia/ — a mídia do pedal foi largada
+        # ali mesmo: em 11/2026 eram 246 arquivos do zap em 5 pastas (118 no
+        # "Pedal pela Democracia", 64 no PH 117), invisíveis pra auditoria e
+        # pras duas ingestões. Conta como mídia o que tem NOME de mídia
+        # (_midia_solta): arquivo do WhatsApp ou original de câmera. O resto
+        # da raiz segue sendo arte.
         for f in os.scandir(ent.path):
             if f.is_file() and not f.name.startswith("."):
-                if Path(f.name).suffix.lower() in IMAGE_EXT:
+                if _midia_solta(f.name):
+                    _conta_midia(f, p, subpasta=None)
+                    p.midia_na_raiz += 1
+                elif Path(f.name).suffix.lower() in IMAGE_EXT:
                     p.arte_na_raiz.append(f.name)
 
         # A pasta de mídia NÃO tem nome único no acervo: 'midia' (83),
@@ -253,6 +265,24 @@ def _tem_imagem(d: Path) -> bool:
     return False
 
 
+# Nome de arquivo que só uma câmera/celular dá: IMG_9063.MOV, DSC09460.JPG,
+# PA243145.JPG (Olympus/Panasonic: P + mês em hexa + dia + nº), PXL_…,
+# 20261024_133000.jpg (Android). Deliberadamente estreito: na raiz da pasta
+# também moram "chamado.png", "46.jpeg", "base.jpg", "PH96.png" — arte.
+RE_CAMERA = re.compile(
+    r"^(?:(?:IMG|DSC|DSCN|DSCF|PXL|MVI|VID|GOPR|GH|GX|DJI)[_-]?\d{3,}"
+    r"|P[0-9A-C]\d{6}"
+    r"|\d{8}[_-]\d{6})", re.I)
+
+
+def _midia_solta(nome: str) -> bool:
+    """Um arquivo solto na RAIZ da pasta do passeio é mídia do pedal (e não
+    arte do chamado)? Só pelo nome — nada é aberto."""
+    if Path(nome).suffix.lower() not in IMAGE_EXT | VIDEO_EXT | AUDIO_EXT:
+        return False
+    return bool(RE_WA.search(nome) or RE_CAMERA.match(nome))
+
+
 def _varre_midia(d: Path, p: PastaAcervo, subpasta: str | None) -> None:
     for f in os.scandir(d):
         if f.name.startswith("."):
@@ -262,30 +292,35 @@ def _varre_midia(d: Path, p: PastaAcervo, subpasta: str | None) -> None:
             continue
         if not f.is_file():
             continue
-        ext = Path(f.name).suffix.lower()
-        if ext not in IMAGE_EXT | VIDEO_EXT | AUDIO_EXT:
-            continue
-        st = f.stat()
-        p.arquivos += 1
-        p.bytes_ += st.st_size
-        p.mtime_max = max(p.mtime_max, st.st_mtime)
-        if ext in VIDEO_EXT:
-            p.videos += 1
-        elif ext in IMAGE_EXT:
-            p.imagens += 1
-        # O WhatsApp remove TODO o EXIF ao enviar: sem GPS, sem data de
-        # captura, sem câmera. Esses arquivos podem virar mídia de galeria,
-        # mas nunca marcador no mapa. Os originais (AirDrop, cabo, Drive
-        # direto) preservam o EXIF e são o material de tier alto do acervo.
-        slug = _slug_do_arquivo(f.name, subpasta)
-        if RE_WA.search(f.name):
-            p.do_whatsapp += 1
-            p.whatsapp_paths.append((Path(f.path), slug))
-        else:
-            p.originais += 1
-            p.originais_paths.append((Path(f.path), slug))
-        if slug:
-            p.contribuintes[slug] += 1
+        _conta_midia(f, p, subpasta)
+
+
+def _conta_midia(f, p: PastaAcervo, subpasta: str | None) -> None:
+    """Soma UM arquivo de mídia (os.DirEntry) à pasta. Só metadados."""
+    ext = Path(f.name).suffix.lower()
+    if ext not in IMAGE_EXT | VIDEO_EXT | AUDIO_EXT:
+        return
+    st = f.stat()
+    p.arquivos += 1
+    p.bytes_ += st.st_size
+    p.mtime_max = max(p.mtime_max, st.st_mtime)
+    if ext in VIDEO_EXT:
+        p.videos += 1
+    elif ext in IMAGE_EXT:
+        p.imagens += 1
+    # O WhatsApp remove TODO o EXIF ao enviar: sem GPS, sem data de
+    # captura, sem câmera. Esses arquivos podem virar mídia de galeria,
+    # mas nunca marcador no mapa. Os originais (AirDrop, cabo, Drive
+    # direto) preservam o EXIF e são o material de tier alto do acervo.
+    slug = _slug_do_arquivo(f.name, subpasta)
+    if RE_WA.search(f.name):
+        p.do_whatsapp += 1
+        p.whatsapp_paths.append((Path(f.path), slug))
+    else:
+        p.originais += 1
+        p.originais_paths.append((Path(f.path), slug))
+    if slug:
+        p.contribuintes[slug] += 1
 
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -318,10 +353,34 @@ class Passeio:
         return [rot for chave, rot, _, _ in funil if not self.campos.get(chave)]
 
 
-def carregar_catalogos() -> tuple[list[Passeio], rdflib.Graph]:
+def _baixa_catalogo(servidor: str, nome: str) -> str:
+    import urllib.request
+    req = urllib.request.Request(f"{servidor}/data/{nome}",
+                                 headers={"User-Agent": USER_AGENT, "Accept": "text/turtle"})
+    with urllib.request.urlopen(req, timeout=60, context=_contexto_ssl()) as r:
+        return r.read().decode("utf-8")
+
+
+def carregar_catalogos(servidor: str | None = None) -> tuple[list[Passeio], rdflib.Graph]:
+    """Lê tours/images/identities. Com `servidor`, do amora de verdade
+    (GET /data/<ttl>); sem, dos arquivos do repo (web/data/).
+
+    O servidor é o padrão de quem chama, e de propósito NÃO há fallback pro
+    disco: os catálogos do repo só mudam num pull e ficam meses pra trás (em
+    11/2026 estavam em 09/09 — sem os passeios novos, as pastas deles sairiam
+    como "sem passeio" e a ingestão as pularia calada). Falhou a rede? Erro.
+    """
     g = rdflib.Graph()
     for f in ("tours.ttl", "images.ttl", "identities.ttl"):
-        g.parse(DATA / f, format="turtle")
+        if servidor:
+            try:
+                g.parse(data=_baixa_catalogo(servidor, f), format="turtle")
+            except Exception as e:  # noqa: BLE001
+                raise SystemExit(
+                    f"não consegui ler {f} de {servidor}: {e}\n"
+                    f"(--catalogos-locais lê os do repo — que podem estar velhos)")
+        else:
+            g.parse(DATA / f, format="turtle")
 
     # mídia do amora por passeio
     midia = Counter()
@@ -783,11 +842,14 @@ def main() -> None:
                     help="grava no catálogo os passes de coleta que faltam")
     ap.add_argument("--dry-run", action="store_true", help="com --sync: só mostra")
     ap.add_argument("--servidor", default=os.environ.get("PHIDRO_SERVER", SERVIDOR_PADRAO))
+    ap.add_argument("--catalogos-locais", action="store_true",
+                    help="lê os catálogos de web/data/ do repo em vez do servidor "
+                         "(podem estar velhos — o padrão é ler de --servidor)")
     ap.add_argument("--quem", default=str(PES["1fhkjnba"]),
                     help="IRI de quem passou o zap (default: dandan)")
     a = ap.parse_args()
 
-    passeios, g = carregar_catalogos()
+    passeios, g = carregar_catalogos(None if a.catalogos_locais else a.servidor.rstrip("/"))
     pastas, orfas, sem_pasta = [], [], []
     if not a.sem_acervo:
         pastas = ler_acervo(Path(a.acervo))

@@ -109,20 +109,74 @@ O acervo tem **8.174 arquivos** (13,0 GiB). Deles:
   captura (as fotos do pedal de 2025-09-09 aparecem como "2025-09-10 at
   00.46").
 
-**Esses 7.658 nunca serão marcadores no mapa**, e não há truque que conserte
-isso: qualquer coordenada atribuída a eles seria GPS inventado. O que eles
-podem ser é **memória** — mídia ligada ao passeio (`ph:capturedDuring`) e a
-quem compartilhou, navegável na galeria e no modal do passeio.
+Esses arquivos entram como **memória** — mídia ligada ao passeio
+(`ph:capturedDuring`) e a quem compartilhou, navegável na galeria e no modal do
+passeio — e **sem coordenada**: o arquivo não tem nenhuma.
+
+> **Revisão (11/2026).** Este texto dizia que esses arquivos "nunca serão
+> marcadores no mapa", porque qualquer coordenada atribuída a eles seria "GPS
+> inventado". O coletivo decidiu diferente, com uma condição que resolve a
+> objeção: a foto pode ser **posicionada à mão sobre a rota do passeio**, desde
+> que a posição fique **marcada como aproximada** — `ph:coordinateSource
+> ph:placedManually` no nó da coordenada. Ela nunca se confunde com um GPS de
+> verdade (o mapa diz "aproximada"), e dá lugar a ele se o original da foto
+> chegar depois. As ferramentas: "🗺 Posicionar no mapa" na edição da mídia e a
+> página `georef.html`, que faz um passeio inteiro de uma vez.
 
 O modelo já suporta isso sem termo novo: o mixin `ph:GeoreferencedImage` é o
 que faz o mapa desenhar um marcador. Mídia sem GPS entra como `ph:StillImage`
 **sem** o mixin — e some do mapa sozinha, sem nenhum caso especial no
 `app.js`. O SHACL também já aceita (`schema:locationCreated` é `sh:Warning`).
 
+**A data é só o dia.** Do arquivo do zap sabemos em que passeio foi, não a que
+horas. Ele entra com `dcterms:date "AAAA-MM-DD"^^xsd:date` — o dia do passeio,
+sem hora. (Até 11/2026 o `ingest-whatsapp.py` gravaria a data **e a hora** da
+saída como `xsd:dateTime`: uma hora inventada, indistinguível de um EXIF de
+verdade. Nunca chegou a rodar em produção.) Os leitores tratam o dia sozinho
+como 23:59 daquele dia — a mídia aparece no fim do dia, depois das fotos com
+hora — e mídia sem data nenhuma herda o dia do `ph:capturedDuring`. A regra
+está em `effectiveDate` (`web/lib/media-query.js`); ver "Data de mídia tem
+três estados" no `CLAUDE.md`.
+
 Ordem importa, e é de graça: **ingira os 516 originais primeiro**. Como o pHash
 *é* o IRI e o WhatsApp só recomprime a imagem, uma cópia de zap e o original
 colidem no mesmo IRI — então, com os originais já lá, as cópias deduplicam
 contra eles e **a versão com GPS vence**.
+
+## O livro-razão: como saber que o amora reflete o acervo
+
+`scripts/media_ledger.py` guarda, **fora dos catálogos e fora do git**
+(`.sync-state/`, por máquina), o que foi feito de cada arquivo do acervo:
+subiu (`med:<hash>`), era duplicata (de qual mídia), ficou retido, foi
+excluído à mão. A chave é o id do arquivo no Google Drive — sobrevive a
+renomear a pasta.
+
+```sh
+python scripts/media_ledger.py status     # por pasta: pendente / subiu / duplicata / retida…
+python scripts/media_ledger.py retidos    # o que parece mídia apagada no amora
+python scripts/media_ledger.py liberar drive:<id>    # pode subir
+python scripts/media_ledger.py excluir drive:<id>    # nunca sobe
+```
+
+Três promessas, testadas ponta a ponta num backend de teste:
+
+- **Apagou no amora, fica apagado.** O arquivo de origem tem registro, então
+  não é reenviado. E uma *outra* cópia da mesma foto (a do zap, recomprimida,
+  com outro id) bate numa **lápide** — um hash que o amora já teve e não tem
+  mais — e fica retida até alguém liberar.
+- **Sumiu do Drive, nada acontece no amora.** Só aparece no `status`.
+- **Sem livro, não sobe nada.** Num clone novo, rode `media_ledger.py semear`
+  (monta as lápides a partir dos blobs que já existiram, no disco e nas versões
+  antigas do bucket — em 11/2026 eram 26) e a primeira ingestão com
+  `--iniciar-livro`. Se o livro existe em outra cópia do repo, copie o
+  `.sync-state/` de lá em vez de começar outro.
+
+**O original substitui a cópia.** Se o amora já tem a foto numa versão pior (a
+do zap: sem GPS, só com o dia) e chega o original, ele toma o lugar dela — no
+MESMO endereço (`/midia/<hash>`), com os álbuns, o crédito e o passeio que a
+cópia tinha, mais a hora e a coordenada do EXIF. A ordem de ingestão deixa de
+importar: zap primeiro e original depois dá no mesmo que o contrário. Só fotos
+(vídeo duplicado fica como duplicata). `--sem-substituir` desliga.
 
 Antes de rodar a fase 2, resolva a autoria: `scripts/whatsapp-slug-map.json`
 (gerado por `--slug-map`) tem 19 slugs que já resolvem pra uma pessoa e ~130
@@ -149,6 +203,18 @@ vários deles a pasta do Drive foi criada, com a arte do chamado na raiz, e a
 
 Esse é o buraco pra fechar primeiro, porque é o único ainda recuperável —
 enquanto a memória (e o WhatsApp) das pessoas aguentar.
+
+**Mídia solta na raiz da pasta (11/2026).** Nas pastas mais novas, criadas por
+quem colabora, não há subpasta `midia/`: os arquivos do pedal foram largados na
+raiz, ao lado da arte do chamado. A auditoria e as duas ingestões só olhavam
+dentro de `midia*/` e não viam 317 arquivos (246 do zap + 71 originais de
+câmera, quase todos em `2026-10-24 Pedal pela Democracia` e no PH 117). Agora
+um arquivo da raiz conta como mídia quando tem **nome** de mídia — do WhatsApp,
+ou de câmera/celular (`IMG_…`, `DSC…`, `PA243145.JPG`…; `_midia_solta` em
+`audit-captura.py`). O resto da raiz segue sendo arte. Fica de fora, por não
+dar pra saber pelo nome, uma vintena de arquivos com nome de UUID (PH 7, PH 8,
+PH 76). O casamento pasta↔passeio é por DATA (±1 dia): pasta com data errada
+se conserta renomeando a pasta no Drive, não no código.
 
 ## Cinco eventos existem no Drive e não no catálogo
 
