@@ -351,6 +351,7 @@ class PessoasField extends WatchUi.DataField {
             return;
         }
         radarRings(dc);
+        radarCardinals(dc);
         if (_lat == null || _lng == null) {
             dc.setColor(_fg, Graphics.COLOR_TRANSPARENT);
             dc.drawText(_rcx, _rcy - dc.getFontHeight(Graphics.FONT_XTINY) / 2, Graphics.FONT_XTINY,
@@ -362,20 +363,36 @@ class PessoasField extends WatchUi.DataField {
         radarMe(dc);
     }
 
-    //! Anéis; no radar completo, também o alcance e o "S" no topo.
+    //! Anéis; no radar completo, também o alcance (acima do "N" da base).
     private function radarRings(dc as Graphics.Dc) as Void {
         dc.setColor(_gray, Graphics.COLOR_TRANSPARENT);
         dc.setPenWidth(1);
         dc.drawCircle(_rcx, _rcy, _rr);
         dc.drawCircle(_rcx, _rcy, _rr / 2);
-        if (_rMini) {
+        if (!_rMini) {
+            var smallH = dc.getFontHeight(Graphics.FONT_XTINY);
+            dc.drawText(_rcx, _rcy + _rr - smallH / 2 - smallH - 1, Graphics.FONT_XTINY,
+                        distLabel(_rRange), Graphics.TEXT_JUSTIFY_CENTER);
+        }
+    }
+
+    //! Pontos cardeais, com o sul pra cima: S no topo, N na base, L (leste) à
+    //! esquerda e O (oeste) à direita. No radar completo ficam em cima do
+    //! anel; no mini, por dentro (pra não bater no texto ao lado), e só se o
+    //! círculo tiver tamanho pra isso.
+    private function radarCardinals(dc as Graphics.Dc) as Void {
+        if (_rMini && _rr < 36) {
             return;
         }
         var small = Graphics.FONT_XTINY;
-        dc.drawText(_rcx, _rcy + _rr - dc.getFontHeight(small) - 1, small, distLabel(_rRange),
-                    Graphics.TEXT_JUSTIFY_CENTER);
-        dc.drawText(_rcx, _rcy - _rr, small, "S",
-                    Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
+        var center = Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER;
+        var v = _rMini ? _rr - dc.getFontHeight(small) / 2 : _rr;    // S e N
+        var hz = _rMini ? _rr - 8 : _rr;                             // L e O
+        dc.setColor(_gray, Graphics.COLOR_TRANSPARENT);
+        dc.drawText(_rcx, _rcy - v, small, "S", center);
+        dc.drawText(_rcx, _rcy + v, small, "N", center);
+        dc.drawText(_rcx - hz, _rcy, small, "L", center);
+        dc.drawText(_rcx + hz, _rcy, small, "O", center);
     }
 
     //! Traçado do próximo passeio (LiveClient.routeE/N, em metros).
