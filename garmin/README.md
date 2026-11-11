@@ -103,6 +103,13 @@ cobra a mais: num pedal de 363 km gravado num Edge 1040, 5 m sem deadband dá
   com a atividade gravando ou o campo na tela. Ver **não envia** a sua posição:
   o servidor devolve lat/lng de cada pessoa e a distância é calculada no
   aparelho.
+- **Radar** (campo com pelo menos 160×190 px): você no centro com o seu rumo
+  pra cima, as pessoas como pontos na posição relativa de verdade, dois anéis
+  de escala (o alcance se ajusta à pessoa mais próxima; quem está além vira
+  um anel oco na borda) e, em laranja, o traçado do próximo passeio — buscado
+  uma vez em `/garmin/list?glance=1` + `/garmin/item/t/<id>?pts=200`. Não é o
+  mapa do aparelho: um campo de dados não tem acesso a ele. Em campo menor
+  fica o resumo (distância + seta).
 - **Transmitir:** desligado por padrão. Ligando "Transmitir minha posição" nas
   configurações, o campo manda a posição pro `POST /live-location` — só com a
   atividade rodando, e a barra de estado diz "transmitindo". Sem conexão, até

@@ -17,6 +17,9 @@ import Toybox.WatchUi;
 //! posição nenhuma; a barra de estado diz sempre se está transmitindo.
 class PessoasField extends WatchUi.DataField {
     private const STALE_S = 180;          // posição velha: distância em cinza
+    // Campo com pelo menos este tamanho vira RADAR; menor, fica o resumo.
+    private const RADAR_MIN_W = 160;
+    private const RADAR_MIN_H = 190;
 
     private var _client as LiveClient;
     private var _share as Boolean = false;
@@ -193,6 +196,12 @@ class PessoasField extends WatchUi.DataField {
             }
         }
 
+        if (w >= RADAR_MIN_W && h >= RADAR_MIN_H) {
+            _client.wantRoute = true;
+            drawRadar(dc, fg, bg, now, best, bestGeo);
+            return;
+        }
+
         if (peers.size() == 0) {
             var msg = (_client.peersAt == 0) ? "..." : "ninguém ao vivo";
             dc.drawText(cx, (h - dc.getFontHeight(Graphics.FONT_SMALL)) / 2 - (h >= 70 ? smallH / 2 : 0),
@@ -246,6 +255,177 @@ class PessoasField extends WatchUi.DataField {
                         Graphics.TEXT_JUSTIFY_LEFT);
         } else {
             dc.drawText(cx, bodyTop + (bodyH - fh) / 2, font, text, Graphics.TEXT_JUSTIFY_CENTER);
+        }
+    }
+
+    // ── Radar ───────────────────────────────────────────────────────────
+    //
+    // Você no centro, com o seu rumo pra cima (sem rumo: norte pra cima). As
+    // pessoas são pontos na posição relativa de verdade; dois anéis dão a
+    // escala (o de fora é o alcance, escolhido pra caber a pessoa mais
+    // próxima); quem está além do alcance vira um anel oco na borda. A linha
+    // laranja é o traçado do próximo passeio. Não é o mapa do aparelho — um
+    // campo de dados não tem acesso a ele.
+
+    //! Alcance "redondo" que contém a distância d (m).
+    private function radarRange(d as Float) as Float {
+        var steps = [250.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 25000.0, 50000.0] as Array<Float>;
+        for (var i = 0; i < steps.size(); i++) {
+            if (d * 1.15 <= steps[i]) {
+                return steps[i];
+            }
+        }
+        return 100000.0;
+    }
+
+    private function drawRadar(dc as Graphics.Dc, fg as Graphics.ColorType, bg as Graphics.ColorType,
+                               now as Number, best as Array?, bestGeo as Array<Float>?) as Void {
+        var w = dc.getWidth();
+        var h = dc.getHeight();
+        var cx = w / 2;
+        var small = Graphics.FONT_XTINY;
+        var smallH = dc.getFontHeight(small);
+        var gray = (bg == Graphics.COLOR_BLACK) ? Graphics.COLOR_LT_GRAY : Graphics.COLOR_DK_GRAY;
+        var peers = _client.peers;
+
+        // Linha de cima: quem é a mais próxima, a quanto e há quanto tempo.
+        var line = "";
+        if (best != null && bestGeo != null) {
+            var nm = (best[0] instanceof Lang.String) ? best[0] as String : "?";
+            var age = (best[3] instanceof Lang.Number) ? (best[3] as Number) + (now - _client.peersAt) : 0;
+            var dist = distLabel(bestGeo[0]);
+            var ago = ageLabel(age);
+            line = nm + " · " + dist + " · " + ago;
+            if (dc.getTextWidthInPixels(line, small) > w - 4) {
+                line = dist + " · " + ago;
+            }
+            if (dc.getTextWidthInPixels(line, small) > w - 4) {
+                line = dist;
+            }
+        } else if (peers.size() == 0) {
+            line = (_client.peersAt == 0) ? "..." : "ninguém ao vivo";
+        } else {
+            line = _client.total.format("%d") + " ao vivo";
+        }
+        dc.setColor(fg, Graphics.COLOR_TRANSPARENT);
+        dc.drawText(cx, 2, small, line, Graphics.TEXT_JUSTIFY_CENTER);
+
+        // Área do radar: entre a linha de cima e a barra de estado.
+        var top = 2 + smallH + 2;
+        var bottom = h - 3 - smallH - 2;
+        var cy = (top + bottom) / 2;
+        var r = ((w < bottom - top) ? w : (bottom - top)) / 2 - 6;
+        if (r < 30) {
+            return;
+        }
+
+        var range = (bestGeo != null) ? radarRange(bestGeo[0]) : 500.0;
+        var scale = r.toFloat() / range;            // px por metro
+
+        // Anéis + alcance.
+        dc.setColor(gray, Graphics.COLOR_TRANSPARENT);
+        dc.setPenWidth(1);
+        dc.drawCircle(cx, cy, r);
+        dc.drawCircle(cx, cy, r / 2);
+        dc.drawText(cx, cy + r - smallH - 1, small, distLabel(range), Graphics.TEXT_JUSTIFY_CENTER);
+
+        var myLat = _lat;
+        var myLng = _lng;
+        if (myLat == null || myLng == null) {
+            dc.setColor(fg, Graphics.COLOR_TRANSPARENT);
+            dc.drawText(cx, cy - smallH / 2, small, "sem GPS", Graphics.TEXT_JUSTIFY_CENTER);
+            return;
+        }
+
+        // Rumo pra cima: (leste, norte) → (x pra direita, y pra cima).
+        var hd = _heading;
+        var th = (hd == null) ? 0.0 : Math.toRadians(hd).toFloat();
+        var cosT = Math.cos(th).toFloat();
+        var sinT = Math.sin(th).toFloat();
+
+        // "N" na borda, na direção do norte.
+        dc.drawText(cx - (r * sinT).toNumber(), cy - (r * cosT).toNumber(), small, "N",
+                    Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
+
+        // Traçado do próximo passeio.
+        var re = _client.routeE;
+        var rn = _client.routeN;
+        if (re.size() >= 2) {
+            var meE = ((myLng - _client.routeLng0) * _client.routeKx).toFloat();
+            var meN = ((myLat - _client.routeLat0) * 110540.0d).toFloat();
+            var lim = 3.0 * r;                      // trecho todo fora daqui: pula
+            var lim2 = lim * lim;
+            dc.setColor(Graphics.COLOR_ORANGE, Graphics.COLOR_TRANSPARENT);
+            dc.setPenWidth(3);
+            var e0 = re[0] - meE;
+            var n0 = rn[0] - meN;
+            var ax = (e0 * cosT - n0 * sinT) * scale;
+            var ay = (e0 * sinT + n0 * cosT) * scale;
+            for (var i = 1; i < re.size(); i++) {
+                var e1 = re[i] - meE;
+                var n1 = rn[i] - meN;
+                var bx = (e1 * cosT - n1 * sinT) * scale;
+                var by = (e1 * sinT + n1 * cosT) * scale;
+                if (ax * ax + ay * ay <= lim2 || bx * bx + by * by <= lim2) {
+                    dc.drawLine(cx + ax.toNumber(), cy - ay.toNumber(),
+                                cx + bx.toNumber(), cy - by.toNumber());
+                }
+                ax = bx;
+                ay = by;
+            }
+            dc.setPenWidth(1);
+        }
+
+        // As pessoas.
+        var kx = 111320.0d * Math.cos(Math.toRadians(myLat));
+        var labels = 0;
+        for (var j = 0; j < peers.size(); j++) {
+            var p = peers[j];
+            if (!(p instanceof Lang.Array) || p.size() < 4) {
+                continue;
+            }
+            var la = p[1];
+            var lo = p[2];
+            if (!(la instanceof Lang.Float || la instanceof Lang.Double || la instanceof Lang.Number)
+                    || !(lo instanceof Lang.Float || lo instanceof Lang.Double || lo instanceof Lang.Number)) {
+                continue;
+            }
+            var pe = ((lo.toDouble() - myLng) * kx).toFloat();
+            var pn = ((la.toDouble() - myLat) * 110540.0d).toFloat();
+            var px = (pe * cosT - pn * sinT) * scale;
+            var py = (pe * sinT + pn * cosT) * scale;
+            var dpx = Math.sqrt(px * px + py * py).toFloat();
+            var pAge = (p[3] instanceof Lang.Number) ? (p[3] as Number) + (now - _client.peersAt) : 0;
+            var nearest = (p == best);
+            var color = (pAge > STALE_S) ? gray : (nearest ? Graphics.COLOR_BLUE : fg);
+            dc.setColor(color, Graphics.COLOR_TRANSPARENT);
+            if (dpx > r) {
+                // Além do alcance: anel oco na borda, na direção certa.
+                var k = r.toFloat() / dpx;
+                dc.drawCircle(cx + (px * k).toNumber(), cy - (py * k).toNumber(), 4);
+                continue;
+            }
+            var sx = cx + px.toNumber();
+            var sy = cy - py.toNumber();
+            dc.fillCircle(sx, sy, nearest ? 7 : 5);
+            if ((nearest || labels < 3) && p[0] instanceof Lang.String) {
+                var label = p[0] as String;
+                if (label.length() > 8) {
+                    var cutLabel = label.substring(0, 8);
+                    label = (cutLabel != null) ? cutLabel : label;
+                }
+                dc.drawText(sx + 10, sy - smallH / 2, small, label, Graphics.TEXT_JUSTIFY_LEFT);
+                labels += 1;
+            }
+        }
+
+        // Você: seta pra cima (o seu rumo); sem rumo, um ponto.
+        dc.setColor(fg, Graphics.COLOR_TRANSPARENT);
+        if (hd != null) {
+            dc.fillPolygon([[cx, cy - 10], [cx + 7, cy + 8], [cx, cy + 3], [cx - 7, cy + 8]]
+                           as Array<Graphics.Point2D>);
+        } else {
+            dc.fillCircle(cx, cy, 5);
         }
     }
 

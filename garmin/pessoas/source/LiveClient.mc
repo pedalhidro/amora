@@ -46,6 +46,18 @@ class LiveClient {
     private var _pendingFix as Array?;
     private var _thenRead as Boolean = false;   // ler as pessoas depois do envio
 
+    // Traçado do próximo passeio, pro radar (só é buscado se o campo pedir).
+    // Em metros a partir do 1º ponto: routeE = leste, routeN = norte.
+    var wantRoute as Boolean = false;
+    var routeE as Array<Float> = [] as Array<Float>;
+    var routeN as Array<Float> = [] as Array<Float>;
+    var routeLat0 as Double = 0.0d;
+    var routeLng0 as Double = 0.0d;
+    var routeKx as Double = 0.0d;               // metros por grau de longitude ali
+    private var _routeState as Number = 0;      // 0 = nada, 1 = sei qual passeio, 2 = pronto
+    private var _routeId as String = "";
+    private var _routeRetryAt as Number = 0;
+
     function initialize() {
         _token = loadToken();
     }
@@ -185,23 +197,118 @@ class LiveClient {
     }
 
     function onPeers(code as Number, data as Dictionary or String or Null) as Void {
-        _busy = false;
+        var t = Time.now().value();
         if (code == 200 && data instanceof Lang.Dictionary) {
             var p = data["p"];
             var n = data["n"];
             if (p instanceof Lang.Array) {
-                var t = Time.now().value();
                 lastError = 0;
-                if (p.size() == 0 && peers.size() > 0 && t - peersAt < HOLD_S) {
-                    return;              // segura a última lista (ver HOLD_S)
+                // Leitura vazia não apaga a última lista na hora (ver HOLD_S).
+                if (!(p.size() == 0 && peers.size() > 0 && t - peersAt < HOLD_S)) {
+                    peers = p;
+                    total = (n instanceof Lang.Number) ? n : p.size();
+                    peersAt = t;
                 }
-                peers = p;
-                total = (n instanceof Lang.Number) ? n : p.size();
-                peersAt = t;
+                if (wantRoute && _routeState < 2 && t >= _routeRetryAt) {
+                    fetchRoute(t);       // segue ocupado: uma requisição por vez
+                    return;
+                }
+                _busy = false;
                 return;
             }
         }
+        _busy = false;
         lastError = (code == 200) ? -1 : code;
+    }
+
+    // ── Traçado do próximo passeio ──────────────────────────────────────
+    // Dois GETs em sequência, encadeados na leitura das pessoas: qual é o
+    // próximo passeio (/garmin/list?glance=1) e o traçado dele
+    // (/garmin/item/t/<id>). Falhou: tenta de novo em 5 min; sem passeio
+    // próximo: olha de novo em 30 min.
+
+    private function fetchRoute(now as Number) as Void {
+        start(now);
+        var opts = {
+            :method => Communications.HTTP_REQUEST_METHOD_GET,
+            :responseType => Communications.HTTP_RESPONSE_CONTENT_TYPE_JSON
+        };
+        if (_routeState == 0) {
+            Communications.makeWebRequest(server + "/garmin/list",
+                { "glance" => "1" } as Dictionary<Object, Object>, opts, method(:onNextTour));
+        } else {
+            Communications.makeWebRequest(server + "/garmin/item/t/" + _routeId,
+                { "pts" => "200" } as Dictionary<Object, Object>, opts, method(:onRoute));
+        }
+    }
+
+    function onNextTour(code as Number, data as Dictionary or String or Null) as Void {
+        var t = Time.now().value();
+        if (code == 200 && data instanceof Lang.Dictionary) {
+            var next = data["next"];
+            if (next instanceof Lang.Dictionary && next["id"] instanceof Lang.String) {
+                _routeId = next["id"] as String;
+                _routeState = 1;
+                fetchRoute(t);
+                return;
+            }
+            _routeRetryAt = t + 1800;
+        } else {
+            _routeRetryAt = t + 300;
+        }
+        _busy = false;
+    }
+
+    function onRoute(code as Number, data as Dictionary or String or Null) as Void {
+        _busy = false;
+        if (code == 200 && data instanceof Lang.Dictionary) {
+            var pts = data["pts"];
+            if (pts instanceof Lang.Array && setRoute(pts)) {
+                _routeState = 2;
+                return;
+            }
+        }
+        _routeState = 0;
+        _routeRetryAt = Time.now().value() + 300;
+    }
+
+    //! [[lat, lng], …] → metros a partir do 1º ponto (equiretangular).
+    private function setRoute(pts as Array) as Boolean {
+        var e = [] as Array<Float>;
+        var n = [] as Array<Float>;
+        var lat0 = 0.0d;
+        var lng0 = 0.0d;
+        var kx = 0.0d;
+        for (var i = 0; i < pts.size(); i++) {
+            var p = pts[i];
+            if (!(p instanceof Lang.Array) || p.size() < 2) {
+                continue;
+            }
+            var la = p[0];
+            var lo = p[1];
+            if (!(la instanceof Lang.Float || la instanceof Lang.Double)
+                    || !(lo instanceof Lang.Float || lo instanceof Lang.Double)) {
+                continue;
+            }
+            var lat = la.toDouble();
+            var lng = lo.toDouble();
+            if (e.size() == 0) {
+                lat0 = lat;
+                lng0 = lng;
+                kx = 111320.0d * Math.cos(Math.toRadians(lat0));
+            }
+            e.add(((lng - lng0) * kx).toFloat());
+            n.add(((lat - lat0) * 110540.0d).toFloat());
+        }
+        if (e.size() < 2) {
+            return false;
+        }
+        routeE = e;
+        routeN = n;
+        routeLat0 = lat0;
+        routeLng0 = lng0;
+        routeKx = kx;
+        return true;
     }
 
     private function start(now as Number) as Void {
