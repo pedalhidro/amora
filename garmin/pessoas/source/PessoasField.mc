@@ -260,8 +260,9 @@ class PessoasField extends WatchUi.DataField {
 
     // ── Radar ───────────────────────────────────────────────────────────
     //
-    // Você no centro, com o seu rumo pra cima (sem rumo: norte pra cima). As
-    // pessoas são pontos na posição relativa de verdade; dois anéis dão a
+    // Você no centro, com o SUL SEMPRE PRA CIMA (a agulha do coletivo aponta
+    // pro sul; o radar não gira com o seu rumo — quem gira é a seta do centro).
+    // As pessoas são pontos na posição relativa de verdade; dois anéis dão a
     // escala (o de fora é o alcance, escolhido pra caber a pessoa mais
     // próxima); quem está além do alcance vira um anel oco na borda. A linha
     // laranja é o traçado do próximo passeio. Não é o mapa do aparelho — um
@@ -337,14 +338,14 @@ class PessoasField extends WatchUi.DataField {
             return;
         }
 
-        // Rumo pra cima: (leste, norte) → (x pra direita, y pra cima).
+        // Sul pra cima, fixo: (leste, norte) → (x pra direita, y pra cima) com
+        // uma rotação de 180° — o leste cai à esquerda, o oeste à direita.
         var hd = _heading;
-        var th = (hd == null) ? 0.0 : Math.toRadians(hd).toFloat();
-        var cosT = Math.cos(th).toFloat();
-        var sinT = Math.sin(th).toFloat();
+        var cosT = -1.0;
+        var sinT = 0.0;
 
-        // "N" na borda, na direção do norte.
-        dc.drawText(cx - (r * sinT).toNumber(), cy - (r * cosT).toNumber(), small, "N",
+        // "S" no topo do anel.
+        dc.drawText(cx, cy - r, small, "S",
                     Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
 
         // Traçado do próximo passeio.
@@ -419,11 +420,11 @@ class PessoasField extends WatchUi.DataField {
             }
         }
 
-        // Você: seta pra cima (o seu rumo); sem rumo, um ponto.
+        // Você: seta no SEU rumo (com o sul pra cima, rumo norte = seta pra
+        // baixo — por isso os 180°); sem rumo, um ponto.
         dc.setColor(fg, Graphics.COLOR_TRANSPARENT);
         if (hd != null) {
-            dc.fillPolygon([[cx, cy - 10], [cx + 7, cy + 8], [cx, cy + 3], [cx - 7, cy + 8]]
-                           as Array<Graphics.Point2D>);
+            drawArrow(dc, cx, cy, 11, hd.toFloat() + 180.0);
         } else {
             dc.fillCircle(cx, cy, 5);
         }
