@@ -93,6 +93,16 @@
   .toolbar.collapsed .tb-toggle .chev { transform: rotate(-90deg); }
   .tb-body { margin-top: 8px; }
   .toolbar.collapsed .tb-body { display: none; }
+  /* Nº de filtros ligados, no próprio botão: recolhida (o padrão no celular),
+     a barra não dava nenhuma pista de que a grade estava filtrada. */
+  .tb-nfilters {
+    min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
+    background: var(--accent); color: #fff; font-size: 11px; line-height: 18px; text-align: center;
+  }
+  /* Quantas mídias a grade mostra. Some em tela estreita: lá a barra não pode
+     quebrar linha (ver syncSelectMode). */
+  .tb-count { color: var(--muted); font-size: 12px; white-space: nowrap; }
+  @media (max-width: 760px) { .tb-count { display: none; } }
   /* Tela baixa/estreita (celular em pé ou deitado): aberta, a barra passa da
      altura da tela — fixa no topo, cobria a grade inteira. Aberta ela rola
      junto com a página; recolhida volta a ficar fixa. */
@@ -238,7 +248,7 @@
   .tl-mark.active .tl-dot { background: var(--accent); border-color: var(--accent); transform: scale(1.35); }
   .tl-mark .tl-lbl { max-width: 90px; overflow: hidden; text-overflow: ellipsis; }
   /* Âncora dos grupos abaixo do cabeçalho fixo (toolbar + timeline). */
-  .group { scroll-margin-top: 220px; }
+  .group { scroll-margin-top: calc(var(--tb-h, 0px) + 8px); }
 
   /* ── Grade estilo Apple Fotos ─────────────────────────────────────────── */
   /* touch-action: pan-x pan-y => o navegador ainda rola com 1 dedo, mas cede o
@@ -273,9 +283,24 @@
   .icon-toggle:hover { border-color: var(--accent); color: var(--accent); }
   .icon-toggle.active { background: var(--accent); border-color: var(--accent); color: #fff; }
   .empty { color: var(--muted); padding: 40px 0; text-align: center; font-size: 15px; }
+  .empty .btn { margin-top: 12px; }
   .group { margin-bottom: 20px; }
+  /* content-visibility: o navegador pula estilo/layout/pintura dos tiles dos
+     grupos longe da tela — com o catálogo de 11/2026 a grade tem 8.375 tiles e
+     sem isto cada troca de filtro/agrupamento/zoom refazia o layout de todos, e
+     a rolagem ficava em ~30 quadros/s num desktop (~3 num celular). A grade
+     pulada ocupa a altura de contain-intrinsic-size, que syncGroupHeights()
+     calcula por grupo (exata na grade quadrada: a barra de rolagem não pula e a
+     linha do tempo leva ao lugar certo). Vai no .tiles e NÃO no grupo inteiro:
+     o cabeçalho fica de fora, com a altura de verdade (no celular o título
+     quebra em 2–3 linhas, e estimar isso errava ~1.000 px na página). O modo
+     contínuo (.wrap-tiles, um contêiner só) não ganha nada com isso.
+     Navegador sem suporte ignora e segue como antes. */
+  .group > .tiles { content-visibility: auto; contain-intrinsic-size: 0 600px; }
+  /* Fica logo abaixo da barra de filtros (--tb-h = altura que ela cobre quando
+     está fixa; ver syncToolbarCover) — com top: 0 ficava ESCONDIDO atrás dela. */
   .group-header {
-    position: sticky; top: 0; z-index: 5;
+    position: sticky; top: var(--tb-h, 0px); z-index: 5;
     background: var(--bg); padding: 8px 2px; margin-bottom: 6px;
     display: flex; align-items: baseline; gap: 8px;
     border-bottom: 1px solid var(--border);
@@ -365,9 +390,11 @@
   /* Foto e painel lado a lado (nowrap): com wrap, uma foto em pé num celular
      deitado (844×390) encolhia o bloco e o painel caía pra baixo da foto,
      fora da tela. No celular em pé é uma coluna (wrap, no bloco de baixo). */
+  /* max-width deixa 64 px de cada lado pras setas ‹ › (44 px a 8 px da borda):
+     com 96vw a seta da direita ficava POR CIMA do painel de infos. */
   .lb-content {
     position: relative; z-index: 2; margin: auto; display: flex; gap: 16px;
-    max-width: 96vw; max-height: 94vh; padding: 16px; flex-wrap: nowrap;
+    max-width: calc(100vw - 128px); max-height: 94vh; padding: 16px; flex-wrap: nowrap;
     align-items: center; justify-content: center;
   }
   .lb-media { flex: 1 1 420px; min-width: 0; display: flex; align-items: center; justify-content: center; }
@@ -557,7 +584,8 @@
 <div class="toolbar" hidden>
   <div class="tb-bar">
     <button id="tb-back" type="button" class="btn tb-back" title="Fechar a galeria e voltar pro mapa">← Mapa</button>
-    <button id="tb-toggle" type="button" class="tb-toggle" aria-expanded="true" aria-controls="tb-body"><span class="chev">▾</span> Filtros<span class="tb-toggle-more"> &amp; agrupamento</span></button>
+    <button id="tb-toggle" type="button" class="tb-toggle" aria-expanded="true" aria-controls="tb-body"><span class="chev">▾</span> Filtros<span class="tb-toggle-more"> &amp; agrupamento</span><span id="tb-nfilters" class="tb-nfilters" hidden></span></button>
+    <span id="tb-count" class="tb-count" role="status" aria-live="polite"></span>
     <div class="tb-spacer"></div>
     <button id="btn-select" type="button" class="btn">Selecionar</button>
     <button id="btn-select-all" type="button" class="btn" hidden>Selecionar tudo</button>
@@ -639,7 +667,7 @@
 <div id="gallery" class="gallery"></div>
 
 <!-- Lightbox -->
-<div id="lightbox" class="lightbox" hidden>
+<div id="lightbox" class="lightbox" hidden role="dialog" aria-modal="true" aria-label="Mídia ampliada">
   <div class="lb-backdrop" id="lb-backdrop"></div>
   <button class="lb-close" id="lb-close" aria-label="Fechar">×</button>
   <div class="lb-count" id="lb-count" hidden></div>
@@ -932,6 +960,7 @@ let _lbSavePending = false;          // há um scheduleLbSave() pendente (deboun
 let _lbPushed = false;               // openLightbox empurrou uma entrada no histórico (voltar = fechar a foto)
 let _lbNavigated = false;            // trocou de foto dentro do lightbox (ao fechar, rola a grade até ela)
 let _lbOpenedAt = 0;                 // performance.now() da abertura (engole o click fantasma do toque)
+let _lbReturnFocus = null;           // quem tinha o foco antes de abrir (volta pra ele ao fechar)
 
 // ── Álbum: /imagens/lista/<slug>[/<n>] ───────────────────────────────────────
 // URL legível de uma lista (o backend serve este mesmo arquivo nesse path). Com
@@ -1195,6 +1224,37 @@ async function runSparqlAndRender(sparql, facets) {
   withViewTransition(() => renderGroups(rows, facets), tileCount(rows));
 }
 
+// Quantas facetas estão filtrando (a consulta personalizada conta como uma).
+function activeFilterCount(f) {
+  if (isCustom) return 1;
+  f = f || {};
+  const wd = (f.weekdays || []).length;
+  return [
+    (f.lists || []).length, (f.authors || []).length, (f.uploaders || []).length, (f.tours || []).length,
+    f.dateFrom || f.dateTo, f.kjMin != null || f.kjMax != null, wd > 0 && wd < 7,
+  ].filter(Boolean).length;
+}
+// Resumo na barra: nº de filtros no botão "Filtros" e total de mídias na grade.
+function updateResultSummary(total, facets) {
+  const n = activeFilterCount(facets);
+  const badge = $('#tb-nfilters');
+  badge.hidden = !n;
+  badge.textContent = isCustom ? 'SPARQL' : String(n);
+  badge.title = isCustom ? 'Consulta personalizada' : `${n} filtro${n === 1 ? '' : 's'} ligado${n === 1 ? '' : 's'}`;
+  const all = model ? model.records.length : total;
+  const num = (x) => x.toLocaleString('pt-BR');
+  $('#tb-count').textContent = (n || pickSet) && total !== all
+    ? `${num(total)} de ${num(all)} mídias`
+    : `${num(total)} mídia${total === 1 ? '' : 's'}`;
+}
+function clearFilters() {
+  ftLists.clear(true); ftAuthors.clear(true); ftUploaders.clear(true); ftTours.clear(true);
+  $('#f-date-from').value = ''; $('#f-date-to').value = '';
+  $('#f-kj-min').value = ''; $('#f-kj-max').value = '';
+  dualDate && dualDate.syncFromEnds(); dualKj && dualKj.syncFromEnds();
+  $$('#f-weekdays input').forEach((cb) => { cb.checked = false; });
+  rebuildAndRun();
+}
 function setQueryStatus(msg) { $('#query-status').textContent = msg; }
 // Erro VISÍVEL: vai pro #status (fora da barra de filtros, que no celular
 // fica recolhida) + um aviso passageiro; os da consulta SPARQL também aparecem
@@ -1232,10 +1292,13 @@ function groupLabel(key) {
   if (/^\d{4}-\d{2}$/.test(key)) { const [y, m] = key.split('-'); return `${MESES[+m - 1] || m} de ${y}`; }
   if (/^\d{4}-\d{2}-\d{2}$/.test(key)) {
     const d = new Date(key + 'T00:00:00Z');
-    return isNaN(d) ? key : d.toLocaleDateString('pt-BR', { timeZone: 'UTC', day: '2-digit', month: 'long', year: 'numeric' });
+    return isNaN(d) ? key : DAY_LABEL_FMT.format(d);
   }
   return key;
 }
+// Um formatador só: toLocaleDateString monta um a cada chamada, e o
+// agrupamento por dia rotula centenas de grupos por render.
+const DAY_LABEL_FMT = new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC', day: '2-digit', month: 'long', year: 'numeric' });
 
 let lastRows = null, lastFacets = null;   // cache p/ re-render sem re-consultar
 function rerender() { if (lastRows) withViewTransition(() => renderGroups(lastRows, lastFacets), tileCount(lastRows)); }
@@ -1305,12 +1368,20 @@ function groupRows(rows, facets, pick, canonical) {
 function renderGroups(rows, facets) {
   lastRows = rows; lastFacets = facets;
   tileLarge = wantLargeTiles();
+  _tileIdx = null;   // a grade vai ser refeita
   const { groups, keys } = groupRows(rows, facets, pickSet, !isCustom);
 
   const gallery = $('#gallery');
   const total = keys.reduce((n, k) => n + groups.get(k).records.length, 0);
+  updateResultSummary(total, facets);
   if (!total) {
-    gallery.innerHTML = '<div class="empty">Nenhuma imagem encontrada.</div>';
+    // Com filtro ligado, a saída está aqui mesmo (no celular a barra de
+    // filtros fica recolhida e o "Limpar filtros" não aparece).
+    const filtered = activeFilterCount(facets) > 0;
+    gallery.innerHTML = '<div class="empty">' +
+      (filtered ? 'Nenhuma mídia com esses filtros.' : 'Nenhuma imagem encontrada.') +
+      (filtered ? '<br><button type="button" class="btn" id="empty-clear">Limpar filtros</button>' : '') +
+      '</div>';
     buildTimeline([]);
     updateSelUI();
     return;
@@ -1334,17 +1405,10 @@ function renderGroups(rows, facets) {
     gallery.style.setProperty('--cols', galleryCols());
     gallery.innerHTML = `<div class="tiles wrap-tiles">${tilesHtml}</div><div class="group-overlay" aria-hidden="true"></div>`;
     overlayGroups = groupList;
-    if (collage) {
-      const wrap = gallery.querySelector('.wrap-tiles');
-      layoutJustified(wrap);
-      wrap.querySelectorAll('img').forEach((img) => {
-        if (img.dataset.relayout) return;
-        img.dataset.relayout = '1';
-        img.addEventListener('load', scheduleRelayout);   // reflui + refaz contornos
-      });
-    }
+    if (collage) layoutAllJustified();   // as miniaturas que carregam refluem (onTileImgLoad)
     requestAnimationFrame(() => drawGroupPolygons());
     buildTimeline(groupList);
+    setupHydration();
     largeTilesReset();
     updateSelUI();
     return;
@@ -1354,13 +1418,14 @@ function renderGroups(rows, facets) {
     const recs = groups.get(k).records;
     const tiles = recs.map((r) => tileHtml(r)).join('');
     const header = noGroup ? '' :
-      `<div class="group-header"><span class="g-title">${escapeHtml(groupLabel(k))}</span>` +
+      `<div class="group-header"><span class="g-title">${escapeHtml(groupList[idx].label)}</span>` +
       `<span class="g-count">${recs.length}</span></div>`;
-    return `<section class="group" id="grp-${idx}">${header}<div class="tiles">${tiles}</div></section>`;
+    return `<section class="group" id="grp-${idx}">${header}<div class="tiles" data-n="${recs.length}">${tiles}</div></section>`;
   }).join('');
   gallery.innerHTML = html;
-  applyGalleryLayout();
+  applyGalleryLayout();   // (termina em syncGroupHeights)
   buildTimeline(noGroup ? [] : groupList);
+  setupHydration();
   largeTilesReset();
   updateSelUI();
 }
@@ -1381,9 +1446,11 @@ function timelineLabel(g) {
   return g.label;
 }
 let timelineGroups = [];
+let _tlEls = [], _tlMarks = new Map(), _tlActive = null;   // nós dos grupos / marcadores / id ativo
 function buildTimeline(groupList) {
   const tl = $('#timeline');
   timelineGroups = groupList.slice();
+  _tlEls = []; _tlMarks = new Map(); _tlActive = null;
   if (groupList.length < 2) { tl.hidden = true; tl.innerHTML = ''; return; }
   // Mais antigo à esquerda → mais novo à direita; sem data/passeio (order '')
   // vai pro começo (mais antigo que o mais antigo).
@@ -1398,14 +1465,27 @@ function buildTimeline(groupList) {
       `<span class="tl-dot"></span><span class="tl-lbl">${escapeHtml(timelineLabel(g))}</span>` +
     `</button>`).join('');
   tl.hidden = false;
+  // Guardados uma vez por render: o refreshTimelineActive roda a cada quadro
+  // de rolagem e buscava (getElementById + querySelectorAll) todos de novo.
+  _tlEls = timelineGroups.map((g) => document.getElementById(g.id));
+  tl.querySelectorAll('.tl-mark').forEach((m) => _tlMarks.set(m.dataset.target, m));
+  // A régua nasce JÁ no marcador ativo: animada, ela rolava por ~1 s a cada
+  // render (da ponta antiga até a mais nova) sem ninguém ter pedido.
+  _tlJump = true;
   refreshTimelineActive();
 }
+let _tlJump = false;
 // Altura que a barra de filtros cobre no topo da tela: 0 quando ela não está
 // fixa (aberta no celular ela rola com a página — ver .toolbar:not(.collapsed)).
 function toolbarCover() {
   const header = document.querySelector('.toolbar');
   if (!header || getComputedStyle(header).position !== 'sticky') return 0;
   return header.offsetHeight;
+}
+// --tb-h (CSS): onde o cabeçalho de grupo gruda e a âncora dos grupos. Segue a
+// barra: recolher/abrir, linha do tempo que aparece/some, quebra de linha.
+function syncToolbarCover() {
+  document.documentElement.style.setProperty('--tb-h', toolbarCover() + 'px');
 }
 function scrollToGroup(id) {
   const el = document.getElementById(id);
@@ -1419,76 +1499,134 @@ function refreshTimelineActive() {
   const tl = $('#timeline');
   if (tl.hidden) return;
   const header = document.querySelector('.toolbar');
-  const cut = Math.max(0, header ? header.getBoundingClientRect().bottom : 0) + 6;
+  // Folga de ~um cabeçalho de grupo: o scrollToGroup para o grupo 8 px ABAIXO
+  // da barra, e com a folga antiga (6 px) clicar num marcador acendia o do
+  // grupo anterior.
+  const cut = Math.max(0, header ? header.getBoundingClientRect().bottom : 0) + 36;
   // timelineGroups está em ordem da galeria (mais novo primeiro). O grupo ativo
   // é o último (mais antigo) cujo topo já passou pelo cabeçalho; se nenhum
-  // passou (galeria no topo), o ativo é o mais novo (timelineGroups[0]).
-  let activeId = null;
-  for (const g of timelineGroups) {
-    const el = document.getElementById(g.id);
-    if (el && el.getBoundingClientRect().top <= cut) activeId = g.id;
+  // passou (galeria no topo), o ativo é o mais novo (timelineGroups[0]). Os
+  // topos crescem na ordem do DOM → busca binária (era uma leitura de posição
+  // por grupo, a cada quadro de rolagem).
+  let lo = 0, hi = _tlEls.length - 1, found = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1, el = _tlEls[mid];
+    if (el && el.getBoundingClientRect().top <= cut) { found = mid; lo = mid + 1; } else hi = mid - 1;
   }
-  if (!activeId && timelineGroups.length) activeId = timelineGroups[0].id; // topo → mais novo
-  let activeMark = null;
-  tl.querySelectorAll('.tl-mark').forEach((m) => {
-    const on = m.dataset.target === activeId;
-    m.classList.toggle('active', on);
-    if (on) activeMark = m;
-  });
+  const activeId = timelineGroups.length ? timelineGroups[Math.max(0, found)].id : null;   // topo → mais novo
+  const behavior = _tlJump ? 'auto' : 'smooth';
+  _tlJump = false;
+  if (activeId === _tlActive) return;
+  const prev = _tlMarks.get(_tlActive);
+  if (prev) prev.classList.remove('active');
+  _tlActive = activeId;
+  const activeMark = _tlMarks.get(activeId) || null;
   if (activeMark) {
+    activeMark.classList.add('active');
     const mLeft = activeMark.offsetLeft, mRight = mLeft + activeMark.offsetWidth;
     if (mLeft < tl.scrollLeft || mRight > tl.scrollLeft + tl.clientWidth) {
-      tl.scrollTo({ left: mLeft - tl.clientWidth / 2 + activeMark.offsetWidth / 2, behavior: 'smooth' });
+      tl.scrollTo({ left: mLeft - tl.clientWidth / 2 + activeMark.offsetWidth / 2, behavior });
     }
   }
 }
 
 // ── Layout: grade quadrada vs colagem justificada ────────────────────────────
-// Aplica o modo atual na grade. No modo colagem, roda o layout justificado e
-// (re)anexa os relayouts em cada imagem que carrega (as miniaturas chegam lazy).
+// Aplica o modo atual na grade. No modo colagem, roda o layout justificado; as
+// miniaturas que carregam depois refluem só o grupo delas (onTileImgLoad).
+const TILE_GAP = 3;   // px — o gap do .tiles no CSS
+let _collageWasOn = false;
 function applyGalleryLayout() {
   const gallery = $('#gallery');
   gallery.style.setProperty('--cols', galleryCols());   // zoom → nº de colunas
   const collage = galleryLayout === 'collage';
   gallery.classList.toggle('collage', collage);
-  if (!collage) {
-    // Limpa os tamanhos inline deixados pela colagem.
+  if (collage) layoutAllJustified();
+  else if (_collageWasOn) {
+    // Limpa os tamanhos inline deixados pela colagem (só se ela esteve ligada).
     gallery.querySelectorAll('.tile').forEach((t) => { t.style.width = ''; t.style.height = ''; });
-    return;
   }
-  layoutAllJustified();
-  gallery.querySelectorAll('.tile img').forEach((img) => {
-    if (img.dataset.relayout) return;
-    img.dataset.relayout = '1';
-    img.addEventListener('load', scheduleRelayout);
+  _collageWasOn = collage;
+  syncGroupHeights();
+}
+// Altura da grade de cada grupo pulada pelo content-visibility (ver
+// .group > .tiles no CSS). Na grade quadrada é exata — linhas × lado do tile;
+// na colagem é a que o layoutJustified calculou (data-ch), exata pras
+// proporções conhecidas. Sem isso a página "encolhia" pros grupos fora da
+// tela: a barra de rolagem pularia e a linha do tempo levaria ao lugar errado.
+function syncGroupHeights() {
+  const gallery = $('#gallery');
+  const conts = gallery.querySelectorAll('.group > .tiles');
+  if (!conts.length) return;
+  const cw = gallery.clientWidth, cols = galleryCols();
+  const collage = galleryLayout === 'collage';
+  const side = (cw - (cols - 1) * TILE_GAP) / cols;
+  conts.forEach((c) => {
+    let h;
+    if (collage) h = +c.dataset.ch || 0;
+    else {
+      const rowsN = Math.ceil((+c.dataset.n || 0) / cols);
+      h = rowsN * side + Math.max(0, rowsN - 1) * TILE_GAP;
+    }
+    c.style.setProperty('contain-intrinsic-size', `0 ${h.toFixed(2)}px`);
   });
 }
+// Proporção (largura/altura) de cada mídia, aprendida quando a miniatura
+// carrega — o catálogo não traz as dimensões. Fica na memória da página: a
+// colagem refeita (filtro, agrupamento, recarga depois de uma edição) já sai
+// com as proporções certas em vez de voltar tudo a quadrado e refluir de novo.
+const _tileAR = new Map();   // iri → largura/altura
+const _dirtyTiles = new Set();   // contêineres .tiles com proporção nova (colagem)
+function onTileImgLoad(img) {
+  if (!img.naturalWidth || !img.naturalHeight) return;
+  const tile = img.parentElement;
+  const iri = tile && tile.dataset.iri;
+  if (!iri) return;
+  const ar = img.naturalWidth / img.naturalHeight;
+  const known = _tileAR.get(iri);
+  if (known && Math.abs(known - ar) < 0.01) return;   // thumb → large: mesma proporção
+  _tileAR.set(iri, ar);
+  if (galleryLayout !== 'collage') return;
+  _dirtyTiles.add(tile.parentElement);
+  scheduleRelayout();
+}
+// `load` não borbulha: um listener só, na captura, pra todos os tiles.
+$('#gallery').addEventListener('load', (e) => {
+  if (e.target && e.target.tagName === 'IMG') onTileImgLoad(e.target);
+}, true);
+// Reflui só os grupos em que uma proporção mudou (era a galeria INTEIRA a cada
+// leva de miniaturas) e refaz os contornos do modo contínuo.
 const scheduleRelayout = debounce(() => {
-  if (galleryLayout === 'collage') layoutAllJustified();
+  if (galleryLayout === 'collage' && _dirtyTiles.size) {
+    const cw = $('#gallery').clientWidth;
+    _dirtyTiles.forEach((c) => { if (c.isConnected) layoutJustified(c, cw); });
+    syncGroupHeights();
+  }
+  _dirtyTiles.clear();
   if (overlayGroups) drawGroupPolygons();   // tiles se moveram → refaz os contornos
 }, 80);
 function layoutAllJustified() {
   const g = $('#gallery');
-  g.querySelectorAll('.group .tiles').forEach((c) => layoutJustified(c));
-  const wrap = g.querySelector('.wrap-tiles');   // modo contínuo em colagem
-  if (wrap) layoutJustified(wrap);
+  // Uma leitura de largura pra todos (os .tiles têm a largura da galeria):
+  // ler a de cada grupo, entre as escritas do anterior, forçava um layout por grupo.
+  const cw = g.clientWidth;
+  g.querySelectorAll('.tiles').forEach((c) => layoutJustified(c, cw));
+  _dirtyTiles.clear();
 }
 // Empacota os tiles em linhas de altura ~alvo, cada linha esticada pra largura
 // toda (larguras ∝ aspect-ratio). A última linha fica na altura-alvo se não
-// encher, pra não distorcer poucos itens.
-function layoutJustified(container) {
+// encher, pra não distorcer poucos itens. Só ESCREVE no DOM (as proporções vêm
+// do _tileAR) e guarda a altura total no grupo (data-ch → syncGroupHeights).
+function layoutJustified(container, cw) {
   const tiles = [...container.children];
-  const cw = container.clientWidth;
-  if (!tiles.length || cw <= 0) return;
-  const gap = 3;
+  if (!tiles.length || !(cw > 0)) return;
+  const gap = TILE_GAP;
   // Altura-alvo derivada do zoom: ~galleryCols() fotos quadradas por linha.
   const cols = galleryCols();
   const targetH = Math.max(24, (cw - (cols - 1) * gap) / cols);
-  const ar = (t) => {
-    const img = t.querySelector('img');
-    const w = img && img.naturalWidth, h = img && img.naturalHeight;
-    return (w && h) ? (w / h) : 1;   // 1 (quadrado) até a miniatura carregar
-  };
+  const ars = tiles.map((t) => _tileAR.get(t.dataset.iri) || 1);   // 1 (quadrado) até a miniatura carregar
+  const arAt = new Map(tiles.map((t, k) => [t, ars[k]]));
+  const ar = (t) => arAt.get(t);
+  let totalH = 0, rowsN = 0;
   let i = 0;
   while (i < tiles.length) {
     let j = i, sum = 0;
@@ -1507,8 +1645,10 @@ function layoutJustified(container) {
       t.style.height = h + 'px';
       t.style.width = Math.max(1, ar(t) * h) + 'px';
     });
+    totalH += h; rowsN++;
     i = j;
   }
+  container.dataset.ch = String(totalH + Math.max(0, rowsN - 1) * gap);
 }
 
 // Modo contínuo: desenha um polígono retilíneo por grupo, contornando os tiles
@@ -1599,44 +1739,39 @@ function drawGroupPolygons() {
 // em tamanho cheio o que está visível (sem subamostrar abaixo de 5 MP) — o
 // álbum de 64 fotos do PH 113 passava de 1 GB e o Safari do iPhone matava a aba
 // ("A problem repeatedly occurred").
-// Desktop: com o zoom grande, todo tile vai de large (lazy). Toque
-// (MEMORY_TIGHT): o HTML sai SEMPRE com o thumb e só os tiles perto da tela —
-// no máximo LARGE_MAX_TILES, os mais perto do centro — sobem pro large; os que
-// se afastam voltam pro thumb (reconcileLargeTiles). Antes o zoom de 2 colunas
-// trocava a grade INTEIRA pro large (64 downloads de ~400 KB no álbum do PH 113)
-// e estimava a memória com tiles quadrados — na colagem cabem ~19 retratos.
+// O HTML sai SEMPRE com o thumb, e só os tiles perto da tela — no máximo
+// LARGE_MAX_TILES, os mais perto do centro — sobem pro large, com a rolagem
+// PARADA; os que se afastam voltam pro thumb (reconcileLargeTiles). No toque
+// (MEMORY_TIGHT) o teto é a memória: antes o zoom de 2 colunas trocava a grade
+// INTEIRA pro large (64 downloads de ~400 KB no álbum do PH 113). No desktop
+// era "todo tile de large, lazy" — e numa tela Retina (DPR 2) o zoom PADRÃO de
+// 5 colunas já passa do limiar: medido, 4 s de rolagem pediram 830 large.jpg
+// (332 MB), porque o lazy do navegador carrega tudo o que passa perto da
+// tela. Agora o desktop segue a mesma regra, com um teto maior: a miniatura
+// aparece na hora e o que parou na tela ganha nitidez.
 const THUMB_USEFUL_PX = 192;
 const LARGE_DECODED_MB = 17;     // 2400×1800×4
 const LARGE_BUDGET_MB = 200;     // teto de larges decodificados ao mesmo tempo (toque)
-const LARGE_MAX_TILES = Math.floor(LARGE_BUDGET_MB / LARGE_DECODED_MB);   // 11
+const LARGE_MAX_TILES = MEMORY_TIGHT ? Math.floor(LARGE_BUDGET_MB / LARGE_DECODED_MB) : 48;   // 11 | 48
 let tileLarge = false;           // o zoom atual pede o large (tile > 2× o útil do thumb)
 function wantLargeTiles() {
   const cw = $('#gallery').clientWidth || document.documentElement.clientWidth;
   const tile = cw / galleryCols();
   return tile * (window.devicePixelRatio || 1) > 2 * THUMB_USEFUL_PX;
 }
-function tileSrc(rec) {
-  return (tileLarge && !MEMORY_TIGHT && rec.largeUrl) ? rec.largeUrl : rec.thumbUrl;
-}
-// Zoom/resize cruzou o limiar: troca o src dos tiles já na grade (o navegador
-// segue mostrando a imagem atual até a nova carregar).
+// Zoom/resize cruzou o limiar: liga/desliga a subida pro large.
 function syncTileResolution() {
   const want = wantLargeTiles();
   if (want === tileLarge) return;
   tileLarge = want;
-  if (MEMORY_TIGHT) { largeTilesReset(); return; }
-  $$('#gallery .tile img').forEach((img) => {
-    const rec = recordByIri.get(img.closest('.tile').dataset.iri);
-    if (rec) img.src = tileSrc(rec);
-  });
+  largeTilesReset();
 }
-// Toque: um IntersectionObserver marca os tiles perto da tela (±25% da altura)
-// e, parada a rolagem, os LARGE_MAX_TILES mais perto do centro ficam com o
-// large; todo o resto volta pro thumb (o large some da memória decodificada).
+// Um IntersectionObserver marca os tiles perto da tela (±25% da altura) e,
+// parada a rolagem, os LARGE_MAX_TILES mais perto do centro ficam com o large;
+// sem vaga, o mais longe volta pro thumb (o large some da memória decodificada).
 let _largeIO = null;
 const _nearImgs = new Set();
 function largeTilesReset() {
-  if (!MEMORY_TIGHT) return;
   _nearImgs.clear();
   if (_largeIO) _largeIO.disconnect();
   if (!tileLarge || !('IntersectionObserver' in window)) { reconcileLargeTiles(); return; }
@@ -1651,7 +1786,6 @@ function largeTilesReset() {
   $$('#gallery .tile img').forEach((img) => _largeIO.observe(img));
 }
 function reconcileLargeTiles() {
-  if (!MEMORY_TIGHT) return;
   const large = $$('#gallery .tile img[data-large]');
   if (!tileLarge) { large.forEach((img) => setTileLarge(img, false)); return; }
   const mid = window.innerHeight / 2;
@@ -1668,9 +1802,7 @@ function reconcileLargeTiles() {
 }
 // Debounce: rolando (inclusive a inércia do iOS) nada troca; ao parar, sobe.
 const scheduleLargeReconcile = debounce(reconcileLargeTiles, 150);
-if (MEMORY_TIGHT) {
-  window.addEventListener('scroll', () => { if (tileLarge) scheduleLargeReconcile(); }, { passive: true });
-}
+window.addEventListener('scroll', () => { if (tileLarge) scheduleLargeReconcile(); }, { passive: true });
 function setTileLarge(img, on) {
   const tile = img.closest('.tile');
   const rec = tile && recordByIri.get(tile.dataset.iri);
@@ -1680,23 +1812,121 @@ function setTileLarge(img, on) {
   if (on) img.dataset.large = '1'; else delete img.dataset.large;
 }
 
+// "0:15" / "1:02:03" pro selo dos vídeos.
+function fmtDuration(sec) {
+  if (sec == null || !isFinite(sec)) return '';
+  const s = Math.max(0, Math.round(sec)), h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+  const ss = String(s % 60).padStart(2, '0');
+  return h ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
+}
+// Nome do tile pro leitor de tela: tipo · passeio · dia (só fatias de string —
+// são milhares de tiles por render; nada de toLocaleString aqui).
+function tileA11yLabel(rec) {
+  const d = /^(\d{4})-(\d{2})-(\d{2})/.exec(rec.datetime || '');
+  return [rec.kind === 'video' ? 'Vídeo' : 'Foto', rec.tourLabel, d ? `${d[3]}/${d[2]}/${d[1]}` : null]
+    .filter(Boolean).join(' · ');
+}
+// O tile sai SEM o <img> (classe `pending`); a miniatura entra depois, por
+// hydrateTile — ver "Miniaturas sob demanda" abaixo.
 function tileHtml(rec, opts) {
   const sel = selected.has(rec.iri) ? ' selected' : '';
-  const noImg = rec.thumbUrl ? '' : ' no-img';
-  // draggable=false: segurar um tile no iOS não "levanta" a foto (ver .tile no CSS).
-  const img = rec.thumbUrl
-    ? `<img loading="lazy" draggable="false" src="${escapeHtml(tileSrc(rec))}" alt="" ` +
-      `onerror="this.style.display='none';this.parentElement.classList.add('no-img')">`
-    : '';
-  const badge = rec.kind === 'video' ? `<span class="badge">▶</span>` : '';
+  const state = rec.thumbUrl ? ' pending' : ' no-img';
+  const dur = rec.kind === 'video' ? fmtDuration(rec.duration) : '';
+  const badge = rec.kind === 'video' ? `<span class="badge">▶${dur ? ' ' + dur : ''}</span>` : '';
   const title = escapeHtml(rec.tourLabel || fmtRecWhen(rec) || '');
   const idAttr = opts && opts.id ? ` id="${opts.id}"` : '';   // 1ª do grupo (linha do tempo)
   return (
-    `<div class="tile${sel}${noImg}"${idAttr} data-iri="${escapeHtml(rec.iri)}" role="button" tabindex="0" title="${title}">` +
-      `${img}${badge}<span class="check"></span>` +
+    `<div class="tile${sel}${state}"${idAttr} data-iri="${escapeHtml(rec.iri)}" role="button" tabindex="0" ` +
+      `title="${title}" aria-label="${escapeHtml(tileA11yLabel(rec))}">` +
+      `${badge}<span class="check"></span>` +
     `</div>`
   );
 }
+
+// ── Miniaturas sob demanda ───────────────────────────────────────────────────
+// Criar o <img> de cada tile junto com a grade era o grosso de todo render:
+// com as 8.375 mídias, 115 dos 165 ms do innerHTML num desktop e 635 dos 835 ms
+// num celular (cada <img> entra na fila de carga e no observador do lazy do
+// navegador, mesmo a quilômetros da tela) — pagos a cada troca de filtro ou de
+// agrupamento. Agora a grade nasce só com os tiles e o <img> entra:
+//  · por GRUPO, quando ele chega a uma tela de distância (IntersectionObserver);
+//  · num contêiner grande (grupo com centenas de mídias, "Nenhum", "Contínuo"),
+//    em levas, da posição da tela pra fora.
+// Quem lê a grade (seleção, sequência do lightbox, linha do tempo, contornos)
+// lê os TILES, que estão todos lá desde o render.
+const HYDRATE_SYNC_MAX = 400;   // até aqui, o contêiner inteiro de uma vez
+const HYDRATE_CHUNK = 400;      // acima: levas deste tamanho
+let _hydrateIO = null, _hydrateGen = 0;
+function hydrateTile(tile) {
+  if (!tile.classList.contains('pending')) return;
+  tile.classList.remove('pending');
+  const rec = recordByIri.get(tile.dataset.iri);
+  if (!rec || !rec.thumbUrl) { tile.classList.add('no-img'); return; }
+  const img = new Image();
+  // lazy + async antes do src: a miniatura só baixa perto da tela, e a
+  // decodificação não segura o quadro da rolagem. draggable=false: segurar um
+  // tile no iOS não "levanta" a foto (ver .tile no CSS).
+  img.loading = 'lazy'; img.decoding = 'async'; img.draggable = false; img.alt = '';
+  img.src = rec.thumbUrl;
+  tile.prepend(img);
+  if (tileLarge && _largeIO) _largeIO.observe(img);
+}
+function hydrateIn(container) {
+  const list = [...container.querySelectorAll('.tile.pending')];
+  if (list.length <= HYDRATE_SYNC_MAX) { list.forEach(hydrateTile); return; }
+  // Âncora = 1º tile que não ficou acima da tela (os topos crescem na ordem do
+  // DOM → busca binária); daí pra baixo e pra cima, uma leva por vez.
+  let lo = 0, hi = list.length - 1, anchor = list.length - 1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (list[mid].getBoundingClientRect().bottom >= 0) { anchor = mid; hi = mid - 1; } else lo = mid + 1;
+  }
+  const gen = _hydrateGen;
+  let down = anchor, up = anchor - 1;
+  const step = () => {
+    if (gen !== _hydrateGen) return;   // a grade foi refeita
+    for (let n = 0; n < HYDRATE_CHUNK && (down < list.length || up >= 0); n++) {
+      // 3 pra baixo : 1 pra cima — quem rola, rola mais pra baixo.
+      if (down < list.length && (up < 0 || n % 4 !== 3)) hydrateTile(list[down++]);
+      else hydrateTile(list[up--]);
+    }
+    if (down < list.length || up >= 0) setTimeout(step, 30);
+  };
+  step();
+}
+// Chamado a cada render, depois do layout (alturas dos grupos já acertadas).
+function setupHydration() {
+  _hydrateGen++;
+  if (_hydrateIO) _hydrateIO.disconnect();
+  const gallery = $('#gallery');
+  const secs = gallery.querySelectorAll('.group');
+  if (!secs.length || !('IntersectionObserver' in window)) {
+    gallery.querySelectorAll('.tiles').forEach(hydrateIn);   // contínuo (ou sem IO): tudo, em levas
+    return;
+  }
+  if (!_hydrateIO) {
+    _hydrateIO = new IntersectionObserver((entries) => {
+      for (const e of entries) {
+        if (!e.isIntersecting) continue;
+        _hydrateIO.unobserve(e.target);
+        hydrateIn(e.target);
+      }
+    }, { rootMargin: '100% 0px' });
+  }
+  secs.forEach((s) => _hydrateIO.observe(s));
+}
+// `error` não borbulha: um listener na captura no lugar do onerror inline de
+// cada <img>. Falhou o large de um tile → volta pra miniatura; falhou a
+// miniatura → o tile mostra o marcador de "sem imagem".
+$('#gallery').addEventListener('error', (e) => {
+  const img = e.target;
+  if (!img || img.tagName !== 'IMG') return;
+  const tile = img.parentElement;
+  const rec = tile && recordByIri.get(tile.dataset.iri);
+  if (img.dataset.large && rec && rec.thumbUrl) { delete img.dataset.large; img.src = rec.thumbUrl; return; }
+  img.style.display = 'none';
+  if (tile) tile.classList.add('no-img');
+}, true);
 
 // ── Interação com a grade: seleção estilo Apple Fotos/Finder ─────────────────
 // Desktop (mouse): clique = seleciona só ela; Cmd/Ctrl+clique = alterna;
@@ -1708,31 +1938,54 @@ const LONGPRESS_MS = 450, MOVE_TOL = 10;
 let _pressTimer = null, _pressTile = null, _pressXY = null;
 let dragSelecting = false, _dragBase = null;
 
-const tileByIri = (iri) => $(`#gallery .tile[data-iri="${(window.CSS && CSS.escape) ? CSS.escape(iri) : iri}"]`);
+// Índice dos tiles da grade atual, montado no 1º uso depois de cada render
+// (renderGroups o zera): `tiles` na ordem do DOM, `pos` = índice do 1º tile de
+// cada IRI, `els` = todos os tiles de cada IRI (uma consulta personalizada
+// pode pôr a mesma mídia em dois grupos), `seq` = IRIs sem repetição. Eram
+// buscas por seletor a cada uso: o tileByIri varria a grade inteira (limpar
+// uma seleção de 8 mil levava mais de 1 s; 5 s num celular) e arrastar a
+// seleção relia e repintava todos os tiles a cada movimento do dedo.
+let _tileIdx = null;
+function tileIndex() {
+  if (_tileIdx) return _tileIdx;
+  const tiles = $$('#gallery .tile[data-iri]');
+  const pos = new Map(), els = new Map(), seq = [];
+  tiles.forEach((t, k) => {
+    const iri = t.dataset.iri, list = els.get(iri);
+    if (list) list.push(t);
+    else { els.set(iri, [t]); pos.set(iri, k); seq.push(iri); }
+  });
+  return (_tileIdx = { tiles, pos, els, seq });
+}
+const tileByIri = (iri) => { const l = tileIndex().els.get(iri); return l ? l[0] : null; };
+function paintSelected(iri, on) {
+  const l = tileIndex().els.get(iri);
+  if (l) for (const t of l) t.classList.toggle('selected', on);
+}
 function markSelected(iri, on) {
   if (on) selected.add(iri); else selected.delete(iri);
-  const t = tileByIri(iri); if (t) t.classList.toggle('selected', on);
+  paintSelected(iri, on);
 }
 function selectOnly(iri) { clearSelection(false); markSelected(iri, true); selectAnchor = iri; syncSelectMode(); }
 function toggleOne(iri) { markSelected(iri, !selected.has(iri)); selectAnchor = iri; syncSelectMode(); }
-// Seleção = intervalo [âncora..alvo] na ordem do DOM, unido a `base` (Set ou null).
+// Seleção = intervalo [âncora..alvo] na ordem do DOM, unido a `base` (Set ou
+// null). Só repinta o que MUDOU em relação à seleção anterior.
 function selectRange(fromIri, toIri, base) {
-  const tiles = $$('#gallery .tile');
-  const order = tiles.map((t) => t.dataset.iri);
-  let i = order.indexOf(fromIri), j = order.indexOf(toIri);
-  if (i < 0 || j < 0) return;
+  const { tiles, pos, els } = tileIndex();
+  let i = pos.get(fromIri), j = pos.get(toIri);
+  if (i == null || j == null) return;
   if (i > j) { const tmp = i; i = j; j = tmp; }
-  const baseSet = base || new Set();
+  const next = new Set();
+  if (base) base.forEach((iri) => { if (els.has(iri)) next.add(iri); });
+  for (let k = i; k <= j; k++) next.add(tiles[k].dataset.iri);
+  selected.forEach((iri) => { if (!next.has(iri)) paintSelected(iri, false); });
+  next.forEach((iri) => { if (!selected.has(iri)) paintSelected(iri, true); });
   selected.clear();
-  tiles.forEach((t, k) => {
-    const on = (k >= i && k <= j) || baseSet.has(t.dataset.iri);
-    t.classList.toggle('selected', on);
-    if (on) selected.add(t.dataset.iri);
-  });
+  next.forEach((iri) => selected.add(iri));
   syncSelectMode();
 }
 function clearSelection(sync = true) {
-  selected.forEach((iri) => { const t = tileByIri(iri); if (t) t.classList.remove('selected'); });
+  $$('#gallery .tile.selected').forEach((t) => t.classList.remove('selected'));
   selected.clear(); selectAnchor = null; _forceSelectMode = false;
   if (sync) syncSelectMode();
 }
@@ -1847,7 +2100,7 @@ function syncSelectMode() {
   updateSelUI();
 }
 function selectAllTiles() {
-  $$('#gallery .tile').forEach((t) => { selected.add(t.dataset.iri); t.classList.add('selected'); });
+  tileIndex().tiles.forEach((t) => { selected.add(t.dataset.iri); t.classList.add('selected'); });
   syncSelectMode();
 }
 function wireSelect() {
@@ -1992,12 +2245,8 @@ let _lbSeq = [];   // sequência do anterior/próxima (ver lbSequence), refeita 
 // da grade renderizar), cai pra ordem do álbum.
 function lbSequence() {
   if (!lbRecord) return [];
-  const seen = new Set(), dom = [];
-  document.querySelectorAll('#gallery .tile[data-iri]').forEach((t) => {
-    const iri = t.dataset.iri;
-    if (!seen.has(iri)) { seen.add(iri); dom.push(iri); }
-  });
-  if (seen.has(lbRecord.iri)) return dom;
+  const idx = tileIndex();   // por render — era uma varredura da grade a cada foto
+  if (idx.pos.has(lbRecord.iri)) return idx.seq;
   const ctx = albumContextIri(lbRecord);
   const seq = ctx && albumSequence(ctx);
   return (seq && seq.includes(lbRecord.iri)) ? seq : [lbRecord.iri];
@@ -2189,7 +2438,7 @@ function openLightbox(rec, opts = {}) {
     // e troca pro large quando terminar de baixar, em vez de deixar a área em
     // branco durante o download (perceptível no celular).
     const placeholder = (rec.thumbUrl && src !== rec.thumbUrl) ? rec.thumbUrl : src;
-    let html = `<img src="${escapeHtml(placeholder)}" alt="">`;
+    let html = `<img src="${escapeHtml(placeholder)}" alt="${escapeHtml(tileA11yLabel(rec))}">`;
     if (rec.kind === 'video' && rec.audioUrl) html += `<audio controls src="${escapeHtml(rec.audioUrl)}"></audio>`;
     media.innerHTML = html;
     if (placeholder !== src) {
@@ -2235,7 +2484,12 @@ function openLightbox(rec, opts = {}) {
   // A página atrás não rola junto (no toque; ver html.lb-open no CSS) e a nova
   // foto começa do topo do overlay (ele rola no celular).
   document.documentElement.classList.add('lb-open');
-  if (!wasOpen) $('#lightbox').scrollTop = 0;
+  if (!wasOpen) {
+    $('#lightbox').scrollTop = 0;
+    // Teclado/leitor de tela: o foco entra no diálogo (e volta pra grade ao fechar).
+    _lbReturnFocus = document.activeElement;
+    $('#lb-close').focus({ preventScroll: true });
+  }
   updateLightboxNav();
   syncLightboxUrl(rec, wasOpen);
   if (opts.dir) animateLbIn(opts.dir);
@@ -2261,10 +2515,16 @@ function closeLightbox(opts = {}) {
   // próprio "voltar" do navegador a fechar); senão só tira o /<n> da URL.
   if (_lbPushed) { _lbPushed = false; if (!opts.fromPop) history.back(); }
   else if (STANDALONE && albumSlug && (parseAlbumRoute() || {}).n) history.replaceState(null, '', albumUrl(albumSlug));
-  // Andou pelas fotos: a grade fica na última vista.
+  // Andou pelas fotos: a grade fica na última vista (e o foco vai pra ela);
+  // senão o foco volta pra onde estava antes de abrir.
+  let focusBack = _lbReturnFocus;
+  _lbReturnFocus = null;
   if (_lbNavigated && shownIri) {
     const t = tileByIri(shownIri);
-    if (t) t.scrollIntoView({ block: 'nearest' });
+    if (t) { t.scrollIntoView({ block: 'nearest' }); focusBack = t; }
+  }
+  if (focusBack && focusBack.isConnected && focusBack !== document.body && focusBack.focus) {
+    focusBack.focus({ preventScroll: true });
   }
   _lbNavigated = false;
   if (_lbDirty) { _lbDirty = false; refresh(); }   // re-fetch + re-render + avisa o mapa
@@ -2361,10 +2621,14 @@ function wireSelbar() {
   document.addEventListener('pointerdown', (e) => {
     if (!e.target.closest('#selbar-menu, #sel-menu')) hideSelbarMenu();
   });
-  window.addEventListener('scroll', hideSelbarMenu, true);
+  window.addEventListener('scroll', (e) => { if (!isTimelineScroll(e)) hideSelbarMenu(); }, true);
   window.addEventListener('resize', hideSelbarMenu);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideSelbarMenu(); });
 }
+// Os menus fecham quando a PÁGINA rola — não quando a régua da linha do tempo
+// se ajeita sozinha (o listener é na captura e pegava a rolagem dela também:
+// um menu aberto logo depois de a galeria carregar fechava na hora).
+function isTimelineScroll(e) { return !!(e && e.target && e.target.id === 'timeline'); }
 function showSelbarMenu() {
   const m = $('#selbar-menu');
   const btn = $('#sel-menu');
@@ -2412,7 +2676,7 @@ function wireContextMenu() {
   });
   // Fecha ao clicar fora, rolar, redimensionar ou Esc.
   document.addEventListener('pointerdown', (e) => { if (!e.target.closest('#ctx-menu')) hideCtxMenu(); });
-  window.addEventListener('scroll', hideCtxMenu, true);
+  window.addEventListener('scroll', (e) => { if (!isTimelineScroll(e)) hideCtxMenu(); }, true);
   window.addEventListener('resize', hideCtxMenu);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideCtxMenu(); });
 }
@@ -2842,12 +3106,17 @@ function wireToolbar() {
   };
   if (smallMq.addEventListener) smallMq.addEventListener('change', onSmallChange);
   else if (smallMq.addListener) smallMq.addListener(onSmallChange);
+  // --tb-h acompanha a altura da barra (recolher/abrir, linha do tempo, quebra
+  // de linha) e a troca fixa ↔ rolando com a página (que não muda o tamanho).
+  syncToolbarCover();
+  if ('ResizeObserver' in window) new ResizeObserver(syncToolbarCover).observe(toolbar);
+  if (smallMq.addEventListener) smallMq.addEventListener('change', syncToolbarCover);
   $('#tb-toggle').addEventListener('click', () => {
     filtersCollapsed = !filtersCollapsed;
     userChose = true;
     lsSet('phidro:filtersCollapsed', filtersCollapsed ? '1' : '0');
     applyCollapse();
-    if (galleryLayout === 'collage') layoutAllJustified();   // altura do header mudou
+    syncToolbarCover();
     if (overlayGroups) drawGroupPolygons();
   });
   // "← Mapa" da barra (embutida + toque): pede pro app fechar o modal.
@@ -2942,7 +3211,9 @@ function wireToolbar() {
     }
   });
   window.addEventListener('resize', debounce(() => {
+    syncToolbarCover();
     if (galleryLayout === 'collage') layoutAllJustified();
+    syncGroupHeights();   // a largura mudou → a altura de cada grupo também
     if (overlayGroups) drawGroupPolygons();
     syncTileResolution();
     refreshTimelineActive();
@@ -2974,14 +3245,9 @@ function wireTimeline() {
   $('#adv').addEventListener('toggle', () => {
     if ($('#adv').open) MQ.ensureEngine().catch(() => {});
   });
-  $('#btn-clear').addEventListener('click', () => {
-    ftLists.clear(true); ftAuthors.clear(true); ftUploaders.clear(true); ftTours.clear(true);
-    $('#f-date-from').value = ''; $('#f-date-to').value = '';
-    $('#f-kj-min').value = ''; $('#f-kj-max').value = '';
-    dualDate && dualDate.syncFromEnds(); dualKj && dualKj.syncFromEnds();
-    $$('#f-weekdays input').forEach((cb) => { cb.checked = false; });
-    rebuildAndRun();
-  });
+  $('#btn-clear').addEventListener('click', clearFilters);
+  // "Limpar filtros" do estado vazio (o nó é recriado a cada render).
+  $('#gallery').addEventListener('click', (e) => { if (e.target.closest('#empty-clear')) clearFilters(); });
 }
 
 // Link compartilhado: restringe a galeria à seleção e abre sem agrupar, em modo

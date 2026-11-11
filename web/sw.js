@@ -25,7 +25,7 @@
 // origin) e v371/v372 saíram na `deploy` (busca de endereços, ⇄ inverter).
 // v373 fica acima de tudo que já circulou, que é o que importa: se a VERSION
 // não crescer, o service worker serve cache velho.
-const VERSION = 'phidro-v439';
+const VERSION = 'phidro-v440';
 const STATIC_CACHE = `${VERSION}-static`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 const DATA_CACHE = 'phidro-data-v1';
@@ -116,6 +116,7 @@ const PAGE_ASSETS = [
   './lib/energy-worker.js',
   './lib/graph-engine.js',          // importScripts()'d pelo energy-worker e pelo viario-graph-worker
   './lib/viario-graph-worker.js',   // decode + Dijkstra do grafo do viário (Traçar "pelo viário")
+  './lib/gallery-worker.js',        // galeria: catálogo → records fora da thread da página (importScripts n3 + media-query)
   './fonts/chunkfive-400.woff2',    // fontes da arte de anúncio (lib/poster.js)
   './fonts/fredoka-600.woff2',
   './fonts/open-sans-400.woff2',
