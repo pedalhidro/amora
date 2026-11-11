@@ -71,6 +71,10 @@ def main():
         t = c.get(f"/garmin/item/t/{FUTURE_SLUG}").get_json()
         assert t["kj"] == 279 and t["band"] == "Ok" and t["place"] == "Museu Indigena"
         assert 2 <= len(t["pts"]) <= 60 and t["km"] > 5
+        many = c.get(f"/garmin/item/t/{FUTURE_SLUG}?pts=200").get_json()["pts"]
+        assert len(t["pts"]) < len(many) <= 200
+        assert len(c.get(f"/garmin/item/t/{FUTURE_SLUG}?pts=99999").get_json()["pts"]) <= 300
+        assert len(c.get(f"/garmin/item/t/{FUTURE_SLUG}?pts=abc").get_json()["pts"]) <= 60
         assert c.get("/garmin/item/t/74d4aa50").get_json()["id"] == FUTURE_SLUG  # slug8
         route_slug = body["routes"][0]["id"]
         ri = c.get(f"/garmin/item/r/{route_slug}").get_json()

@@ -41,6 +41,7 @@ QUEUE_MAX_ITEMS = 10            # itens enviados por aparelho (os mais novos)
 QUEUE_ITEM_TTL_S = 30 * 86400   # um envio some da lista depois de 30 dias
 LIST_NEXT, LIST_RECENT, LIST_ROUTES = 6, 6, 10
 PREVIEW_PTS = 60                # pontos do traçado na ficha (MapView do relógio)
+PREVIEW_PTS_MAX = 300           # teto do ?pts= (o radar do campo Pessoas pede 200)
 LIVE_MAX_PEERS = 30             # pessoas por resposta do /garmin/live
 UPCOMING_GRACE_S = 6 * 3600     # passeio que saiu há < 6 h ainda é "próximo"
 
@@ -318,7 +319,8 @@ def register(app, m):
     def garmin_item(kind, ref):
         """Ficha de um passeio (`t`) ou rota salva (`r`): nome, quando, de
         onde sai, km, subida, kJ + faixa do censo e o traçado reamostrado a
-        ≤ 60 pontos pra pré-visualização no mapa do aparelho. `approx: true`
+        ≤ 60 pontos pra pré-visualização no mapa do aparelho (`?pts=N` muda o
+        teto, até 300 — o radar do campo Pessoas pede 200). `approx: true`
         = o percurso desse passeio é o traçado grosso do routes.json (a rota
         dele não está hospedada no amora)."""
         it = _find(kind, ref)
@@ -350,7 +352,11 @@ def register(app, m):
         if kj is not None:
             out["kj"] = round(kj)
             out["band"] = m._intensity_for(kj)
-        out["pts"] = _resample(latlngs, PREVIEW_PTS)
+        try:
+            n_pts = int(request.args.get("pts") or PREVIEW_PTS)
+        except ValueError:
+            n_pts = PREVIEW_PTS
+        out["pts"] = _resample(latlngs, max(2, min(PREVIEW_PTS_MAX, n_pts)))
         return _no_store(out)
 
     @app.get("/garmin/course/<kind>/<ref>.fit")
