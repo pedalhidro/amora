@@ -92,6 +92,12 @@ TZ_SP = timezone(timedelta(hours=-3))
 FOLGA = timedelta(hours=1)          # antes da saída / depois da chegada
 DURACAO_PADRAO = timedelta(hours=6)  # passeio com saída mas sem chegada
 ROTA_PERTO_M = 400
+# Regra do coletivo (11/2026): foto COM câmera no EXIF feita entre 1 h antes do
+# horário ANUNCIADO e 3 h depois do FIM do passeio sobe sem passar pela folha
+# de contato. Não vale pra foto com GPS longe da rota (pode ser de casa — essa
+# segue pedindo um "sim") nem pra passeio sem rota contra a qual conferir o GPS.
+REGRA_ANTES = timedelta(hours=1)
+REGRA_DEPOIS = timedelta(hours=3)
 
 PH = rdflib.Namespace("https://id.pedalhidrografi.co/terms#")
 
@@ -100,20 +106,52 @@ PH = rdflib.Namespace("https://id.pedalhidrografi.co/terms#")
 # 1. Janelas e rotas dos passeios
 # ═════════════════════════════════════════════════════════════════════════
 
+def _com_fuso(d: datetime) -> datetime:
+    return d if d.tzinfo is not None else d.replace(tzinfo=TZ_SP)
+
+
+def janela_da_regra(g, p) -> tuple[datetime, datetime] | None:
+    """A janela em que a foto sobe SEM revisão (ver REGRA_ANTES/REGRA_DEPOIS):
+    de 1 h antes do horário anunciado (`dcterms:date`; se ele só tem o dia, a
+    saída) até 3 h depois do fim (`ph:arrivedAt`; senão o começo +
+    `ph:totalDuration`). None = não dá pra aplicar: o passeio não tem horário,
+    ou não tem como saber quando acabou — nada de duração inventada aqui."""
+    t = rdflib.URIRef(p.iri)
+    dep, arr, tot = g.value(t, PH.departedAt), g.value(t, PH.arrivedAt), g.value(t, PH.totalDuration)
+    anun = _com_fuso(p.data)
+    dep = _com_fuso(dep.toPython()) if dep is not None else None
+    if anun.hour or anun.minute:
+        ini = min(anun, dep) if dep else anun
+    elif dep:
+        ini = dep
+    else:
+        return None
+    if arr is not None:
+        fim = _com_fuso(arr.toPython())
+    elif tot is not None and isinstance(tot.toPython(), timedelta):
+        fim = (dep or anun) + tot.toPython()
+    else:
+        return None
+    if fim < ini:
+        return None
+    return ini - REGRA_ANTES, fim + REGRA_DEPOIS
+
+
 def janela(g, p) -> tuple[datetime, datetime, str]:
     """(início, fim, confiança) — 'hora' quando o passeio tem horário, 'dia'
-    quando só se sabe o dia (gravado às 00:00)."""
+    quando só se sabe o dia (gravado às 00:00). Cobre sempre a janela da regra
+    (`janela_da_regra`), que começa no horário anunciado e vai mais longe."""
     t = rdflib.URIRef(p.iri)
     dep, arr = g.value(t, PH.departedAt), g.value(t, PH.arrivedAt)
-    ini = dep.toPython() if dep is not None else p.data
-    if ini.tzinfo is None:
-        ini = ini.replace(tzinfo=TZ_SP)
+    ini = _com_fuso(dep.toPython() if dep is not None else p.data)
     if dep is None and ini.hour == 0 and ini.minute == 0:
         return ini, ini + timedelta(hours=28), "dia"
-    fim = arr.toPython() if arr is not None else ini + DURACAO_PADRAO
-    if fim.tzinfo is None:
-        fim = fim.replace(tzinfo=TZ_SP)
-    return ini - FOLGA, fim + FOLGA, "hora"
+    fim = _com_fuso(arr.toPython()) if arr is not None else ini + DURACAO_PADRAO
+    ini, fim = ini - FOLGA, fim + FOLGA
+    regra = janela_da_regra(g, p)
+    if regra:
+        ini, fim = min(ini, regra[0]), max(fim, regra[1])
+    return ini, fim, "hora"
 
 
 def rotas(servidor: str) -> dict[str, list]:
@@ -275,6 +313,7 @@ class Contexto:
 def candidatas(ctx: Contexto, p, com_hash: bool = True) -> tuple[list[dict], Counter]:
     """As candidatas de um passeio + o que foi deixado de fora (e por quê)."""
     ini, fim, conf = janela(ctx.g, p)
+    regra = janela_da_regra(ctx.g, p)
     rota = ctx.rotas.get(p.iri)
     fora = Counter()
     out = []
@@ -322,6 +361,20 @@ def candidatas(ctx: Contexto, p, com_hash: bool = True) -> tuple[list[dict], Cou
                 else:
                     estado = "nova"
         dec = ctx.revisao.get(f.uuid)
+        # Quem aprova, nesta ordem: a revisão; o álbum aprovado; a regra do
+        # horário. As duas últimas NUNCA valem pra foto com GPS LONGE da rota
+        # (pode ser de casa, do caminho, e sobe com o EXIF inteiro — só com um
+        # "sim" explícito na folha de contato), e a do horário também não vale
+        # com GPS num passeio sem rota (não há contra o que conferir).
+        no_horario = bool(regra and tem_camera and regra[0] <= f.date <= regra[1])
+        if dec:
+            decisao, via = dec["decisao"], "revisão"
+        elif album_ok and grupo != "longe":
+            decisao, via = "aprovar", "álbum"
+        elif no_horario and grupo in ("na-rota", "sem-gps"):
+            decisao, via = "aprovar", "horário"
+        else:
+            decisao, via = None, None
         # Sem câmera no EXIF não dá pra saber quem fez (costuma ser foto de
         # outra pessoa, salva do zap): entra SEM autoria, nunca no "padrão".
         camera = f"{ex.camera_make} {ex.camera_model or ''}".strip() if tem_camera else "(sem câmera)"
@@ -336,12 +389,7 @@ def candidatas(ctx: Contexto, p, com_hash: bool = True) -> tuple[list[dict], Cou
             "grupo": grupo, "estado": estado, "alvo": alvo,
             "editada": bool(f.hasadjustments), "local": bool(f.path),
             "previa": previas[0] if previas else None,
-            # Decisão: a da revisão, se houver; senão o álbum aprovado vale "sobe"
-            # — MENOS pra foto com GPS LONGE da rota: ela pode ser de casa, do
-            # caminho, e sobe com o EXIF inteiro. Essa só com um "sim" explícito
-            # na folha de contato, mesmo estando no álbum.
-            "decisao": dec["decisao"] if dec else ("aprovar" if (album_ok and grupo != "longe") else None),
-            "via": "revisão" if dec else ("álbum" if (album_ok and grupo != "longe") else None),
+            "decisao": decisao, "via": via, "no_horario": no_horario,
             "albuns": album_ok, "confianca": conf,
             # Bandeira na folha de contato: está num álbum aprovado, mas o GPS
             # cai longe da rota — pode ser de casa ou do caminho.
@@ -664,8 +712,12 @@ def fila(ctx: Contexto, so_passeio=None) -> tuple[list[tuple], Counter]:
                 out.append((por_uuid[c["uuid"]], c, p))
             elif c.get("albuns") and c["grupo"] == "longe":
                 resumo["de álbum aprovado, mas com GPS LONGE da rota (pedem um sim na folha de contato)"] += 1
+            elif c.get("no_horario") and c["grupo"] == "longe":
+                resumo["no horário do passeio, mas com GPS LONGE da rota (pedem um sim na folha de contato)"] += 1
+            elif c.get("no_horario") and c["grupo"] == "sem-rota":
+                resumo["no horário do passeio, com GPS, mas o passeio não tem rota pra conferir (pedem um sim)"] += 1
             else:
-                resumo["sem decisão (não sobem)"] += 1
+                resumo["sem decisão — fora do horário da regra, ou passeio sem horário/fim (não sobem)"] += 1
     if not so_passeio and ctx.albuns_ok:
         for c in candidatas_sem_passeio(ctx, com_hash=False):
             if c["uuid"] in vistos:
