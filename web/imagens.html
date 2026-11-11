@@ -538,8 +538,11 @@
 <link href="./lib/tom-select.min.css" rel="stylesheet">
 <!-- media-query.js é um <script> CLÁSSICO (publica window.PhidroMediaQuery),
      não um módulo: carregado no <head> antes do módulo abaixo. Requer window.N3
-     já presente na hora de CHAMAR makeStore/buildMediaRecords (garantido por loadN3()). -->
-<script src="./lib/media-query.js"></script>
+     já presente na hora de CHAMAR o que parseia/monta store (loadN3()).
+     ?api=N: o .js fica até 4 h no cache HTTP da Cloudflare, e HTML novo + lib
+     velha = galeria quebrada — suba o N (aqui E no lib/gallery-worker.js)
+     quando a página passar a usar um nome novo de lá. -->
+<script src="./lib/media-query.js?api=2"></script>
 </head>
 <body>
 
@@ -833,48 +836,65 @@ function backToMap() {
   else location.href = './';
 }
 
-// ── Carregamento dos dados (manifesto void → tours.ttl + uploads.ttl) ────────
-async function loadData() {
-  const N3 = await loadN3();
-  const VOID = 'http://rdfs.org/ns/void#';
-  let urls = null;
-  // 1) tenta o manifesto e segue cada void:dataDump (URL relativa).
-  try {
-    const manifestUrl = new URL('./data/data_graphs.ttl', document.baseURI).href;
-    const res = await fetch(manifestUrl, { cache: 'no-cache' });
-    if (!res.ok) throw new Error(`data_graphs.ttl HTTP ${res.status}`);
-    const manifestText = await res.text();
-    const mQuads = new N3.Parser().parse(manifestText);
-    urls = [];
-    for (const q of mQuads) {
-      if (q.predicate.value === VOID + 'dataDump') {
-        urls.push(new URL(q.object.value, manifestUrl).href);
-      }
+// ── Carregamento dos dados (manifesto void → dumps → records) ───────────────
+// O model da galeria (records + catálogos de facetas) é montado num WORKER
+// (lib/gallery-worker.js): download, parse do Turtle e records fora da thread
+// da página — eram ~2 s de página travada num desktop e ~7 s num celular (e do
+// APP junto, quando a galeria abre no modal dele), a cada abertura e a cada
+// recarga depois de uma edição. O caminho é o MESMO nos dois lugares
+// (MQ.loadMediaModel): sem Worker, ou se ele falhar, roda aqui na página.
+let _worker = null, _workerDead = typeof Worker !== 'function', _workerSeq = 0;
+const _workerWaiting = new Map();   // id → {resolve, reject}
+function workerFailed(why) {
+  _workerDead = true;
+  if (_worker) { try { _worker.terminate(); } catch (_) {} _worker = null; }
+  const err = new Error(why);
+  _workerWaiting.forEach((w) => w.reject(err));
+  _workerWaiting.clear();
+}
+function modelFromWorker() {
+  return new Promise((resolve, reject) => {
+    if (!_worker) {
+      _worker = new Worker(new URL('./lib/gallery-worker.js?api=1', document.baseURI));
+      _worker.onmessage = (e) => {
+        const d = e.data || {}, w = _workerWaiting.get(d.id);
+        if (!w) return;
+        _workerWaiting.delete(d.id);
+        if (d.model) w.resolve(d.model); else w.reject(new Error(d.error || 'worker sem resposta'));
+      };
+      // Não carregou (404, importScripts falhou) ou estourou: desiste do worker.
+      _worker.onerror = (e) => { e.preventDefault && e.preventDefault(); workerFailed(e.message || 'worker da galeria falhou'); };
     }
-    if (!urls.length) throw new Error('manifesto sem void:dataDump');
-  } catch (e) {
-    // 2) fallback: baixa os dois dumps conhecidos diretamente.
-    console.warn('[imagens] manifesto indisponível, usando fallback:', e.message);
-    urls = [
-      new URL('./data/tours.ttl', document.baseURI).href,
-      new URL('./data/images.ttl', document.baseURI).href,
-      new URL('./data/identities.ttl', document.baseURI).href,
-      new URL('./data/lists.ttl', document.baseURI).href,
-    ];
+    const id = ++_workerSeq;
+    _workerWaiting.set(id, { resolve, reject });
+    _worker.postMessage({ id, base: document.baseURI });
+  });
+}
+async function loadModel() {
+  if (!_workerDead) {
+    try { return await modelFromWorker(); }
+    catch (e) { console.warn('[imagens] worker indisponível, carregando na página:', e.message); }
   }
-  // Baixa e concatena o texto de todos os grafos, depois parseia tudo junto.
-  // Em PARALELO (eram N round trips em série), concatenados na ordem.
-  const parts = (await Promise.all(urls.map((u) =>
-    fetch(u, { cache: 'no-cache' })
-      .then((r) => { if (!r.ok) { console.warn(`[imagens] ${u}: HTTP ${r.status}`); return null; } return r.text(); })
-      .catch((err) => { console.warn(`[imagens] ${u}: ${err.message}`); return null; })
-  ))).filter((t) => t != null);
-  const text = parts.join('\n\n');
-  return new N3.Parser().parse(text);
+  await loadN3();
+  return MQ.loadMediaModel(document.baseURI);
+}
+// N3.Store do catálogo inteiro — só a consulta "Avançado (SPARQL)" precisa
+// dele, então só é montado no 1º uso (re-baixa os dumps: o cache HTTP/SW
+// revalida) e vale até a próxima carga de dados.
+let _storeP = null;
+function ensureStore() {
+  if (!_storeP) {
+    _storeP = (async () => {
+      const N3 = await loadN3();
+      return MQ.makeStore(new N3.Parser().parse(await MQ.fetchCatalogText(document.baseURI)));
+    })();
+    _storeP.catch(() => { _storeP = null; });   // falhou: a próxima consulta tenta de novo
+  }
+  return _storeP;
 }
 
 // ── Estado do módulo ─────────────────────────────────────────────────────────
-let store = null, model = null, recordByIri = new Map();
+let model = null, recordByIri = new Map();
 let pickSet = null;          // ?pick=… → restringe a galeria a estas mídias (link compartilhado)
 let currentGroup = 'tour';
 let currentSparql = '';
@@ -926,13 +946,14 @@ const PAGE_TITLE = document.title;
 let albumSlug = null;                // álbum refletido na barra de endereço (standalone)
 const _albumSeqReady = new Map();    // listIri → string[] (IRIs na ordem do álbum)
 
-// Reconstrói store + model + índice a partir dos dados atuais. O store (N3)
-// serve aos records e à consulta Avançado (SPARQL); a grade em si sai dos
-// records (MQ.facetRows), sem o Comunica.
+// Recarrega model + índice a partir dos dados atuais. A grade sai dos records
+// (MQ.facetRows), sem store nem Comunica; o store da consulta Avançado é
+// refeito no próximo uso (ensureStore).
 async function loadAndBuild() {
-  const quads = await loadData();
-  store = MQ.makeStore(quads);
-  model = MQ.buildMediaRecords(store);
+  const m = await loadModel();
+  m.tourLabel = MQ.makeTourLabel(m.tours);   // o model do worker vem só com dados
+  model = m;
+  _storeP = null;
   recordByIri = new Map(model.records.map((r) => [r.iri, r]));
   _albumSeqReady.clear();
 }
@@ -1159,7 +1180,7 @@ async function runSparqlAndRender(sparql, facets) {
   clearError();
   let rows;
   try {
-    rows = await MQ.runQuery(store, sparql);
+    rows = await MQ.runQuery(await ensureStore(), sparql);
   } catch (e) {
     if (seq !== runSeq) return;
     setQueryStatus('');
@@ -3053,8 +3074,9 @@ async function pickFromParent(hash) {
 (async () => {
   try {
     embeddedSetup();
-    await Promise.all([loadN3(), loadTomSelect()]);
-    await loadAndBuild();
+    // O catálogo carrega no worker enquanto o Tom Select baixa; o N3 da página
+    // só entra se o worker falhar ou na consulta Avançado.
+    await Promise.all([loadAndBuild(), loadTomSelect()]);
     // Lido ANTES do rebuildAndRun: o syncAlbumUrl dele reescreve a URL (tira o /<n>).
     const bootRoute = parseAlbumRoute();
     applyPickParam();          // antes dos controles p/ refletirem o estado do link
