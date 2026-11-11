@@ -1,0 +1,25 @@
+<resources xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://developer.garmin.com/downloads/connect-iq/resources.xsd">
+    <!-- Os ids batem com FIELD_* em QuilojaulesField.mc. Por record: 4 bytes
+         (kJ, float) + 2 (potência estimada, uint16); 8 por volta; 8 por sessão
+         — folga no limite de 32 bytes por mensagem que um campo de dados tem. -->
+    <fitContributions>
+        <!-- kJ acumulados do modelo, a cada registro (gráfico) -->
+        <fitField id="0" displayInChart="true" sortOrder="0" precision="0"
+                  chartTitle="@Strings.FitModel" dataLabel="@Strings.FitModel"
+                  unitLabel="@Strings.UnitKj" fillColor="#FFBD59" />
+        <!-- por volta: é a "janela do passeio" (volta no ponto de encontro e na chegada) -->
+        <fitField id="1" displayInActivityLaps="true" sortOrder="1" precision="0"
+                  dataLabel="@Strings.FitLapModel" unitLabel="@Strings.UnitKj" />
+        <fitField id="2" displayInActivityLaps="true" sortOrder="2" precision="0"
+                  dataLabel="@Strings.FitLapMeasured" unitLabel="@Strings.UnitKj" />
+        <!-- totais da atividade -->
+        <fitField id="3" displayInActivitySummary="true" sortOrder="3" precision="0"
+                  dataLabel="@Strings.FitTotalModel" unitLabel="@Strings.UnitKj" />
+        <fitField id="4" displayInActivitySummary="true" sortOrder="4" precision="0"
+                  dataLabel="@Strings.FitTotalMeasured" unitLabel="@Strings.UnitKj" />
+        <!-- potência estimada pelo modelo (média de 30 s), a cada registro -->
+        <fitField id="5" displayInChart="true" sortOrder="5" precision="0"
+                  chartTitle="@Strings.FitEstPower" dataLabel="@Strings.FitEstPower"
+                  unitLabel="@Strings.UnitW" fillColor="#C1FF72" />
+    </fitContributions>
+</resources>

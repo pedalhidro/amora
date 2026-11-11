@@ -312,6 +312,26 @@ one optional hosted deploy target, not a dependency.
   `dlLinkAttrs()`, exports use `saveFile()`. Edits to `web/` alone need NO
   native rebuild — the app loads the remote site (so iterate by deploying
   `web/`, not rebuilding); `capacitor/` changes do.
+- `garmin/` — three Connect IQ (Monkey C) apps for the Edge 1040 and
+  Forerunner 955, out of the container: `quilojaules/` (data field — the
+  amora energy model live; `KjModel.mc` is mirrored line by line by
+  `tools/kj_parity.mjs`, which checks it against the REAL `simulateRide`
+  extracted from `web/app.js` — change both together, and keep its settings
+  defaults equal to app.js's `DEFAULT_PARAMS`), `pessoas/` (data field —
+  nearest live person; sharing is OFF by default and only runs with the
+  activity timer on) and `amora/` (device app + glance — lists tours/routes,
+  downloads the course as FIT, hands it to native navigation; pairing by a
+  6-char code generated on the device). Backend side is `backend/garmin.py`
+  (`/garmin/list`, `/garmin/item/<t|r>/<slug>`, `/garmin/course/<t|r>/<slug>.fit`,
+  `POST /garmin/send`, `POST /garmin/live`; registered at the END of
+  `main.py`, reads main's helpers by attribute) + `backend/fit_course.py`
+  (dependency-free FIT course encoder) — both are in the Dockerfile's `COPY`
+  by name; `garmin_queue.json` (the "enviadas por você" queue) is store
+  state like `saved_routes.json`. The SW passes `/garmin/` straight to the
+  network. `garmin/build.sh` builds all three for both devices (`-l 3`; needs
+  `CIQ_SDK` + the device folders in `~/.Garmin/ConnectIQ/Devices/`). **Only
+  Quilojaules has run, and only in the simulator**; nothing has run on a
+  device yet — what is tested is in `garmin/README.md`.
 
 ## IRIs são dereferenciáveis (Linked Data) — esquema atual
 
