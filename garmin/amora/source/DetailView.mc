@@ -212,6 +212,10 @@ class DetailView extends WatchUi.View {
             if (geo.length() > 0) {
                 lines.add(geo);
             }
+            // Rota fora do amora: o percurso é o traçado grosso do routes.json.
+            if (info["approx"] instanceof Lang.Boolean && (info["approx"] as Boolean)) {
+                lines.add("traçado aproximado");
+            }
             var e = info["kj"];
             if (e instanceof Lang.Number) {
                 kj = e;
