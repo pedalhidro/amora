@@ -108,8 +108,10 @@ cobra a mais: num pedal de 363 km gravado num Edge 1040, 5 m sem deadband dá
   de escala (o alcance se ajusta à pessoa mais próxima; quem está além vira
   um anel oco na borda) e, em laranja, o traçado do próximo passeio — buscado
   uma vez em `/garmin/list?glance=1` + `/garmin/item/t/<id>?pts=200`. Não é o
-  mapa do aparelho: um campo de dados não tem acesso a ele. Em campo menor
-  fica o resumo (distância + seta).
+  mapa do aparelho: um campo de dados não tem acesso a ele. Em campo médio
+  (≥ 90×60 px — as telas de 8–10 campos) sai o **radar mini**: o círculo à
+  esquerda, sem nomes, e ao lado a distância e a idade da pessoa mais
+  próxima. Menor que isso, só o resumo (distância + seta).
 - **Transmitir:** desligado por padrão. Ligando "Transmitir minha posição" nas
   configurações, o campo manda a posição pro `POST /live-location` — só com a
   atividade rodando, e a barra de estado diz "transmitindo". Sem conexão, até

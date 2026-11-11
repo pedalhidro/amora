@@ -17,9 +17,14 @@ import Toybox.WatchUi;
 //! posição nenhuma; a barra de estado diz sempre se está transmitindo.
 class PessoasField extends WatchUi.DataField {
     private const STALE_S = 180;          // posição velha: distância em cinza
-    // Campo com pelo menos este tamanho vira RADAR; menor, fica o resumo.
+    // Campo com pelo menos RADAR_MIN vira o radar COMPLETO (linha de cima,
+    // nomes, barra de estado). Entre MINI_MIN e isso — as telas de 8–10
+    // campos — vira o radar MINI: o círculo à esquerda e, ao lado, distância
+    // e idade da pessoa mais próxima. Menor que MINI_MIN, só o resumo.
     private const RADAR_MIN_W = 160;
     private const RADAR_MIN_H = 190;
+    private const MINI_MIN_W = 90;
+    private const MINI_MIN_H = 60;
 
     private var _client as LiveClient;
     private var _share as Boolean = false;
@@ -201,6 +206,18 @@ class PessoasField extends WatchUi.DataField {
             drawRadar(dc, fg, bg, now, best, bestGeo);
             return;
         }
+        if (w >= MINI_MIN_W && h >= MINI_MIN_H) {
+            _client.wantRoute = true;
+            // A barra de estado de cima escreveu o texto dela; o mini usa o
+            // campo todo, então limpa e deixa só a faixa colorida.
+            dc.setColor(fg, bg);
+            dc.clear();
+            dc.setColor(sharing ? Graphics.COLOR_DK_GREEN : Graphics.COLOR_DK_GRAY,
+                        Graphics.COLOR_TRANSPARENT);
+            dc.fillRectangle(0, h - 3, w, 3);
+            drawMiniRadar(dc, fg, bg, now, best, bestGeo);
+            return;
+        }
 
         if (peers.size() == 0) {
             var msg = (_client.peersAt == 0) ? "..." : "ninguém ao vivo";
@@ -279,6 +296,7 @@ class PessoasField extends WatchUi.DataField {
         return 100000.0;
     }
 
+    //! Radar completo: linha de cima + radar com nomes + barra de estado.
     private function drawRadar(dc as Graphics.Dc, fg as Graphics.ColorType, bg as Graphics.ColorType,
                                now as Number, best as Array?, bestGeo as Array<Float>?) as Void {
         var w = dc.getWidth();
@@ -286,7 +304,6 @@ class PessoasField extends WatchUi.DataField {
         var cx = w / 2;
         var small = Graphics.FONT_XTINY;
         var smallH = dc.getFontHeight(small);
-        var gray = (bg == Graphics.COLOR_BLACK) ? Graphics.COLOR_LT_GRAY : Graphics.COLOR_DK_GRAY;
         var peers = _client.peers;
 
         // Linha de cima: quem é a mais próxima, a quanto e há quanto tempo.
@@ -314,27 +331,92 @@ class PessoasField extends WatchUi.DataField {
         // Área do radar: entre a linha de cima e a barra de estado.
         var top = 2 + smallH + 2;
         var bottom = h - 3 - smallH - 2;
-        var cy = (top + bottom) / 2;
         var r = ((w < bottom - top) ? w : (bottom - top)) / 2 - 6;
         if (r < 30) {
             return;
         }
-
         var range = (bestGeo != null) ? radarRange(bestGeo[0]) : 500.0;
+        plotRadar(dc, cx, (top + bottom) / 2, r, range, fg, bg, now, best, false);
+    }
+
+    //! Radar mini (telas de muitos campos): o círculo ocupa a altura do campo,
+    //! à esquerda; ao lado, a distância da pessoa mais próxima, a idade da
+    //! posição e o alcance do anel. Sem nomes no círculo — não cabem.
+    private function drawMiniRadar(dc as Graphics.Dc, fg as Graphics.ColorType, bg as Graphics.ColorType,
+                                   now as Number, best as Array?, bestGeo as Array<Float>?) as Void {
+        var w = dc.getWidth();
+        var h = dc.getHeight();
+        var small = Graphics.FONT_XTINY;
+        var smallH = dc.getFontHeight(small);
+        var gray = (bg == Graphics.COLOR_BLACK) ? Graphics.COLOR_LT_GRAY : Graphics.COLOR_DK_GRAY;
+
+        var d = h - 8;                     // diâmetro: a altura, menos a faixa e a folga
+        if (d > w - 4) {
+            d = w - 4;
+        }
+        var r = d / 2;
+        if (r < 18) {
+            return;
+        }
+        var colW = w - d - 8;              // coluna de texto à direita do círculo
+        var cx = (colW >= 36) ? 3 + r : w / 2;
+        var cy = (h - 3) / 2;
+        var range = (bestGeo != null) ? radarRange(bestGeo[0]) : 500.0;
+        plotRadar(dc, cx, cy, r, range, fg, bg, now, best, true);
+
+        if (colW < 36) {
+            return;                        // campo quase quadrado: só o círculo
+        }
+        var tx = 3 + d + 5;
+        var lines = [] as Array<String>;
+        if (best != null && bestGeo != null) {
+            var age = (best[3] instanceof Lang.Number) ? (best[3] as Number) + (now - _client.peersAt) : 0;
+            lines.add(distLabel(bestGeo[0]));
+            lines.add(ageShort(age));
+        } else if (_client.peers.size() == 0) {
+            lines.add((_client.peersAt == 0) ? "..." : "0");
+        } else {
+            lines.add(_client.total.format("%d"));
+        }
+        var maxLines = (h - 6) / smallH;
+        var y = (h - 3 - ((lines.size() < maxLines ? lines.size() : maxLines) * smallH)) / 2;
+        dc.setColor(fg, Graphics.COLOR_TRANSPARENT);
+        for (var i = 0; i < lines.size() && i < maxLines; i++) {
+            if (i == 1) {
+                dc.setColor(gray, Graphics.COLOR_TRANSPARENT);   // a idade, mais apagada
+            }
+            if (dc.getTextWidthInPixels(lines[i], small) <= colW + 3) {
+                dc.drawText(tx, y, small, lines[i], Graphics.TEXT_JUSTIFY_LEFT);
+            }
+            y += smallH;
+        }
+    }
+
+    //! O desenho do radar em si, centrado em (cx, cy) com raio r px e alcance
+    //! `range` m. `mini` = sem nomes, sem rótulo de alcance, traços menores.
+    private function plotRadar(dc as Graphics.Dc, cx as Number, cy as Number, r as Number,
+                               range as Float, fg as Graphics.ColorType, bg as Graphics.ColorType,
+                               now as Number, best as Array?, mini as Boolean) as Void {
+        var small = Graphics.FONT_XTINY;
+        var smallH = dc.getFontHeight(small);
+        var gray = (bg == Graphics.COLOR_BLACK) ? Graphics.COLOR_LT_GRAY : Graphics.COLOR_DK_GRAY;
+        var peers = _client.peers;
         var scale = r.toFloat() / range;            // px por metro
 
-        // Anéis + alcance.
+        // Anéis (+ alcance, no radar completo).
         dc.setColor(gray, Graphics.COLOR_TRANSPARENT);
         dc.setPenWidth(1);
         dc.drawCircle(cx, cy, r);
         dc.drawCircle(cx, cy, r / 2);
-        dc.drawText(cx, cy + r - smallH - 1, small, distLabel(range), Graphics.TEXT_JUSTIFY_CENTER);
+        if (!mini) {
+            dc.drawText(cx, cy + r - smallH - 1, small, distLabel(range), Graphics.TEXT_JUSTIFY_CENTER);
+        }
 
         var myLat = _lat;
         var myLng = _lng;
         if (myLat == null || myLng == null) {
             dc.setColor(fg, Graphics.COLOR_TRANSPARENT);
-            dc.drawText(cx, cy - smallH / 2, small, "sem GPS", Graphics.TEXT_JUSTIFY_CENTER);
+            dc.drawText(cx, cy - smallH / 2, small, mini ? "GPS?" : "sem GPS", Graphics.TEXT_JUSTIFY_CENTER);
             return;
         }
 
@@ -344,9 +426,11 @@ class PessoasField extends WatchUi.DataField {
         var cosT = -1.0;
         var sinT = 0.0;
 
-        // "S" no topo do anel.
-        dc.drawText(cx, cy - r, small, "S",
-                    Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
+        // "S" no topo do anel (no mini não cabe: fica só a convenção).
+        if (!mini) {
+            dc.drawText(cx, cy - r, small, "S",
+                        Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
+        }
 
         // Traçado do próximo passeio.
         var re = _client.routeE;
@@ -357,7 +441,7 @@ class PessoasField extends WatchUi.DataField {
             var lim = 3.0 * r;                      // trecho todo fora daqui: pula
             var lim2 = lim * lim;
             dc.setColor(Graphics.COLOR_ORANGE, Graphics.COLOR_TRANSPARENT);
-            dc.setPenWidth(3);
+            dc.setPenWidth(mini ? 2 : 3);
             var e0 = re[0] - meE;
             var n0 = rn[0] - meN;
             var ax = (e0 * cosT - n0 * sinT) * scale;
@@ -403,13 +487,13 @@ class PessoasField extends WatchUi.DataField {
             if (dpx > r) {
                 // Além do alcance: anel oco na borda, na direção certa.
                 var k = r.toFloat() / dpx;
-                dc.drawCircle(cx + (px * k).toNumber(), cy - (py * k).toNumber(), 4);
+                dc.drawCircle(cx + (px * k).toNumber(), cy - (py * k).toNumber(), mini ? 3 : 4);
                 continue;
             }
             var sx = cx + px.toNumber();
             var sy = cy - py.toNumber();
-            dc.fillCircle(sx, sy, nearest ? 7 : 5);
-            if ((nearest || labels < 3) && p[0] instanceof Lang.String) {
+            dc.fillCircle(sx, sy, mini ? (nearest ? 5 : 3) : (nearest ? 7 : 5));
+            if (!mini && (nearest || labels < 3) && p[0] instanceof Lang.String) {
                 var label = p[0] as String;
                 if (label.length() > 8) {
                     var cutLabel = label.substring(0, 8);
@@ -424,10 +508,23 @@ class PessoasField extends WatchUi.DataField {
         // baixo — por isso os 180°); sem rumo, um ponto.
         dc.setColor(fg, Graphics.COLOR_TRANSPARENT);
         if (hd != null) {
-            drawArrow(dc, cx, cy, 11, hd.toFloat() + 180.0);
+            drawArrow(dc, cx, cy, mini ? 7 : 11, hd.toFloat() + 180.0);
         } else {
-            dc.fillCircle(cx, cy, 5);
+            dc.fillCircle(cx, cy, mini ? 3 : 5);
         }
+    }
+
+    //! Idade curta pro radar mini: "30 s", "2 min", "1 h".
+    private function ageShort(s as Number) as String {
+        if (s < 0) {
+            s = 0;
+        }
+        if (s < 60) {
+            return s.format("%d") + " s";
+        } else if (s < 3600) {
+            return (s / 60).format("%d") + " min";
+        }
+        return (s / 3600).format("%d") + " h";
     }
 
     //! "há 30 s", "há 2 min", "há 1 h".
