@@ -273,6 +273,24 @@ one optional hosted deploy target, not a dependency.
   por pasta, `semear` monta as lápides do que foi apagado antes de o livro
   existir, `retidos`/`liberar`/`excluir` resolvem o que ficou retido; as duas
   ingestões gravam nele. Ver "Livro-razão" em Conventions),
+  `sync-photos.py` (**Fotos da Apple → amora**, só leitura na biblioteca:
+  `candidatas` lista por passeio as fotos na JANELA dele (saída −1 h … chegada
+  +1 h) com câmera no EXIF, agrupadas pela distância à rota (`routes.json`);
+  `revisar --passeio X` sobe uma folha de contato SÓ em 127.0.0.1 (clique =
+  sobe / não sobe; decisões em `.sync-state/photos-review.jsonl`); `enviar`
+  baixa do iCloud uma a uma e sobe o aprovado pelo mesmo caminho de dedup /
+  substituição / lápide das ingestões do Drive, com chave `photos:<uuid>` no
+  livro. Nada sobe sem aprovação — da revisão ou de um álbum listado em
+  `.sync-state/photos-albums.json` (o "Amora" é o do dia a dia). Autoria pela
+  CÂMERA (`.sync-state/photos-cameras.json`; sem câmera no EXIF = sem
+  autoria), quem subiu = a dona da biblioteca; foto editada no Fotos sobe na
+  versão EDITADA. A comparação com o amora na listagem usa o pHash da PRÉVIA
+  local (os originais moram no iCloud); o hash que vale é o do arquivo
+  baixado. Gotchas: precisa de osxphotos ≥ 0.78; o download é pelo app Fotos
+  (AppleScript — `use_photos_export`), que tem que estar ABERTO NORMALMENTE
+  (lançado sem janela por um script ele trava e todo AppleEvent dá timeout);
+  PhotoKit não funciona a partir do VS Code (o app não declara uso do Fotos e
+  o macOS nega sem perguntar). Vídeos ainda não sobem por aqui),
   `mock_location.sh` (empurra posições de
   teste da localização ao vivo pro backend — random walk, 1 ponto/3 s; bate no
   remoto amora por padrão, `--local` p/ 127.0.0.1:8080; curl não precisa de

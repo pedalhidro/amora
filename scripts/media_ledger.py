@@ -204,9 +204,55 @@ class Livro:
         return r
 
 
+LOCK = STATE_DIR / "ingest.lock"
+
+
+def _pid_vivo(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+
+
+def trava_escritor() -> None:
+    """Uma ingestão com --apply por vez, nesta máquina. Cada uma decide com um
+    RETRATO do catálogo tirado no começo; duas ao mesmo tempo não se enxergam —
+    a cópia do zap de uma sobrescreveria o original que a outra acabou de subir
+    (o /upload-image é purge-and-replace). Trava por pid: se o dono morreu, a
+    trava velha é ignorada."""
+    import atexit
+    if LOCK.exists():
+        try:
+            d = json.loads(LOCK.read_text(encoding="utf-8"))
+            pid = int(d.get("pid"))
+        except (ValueError, TypeError, OSError):
+            d, pid = {}, None
+        if pid and pid != os.getpid() and _pid_vivo(pid):
+            raise SystemExit(
+                f"\noutra ingestão com --apply está rodando (pid {pid}, desde {d.get('desde')}):\n"
+                f"  {d.get('cmd')}\nEspere ela terminar — duas ao mesmo tempo se atropelam.")
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    LOCK.write_text(json.dumps({"pid": os.getpid(), "desde": agora(),
+                                "cmd": " ".join(sys.argv)}), encoding="utf-8")
+
+    def _solta():
+        try:
+            if json.loads(LOCK.read_text(encoding="utf-8")).get("pid") == os.getpid():
+                LOCK.unlink()
+        except (OSError, ValueError):
+            pass
+    atexit.register(_solta)
+
+
 def abre_livro(apply: bool, iniciar: bool) -> Livro | None:
     """A porta de entrada das ingestões. Dry-run sem livro segue (não grava
-    nada mesmo); `--apply` sem livro PARA, a não ser com `--iniciar-livro`."""
+    nada mesmo); `--apply` sem livro PARA, a não ser com `--iniciar-livro`.
+    Com `--apply` também toma a trava de escritor único."""
+    if apply:
+        trava_escritor()
     try:
         return Livro(criar=apply and iniciar)
     except LivroAusente as e:

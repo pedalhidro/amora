@@ -379,6 +379,7 @@ def main() -> None:
 
     cands: list[Item] = []
     sem_passeio: set[str] = set()
+    videos_originais_adiados = 0
     for pa in pastas:
         if a.pasta and a.pasta.lower() not in pa.nome.lower():
             continue
@@ -402,6 +403,14 @@ def main() -> None:
                 continue
             if original and ext not in (".jpg", ".jpeg", ".png", ".heic", ".heif", *A.VIDEO_EXT):
                 continue                     # o backend só aceita esses como original
+            if original and kind == "video":
+                # Vídeo ORIGINAL (de câmera/celular) fica pra depois: este
+                # caminho ainda não lê a data/hora nem o GPS do arquivo, e o
+                # vídeo entraria só com o dia do passeio e sem coordenada —
+                # gravado como `ingested`, nunca mais seria corrigido. Fica
+                # pendente no livro até o caminho de vídeo ler os metadados.
+                videos_originais_adiados += 1
+                continue
             it = Item(caminho=caminho, pasta=pa.nome, kind=kind, original=original)
             # Originais "dandanlessa DSC09460.JPG": 1º token como slug SÓ se
             # já resolve pra pessoa (mesmo fallback da fase 1).
@@ -421,6 +430,9 @@ def main() -> None:
         cands = cands[:a.limit]
     if sem_passeio:
         print(f"  ⚠ pastas com zap mas sem passeio casado (puladas): {', '.join(sorted(sem_passeio))}")
+    if videos_originais_adiados:
+        print(f"  {videos_originais_adiados} vídeos ORIGINAIS adiados (este caminho ainda não lê "
+              f"data/hora e GPS de vídeo — ficam pendentes)")
     if not cands:
         sys.exit("nenhum arquivo do WhatsApp com esses filtros.")
 
