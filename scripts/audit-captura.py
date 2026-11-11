@@ -136,7 +136,12 @@ RE_PASTA = re.compile(
 
 # "dandanlessa WhatsApp Image 2025-09-10 at 00.46.14.jpeg" → dandanlessa
 RE_SLUG_WA = re.compile(r"^(?P<slug>.+?)\s+WhatsApp\s+(?:Image|Video|Audio|Ptt)\b", re.I)
-RE_WA = re.compile(r"\bWhatsApp\s+(?:Image|Video|Audio|Ptt)\b", re.I)
+# Dois nomes de arquivo do WhatsApp: o do iPhone/desktop ("WhatsApp Image
+# 2025-09-23 at 19.40.12.jpeg") e o do Android ("VID-20251026-WA0057.mp4").
+# O segundo casaria com RE_CAMERA (VID-…) e entraria como original — e a hora
+# do mvhd de um vídeo recomprimido pelo zap é a do ENVIO, não a da gravação.
+RE_WA = re.compile(r"\bWhatsApp\s+(?:Image|Video|Audio|Ptt)\b"
+                   r"|\b(?:IMG|VID|AUD|PTT|STK)-\d{8}-WA\d{3,}", re.I)
 
 
 @dataclass
