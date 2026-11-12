@@ -36,7 +36,9 @@
 #   GCP_REGION         default: southamerica-east1
 #   CLOUDRUN_SERVICE   default: phidro
 #   GCS_BUCKET         default: phidro-state
-#   CLOUDRUN_MEMORY    default: 512Mi
+#   CLOUDRUN_MEMORY    default: 1Gi (com 512Mi o catálogo em memória — ~390 MiB
+#                      com 9 mil mídias — estourava o limite e o serviço
+#                      reiniciava a cada ~30 s; 11/2026)
 #   CLOUDRUN_CPU       default: 1
 #   CLOUDRUN_MAX_INSTANCES  default: 1
 #   CLOUDRUN_MIN_INSTANCES  default: 0  (scale-to-zero)
@@ -55,7 +57,7 @@ PROJECT="${GCP_PROJECT:-pedal-hidrografico}"
 REGION="${GCP_REGION:-southamerica-east1}"
 SERVICE="${CLOUDRUN_SERVICE:-phidro}"
 BUCKET="${GCS_BUCKET:-phidro-state}"
-MEMORY="${CLOUDRUN_MEMORY:-512Mi}"
+MEMORY="${CLOUDRUN_MEMORY:-1Gi}"
 CPU="${CLOUDRUN_CPU:-1}"
 # 1 instância, SEMPRE: o _state_lock do backend é por processo e as escritas
 # no bucket não têm precondição de geração — duas instâncias gravando o mesmo
