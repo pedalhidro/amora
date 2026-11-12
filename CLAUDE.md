@@ -66,7 +66,17 @@ one optional hosted deploy target, not a dependency.
   excluir. **Streaming:** cada item sobe assim que é lido (no toque, um decode
   full-res por vez — large, thumb e a miniatura da colagem saem do MESMO
   decode do pHash); falha (4G, troca de app, tela apagada) ganha ↻ e re-tenta
-  sozinha quando a página volta visível/online; POSTs com timeout. **Um álbum
+  sozinha quando a página volta visível/online; POSTs com timeout. **Duas fases (v442):** a fase 1 de cada item manda só o
+  que o faz APARECER (foto: TTL + large + thumb pro `/upload-image`, sem o
+  original; vídeo: TTL sem 720p + áudio + 360p + thumb) e a célula fica "◐
+  enviada em parte"; a fase 2 só anda com a fase 1 ociosa (`pumpFull`, 2 por
+  vez) e manda o `original` / o `video720` pra `POST /complete-media/<hash>`
+  (foto: grava o blob, catálogo intacto, recusa `ph:anonymized`/`compressed` e
+  não regrava original que já existe; vídeo: grava o blob e acrescenta SÓ
+  `ph:video720p` + `"720p"` — uma edição feita entre as fases sobrevive). A
+  página fica `busy` pro app até a fase 2 acabar; recarregar perde os arquivos
+  e a foto fica em parte até ser escolhida de novo (mesmo pHash completa). Na
+  fila do aparelho (shell nativo) o envio segue inteiro, num job só. **Um álbum
   por passeio + autora** (`lst:<slug>`, `schema:Collection` inline, slug
   derivado do nome "passeio · autora · data" como o `slugifyList` do form
   completo; a data é a DO PASSEIO), mintado quando o 1º item daquele passeio é
@@ -949,6 +959,8 @@ Key flows:
   do pré-envio). Não há auth: o pré-envio expõe os blobs na URL pública do
   bucket por até 6 h mesmo sem upload — aceito (quem abre o form vai subir).
   `POST /upload-tour` (`mode=replace|patch` + `remove` — see Tour CRUD),
+  `POST /complete-media/<hash>` (2ª fase do /subir: original da foto ou 720p
+  do vídeo de uma mídia já catalogada),
   `POST /delete-image/<phash>`, `POST /delete-video/<vhash>`,
   `POST /delete-tour/<tour_id>`. Rotas salvas (biblioteca do editor de
   traçado, `web/saved_routes.json`): `GET /saved-routes` (lista resumida,

@@ -77,6 +77,9 @@
   #grid .badge { position: absolute; right: .3rem; bottom: .3rem; font-size: .7rem; line-height: 1;
     padding: .15rem .3rem; border-radius: 4px; background: rgba(16,24,32,.75); color: #fff; }
   #grid li.is-ok img { border-color: var(--ok); }
+  /* Enviada EM PARTE (aparece no acervo; o original / o HD ainda sobe). */
+  #grid li.is-part img { border-color: var(--warn); }
+  #full-status { font-size: .8rem; line-height: 1.4; color: var(--muted); margin: -.25rem 0 .75rem; }
   #grid li.is-err img, #grid li.is-err .noimg { border-color: var(--err); }
   #grid li.is-dup img { border-color: var(--warn); opacity: .6; }
   #grid li.is-busy img { border-color: var(--accent); }
@@ -188,6 +191,7 @@ paciência) ou por um computador.</p>
   });
 </script>
 <p id="status">carregando catálogo…</p>
+<p id="full-status" hidden></p>
 <div id="geo-note" hidden>
   <p id="geo-text"></p>
   <button type="button" id="geo-btn">📍 Usar minha localização atual</button>
@@ -249,6 +253,18 @@ paciência) ou por um computador.</p>
 // foto que falha ganha "↻ tentar de novo" e, se foi rede/tempo/5xx, é
 // reenviada sozinha quando a página volta a ficar visível ou online (e com
 // backoff enquanto está); o wake lock é repedido na volta.
+//
+// DUAS FASES (prioridade: o lote INTEIRO aparece antes de qualquer arquivo
+// pesado subir). Fase 1, por item: foto = TTL + large + thumb (~0,5 MB em vez
+// de original + ~0,5 MB); vídeo = TTL + áudio + 360p + thumb. A célula fica
+// "◐ enviada em parte" — a mídia já está no acervo, no álbum e na colagem.
+// Fase 2, só com a fase 1 OCIOSA (jobs === 0; escolher mais imagens pausa a
+// fila): o `original` da foto e o 720p do vídeo vão pra POST
+// /complete-media/<hash>, 2 por vez, e a célula vira "✓ enviada". Falha de
+// rede re-tenta como na fase 1; recarregar a página perde os arquivos — as
+// fotos em parte pedem pra ser escolhidas de novo (o mesmo pHash completa a
+// que já subiu). Na fila do aparelho (shell nativo) o envio segue inteiro,
+// num job só.
 //
 // ÁLBUM (lst:, schema:Collection): um POR PASSEIO (e autora) na sessão,
 // mintado quando o 1º item daquele passeio é aceito — nome "passeio · autora ·
@@ -580,6 +596,15 @@ async function preparePhoto(item) {
   catch (e) { await exifP; return fail(item, e, { kind: 'read' }); }
   try {
     item.phash = computePHash(bitmap);
+    const lost = items.find((i) => i !== item && i.kind === 'image' && i.partial && i.state === 'ok' &&
+      i.fullState === 'lost' && i.phash === item.phash);
+    if (lost) {
+      await exifP;
+      lost.file = item.file;
+      queueFull(lost);
+      setState(item, 'dup', 'já enviada em parte — completando com este arquivo');
+      return 'dup';
+    }
     item.exif = await exifP;
     item.thumbBlob = await scaledJpeg(bitmap, 256, 0.75);   // = makeThumbnail, zerando o canvas
     setThumb(item, item.thumbBlob);
@@ -764,6 +789,7 @@ function saveSession() {
   try {
     const sent = sentItems.map((i) => ({
       h: i.phash, k: i.kind, n: i.name, a: i.album?.key || null, m: Number.isFinite(i.dateMs) ? i.dateMs : null,
+      p: i.partial ? 1 : 0,
       g: hasGeo(i), d: hasDate(i), t: i.tour ? { iri: i.tour.iri, ms: i.tour.ms, title: i.tour.title } : null,
     }));
     const data = { v: 1, t: Date.now(), cur: curAlbum?.key || null, albums: [...albums.values()], sent };
@@ -783,6 +809,9 @@ function restoreSession() {
       album: albums.get(s.a) || null, tour: s.t || null, dateMs: Number.isFinite(s.m) ? s.m : NaN,
       hasGeo: !!s.g, hasDate: !!s.d,
     };
+    // Foto que ficou em parte: o arquivo se foi com a página — escolher de
+    // novo completa (ver preparePhoto). Vídeo sem o HD fica como está.
+    if (s.p && item.kind === 'image') { item.partial = true; item.fullState = 'lost'; }
     item.li = makeCell(item.name);
     setThumbUrl(item, item.kind === 'video' ? `./clips/${item.phash}.thumb.jpg` : `./photos/${item.phash}/thumb.jpg`);
     items.push(item);
@@ -916,7 +945,7 @@ const CLS = { queued: 'is-busy', preparing: 'is-busy', sending: 'is-busy', nativ
 function setState(item, state, html) {
   item.state = state;
   const li = item.li;
-  li.classList.remove('is-busy', 'is-ok', 'is-err', 'is-dup');
+  li.classList.remove('is-busy', 'is-ok', 'is-err', 'is-dup', 'is-part');
   if (CLS[state]) li.classList.add(CLS[state]);
   $('.st', li).innerHTML = html;
   if (state !== 'ok' && state !== 'err') $('.acts', li)?.remove();
@@ -959,13 +988,28 @@ function renderActs(item) {
     const del = mk('🗑', 'Excluir', 'danger');
     edit.addEventListener('click', () => openEditor(item));
     del.addEventListener('click', () => deleteItem(item, edit, del));
+    if (item.partial && item.fullState === 'err') {
+      const retry = mk('↻', `Tentar de novo ${item.kind === 'video' ? 'o HD' : 'o original'}`, 'retry');
+      retry.addEventListener('click', () => { item.fullTries = 0; queueFull(item); });
+      acts.append(retry);
+    }
     acts.append(edit, del);
   } else return;
   item.li.appendChild(acts);
 }
 function showSent(item, extra = '') {
   const where = item.tour ? escapeHtml(item.tour.title) : 'sem passeio';
-  setState(item, 'ok', `✓ enviada · ${where}${extra}${item.edited ? ' · editada' : ''}`);
+  if (extra) item.sentExtra = extra;
+  const tail = `${item.sentExtra || ''}${item.edited ? ' · editada' : ''}`;
+  if (item.partial) {
+    const what = item.kind === 'video' ? 'o HD' : 'o original';
+    const note = item.fullState === 'sending' ? `subindo ${what}…`
+      : item.fullState === 'err' ? `${what} não subiu${item.fullTransient ? ' — tentamos de novo sozinhos' : `: ${escapeHtml(item.fullErr || 'erro')}`}`
+      : item.fullState === 'lost' ? 'escolha a imagem de novo pra completar'
+      : `${what} sobe depois`;
+    setState(item, 'ok', `◐ enviada em parte · ${where}${tail} · ${note}`);
+    item.li.classList.add('is-part');
+  } else setState(item, 'ok', `✓ enviada · ${where}${tail}`);
   renderFlags(item);
   renderActs(item);
   if (!sentItems.includes(item)) sentItems.push(item);
@@ -1025,6 +1069,7 @@ function autoRetry({ fresh = false } = {}) {
     if (fresh) it.autoTries = 0;   // voltou pra página / pra rede: nova série de tentativas
     if ((it.autoTries || 0) < AUTO_RETRY_MAX) retryItem(it, { auto: true });
   }
+  retryFulls({ fresh });
 }
 
 // ===================== Envio =============================================
@@ -1063,21 +1108,22 @@ async function postPhoto(item) {
   const { ttl, hasGeo: ttlGeo } = buildImageTtl(item, item.author);
   if (nativeUpload) return enqueuePhoto(item, ttl, ttlGeo);
   const fd = new FormData();
+  // Fase 1: só o que faz a foto aparecer. O original vai na fase 2
+  // (/complete-media), depois que o lote inteiro subiu em parte.
   fd.append('ttl', ttl);
-  fd.append('original', item.file, `original.${originalFormat(item.file).ext}`);
   fd.append('large', item.largeBlob, 'large.jpg');
   fd.append('thumb', item.thumbBlob, 'thumb.jpg');
-  const r = await postMedia(item, './upload-image', fd, item.file.size + item.largeBlob.size + item.thumbBlob.size);
-  if (r === 'ok') photoSent(item, ttlGeo);
+  const r = await postMedia(item, './upload-image', fd, item.largeBlob.size + item.thumbBlob.size);
+  if (r === 'ok') photoSent(item, ttlGeo, { partial: true });
   return r;
 }
 // Foto no servidor — pelo POST daqui ou pela fila do aparelho (shell nativo).
-function photoSent(item, ttlGeo) {
+function photoSent(item, ttlGeo, { partial = false } = {}) {
   existingPhashes.push(item.phash);   // re-escolher nesta sessão = duplicada
   if (item.shotWhen && item.hasExifGeo) addShot(item.shotWhen, item.lat, item.lon, item.phash);
   item.sentGeo = ttlGeo && !item.hasExifGeo;
   item.largeBlob = null;   // já subiu: solta os ~500 kB
-  showSent(item);
+  if (partial) queueFull(item); else showSent(item);
   saveSession();
   notifyParent('upload-image', item.phash);
   // A localização do aparelho chegou com o POST já em voo: grava agora.
@@ -1110,25 +1156,141 @@ async function postVideo(item) {
   const result = item.clip;
   const vid = item.phash;
   if (nativeUpload) return enqueueVideo(item, buildVideoTtl(item, item.author, result), result);
+  // Fase 1: 360p + áudio + miniatura, TTL sem 720p. O HD (se o motor fez)
+  // sobe na fase 2 e o servidor acrescenta ph:video720p.
+  const hd = result.blob720 || null;
+  const first = hd ? { ...result, blob720: null } : result;
   const fd = new FormData();
-  fd.append('ttl', buildVideoTtl(item, item.author, result));
+  fd.append('ttl', buildVideoTtl(item, item.author, first));
   fd.append('id', vid);
   fd.append('audio', result.audio, clipFileName(vid, 'audio', result.audio));
   const thumb = result.thumb || item.thumbBlob;
   if (thumb) { fd.append('thumb', thumb, `${vid}.thumb.jpg`); item.thumbBlob = thumb; }
   if (result.blob360) fd.append('video360', result.blob360, clipFileName(vid, '360p', result.blob360));
-  if (result.blob720) fd.append('video720', result.blob720, clipFileName(vid, '720p', result.blob720));
-  const bytes = [result.audio, thumb, result.blob360, result.blob720].reduce((s, b) => s + (b?.size || 0), 0);
+  const bytes = [result.audio, thumb, result.blob360].reduce((s, b) => s + (b?.size || 0), 0);
   const r = await postMedia(item, './upload-video', fd, bytes);
-  if (r === 'ok') videoSent(item, result.engine);
+  if (r === 'ok') videoSent(item, result.engine, hd);
   return r;
 }
-function videoSent(item, engine) {
+function videoSent(item, engine, hd = null) {
   existingVhashes.push(item.phash);
   item.clip = null;   // já subiu: solta os webms
-  showSent(item, engine ? ` (${engine})` : '');
+  item.sentExtra = engine ? ` (${engine})` : '';
+  if (hd) { item.hd = hd; queueFull(item); } else showSent(item);
   saveSession();
   notifyParent('upload-video', item.phash);
+}
+
+// ===================== Fase 2: completar (original / HD) =================
+// Só anda com a fase 1 ociosa (jobs === 0) — a prioridade é o lote inteiro
+// aparecer. O que já está em voo termina; nada novo começa enquanto houver
+// item sendo lido/enviado em parte.
+const FULL_POOL = 2;
+const fullQueue = [];
+let fullActive = 0, _fullTimer = 0, _fullShown = false;
+const fullPending = () => fullQueue.length + fullActive;
+function queueFull(item) {
+  item.partial = true;
+  item.fullState = 'pending';
+  if (!fullQueue.includes(item)) fullQueue.push(item);
+  showSent(item);
+  pumpFull();
+}
+function pumpFull() {
+  while (!jobs && fullActive < FULL_POOL && fullQueue.length) {
+    const item = fullQueue.shift();
+    if (item.state !== 'ok' || !item.partial) continue;
+    fullActive++;
+    acquireWakeLock();
+    sendFull(item).catch((e) => console.warn('subir (fase 2):', e)).finally(() => {
+      fullActive--;
+      if (!jobs && !fullPending()) releaseWakeLock();
+      pumpFull();
+    });
+  }
+  renderFull();
+  scheduleUi();
+}
+async function sendFull(item) {
+  const g0 = gen;
+  const blob = item.kind === 'video' ? item.hd : item.file;
+  if (!blob) { item.fullState = 'lost'; showSent(item); return; }
+  item.fullState = 'sending';
+  showSent(item);
+  const fd = new FormData();
+  if (item.kind === 'video') fd.append('video720', blob, clipFileName(item.phash, '720p', blob));
+  else fd.append('original', blob, `original.${originalFormat(blob).ext}`);
+  // AbortController próprio (excluir / zerar a sessão cancelam) + tempo-limite.
+  const ctl = new AbortController();
+  item.fullAbort = ctl;
+  const timer = setTimeout(() => ctl.abort(), postTimeoutMs(blob.size));
+  let res = null, data = {}, netErr = null;
+  try {
+    res = await fetch(`./complete-media/${item.phash}`, { method: 'POST', body: fd, signal: ctl.signal });
+    data = await res.json().catch(() => ({}));
+  } catch (e) { netErr = e; }
+  clearTimeout(timer);
+  item.fullAbort = null;
+  if (g0 !== gen || item.state !== 'ok' || !item.partial) return;   // sessão zerada / excluída
+  if (res?.ok) {
+    item.partial = false; item.fullState = null; item.hd = null;
+    showSent(item);
+    saveSession();
+    if (item.kind === 'video') notifyParent('update-video', item.phash);   // o catálogo ganhou o 720p
+    return;
+  }
+  item.fullState = 'err';
+  item.fullTransient = !res || res.status >= 500 || res.status === 408 || res.status === 429;
+  item.fullErr = res ? (res.status === 413 ? 'grande demais pro servidor' : (data.error || `HTTP ${res.status}`)) : (netErr?.message || 'rede');
+  showSent(item);
+  renderActs(item);
+  if (item.fullTransient) scheduleFullRetry();
+}
+function failedFulls() { return items.filter((i) => i.state === 'ok' && i.partial && i.fullState === 'err'); }
+function scheduleFullRetry() {
+  if (_fullTimer) return;
+  const pend = failedFulls().filter((i) => i.fullTransient && (i.fullTries || 0) < AUTO_RETRY_MAX);
+  if (!pend.length) return;
+  const tries = Math.min(...pend.map((i) => i.fullTries || 0));
+  _fullTimer = setTimeout(() => { _fullTimer = 0; retryFulls(); }, AUTO_RETRY_DELAYS[Math.min(tries, AUTO_RETRY_DELAYS.length - 1)]);
+}
+function retryFulls({ fresh = false } = {}) {
+  if (document.visibilityState !== 'visible' || navigator.onLine === false) return;
+  clearTimeout(_fullTimer); _fullTimer = 0;
+  for (const it of failedFulls()) {
+    if (!it.fullTransient) continue;
+    if (fresh) it.fullTries = 0;
+    if ((it.fullTries || 0) >= AUTO_RETRY_MAX) continue;
+    it.fullTries = (it.fullTries || 0) + 1;
+    queueFull(it);
+  }
+}
+function dropFull(item) {
+  const i = fullQueue.indexOf(item); if (i >= 0) fullQueue.splice(i, 1);
+  item.partial = false; item.fullState = null; item.hd = null;
+  try { item.fullAbort?.abort(); } catch (_) {}
+}
+// Linha da fase 2, embaixo do status da rodada.
+function renderFull() {
+  const el = $('#full-status');
+  const part = items.filter((i) => i.state === 'ok' && i.partial);
+  const pend = part.filter((i) => i.fullState === 'pending' || i.fullState === 'sending').length;
+  const err = part.filter((i) => i.fullState === 'err');
+  const lost = part.filter((i) => i.fullState === 'lost').length;
+  const out = [];
+  const heavy = part.some((i) => i.kind === 'video') ? 'os originais e o HD dos vídeos sobem' : 'os originais sobem';
+  if (pend) {
+    out.push(jobs
+      ? `◐ ${plural(pend, 'imagem em parte', 'imagens em parte')} — ${heavy} quando todas tiverem aparecido`
+      : `⏳ completando — <strong>mantenha esta tela aberta</strong> · ${pend === 1 ? 'falta 1' : `faltam ${pend}`}`);
+  }
+  if (err.length) out.push(`<span class="err">${err.length} em parte: não completou — ${err.some((i) => i.fullTransient) ? 'tentamos de novo quando a conexão voltar' : 'toque ↻ na imagem'}</span>`);
+  if (lost) out.push(`<span class="warn">${plural(lost, 'imagem ficou', 'imagens ficaram')} em parte (a página recarregou) — escolha de novo pra completar com o original</span>`);
+  if (!out.length && _fullShown && !jobs) out.push('<span class="ok">✓ tudo enviado por completo.</span>');
+  if (part.length) _fullShown = true;
+  else for (const t of document.querySelectorAll('#status .part-tag')) t.remove();   // o resumo da rodada deixa de dizer "em parte"
+  el.innerHTML = out.join(' · ');
+  el.hidden = !out.length;
 }
 
 async function deleteItem(item, edit, del) {
@@ -1151,7 +1313,9 @@ async function deleteItem(item, edit, del) {
     for (let i = list.length - 1; i >= 0; i--) if (list[i].h === item.phash) list.splice(i, 1);
   }
   item.accepted = false;
+  dropFull(item);
   setState(item, 'deleted', 'excluída');
+  renderFull();
   notifyParent(item.kind === 'video' ? 'delete-video' : 'delete-image', item.phash);
   const si = sentItems.indexOf(item); if (si >= 0) sentItems.splice(si, 1);
   saveSession();
@@ -1285,12 +1449,16 @@ window.addEventListener('message', (e) => {
   // O app fechou o modal: com a página OCIOSA, zera a sessão (grade, álbuns,
   // colagem) — a próxima abertura é um envio novo, sem cair no álbum do
   // passeio anterior. Ocupada, não mexe: o lote segue e o resultado fica.
-  if (e.data.type === 'phidro-upload-modal-closed' && !jobs && !nativePendingCount()) resetSession();
+  if (e.data.type === 'phidro-upload-modal-closed' && !jobs && !nativePendingCount() && !fullPending()) resetSession();
 });
 function resetSession() {
   gen++;
   closeEditor(true);
   clearTimeout(_retryTimer); _retryTimer = 0;
+  clearTimeout(_fullTimer); _fullTimer = 0;
+  fullQueue.length = 0; _fullShown = false;
+  for (const it of items) { try { it.fullAbort?.abort(); } catch (_) {} }
+  $('#full-status').hidden = true;
   items.length = 0; sentItems.length = 0; batchHashes.length = 0; nativeItems.clear();
   albums.clear(); curAlbum = null; runItems = new Set(); runSkip = 0;
   collageMode = 'all'; collageSample = [];
@@ -1313,10 +1481,12 @@ let _lastFormState = '';
 function postFormState() {
   if (!EMBEDDED) return;
   const active = activeCount(), failed = failedCount();
-  const busy = active > 0 || editorState.busy;
-  const dirty = failed > 0 || editorState.dirty;
+  const full = fullPending(), fullErr = failedFulls().length;
+  const busy = active > 0 || full > 0 || editorState.busy;
+  const dirty = failed > 0 || fullErr > 0 || editorState.dirty;
   const parts = [];
   if (active) parts.push(plural(active, 'imagem ainda enviando', 'imagens ainda enviando'));
+  if (full + fullErr) parts.push(`${plural(full + fullErr, 'imagem enviada só em parte', 'imagens enviadas só em parte')} (falta o original)`);
   if (failed) parts.push(`${plural(failed, 'imagem com erro', 'imagens com erro')}, não ${failed === 1 ? 'enviada' : 'enviadas'}`);
   if (editorState.busy || editorState.dirty) parts.push(editorState.label || 'edição não salva');
   const msg = { type: 'phidro-form-state', busy, dirty, label: parts.join(' · ') };
@@ -1352,7 +1522,7 @@ function beginRun() {
 }
 function finishRun() {
   $('#picker').classList.remove('busy');
-  releaseWakeLock();
+  if (!fullPending()) releaseWakeLock();
   const run = runList();
   runItems = new Set();
   const count = (st) => run.filter((i) => i.state === st).length;
@@ -1366,7 +1536,8 @@ function finishRun() {
   const noDate = sentRun.filter((i) => !hasDate(i)).length;
   const skip = runSkip; runSkip = 0;
   const parts = [];
-  if (ok)     parts.push(`<span class="ok">${plural(ok, 'imagem enviada', 'imagens enviadas')}</span>`);
+  const part = run.filter((i) => i.state === 'ok' && i.partial).length;
+  if (ok)     parts.push(`<span class="ok">${plural(ok, 'imagem enviada', 'imagens enviadas')}${part ? `<span class="part-tag">${part === ok ? ' em parte' : ` (${part} em parte)`}</span>` : ''}</span>`);
   if (queued) parts.push(`<span class="ok">${queued} na fila do aparelho — <strong>pode fechar o app</strong>, o envio continua</span>`);
   if (dup)    parts.push(`<span class="warn">${plural(dup, 'duplicada', 'duplicadas')}</span>`);
   if (err)    parts.push(`<span class="err">${err} com erro — toque ↻ na imagem${errItems.some((i) => i.transient) ? ' (ou espere: tentamos de novo quando a conexão voltar)' : ''}</span>`);
@@ -1389,6 +1560,7 @@ function finishRun() {
   if (sentItems.length) updateShare({ reveal: sentRun.length > 0 });
   renderGeoNote();
   scheduleUi();
+  pumpFull();   // fase 1 ociosa: agora sobem os originais
 }
 function startJob(item) {
   if (jobs === 0) beginRun();
@@ -1429,7 +1601,7 @@ function releaseWakeLock() {
   l?.release?.().catch(() => {});
 }
 function onVisible() {
-  if (jobs) acquireWakeLock();
+  if (jobs || fullPending()) acquireWakeLock();
   autoRetry({ fresh: true });
 }
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') onVisible(); });
@@ -1439,14 +1611,15 @@ window.addEventListener('online', () => autoRetry({ fresh: true }));
 // antes (o iOS ignora beforeunload — lá quem protege é o wake lock + a
 // re-tentativa). Embutida, quem pergunta é o app (phidro-form-state) — aqui
 // seria um 2º diálogo.
-if (!EMBEDDED) window.addEventListener('beforeunload', (e) => { if (jobs) { e.preventDefault(); e.returnValue = ''; } });
+if (!EMBEDDED) window.addEventListener('beforeunload', (e) => { if (jobs || fullPending()) { e.preventDefault(); e.returnValue = ''; } });
 // Link que sai da página no meio do envio (formulário completo, voltar ao
 // mapa) cancelaria o resto do lote: confirma antes.
 document.addEventListener('click', (e) => {
   const a = e.target.closest?.('a[href]');
   if (!a || a.target === '_blank' || a.hasAttribute('download') || (a.getAttribute('href') || '').startsWith('#')) return;
-  const n = activeCount();
+  const n = activeCount(), f = fullPending();
   if (n && !confirm(`${plural(n, 'imagem ainda enviando', 'imagens ainda enviando')} — sair desta página cancela o resto. Sair mesmo assim?`)) e.preventDefault();
+  else if (!n && f && !confirm(`${plural(f, 'imagem ainda está', 'imagens ainda estão')} só em parte (falta o original) — sair agora deixa assim. Sair mesmo assim?`)) e.preventDefault();
 }, true);
 
 // ===================== Compartilhar: álbum + colagem ====================
@@ -2061,6 +2234,7 @@ $('#files').addEventListener('change', (e) => {
     $('#status').innerHTML = _restoredNote;
     updateShare();
     renderGeoNote();
+    renderFull();
   }
   for (const files of early) handlePickedFiles(files);
   scheduleUi();   // estado inicial pro app (ociosa, sem pendência)
