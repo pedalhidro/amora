@@ -5677,6 +5677,112 @@ def upload_video():
     return jsonify(id=vid_id, files=written, ok=True, staged=staged)
 
 
+# ── Envio em duas fases (/subir): completar a mídia ───────────────────────
+# O envio simplificado manda primeiro o que faz a mídia APARECER (foto: TTL +
+# large + thumb; vídeo: TTL + áudio + 360p + thumb) e só depois, quando o lote
+# inteiro já apareceu, o que pesa: o `original` da foto e o 720p do vídeo.
+# Este endpoint recebe essa 2ª fase de uma mídia JÁ catalogada:
+#   foto  — `original`: grava photos/<phash>/original.<ext>; o catálogo não
+#           muda (a extensão não-jpg já está no schema:encodingFormat da fase 1);
+#   vídeo — `video720`: grava clips/<vhash>.720p.<webm|mp4> e acrescenta
+#           ph:video720p + ph:availableResolution "720p" à mídia (só esses dois
+#           predicados — uma edição feita entre as fases sobrevive, o que um
+#           /upload-video de novo, purge-and-replace, apagaria).
+# Sem @serialized: corpo e blob fora do lock, como nos uploads.
+@app.post("/complete-media/<hash_>")
+def complete_media(hash_):
+    from rdflib import Literal, RDF, URIRef
+    hash_ = (hash_ or "").strip().lower()
+    if not _is_hash16(hash_):
+        return jsonify(error="hash inválido (esperado 16 hex)"), 400
+    iri = URIRef(MED_NS + hash_)
+    catalog = _load_catalog()
+    is_still = (iri, RDF.type, URIRef(PH_NS + "StillImage")) in catalog
+    is_motion = (iri, RDF.type, URIRef(PH_NS + "MotionImage")) in catalog
+    if not (is_still or is_motion):
+        return jsonify(error=f"mídia não encontrada: {hash_}"), 404
+
+    if is_still:
+        f = request.files.get("original")
+        if not f:
+            return jsonify(error="original ausente"), 400
+        # Mídia limpa de propósito (anonimizada/comprimida): o original
+        # devolveria o EXIF que a pessoa tirou.
+        for flag in ("anonymized", "compressed"):
+            if any(str(o).strip().lower() in ("true", "1")
+                   for o in catalog.objects(iri, URIRef(PH_NS + flag))):
+                return jsonify(error=f"mídia marcada ph:{flag} — não recebe original"), 409
+        prefix = f"photos/{hash_}/"
+        try:
+            have = [k for k in STORE.list_keys(prefix)
+                    if k.rsplit("/", 1)[-1].startswith("original.")]
+        except Exception:  # noqa: BLE001
+            have = []
+        if have:   # já tem (re-tentativa depois de resposta perdida): não regrava
+            return jsonify(ok=True, phash=hash_, existed=True,
+                           files=[k.rsplit("/", 1)[-1] for k in have])
+        ext = (os.path.splitext(f.filename or "")[1].lstrip(".") or "jpg").lower()
+        if ext not in ("jpg", "jpeg", "png", "heic", "heif"):
+            ext = "jpg"
+        if ext == "jpeg":
+            ext = "jpg"
+        ct = {"jpg": "image/jpeg", "png": "image/png",
+              "heic": "image/heic", "heif": "image/heif"}[ext]
+        key = f"{prefix}original.{ext}"
+        try:
+            STORE.write_bytes(key, f.read(), content_type=ct)
+        except Exception as e:  # noqa: BLE001
+            traceback.print_exc()
+            return jsonify(error=f"gravação do original: {e}", phash=hash_), 500
+        # Excluída enquanto o original subia: não deixa blob órfão público.
+        if (iri, RDF.type, None) not in _load_catalog():
+            try:
+                STORE.delete(key)
+            except Exception as e2:  # noqa: BLE001
+                print(f"[complete-media] aviso limpando órfão {key}: {e2}")
+            return jsonify(error=f"mídia não encontrada: {hash_}"), 404
+        print(f"[complete-media] foto {hash_} original.{ext}")
+        return jsonify(ok=True, phash=hash_, files=[f"original.{ext}"])
+
+    f = request.files.get("video720")
+    if not f:
+        return jsonify(error="video720 ausente"), 400
+    variants = dict(_CLIP_VARIANTS)["video720"]
+    data = f.read()
+    suffix, ctype = _clip_variant_for("video720", variants, f.filename, data)
+    key = f"clips/{hash_}.{suffix}"
+    try:
+        STORE.write_bytes(key, data, content_type=ctype)
+    except Exception as e:  # noqa: BLE001
+        traceback.print_exc()
+        return jsonify(error=f"gravação do 720p: {e}", id=hash_), 500
+    gone = False
+    p720 = URIRef(PH_NS + "video720p")
+    try:
+        with _mutating("images.ttl") as g:
+            if (iri, RDF.type, URIRef(PH_NS + "MotionImage")) not in g:
+                gone = True
+            else:
+                g.remove((iri, p720, None))
+                g.add((iri, p720, Literal(f"{hash_}.{suffix}")))
+                g.add((iri, URIRef(PH_NS + "availableResolution"), Literal("720p")))
+        _invalidate_catalog()
+    except Exception as e:  # noqa: BLE001
+        try:
+            STORE.delete(key)
+        except Exception:  # noqa: BLE001
+            pass
+        return _persist_error(e, id=hash_)
+    if gone:
+        try:
+            STORE.delete(key)
+        except Exception as e2:  # noqa: BLE001
+            print(f"[complete-media] aviso limpando órfão {key}: {e2}")
+        return jsonify(error=f"mídia não encontrada: {hash_}"), 404
+    print(f"[complete-media] vídeo {hash_} {suffix}")
+    return jsonify(ok=True, id=hash_, files=[key])
+
+
 def remove_video_from_uploads(vhash):
     """Lê os caminhos dos arquivos do vídeo, purga triples (vídeo + bnodes
     alcançáveis), persiste, e devolve (paths, n_triples) — pra que o caller
