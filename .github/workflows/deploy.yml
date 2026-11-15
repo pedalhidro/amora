@@ -68,6 +68,7 @@ on:
       - 'design/**'
       - 'test/**'
       - 'research/**'
+      - 'filme/**'
       - '**.md'
       - '.vscode/**'
       - '.github/**'
