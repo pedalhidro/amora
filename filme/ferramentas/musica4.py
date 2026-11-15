@@ -24,10 +24,10 @@ for t in d["tracks"]:
         if nm.startswith("1110-intro"): INTRO = (a, b)
         if nm.startswith("1110-numeros-10s"):
             s0n = s["source_timerange"]["start"] / 1e6; NUM = (a, b)
-            passos_num = [a + (q - s0n) / s["speed"] for q in (4, 7) if a <= a + (q - s0n) / s["speed"] < b]
+            passos_num = [a + (q - s0n) / s["speed"] for q in ((3, 4, 5, 6, 7, 8) if "-4x5" in nm else (4, 7)) if a <= a + (q - s0n) / s["speed"] < b]
         if nm.startswith("1110-mural-10s-60bpm"):
             s0 = s["source_timerange"]["start"] / 1e6; MURAL = (a, b)
-            passos = [a + (q - s0) / s["speed"] for q in (1, 3, 5, 7, 9) if a <= a + (q - s0) / s["speed"] < b]
+            passos = [a + (q - s0) / s["speed"] for q in (range(1, 10) if "-4x5" in nm else (1, 3, 5, 7, 9)) if a <= a + (q - s0) / s["speed"] < b]
         m = re.match(r"(.+?)_(\d{4})-(\d\d)-\d\d", nm)
         if m:
             k = m.group(1); y, mo = int(m.group(2)), int(m.group(3))

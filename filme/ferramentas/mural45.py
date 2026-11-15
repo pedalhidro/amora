@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-"""Mural das artes de anúncio em RETRATO (1080×1350): 5 colunas, mais novas em cima, rolando pra CIMA em 5 deslizes que começam nos
-segundos 1, 3, 5, 7 e 9 (10 s, 60 BPM — os mesmos tempos do mural deitado, pra trilha servir nos dois).
+"""Mural das artes de anúncio em RETRATO (1080×1350): 3 colunas (NC), mais novas em cima, rolando pra CIMA em 19 deslizes, um a cada meio
+segundo (10 s, 60 BPM). O metrônomo e as trilhas marcam só os deslizes que caem no segundo inteiro (1…9 s): reconhecem o arquivo pelo "-4x5".
   mural45.py <pasta de cache com art-all/ e tours.ttl> <saida.mp4>"""
 import hashlib, os, subprocess, sys
 import rdflib
 from PIL import Image
 C, out = sys.argv[1], sys.argv[2]
-W, H, FPS, TOTAL, GAP, NC, MOVE = 1080, 1350, 30, 10.0, 6, 5, 0.5
-INICIOS = [1.0, 3.0, 5.0, 7.0, 9.0]
+import os as _os
+W, H, FPS, TOTAL, GAP, NC, MOVE = 1080, 1350, 30, 10.0, 6, int(_os.environ.get("NC", 3)), 0.25     # NC = nº de colunas; 0,25 s de deslize + 0,25 s parado
+INICIOS = [k / 2 for k in range(1, 20)]                                 # um deslize a cada MEIO segundo (0,5…9,5 s): passo menor que a tela, nada é pulado
 g = rdflib.Graph(); g.parse(f"{C}/tours.ttl", format="turtle")
 PH = rdflib.Namespace("https://id.pedalhidrografi.co/terms#"); DC = rdflib.URIRef("http://purl.org/dc/terms/date")
 rows = []
@@ -31,7 +32,10 @@ def pos(t):
     return travel * (k + u * u * u * (u * (u * 6 - 15) + 10)) / NS
 maior = max(im.height for c in cols for _, im in c)
 print(f"{len(rows)} artes em {NC} colunas de {LW} px; mural de {th} px; {NS} deslizes de {travel / NS:.0f} px ({travel / NS / H:.0%} da tela); "
-      f"{'toda arte aparece parada' if travel / NS <= H - maior else 'ATENÇÃO: alguma arte só aparece cortada'}")
+      f"{'toda arte aparece parada' if travel / NS <= H - maior else 'ATENÇÃO: alguma arte só aparece em movimento'}")
+paradas = [k * travel / NS for k in range(NS + 1)]                       # quantas artes ficam inteiras na tela em alguma pausa
+inteiras = sum(any(p <= round(y0 + j * ((th - (alt[k] - GAP)) / max(1, len(c) - 1))) and round(y0 + j * ((th - (alt[k] - GAP)) / max(1, len(c) - 1))) + im.height <= p + H for p in paradas) for k, c in enumerate(cols) for j, (y0, im) in enumerate(c))
+print(f"artes vistas inteiras e paradas: {inteiras} de {len(rows)}")
 ff = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(FPS), "-i", "-", "-an", "-c:v", "libx264",
                        "-preset", "medium", "-crf", "16", "-pix_fmt", "yuv420p", "-movflags", "+faststart", out], stdin=subprocess.PIPE)
 for i in range(round(TOTAL * FPS)):

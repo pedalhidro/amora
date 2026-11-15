@@ -24,14 +24,16 @@ A trilha é a mesma nos dois.
 ## Onde as coisas ficam (fora do repositório)
 
 - **Projetos:** `~/Movies/CapCut/User Data/Projects/com.lveditor.draft/`.
-- **Mídia de edição:** `~/Downloads/1110-midia/` — cópias locais do que o amora serve
-  (fotos originais, vídeos em 360p). O projeto lia de uma montagem WebDAV do bucket e
-  travava; `repoint.py` troca os caminhos pelas cópias locais.
-- **Originais dos vídeos:** `~/Downloads/1110-midia-original/` (Fotos da Apple e Drive),
-  pra trocar no fim, quando a edição estiver fechada.
-- **Renders:** `~/Downloads/1110-*.mp4` (mapa, murais). O **prefixo do nome importa**: o
-  metrônomo e as trilhas reconhecem `1110-intro`, `1110-mural-10s-60bpm` e `1110-numeros-10s`.
-- **Áudio:** `~/Downloads/metronomo-catraca-60bpm-v*.wav` e `~/Downloads/bicicultura-musica*/`.
+- **Arquivo do filme:** `~/Movies/2026-bicicultura/video-pedalhidro/` — é de lá que os dois projetos
+  leem. Tem um `LEIAME.md` próprio. Em resumo: `midia/` (as cópias de edição do amora e os vídeos
+  em qualidade original), `renders/` (mapa, murais), `audio/` (metrônomos e trilhas),
+  `exportacoes/`, `capcut/` (cópia dos projetos), `backups/`, `dados/` (catálogos e artes usados
+  nos renders) e `ferramentas/`. Não mover nem renomear sem religar os projetos (`religar.py`).
+- **O prefixo do nome dos renders importa:** o metrônomo e as trilhas reconhecem `1110-intro`,
+  `1110-mural-10s-60bpm` e `1110-numeros-10s`; `-4x5` no nome diz que é o render em retrato (que
+  tem outros tempos de deslize).
+- **O nome dos vídeos originais também:** as ferramentas leem o passeio e a data do nome do arquivo
+  (`PH-118_2026-11-11_…`), então cada original tem um nome com esse prefixo (`nomes_originais.py`).
 - **Cópia de trabalho destas ferramentas:** `~/Movies/amora-capcut-tools/`. O repositório mora
   num compartilhamento de rede que cai; por isso as ferramentas rodam de lá e `ferramentas/`
   é um retrato delas (`cp ~/Movies/amora-capcut-tools/*.py filme/ferramentas/`).
@@ -70,9 +72,16 @@ O rascunho é um JSON (`draft_info.json`) com quatro cópias que têm de ficar i
 | `capcut_layout.py` | modelo de como o CapCut posiciona os clipes; desenha um quadro |
 | `previa45.py` | folha de contato de um projeto, com as legendas |
 | `make_4x5.py` | gera o projeto em retrato a partir do deitado |
+| `troca_originais.py` | troca os vídeos 360p pelos originais, conferindo duração, proporção e o próprio quadro |
+| `nomes_originais.py` | dá a cada original um nome com o prefixo do passeio (hard link) |
+| `preenche.py` | tira os espaços em branco das cenas do projeto deitado sem refazer a composição |
+| `mascaras.py` | bordas suaves em todos os clipes, copiadas de uma máscara-modelo feita à mão |
+| `religar.py` | troca um prefixo de caminho em todo o projeto (a mídia mudou de pasta) |
+| `mapa3d/intro_3d.py` | o mapa de abertura 16:9 (relevo 3D, rotas desenhadas na textura); usa `render.py` e `view_all.py` |
+| `mapa3d/intro_3d_retrato.py` | o mesmo pra tela em retrato: câmera em qualquer direção, zoom, deslocamento e esticão vertical |
 
-O renderizador do mapa 3D se perdeu numa reinicialização e está sendo recuperado do
-registro da sessão; entra aqui (`mapa3d/`) quando voltar.
+O mapa em retrato que está no filme:
+`AZ=285 PITCH=35 M_ALVO=22 LW=1.5 PAN_R=2.5 LARGURA_KM=63.5 ESTICA_V=1.875 python3 intro_3d_retrato.py <cache> --out x.mp4`.
 
 ## Convenções do filme
 

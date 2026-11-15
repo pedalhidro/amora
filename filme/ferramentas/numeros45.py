@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Mural de números em RETRATO (1080×1350, 5 colunas; "quilojaules" vira "kJ" pra caber): uma célula por passeio, mais novos primeiro, rolando pra baixo em 2 passos
+"""Mural de números em RETRATO (1080×1350, 3 colunas — NC; "quilojaules" vira "kJ" pra caber): uma célula por passeio, mais novos primeiro, rolando pra baixo em 2 passos
 que começam nos segundos 4 e 7 (10 s, 60 BPM — o mesmo deslize do mural de artes). No topo, um parágrafo com os totais ocupa a 1ª fileira. Só texto, em IBM Plex Mono. Números como no censo:
   intensidade pelas faixas de kJ; coletividade = participantes × tempo total; gasolina = participantes × kJ ÷ 34.200 kJ/L.
   numeros.py <pasta com tours.ttl e images.ttl> <saida.mp4> [--still quadro.png]"""
@@ -7,9 +7,10 @@ import sys, os, re, json, subprocess, collections, datetime, unicodedata
 import rdflib
 from PIL import Image, ImageDraw, ImageFont
 C, out = sys.argv[1], sys.argv[2]
-W, H, FPS, TOTAL, NC = 1080, 1350, 30, 10.0, 5
-CW, CH, PAD = W // NC, 132, 12
-INICIOS, MOVE = [4.0, 7.0], 0.5                                        # dois passos; a 1ª tela (com o texto) fica 4 s
+W, H, FPS, TOTAL, NC = 1080, 1350, 30, 10.0, int(os.environ.get("NC", 3))
+F_CEL, LH_CEL, ALT_CEL, F_TXT, LH_TXT = {5: (12, 15, 132, 28, 38), 3: (16, 20, 176, 30, 40)}[NC]   # por nº de colunas: letra e linha da célula, altura da célula, letra e linha do parágrafo
+CW, CH, PAD = W // NC, ALT_CEL, 12
+INICIOS, MOVE = [3.0, 4.0, 5.0, 6.0, 7.0, 8.0], 0.4                     # seis passos, um por segundo; a 1ª tela (com o texto) fica 3 s
 PH = rdflib.Namespace("https://id.pedalhidrografi.co/terms#"); DC = rdflib.Namespace("http://purl.org/dc/terms/")
 g = rdflib.Graph(); g.parse(f"{C}/tours.ttl", format="turtle")
 TTL_IMG = open(f"{C}/images.ttl", encoding="utf-8").read()
@@ -53,8 +54,8 @@ def linhas(t):
          pl(t["incidentes"], "incidente", "incidentes")]
     return [x for x in L if x]
 FD = os.path.expanduser("~/Library/Fonts/IBMPlexMono-")
-f_cod, f_nome, f_num = (ImageFont.truetype(FD + peso + ".ttf", 12) for peso in ("Bold", "Medium", "Regular"))
-AV = f_num.getlength("0"); COLS = int((CW - 10) // AV); LH = 15      # fonte monoespaçada: cabe COLS caracteres por linha
+f_cod, f_nome, f_num = (ImageFont.truetype(FD + peso + ".ttf", F_CEL) for peso in ("Bold", "Medium", "Regular"))
+AV = f_num.getlength("0"); COLS = int((CW - 10) // AV); LH = LH_CEL      # fonte monoespaçada: cabe COLS caracteres por linha
 def quebra(txt, maxl):
     out_, atual = [], ""
     for pal in txt.split(" "):
@@ -73,7 +74,7 @@ TEXTO = (f"Produção possível devido aos contribuintes do amora ajudante bicie
          f"CC BY-SA 4.0, mesmos termos deste vídeo. De {dia(INI)} até {dia(ATE)}, ocorreram {len(tours)} passeios com {mil(presencas)} presenças combinadas debaixo do "
          f"guarda-chuva do Pedal Hidrográfico, resultando num total de {mil(horas_col)} horas coletivas totais destinadas para o passeio, e nos quais foram investidos "
          f"energeticamente {mil(kj_col)} quilojaules - equivalente à entalpia de combustão de {br(kj_col / 34200, 2)} litros de gasolina. Discrimina-se em detalhes e por passeio:")
-f_txt = ImageFont.truetype(FD + "Regular.ttf", 28); AVT = f_txt.getlength("0"); LHT = 38
+f_txt = ImageFont.truetype(FD + "Regular.ttf", F_TXT); AVT = f_txt.getlength("0"); LHT = LH_TXT
 _c, COLS = COLS, int((W - 28) // AVT); par = quebra(TEXTO, 99); COLS = _c
 HEAD = 16 + len(par) * LHT + 18                                         # o parágrafo, em cima, com letra que dá pra ler no celular
 linhas_tot = -(-len(tours) // NC)

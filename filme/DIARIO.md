@@ -56,11 +56,37 @@ Registro do que foi feito e decidido, em ordem. Datas de 2026.
     ficou, de quebra-galho, o render 16:9 recortado no centro. Falta o render de verdade em
     retrato, com a câmera repensada (girar o mapa, se precisar).
 
+## 14/11, noite, e 15/11
+
+- **Vídeos em qualidade original no projeto 16:9 e no retrato** (`troca_originais.py`): só troca o
+  clipe que confere em duração, proporção e no próprio quadro. Ficaram como estavam os sem
+  original e um clipe cujo corte passa do fim do original. Os originais ganharam um nome com o
+  prefixo do passeio, porque as outras ferramentas leem o passeio do nome do arquivo.
+- **"Mídia não suportada" no CapCut:** eram dois vídeos 720p em WebM do amora; convertidos pra MP4.
+- **Espaços em branco no 16:9** (`preenche.py`): cada clipe cresce só na direção do vazio vizinho,
+  sem refazer a composição feita à mão. A tela em branco caiu de 0,9 % pra 0 % na média.
+- **Bordas suaves** (`mascaras.py`): máscara retangular em todos os clipes dos dois projetos, com os
+  valores de uma máscara-modelo feita à mão no CapCut; o desfoque foi depois cortado pela metade
+  (0,05). Os seis clipes compostos ficaram sem.
+- **Renderizador do mapa 3D recuperado** do registro da sessão; reproduz o quadro do vídeo original.
+- **Mapa de abertura em retrato**, decidido em várias voltas: um mapa só (a composição com dois
+  foi recusada); câmera olhando pra 285° (entre o norte-em-cima e o oeste-em-cima), inclinação de
+  35°, zoom de 1,25×, a Cratera de Colônia quase na borda esquerda; a imagem esticada na vertical
+  (corta em cima e embaixo) e 5 % mais chão à direita. Só o mapa colorido aparece: além da
+  cobertura dele a cor é calculada da altitude e da declividade, pela regra aprendida onde ele
+  existe.
+- **Projeto em retrato editado à mão** por quem edita (uma cena 2 s mais curta). Ganhou trilha
+  própria: as mixagens com os mesmos 2 s retirados e o metrônomo refeito.
+- **Mural de artes e mural de números em 3 colunas no retrato.** Com menos colunas o conteúdo fica
+  mais comprido; pra nada ser pulado o mural de artes dá um passo a cada meio segundo (19) e o de
+  números um por segundo (6). O metrônomo e as trilhas marcam os passos que caem no segundo inteiro.
+- **Arquivo:** tudo o que não é do repositório foi pra `~/Movies/2026-bicicultura/video-pedalhidro/`
+  e os dois projetos passaram a ler de lá.
+- **No filme:** 494 mídias distintas (257 fotos e 237 vídeos) de 104 passeios.
+
 ## Em aberto
 
-- Recuperar o renderizador do mapa 3D e fazer a versão em retrato.
-- Trocar os vídeos pelos originais quando a edição fechar (conferindo a duração de cada um).
 - Rever o texto das legendas geradas.
 - Decidir se o parágrafo do mural de números conta os dois Pedalula.
-- No projeto em retrato, conferir no CapCut: clipes compostos (153–156 s e 166–169 s),
-  tamanho das legendas, os cortes novos (22, 24 e 26 s) e os clipes com máscara.
+- Máscara nos seis clipes compostos (153–156 s e 166–169 s no 16:9).
+- Três fotos do projeto em retrato ainda são lidas da montagem do amora (`~/AmoraPhotos`).

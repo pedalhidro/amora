@@ -17,7 +17,8 @@ c /= np.abs(c).max()
 AMP = dict(forte=0.95, medio=0.5, fraco=0.2); NROTAS = 120
 d = json.load(open(sys.argv[2])); M = {m["id"]: m for m in d["materials"]["videos"]}
 segs, deslizes, INTRO, MURAL, inicios_mural = [], [], None, None, []
-MURAIS = {"1110-mural-10s-60bpm": (1, 3, 5, 7, 9), "1110-numeros-10s": (4, 7)}   # prefixo do arquivo → segundos em que os deslizes começam
+MURAIS = {"1110-mural-10s-60bpm": (1, 3, 5, 7, 9), "1110-numeros-10s": (4, 7)}
+MURAIS_45 = {"1110-mural-10s-60bpm": tuple(range(1, 10)), "1110-numeros-10s": (3, 4, 5, 6, 7, 8)}   # os renders em retrato ("-4x5" no nome) têm mais deslizes   # prefixo do arquivo → segundos em que os deslizes começam
 passeios = collections.defaultdict(list)
 for t in d["tracks"]:
     if t["type"] != "video": continue
@@ -29,7 +30,7 @@ for t in d["tracks"]:
         segs.append((a, b))
         m = re.match(r"(.+?)_\d{4}-\d\d-\d\d", nm)
         if m: passeios[m.group(1)].append(a)
-        for pref, qs in MURAIS.items():                                # murais: cada deslize é um forte
+        for pref, qs in (MURAIS_45 if "-4x5" in nm else MURAIS).items():                                # murais: cada deslize é um forte
             if nm.startswith(pref):
                 s0 = s["source_timerange"]["start"] / 1e6; MURAL = a if MURAL is None else min(MURAL, a); inicios_mural.append(a)
                 deslizes += [a + (q - s0) / s["speed"] for q in qs if a <= a + (q - s0) / s["speed"] < b]

@@ -11,15 +11,17 @@ things that are easy to get wrong.
   a network share that drops mid-session. `filme/ferramentas/` is a snapshot — after changing a
   tool, copy it back here (`cp ~/Movies/amora-capcut-tools/*.py filme/ferramentas/`).
 - Never keep anything you need in the session scratchpad. A reboot wiped it once and took the
-  3D map renderer and every cache with it.
+  3D map renderer and every cache with it (the renderer was later rebuilt from the session log).
 - Media, renders, audio and CapCut projects stay out of the repo (it is public, and they are
   large). No people's names, e-mail addresses or ledger contents in anything committed here.
 
 ## Editing a CapCut project
 
 Projects live in `~/Movies/CapCut/User Data/Projects/com.lveditor.draft/`:
-`bicicultura-pedalhidro` (16:9, the source of truth) and `bicicultura-pedalhidro-4x5`
-(portrait, generated from it by `make_4x5.py`).
+`bicicultura-pedalhidro` (16:9) and `bicicultura-pedalhidro-4x5` (portrait). The portrait one
+was generated from the 16:9 one by `make_4x5.py` and then **edited by hand** (clips moved, a scene
+shortened by 2 s): never run `make_4x5.py --refaz` on it again — that would wipe those edits.
+Each project has its own soundtrack files (`-247s` for 16:9, `-4x5-v2` for portrait).
 
 - **Only write while CapCut is closed.** Check with
   `ps -axo comm | grep -i -E 'capcut|jianying'`. Never quit it yourself — ask.
@@ -61,7 +63,14 @@ Projects live in `~/Movies/CapCut/User Data/Projects/com.lveditor.draft/`:
 
 - Tour data: `https://amora.pedalhidrografi.co/data/tours.ttl` and `images.ttl` (public).
   Stats follow `web/censo.html` — change the numbers there and here together.
-- Local media copies: `~/Downloads/1110-midia/`; original-quality videos:
-  `~/Downloads/1110-midia-original/` (from Apple Photos and the Drive library, both read-only).
-- Swapping in the originals is for when the edit is locked: check each original's duration
-  against the clip it replaces and leave mismatches alone.
+- Everything the projects read lives in `~/Movies/2026-bicicultura/video-pedalhidro/` (see its
+  `LEIAME.md`). Moving or renaming it breaks both projects until they are re-pointed with
+  `religar.py`.
+- The original-quality videos carry two names each (hash-only and tour-prefixed hard links); the
+  tools read tour and date from the file name, so the projects use the prefixed one.
+- CapCut rejects amora's 720p WebM files ("unsupported media"); convert them to MP4 first.
+- Soft edges are a rectangle mask per clip with feather 0.05 and round corner 0.05 (values taken
+  from a mask the editor made by hand). New masks are 95 % of the clip, with the clip scaled up
+  to compensate. Compound clips have none.
+- The colourful basemap covers only the metropolitan region. Beyond it the portrait map continues
+  the same look with colours computed from elevation and slope, learned from the covered pixels.
