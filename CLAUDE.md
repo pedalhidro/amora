@@ -1454,6 +1454,11 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
     mais ~100 pontos reamostrados do `routes.json` ligados em reta. Rota do
     RideWithGPS segue no traçado amostrado (retas de propósito).
   - O popup do ponto mostra "Trecho até aqui: <modo>" (`segmentModeNote`).
+  - Refazer o traçado INTEIRO no modo selecionado é um botão à parte, ao lado
+    do seletor (`#trace-reroute` → `rerouteAllInSelectedMode`; ícone `reroute`
+    do vocabulário): vale pra todos os trechos, inclusive geometria importada,
+    pede confirmação acima de `REROUTE_CONFIRM_THRESHOLD` e entra no
+    histórico.
 - **Editor de traçado (Traçar).** Roteamento POR SEGMENTO: cada trecho tem
   seu carimbo (`tp._routeSeq`) e um resultado só entra se o carimbo, o
   vizinho anterior e as duas pontas ainda batem; `pendingRouteSeq` virou a

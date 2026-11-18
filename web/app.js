@@ -10363,6 +10363,7 @@ function traceLegendHtml() {
     ['Arraste um ponto', 'move; ' + (t ? 'toque' : 'clique') + ' nele: nome, POI, remover'],
     ['↶ ↷', 'desfazer / refazer'],
     ['Seletor', 'como ligar os trechos novos e os que você mexer (reta, OSM, menor energia) — trocar não refaz o traçado; cada trecho lembra o seu modo'],
+    ['🔁', 'refaz o traçado inteiro no modo selecionado'],
     ['⚙', 'parâmetros da simulação'],
     ['🗑', 'descarta o traçado (e o rascunho guardado)'],
     ['⇄', 'inverte o sentido'],
@@ -10583,6 +10584,7 @@ traceSave.addEventListener('click', () => saveAndExit());
 traceView.addEventListener('click', () => enterPreviewMode());
 traceTrash?.addEventListener('click', () => discardTrace());
 traceReverse.addEventListener('click', () => reverseTraceDirection());
+document.getElementById('trace-reroute')?.addEventListener('click', () => rerouteAllInSelectedMode());
 traceUndo.addEventListener('click', undo);
 traceRedo.addEventListener('click', redo);
 traceRoutingMode.addEventListener('change', () => {
@@ -10595,12 +10597,28 @@ traceRoutingMode.addEventListener('change', () => {
   scheduleTraceDraftSave();   // persiste o modo selecionado
   noteRoutingModeScope();
 });
+// "Refazer tudo neste modo" (o 🔁 ao lado do seletor): o jeito EXPLÍCITO de
+// re-rotear o traçado inteiro no modo selecionado — o que trocar o seletor
+// fazia sozinho até a v443. Vale pra todos os trechos, inclusive os de
+// geometria importada (um GPX) e os de outros modos. Entra no histórico: ↶
+// volta pro traçado de antes.
+async function rerouteAllInSelectedMode() {
+  if (!drawingMode || previewMode || trackpoints.length < 2) return;
+  const tps = trackpoints.slice(1);
+  const label = routingModeLabel(routingMode);
+  if (tps.length > REROUTE_CONFIRM_THRESHOLD &&
+      !confirm(`Isto vai refazer os ${tps.length} trechos do traçado em "${label}" e pode demorar bastante. Continuar?`)) {
+    return;
+  }
+  showToast(`Refazendo ${tps.length} trecho${tps.length === 1 ? '' : 's'} em "${label}"… (↶ desfaz)`, 3000);
+  await routeSegmentsBatch(tps);   // sem modeOf: o modo selecionado
+}
 // Avisa, uma vez por sessão e só com traçado na tela, o alcance do seletor.
 let _routingModeScopeTold = false;
 function noteRoutingModeScope() {
   if (_routingModeScopeTold || !drawingMode || trackpoints.length < 2) return;
   _routingModeScopeTold = true;
-  showToast(`${routingModeLabel(routingMode)}: vale pros trechos novos e pros que você mexer — o resto do traçado fica como está.`, 5000);
+  showToast(`${routingModeLabel(routingMode)}: vale pros trechos novos e pros que você mexer — o resto do traçado fica como está. Pra refazer tudo neste modo, use o 🔁 ao lado.`, 6000);
 }
 // Rótulo de um modo de roteamento — o texto da própria opção do seletor.
 function routingModeLabel(mode) {
@@ -16227,6 +16245,8 @@ function updateTraceControls() {
   traceRedo.disabled = historyIndex >= drawHistory.length - 1;
   if (traceTrash) traceTrash.disabled = trackpoints.length === 0;
   if (traceReverse) traceReverse.disabled = trackpoints.length < 2;
+  const reroute = document.getElementById('trace-reroute');
+  if (reroute) reroute.disabled = trackpoints.length < 2;
 }
 
 // ─── Rascunho persistente do traçado (localStorage) ─────────────────────────
@@ -18173,7 +18193,12 @@ function renderSavedRoutes(routes) {
     const loadBtn = document.createElement('button');
     loadBtn.type = 'button';
     loadBtn.className = 'saved-route-load';
-    loadBtn.textContent = 'Carregar';
+    // Ícone, não "Carregar" por extenso: com o ⌚ do Garmin são quatro botões
+    // e o texto empurrava o 🗑 pra fora do card (19 px no desktop, 69 px num
+    // celular estreito). A miniatura, logo acima, também carrega.
+    loadBtn.innerHTML = uiIcon('folder-open');
+    loadBtn.title = 'Carregar esta rota no editor';
+    loadBtn.setAttribute('aria-label', `Carregar ${r.name || r.id}`);
     loadBtn.addEventListener('click', () => loadSavedRoute(r.id, r.name));
     const linkBtn = document.createElement('button');
     linkBtn.type = 'button';

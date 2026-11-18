@@ -1527,6 +1527,9 @@ body.layers-hidden .layer-panel { display: none; }
   gap: 10px;
 }
 .saved-routes-list > li.muted { grid-column: 1 / -1; }   /* "Carregando…" ocupa a linha */
+/* Celular estreito (320 px): duas colunas deixavam o card com ~120 px úteis —
+   menos que os quatro botões. Uma coluna só. */
+@media (max-width: 340px) { .saved-routes-list { grid-template-columns: minmax(0, 1fr); } }
 .saved-route-card {
   border: 1px solid var(--ui-border-default);
   border-radius: 8px;
@@ -1586,8 +1589,15 @@ body.layers-hidden .layer-panel { display: none; }
   white-space: nowrap;
 }
 .saved-route-stats { font-size: 11px; color: var(--ui-content-muted); }
-.saved-route-actions { display: flex; gap: 6px; margin-top: auto; }
+/* Os botões dividem a largura do card por igual e, se nem assim couberem
+   (card de celular estreito), quebram de linha — nunca saem do card. */
+.saved-route-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; }
 .saved-route-actions button {
+  flex: 1 1 30px;
+  min-width: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   background: transparent;
   color: var(--ui-content-muted);
   border: 1px solid var(--ui-border-default);
@@ -1597,10 +1607,10 @@ body.layers-hidden .layer-panel { display: none; }
   font-size: 12px;
   cursor: pointer;
 }
+.saved-route-actions button .icon { width: 16px; height: 16px; }
 .saved-route-actions button:hover { color: var(--ui-content-primary); }
 .saved-route-actions button:disabled { opacity: 0.45; cursor: default; }
 .saved-route-actions button.danger { color: var(--ui-status-danger); border-color: var(--ui-status-danger); }
-.saved-route-actions .saved-route-load { flex: 1; }
 
 /* Crosshair cursor on the map while drawing. */
 body.drawing .leaflet-grab,

@@ -79,6 +79,12 @@ const ICONS = {
       "body": "<path d=\"M7 10h14l-4 -4\"/><path d=\"M17 14h-14l4 4\"/>"
     }
   },
+  "reroute": {
+    "outline": {
+      "attrs": "viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"",
+      "body": "<path d=\"M4 12v-3a3 3 0 0 1 3 -3h13m-3 -3l3 3l-3 3\"/><path d=\"M20 12v3a3 3 0 0 1 -3 3h-13m3 3l-3 -3l3 -3\"/>"
+    }
+  },
   "folder-open": {
     "outline": {
       "attrs": "viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"",
