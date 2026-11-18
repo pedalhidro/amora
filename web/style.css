@@ -2538,6 +2538,8 @@ body.trace-preview .tp-label { display: none !important; }
 }
 .tp-popup-body .tp-row { display: grid; gap: 3px; }
 .tp-popup-body .tp-row > span { color: var(--ui-content-muted); font-size: 11px; }
+/* O modo de roteamento do trecho que chega neste ponto (só leitura). */
+.tp-popup-body .tp-seg { margin: 0; color: var(--ui-content-muted); font-size: 11px; line-height: 1.35; }
 .tp-popup-body .tp-checkbox {
   display: flex;
   align-items: center;
