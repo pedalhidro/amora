@@ -52,6 +52,10 @@
       "name": "arrows-exchange",
       "description": "Inverter o sentido."
     },
+    "reroute": {
+      "name": "repeat",
+      "description": "Refazer o traçado inteiro no modo de roteamento selecionado."
+    },
     "folder-open": {
       "name": "folder-open",
       "description": "Carregar de um arquivo ou da biblioteca."

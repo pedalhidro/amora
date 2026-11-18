@@ -958,8 +958,8 @@ Key flows:
   write is serialized) and is best-effort — a fetch failure never fails the
   tour save (the entry is kept with `latlngs:null` + `error`, same convention
   as `build-routes.py`). Rotas amora não têm fetch de rede: a geometria é
-  decodificada do `saved_routes.json` (wp + polyline5 `sg`; POIs dos wp com
-  `isPoi`) — e como esse traçado é MUTÁVEL (re-salvar no editor muda), o
+  decodificada do `saved_routes.json` (wp + polyline5 `sg`, `''` = trecho
+  reto; POIs dos wp com `isPoi`; o `sm`, modo por trecho, é só do editor) — e como esse traçado é MUTÁVEL (re-salvar no editor muda), o
   curto-circuito de cache de geometria não vale pra elas e o `/save-route`
   re-sincroniza (best-effort, local) os tours que referenciam o slug
   (`_resync_amora_route_tours`). The shared fetch/parse/entry-building logic
@@ -1416,6 +1416,49 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
   escreve valor que mudou; `--photo-scale` fica no container do mapa, não em
   cada marcador. O slider de datas atualiza a lista no `input` e as fotos só
   no `change` (ou 250 ms parado).
+- **Traçar: o MODO de roteamento é por trecho (v444).** Cada trecho lembra
+  o modo que o produziu — `path.mode`, no waypoint em que ele CHEGA
+  (`'straight'|'cycling'|'foot'|'energy'|'energy_road'`; ausente = sem
+  proveniência: geometria importada, ou roteamento que falhou). O seletor da
+  barra (`routingMode`) é só o modo dos trechos criados ou mexidos DAQUI PRA
+  FRENTE: **trocar o seletor não refaz nada** (até a v443 re-roteava o
+  rascunho inteiro). Em A-B-C-D, arrastar B refaz A-B e B-C no modo
+  selecionado; C-D fica. Regras:
+  - Um trecho só muda de modo em `routeNewSegment(tp)` — ponto novo,
+    arrastado, removido, inserido. Reta de propósito é `straightSegment`
+    (carimbada `'straight'`); `straightPath` cru é a reta PROVISÓRIA de um
+    roteamento em voo, ou o que sobra de um que falhou.
+  - Refazer um trecho sem mexer nele usa o modo DELE, não o do seletor:
+    `refetchPath(tp, modo)`. A varredura de pendentes roteia cada um no modo
+    em que foi pedido (`_routePending`); um toggle de fonte de dados
+    (`rerouteCurrentDraft` → `segmentDependsOn`, que devolve o modo) refaz os
+    trechos cujo modo depende da fonte, com o seletor em qualquer posição.
+  - Onde o modo viaja: undo/rascunho (`snapshot().mode`), GPX
+    (`userWaypoints[].mode`), e a rota salva / link `#st=` — **`sm`**, uma
+    letra por trecho na ordem do `sg` (`s c f e r`, `-` = sem proveniência;
+    `segModesToString` / `segModeFromState`, o bloco "modos por trecho" do
+    app.js, testado por `test/route-modes.test.mjs`). `rm` segue sendo o modo
+    do SELETOR ao salvar. O backend guarda o estado como vem e só lê `wp`+`sg`.
+  - **O `sg` vai sempre que há geometria** (`shareSegments`) — antes só ia com
+    o seletor num modo roteado, e salvar com ele em "Reta" jogava fora a rota
+    inteira (15 das 38 rotas salvas de produção em 11/2026 estão assim: `rm:
+    straight`, sem `sg`). Trecho reto vai como `''`; com `rm` roteado o `sg`
+    vai mesmo todo vazio (um app.js antigo trata "sem sg" como link v1 e
+    re-rotearia tudo).
+  - Estado antigo (sem `sm`) e GPX antigo (sem `mode`): `segModeFromState`
+    deduz — com `rm` roteado, todo trecho com geometria guardada herda o
+    `rm`; em `straight`, reta é reta de propósito. Nada é re-roteado ao abrir.
+  - **"Editar este traçado"** num passeio cuja rota é do amora
+    (`entry.provider === 'amora'`) abre a ROTA SALVA (`/saved-route/<id>` →
+    `applyShareState`, adotando o id: salvar atualiza a rota do passeio) — não
+    mais ~100 pontos reamostrados do `routes.json` ligados em reta. Rota do
+    RideWithGPS segue no traçado amostrado (retas de propósito).
+  - O popup do ponto mostra "Trecho até aqui: <modo>" (`segmentModeNote`).
+  - Refazer o traçado INTEIRO no modo selecionado é um botão à parte, ao lado
+    do seletor (`#trace-reroute` → `rerouteAllInSelectedMode`; ícone `reroute`
+    do vocabulário): vale pra todos os trechos, inclusive geometria importada,
+    pede confirmação acima de `REROUTE_CONFIRM_THRESHOLD` e entra no
+    histórico.
 - **Editor de traçado (Traçar).** Roteamento POR SEGMENTO: cada trecho tem
   seu carimbo (`tp._routeSeq`) e um resultado só entra se o carimbo, o
   vizinho anterior e as duas pontas ainda batem; `pendingRouteSeq` virou a
@@ -1527,9 +1570,9 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
   mil no desktop; `PackedLinesLayer` cobre o quadrado da diagonal com o mapa
   girado (redesenha só quando um canto sai dele), acompanha a pinça pelo
   evento `zoom` e limita o DPR do canvas a 2. Trocar uma fonte de dados só
-  re-roteia os trechos que dependem dela (proveniência `path.mode`): parâmetro
-  novo que afete o roteamento entra em `routingSettingsNow()` e em
-  `segmentDependsOn()`.
+  re-roteia os trechos que dependem dela (proveniência `path.mode`, cada um no
+  seu modo — ver "o MODO de roteamento é por trecho"): parâmetro novo que
+  afete o roteamento entra em `routingSettingsNow()` e em `segmentDependsOn()`.
 - **Campos de formulário no iPhone.** `showPicker()` não faz nada no iOS em
   input de data (e não lança): no toque o padrão é um input transparente
   POR CIMA do controle (`.dt-overlay` nos forms de passeio,
@@ -1827,9 +1870,9 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
   `censo.html`) ou no `backend/mdhtml.py`: `python3 test/test_mdhtml.py` e
   `python3 scripts/check-nojs.py http://127.0.0.1:<porta>` com o backend local
   no ar (ver "Conteúdo sem JavaScript").
-- `npm test` (tokens, cores, ícones, `safeUrl`) se mexeu em `web/style.css`,
-  `web/index.html`, `web/app.js`, `web/lib/utils.js`, `web/memoria.html` ou
-  `design/`.
+- `npm test` (tokens, cores, ícones, `safeUrl`, modos por trecho do Traçar) se
+  mexeu em `web/style.css`, `web/index.html`, `web/app.js`, `web/lib/utils.js`,
+  `web/memoria.html` ou `design/`.
 - Ontology / shapes / data: parse with `rdflib` after editing `*.ttl`.
 
 ## Build & deploy

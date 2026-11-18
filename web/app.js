@@ -6022,10 +6022,7 @@ function draftShareState(name) {
       return out;
     }),
   };
-  if (rm !== 'straight') {
-    state.sg = d.wp.slice(1).map((w) => (Array.isArray(w.path) && w.path.length >= 2
-      ? encodePolyline(simplifyForShare(w.path)) : ''));
-  }
+  Object.assign(state, shareSegments(d.wp.slice(1).map((w) => ({ path: w.path, mode: w.mode })), rm));
   return { state, sid: d.sid || null };
 }
 // Ajustar a rota da arte no Traçar: abre o editor com a rota salva (ou o
@@ -10365,7 +10362,8 @@ function traceLegendHtml() {
     [t ? 'Segure na linha' : 'Clique na linha', 'insere um ponto no meio (arraste pra posicionar)'],
     ['Arraste um ponto', 'move; ' + (t ? 'toque' : 'clique') + ' nele: nome, POI, remover'],
     ['↶ ↷', 'desfazer / refazer'],
-    ['Seletor', 'como ligar os pontos: reta, OSM, menor energia'],
+    ['Seletor', 'como ligar os trechos novos e os que você mexer (reta, OSM, menor energia) — trocar não refaz o traçado; cada trecho lembra o seu modo'],
+    ['🔁', 'refaz o traçado inteiro no modo selecionado'],
     ['⚙', 'parâmetros da simulação'],
     ['🗑', 'descarta o traçado (e o rascunho guardado)'],
     ['⇄', 'inverte o sentido'],
@@ -10549,8 +10547,12 @@ const _lineageMeta = new Map();   // linhagem → { sid, n, rm }
 let draftPolyline = null;
 let draftCasing = null;
 let pointIdCounter = 0;
-// 'straight' | 'cycling' | 'foot' — controls how new segments are computed.
-// 'straight' just connects waypoints with a line (the absolute shortest distance).
+// O modo SELECIONADO na barra ('straight' | 'cycling' | 'foot' | 'energy' |
+// 'energy_road'): vale pros trechos que forem criados ou mexidos DAQUI PRA
+// FRENTE. O modo de roteamento é POR TRECHO — cada um lembra o modo que o
+// produziu (`path.mode`, no waypoint em que o trecho chega) e só muda quando
+// o próprio trecho é refeito: ponto novo, ponto arrastado/removido/inserido.
+// Trocar o seletor não toca no traçado.
 let routingMode = 'straight';
 // Roteamento é POR SEGMENTO: cada um (o caminho que CHEGA em tp) leva o
 // próprio carimbo (tp._routeSeq) e um resultado só entra se o carimbo ainda é
@@ -10582,17 +10584,47 @@ traceSave.addEventListener('click', () => saveAndExit());
 traceView.addEventListener('click', () => enterPreviewMode());
 traceTrash?.addEventListener('click', () => discardTrace());
 traceReverse.addEventListener('click', () => reverseTraceDirection());
+document.getElementById('trace-reroute')?.addEventListener('click', () => rerouteAllInSelectedMode());
 traceUndo.addEventListener('click', undo);
 traceRedo.addEventListener('click', redo);
 traceRoutingMode.addEventListener('change', () => {
-  const prev = routingMode;
   routingMode = traceRoutingMode.value || 'straight';
-  // Trocar o modo re-roteia o rascunho atual com o modo/fontes vigentes (antes
-  // só valia pros próximos waypoints). Reverte o seletor se o usuário recusar
-  // um re-roteamento grande.
-  rerouteCurrentDraft(prev);
-  scheduleTraceDraftSave();   // persiste o modo mesmo sem re-roteamento (reta)
+  // Trocar o modo NÃO refaz o traçado (até a v443 re-roteava tudo — e um
+  // arraste depois refazia os dois trechos num modo, o resto noutro, sem a
+  // pessoa ter como saber qual). Vale pro que for criado ou mexido a partir
+  // de agora: arrastar B em A-B-C-D refaz A-B e B-C neste modo; C-D fica.
+  syncLineageMeta();          // o desfazer não devolve o seletor antigo
+  scheduleTraceDraftSave();   // persiste o modo selecionado
+  noteRoutingModeScope();
 });
+// "Refazer tudo neste modo" (o 🔁 ao lado do seletor): o jeito EXPLÍCITO de
+// re-rotear o traçado inteiro no modo selecionado — o que trocar o seletor
+// fazia sozinho até a v443. Vale pra todos os trechos, inclusive os de
+// geometria importada (um GPX) e os de outros modos. Entra no histórico: ↶
+// volta pro traçado de antes.
+async function rerouteAllInSelectedMode() {
+  if (!drawingMode || previewMode || trackpoints.length < 2) return;
+  const tps = trackpoints.slice(1);
+  const label = routingModeLabel(routingMode);
+  if (tps.length > REROUTE_CONFIRM_THRESHOLD &&
+      !confirm(`Isto vai refazer os ${tps.length} trechos do traçado em "${label}" e pode demorar bastante. Continuar?`)) {
+    return;
+  }
+  showToast(`Refazendo ${tps.length} trecho${tps.length === 1 ? '' : 's'} em "${label}"… (↶ desfaz)`, 3000);
+  await routeSegmentsBatch(tps);   // sem modeOf: o modo selecionado
+}
+// Avisa, uma vez por sessão e só com traçado na tela, o alcance do seletor.
+let _routingModeScopeTold = false;
+function noteRoutingModeScope() {
+  if (_routingModeScopeTold || !drawingMode || trackpoints.length < 2) return;
+  _routingModeScopeTold = true;
+  showToast(`${routingModeLabel(routingMode)}: vale pros trechos novos e pros que você mexer — o resto do traçado fica como está. Pra refazer tudo neste modo, use o 🔁 ao lado.`, 6000);
+}
+// Rótulo de um modo de roteamento — o texto da própria opção do seletor.
+function routingModeLabel(mode) {
+  const opt = [...traceRoutingMode.options].find((o) => o.value === mode);
+  return opt ? opt.textContent.trim() : mode;
+}
 
 document.addEventListener('keydown', (e) => {
   // Defer to whatever modal is open instead of acting on the drawing tool
@@ -10819,7 +10851,7 @@ async function onMapClickInDrawing(e) {
   // o roteamento completa o snapshot quando chega, ver patchPendingHistory).
   // Empilhar depois do await deixava um desfazer feito no meio do voo pular
   // um passo e perder o refazer quando a resposta chegava.
-  const job = routingMode !== 'straight' && trackpoints.length > 1 ? refetchPath(tp) : null;
+  const job = trackpoints.length > 1 ? routeNewSegment(tp) : null;
   pushHistory();
   if (job) {
     await job;
@@ -11066,6 +11098,17 @@ function refreshMarker(tp) {
 
 let _tpPopup = null;   // popup de edição de ponto aberto (no máx. um)
 
+// Como o trecho que CHEGA em `tp` foi feito, em palavras — '' pro 1º ponto.
+function segmentModeNote(tp) {
+  if (trackpoints.indexOf(tp) < 1) return '';
+  if (tp._routePending) return `roteando (${routingModeLabel(tp._routePending)})…`;
+  const path = tp.pathFromPrev;
+  if (path?.mode) return routingModeLabel(path.mode);
+  return path && path.length > 2
+    ? 'traçado importado (sem roteamento)'
+    : 'reta — o roteamento não respondeu';
+}
+
 function openTpPopup(id) {
   const tp = trackpoints.find((t) => t.id === id);
   if (!tp) return;
@@ -11085,10 +11128,20 @@ function openTpPopup(id) {
       <span>Símbolo</span>
       <select class="tp-sym"></select>
     </label>
+    <p class="tp-seg" hidden></p>
     <div class="tp-actions">
       <button type="button" class="tp-delete">Remover ponto</button>
     </div>
   `;
+
+  // O modo é por trecho: mostra o do trecho que CHEGA neste ponto (muda só
+  // quando o trecho é refeito — arrastar este ponto ou o anterior).
+  const segNote = segmentModeNote(tp);
+  if (segNote) {
+    const segEl = root.querySelector('.tp-seg');
+    segEl.textContent = `Trecho até aqui: ${segNote}`;
+    segEl.hidden = false;
+  }
 
   const nameInput = root.querySelector('.tp-name');
   const poiCheck = root.querySelector('.tp-poi');
@@ -11196,8 +11249,8 @@ async function removeTrackpoint(id) {
   }
   redrawAndMetrics();
   updateTraceControls();
-  const job = routingMode !== 'straight' && idx > 0 && idx < trackpoints.length
-    ? refetchPath(trackpoints[idx]) : null;
+  const job = idx > 0 && idx < trackpoints.length
+    ? routeNewSegment(trackpoints[idx]) : null;
   pushHistory();   // na hora — ver onMapClickInDrawing
   if (job) {
     await job;
@@ -11222,9 +11275,11 @@ async function onMarkerDragEnd(id) {
   redrawAndMetrics();
 
   // Os dois lados em paralelo e POR REFERÊNCIA — um índice capturado antes
-  // do await apontaria pro ponto errado se outro fosse inserido no meio.
-  const jobs = routingMode !== 'straight'
-    ? [idx > 0 ? refetchPath(tp) : null, next ? refetchPath(next) : null] : [];
+  // do await apontaria pro ponto errado se outro fosse inserido no meio. Só
+  // estes dois trechos são refeitos (no modo selecionado); os demais ficam
+  // com a geometria e o modo que tinham.
+  const jobs = [idx > 0 ? routeNewSegment(tp) : null, next ? routeNewSegment(next) : null]
+    .filter(Boolean);
   pushHistory();   // na hora — ver onMapClickInDrawing
   if (jobs.length) {
     await Promise.all(jobs);
@@ -11248,21 +11303,54 @@ function straightPath(fromLatLng, toLatLng) {
     [toLatLng.lat, toLatLng.lng],
   ];
 }
+// Reta que é o RESULTADO do trecho (modo 'straight'), não a provisória de um
+// roteamento em voo ou que falhou: leva a proveniência, como os roteados.
+function straightSegment(fromLatLng, toLatLng) {
+  const path = straightPath(fromLatLng, toLatLng);
+  path.mode = 'straight';
+  return path;
+}
+
+// O trecho que CHEGA em `tp` acabou de ser criado ou mexido (ponto novo,
+// arrastado, removido, inserido) e está na reta provisória: fecha-o no modo
+// SELECIONADO. É o único lugar em que o modo de um trecho muda. Em 'straight'
+// a reta é o resultado; senão pede a rota. Devolve a promise do roteamento,
+// ou null quando não há o que esperar.
+function routeNewSegment(tp) {
+  const idx = tp ? trackpoints.indexOf(tp) : -1;
+  if (idx < 1) return null;
+  if (routingMode !== 'straight') return refetchPath(tp);
+  // Um roteamento ainda em voo pra este trecho perde (carimbo novo) e não
+  // fica pendente — senão a varredura o refaria no modo antigo.
+  tp._routeSeq = ++_segRouteSeq;
+  tp._routePending = null;
+  tp.pathFromPrev = straightSegment(trackpoints[idx - 1].marker.getLatLng(), tp.marker.getLatLng());
+  return null;
+}
 
 // (Re)roteia o segmento que CHEGA em `target` — o trackpoint (ou, por
 // compatibilidade, o índice dele, resolvido NA HORA da chamada) — a partir do
 // waypoint anterior. Falha mantém a reta provisória. Devolve true se o
 // resultado entrou. O 2º argumento das chamadas em lote antigas (um seq
 // compartilhado) é ignorado: cada segmento se carimba sozinho, então lote e
-// edição interativa não se invalidam mais.
-async function refetchPath(target) {
+// edição interativa não se invalidam mais. `mode`: o modo DESTE trecho — o
+// selecionado, pra um trecho novo/mexido (routeNewSegment); o próprio modo do
+// trecho quando é só pra refazê-lo (varredura de pendentes, lote de uma rota
+// carregada sem geometria).
+async function refetchPath(target, mode) {
+  if (!mode) mode = routingMode;
   const tp = typeof target === 'number' ? trackpoints[target] : target;
   const idx = tp ? trackpoints.indexOf(tp) : -1;
   if (idx < 1) return false;
   const prev = trackpoints[idx - 1];
+  if (!ROUTED_MODES.includes(mode)) {   // 'straight' (ou lixo): não há rota a pedir
+    tp._routeSeq = ++_segRouteSeq;
+    tp._routePending = null;
+    tp.pathFromPrev = straightSegment(prev.marker.getLatLng(), tp.marker.getLatLng());
+    return true;
+  }
   const epoch = pendingRouteSeq;
   const seq = ++_segRouteSeq;
-  const mode = routingMode;
   tp._routeSeq = seq;
   tp._routePending = mode;   // reta provisória até a resposta (ver sweepPendingRoutes)
   const a = prev.marker.getLatLng();
@@ -11297,8 +11385,8 @@ async function refetchPath(target) {
   const ok = Array.isArray(path) && path.length >= 2;
   // Proveniência do segmento: o modo que produziu ESTA geometria (o do
   // PEDIDO, não o do seletor agora). Viaja no snapshot/undo, no rascunho
-  // persistido e no GPX exportado (userWaypoints) — reabrir o arquivo
-  // devolve a opção de roteamento de cada waypoint.
+  // persistido, na rota salva / link (`sm`, ver shareSegments) e no GPX
+  // exportado (userWaypoints) — reabrir devolve o modo de cada trecho.
   if (ok) path.mode = mode;
   let committed = false;
   if (fresh) {
@@ -11355,13 +11443,18 @@ function scheduleRouteSweep() {
 }
 async function sweepPendingRoutes() {
   _routeSweepTimer = null;
-  if (!drawingMode || routingMode === 'straight') return;
+  if (!drawingMode) return;
   // Arraste/inserção em curso: o dragend/pointerup deles pede o próprio
   // roteamento — varrer agora rotearia a posição do meio do gesto à toa.
   if (_routesInFlight > 0 || _markerDragActive > 0 || lineInsertActive) return;
-  const todo = trackpoints.filter((t, i) => i > 0 && t._routePending);
+  // No modo em que cada um foi PEDIDO — o seletor pode ter mudado desde
+  // então. O par é capturado agora; se até a vez dele o trecho foi refeito
+  // (arraste → pendente noutro modo, ou já resolvido), esse pedido é pulado.
+  const todo = trackpoints.filter((t, i) => i > 0 && t._routePending)
+    .map((t) => [t, t._routePending]);
   if (!todo.length) return;
-  const results = await mapConcurrent(todo, 4, (t) => refetchPath(t));
+  const results = await mapConcurrent(todo, 4,
+    ([t, mode]) => (t._routePending === mode ? refetchPath(t, mode) : false));
   if (results.some(Boolean)) redrawAndMetrics();
 }
 
@@ -13741,8 +13834,8 @@ async function insertWaypointAt(idx, latlng, init = {}) {
   updateTraceControls();
 
   // Os dois segmentos novos em paralelo, por referência (ver onMarkerDragEnd).
-  const jobs = routingMode !== 'straight'
-    ? [idx > 0 ? refetchPath(tp) : null, next ? refetchPath(next) : null] : [];
+  const jobs = [idx > 0 ? routeNewSegment(tp) : null, next ? routeNewSegment(next) : null]
+    .filter(Boolean);
   pushHistory();   // na hora — ver onMapClickInDrawing
   if (jobs.length) {
     await Promise.all(jobs);
@@ -15629,73 +15722,60 @@ function routingSettingsChanged() {
   return new Set(Object.keys(now).filter((k) => now[k] !== prev[k]));
 }
 
-// O trecho i (trackpoints[i-1] → trackpoints[i]) depende do que mudou? Só
-// trechos produzidos pelo MODO ATUAL (proveniência path.mode) — ou retas sem
-// proveniência (roteamento que falhou; nada de exato a perder): uma geometria
-// restaurada de GPX ou feita noutro modo não é sobrescrita por um toggle.
-// OSRM (Bicicleta/A pé) não lê nenhuma destas configurações. "Pelo terreno" lê
-// DEM/σ/direções/água/portais. "Pelo viário" lê a fonte do viário (grafo/FGB/
-// rede custom) — e DEM/σ/direções/água/portais SÓ nos trechos fora do grafo
-// pré-cozido (FGB/grid raster).
+// O trecho i (trackpoints[i-1] → trackpoints[i]) depende do que mudou? Devolve
+// o modo em que ele deve ser refeito — o do PRÓPRIO trecho (proveniência
+// path.mode), não o do seletor — ou null. Reta sem proveniência (roteamento
+// que falhou; nada de exato a perder) vai pelo modo selecionado; geometria
+// sem proveniência (restaurada de um arquivo) e reta de propósito ('straight')
+// nunca são sobrescritas por um toggle. OSRM (Bicicleta/A pé) não lê nenhuma
+// destas configurações. "Pelo terreno" lê DEM/σ/direções/água/portais. "Pelo
+// viário" lê a fonte do viário (grafo/FGB/rede custom) — e DEM/σ/direções/
+// água/portais SÓ nos trechos fora do grafo pré-cozido (FGB/grid raster).
 function segmentDependsOn(i, changed) {
   const tp = trackpoints[i], prev = trackpoints[i - 1];
   const path = tp && tp.pathFromPrev;
-  if (!tp || !prev) return false;
-  const segMode = path && path.mode;
-  if (segMode ? segMode !== routingMode : (path && path.length > 2)) return false;
-  const terrainInputs = ['dem', 'customDem', 'grid', 'water'].some((k) => changed.has(k));
-  if (routingMode === 'energy') return terrainInputs;
-  if (routingMode === 'energy_road') {
-    if (changed.has('viario') || changed.has('network')) return true;
-    if (!terrainInputs) return false;
-    return !!_customNetwork || params.useViarioGpkg === false ||
-      !viarioGraphCovers(prev.marker.getLatLng(), tp.marker.getLatLng());
+  if (!tp || !prev) return null;
+  let mode = path && path.mode;
+  if (!mode) {
+    if (path && path.length > 2) return null;
+    mode = routingMode;
   }
-  return false;
+  const terrainInputs = ['dem', 'customDem', 'grid', 'water'].some((k) => changed.has(k));
+  if (mode === 'energy') return terrainInputs ? mode : null;
+  if (mode === 'energy_road') {
+    if (changed.has('viario') || changed.has('network')) return mode;
+    if (!terrainInputs) return null;
+    return (!!_customNetwork || params.useViarioGpkg === false ||
+      !viarioGraphCovers(prev.marker.getLatLng(), tp.marker.getLatLng())) ? mode : null;
+  }
+  return null;
 }
 
-// Re-roteia o rascunho atual com o modo/fontes vigentes. Chamado quando algo
-// que afeta a GEOMETRIA roteada muda: o seletor de modo (`revertModeTo` vem —
-// re-roteia TODOS os trechos), a rede viária custom, ou os toggles de
-// viário/DEM/água/grade (só os trechos que dependem da mudança — antes um
-// toggle re-roteava tudo, até no OSRM, onde não tem efeito, e passava por cima
-// de geometria restaurada). Sem efeito fora do desenho ou em 'straight' (reta
-// não roteia). Acima do limiar pede confirmação (re-rotear centenas de trechos
-// por energia é pesado); se recusar e `revertModeTo` veio, volta o modo
-// anterior. Ao terminar entra no histórico (desfazer volta pro traçado de
-// antes).
+// Refaz os trechos do rascunho cuja GEOMETRIA depende de uma fonte de dados
+// que acabou de mudar — a rede viária custom, ou os toggles de viário/DEM/
+// água/grade —, cada um no SEU modo (segmentDependsOn). Trocar o modo no
+// seletor NÃO passa por aqui: ele só vale pros trechos novos ou mexidos. Sem
+// efeito fora do desenho. Acima do limiar pede confirmação (re-rotear
+// centenas de trechos por energia é pesado). Ao terminar entra no histórico
+// (desfazer volta pro traçado de antes).
 const REROUTE_CONFIRM_THRESHOLD = 150;
-async function rerouteCurrentDraft(revertModeTo) {
+async function rerouteCurrentDraft() {
   const changed = routingSettingsChanged();   // sempre atualiza o retrato
-  if (!drawingMode || routingMode === 'straight' || trackpoints.length < 2) return;
-  const modeSwitch = revertModeTo !== undefined;
-  const indices = [];
+  if (!drawingMode || trackpoints.length < 2) return;
+  const modeOf = new Map();
   for (let i = 1; i < trackpoints.length; i++) {
-    if (modeSwitch || segmentDependsOn(i, changed)) indices.push(i);
+    const mode = segmentDependsOn(i, changed);
+    if (mode) modeOf.set(trackpoints[i], mode);
   }
-  if (!indices.length) return;
-  if (indices.length > REROUTE_CONFIRM_THRESHOLD &&
-      !confirm(`Isto vai rotear ${indices.length} trechos pelo modo selecionado e pode demorar bastante. Continuar?`)) {
-    if (modeSwitch) {
-      routingMode = revertModeTo;
-      traceRoutingMode.value = revertModeTo;
-    }
+  if (!modeOf.size) return;
+  if (modeOf.size > REROUTE_CONFIRM_THRESHOLD &&
+      !confirm(`Isto vai refazer ${modeOf.size} trechos com a nova configuração e pode demorar bastante. Continuar?`)) {
     return;
   }
-  showToast(`Re-roteando ${indices.length} trecho(s)…`, 2500);
-  // Com o roteamento POR SEGMENTO do editor (routeSegmentsBatch: marca os
-  // trechos pendentes, entra no histórico e roteia por referência, sem
-  // invalidar o que está em voo nos outros trechos), é ele que roteia.
-  if (typeof routeSegmentsBatch === 'function') {
-    await routeSegmentsBatch(indices.map((i) => trackpoints[i]));
-    return;
-  }
-  const routeSeq = ++pendingRouteSeq;
-  await mapConcurrent(indices, 4, (idx) => refetchPath(idx, routeSeq));
-  redrawAndMetrics();
-  // Superado por outra edição no meio do caminho: ela cuida do histórico.
-  if (routeSeq === pendingRouteSeq && drawingMode) pushHistory();
-  else scheduleTraceDraftSave();
+  showToast(`Re-roteando ${modeOf.size} trecho(s)…`, 2500);
+  // routeSegmentsBatch marca os trechos pendentes, entra no histórico e
+  // roteia por referência, sem invalidar o que está em voo nos outros.
+  await routeSegmentsBatch([...modeOf.keys()], (t) => modeOf.get(t));
 }
 
 // Trocar a fonte de elevação exige limpar o cache (senão valores já amostrados
@@ -15751,9 +15831,9 @@ if (dsModal && dsOpenBtn) {
       showToast(`Carregando rede ${file.name}…`);
       await setCustomNetwork(file);
       refreshDataSourceStatus();
-      // A rede custom só é consultada no modo "Menor energia pelo viário". Se já
-      // estiver nesse modo com um rascunho, re-roteia na hora; senão orienta.
-      if (routingMode === 'energy_road' && drawingMode) {
+      // A rede custom só é consultada nos trechos "Menor energia pelo viário".
+      // Se o rascunho tem algum, refaz esses na hora; senão orienta.
+      if (drawingMode && trackpoints.some((t) => t.pathFromPrev?.mode === 'energy_road')) {
         showToast(`Rede viária custom ativa: ${file.name}.`, 3000);
         rerouteCurrentDraft();
       } else {
@@ -15768,7 +15848,7 @@ if (dsModal && dsOpenBtn) {
     clearCustomNetwork();
     refreshDataSourceStatus();
     showToast('Rede viária custom removida.');
-    if (routingMode === 'energy_road') rerouteCurrentDraft();
+    rerouteCurrentDraft();   // só os trechos "pelo viário" dependem dela
   });
 }
 
@@ -16100,6 +16180,7 @@ function reverseTraceDirection() {
     }
     const path = src.map((p) => [p[0], p[1]]).reverse();
     if (src.deckFlag) path.deckFlag = [...src.deckFlag].reverse();
+    if (src.mode) path.mode = src.mode;   // o trecho segue lembrando o modo
     // routedEnergyJ NÃO é copiado de propósito: o custo v2 é assimétrico
     // (subida ≠ descida), então o objetivo do sentido inverso é outro número
     // que só um re-roteamento produziria.
@@ -16164,6 +16245,8 @@ function updateTraceControls() {
   traceRedo.disabled = historyIndex >= drawHistory.length - 1;
   if (traceTrash) traceTrash.disabled = trackpoints.length === 0;
   if (traceReverse) traceReverse.disabled = trackpoints.length < 2;
+  const reroute = document.getElementById('trace-reroute');
+  if (reroute) reroute.disabled = trackpoints.length < 2;
 }
 
 // ─── Rascunho persistente do traçado (localStorage) ─────────────────────────
@@ -16585,7 +16668,34 @@ const PHIDRO_NS = 'https://pedalhidrografi.co/ns/gpx/1.0';
 // rota de quem compartilhou, sem re-rotear via OSRM (reprodutível, abre mais
 // rápido e funciona offline). Links v1 (sem `sg`) seguem funcionando: caem
 // no caminho antigo de re-roteamento.
+// `sm` (aditivo, ainda v2): o MODO de roteamento de cada trecho, uma letra por
+// trecho na ordem do `sg` — a rota salva / o link lembram o modo por waypoint,
+// como o GPX. `rm` continua sendo o modo SELECIONADO na barra ao salvar.
 const SHARE_STATE_VERSION = 2;
+
+// ── modos por trecho: início (puro — test/route-modes.test.mjs lê este bloco) ──
+// sm[k] = modo do trecho que CHEGA em wp[k+1]. '-' = sem proveniência
+// (geometria importada de um arquivo, ou roteamento que falhou).
+const SEG_MODE_CODE = { straight: 's', cycling: 'c', foot: 'f', energy: 'e', energy_road: 'r' };
+const SEG_MODE_OF_CODE = { s: 'straight', c: 'cycling', f: 'foot', e: 'energy', r: 'energy_road' };
+function segModesToString(modes) {
+  return modes.map((m) => SEG_MODE_CODE[m] || '-').join('');
+}
+// Modo do trecho `k` de uma rota guardada: o gravado em `sm`; num estado
+// ANTIGO (sem `sm` — um modo só, o do seletor `rm`, pra rota toda), o que dá
+// pra deduzir: com `rm` roteado, todo trecho que TEM geometria guardada veio
+// dele (inclusive o que é uma reta de dois pontos — uma quadra reta, depois
+// de simplificada; sem o modo ele passaria por roteamento que falhou e seria
+// refeito ao reabrir o editor); numa rota em 'straight', toda reta é reta de
+// propósito e geometria com mais de dois pontos é traçado importado. `points`
+// = nº de pontos da geometria guardada do trecho (0 se não há). null = sem
+// proveniência.
+function segModeFromState(sm, rm, k, points) {
+  if (typeof sm === 'string') return SEG_MODE_OF_CODE[sm[k]] || null;
+  if (rm === 'straight') return points > 2 ? null : 'straight';
+  return SEG_MODE_OF_CODE[SEG_MODE_CODE[rm]] && points >= 2 ? rm : null;
+}
+// ── modos por trecho: fim ──
 
 // Tolerância do Douglas-Peucker (em graus, ~5 m) aplicada à geometria antes
 // de codificar — invisível nos zooms de uso e corta 50–70% dos pontos.
@@ -16663,6 +16773,24 @@ function simplifyForShare(path) {
   return L.LineUtil.simplify(pts, SHARE_SIMPLIFY_TOLERANCE).map((p) => [p.x, p.y]);
 }
 
+// Geometria + modo POR TRECHO do estado de compartilhamento, a partir de
+// `segs` = [{ path, mode }] (o trecho que CHEGA em cada waypoint depois do
+// primeiro): `sg[k]` = polyline do caminho ('' = reta entre os dois pontos) e
+// `sm` = uma letra por trecho (segModesToString). A geometria vai SEMPRE que
+// existe — até a v443 só ia com o seletor num modo roteado, e salvar com ele
+// em "Reta" jogava fora a rota inteira (o traçado voltava em linhas retas).
+// Com o seletor (`rm`) roteado o `sg` vai mesmo todo vazio: um app.js antigo
+// trata "sem sg" como link v1 e re-rotearia a rota inteira ao abrir.
+function shareSegments(segs, rm) {
+  const out = {};
+  const sg = segs.map(({ path }) => (Array.isArray(path) && path.length > 2
+    ? encodePolyline(simplifyForShare(path)) : ''));
+  if (sg.some(Boolean) || ROUTED_MODES.includes(rm)) out.sg = sg;
+  const sm = segModesToString(segs.map(({ mode }) => mode));
+  if (/[^-]/.test(sm)) out.sm = sm;
+  return out;
+}
+
 function snapshotForShare(name) {
   const state = {
     v: SHARE_STATE_VERSION,
@@ -16682,16 +16810,13 @@ function snapshotForShare(name) {
       return out;
     }),
   };
-  if (routingMode !== 'straight') {
-    // Geometria por segmento: sg[k] é o caminho que CHEGA em wp[k+1].
-    // Segmentos em reta (fallback de fetch falho, ou ainda em voo na hora do
-    // share) codificam a reta mesmo — o que o remetente vê é o que vale.
-    state.sg = trackpoints.slice(1).map((t) => {
-      const path = t.pathFromPrev;
-      if (!Array.isArray(path) || path.length < 2) return '';
-      return encodePolyline(simplifyForShare(path));
-    });
-  }
+  // Geometria e modo por trecho: sg[k]/sm[k] são do caminho que CHEGA em
+  // wp[k+1]. Trecho em reta (de propósito, fallback de roteamento que falhou
+  // ou ainda em voo na hora do share) vai como reta — o que o remetente vê é
+  // o que vale.
+  Object.assign(state, shareSegments(
+    trackpoints.slice(1).map((t) => ({ path: t.pathFromPrev, mode: t.pathFromPrev?.mode })),
+    routingMode));
   return state;
 }
 
@@ -16722,7 +16847,7 @@ async function buildShareUrl(name, maxChars = SHARE_HASH_MAX_CHARS) {
   const state = snapshotForShare(name);
   let compressed = await gzipB64Url(JSON.stringify(state));
   // Rota muito longa → hash gigante: refaz sem a geometria embutida (vira um
-  // link estilo v1 — quem abrir re-roteia via OSRM, como antes).
+  // link estilo v1 — quem abrir refaz cada trecho no modo dele, o `sm`).
   if (state.sg && compressed.length > maxChars) {
     delete state.sg;
     compressed = await gzipB64Url(JSON.stringify(state));
@@ -16759,7 +16884,10 @@ async function applyShareState(state) {
 
   // sg[i-1] = geometria roteada que CHEGA no waypoint original i. Decodifica
   // direto e pula o re-roteamento lá embaixo — a rota fica idêntica à salva.
+  // sm[i-1] = o modo desse trecho (segModeFromState deduz o dos estados
+  // antigos, que só guardavam o modo do seletor).
   const segs = Array.isArray(state.sg) ? state.sg : null;
+  const toRoute = new Map();   // trecho sem geometria guardada → modo em que refazer
   let prevOriginalIdx = -1; // índice ORIGINAL do último waypoint adicionado
   for (let i = 0; i < state.wp.length; i++) {
     const wp = state.wp[i];
@@ -16779,14 +16907,22 @@ async function applyShareState(state) {
       // A geometria embutida só vale se o waypoint anterior não foi pulado
       // (senão o segmento ligaria outro par de pontos). Decodificação
       // falha/corrompida degrada pra reta.
-      const embedded =
-        segs && prevOriginalIdx === i - 1 ? decodePolylineSafe(segs[i - 1]) : null;
+      const aligned = prevOriginalIdx === i - 1;
+      const embedded = segs && aligned ? decodePolylineSafe(segs[i - 1]) : null;
       tp.pathFromPrev =
         embedded ||
         straightPath(
           trackpoints[trackpoints.length - 1].marker.getLatLng(),
           tp.marker.getLatLng(),
         );
+      let mode = aligned ? segModeFromState(state.sm, state.rm, i - 1, embedded ? embedded.length : 0) : null;
+      if (!segs && aligned) {
+        // Sem geometria embutida (link v1, ou longo demais pro hash): o
+        // trecho é refeito no modo dele — sem `sm`, no do seletor salvo.
+        if (!mode && ROUTED_MODES.includes(state.rm)) mode = state.rm;
+        if (ROUTED_MODES.includes(mode)) { toRoute.set(tp, mode); mode = null; }
+      }
+      if (mode) tp.pathFromPrev.mode = mode;
     }
     prevOriginalIdx = i;
     trackpoints.push(tp);
@@ -16804,7 +16940,7 @@ async function applyShareState(state) {
   if (!trackpoints.length) return false;
   // Só re-roteia quando NÃO há geometria embutida (formato v1) — com sg os
   // caminhos já foram restaurados acima.
-  if (routingMode !== 'straight' && !segs) await routeSegmentsBatch(trackpoints.slice(1));
+  if (toRoute.size) await routeSegmentsBatch([...toRoute.keys()], (t) => toRoute.get(t));
   else pushHistory();
   return { stashed };
 }
@@ -16814,10 +16950,19 @@ async function applyShareState(state) {
 // patchPendingHistory o completa conforme as rotas chegam — e roteia até 4
 // por vez (fair use do FOSSGIS), POR REFERÊNCIA: um índice resolvido tarde
 // apontaria pro segmento errado se o usuário inserir um ponto no meio do lote.
-async function routeSegmentsBatch(tps) {
-  for (const t of tps) t._routePending = routingMode;
+// `modeOf(tp)`: o modo de cada trecho (rota carregada sem geometria, toggle de
+// fonte de dados); sem ele, o selecionado. Trecho cujo modo é 'straight' já
+// sai resolvido (reta). Um trecho refeito pelo usuário no meio do lote (o
+// pendente dele muda) não é pedido de novo aqui.
+async function routeSegmentsBatch(tps, modeOf) {
+  const jobs = tps.map((t) => [t, (modeOf && modeOf(t)) || routingMode]);
+  for (const [t, mode] of jobs) {
+    if (ROUTED_MODES.includes(mode)) t._routePending = mode;
+    else refetchPath(t, mode);   // reta: resolve na hora
+  }
   pushHistory();
-  await mapConcurrent(tps, 4, (t) => refetchPath(t));
+  await mapConcurrent(jobs.filter(([, mode]) => ROUTED_MODES.includes(mode)), 4,
+    ([t, mode]) => (t._routePending === mode ? refetchPath(t, mode) : false));
   redrawAndMetrics();
 }
 
@@ -18048,7 +18193,12 @@ function renderSavedRoutes(routes) {
     const loadBtn = document.createElement('button');
     loadBtn.type = 'button';
     loadBtn.className = 'saved-route-load';
-    loadBtn.textContent = 'Carregar';
+    // Ícone, não "Carregar" por extenso: com o ⌚ do Garmin são quatro botões
+    // e o texto empurrava o 🗑 pra fora do card (19 px no desktop, 69 px num
+    // celular estreito). A miniatura, logo acima, também carrega.
+    loadBtn.innerHTML = uiIcon('folder-open');
+    loadBtn.title = 'Carregar esta rota no editor';
+    loadBtn.setAttribute('aria-label', `Carregar ${r.name || r.id}`);
     loadBtn.addEventListener('click', () => loadSavedRoute(r.id, r.name));
     const linkBtn = document.createElement('button');
     linkBtn.type = 'button';
@@ -18161,6 +18311,27 @@ savedRoutesModal?.addEventListener('click', (e) => {
 // gets a manageable number of draggable handles.
 const MAX_EDIT_WAYPOINTS = 100;
 async function editEntryInDrawingTool(entry) {
+  // Passeio cuja rota é uma rota salva do amora: abre a PRÓPRIA rota — os
+  // waypoints de quem a traçou, a geometria e o modo de cada trecho —, ligada
+  // à rota do servidor (salvar atualiza ela, e o passeio junto). Até a v443
+  // caía no caminho de baixo: ~100 pontos reamostrados do routes.json,
+  // ligados em reta, sem nada do que a rota salva guarda.
+  if (entry?.provider === 'amora' && entry.id) {
+    try {
+      const res = await fetch(`./saved-route/${encodeURIComponent(entry.id)}`, { cache: 'no-store' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const state = await res.json();
+      const applied = await applyShareState(state);
+      if (!applied) throw new Error('estado sem waypoints');
+      if (state.id) currentSavedRouteId = state.id;
+      syncLineageMeta();
+      announceStashedDraft(`Rota "${state.n || entry.id}" carregada · ${trackpoints.length} pontos`, applied.stashed);
+      return;
+    } catch (err) {
+      // Rota apagada/renomeada, ou sem rede: segue pelo traçado do routes.json.
+      console.warn(`[route] rota salva "${entry.id}" não abriu (${err.message}) — usando o traçado do passeio`);
+    }
+  }
   if (!entry || !Array.isArray(entry.latlngs) || entry.latlngs.length < 2) {
     alert('Este traçado não tem pontos suficientes para editar.');
     return;
@@ -18219,7 +18390,9 @@ async function editEntryInDrawingTool(entry) {
       sym: wp.sym,
     });
     if (i > 0) {
-      tp.pathFromPrev = straightPath(
+      // Reta de propósito (os pontos amostrados SÃO o traçado): com a
+      // proveniência, pra não passar por roteamento que falhou.
+      tp.pathFromPrev = straightSegment(
         trackpoints[i - 1].marker.getLatLng(),
         tp.marker.getLatLng(),
       );
@@ -18423,6 +18596,11 @@ async function loadGpxIntoEditor(gpxText, fileName = '') {
     traceRoutingMode.value = chosenConnectMode;
   }
 
+  // Modo por waypoint: o GPX do amora grava o de cada trecho (`mode`). Arquivo
+  // de antes disso — ou de terceiros, ligado em Reta — só tem o modo geral:
+  // segModeFromState deduz o que dá (como nas rotas salvas antigas).
+  const fileHasModes = waypointsToCreate.some((w) => w.mode);
+  const fileMode = savedRoutingMode || chosenConnectMode;
   for (let i = 0; i < waypointsToCreate.length; i++) {
     const wp = waypointsToCreate[i];
     const tp = createTrackpoint(L.latLng(wp.lat, wp.lng), {
@@ -18444,8 +18622,14 @@ async function loadGpxIntoEditor(gpxText, fileName = '') {
         tp.pathFromPrev.deckFlag = wp.deckFlag;
       }
       if (Number.isFinite(wp.routedEnergyJ)) tp.pathFromPrev.routedEnergyJ = wp.routedEnergyJ;
-      // Proveniência do segmento (modo de roteamento que o produziu).
-      if (wp.mode) tp.pathFromPrev.mode = wp.mode;
+      // Proveniência do segmento (modo de roteamento que o produziu). Num
+      // trecho SEM geometria no arquivo e com o modo geral roteado, ela vem
+      // do roteamento lá embaixo.
+      const hasPath = !!(wp.path && wp.path.length >= 2);
+      const mode = ['straight', ...ROUTED_MODES].includes(wp.mode) ? wp.mode
+        : fileHasModes || (!hasPath && ROUTED_MODES.includes(fileMode)) ? null
+          : segModeFromState(null, fileMode, i - 1, tp.pathFromPrev.length);
+      if (mode) tp.pathFromPrev.mode = mode;
     }
     trackpoints.push(tp);
   }
