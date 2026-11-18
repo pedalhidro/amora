@@ -225,7 +225,7 @@
 
 <script type="module">
 // Helpers comuns das páginas (?api=N: ver o comentário do import no subir.html).
-import { escapeHtml, setupEmbeddedPage, loadN3 } from './lib/utils.js?api=1';
+import { escapeHtml, safeUrl, setupEmbeddedPage, loadN3 } from './lib/utils.js?api=2';
 const $ = (q) => document.querySelector(q);
 
 // ── Modo embutido (iframe do modal do app) ──────────────────────────────────
@@ -500,7 +500,7 @@ function tourTile(iri) {
   const body = code
     ? `<span class="series">${escapeHtml(code)}</span>`
     : `<span class="title">${escapeHtml(title)}</span>`;
-  const art = imageOf.get(iri);
+  const art = safeUrl(imageOf.get(iri));   // só http(s)/relativa vira src
   if (art) {
     // Tile de 56 px: a MINIATURA que o backend deriva da arte (lado menor
     // 256 px, ~25 KB) — o original é PNG de até 10 MB, e o cartão de quem
@@ -538,7 +538,10 @@ function renderForward(fwd) {
     let val;
     if (f.literal) val = escapeHtml(f.o);
     else if (f.p === RDFT) val = escapeHtml(curie(f.o));
-    else val = `<a href="${escapeHtml(f.o)}" target="_blank" rel="noopener">${escapeHtml(curie(f.o))}</a>`;
+    // Só URL http(s)/mailto vira link (safeUrl): um IRI `javascript:` ou
+    // `data:` gravado na pessoa aparece como texto.
+    else if (safeUrl(f.o)) val = `<a href="${escapeHtml(f.o)}" target="_blank" rel="noopener">${escapeHtml(curie(f.o))}</a>`;
+    else val = escapeHtml(curie(f.o));
     return `<tr><td class="pred">${escapeHtml(curie(f.p))}</td><td class="val">${val}</td></tr>`;
   });
   return `<table class="facts-table"><tbody>${rows.join('')}</tbody></table>`;
@@ -612,6 +615,7 @@ function platformIcon(url) {
   return '🔗';
 }
 function socialChip(url, home) {
+  if (!safeUrl(url)) return '';   // link que não é http(s)/mailto não vira chip
   let host = url;
   try { host = new URL(url).host.replace(/^www\./, ''); } catch (_) {}
   return `<a class="social-chip" href="${escapeHtml(url)}" target="_blank" rel="noopener" ` +
@@ -621,7 +625,8 @@ function socialChipsHtml(p) {
   const items = [];
   if (p.url) items.push(socialChip(p.url, true));
   for (const u of p.seeAlso) items.push(socialChip(u, false));
-  return items.length ? `<div class="social">${items.join('')}</div>` : '';
+  const html = items.join('');
+  return html ? `<div class="social">${html}</div>` : '';
 }
 
 function renderPerson(p) {

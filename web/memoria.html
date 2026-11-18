@@ -268,6 +268,17 @@ function escapeHtml(s) {
   return String(s ?? '').replace(/[&<>"]/g, (c) =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 }
+// URL do catálogo que pode ir num href/src — a própria, ou null: relativa, ou
+// http(s)/mailto. O catálogo é escrito sem auth; um `javascript:`/`data:`
+// gravado na rota, no Instagram ou na arte de um passeio não pode virar link.
+// Cópia do safeUrl de lib/utils.js (esta página é script clássico e tem os
+// seus helpers) — mude os dois, e o safe_url de backend/mdhtml.py, juntos.
+function safeUrl(url) {
+  const s = String(url ?? '').trim();
+  if (!s || /[\u0000-\u0020\u007f<>"'`\\]/.test(s)) return null;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(s) && !/^(?:https?|mailto):/i.test(s)) return null;
+  return s;
+}
 // Linkifica URLs em texto JÁ escapado (a narrativa costuma citar rotas etc.).
 function linkify(escaped) {
   return escaped.replace(/https?:\/\/[^\s<]+/g, (u) =>
@@ -405,7 +416,9 @@ function statsHtml(t) {
   const rows = [];
   const add = (k, v) => { if (v != null && v !== '') rows.push(`<dt>${k}</dt><dd>${v}</dd>`); };
   const shortUrl = (u) => String(u).replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '');
-  const link = (u) => `<a href="${escapeHtml(u)}" target="_blank" rel="noopener">${escapeHtml(shortUrl(u))}</a>`;
+  const link = (u) => (safeUrl(u)
+    ? `<a href="${escapeHtml(u)}" target="_blank" rel="noopener">${escapeHtml(shortUrl(u))}</a>`
+    : escapeHtml(shortUrl(u)));   // não é http(s): fica como texto
 
   if (t.date) add('Partida', escapeHtml(fmtQuando(t.date)));
   // Trajeto: locais de saída e chegada numa linha só.
@@ -499,7 +512,7 @@ function tourMemoryHtml(t, medias) {
     : '';
   // Variante web da arte (≤ 1350 px, ~300 KB — o original chega a 10 MB);
   // se ela não carregar, o listener de 'error' em #linha cai no original.
-  const arte = t.announcement
+  const arte = safeUrl(t.announcement)
     ? `<div class="arte"><img loading="lazy" decoding="async" ` +
       `src="${escapeHtml(artVariant(t.announcement, 'web') || t.announcement)}" ` +
       `data-orig="${escapeHtml(t.announcement)}" alt="Arte do anúncio"></div>`

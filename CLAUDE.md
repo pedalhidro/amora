@@ -521,6 +521,14 @@ ficha, JSON-LD ImageObject/VideoObject), `/imagens/lista/<slug>[/<n>]`
   relativa ou `http(s)`/`mailto` (`safe_url`); rótulo de link ou célula de
   tabela com texto do catálogo passa por `_md_label`. HTML de conteúdo escrito
   fora do `mdhtml` (Memória, feed) checa `mdhtml.safe_url` antes de um `href`.
+  **No cliente o espelho é `safeUrl`** (`lib/utils.js`; o `memoria.html`, script
+  clássico, tem a sua cópia): nas páginas vivas SEM CSP — pessoas, galeria,
+  Memória — toda URL ou IRI do catálogo que vá num `href`/`src` passa por ela
+  (links de pessoa, IRI de autora/passeio, rota, Instagram, arte). `escapeHtml`
+  não resolve: `javascript:alert(1)` é uma URL válida e virava link clicável.
+  Os três (`safe_url`, `safeUrl`, a cópia) decidem pelos MESMOS casos, em
+  `test/safe-url-cases.json` — mude-os juntos. O `index.html` tem CSP, que já
+  barra `javascript:`.
 - **Páginas quentes nunca esperam o catálogo.** Refazer o snapshot
   (`_load_catalog()`) depois de uma gravação leva ~2,6 s (medido em 11/2026,
   167 mil triples). Home, passeio, galeria-índice, pessoas e censo leem só
@@ -1533,7 +1541,7 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
   o Enter no `keydown`. Inputs com 16 px no toque (menos que isso o Safari
   dá zoom ao focar).
 - **Helpers das páginas embutidas moram em `lib/utils.js`** (`escapeHtml`,
-  `turtleEscape`, `TTL_PREFIXES`, `slugifyList` — tem que seguir igual ao do
+  `safeUrl` — ver "Conteúdo sem JavaScript" —, `turtleEscape`, `TTL_PREFIXES`, `slugifyList` — tem que seguir igual ao do
   app.js, os slugs de álbum dependem disso —, `randPersonSlug`, loaders de
   N3/Tom Select/scripts, `setupEmbeddedPage`, helpers do form de passeio) e os
   tokens de cor em `lib/tokens.css` (gerado — ver "Design tokens" em Conventions;
@@ -1819,8 +1827,9 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
   `censo.html`) ou no `backend/mdhtml.py`: `python3 test/test_mdhtml.py` e
   `python3 scripts/check-nojs.py http://127.0.0.1:<porta>` com o backend local
   no ar (ver "Conteúdo sem JavaScript").
-- `npm test` (tokens, cores, ícones) se mexeu em `web/style.css`, `web/index.html`,
-  `web/app.js` ou `design/`.
+- `npm test` (tokens, cores, ícones, `safeUrl`) se mexeu em `web/style.css`,
+  `web/index.html`, `web/app.js`, `web/lib/utils.js`, `web/memoria.html` ou
+  `design/`.
 - Ontology / shapes / data: parse with `rdflib` after editing `*.ttl`.
 
 ## Build & deploy

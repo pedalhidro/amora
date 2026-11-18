@@ -787,9 +787,9 @@
 'use strict';
 // Helpers comuns das páginas (?api=N: ver o comentário do import no subir.html).
 import {
-  escapeHtml, turtleEscape, slugifyList, EMBEDDED, blockEmbeddedPinch,
+  escapeHtml, safeUrl, turtleEscape, slugifyList, EMBEDDED, blockEmbeddedPinch,
   loadScript, loadN3, loadTomSelect,
-} from './lib/utils.js?api=1';
+} from './lib/utils.js?api=2';
 const $  = (q) => document.querySelector(q);
 const $$ = (q) => Array.from(document.querySelectorAll(q));
 // localStorage com try/catch: com "Bloquear todos os cookies" no Safari o
@@ -2487,7 +2487,8 @@ function openLightbox(rec, opts = {}) {
   // Metadados
   const rows = [];
   const personLinks = (names, iris) => (names || []).map((name, i) => {
-    const iri = iris && iris[i];
+    // O IRI da pessoa vem do catálogo: só http(s) vira link (safeUrl).
+    const iri = safeUrl(iris && iris[i]);
     return iri
       ? `<a href="${escapeHtml(iri)}" target="_blank" rel="noopener">${escapeHtml(name)}</a>`
       : escapeHtml(name);
@@ -2495,7 +2496,7 @@ function openLightbox(rec, opts = {}) {
   rows.push(['Data', escapeHtml(fmtRecWhen(rec)) + (rec.dateOnly ? ' <small>(hora desconhecida)</small>'
     : rec.dateEstimated ? ' <small>(hora estimada pela posição)</small>' : '')]);
   if (rec.tourLabel) {
-    const tourHtml = rec.tourIri
+    const tourHtml = safeUrl(rec.tourIri)
       ? `<a href="${escapeHtml(rec.tourIri)}" target="_blank" rel="noopener">${escapeHtml(rec.tourLabel)}</a>`
       : escapeHtml(rec.tourLabel);
     rows.push(['Passeio', tourHtml]);

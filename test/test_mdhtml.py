@@ -134,6 +134,14 @@ eq(inline('[x](/a"onmouseover="1)'), 'x')
 eq(inline("adutora_de_cotia * 2 * 3"), "adutora_de_cotia * 2 * 3")
 eq(inline("[x](https://s/a)", lambda u: u.replace("https://s", "")), '<a href="/a">x</a>')
 assert safe_url("//evil.example/x") == "//evil.example/x" and safe_url(" vbscript:x") is None
+# Os mesmos casos do safeUrl do cliente (test/safe-url.test.mjs): os três
+# lugares que decidem se uma URL do catálogo vira link têm que concordar.
+import json
+for url, ok in json.loads((ROOT / "test" / "safe-url-cases.json").read_text(encoding="utf-8")):
+    got = safe_url(url)
+    assert (got is not None) == ok, f"safe_url({url!r}) → {got!r}"
+    if ok:
+        assert got == url.strip()
 assert safe_url("/a b") is None and safe_url("x\njavascript:1") is None
 eq(md_to_html("# T\n\ntexto um\nlinha dois\n\n- a\n  cont\n- b\n\n> q1\n> q2\n\n## H #\n"),
    "<h1>T</h1>\n<p>texto um linha dois</p>\n<ul>\n<li>a cont</li>\n<li>b</li>\n</ul>\n"
