@@ -14,6 +14,21 @@ export function escapeHtml(s) {
   );
 }
 
+// URL do catálogo que pode ir num href/src — a própria, ou null. Relativa
+// passa; com esquema, só http(s) e mailto. O catálogo é escrito sem auth: um
+// `javascript:` ou `data:` gravado no link de uma pessoa ou de um passeio não
+// pode virar link clicável (escapeHtml não resolve — o valor é uma URL
+// válida). Espaço ou caractere de controle em qualquer ponto também recusa:
+// o navegador os ignora ao ler o esquema ("java\tscript:"). Espelho do
+// safe_url de backend/mdhtml.py — mude os dois juntos (e a cópia do
+// memoria.html); test/safe-url-cases.json confere os três.
+export function safeUrl(url) {
+  const s = String(url ?? '').trim();
+  if (!s || /[\u0000-\u0020\u007f<>"'`\\]/.test(s)) return null;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(s) && !/^(?:https?|mailto):/i.test(s)) return null;
+  return s;
+}
+
 export function escapeXml(s) {
   return String(s).replace(/[<>&"']/g, (c) =>
     ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' })[c],

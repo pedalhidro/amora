@@ -25,7 +25,7 @@
 // origin) e v371/v372 saíram na `deploy` (busca de endereços, ⇄ inverter).
 // v373 fica acima de tudo que já circulou, que é o que importa: se a VERSION
 // não crescer, o service worker serve cache velho.
-const VERSION = 'phidro-v442';
+const VERSION = 'phidro-v443';
 const STATIC_CACHE = `${VERSION}-static`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 const DATA_CACHE = 'phidro-data-v1';
@@ -232,13 +232,15 @@ const PAGE_RELS = new Set(PAGE_ASSETS.filter((u) => u.endsWith('.html')).map((u)
 //     (tryOpenTourFromPath) — nada do SSR é usado —, então vem o shell: sem
 //     esperar a rede em 4G fraco e sem o risco de um HTML de um deploy novo
 //     rodar com o JS de um deploy velho logo depois de publicar;
-//   /imagens/lista/<slug>[/<n>] (o álbum), /pessoas/<slug> e /subir: o backend
-//     serve imagens.html / pessoas.html / subir.html nesses caminhos e o
-//     cliente lê o path (as tags de preview de link são pros robôs).
+//   /imagens/lista/<slug>[/<n>] (o álbum), /midia/<hash> (uma mídia),
+//     /pessoas/<slug> e /subir: o backend serve imagens.html / pessoas.html /
+//     subir.html nesses caminhos e o cliente lê o path (as tags de preview de
+//     link e o conteúdo no HTML são pros robôs e pra quem não roda JS).
 function shellPageFor(rel) {
   if (rel === '' || rel === 'index.html') return 'index.html';
   if (/^passeio\/[A-Za-z0-9-]+$/.test(rel) && !LEGACY_TOUR_RE.test(rel)) return 'index.html';
   if (/^imagens\/lista\/[^/]+(?:\/\d+)?\/?$/.test(rel)) return 'imagens.html';
+  if (/^midia\/(?:image_|video_)?[0-9a-f]{16}$/.test(rel)) return 'imagens.html';
   if (/^pessoas\/[^/]+$/.test(rel)) return 'pessoas.html';
   if (rel === 'subir') return 'subir.html';
   if (PAGE_RELS.has(rel)) return rel;

@@ -9,6 +9,11 @@
 <meta name="robots" content="noindex">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Pessoas — Pedal Hidrográfico</title>
+<!-- Marca que o JS roda ANTES da primeira pintura: o conteúdo que o servidor
+     manda no HTML pra quem não roda JS (#ssr-content — crawlers, leitores de
+     página dos LLMs) nem chega a aparecer pra quem roda; a página monta a
+     versão viva e o remove. -->
+<script>document.documentElement.classList.add('js');</script>
 <link rel="stylesheet" href="./fonts/fonts.css">
 <link rel="stylesheet" href="./lib/tokens.css">
 <style>
@@ -29,6 +34,24 @@
   header a:hover { color: var(--accent-hover); }
 
   #status { color: var(--muted); padding: 12px 0; }
+  /* O "Carregando…" é conteúdo gerado, não texto do HTML: quem não roda JS
+     (e lê o texto da página) não fica com um carregando que nunca termina. */
+  #status:empty::before { content: "Carregando pessoas…"; }
+  /* Conteúdo que o servidor manda no HTML pra quem não roda JS — crawlers,
+     leitores de página dos LLMs (ver "Conteúdo sem JavaScript" em
+     backend/main.py). A página o remove quando monta a versão viva. */
+  .ssr-content { max-width: 860px; line-height: 1.5; margin: 8px 0 16px; }
+  .js #ssr-content { display: none; }
+  .ssr-content h1 { font-size: 18px; margin: 0 0 8px; }
+  .ssr-content h2 { font-size: 15px; margin: 18px 0 6px; }
+  .ssr-content a { color: var(--accent); }
+  .ssr-content ul { padding-left: 20px; }
+  .ssr-content li { margin: 3px 0; }
+  .ssr-content img { max-width: 100%; height: auto; border-radius: 6px; }
+  .ssr-content p > img { max-height: 80vh; width: auto; }
+  .ssr-content a > img { height: 96px; width: auto; vertical-align: middle; }
+  .ssr-content table { border-collapse: collapse; font-size: 13px; }
+  .ssr-content th, .ssr-content td { border-bottom: 1px solid var(--border); padding: 4px 8px; text-align: left; }
   .err { color: #b3261e; }
   .ok  { color: #1a7f4b; }
 
@@ -181,7 +204,9 @@
   </nav>
 </header>
 
-<div id="status" role="status" aria-live="polite">Carregando pessoas…</div>
+<!-- SSR:CONTENT -->
+
+<div id="status" role="status" aria-live="polite"></div>
 
 <div class="summary-line" id="summary" hidden></div>
 <div class="search" id="searchbox" hidden>
@@ -200,7 +225,7 @@
 
 <script type="module">
 // Helpers comuns das páginas (?api=N: ver o comentário do import no subir.html).
-import { escapeHtml, setupEmbeddedPage, loadN3 } from './lib/utils.js?api=1';
+import { escapeHtml, safeUrl, setupEmbeddedPage, loadN3 } from './lib/utils.js?api=2';
 const $ = (q) => document.querySelector(q);
 
 // ── Modo embutido (iframe do modal do app) ──────────────────────────────────
@@ -475,7 +500,7 @@ function tourTile(iri) {
   const body = code
     ? `<span class="series">${escapeHtml(code)}</span>`
     : `<span class="title">${escapeHtml(title)}</span>`;
-  const art = imageOf.get(iri);
+  const art = safeUrl(imageOf.get(iri));   // só http(s)/relativa vira src
   if (art) {
     // Tile de 56 px: a MINIATURA que o backend deriva da arte (lado menor
     // 256 px, ~25 KB) — o original é PNG de até 10 MB, e o cartão de quem
@@ -513,7 +538,10 @@ function renderForward(fwd) {
     let val;
     if (f.literal) val = escapeHtml(f.o);
     else if (f.p === RDFT) val = escapeHtml(curie(f.o));
-    else val = `<a href="${escapeHtml(f.o)}" target="_blank" rel="noopener">${escapeHtml(curie(f.o))}</a>`;
+    // Só URL http(s)/mailto vira link (safeUrl): um IRI `javascript:` ou
+    // `data:` gravado na pessoa aparece como texto.
+    else if (safeUrl(f.o)) val = `<a href="${escapeHtml(f.o)}" target="_blank" rel="noopener">${escapeHtml(curie(f.o))}</a>`;
+    else val = escapeHtml(curie(f.o));
     return `<tr><td class="pred">${escapeHtml(curie(f.p))}</td><td class="val">${val}</td></tr>`;
   });
   return `<table class="facts-table"><tbody>${rows.join('')}</tbody></table>`;
@@ -587,6 +615,7 @@ function platformIcon(url) {
   return '🔗';
 }
 function socialChip(url, home) {
+  if (!safeUrl(url)) return '';   // link que não é http(s)/mailto não vira chip
   let host = url;
   try { host = new URL(url).host.replace(/^www\./, ''); } catch (_) {}
   return `<a class="social-chip" href="${escapeHtml(url)}" target="_blank" rel="noopener" ` +
@@ -596,7 +625,8 @@ function socialChipsHtml(p) {
   const items = [];
   if (p.url) items.push(socialChip(p.url, true));
   for (const u of p.seeAlso) items.push(socialChip(u, false));
-  return items.length ? `<div class="social">${items.join('')}</div>` : '';
+  const html = items.join('');
+  return html ? `<div class="social">${html}</div>` : '';
 }
 
 function renderPerson(p) {
@@ -756,11 +786,14 @@ function focusPersonFromUrl() {
     }
     $('#status').remove();
     renderAll();
+    // A versão viva está montada: sai a que veio no HTML (pra quem não roda JS).
+    document.getElementById('ssr-content')?.remove();
     wireEvents();
     focusPersonFromUrl();
     $('#meta-ts').textContent = ` · gerado em ${new Date().toLocaleString('pt-BR')}`;
   } catch (e) {
     $('#status').innerHTML = `<span class="err">Falha ao carregar: ${escapeHtml(e.message)}</span>`;
+    document.documentElement.classList.remove('js');   // não montou: fica o conteúdo que veio no HTML
   }
 })();
 </script>

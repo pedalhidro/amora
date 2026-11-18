@@ -10,6 +10,11 @@
 <meta name="robots" content="noindex">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Imagens — Pedal Hidrográfico</title>
+<!-- Marca que o JS roda ANTES da primeira pintura: o conteúdo que o servidor
+     manda no HTML pra quem não roda JS (#ssr-content — crawlers, leitores de
+     página dos LLMs) nem chega a aparecer pra quem roda; a página monta a
+     versão viva e o remove. -->
+<script>document.documentElement.classList.add('js');</script>
 <link rel="stylesheet" href="./fonts/fonts.css">
 <link rel="stylesheet" href="./lib/tokens.css">
 <style>
@@ -49,6 +54,24 @@
   body.embedded.touch-ui .tb-bar .tb-back { display: inline-flex; align-items: center; }
 
   #status { color: var(--muted); padding: 10px 0; }
+  /* O "Carregando…" é conteúdo gerado, não texto do HTML: quem não roda JS
+     (e lê o texto da página) não fica com um carregando que nunca termina. */
+  #status:empty::before { content: "Carregando catálogo de mídias…"; }
+  /* Conteúdo que o servidor manda no HTML pra quem não roda JS — crawlers,
+     leitores de página dos LLMs (ver "Conteúdo sem JavaScript" em
+     backend/main.py). A página o remove quando monta a versão viva. */
+  .ssr-content { max-width: 860px; line-height: 1.5; margin: 8px 0 16px; }
+  .js #ssr-content { display: none; }
+  .ssr-content h1 { font-size: 18px; margin: 0 0 8px; }
+  .ssr-content h2 { font-size: 15px; margin: 18px 0 6px; }
+  .ssr-content a { color: var(--accent); }
+  .ssr-content ul { padding-left: 20px; }
+  .ssr-content li { margin: 3px 0; }
+  .ssr-content img { max-width: 100%; height: auto; border-radius: 6px; }
+  .ssr-content p > img { max-height: 80vh; width: auto; }
+  .ssr-content a > img { height: 96px; width: auto; vertical-align: middle; }
+  .ssr-content table { border-collapse: collapse; font-size: 13px; }
+  .ssr-content th, .ssr-content td { border-bottom: 1px solid var(--border); padding: 4px 8px; text-align: left; }
   .err { color: #b3261e; }
   .ok  { color: #1a7f4b; }
   .muted { color: var(--muted); }
@@ -579,7 +602,9 @@
   <a href="./" id="hdr-map">← Mapa</a>
 </header>
 
-<div id="status" role="status" aria-live="polite">Carregando catálogo de mídias…</div>
+<!-- SSR:CONTENT -->
+
+<div id="status" role="status" aria-live="polite"></div>
 
 <div class="toolbar" hidden>
   <div class="tb-bar">
@@ -762,9 +787,9 @@
 'use strict';
 // Helpers comuns das páginas (?api=N: ver o comentário do import no subir.html).
 import {
-  escapeHtml, turtleEscape, slugifyList, EMBEDDED, blockEmbeddedPinch,
+  escapeHtml, safeUrl, turtleEscape, slugifyList, EMBEDDED, blockEmbeddedPinch,
   loadScript, loadN3, loadTomSelect,
-} from './lib/utils.js?api=1';
+} from './lib/utils.js?api=2';
 const $  = (q) => document.querySelector(q);
 const $$ = (q) => Array.from(document.querySelectorAll(q));
 // localStorage com try/catch: com "Bloquear todos os cookies" no Safari o
@@ -970,8 +995,13 @@ let _lbReturnFocus = null;           // quem tinha o foco antes de abrir (volta 
 // histórico do iframe faria o "voltar" do app voltar dentro da galeria.
 const STANDALONE = window.self === window.top;
 const ALBUM_PATH_RE = /\/imagens\/lista\/([^/]+)(?:\/(\d+))?\/?$/;
+// /midia/<hash>: a página de UMA mídia — o backend serve a galeria nesse path
+// (com a ficha no HTML, pra quem não roda JS) e ela abre como um ?pick=<hash>.
+const MEDIA_PATH_RE = /\/midia\/(?:image_|video_)?([0-9a-f]{16})\/?$/;
 const SHARE_ORIGIN = 'https://amora.pedalhidrografi.co';   // links compartilhados apontam pra produção
-const PAGE_TITLE = document.title;
+// Fixo, não document.title: em /midia/<hash> e /imagens/lista/<slug> o backend
+// manda o <title> da mídia/do álbum (é o que crawlers e LLMs leem).
+const PAGE_TITLE = 'Imagens — Pedal Hidrográfico';
 let albumSlug = null;                // álbum refletido na barra de endereço (standalone)
 const _albumSeqReady = new Map();    // listIri → string[] (IRIs na ordem do álbum)
 
@@ -2457,7 +2487,8 @@ function openLightbox(rec, opts = {}) {
   // Metadados
   const rows = [];
   const personLinks = (names, iris) => (names || []).map((name, i) => {
-    const iri = iris && iris[i];
+    // O IRI da pessoa vem do catálogo: só http(s) vira link (safeUrl).
+    const iri = safeUrl(iris && iris[i]);
     return iri
       ? `<a href="${escapeHtml(iri)}" target="_blank" rel="noopener">${escapeHtml(name)}</a>`
       : escapeHtml(name);
@@ -2465,7 +2496,7 @@ function openLightbox(rec, opts = {}) {
   rows.push(['Data', escapeHtml(fmtRecWhen(rec)) + (rec.dateOnly ? ' <small>(hora desconhecida)</small>'
     : rec.dateEstimated ? ' <small>(hora estimada pela posição)</small>' : '')]);
   if (rec.tourLabel) {
-    const tourHtml = rec.tourIri
+    const tourHtml = safeUrl(rec.tourIri)
       ? `<a href="${escapeHtml(rec.tourIri)}" target="_blank" rel="noopener">${escapeHtml(rec.tourLabel)}</a>`
       : escapeHtml(rec.tourLabel);
     rows.push(['Passeio', tourHtml]);
@@ -2715,7 +2746,8 @@ function shareSelectedLink() {
   const recs = selectedRecords();
   if (!recs.length) return;
   const packed = recs.map((r) => encodeMediaToken(r)).join('');   // tokens de 12 chars, colados
-  const url = new URL(location.href);
+  const url = MEDIA_PATH_RE.test(location.pathname)
+    ? new URL('imagens.html', document.baseURI) : new URL(location.href);
   url.hash = '';
   url.searchParams.delete('pick');
   url.searchParams.set('p', packed);
@@ -3263,7 +3295,9 @@ function applyPickParam() {
       try { iris.push(decodeMediaToken(packed.slice(i, i + 12))); } catch (_) {}
     }
   } else {
-    const raw = qs.get('pick');
+    // /midia/<hash> (a página da mídia) vale como ?pick=<hash>.
+    const pathPick = location.pathname.match(MEDIA_PATH_RE);
+    const raw = pathPick ? pathPick[1] : qs.get('pick');
     // Aceita ?pick=<hash> (novo) e o legado ?pick=image_<hash>/video_<hash>
     // (tira o prefixo — o IRI agora é opaco med:<hash>).
     if (raw) iris = raw.split(',').map((s) => s.trim()).filter(Boolean)
@@ -3280,9 +3314,12 @@ function applyPickParam() {
   note.hidden = false;
   $('#pick-clear').addEventListener('click', () => {
     pickSet = null; note.hidden = true;
-    const u = new URL(location.href);
+    // Saindo da página de uma mídia (/midia/<hash>), a barra volta pra galeria.
+    const u = MEDIA_PATH_RE.test(location.pathname)
+      ? new URL('imagens.html', document.baseURI) : new URL(location.href);
     u.searchParams.delete('p'); u.searchParams.delete('pick');
     history.replaceState(null, '', u);
+    document.title = PAGE_TITLE;
     rerender();
   });
 }
@@ -3358,6 +3395,8 @@ async function pickFromParent(hash) {
     wireAssignModal();
     wireDownloadModal();
     $('#status').hidden = true;
+    // A grade viva vai ser montada: sai o conteúdo que veio no HTML (pra quem não roda JS).
+    document.getElementById('ssr-content')?.remove();
     $('.toolbar').hidden = false;
     // Visão padrão: agrupado por passeio, sem filtros (mostra TODAS as mídias).
     rebuildAndRun();
@@ -3382,6 +3421,7 @@ async function pickFromParent(hash) {
       (EMBEDDED ? ' <button type="button" class="btn" id="status-back">← Mapa</button>' : '');
     $('#status').hidden = false;
     $('#status-back')?.addEventListener('click', backToMap);
+    document.documentElement.classList.remove('js');   // não montou: fica o conteúdo que veio no HTML
   }
 })();
 </script>
