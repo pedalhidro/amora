@@ -53,6 +53,9 @@
   .toolbar button:hover { border-color: var(--accent); }
   .toolbar .conta { color: var(--muted); font-size: 12px; }
   #status { color: var(--muted); padding: 12px 0; }
+  /* O "Carregando…" é conteúdo gerado, não texto do HTML: quem não roda JS
+     (e lê o texto da página) não fica com um carregando que nunca termina. */
+  #status:empty::before { content: "Carregando os grafos…"; }
   .err { color: #b3261e; }
 
   /* ── Linha do tempo ──────────────────────────────────────────────────── */
@@ -223,7 +226,7 @@
   <span id="conta" class="conta"></span>
 </div>
 
-<div id="status" role="status" aria-live="polite">Carregando os grafos…</div>
+<div id="status" role="status" aria-live="polite"></div>
 <ol class="linha" id="linha" hidden></ol>
 
 <!-- SSR:MEMORIA -->

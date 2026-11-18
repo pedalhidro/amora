@@ -20,7 +20,7 @@ host local  (ou Cloud Run — mesmo main.py, STORAGE_BACKEND escolhe storage)
 A lista completa de rotas está em `../web/openapi.json` (leitura) e na seção
 "Backend endpoint summary" do `../CLAUDE.md` (tudo, inclusive mutações).
 
-Arquivos: `main.py`, `storage.py`, `rwgps.py`, `requirements.txt`,
+Arquivos: `main.py`, `storage.py`, `rwgps.py`, `mdhtml.py`, `requirements.txt`,
 `phidro.plist` (launchd, macOS).
 
 ## O estado vive em `web/` (local) ou no bucket GCS (Cloud Run)

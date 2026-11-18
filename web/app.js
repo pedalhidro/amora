@@ -200,9 +200,17 @@ for (const t of ['gesturestart', 'gesturechange']) {
 // ANTES de criar o mapa (fica no DOM, oculto): passeio com rota abre no modal
 // da rota (_openTourBySlug o remove); sem rota, vira uma folha
 // (showSsrTourArticle).
+// O backend usa o MESMO bloco pro conteúdo da home (apresentação + passeios,
+// séries, álbuns… — data-ssr="home"): esse sai de vez. Só o artigo de um
+// passeio (data-ssr="tour") fica pra poder virar folha — e o shell que o
+// service worker pré-cacheia é a resposta da home, servida também em
+// /passeio/<slug>: o bloco da home não pode passar por artigo do passeio.
 {
   const art = document.getElementById('tour-article');
-  if (art) art.hidden = true;
+  if (art) {
+    art.hidden = true;
+    if (art.dataset.ssr !== 'tour') art.remove();
+  }
 }
 const map = L.map('map', {
   zoomControl: true,

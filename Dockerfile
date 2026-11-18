@@ -33,7 +33,7 @@ COPY backend/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Código do backend.
-COPY backend/main.py backend/storage.py backend/rwgps.py \
+COPY backend/main.py backend/storage.py backend/rwgps.py backend/mdhtml.py \
      backend/garmin.py backend/fit_course.py ./
 
 # Conteúdo estático do app (HTML/JS/CSS + shapes/ontology/tours).

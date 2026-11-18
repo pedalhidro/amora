@@ -370,6 +370,9 @@ body.header-hidden .leaflet-top {
   font-size: 13px;
   padding: 8px 0;
 }
+/* O "Carregando…" inicial é conteúdo gerado, não texto do HTML: quem não roda
+   JS (e lê o texto da página) não fica com um carregando que nunca termina. */
+#routes-status:empty::before { content: "Carregando…"; }
 .status.error { color: var(--ui-status-error); }
 .status.success { color: var(--ui-status-ok); }
 
@@ -2391,12 +2394,14 @@ body.trace-preview .tp-label { display: none !important; }
   font-style: italic;
 }
 
-/* Página por passeio (SSR do backend em /passeio/<slug>): conteúdo pra
-   crawlers e visitantes sem JS. Sem JS ele entra no grid do body como uma 3ª
-   linha (abaixo da topbar). Com JS o app o tira do fluxo ANTES de criar o mapa
+/* Conteúdo que o backend põe no HTML pra crawlers, leitores de página dos
+   LLMs e visitantes sem JS (#tour-article): o passeio em /passeio/<slug>, a
+   home em /. No HTML ele vem no TOPO do body (antes do chrome do app, pra quem
+   lê em ordem); na tela, sem JS, entra no grid do body como uma 3ª linha
+   (abaixo da topbar). Com JS o app o tira do fluxo ANTES de criar o mapa
    (senão espremia o #map a ~0 px — o passeio abria num mapa cinza): passeio
    com rota abre no modal da rota; sem rota, o artigo vira uma folha
-   (#tour-article-modal, showSsrTourArticle em app.js). */
+   (#tour-article-modal, showSsrTourArticle em app.js); na home ele sai. */
 .tour-article {
   grid-column: 1 / -1;
   max-width: 720px;
@@ -2410,6 +2415,11 @@ body.trace-preview .tp-label { display: none !important; }
 .tour-article img { max-width: 100%; border-radius: 8px; }
 .tour-article-meta { color: var(--ui-content-muted); font-size: 13px; }
 .tour-article a { color: var(--ui-accent-default); }
+.tour-article h2 { font-size: 17px; margin: 28px 0 8px; }
+.tour-article ul { padding-left: 20px; }
+.tour-article li { margin: 4px 0; }
+/* Miniaturas linkadas (a faixa de fotos do passeio). */
+.tour-article a > img { height: 88px; width: auto; vertical-align: middle; border-radius: 4px; }
 
 /* Trackpoint marker: small filled circle with a white ring. */
 .trackpoint-marker {

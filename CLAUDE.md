@@ -129,6 +129,9 @@ one optional hosted deploy target, not a dependency.
   `uploads.ttl` is now obsolete — and `GET /data/uploads.ttl` is a hard 404:
   a stale July-2026 copy left in the bucket still carried media deleted
   later, GPS included, and was publicly served until v425.)
+  `mdhtml.py` (Markdown → HTML do subconjunto que o backend escreve — é o
+  que põe o conteúdo de cada página no HTML pra quem não roda JS; ver
+  "Conteúdo sem JavaScript"; está no `COPY` do Dockerfile por nome),
   `phidro.plist` (launchd), `requirements.txt`, `README.md`. Runs locally
   (macOS/Linux) or on Cloud Run. (Was `backend/pi/` — the Raspberry Pi
   deploy was retired; the systemd unit + `pi-deploy.sh` were removed.)
@@ -331,6 +334,8 @@ one optional hosted deploy target, not a dependency.
   `/users/<id>/trips.json` hoje devolve a conta inteira numa LISTA (o
   `listar_trips` do `backfill-activities.py` ainda espera `{results}` e
   quebra), e `departed_at` vem ora ISO, ora número),
+  `check-nojs.py` (confere que o conteúdo de cada tipo de página chega no
+  HTML sem JavaScript — ver "Conteúdo sem JavaScript"),
   `mock_location.sh` (empurra posições de
   teste da localização ao vivo pro backend — random walk, 1 ponto/3 s; bate no
   remoto amora por padrão, `--local` p/ 127.0.0.1:8080; curl não precisa de
@@ -418,7 +423,7 @@ senão a página/documento humano. Esquema (prefixos usados nos TTLs e no códig
 | Passeio | `pas:` | `…/passeio/<slug8>` | `GET /passeio/<slug>` (turtle \| index SSR'ado servido NO path) — aceita também o **slug legível** (`schema:identifier`, mintado do título no save e IMUTÁVEL; slug8 com legível disponível 303a pra ele; `?tour=` e id numérico legado 303am pra cá). É a URL canônica dos links (compartilhar/sitemap/feed/memória); routes.json espelha em `entry.slug` |
 | Edição de série | (IRI full) | `…/passeio/<ES>/<seq>` (ex.: `…/passeio/BP/4`) | `GET /passeio/<es>/<seq>` (turtle \| 303 pro passeio) |
 | Série | `ser:` | `…/serie/<ES>` (PH/BT/BP/S/SESC) | `GET /serie/<es>` (turtle=série+edições \| HTML gerada, edições mais recentes primeiro, linkando pro passeio) |
-| Mídia | `med:` | `…/midia/<hash16>` (opaco — foto OU vídeo) | `GET /midia/<hash>` (turtle \| 303 `/imagens.html?pick=`) |
+| Mídia | `med:` | `…/midia/<hash16>` (opaco — foto OU vídeo) | `GET /midia/<hash>` (turtle \| a galeria servida NO path, com a ficha da mídia no HTML) |
 | Lista/álbum | `lst:` | `…/listas/<slug>` | `GET /listas/<slug>` (turtle \| 303 `/imagens/lista/<slug>`, o álbum na galeria) |
 | Envio (ph:Upload) | `env:` | `…/envio/<ts>` | (sem resolver; provenance interna) |
 
@@ -489,6 +494,68 @@ Cloudflare: se uma cache rule cachear o HTML de `/` ignorando o Accept, um
 agente pode receber o HTML cacheado — ou bypassar o cache pra
 `Accept: text/markdown`, ou ligar o "Markdown for Agents" da zona (coexiste:
 a CF só converte HTML e passa o `text/markdown` da origem intacto).
+
+**Conteúdo sem JavaScript (v443) — o HTML de toda URL pública carrega o
+conteúdo dela.** Crawlers de busca, bots de preview e os leitores de página dos
+LLMs pedem `text/html` (não Markdown) e não rodam JS: recebiam o esqueleto do
+app ("Carregando…") e reclamavam que o acervo estava "atrás de JavaScript".
+Agora **cada página tem UM renderer de conteúdo, em Markdown** (os
+`_render_*_markdown` de `main.py`), que sai de dois jeitos: cru em
+`Accept: text/markdown`, e convertido por `backend/mdhtml.py` num
+`<article class="ssr-content">` injetado no shell (`_ssr_article` /
+`_ssr_inject`, no lugar do marcador `<!-- SSR:CONTENT -->`). O que o agente lê
+em Markdown é o que o crawler lê em HTML — página nova = escrever o Markdown
+e chamar esses dois; não escrever HTML de conteúdo à mão. Cobertura: `/`
+(apresentação + passeios recentes, séries, álbuns, rotas salvas —
+`_home_sections_md`), `/passeio/<slug>` (narrativa, ficha, faixa de fotos),
+`/midia/<hash>` (agora **200**, a galeria servida no path — era 303; imagem,
+ficha, JSON-LD ImageObject/VideoObject), `/imagens/lista/<slug>[/<n>]`
+(o álbum, na ordem de `_album_sequence`, JSON-LD ImageGallery), `/imagens.html`
+(índice: álbuns + mídias por passeio; `?pick=<hash>` = a ficha da mídia),
+`/pessoas.html` e `/pessoas/<slug>` (JSON-LD ProfilePage), `/censo.html`
+(tabela de métricas por passeio), `/route/<slug>` (ficha da rota; perdeu o
+`<meta refresh>` — só o script redireciona, então quem não roda JS fica e lê).
+`/memoria`, `/serie/<es>` e `/terms` já eram HTML gerado. Regras:
+- **Segurança:** o catálogo é escrito sem auth e os renderers interpolam o
+  texto dele cru. `mdhtml` escapa TUDO e só deixa virar link/imagem URL
+  relativa ou `http(s)`/`mailto` (`safe_url`); rótulo de link ou célula de
+  tabela com texto do catálogo passa por `_md_label`. HTML de conteúdo escrito
+  fora do `mdhtml` (Memória, feed) checa `mdhtml.safe_url` antes de um `href`.
+- **Páginas quentes nunca esperam o catálogo.** Refazer o snapshot
+  (`_load_catalog()`) depois de uma gravação leva ~2,6 s (medido em 11/2026,
+  167 mil triples). Home, passeio, galeria-índice, pessoas e censo leem só
+  `_tours_graph()` e `_media_index()` — um resumo autocontido da mídia (totais,
+  por passeio com a faixa de miniaturas pronta, álbuns, por pessoa) servido
+  DESATUALIZADO enquanto uma thread o refaz. Não chamar `_load_catalog()`
+  nesses caminhos. As páginas agregadas ainda passam por `_memo` (TTL 2 min).
+- **`Vary: Accept` segue proibido nos shells que o SW pré-cacheia** — `/`,
+  `/imagens.html`, `/pessoas.html`, `/censo.html` agora são respostas GERADAS,
+  mas saem por `_conditional` (ETag, sem Vary); só as servidas em paths
+  (`/passeio/…`, `/midia/…`, `/pessoas/<slug>`…) usam `_negotiated`.
+- **O precache do SW guarda a resposta da home** (com o bloco dela). Por isso
+  no `index.html` o bloco tem sempre `id="tour-article"` — o que o app.js,
+  inclusive um velho no cache HTTP, já tira do fluxo antes do `L.map` — e um
+  `data-ssr`: `"tour"` pode virar folha (`showSsrTourArticle`), `"home"` é
+  removido no boot (senão a home apareceria como "o passeio" num
+  `/passeio/<slug>` sem rota servido pelo shell). No HTML o bloco vem no TOPO
+  do `<body>` (quem lê em ordem chega no conteúdo antes do chrome do app); na
+  tela continua na 3ª linha do grid.
+- **Páginas de iframe (`imagens`/`pessoas`/`censo.html`):** um script inline
+  no `<head>` põe `.js` no `<html>` e `.js #ssr-content { display: none }` — com
+  JS o bloco nunca aparece (nada muda na tela, nem no shell Capacitor, que não
+  tem SW e recebe o HTML do servidor a cada abertura); a página o remove ao
+  montar a versão viva e, se a carga falhar, tira o `.js` (fica o conteúdo do
+  servidor). O "Carregando…" inicial dessas páginas e do `#routes-status` é
+  conteúdo gerado por CSS (`:empty::before`), não texto do HTML.
+- **`noindex` não mudou:** galeria, pessoas e censo seguem `noindex` (decisão
+  anterior) e fora do sitemap, que ganhou só `/serie/<es>` e `/terms`; o
+  `robots.txt` segue com `Disallow: /photos/`. O conteúdo no HTML é pra quem
+  LÊ a página (LLMs, previews), não muda o que os buscadores indexam.
+- Conferir: `python3 scripts/check-nojs.py [base-url]` (produção por padrão)
+  pede uma URL de cada tipo como um crawler, tira `<script>/<style>` e exige
+  que o texto que sobra seja o conteúdo — o título da representação Markdown,
+  nenhum "Carregando…". `python3 test/test_mdhtml.py` testa o conversor
+  (inclusive com texto hostil).
 
 ## Architecture
 
@@ -970,7 +1037,8 @@ Key flows:
   link; colisão com outra rota → 409; responde logo depois do JSON write +
   resync dos tours — o card OG renderiza em THREAD), `POST /delete-route/<id>`. Cada rota
   salva tem um **link compartilhável POR NOME** `/route/<slug>` —
-  `GET /route/<slug>` serve uma página mínima com as OG tags da rota
+  `GET /route/<slug>` serve uma página pequena com o conteúdo da rota no
+  corpo (ver "Conteúdo sem JavaScript") e as OG tags
   (og:image = `/route/<slug>/og.png` — o card de WhatsApp/redes: traçado
   renderizado com Pillow sobre a **Morros e Águas** (o MESMO FGB de
   hidrografia da camada, lido server-side por range request via o pacote
@@ -986,7 +1054,7 @@ Key flows:
   throttled e a thread pode atrasar; `_og_render_lock` evita render duplo);
   delete-route apaga o blob; max-age 1 h)
   e redireciona o humano na hora
-  (script + meta-refresh) pra `/#rt=<slug>` (FRAGMENTO, como o `#st=`:
+  (só por script — sem meta-refresh) pra `/#rt=<slug>` (FRAGMENTO, como o `#st=`:
   nunca é comido pelo strip de query da Cloudflare nem pelo cache do SW —
   e o SW trata `/route/<slug>` como network-first pra rename não servir
   redirect velho); o cliente resolve (`tryLoadSavedRouteFromHash` → fetch de
@@ -1512,8 +1580,8 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
   query-versioned import (`media-pipeline.js?api=N`) falls back offline to
   the precached copy without the query. Navigations to `/`, `/index.html`,
   `/passeio/<slug>` (the app opens tours from the path — the SSR only reaches
-  crawlers and clients without a SW), `/imagens/lista/…`, `/pessoas/<slug>`,
-  `/subir` and the iframe pages come from the precache; `?format=` bypasses
+  crawlers and clients without a SW), `/imagens/lista/…`, `/midia/<hash>`,
+  `/pessoas/<slug>`, `/subir` and the iframe pages come from the precache; `?format=` bypasses
   the SW. Unversioned caches (`KEEP_CACHES`; anything else is DELETED on
   activate — don't add a page-side Cache Storage): `phidro-data-v1`
   (network-first racing a 3.5 s timer — the cached copy wins on weak 4G and
@@ -1747,6 +1815,10 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
   browser surfaces syntax errors immediately. No standalone JS tooling here.
 - Bump `web/sw.js` `VERSION` if any file under `web/` changed.
 - `python -m py_compile backend/main.py`
+- Mexeu num renderer de página, num shell (`index`/`imagens`/`pessoas`/
+  `censo.html`) ou no `backend/mdhtml.py`: `python3 test/test_mdhtml.py` e
+  `python3 scripts/check-nojs.py http://127.0.0.1:<porta>` com o backend local
+  no ar (ver "Conteúdo sem JavaScript").
 - `npm test` (tokens, cores, ícones) se mexeu em `web/style.css`, `web/index.html`,
   `web/app.js` ou `design/`.
 - Ontology / shapes / data: parse with `rdflib` after editing `*.ttl`.

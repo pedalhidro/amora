@@ -152,8 +152,18 @@
     <link rel="stylesheet" href="lib/locatecontrol/L.Control.Locate.min.css" />
     <link rel="stylesheet" href="lib/tokens.css" />
     <link rel="stylesheet" href="style.css" />
+    <!-- Sem JS não há mapa nem lista de rotas: ficam a barra e o conteúdo que o
+         backend pôs no topo do body (#tour-article). -->
+    <noscript><style>#map, #sidebar { display: none; }</style></noscript>
   </head>
   <body class="rotas-page">
+    <!-- O backend põe AQUI, no topo do body, o conteúdo da página pra quem não
+         roda JS — a home (apresentação + passeios, séries, álbuns, rotas) ou o
+         passeio de /passeio/[slug] —, no elemento #tour-article. Vem antes do
+         chrome do app pra quem lê o HTML em ordem (crawlers, leitores de página
+         dos LLMs); na tela ele fica na 3ª linha do grid do body, e o app.js o
+         tira do fluxo antes de criar o mapa. -->
+    <!-- SSR:CONTENT -->
     <header class="topbar">
       <div class="title">
         <h1><img class="title-icon" src="img/amora-icon.png" alt="" width="96" height="96" /><span class="title-text">amora: ajudante bicigeoenergético</span><img class="title-icon" src="img/amora-icon.png" alt="" width="96" height="96" /></h1>
@@ -210,7 +220,7 @@
     </main>
 
     <aside id="sidebar" class="sidebar">
-      <div id="routes-status" class="status" role="status" aria-live="polite">Carregando…</div>
+      <div id="routes-status" class="status" role="status" aria-live="polite"></div>
 
       <section class="date-filter" id="date-filter" hidden>
         <span class="range-value" id="range-from-value"></span>
@@ -237,7 +247,7 @@
             <summary>Novidades (changelog)</summary>
             <!-- O histórico mora em changelog.html (baixado na 1ª abertura, ver
                  app.js) — eram ~110 KB do shell. Entrada nova vai LÁ. -->
-            <p class="help-changelog-slot">Carregando…</p>
+            <p class="help-changelog-slot"><a href="./changelog.html">Abrir o histórico de novidades</a></p>
           </details>
           <h3>Mapa</h3>
           <p>Arraste para mover, scroll/pinça para zoom. Para <strong>girar</strong>: dois dedos girando (celular) ou Shift + roda do mouse (computador); a bússola que aparece à esquerda volta o norte pra cima. O painel de camadas (canto sup. direito) controla visibilidade e opacidade de cada camada — base (OSM ou satélite), sobreposições (Topografia colorida, SARA Brasil 1930, rotas cadastradas) e duas camadas customizáveis (XYZ e WMS — clique no <svg class="icon" data-icon="edit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4"/><path d="M13.5 6.5l4 4"/></svg> para colar uma URL).</p>

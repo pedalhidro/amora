@@ -37,11 +37,13 @@ import re
 import threading
 import time
 import uuid
+import weakref
 from pathlib import Path
 
 from datetime import datetime, timedelta, timezone
 from flask import Flask, Response, abort, jsonify, redirect, request, send_from_directory
 
+import mdhtml
 from storage import make_store_from_env
 
 # ── Caminhos ─────────────────────────────────────────────────────────────
@@ -1199,6 +1201,145 @@ def _md_inline(s):
     return " ".join(str(s or "").split())
 
 
+def _md_label(s):
+    """_md_inline + escape do que quebraria um rótulo de link ou célula de
+    tabela (`[`, `]`, `|`) — pra título/nome do catálogo dentro de [..](..)."""
+    return mdhtml.md_escape(_md_inline(s))
+
+
+# ── Conteúdo sem JavaScript (o HTML de toda página carrega o conteúdo) ──────
+# As páginas do app se compõem no navegador; quem não roda JS — crawlers de
+# busca, bots de preview e os leitores de página dos LLMs, que pedem text/html
+# e não Markdown — recebia o esqueleto ("Carregando…"). Agora o HTML de cada
+# URL pública traz o conteúdo dela: o MESMO Markdown da representação de
+# agente (os _render_*_markdown), convertido por mdhtml e injetado no shell no
+# lugar do marcador abaixo, num <article class="ssr-content">. Com JS, a
+# página tira o bloco quando compõe a versão viva (app.js o tira do fluxo
+# antes de criar o mapa; imagens.html e pessoas.html o removem depois de
+# renderizar). Quem chega pelo service worker nem o recebe: ele serve o shell
+# do precache.
+_SSR_MARKER = "<!-- SSR:CONTENT -->"
+_shell_cache = {}   # nome → ((mtime_ns, tamanho), texto)
+
+
+def _shell(name):
+    """(versão, texto) de um shell de web/ (index.html, imagens.html,
+    pessoas.html…), relido só quando o arquivo muda."""
+    st = (WEB / name).stat()
+    version = (st.st_mtime_ns, st.st_size)
+    hit = _shell_cache.get(name)
+    if hit is None or hit[0] != version:
+        hit = (version, (WEB / name).read_text(encoding="utf-8"))
+        _shell_cache[name] = hit
+    return hit
+
+
+def _site_relative(url):
+    """URL absoluta do próprio site → relativa à raiz: o HTML fica menor e os
+    links valem em qualquer host (os shells trazem <base href="/">)."""
+    return "/" + url[len(SITE_URL):] if url.startswith(SITE_URL) else url
+
+
+def _jsonld_tag(obj):
+    """<script type="application/ld+json"> com o objeto. Escapa &/</> pra um
+    texto do catálogo com "</script>" não fechar a tag e injetar markup no
+    <head> (crawlers/bots de preview não têm o CSP da página pra segurar
+    isso). & primeiro, senão o < e > escritos depois seriam re-escapados."""
+    body = (json.dumps(obj, ensure_ascii=False)
+            .replace("&", "\\u0026")
+            .replace("<", "\\u003c")
+            .replace(">", "\\u003e"))
+    return '<script type="application/ld+json">' + body + "</script>"
+
+
+def _ssr_article(md, elem_id="ssr-content", cls="ssr-content", kind=None):
+    """O Markdown de uma página como o bloco <article> que vai no shell.
+    `kind` vira data-ssr — no index.html, é como o app.js distingue o artigo
+    de um passeio ("tour", que ele pode mostrar numa folha) do da home."""
+    data = f' data-ssr="{kind}"' if kind else ""
+    return (f'<article id="{elem_id}" class="{cls}"{data}>\n'
+            + mdhtml.md_to_html(md, rewrite_url=_site_relative)
+            + "\n</article>")
+
+
+def _ssr_inject(html_text, article, head=()):
+    """`article` no lugar do marcador do shell (shell sem marcador: logo
+    depois de <body>) e as linhas de `head` antes de </head>."""
+    if _SSR_MARKER in html_text:
+        html_text = html_text.replace(_SSR_MARKER, article, 1)
+    else:
+        html_text = re.sub(r"(<body[^>]*>)", lambda m: m.group(1) + "\n" + article,
+                           html_text, count=1)
+    if head:
+        html_text = html_text.replace(
+            "</head>", "\n".join(head) + "\n</head>", 1)
+    return html_text
+
+
+def _alternate_links(page_url, turtle=True):
+    """<link rel="alternate"> pras outras representações da mesma URL."""
+    from html import escape as h
+    out = [f'<link rel="alternate" type="text/markdown" href="{h(page_url)}?format=md">']
+    if turtle:
+        out.append(f'<link rel="alternate" type="text/turtle" href="{h(page_url)}?format=ttl">')
+    return out
+
+
+def _head_meta(title=None, description=None, canonical=None, image=None,
+               image_alt=None, og_type="website"):
+    """Linhas de <head> (descrição, canônica, preview de link) pra um shell
+    que não as traz — imagens.html e pessoas.html. O <title> é trocado à
+    parte (_set_title): esses shells já têm o seu."""
+    from html import escape as h
+    out = ['<meta property="og:site_name" content="amora · Pedal Hidrográfico">',
+           f'<meta property="og:type" content="{h(og_type)}">']
+    if title:
+        out.append(f'<meta property="og:title" content="{h(title)}">')
+    if description:
+        out += [f'<meta name="description" content="{h(description)}">',
+                f'<meta property="og:description" content="{h(description)}">']
+    if canonical:
+        out += [f'<link rel="canonical" href="{h(canonical)}">',
+                f'<meta property="og:url" content="{h(canonical)}">']
+    if image:
+        out += [f'<meta property="og:image" content="{h(image)}">',
+                '<meta name="twitter:card" content="summary_large_image">']
+        if image_alt:
+            out.append(f'<meta property="og:image:alt" content="{h(image_alt)}">')
+    return out
+
+
+def _set_title(html_text, title):
+    from html import escape as h
+    return re.sub(r"<title>.*?</title>", lambda m: f"<title>{h(title)}</title>",
+                  html_text, count=1, flags=re.S)
+
+
+_page_memo = {}
+_page_memo_lock = threading.Lock()
+
+
+def _memo(key, versions, build, ttl=None, token=None):
+    """`build()` memoizado por `key` enquanto cada objeto de `versions` for O
+    MESMO (por identidade — os grafos do catálogo são trocados a cada
+    gravação; weakref pra o memo não segurar um snapshot velho na memória),
+    `token` for igual (a geração do resumo de mídia) e, com `ttl`, por no
+    máximo `ttl` segundos. Chaves fixas (uma por página agregada), nunca por
+    recurso."""
+    now = time.monotonic()
+    with _page_memo_lock:
+        hit = _page_memo.get(key)
+        if (hit is not None and len(hit[0]) == len(versions)
+                and all(r() is v for r, v in zip(hit[0], versions))
+                and hit[3] == token
+                and (ttl is None or now - hit[2] < ttl)):
+            return hit[1]
+    value = build()
+    with _page_memo_lock:
+        _page_memo[key] = ([weakref.ref(v) for v in versions], value, now, token)
+    return value
+
+
 # ── Descoberta pra agentes (RFC 8288 / RFC 9727 §3) ─────────────────────────
 # Link header nas páginas (HTML e Markdown) apontando pros recursos legíveis
 # por máquina: o catálogo de APIs (/.well-known/api-catalog, linkset RFC 9264),
@@ -1224,6 +1365,12 @@ def _discovery_links(resp):
     if (request.method == "GET" and resp.status_code == 200
             and resp.mimetype in ("text/html", "text/markdown")):
         resp.headers.add("Link", _DISCOVERY_LINK)
+        if resp.mimetype == "text/html":
+            # A mesma URL em Markdown limpo (toda página HTML negocia).
+            from urllib.parse import quote
+            resp.headers.add(
+                "Link", f'<{quote(request.path)}?format=md>; rel="alternate"; '
+                        'type="text/markdown"')
     return resp
 
 
@@ -1918,12 +2065,20 @@ def index():
                 return redirect(f"/passeio/{by_id.get(tid, tid)}", code=303)
         except Exception as e:  # noqa: BLE001
             print(f"[tour-page] alias falhou pra ?tour={tour_id}: {e}")
-    # Agente (Accept: text/markdown): o guia do site + passeios recentes, em
-    # vez do shell do app. O index.html em si segue sem Vary (pré-cacheado
-    # pelo service worker — ver _negotiated).
+    # Agente (Accept: text/markdown): o guia do site + o acervo em listas.
     if _wants_markdown(request):
         return _markdown_response(_render_home_markdown())
-    return send_from_directory(WEB, "index.html")
+    # HTML: o shell do app COM o conteúdo da home pra quem não roda JS
+    # (_render_home_html). Sem Vary: Accept de propósito — esta resposta é o
+    # que o service worker pré-cacheia (ver _negotiated); ETag pra a
+    # revalidação dele (e a do browser) virar 304.
+    try:
+        page = _render_home_html()
+    except Exception:  # noqa: BLE001 — o conteúdo é best-effort; o app, não
+        app.logger.exception("[home] conteúdo sem JS falhou; servindo o estático")
+        return send_from_directory(WEB, "index.html")
+    return _conditional(Response(page, mimetype="text/html",
+                                 headers={"Cache-Control": "no-cache"}))
 
 
 @app.get("/pessoas/<slug>")
@@ -1948,7 +2103,68 @@ def person_page(slug):
         if md is None:
             abort(404)
         return _markdown_response(md)
-    return send_from_directory(WEB, "pessoas.html")
+    # HTML: pessoas.html com a ficha da pessoa já no corpo (quem não roda JS
+    # lê; a página a troca pelo cartão vivo). Pessoa desconhecida ou falha →
+    # o shell puro, como sempre.
+    try:
+        page = _render_person_page(slug)
+    except Exception:  # noqa: BLE001
+        app.logger.exception("[pessoa] conteúdo sem JS falhou pra %s", slug)
+        page = None
+    if page is None:
+        return send_from_directory(WEB, "pessoas.html")
+    return _negotiated(Response(page, mimetype="text/html",
+                                headers={"Cache-Control": "no-cache"}))
+
+
+def _shell_page(name, render, render_md):
+    """Uma página do app servida no seu próprio .html (pessoas.html,
+    imagens.html, censo.html) com o conteúdo no corpo pra quem não roda JS;
+    Markdown pra agentes. Sem Vary: Accept — são URLs que o service worker
+    pré-cacheia (ver _negotiated). `render` devolve None quando não dá pra
+    montar o conteúdo agora; isso, ou uma falha → o arquivo estático."""
+    if _wants_markdown(request):
+        try:
+            return _markdown_response(render_md())
+        except Exception:  # noqa: BLE001
+            app.logger.exception("[%s] Markdown falhou; servindo o resumo", name)
+            return _markdown_response(_html_shell_markdown(name))
+    try:
+        page = render()
+    except Exception:  # noqa: BLE001
+        app.logger.exception("[%s] conteúdo sem JS falhou; servindo o estático", name)
+        page = None
+    if page is None:   # falhou, ou o resumo de mídia ainda não ficou pronto
+        return send_from_directory(WEB, name)
+    return _conditional(Response(page, mimetype="text/html",
+                                 headers={"Cache-Control": "no-cache"}))
+
+
+@app.get("/pessoas.html")
+def people_page():
+    """Índice de pessoas: pessoas.html com a lista (nome → ficha) no corpo."""
+    return _shell_page("pessoas.html", _render_people_page, _render_people_markdown)
+
+
+@app.get("/censo.html")
+def censo_page():
+    """Censo: censo.html com a tabela de métricas por passeio no corpo."""
+    return _shell_page("censo.html", _render_censo_page, _render_censo_markdown)
+
+
+@app.get("/imagens.html")
+def gallery_page():
+    """A galeria. Sem JS: o índice (álbuns + mídias por passeio) — ou, num
+    link compartilhado de UMA mídia (?pick=<hash>), a ficha dela."""
+    pick = (request.args.get("pick") or "").strip().lower()
+    for pfx in ("image_", "video_"):
+        if pick.startswith(pfx):
+            pick = pick[len(pfx):]
+    if _is_hash16(pick):
+        return _shell_page("imagens.html",
+                           lambda: _render_media_page(pick) or _render_gallery_index_page(),
+                           lambda: _render_media_markdown(pick) or _render_gallery_markdown())
+    return _shell_page("imagens.html", _render_gallery_index_page, _render_gallery_markdown)
 
 
 def _terms_model():
@@ -2501,16 +2717,23 @@ def album_page(slug, n=None):
     tags de preview de link (og:*) do álbum ou da n-ésima mídia injetadas —
     quem lê o path é o cliente. Álbum desconhecido/falha → o estático puro.
     Agente (turtle/markdown) → a mesma resposta da lista (list_page)."""
-    if _negotiated_format(request) != "html":
+    fmt = _negotiated_format(request)
+    if fmt == "md" and n:   # a n-ésima mídia em destaque, depois o álbum
+        md = _render_list_markdown(slug, n)
+        if md is None:
+            abort(404)
+        return _markdown_response(md)
+    if fmt != "html":
         return list_page(slug)
     try:
         meta = _album_share_meta(slug, n)
-    except Exception as e:  # noqa: BLE001 — o preview é best-effort
-        print(f"[album-og] meta falhou pra {slug}/{n}: {e}")
-        meta = None
-    if meta is None:
+        page = _album_page_html(meta, slug, n) if meta else None
+    except Exception as e:  # noqa: BLE001 — preview e conteúdo são best-effort
+        print(f"[album] página falhou pra {slug}/{n}: {e}")
+        page = None
+    if page is None:
         return send_from_directory(WEB, "imagens.html")
-    return _negotiated(Response(_album_page_html(meta), mimetype="text/html",
+    return _negotiated(Response(page, mimetype="text/html",
                                 headers={"Cache-Control": "no-cache"}))
 
 
@@ -2695,31 +2918,21 @@ def _album_share_meta(slug, n=None):
     }
 
 
-def _album_page_html(meta):
-    """imagens.html com as tags de preview (og:/twitter:) logo depois do
-    <title>. O <title> fica como está: o cliente usa o título estático como
-    base do título da aba (PAGE_TITLE em imagens.html)."""
-    import html as _html
-    esc = _html.escape
-    tags = [
-        '<meta property="og:type" content="website">',
-        '<meta property="og:site_name" content="amora · Pedal Hidrográfico">',
-        f'<meta property="og:title" content="{esc(meta["title"])}">',
-        f'<meta property="og:description" content="{esc(meta["description"])}">',
-        f'<meta property="og:url" content="{esc(meta["url"])}">',
-        f'<meta name="description" content="{esc(meta["description"])}">',
-    ]
-    if meta.get("image"):
-        tags += [
-            f'<meta property="og:image" content="{esc(meta["image"])}">',
-            '<meta property="og:image:type" content="image/jpeg">',
-            f'<meta property="og:image:width" content="{_MEDIA_OG_W}">',
-            f'<meta property="og:image:height" content="{_MEDIA_OG_H}">',
-            f'<meta property="og:image:alt" content="{esc(meta["alt"])}">',
-            '<meta name="twitter:card" content="summary_large_image">',
-        ]
-    html_text = (WEB / "imagens.html").read_text(encoding="utf-8")
-    return html_text.replace("</title>", "</title>\n" + "\n".join(tags), 1)
+def _album_page_html(meta, slug, n=None):
+    """imagens.html com o álbum (ou a n-ésima mídia dele) pra quem não roda
+    JS: as tags de preview de link (og:/twitter:), o <title> e o conteúdo —
+    as mídias do álbum, na ordem dele — no corpo, mais o JSON-LD
+    (schema.org ImageGallery)."""
+    from rdflib import URIRef
+    cat = _load_catalog()
+    ld = {"@context": "https://schema.org", "@type": "ImageGallery",
+          "name": meta["title"], "description": meta["description"],
+          "url": meta["url"], "inLanguage": "pt-BR",
+          "mainEntity": {"@type": "Collection", "@id": LST_NS + slug,
+                         "name": str(cat.value(URIRef(LST_NS + slug),
+                                               URIRef(SCHEMA_NS + "name")) or slug),
+                         "collectionSize": len(_album_sequence(cat, LST_NS + slug))}}
+    return _gallery_page(_render_list_markdown(slug, n), meta, ld)
 
 
 def _media_og_source(cat, h):
@@ -2833,8 +3046,9 @@ def media_page(local):
     """Dereferência de uma mídia (foto/vídeo). IRI opaco:
     https://id.pedalhidrografi.co/midia/<hash16> (o tipo vem da classe, não do
     IRI). CF 303 pra cá. Conneg: Accept: text/turtle (ou ?format=ttl) → as
-    triples da mídia fatiadas de images.ttl; senão 303 pra galeria com a mídia
-    pré-selecionada (imagens.html?pick=<hash>). Aceita a forma legada
+    triples da mídia fatiadas de images.ttl; Markdown → a ficha; senão a
+    página da mídia: a galeria (imagens.html) servida neste path com a ficha
+    no corpo (_render_media_page). Aceita a forma legada
     /midia/image_<hash> / video_<hash> (tira o prefixo)."""
     for pfx in ("image_", "video_"):
         if local.startswith(pfx):
@@ -2849,7 +3063,19 @@ def media_page(local):
             abort(404)
         return _markdown_response(md)
     if fmt != "ttl":
-        return redirect("/imagens.html?pick=" + local, code=303)
+        # HTML: a galeria servida AQUI, com a ficha da mídia já no corpo (quem
+        # não roda JS lê a foto, a data, o passeio, a autoria e a licença; a
+        # galeria lê o hash do path e abre a mídia). Mídia desconhecida ou
+        # falha → o 303 de sempre pra galeria, que avisa.
+        try:
+            page = _render_media_page(local)
+        except Exception:  # noqa: BLE001
+            app.logger.exception("[midia] conteúdo sem JS falhou pra %s", local)
+            page = None
+        if page is None:
+            return redirect("/imagens.html?pick=" + local, code=303)
+        return _negotiated(Response(page, mimetype="text/html",
+                                    headers={"Cache-Control": "no-cache"}))
     ttl = _resource_slice_ttl(MED_NS + local, "images.ttl")
     if ttl is None:
         abort(404)
@@ -3247,17 +3473,6 @@ def _art_web_dims(img_url):
     return None
 
 
-def _art_img_html(img_url, alt):
-    """<img> da arte no HTML do SSR: a variante web (URL externa: a própria),
-    lazy/async, com width/height quando já conhecidos (sem salto de layout)."""
-    from html import escape as h
-    src = _art_variant_url(img_url, "web") or img_url
-    dims = _art_web_dims(img_url) if src != img_url else None
-    wh = f' width="{dims[0]}" height="{dims[1]}"' if dims else ""
-    return (f'<img src="{h(src)}" alt="{h(alt)}" loading="lazy" '
-            f'decoding="async"{wh}/>')
-
-
 def _serve_art_variant(dir_, name):
     """GET /tour_assets/<dir>/announcement.<web|thumb>.jpg — ver o bloco acima."""
     try:
@@ -3531,13 +3746,16 @@ def get_saved_route(ref):
 def route_deep_link(slug):
     """Link compartilhável de uma rota salva, POR NOME: /route/<slug>.
 
-    Serve uma página mínima com as OG tags da ROTA (título = nome, descrição
+    Serve uma página pequena com as OG tags da ROTA (título = nome, descrição
     = km/subida, og:image = /route/<slug>/og.png — o traçado renderizado com
-    o logo) e redireciona o humano NA HORA pra /#rt=<slug> (script +
-    meta-refresh; fragmento nunca chega na Cloudflare nem no service worker,
-    mesma razão do #st=). Crawlers de preview (WhatsApp/FB/Telegram) não
-    executam JS: leem as tags e montam o card. Slug desconhecido degrada pro
-    303 antigo — o app abre e mostra o toast de "rota não encontrada"."""
+    o logo) e o conteúdo dela no corpo (_render_route_markdown: ficha, pontos
+    de interesse, passeios que a usam), e redireciona o humano NA HORA pra
+    /#rt=<slug> por script (fragmento nunca chega na Cloudflare nem no
+    service worker, mesma razão do #st=). Quem não executa JS — crawlers de
+    preview (WhatsApp/FB/Telegram), buscadores, leitores de página dos LLMs —
+    fica na página: lê as tags e o conteúdo. `Accept: text/markdown` → o
+    mesmo conteúdo em Markdown. Slug desconhecido degrada pro 303 antigo — o
+    app abre e mostra o toast de "rota não encontrada"."""
     import html as _html
     slug = (slug or "").strip().lower()
     if not re.fullmatch(r"[a-z0-9][a-z0-9\-]{0,80}", slug):
@@ -3546,30 +3764,33 @@ def route_deep_link(slug):
     if not isinstance(r, dict) or not isinstance(r.get("state"), dict):
         return redirect(f"/#rt={slug}", code=303)
     name = r.get("name") or slug
-    _, dist = _route_preview_and_dist(r.get("state") or {})
-    bits = []
-    if dist:
-        bits.append(f"{dist / 1000:.1f} km".replace(".", ","))
-    st = r.get("stats") if isinstance(r.get("stats"), dict) else {}
-    asc = (st or {}).get("ascentM")
-    if isinstance(asc, (int, float)) and math.isfinite(asc):
-        bits.append(f"↑{round(asc)} m")
-    # Quilojaules + faixa de intensidade do censo (De boa…Insano).
-    kj = (st or {}).get("energyKj")
-    if isinstance(kj, (int, float)) and math.isfinite(kj):
-        bits.append(f"{round(kj)} kJ ({_intensity_for(float(kj))})")
-    desc = (" · ".join(bits) + " — " if bits else "") + \
+    # km · subida · quilojaules + faixa de intensidade do censo (De boa…Insano).
+    line = _saved_route_facts(r)["line"]
+    desc = (line + " — " if line else "") + \
         "rota traçada no amora, o mapa do Pedal Hidrográfico"
     target = f"/#rt={slug}"
     page_url = f"{SITE_URL}route/{slug}"
     og_img = f"{page_url}/og.png"
     esc = _html.escape
+    try:
+        md = _render_route_markdown(slug, r)
+    except Exception:  # noqa: BLE001 — o conteúdo é best-effort; o link, não
+        app.logger.exception("[route] conteúdo sem JS falhou pra %s", slug)
+        md = None
+    if md and _wants_markdown(request):
+        return _markdown_response(md)
+    body = (mdhtml.md_to_html(md, rewrite_url=_site_relative) if md else
+            f"<h1>{esc(name)}</h1>\n<p>{esc(desc)}</p>")
+    # Sem <meta http-equiv="refresh">: quem não roda JS (crawlers, leitores de
+    # página dos LLMs) fica na página e lê a rota; o app precisa de JS de
+    # qualquer jeito, então só o script redireciona.
     page = f"""<!doctype html>
 <html lang="pt-BR"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{esc(name)} · amora</title>
 <link rel="canonical" href="{esc(page_url)}">
+<link rel="alternate" type="text/markdown" href="{esc(page_url)}?format=md">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="amora · Pedal Hidrográfico">
 <meta property="og:title" content="{esc(name)}">
@@ -3580,14 +3801,18 @@ def route_deep_link(slug):
 <meta property="og:image:height" content="{_ROUTE_OG_H}">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="description" content="{esc(desc)}">
-<meta http-equiv="refresh" content="0;url={esc(target)}">
+<style>
+body {{ font: 16px/1.6 system-ui, sans-serif; max-width: 720px; margin: 0 auto; padding: 24px 18px 48px; }}
+img {{ max-width: 100%; height: auto; border-radius: 8px; }}
+</style>
 </head><body>
-<p>Abrindo a rota <strong>{esc(name)}</strong> no amora…
-<a href="{esc(target)}">clique aqui se não abrir sozinho</a>.</p>
 <script>location.replace({json.dumps(target)});</script>
+<article>
+{body}
+</article>
 </body></html>"""
-    return Response(page, mimetype="text/html",
-                    headers={"Cache-Control": "no-cache"})
+    return _negotiated(Response(page, mimetype="text/html",
+                                headers={"Cache-Control": "no-cache"}))
 
 
 # ── Imagem OG da rota (preview de link em WhatsApp/redes) ────────────────
@@ -4146,6 +4371,8 @@ def _build_feed_xml(tours_text):
         title = _tour_display_title(g, t)
 
         ig = g.value(t, PH.linkInstagram)
+        if ig and not mdhtml.safe_url(str(ig)):
+            ig = None   # só http(s) vira link (o catálogo é escrito sem auth)
         # Sem post no IG, o link do item é a página canônica do passeio.
         _lslug = str(t)[len(PAS_NS):] if str(t).startswith(PAS_NS) else None
         link = (str(ig) if ig
@@ -4178,7 +4405,7 @@ def _build_feed_xml(tours_text):
         # rota + energia, métricas, elaboradores.
         html = []
         img = g.value(t, SCHEMA.image)
-        if img:
+        if img and mdhtml.safe_url(str(img)):
             html.append(f'<p><img src="{attr_escape(str(img))}" '
                         f'alt="{attr_escape(title)}" style="max-width:100%"/></p>')
         narrative = g.value(t, DCT.description)
@@ -4189,7 +4416,7 @@ def _build_feed_xml(tours_text):
         route_ref = g.value(t, PH.linkRoute)
         route_url = g.value(route_ref, SCHEMA.url) if route_ref else None
         route_block = []
-        if route_url:
+        if route_url and mdhtml.safe_url(str(route_url)):
             u = escape(str(route_url))
             route_block.append(f'Rota: <a href="{attr_escape(str(route_url))}">{u}</a>')
         if energy_line:
@@ -4281,10 +4508,11 @@ def get_feed():
 
 
 # Sitemap dinâmico (sobrepõe o web/sitemap.xml estático, que fica como
-# fallback de host estático): home + uma URL por passeio (/passeio/<slug
-# legível ou slug8> — o app abre o modal da rota). Passeios com data nas últimas
-# 48 h ganham o bloco <news:news> do Google News; o cache expira em 1 h
-# pra essa janela deslizar mesmo sem mudança no tours.ttl.
+# fallback de host estático): home, Memória, séries, vocabulário + uma URL por
+# passeio (/passeio/<slug legível ou slug8> — o app abre o modal da rota).
+# Passeios com data nas últimas 48 h ganham o bloco <news:news> do Google
+# News; o cache expira em 1 h pra essa janela deslizar mesmo sem mudança no
+# tours.ttl.
 _NEWS_WINDOW_S = 48 * 3600
 _sitemap_cache = {"digest": None, "xml": None, "built_at": None}
 
@@ -4297,8 +4525,14 @@ def _build_sitemap_xml(tours_text):
     DCT = Namespace("http://purl.org/dc/terms/")
 
     tours = []
+    series = []
     if tours_text:
         g = Graph().parse(data=tours_text, format="turtle")
+        # Séries (schema:EventSeries) com ao menos uma edição — /serie/<código>.
+        for s in set(g.subjects(RDF.type, Namespace(SCHEMA_NS).EventSeries)):
+            if str(s).startswith(SER_NS) and (None, PH.inEventSeries, s) in g:
+                series.append(str(s)[len(SER_NS):])
+        series.sort()
         for t in g.subjects(RDF.type, PH.Tour):
             date = g.value(t, DCT.date)
             try:
@@ -4327,6 +4561,18 @@ def _build_sitemap_xml(tours_text):
         memoria.append(f"    <lastmod>{newest.date().isoformat()}</lastmod>")
     memoria += ["    <changefreq>weekly</changefreq>", "  </url>"]
     urls.append("\n".join(memoria))
+    # Séries (a lista de edições muda junto com o catálogo) e o vocabulário.
+    # Galeria, pessoas e censo ficam de fora: são noindex por decisão.
+    from urllib.parse import quote
+    for code in series:
+        lines = ["  <url>",
+                 f"    <loc>{escape(SITE_URL)}serie/{escape(quote(code, safe=''))}</loc>"]
+        if newest:
+            lines.append(f"    <lastmod>{newest.date().isoformat()}</lastmod>")
+        lines += ["    <changefreq>weekly</changefreq>", "  </url>"]
+        urls.append("\n".join(lines))
+    urls.append(f"  <url>\n    <loc>{escape(SITE_URL)}terms</loc>\n"
+                "    <changefreq>monthly</changefreq>\n  </url>")
     for dt, tour_id, title in tours:
         lines = ["  <url>",
                  f"    <loc>{escape(f'{SITE_URL}passeio/{tour_id}')}</loc>"]
@@ -4431,7 +4677,7 @@ def _render_tour_index(tour_id):
     d = _tour_facts(g, t)
     title, page_url, dt, date_label = d["title"], d["page_url"], d["dt"], d["date_label"]
     narrative, img_url, energy_line = d["narrative"], d["img_url"], d["energy_line"]
-    route_url, ig_url, authors = d["route_url"], d["ig_url"], d["author_names"]
+    authors = d["author_names"]
 
     # Descrição pra <meta>/OG: primeiro parágrafo da narrativa (truncado),
     # senão um resumo do que houver.
@@ -4443,37 +4689,12 @@ def _render_tour_index(tour_id):
         meta_desc = ("Passeio do Pedal Hidrográfico"
                      + (" — " + " · ".join(bits) if bits else "."))
 
-    # <article> que o crawler lê (e quem está sem JS).
-    a = ['<article id="tour-article" class="tour-article">',
-         f"  <h1>{h(title)}</h1>"]
-    meta_bits = []
-    if dt:
-        meta_bits.append(f'<time datetime="{h(dt.isoformat())}">{h(date_label)}</time>')
-    meta_bits.append("Pedal Hidrográfico")
-    a.append('  <p class="tour-article-meta">' + " · ".join(meta_bits) + "</p>")
-    if img_url:
-        # Variante web da arte (~300 KB; o original chega a 3–10 MB), lazy:
-        # com JS o app tira o <article> e mostra a mesma variante no modal.
-        a.append(f"  <figure>{_art_img_html(img_url, title)}</figure>")
-    for para in re.split(r"\r?\n+", narrative):
-        if para.strip():
-            a.append(f"  <p>{h(para.strip())}</p>")
-    facts = []
-    if route_url:
-        facts.append(f'Rota: <a href="{h(str(route_url))}">{h(str(route_url))}</a>')
-    if energy_line:
-        facts.append(h(energy_line))
-    if ig_url:
-        facts.append(f'<a href="{h(str(ig_url))}">Post no Instagram</a>')
-    if facts:
-        a.append("  <p>" + "<br/>".join(facts) + "</p>")
-    if authors:
-        a.append(f"  <p>Alguns elaboradores: {h(', '.join(authors))}</p>")
-    a.append(f'  <p><a href="{h(SITE_URL)}">← mapa do Pedal Hidrográfico</a> · '
-             f'<a href="{h(SITE_URL)}memoria#{h(tour_id)}">este passeio na '
-             "Memória Hidrográfica</a></p>")
-    a.append("</article>")
-    article = "\n".join(a)
+    # <article> que o crawler lê (e quem está sem JS): o Markdown do passeio
+    # (narrativa, ficha, fotos, dados — o mesmo da representação de agente),
+    # convertido. O id é contrato com o app.js, que o tira do fluxo antes de
+    # criar o mapa e, em passeio sem rota, o mostra numa folha.
+    article = _ssr_article(_render_tour_markdown(tour_id), "tour-article",
+                           "tour-article ssr-content", kind="tour")
 
     jsonld = {
         "@context": "https://schema.org",
@@ -4499,18 +4720,7 @@ def _render_tour_index(tour_id):
         jsonld["description"] = meta_desc
     if authors:
         jsonld["author"] = [{"@type": "Person", "name": n} for n in authors]
-    # Escapa &/</> pra um tour com "</script>" no título/narrativa não
-    # fechar a tag e injetar markup no <head> (crawlers/preview bots não
-    # têm o CSP da página pra segurar isso). & primeiro, senão o <
-    # e > que a gente escreve depois seriam re-escapados.
-    jsonld_body = (json.dumps(jsonld, ensure_ascii=False)
-                   .replace("&", "\\u0026")
-                   .replace("<", "\\u003c")
-                   .replace(">", "\\u003e"))
-    jsonld_tag = ('<script type="application/ld+json">'
-                  + jsonld_body + "</script>")
-
-    html_text = (WEB / "index.html").read_text(encoding="utf-8")
+    html_text = _shell("index.html")[1]
     # Servido também em /passeio/<slug> (não só na raiz): o <base> faz as
     # URLs relativas do app (./app.js, ./data/…) resolverem na raiz do host,
     # como em pessoas.html. CSP tem base-uri 'self'; os href="#" do app são
@@ -4556,9 +4766,11 @@ def _render_tour_index(tour_id):
             html_text = re.sub(
                 r'\s*<meta property="og:image:(?:width|height)" content="[^"]*" />',
                 "", html_text)
-    html_text = html_text.replace("</head>", "    " + jsonld_tag + "\n  </head>", 1)
-    html_text = html_text.replace("</body>", article + "\n</body>", 1)
-    return html_text
+    # O artigo entra no marcador, no TOPO do <body>: quem lê o HTML em ordem
+    # (conversores HTML→texto dos LLMs) chega no conteúdo antes do chrome do
+    # app. Visualmente ele segue na 3ª linha do grid do body.
+    return _ssr_inject(html_text, article,
+                       _alternate_links(page_url) + [_jsonld_tag(jsonld)])
 
 
 # ── Markdown pra agentes: fatos de passeio + renderers ─────────────────────
@@ -4699,11 +4911,225 @@ def _tour_md_meta_line(d):
     return " · ".join(bits)
 
 
+# ── Mídia: índice do catálogo + legendas (compartilhados pelos renderers) ──
+
+_media_idx = {"ref": None, "value": None, "building": False, "gen": 0}
+_media_idx_lock = threading.Lock()
+
+
+def _build_media_index(cat):
+    """Resumo da mídia do catálogo `cat` (ver _media_index) — autocontido: só
+    textos e números, nada que aponte pro grafo."""
+    from collections import defaultdict
+    from rdflib import Namespace, RDF, URIRef
+    PH = Namespace(PH_NS)
+    SCHEMA = Namespace(SCHEMA_NS)
+    PROV = Namespace("http://www.w3.org/ns/prov#")
+    videos = set(cat.subjects(RDF.type, PH.MotionImage))
+    media = set(cat.subjects(RDF.type, PH.StillImage)) | videos
+    by_tour, by_list = defaultdict(list), defaultdict(list)
+    people = defaultdict(lambda: [0, 0])
+    tour_lists = defaultdict(lambda: defaultdict(int))
+    counts = [0, 0]
+    for m in media:
+        iri = str(m)
+        if not iri.startswith(MED_NS):
+            continue
+        video = m in videos
+        counts[video] += 1
+        rec = (_media_instant(cat, m), iri[len(MED_NS):], video)
+        tour = cat.value(m, PH.capturedDuring)
+        if tour is not None:
+            by_tour[str(tour)].append(rec)
+        for p in cat.objects(m, PROV.wasAttributedTo):
+            people[str(p)][video] += 1
+        for lst in cat.objects(m, SCHEMA.isPartOf):
+            if str(lst).startswith(LST_NS):
+                by_list[str(lst)].append(rec)
+                if tour is not None:
+                    tour_lists[str(tour)][str(lst)] += 1
+
+    def n_videos(recs):
+        return sum(1 for r in recs if r[2])
+
+    def list_name(l):
+        return str(cat.value(URIRef(l), SCHEMA.name) or l[len(LST_NS):])
+
+    tours = {}
+    for t_iri, recs in by_tour.items():
+        recs.sort(key=lambda r: (r[0] is None, r[0] or 0.0, r[1]))   # cronológica
+        tours[t_iri] = {
+            "videos": n_videos(recs), "stills": len(recs) - n_videos(recs),
+            # A lista "Padrão" é o filtro default do mapa, não um álbum do passeio.
+            "albums": sorted(((list_name(l), l[len(LST_NS):], n)
+                              for l, n in tour_lists[t_iri].items()
+                              if l != LST_NS + "padrao"),
+                             key=lambda a: (a[0].casefold(), a[1])),
+            "strip": [_media_md_thumb(cat, h, video, with_tour=False)
+                      for _, h, video in recs[:TOUR_MD_MEDIA_STRIP]],
+        }
+    albums = [{"slug": l[len(LST_NS):], "name": list_name(l),
+               "videos": n_videos(recs), "stills": len(recs) - n_videos(recs),
+               "newest": max((r[0] for r in recs if r[0] is not None), default=0.0)}
+              for l, recs in by_list.items()]
+    return {"stills": counts[0], "videos": counts[1], "tours": tours,
+            "albums": albums, "people": {k: tuple(v) for k, v in people.items()}}
+
+
+def _refresh_media_index():
+    try:
+        cat = _load_catalog()
+        value = _build_media_index(cat)
+        with _media_idx_lock:
+            _media_idx["ref"], _media_idx["value"] = weakref.ref(cat), value
+            _media_idx["gen"] += 1
+        return value
+    finally:
+        with _media_idx_lock:
+            _media_idx["building"] = False
+
+
+def _media_index(wait=False):
+    """Resumo da mídia do catálogo — o que as páginas QUENTES (home, passeio,
+    galeria, pessoas, censo) consultam em vez de varrer as ~10 mil mídias:
+      stills / videos — totais do acervo;
+      tours[iri do passeio] — {stills, videos, albums: [(nome, slug, nº)],
+        strip: as primeiras miniaturas, já em Markdown};
+      albums — [{slug, name, stills, videos, newest}], todas as listas;
+      people[iri da pessoa] — (fotos, vídeos) que ela assina.
+
+    NUNCA espera o catálogo: refazer o snapshot depois de uma gravação leva
+    segundos (medido: 2,6 s com 167 mil triples; ~9 s o parse de um processo
+    recém-iniciado) e a home e a página do passeio são o que abre no meio do
+    pedal, com gente subindo foto — antes eram arquivo estático. Enquanto o
+    snapshot não é o mesmo do resumo, sai o resumo anterior (segundos
+    desatualizado) e uma thread — uma só — refaz os dois. Antes do primeiro
+    resumo do processo sai None: quem chama monta a página sem a parte de
+    mídia (o warm-up do boot já o deixa pronto). `wait=True` (pedido de
+    agente, em Markdown) espera esse primeiro."""
+    snap = _catalog_cache   # espiada sem lock: None = invalidado por uma gravação
+    with _media_idx_lock:
+        ref, value = _media_idx["ref"], _media_idx["value"]
+        if (value is not None and snap is not None
+                and ref is not None and ref() is snap):
+            return value
+        if value is not None or not wait:
+            if not _media_idx["building"]:
+                _media_idx["building"] = True
+                threading.Thread(target=_refresh_media_index, name="media-index",
+                                 daemon=True).start()
+            return value
+        _media_idx["building"] = True
+    return _refresh_media_index()
+
+
+def _media_gen():
+    """Geração do resumo de mídia (0 = ainda não há) — token dos memos das
+    páginas que o usam: resumo novo, página refeita."""
+    return _media_idx["gen"]
+
+
+def _count_media(stills, videos):
+    """"64 fotos e 3 vídeos" / "1 foto" / "nenhuma mídia"."""
+    bits = [f"{c} {w}{'s' if c != 1 else ''}"
+            for c, w in ((stills, "foto"), (videos, "vídeo")) if c]
+    return " e ".join(bits) if bits else "nenhuma mídia"
+
+
+def _media_when(cat, m):
+    """Data de uma mídia como texto — "06/10/2026 14:32" (hora de verdade),
+    "06/10/2026 ≈14:32" (hora estimada pela posição) ou "06/10/2026" (só o
+    dia). None sem data própria. A hora nunca é inventada."""
+    from datetime import date
+    from rdflib import Namespace
+    d = cat.value(m, Namespace("http://purl.org/dc/terms/").date)
+    v = d.toPython() if d is not None else None
+    if isinstance(v, datetime):
+        return v.strftime("%d/%m/%Y %H:%M")
+    if isinstance(v, date):
+        est = cat.value(m, Namespace(PH_NS).estimatedCaptureTime)
+        ev = est.toPython() if est is not None else None
+        return v.strftime("%d/%m/%Y") + (
+            f" ≈{ev.strftime('%H:%M')}" if isinstance(ev, datetime) else "")
+    return None
+
+
+def _media_caption(cat, m, video, with_tour=True, with_when=True):
+    """Legenda de uma mídia — "Foto de Fulana · PH 115: Adutora de Cotia ·
+    06/10/2026 14:32". As mídias não têm legenda escrita: é o que o catálogo
+    sabe delas (tipo, autoria, passeio, data)."""
+    from rdflib import Namespace, RDF
+    PH = Namespace(PH_NS)
+    authors = sorted(_person_name(cat, p) for p in cat.objects(
+        m, Namespace("http://www.w3.org/ns/prov#").wasAttributedTo))
+    bits = [("Vídeo" if video else "Foto")
+            + (f" de {', '.join(authors)}" if authors else "")]
+    if with_tour:
+        tour = cat.value(m, PH.capturedDuring)
+        if tour is not None and (tour, RDF.type, PH.Tour) in cat:
+            bits.append(_tour_display_title(cat, tour))
+    when = _media_when(cat, m) if with_when else None
+    if when:
+        bits.append(when)
+    return _md_inline(" · ".join(bits))
+
+
+def _media_thumb_url(cat, m, h, video):
+    """URL da miniatura de uma mídia (vídeo sem miniatura: None)."""
+    from rdflib import Namespace
+    if not video:
+        return f"{SITE_URL}photos/{h}/thumb.jpg"
+    thumb = str(cat.value(m, Namespace(SCHEMA_NS).thumbnail) or "")
+    if not thumb or ".." in thumb or thumb.startswith("/"):
+        return None
+    return f"{SITE_URL}clips/{thumb}"
+
+
+def _media_md_thumb(cat, h, video, **caption_opts):
+    """Miniatura linkada pra página da mídia, em Markdown — ou, vídeo sem
+    miniatura, só o link com a legenda."""
+    from rdflib import URIRef
+    m = URIRef(MED_NS + h)
+    cap = mdhtml.md_escape(_media_caption(cat, m, video, **caption_opts))
+    thumb = _media_thumb_url(cat, m, h, video)
+    label = f"![{cap}]({thumb})" if thumb else cap
+    return f"[{label}]({SITE_URL}midia/{h})"
+
+
+TOUR_MD_MEDIA_STRIP = 12   # miniaturas na página do passeio
+
+
+def _tour_media_md(tour_iri):
+    """Seção "Fotos e vídeos" da página do passeio: quantas mídias, os álbuns
+    em que estão e uma faixa com as primeiras (em ordem cronológica). [] se o
+    passeio não tem mídia no acervo. Só lê o resumo (_media_index) — nunca
+    espera o catálogo."""
+    from urllib.parse import quote
+    idx = _media_index()
+    t = idx["tours"].get(tour_iri) if idx else None
+    if not t:
+        return []
+    total = t["stills"] + t["videos"]
+    out = ["## Fotos e vídeos", "",
+           f"{_count_media(t['stills'], t['videos'])} deste passeio no acervo — cada "
+           "uma tem a sua página, com data, local, autoria e licença."]
+    if t["albums"]:
+        out += ["", "Álbuns: " + " · ".join(
+            f"[{_md_label(nm)}]({SITE_URL}imagens/lista/{quote(slug, safe='')}) ({n})"
+            for nm, slug, n in t["albums"])]
+    out += ["", " ".join(t["strip"])]
+    if total > len(t["strip"]):
+        out += ["", f"… e mais {total - len(t['strip'])} — nos álbuns acima e na "
+                    f"[galeria]({SITE_URL}imagens.html)."]
+    return out + [""]
+
+
 def _render_tour_markdown(tour_id):
-    """A página do passeio em Markdown (Accept: text/markdown): o mesmo
-    conteúdo do <article> SSR'ado, mais a ficha completa (série, energias,
-    horários, participantes) e os ponteiros pros dados — sem o chrome do app.
-    None se o passeio não existe."""
+    """A página do passeio em Markdown: narrativa, ficha completa (série,
+    energias, horários, participantes), as fotos e os ponteiros pros dados —
+    sem o chrome do app. É o que sai em `Accept: text/markdown` E, convertido,
+    o <article> que o HTML da página carrega pra quem não roda JS
+    (_render_tour_index). None se o passeio não existe."""
     from rdflib import Namespace, RDF, URIRef
     g = _tours_graph()
     t = URIRef(PAS_NS + tour_id)
@@ -4714,7 +5140,9 @@ def _render_tour_markdown(tour_id):
     out = [f"# {title}", "",
            " · ".join(b for b in (d["date_label"], "Pedal Hidrográfico") if b), ""]
     if d["img_url"]:
-        out += [f"![Arte do chamado — {title}]({d['img_url']})", ""]
+        # A variante web da arte (~300 KB) — o original chega a 3–10 MB.
+        art = _art_variant_url(d["img_url"], "web", absolute=True) or d["img_url"]
+        out += [f"![Arte do chamado — {mdhtml.md_escape(title)}]({art})", ""]
     for para in d["paragraphs"]:
         out += [para, ""]
     facts = []
@@ -4752,6 +5180,10 @@ def _render_tour_markdown(tour_id):
         facts.append(f"- **Alguns elaboradores:** {names}")
     if facts:
         out += ["## Ficha", "", *facts, ""]
+    try:
+        out += _tour_media_md(d["iri"])
+    except Exception as e:  # noqa: BLE001 — a faixa de fotos é best-effort
+        print(f"[tour-md] mídias de {tour_id} falharam: {e}")
     out += ["## Dados", "",
             f"- **IRI:** `{d['iri']}`",
             f"- **RDF (Turtle):** [{d['page_url']}?format=ttl]({d['page_url']}?format=ttl)"
@@ -4762,37 +5194,198 @@ def _render_tour_markdown(tour_id):
 
 
 HOME_MD_RECENT_TOURS = 20
+HOME_MD_SAVED_ROUTES = 30
+HOME_MD_ALBUMS = 40
+
+
+def _fmt_km(meters):
+    return f"{meters / 1000:.1f} km".replace(".", ",")
+
+
+def _saved_route_facts(r):
+    """Fatos de uma rota salva que a listagem e a página dela mostram:
+    distância (da geometria), subida e energia (gravadas pelo editor no save)."""
+    _, dist = _route_preview_and_dist(r.get("state") or {})
+    st = r.get("stats") if isinstance(r.get("stats"), dict) else {}
+
+    def num(k):
+        v = st.get(k)
+        return v if isinstance(v, (int, float)) and math.isfinite(v) else None
+    asc, kj = num("ascentM"), num("energyKj")
+    bits = []
+    if dist:
+        bits.append(_fmt_km(dist))
+    if asc is not None:
+        bits.append(f"↑{round(asc)} m")
+    if kj is not None:
+        bits.append(f"{round(kj)} kJ ({_intensity_for(float(kj))})")
+    return {"dist": dist, "ascent": asc, "kj": kj, "line": " · ".join(bits)}
+
+
+def _saved_routes_md_items(limit):
+    """(linhas de lista das rotas salvas mais recentes, total). O catálogo de
+    rotas mora no store (uma leitura do bucket por chamada) — quem chama
+    memoiza com TTL."""
+    routes = [(rid, r) for rid, r in _read_saved_routes().get("routes", {}).items()
+              if isinstance(r, dict) and isinstance(r.get("state"), dict)]
+    routes.sort(key=lambda kv: kv[1].get("updated") or kv[1].get("created") or "",
+                reverse=True)
+    items = []
+    for _, r in routes[:limit]:
+        slug = _entry_slug(r)
+        if not slug:
+            continue
+        line = _saved_route_facts(r)["line"]
+        items.append(f"- [{_md_label(r.get('name') or slug)}]({SITE_URL}route/{slug})"
+                     + (f" — {line}" if line else ""))
+    return items, len(routes)
+
+
+def _home_sections_md():
+    """O acervo em listas — passeios recentes, séries, fotos e álbuns, rotas
+    salvas, pessoas —, cada item linkando pra sua página. É o miolo da home
+    nas duas representações: depois do llms.txt em Markdown (agentes) e
+    depois da apresentação em HTML (crawlers e quem está sem JS)."""
+    from urllib.parse import quote
+    from rdflib import Namespace, RDF, URIRef
+    PH = Namespace(PH_NS)
+    SCHEMA = Namespace(SCHEMA_NS)
+    DCT = Namespace("http://purl.org/dc/terms/")
+    out = ["## Passeios recentes", ""]
+    try:
+        tours = _tours_sorted()
+    except Exception as e:  # noqa: BLE001
+        print(f"[home] catálogo de passeios falhou: {e}")
+        tours = []
+    for d in tours[:HOME_MD_RECENT_TOURS]:
+        out.append(f"- [{_md_label(d['title'])}]({d['page_url']}) — {_tour_md_meta_line(d)}")
+    if tours:
+        out += ["", f"Todos os {len(tours)} passeios, com a narrativa de cada um: "
+                    f"[Memória Hidrográfica]({SITE_URL}memoria)."]
+    else:
+        out.append("(catálogo de passeios indisponível no momento)")
+
+    try:
+        g = _tours_graph()
+        series = []
+        for s in set(g.subjects(RDF.type, SCHEMA.EventSeries)):
+            if not str(s).startswith(SER_NS):
+                continue
+            n = sum(1 for _ in g.subjects(PH.inEventSeries, s))
+            series.append((n, str(s)[len(SER_NS):], str(g.value(s, DCT.title) or "")))
+        series.sort(key=lambda x: (-x[0], x[1]))
+        if series:
+            out += ["", "## Séries de passeios", ""]
+            for n, code, title in series:
+                out.append(f"- [{_md_label(code + (' — ' + title if title else ''))}]"
+                           f"({SITE_URL}serie/{quote(code, safe='')}) — "
+                           f"{n} ediç{'ões' if n != 1 else 'ão'}")
+    except Exception as e:  # noqa: BLE001
+        print(f"[home] séries falharam: {e}")
+
+    try:
+        idx = _media_index() or {"stills": 0, "videos": 0, "albums": []}
+        total = (f"O acervo tem {_count_media(idx['stills'], idx['videos'])}, quase "
+                 "todos ligados a um passeio" if idx["stills"] or idx["videos"]
+                 else "As fotos e os vídeos do acervo são ligados a um passeio")
+        out += ["", "## Fotos e vídeos", "",
+                f"{total} (a página de cada passeio mostra os seus). "
+                f"[Galeria]({SITE_URL}imagens.html) — álbuns e mídias por passeio."]
+        albums = sorted((a for a in idx["albums"] if a["slug"] != "padrao"),
+                        key=lambda a: (-a["newest"], a["name"]))
+        if albums:
+            out += ["", "Álbuns mais recentes:", ""]
+            for a in albums[:HOME_MD_ALBUMS]:
+                out.append(f"- [{_md_label(a['name'])}]({SITE_URL}imagens/lista/"
+                           f"{quote(a['slug'], safe='')}) — "
+                           f"{_count_media(a['stills'], a['videos'])}")
+    except Exception as e:  # noqa: BLE001
+        print(f"[home] mídia falhou: {e}")
+
+    try:
+        items, total = _memo("home-saved-routes", (),
+                             lambda: _saved_routes_md_items(HOME_MD_SAVED_ROUTES), ttl=120)
+        if items:
+            out += ["", "## Rotas traçadas", "",
+                    "Rotas salvas no editor de traçado do amora (as mais recentes "
+                    f"de {total}) — cada uma abre no mapa e traz distância, subida e "
+                    "energia estimada:", "", *items]
+    except Exception as e:  # noqa: BLE001
+        print(f"[home] rotas salvas falharam: {e}")
+
+    out += ["", "## Pessoas", "",
+            f"[Quem aparece no acervo]({SITE_URL}pessoas.html) — quem elaborou os "
+            "passeios e assinou as fotos.", ""]
+    return "\n".join(out)
+
+
+def _home_sections_cached():
+    # Passeio novo aparece na hora (o grafo de passeios é a versão); o resto
+    # (mídia, rotas salvas) em até 2 min.
+    return _memo("home-sections", (_tours_graph(),), _home_sections_md, ttl=120,
+                 token=_media_gen())
 
 
 def _render_home_markdown():
     """A home em Markdown (Accept: text/markdown em `/`): o llms.txt — o guia
-    do site pra agentes, que já é Markdown — mais a lista dos passeios mais
-    recentes, cada um linkando pra sua página (que também negocia Markdown).
-    É o que um agente lê ao chegar aqui, em vez do shell do app (mapa +
-    modais, vazio de conteúdo sem JS)."""
+    do site pra agentes, que já é Markdown — mais o acervo em listas (ver
+    _home_sections_md), cada item linkando pra sua página (que também negocia
+    Markdown)."""
     guide = (WEB / "llms.txt").read_text(encoding="utf-8").strip()
-    try:
-        tours = _tours_sorted()
-    except Exception as e:  # noqa: BLE001
-        print(f"[home-md] catálogo de passeios falhou: {e}")
-        tours = []
-    out = [guide, "", "## Passeios recentes", ""]
-    for d in tours[:HOME_MD_RECENT_TOURS]:
-        out.append(f"- [{_md_inline(d['title'])}]({d['page_url']}) — {_tour_md_meta_line(d)}")
-    if tours:
-        out += ["", f"Todos os {len(tours)} passeios, com narrativa: "
-                    f"[Memória Hidrográfica]({SITE_URL}memoria) "
-                    "(também em Markdown com `Accept: text/markdown`)."]
-    else:
-        out.append("(catálogo de passeios indisponível no momento)")
-    out.append("")
-    return "\n".join(out)
+    return guide + "\n\n" + _home_sections_cached()
 
 
-def _render_person_markdown(slug):
+_HOME_INTRO_MD = """# amora — o mapa do Pedal Hidrográfico
+
+O amora é o mapa do Pedal Hidrográfico, coletivo de ciclismo urbano da Grande
+São Paulo que pedala seguindo rios, córregos e divisores de água. Aqui ficam
+as rotas de todos os passeios, as fotos e os vídeos feitos neles, um editor
+pra traçar rotas (com exportação em GPX) e uma simulação da energia que cada
+pedalada pede, em quilojaules. Tudo é publicado como dados abertos.
+"""
+
+_HOME_DATA_MD = f"""## Dados abertos
+
+Todo o acervo é publicado em RDF/Turtle e cada página responde também em
+Markdown (`?format=md`) e, quando descreve uma coisa do acervo, em Turtle
+(`?format=ttl`).
+
+- [llms.txt]({SITE_URL}llms.txt) — guia do site pra agentes e LLMs
+- [Manifesto VoID]({SITE_URL}data/data_graphs.ttl) — todos os dumps RDF
+- [Vocabulário ph:]({SITE_URL}terms) — as classes e propriedades do acervo
+- [Feed RSS dos passeios]({SITE_URL}feed.xml)
+- [openapi.json]({SITE_URL}openapi.json) — a API HTTP de leitura
+- [Novidades do amora]({SITE_URL}changelog.html) · [Privacidade]({SITE_URL}privacidade.html)
+"""
+
+
+def _render_home_html():
+    """index.html com o conteúdo da home pra quem não roda JS: a
+    apresentação + o acervo em listas (_home_sections_md) + os ponteiros pros
+    dados. O bloco usa o MESMO id do artigo do passeio (#tour-article): é o
+    que o app.js — inclusive um app.js velho no cache HTTP de quem não tem
+    service worker — já tira do fluxo antes de criar o mapa; com outro id, o
+    bloco entraria no grid do body e espremeria o mapa. O que os distingue é
+    o data-ssr ("home" × "tour"): esta resposta é também o shell que o
+    service worker pré-cacheia e serve em /passeio/<slug>, e lá o app não
+    pode tomar o bloco da home pelo artigo do passeio."""
+    version, shell = _shell("index.html")
+
+    def build():
+        md = _HOME_INTRO_MD + "\n" + _home_sections_md() + "\n" + _HOME_DATA_MD
+        return _ssr_inject(
+            shell, _ssr_article(md, "tour-article", "tour-article ssr-content",
+                                kind="home"),
+            _alternate_links(SITE_URL, turtle=False))
+    return _memo(("home-html", version), (_tours_graph(),), build, ttl=120,
+                 token=_media_gen())
+
+
+def _render_person_markdown(slug, wait=True):
     """Ficha da pessoa em Markdown: nome/apelido/links (identities.ttl), os
-    passeios que elaborou (tours.ttl) e quantas mídias assinou (images.ttl,
-    via o catálogo cacheado). None se a pessoa não existe."""
+    passeios que elaborou (tours.ttl) e quantas mídias assinou (o resumo de
+    mídia — `wait=False`, do HTML, não espera o primeiro: sai sem a seção).
+    None se a pessoa não existe."""
     from rdflib import Namespace, RDF, RDFS, URIRef
     SCHEMA = Namespace("https://schema.org/")
     PROV = Namespace("http://www.w3.org/ns/prov#")
@@ -4818,80 +5411,180 @@ def _render_person_markdown(slug):
     tours.sort(key=lambda d: _tour_date_sort_key(d["dt"]), reverse=True)
     out += [f"## Passeios elaborados ({len(tours)})", ""]
     for d in tours:
-        out.append(f"- [{_md_inline(d['title'])}]({d['page_url']}) — {_tour_md_meta_line(d)}")
+        out.append(f"- [{_md_label(d['title'])}]({d['page_url']}) — {_tour_md_meta_line(d)}")
     if not tours:
         out.append("Nenhum passeio registrado com esta pessoa na elaboração.")
     try:
-        cat = _load_catalog()
-        signed = list(cat.subjects(PROV.wasAttributedTo, p))
-        stills = sum(1 for m in signed if (m, RDF.type, PH.StillImage) in cat)
-        videos = sum(1 for m in signed if (m, RDF.type, PH.MotionImage) in cat)
-        out += ["", "## Mídias", "",
-                f"Assinou {stills} foto{'s' if stills != 1 else ''} e {videos} "
-                f"vídeo{'s' if videos != 1 else ''} do acervo "
-                f"([galeria]({SITE_URL}imagens.html))."]
+        idx = _media_index(wait)
+        stills, videos = idx["people"].get(str(p), (0, 0)) if idx else (0, 0)
+        if idx:
+            out += ["", "## Mídias", "",
+                    f"Assinou {stills} foto{'s' if stills != 1 else ''} e {videos} "
+                    f"vídeo{'s' if videos != 1 else ''} do acervo "
+                    f"([galeria]({SITE_URL}imagens.html))."]
     except Exception as e:  # noqa: BLE001
         print(f"[person-md] contagem de mídias falhou pra {slug}: {e}")
     out += ["", "## Dados", "",
             f"- **IRI:** `{PES_NS}{slug}`",
             f"- **RDF (Turtle):** [{SITE_URL}pessoas/{slug}?format=ttl]"
             f"({SITE_URL}pessoas/{slug}?format=ttl) — ou `Accept: text/turtle` na mesma URL",
-            f"- [Página no app]({SITE_URL}pessoas/{slug})", ""]
+            f"- [Todas as pessoas do acervo]({SITE_URL}pessoas.html)", ""]
     return "\n".join(out)
 
 
-def _render_list_markdown(slug):
-    """Lista/álbum em Markdown: nome + membros (mídias com schema:isPartOf →
-    a lista), cada um linkando pra sua página e pro passeio em que foi
-    capturado. Lê o catálogo cacheado (lists + images + tours). None se a
-    lista não existe."""
+def _render_people_markdown(wait=True):
+    """Índice de pessoas em Markdown: cada pessoa do acervo com quantos
+    passeios elaborou e quantas mídias assina, linkando pra ficha dela."""
+    from rdflib import Namespace, RDF
+    SCHEMA = Namespace(SCHEMA_NS)
+    PROV = Namespace("http://www.w3.org/ns/prov#")
+    PH = Namespace(PH_NS)
+    g = _tours_graph()
+    signed = (_media_index(wait) or {}).get("people", {})
+    people = []
+    for p in set(g.subjects(RDF.type, SCHEMA.Person)):
+        if not str(p).startswith(PES_NS):
+            continue
+        n_tours = sum(1 for t in g.subjects(PROV.wasAttributedTo, p)
+                      if (t, RDF.type, PH.Tour) in g)
+        stills, videos = signed.get(str(p), (0, 0))
+        people.append((_person_name(g, p), str(p)[len(PES_NS):], n_tours, stills, videos))
+    people.sort(key=lambda x: (x[0].casefold(), x[1]))
+    n = len(people)
+    out = ["# Pessoas do Pedal Hidrográfico", "",
+           f"Quem aparece no acervo — {n} pessoa{'s' if n != 1 else ''}. Cada nome "
+           "leva à ficha da pessoa: os passeios que elaborou e as mídias que assina.", ""]
+    for name, slug, n_tours, stills, videos in people:
+        bits = []
+        if n_tours:
+            bits.append(f"{n_tours} passeio{'s' if n_tours != 1 else ''} "
+                        f"elaborado{'s' if n_tours != 1 else ''}")
+        if stills or videos:
+            bits.append(_count_media(stills, videos))
+        out.append(f"- [{_md_label(name)}]({SITE_URL}pessoas/{slug})"
+                   + (f" — {' · '.join(bits)}" if bits else ""))
+    if not people:
+        out.append("Nenhuma pessoa no catálogo.")
+    out += ["", "## Dados", "",
+            f"- [identities.ttl]({SITE_URL}data/identities.ttl) — todas as pessoas "
+            "(`schema:Person`) em RDF/Turtle",
+            f"- [Mapa do Pedal Hidrográfico]({SITE_URL})", ""]
+    return "\n".join(out)
+
+
+LIST_MD_MAX_MEDIA = 400   # álbum maior que isso: o resto fica no Turtle
+
+
+def _render_list_markdown(slug, n=None):
+    """Lista/álbum em Markdown: nome + as mídias (com schema:isPartOf → a
+    lista), na ordem canônica do álbum (_album_sequence — a mesma numeração
+    de /imagens/lista/<slug>/<n>), cada uma com a miniatura linkada pra sua
+    página, a data e o passeio. Com `n`, a n-ésima mídia vem em destaque antes
+    da lista. Lê o catálogo cacheado. None se a lista não existe."""
+    from urllib.parse import quote
     from rdflib import Namespace, RDF, URIRef
     SCHEMA = Namespace(SCHEMA_NS)
     PH = Namespace(PH_NS)
-    DCT = Namespace("http://purl.org/dc/terms/")
     cat = _load_catalog()
     lu = URIRef(LST_NS + slug)
     if (lu, None, None) not in cat:
         return None
     name = _md_inline(cat.value(lu, SCHEMA.name) or slug)
     desc = cat.value(lu, SCHEMA.description)
-    members = []
-    for m in cat.subjects(SCHEMA.isPartOf, lu):
-        if (m, RDF.type, PH.MotionImage) in cat:
-            kind = "vídeo"
-        elif (m, RDF.type, PH.StillImage) in cat:
-            kind = "foto"
-        else:
-            kind = "mídia"
-        local = str(m)[len(MED_NS):] if str(m).startswith(MED_NS) else str(m)
-        # Ordem pela data EFETIVA (só-o-dia e sem-data-com-passeio valem o
-        # fim do dia); o texto mostrado segue sendo o literal gravado.
-        members.append((str(cat.value(m, DCT.date) or ""), kind, local,
-                        cat.value(m, PH.capturedDuring), _media_instant(cat, m)))
-    members.sort(key=lambda x: (x[4] is not None, x[4] or 0.0, x[2]), reverse=True)
-    n = len(members)
+    seq = _album_sequence(cat, str(lu))
+    total = len(seq)
+    album_url = f"{SITE_URL}imagens/lista/{quote(slug, safe='')}"
+    videos = sum(1 for iri in seq if (URIRef(iri), RDF.type, PH.MotionImage) in cat)
     out = [f"# {name}", "",
-           f"Lista/álbum do acervo do Pedal Hidrográfico (`lst:{slug}`) · {n} "
-           f"mídia{'s' if n != 1 else ''}.", ""]
+           f"Álbum do acervo do Pedal Hidrográfico (`lst:{slug}`) · "
+           f"{_count_media(total - videos, videos)}.", ""]
     if desc:
         out += [str(desc).strip(), ""]
+
+    def is_video(m):
+        return (m, RDF.type, PH.MotionImage) in cat
+
+    if n and 1 <= n <= total:
+        m = URIRef(seq[n - 1])
+        h = seq[n - 1][len(MED_NS):]
+        out += [f"## Mídia {n} de {total}", "",
+                _media_md_thumb(cat, h, is_video(m)), "",
+                f"{_media_caption(cat, m, is_video(m))} — "
+                f"[página desta mídia]({SITE_URL}midia/{h}).", ""]
     out += ["## Mídias", ""]
-    for date, kind, local, tour, _inst in members:
-        line = f"- [{kind} {local}]({SITE_URL}midia/{local})"
-        if date:
-            line += f" — {date[:10]}"
+    for k, iri in enumerate(seq[:LIST_MD_MAX_MEDIA], 1):
+        m = URIRef(iri)
+        h = iri[len(MED_NS):]
+        video = is_video(m)
+        line = (f"- {_media_md_thumb(cat, h, video, with_tour=False, with_when=False)} "
+                f"{k}. {_media_caption(cat, m, video, with_tour=False)}")
+        tour = cat.value(m, PH.capturedDuring)
         if tour is not None and (tour, RDF.type, PH.Tour) in cat:
             tid = str(tour)[len(PAS_NS):] if str(tour).startswith(PAS_NS) else str(tour)
-            line += (f" · [{_md_inline(_tour_display_title(cat, tour))}]"
+            line += (f" · [{_md_label(_tour_display_title(cat, tour))}]"
                      f"({SITE_URL}passeio/{_tour_pretty_of(cat, tour) or tid})")
         out.append(line)
-    if not members:
+    if not seq:
         out.append("Lista vazia.")
+    elif total > LIST_MD_MAX_MEDIA:
+        out += ["", f"… e mais {total - LIST_MD_MAX_MEDIA} mídias — a lista completa "
+                    "está na representação Turtle (abaixo)."]
     out += ["", "## Dados", "",
             f"- **IRI:** `{LST_NS}{slug}`",
             f"- **RDF (Turtle):** [{SITE_URL}listas/{slug}?format=ttl]"
             f"({SITE_URL}listas/{slug}?format=ttl) — ou `Accept: text/turtle` na mesma URL",
-            f"- [Álbum na galeria]({SITE_URL}imagens/lista/{slug})", ""]
+            f"- [Este álbum na galeria]({album_url}) · "
+            f"[todos os álbuns]({SITE_URL}imagens.html)", ""]
+    return "\n".join(out)
+
+
+def _render_gallery_markdown(wait=True):
+    """Índice da galeria em Markdown: os totais do acervo de mídia, os álbuns
+    e as mídias por passeio — o caminho até cada foto sem rodar o app. Só lê
+    o resumo (_media_index) e o grafo de passeios."""
+    from urllib.parse import quote
+    from rdflib import Namespace, RDF, URIRef
+    PH = Namespace(PH_NS)
+    DCT = Namespace("http://purl.org/dc/terms/")
+    g = _tours_graph()
+    idx = _media_index(wait)
+    if idx is None:
+        return None
+    out = ["# Imagens — fotos e vídeos do Pedal Hidrográfico", "",
+           f"O acervo tem {_count_media(idx['stills'], idx['videos'])}. Cada mídia tem "
+           f"a sua página (`{SITE_URL}midia/<hash>`), com data, local, autoria e "
+           "licença — em geral CC BY-SA 4.0. Os álbuns e os passeios abaixo levam "
+           "até elas.", ""]
+    albums = sorted(idx["albums"], key=lambda a: (a["name"].casefold(), a["slug"]))
+    if albums:
+        out += [f"## Álbuns ({len(albums)})", ""]
+        for a in albums:
+            out.append(f"- [{_md_label(a['name'])}]({SITE_URL}imagens/lista/"
+                       f"{quote(a['slug'], safe='')}) — "
+                       f"{_count_media(a['stills'], a['videos'])}")
+        out.append("")
+    tours = []
+    for t_iri, t in idx["tours"].items():
+        tour = URIRef(t_iri)
+        if (tour, RDF.type, PH.Tour) not in g:
+            continue
+        tid = t_iri[len(PAS_NS):] if t_iri.startswith(PAS_NS) else t_iri
+        tours.append((str(g.value(tour, DCT.date) or ""), _tour_display_title(g, tour),
+                      _tour_pretty_of(g, tour) or tid, t))
+    tours.sort(key=lambda x: (x[0], x[1]), reverse=True)
+    if tours:
+        out += [f"## Por passeio ({len(tours)})", "",
+                "A página de cada passeio mostra as suas fotos e os álbuns em que estão.", ""]
+        for date, title, slug, t in tours:
+            out.append(f"- [{_md_label(title)}]({SITE_URL}passeio/{slug})"
+                       + (f" — {date[:10]}" if date else "")
+                       + f" · {_count_media(t['stills'], t['videos'])}")
+        out.append("")
+    out += ["## Dados", "",
+            f"- [images.ttl]({SITE_URL}data/images.ttl) — todas as mídias "
+            "(`ph:StillImage`, `ph:MotionImage`) em RDF/Turtle",
+            f"- [lists.ttl]({SITE_URL}data/lists.ttl) — os álbuns (`schema:Collection`)",
+            f"- [Mapa do Pedal Hidrográfico]({SITE_URL})", ""]
     return "\n".join(out)
 
 
@@ -4915,18 +5608,37 @@ def _render_media_markdown(local):
     kind = "Vídeo" if is_video else "Foto"
 
     def person_link(p):
-        nm = _md_inline(_person_name(cat, p))
+        nm = _md_label(_person_name(cat, p))
         if str(p).startswith(PES_NS):
             return f"[{nm}]({SITE_URL}pessoas/{str(p)[len(PES_NS):]})"
         return nm
 
-    out = [f"# {kind} `{local}`", "",
-           f"{kind} do acervo do Pedal Hidrográfico (`med:{local}` — o hash é a "
-           "identidade da mídia; o tipo vem da classe).", ""]
+    # O título é a legenda (tipo, autoria, passeio, data) — as mídias não têm
+    # legenda escrita; a imagem vem logo abaixo (vídeo: a miniatura, linkada
+    # pro arquivo de 360p).
+    caption = _media_caption(cat, m, is_video)
+    alt = mdhtml.md_escape(caption)
+    out = [f"# {caption}", ""]
+    if is_video:
+        from urllib.parse import quote
+        thumb = _media_thumb_url(cat, m, local, True)
+        clip = str(cat.value(m, PH.video360p) or cat.value(m, PH.video720p) or "")
+        if thumb:
+            img = f"![{alt}]({thumb})"
+            ok = clip and ".." not in clip and not clip.startswith("/")
+            out += [f"[{img}]({SITE_URL}clips/{quote(clip)})" if ok else img, ""]
+    else:
+        out += [f"![{alt}]({SITE_URL}photos/{local}/large.jpg)", ""]
+    out += [f"{kind} do acervo do Pedal Hidrográfico (`med:{local}` — o hash é a "
+            "identidade da mídia; o tipo vem da classe).", ""]
     facts = []
     date = cat.value(m, DCT.date)
     if date:
         facts.append(f"- **Data:** {_md_inline(date)}")
+    else:
+        when = cat.value(m, PH.estimatedCaptureTime)
+        if when:
+            facts.append(f"- **Hora estimada pela posição:** {_md_inline(when)}")
     geo = cat.value(m, SCHEMA.locationCreated)
     if geo is not None:
         lat, lng = cat.value(geo, SCHEMA.latitude), cat.value(geo, SCHEMA.longitude)
@@ -4990,8 +5702,282 @@ def _render_media_markdown(local):
             f"- **IRI:** `{MED_NS}{local}`",
             f"- **RDF (Turtle):** [{SITE_URL}midia/{local}?format=ttl]"
             f"({SITE_URL}midia/{local}?format=ttl) — ou `Accept: text/turtle` na mesma URL",
-            f"- [Na galeria]({SITE_URL}imagens.html?pick={local})", ""]
+            f"- [Na galeria]({SITE_URL}imagens.html?pick={local}) · "
+            f"[todos os álbuns]({SITE_URL}imagens.html)", ""]
     return "\n".join(out)
+
+
+def _media_page_meta(local):
+    """O que o HTML da página de uma mídia leva além do corpo: título,
+    descrição, imagem de preview e o JSON-LD (schema.org ImageObject ou
+    VideoObject — com licença, autoria e local, o que os buscadores de imagem
+    leem). None se a mídia não existe."""
+    from urllib.parse import quote
+    from rdflib import Namespace, RDF, URIRef
+    SCHEMA = Namespace(SCHEMA_NS)
+    PH = Namespace(PH_NS)
+    DCT = Namespace("http://purl.org/dc/terms/")
+    PROV = Namespace("http://www.w3.org/ns/prov#")
+    cat = _load_catalog()
+    m = URIRef(MED_NS + local)
+    video = (m, RDF.type, PH.MotionImage) in cat
+    if not video and (m, RDF.type, PH.StillImage) not in cat:
+        return None
+    caption = _media_caption(cat, m, video)
+    page_url = f"{SITE_URL}midia/{local}"
+    desc = caption + " — acervo do Pedal Hidrográfico"
+    ld = {"@context": "https://schema.org",
+          "@type": "VideoObject" if video else "ImageObject",
+          "@id": MED_NS + local, "name": caption, "description": desc,
+          "url": page_url, "mainEntityOfPage": page_url, "inLanguage": "pt-BR"}
+    date = cat.value(m, DCT.date)
+    if date:
+        ld["dateCreated"] = str(date)
+        if video:
+            ld["uploadDate"] = str(date)
+    lic = cat.value(m, DCT.license)
+    if lic:
+        ld["license"] = str(lic)
+        ld["acquireLicensePage"] = page_url
+    authors = sorted((_person_name(cat, p), str(p))
+                     for p in cat.objects(m, PROV.wasAttributedTo))
+    if authors:
+        ld["creator"] = [
+            {"@type": "Person", "name": nm,
+             **({"url": f"{SITE_URL}pessoas/{iri[len(PES_NS):]}"}
+                if iri.startswith(PES_NS) else {})}
+            for nm, iri in authors]
+        ld["creditText"] = ", ".join(nm for nm, _ in authors)
+        ld["copyrightNotice"] = ld["creditText"]
+    geo = cat.value(m, SCHEMA.locationCreated)
+    if geo is not None:
+        lat, lng = cat.value(geo, SCHEMA.latitude), cat.value(geo, SCHEMA.longitude)
+        try:
+            ld["contentLocation"] = {"@type": "Place", "geo": {
+                "@type": "GeoCoordinates",
+                "latitude": float(lat), "longitude": float(lng)}}
+        except (TypeError, ValueError):
+            pass
+    thumb = _media_thumb_url(cat, m, local, video)
+    if thumb:
+        ld["thumbnailUrl"] = thumb
+    if video:
+        clip = str(cat.value(m, PH.video360p) or cat.value(m, PH.video720p) or "")
+        if clip and ".." not in clip and not clip.startswith("/"):
+            ld["contentUrl"] = f"{SITE_URL}clips/{quote(clip)}"
+        dur = cat.value(m, SCHEMA.duration)
+        if dur:
+            ld["duration"] = str(dur)
+    else:
+        ld["contentUrl"] = f"{SITE_URL}photos/{local}/large.jpg"
+    return {"title": caption, "description": desc, "url": page_url, "jsonld": ld,
+            "image": (f"{SITE_URL}imagens/og/{local}.jpg"
+                      if _media_og_has_source(cat, m) else None)}
+
+
+def _gallery_page(md, meta, jsonld=None, turtle=True, set_title=True):
+    """imagens.html (a galeria) com o conteúdo de uma das suas páginas — o
+    índice, um álbum ou uma mídia — pra quem não roda JS: o <title> e as tags
+    de preview da página e o Markdown dela convertido no <article>. A galeria
+    remove o bloco quando termina de montar a grade."""
+    _, shell = _shell("imagens.html")
+    head = _head_meta(meta["title"], meta.get("description"), meta["url"],
+                      meta.get("image"), meta.get("alt"))
+    if meta.get("image"):
+        head += ['<meta property="og:image:type" content="image/jpeg">',
+                 f'<meta property="og:image:width" content="{_MEDIA_OG_W}">',
+                 f'<meta property="og:image:height" content="{_MEDIA_OG_H}">']
+    head += _alternate_links(meta["url"], turtle=turtle)
+    if jsonld:
+        head.append(_jsonld_tag(jsonld))
+    html_text = (_set_title(shell, f"{meta['title']} — Imagens — Pedal Hidrográfico")
+                 if set_title else shell)
+    return _ssr_inject(html_text, _ssr_article(md), head)
+
+
+def _render_media_page(local):
+    """A página HTML de uma mídia (/midia/<hash>). None se ela não existe."""
+    meta = _media_page_meta(local)
+    md = _render_media_markdown(local) if meta else None
+    if md is None:
+        return None
+    return _gallery_page(md, meta, meta["jsonld"])
+
+
+def _render_gallery_index_page():
+    """A página HTML do índice da galeria (/imagens.html)."""
+    idx = _media_index()
+    if idx is None:   # processo recém-iniciado: ainda não há resumo → shell puro
+        return None
+    meta = {"title": "Fotos e vídeos do Pedal Hidrográfico",
+            "description": (f"Galeria do acervo do Pedal Hidrográfico: "
+                            f"{_count_media(idx['stills'], idx['videos'])} dos "
+                            "passeios, em álbuns e por passeio."),
+            "url": f"{SITE_URL}imagens.html"}
+    md = _memo("gallery-md", (_tours_graph(),),
+               lambda: _render_gallery_markdown(wait=False), ttl=120, token=_media_gen())
+    if md is None:
+        return None
+    return _gallery_page(md, meta, turtle=False, set_title=False)
+
+
+def _render_person_page(slug):
+    """pessoas.html com a ficha da pessoa (/pessoas/<slug>) pra quem não roda
+    JS, mais o JSON-LD (schema.org ProfilePage). None se ela não existe."""
+    from rdflib import Namespace, RDFS, URIRef
+    md = _render_person_markdown(slug, wait=False)
+    if md is None:
+        return None
+    SCHEMA = Namespace(SCHEMA_NS)
+    g = _tours_graph()
+    p = URIRef(PES_NS + slug)
+    name = _person_name(g, p)
+    page_url = f"{SITE_URL}pessoas/{slug}"
+    person = {"@type": "Person", "@id": PES_NS + slug, "name": name, "url": page_url}
+    alt = g.value(p, SCHEMA.alternateName)
+    if alt and str(alt) != name:
+        person["alternateName"] = str(alt)
+    same = sorted({str(o) for pred in (SCHEMA.sameAs, RDFS.seeAlso, SCHEMA.url)
+                   for o in g.objects(p, pred) if mdhtml.safe_url(str(o))})
+    if same:
+        person["sameAs"] = same
+    ld = {"@context": "https://schema.org", "@type": "ProfilePage",
+          "url": page_url, "inLanguage": "pt-BR", "mainEntity": person}
+    desc = f"{name} no acervo do Pedal Hidrográfico: passeios que elaborou e mídias que assina."
+    _, shell = _shell("pessoas.html")
+    head = (_head_meta(name, desc, page_url, og_type="profile")
+            + _alternate_links(page_url) + [_jsonld_tag(ld)])
+    return _ssr_inject(_set_title(shell, f"{name} — Pessoas — Pedal Hidrográfico"),
+                       _ssr_article(md), head)
+
+
+def _render_people_page():
+    """pessoas.html com o índice de pessoas (/pessoas.html) pra quem não roda JS."""
+    page_url = f"{SITE_URL}pessoas.html"
+    md = _memo("people-md", (_tours_graph(),),
+               lambda: _render_people_markdown(wait=False), ttl=120, token=_media_gen())
+    _, shell = _shell("pessoas.html")
+    head = (_head_meta("Pessoas do Pedal Hidrográfico",
+                       "Quem aparece no acervo do Pedal Hidrográfico: quem elaborou "
+                       "os passeios e assinou as fotos e os vídeos.", page_url)
+            + _alternate_links(page_url, turtle=False))
+    return _ssr_inject(shell, _ssr_article(md), head)
+
+
+def _render_route_markdown(slug, r):
+    """Uma rota salva do editor de traçado (`r`, a entrada dela no catálogo)
+    em Markdown: o desenho, a ficha (distância, subida, energia, começo e
+    fim), os pontos de interesse, os passeios que a usam e como abri-la."""
+    import rwgps
+    from rdflib import Namespace, RDF
+    name = _md_inline(r.get("name") or slug)
+    page_url = f"{SITE_URL}route/{slug}"
+    f = _saved_route_facts(r)
+    out = [f"# {name}", "",
+           "Rota traçada no amora, o mapa do Pedal Hidrográfico"
+           + (f" — {f['line']}." if f["line"] else "."), "",
+           f"![Traçado da rota {mdhtml.md_escape(name)}]({page_url}/og.png)", ""]
+    facts = []
+    if f["dist"]:
+        facts.append(f"- **Distância:** {_fmt_km(f['dist'])}")
+    if f["ascent"] is not None:
+        facts.append(f"- **Subida acumulada:** {round(f['ascent'])} m")
+    if f["kj"] is not None:
+        facts.append(f"- **Energia estimada:** {round(f['kj'])} kJ "
+                     f"({_intensity_for(float(f['kj']))})")
+    try:
+        geom = rwgps.amora_route_geometry(r["state"])
+    except Exception:  # noqa: BLE001 — estado que não decodifica: só a ficha
+        geom = {"latlngs": [], "pois": []}
+    pts = geom["latlngs"]
+
+    def place(pt):
+        lat, lng = round(pt[0], 5), round(pt[1], 5)
+        return (f"{lat}, {lng} ([OpenStreetMap](https://www.openstreetmap.org/"
+                f"?mlat={lat}&mlon={lng}#map=16/{lat}/{lng}))")
+    if pts:
+        facts += [f"- **Começo:** {place(pts[0])}", f"- **Fim:** {place(pts[-1])}"]
+    when = str(r.get("updated") or r.get("created") or "")[:10]
+    if when:
+        facts.append(f"- **Atualizada em:** {when}")
+    try:
+        g = _tours_graph()
+        PH = Namespace(PH_NS)
+        SCHEMA = Namespace(SCHEMA_NS)
+        for t, ref in sorted(g.subject_objects(PH.linkRoute)):
+            url = g.value(ref, SCHEMA.url)
+            if (url and rwgps.extract_amora_slug(str(url)) == slug
+                    and (t, RDF.type, PH.Tour) in g):
+                d = _tour_facts(g, t)
+                facts.append(f"- **Passeio nesta rota:** [{_md_label(d['title'])}]"
+                             f"({d['page_url']})"
+                             + (f" — {d['date_label']}" if d["date_label"] else ""))
+    except Exception as e:  # noqa: BLE001
+        print(f"[route-md] passeios da rota {slug} falharam: {e}")
+    if facts:
+        out += ["## Ficha", "", *facts, ""]
+    pois = [p for p in geom["pois"] if p.get("name")]
+    if pois:
+        out += ["## Pontos de interesse", ""]
+        out += [f"- {_md_label(p['name'])} — {p['lat']}, {p['lng']}" for p in pois]
+        out.append("")
+    out += ["## Abrir", "",
+            f"- [Abrir esta rota no mapa do amora]({SITE_URL}#rt={slug}) — dá pra "
+            "editar e exportar em GPX",
+            f"- [Traçado completo (JSON)]({SITE_URL}saved-route/{slug}) — os pontos "
+            "e a geometria (polyline) de cada trecho",
+            f"- [Mapa do Pedal Hidrográfico]({SITE_URL})", ""]
+    return "\n".join(out)
+
+
+def _render_censo_markdown(wait=True):
+    """O Censo Hidrográfico em Markdown: uma tabela com as métricas de cada
+    passeio (gente, energia, tempos, mídias), mais recentes primeiro."""
+    tours = _tours_sorted()
+    by_tour = (_media_index(wait) or {}).get("tours", {})
+
+    def cell(v):
+        return "" if v is None else str(v)
+
+    def kj(v):
+        return "" if v is None else f"{v:.0f}"
+    people = [d["attendees"] for d in tours if d["attendees"] is not None]
+    new = [d["newcomers"] for d in tours if d["newcomers"] is not None]
+    out = ["# Censo Hidrográfico", "",
+           f"As métricas dos {len(tours)} passeios do Pedal Hidrográfico, mais "
+           "recentes primeiro. Energia em quilojaules (kJ): a estimada pelo modelo "
+           "do amora pra rota e a medida numa gravação do pedal.", ""]
+    if people:
+        out += [f"Somando os {len(people)} passeios com contagem: {sum(people)} "
+                f"participações" + (f", {sum(new)} delas de gente pedalando com o "
+                                    "coletivo pela primeira vez" if new else "") + ".", ""]
+    out += ["| Passeio | Data | Participantes | Pela 1ª vez | kJ estimados | kJ medidos "
+            "| Tempo total | Em movimento | Mídias |",
+            "|---|---|---|---|---|---|---|---|---|"]
+    for d in tours:
+        t = by_tour.get(d["iri"])
+        n_media = t["stills"] + t["videos"] if t else 0
+        out.append("| " + " | ".join((
+            f"[{_md_label(d['title'])}]({d['page_url']})",
+            d["dt"].date().isoformat() if d["dt"] else "",
+            cell(d["attendees"]), cell(d["newcomers"]),
+            kj(d["energy"]), kj(d["measured"]),
+            cell(d["total"]), cell(d["moving"]),
+            str(n_media) if n_media else "")) + " |")
+    out += ["", "## Dados", "",
+            f"- [tours.ttl]({SITE_URL}data/tours.ttl) — o catálogo de passeios em RDF/Turtle",
+            f"- [Memória Hidrográfica]({SITE_URL}memoria) — os mesmos passeios, com a narrativa",
+            f"- [Mapa do Pedal Hidrográfico]({SITE_URL})", ""]
+    return "\n".join(out)
+
+
+def _render_censo_page():
+    """censo.html com a tabela de métricas pra quem não roda JS."""
+    md = _memo("censo-md", (_tours_graph(),),
+               lambda: _render_censo_markdown(wait=False), ttl=120, token=_media_gen())
+    _, shell = _shell("censo.html")
+    return _ssr_inject(shell, _ssr_article(md),
+                       _alternate_links(f"{SITE_URL}censo.html", turtle=False))
 
 
 def _html_shell_markdown(p):
@@ -5087,13 +6073,15 @@ def _build_memoria_ssr():
                          + (f" ({label})" if label else ""))
         if med is not None:
             facts.append(f"{med:.0f} kJ medidos")
+        # Só URL http(s) vira link (mdhtml.safe_url): o catálogo é escrito sem
+        # auth, e um `javascript:` aqui seria um link clicável na página.
         route_ref = g.value(t, PH.linkRoute)
         route_url = g.value(route_ref, SCHEMA.url) if route_ref else None
-        if route_url:
+        if route_url and mdhtml.safe_url(str(route_url)):
             facts.append(f'Rota: <a href="{h(str(route_url))}">'
                          f"{h(str(route_url))}</a>")
         ig_url = g.value(t, PH.linkInstagram)
-        if ig_url:
+        if ig_url and mdhtml.safe_url(str(ig_url)):
             facts.append(f'<a href="{h(str(ig_url))}">Post no Instagram</a>')
         if facts:
             out.append('    <p class="meta">' + " · ".join(facts) + "</p>")
@@ -6330,7 +7318,9 @@ def _warm_caches():
     try:
         _load_validator()
         _load_catalog()
-        print(f"[warmup] validador + catálogo prontos em {_time.monotonic() - t0:.1f}s")
+        _media_index(wait=True)   # o resumo que a home e os passeios consultam
+        print(f"[warmup] validador + catálogo + resumo de mídia prontos em "
+              f"{_time.monotonic() - t0:.1f}s")
         _sweep_staging()
     except Exception as e:  # noqa: BLE001
         print(f"[warmup] falhou (segue lazy): {e}")
