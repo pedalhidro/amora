@@ -1394,7 +1394,12 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
 - **Galeria sem Comunica na visão padrão.** As facetas filtram em JS
   (`MQ.facetRows`, em `lib/media-query.js`) — tem que continuar EQUIVALENTE ao
   `buildQueryFromFacets` (mude os dois juntos); o Comunica só carrega no
-  Avançado (SPARQL), e `albumSequence` é síncrono. A faceta de data usa a
+  Avançado (SPARQL), e `albumSequence` é síncrono. A faceta **Série** (v445,
+  `facets.series`, várias = qualquer uma) filtra pela série do PASSEIO da
+  mídia: cada record leva `seriesIris` e o model leva `series` (IRI → `{code,
+  title}`, o catálogo das opções); passeio que é edição de duas séries casa
+  as duas e a mídia sai uma vez só. `test/media-facets.test.mjs` cobre o lado
+  JS e o texto da consulta. A faceta de data usa a
   data de CALENDÁRIO gravada (`SUBSTR(STR(?d),1,10)`): o Comunica aplica o
   fuso do navegador, com o sinal trocado, a limites de data sem fuso (pedais
   noturnos sumiam). Standalone, o lightbox empilha histórico também fora de
@@ -1870,8 +1875,9 @@ writes RDF directly. App.js reads `ph:Video` from `uploads.ttl` only.
   `censo.html`) ou no `backend/mdhtml.py`: `python3 test/test_mdhtml.py` e
   `python3 scripts/check-nojs.py http://127.0.0.1:<porta>` com o backend local
   no ar (ver "Conteúdo sem JavaScript").
-- `npm test` (tokens, cores, ícones, `safeUrl`, modos por trecho do Traçar) se
-  mexeu em `web/style.css`, `web/index.html`, `web/app.js`, `web/lib/utils.js`,
+- `npm test` (tokens, cores, ícones, `safeUrl`, modos por trecho do Traçar,
+  facetas da galeria) se mexeu em `web/style.css`, `web/index.html`,
+  `web/app.js`, `web/lib/utils.js`, `web/lib/media-query.js`,
   `web/memoria.html` ou `design/`.
 - Ontology / shapes / data: parse with `rdflib` after editing `*.ttl`.
 
