@@ -228,6 +228,12 @@
   }
   .ts-dropdown .option.active,
   .ts-dropdown .active { background: var(--accent) !important; color: #fff !important; }
+  /* Faceta Série: código em destaque + nome por extenso + nº de passeios.
+     Caixa um pouco mais larga que as outras: o menu tem a largura dela, e o
+     nome por extenso quebrava em quatro linhas. */
+  .facet-series .ts-wrapper { min-width: 200px; }
+  .ts-dropdown .opt-series b { font-weight: 700; }
+  .ts-dropdown .opt-series .opt-n { opacity: .65; white-space: nowrap; }
   .ts-dropdown .create,
   .ts-dropdown .no-results,
   .ts-dropdown .optgroup-header { color: var(--muted) !important; }
@@ -592,7 +598,7 @@
      ?api=N: o .js fica até 4 h no cache HTTP da Cloudflare, e HTML novo + lib
      velha = galeria quebrada — suba o N (aqui E no lib/gallery-worker.js)
      quando a página passar a usar um nome novo de lá. -->
-<script src="./lib/media-query.js?api=2"></script>
+<script src="./lib/media-query.js?api=3"></script>
 </head>
 <body>
 
@@ -641,6 +647,7 @@
     <label class="facet"><span>Listas</span><select id="f-lists" multiple placeholder="todas"></select></label>
     <label class="facet"><span>Autoras</span><select id="f-authors" multiple placeholder="todas"></select></label>
     <label class="facet"><span>Quem subiu</span><select id="f-uploaders" multiple placeholder="todos"></select></label>
+    <label class="facet facet-series"><span>Série</span><select id="f-series" multiple placeholder="todas"></select></label>
     <label class="facet"><span>Passeio</span><select id="f-tours" multiple placeholder="todos"></select></label>
     <div class="facet facet-range"><span>Datas</span>
       <div class="range-block">
@@ -908,7 +915,7 @@ function workerFailed(why) {
 function modelFromWorker() {
   return new Promise((resolve, reject) => {
     if (!_worker) {
-      _worker = new Worker(new URL('./lib/gallery-worker.js?api=1', document.baseURI));
+      _worker = new Worker(new URL('./lib/gallery-worker.js?api=2', document.baseURI));
       _worker.onmessage = (e) => {
         const d = e.data || {}, w = _workerWaiting.get(d.id);
         if (!w) return;
@@ -979,7 +986,7 @@ let selectAnchor = null;             // IRI âncora p/ shift-range (desktop) e d
 let _downType = null;                // pointerType do último pointerdown na grade
 const selected = new Set();          // IRIs de mídia selecionadas
 const pendingNewLists = new Map();   // listIri → nome (listas criadas na sessão, ainda não persistidas)
-let ftLists, ftAuthors, ftUploaders, ftTours, assignTS, lbTS;
+let ftLists, ftAuthors, ftUploaders, ftSeries, ftTours, assignTS, lbTS;
 let lbRecord = null;                 // record aberto no lightbox
 let _lbSavePending = false;          // há um scheduleLbSave() pendente (debounce) a ser descartado/reforçado ao fechar
 let _lbPushed = false;               // openLightbox empurrou uma entrada no histórico (voltar = fechar a foto)
@@ -1032,6 +1039,27 @@ function peopleOptions(iriSet) {
 }
 function authorIriSet() { const s = new Set(); model.records.forEach((r) => r.authorIris.forEach((i) => s.add(i))); return s; }
 function uploaderIriSet() { const s = new Set(); model.records.forEach((r) => r.uploaderIris.forEach((i) => s.add(i))); return s; }
+// Séries (PH, BP, BT…) — só as que têm passeio COM mídia, como os passeios
+// abaixo. A série com mais passeios vem primeiro. `code` é o que aparece na
+// caixa (o chip); a linha do menu traz o nome por extenso e a contagem.
+function seriesOptions() {
+  const all = model.series || {};
+  const tourSets = new Map();   // série → Set(passeios com mídia)
+  model.records.forEach((r) => (r.seriesIris || []).forEach((s) => {
+    if (!tourSets.has(s)) tourSets.set(s, new Set());
+    tourSets.get(s).add(r.tourIri);
+  }));
+  return [...tourSets.entries()]
+    .map(([iri, set]) => {
+      const code = (all[iri] && all[iri].code) || short(iri);
+      const title = (all[iri] && all[iri].title) || code;
+      return {
+        value: iri, code, title, n: set.size,
+        text: title === code ? code : `${code} — ${title}`,   // o que a busca do menu casa
+      };
+    })
+    .sort((a, b) => b.n - a.n || a.code.localeCompare(b.code));
+}
 function tourOptions() {
   // Só passeios que TÊM mídia associada — o catálogo tem ~100 passeios mas a
   // maioria ainda não tem foto/vídeo, então não faz sentido oferecê-los no
@@ -1046,8 +1074,9 @@ function tourOptions() {
 }
 
 // ── Inicialização dos controles de faceta ────────────────────────────────────
-function initSelect(sel, options, { placeholder, sortByOrder } = {}) {
+function initSelect(sel, options, { placeholder, sortByOrder, render } = {}) {
   const cfg = { plugins: ['remove_button'], persist: false, options, maxOptions: 2000, placeholder: placeholder || '' };
+  if (render) cfg.render = render;
   // sortByOrder preserva a ordem em que passamos as opções (usado nos passeios,
   // que já vêm por data desc); senão o Tom Select ordena alfabético/relevância.
   if (sortByOrder) cfg.sortField = [{ field: '$order', direction: 'asc' }];
@@ -1128,8 +1157,18 @@ function buildFacetControls() {
   ftLists     = initSelect('#f-lists', listOptions(), { placeholder: 'todas' });
   ftAuthors   = initSelect('#f-authors', peopleOptions(authorIriSet()), { placeholder: 'todas' });
   ftUploaders = initSelect('#f-uploaders', peopleOptions(uploaderIriSet()), { placeholder: 'todos' });
+  ftSeries    = initSelect('#f-series', seriesOptions(), {
+    placeholder: 'todas', sortByOrder: true,
+    render: {
+      // `esc` = o escape de HTML do Tom Select (código e título vêm do catálogo).
+      option: (d, esc) => `<div class="opt-series"><b>${esc(d.code)}</b>` +
+        (d.title !== d.code ? ` ${esc(d.title)}` : '') +
+        ` <span class="opt-n">· ${d.n} passeio${d.n === 1 ? '' : 's'}</span></div>`,
+      item: (d, esc) => `<div title="${esc(d.text)}">${esc(d.code)}</div>`,
+    },
+  });
   ftTours     = initSelect('#f-tours', tourOptions(), { placeholder: 'todos', sortByOrder: true });
-  [ftLists, ftAuthors, ftUploaders, ftTours].forEach((ts) => ts.on('change', debouncedRebuild));
+  [ftLists, ftAuthors, ftUploaders, ftSeries, ftTours].forEach((ts) => ts.on('change', debouncedRebuild));
 
   // Faixas data/kJ: campos nas pontas (digitáveis/selecionáveis) + slider duplo.
   computeRangeBounds();
@@ -1170,6 +1209,7 @@ function readFacets() {
     lists: ftLists ? ftLists.getValue() : [],
     authors: ftAuthors ? ftAuthors.getValue() : [],
     uploaders: ftUploaders ? ftUploaders.getValue() : [],
+    series: ftSeries ? ftSeries.getValue() : [],
     tours: ftTours ? ftTours.getValue() : [],
     dateFrom: $('#f-date-from').value || null,
     dateTo: $('#f-date-to').value || null,
@@ -1260,7 +1300,8 @@ function activeFilterCount(f) {
   f = f || {};
   const wd = (f.weekdays || []).length;
   return [
-    (f.lists || []).length, (f.authors || []).length, (f.uploaders || []).length, (f.tours || []).length,
+    (f.lists || []).length, (f.authors || []).length, (f.uploaders || []).length,
+    (f.series || []).length, (f.tours || []).length,
     f.dateFrom || f.dateTo, f.kjMin != null || f.kjMax != null, wd > 0 && wd < 7,
   ].filter(Boolean).length;
 }
@@ -1278,7 +1319,7 @@ function updateResultSummary(total, facets) {
     : `${num(total)} mídia${total === 1 ? '' : 's'}`;
 }
 function clearFilters() {
-  ftLists.clear(true); ftAuthors.clear(true); ftUploaders.clear(true); ftTours.clear(true);
+  ftLists.clear(true); ftAuthors.clear(true); ftUploaders.clear(true); ftSeries.clear(true); ftTours.clear(true);
   $('#f-date-from').value = ''; $('#f-date-to').value = '';
   $('#f-kj-min').value = ''; $('#f-kj-max').value = '';
   dualDate && dualDate.syncFromEnds(); dualKj && dualKj.syncFromEnds();

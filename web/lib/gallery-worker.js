@@ -7,14 +7,14 @@
  * depois de uma edição.
  *
  * Protocolo: página → {id, base}; worker → {id, model} | {id, error}.
- * `model` = {records, tours, people, lists} (só dados; ver loadMediaModel em
+ * `model` = {records, tours, people, lists, series} (só dados; ver loadMediaModel em
  * media-query.js). Qualquer falha — aqui ou ao carregar este arquivo — faz a
  * página rodar o mesmo caminho nela mesma (loadModel em imagens.html).
  */
 'use strict';
 // Mesmo ?api= do <script> da galeria: o worker tem que rodar a MESMA
 // media-query.js que a página.
-importScripts('./n3.min.js', './media-query.js?api=2');
+importScripts('./n3.min.js', './media-query.js?api=3');
 
 self.onmessage = function (e) {
   var id = e.data && e.data.id;

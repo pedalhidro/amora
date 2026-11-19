@@ -286,15 +286,32 @@
         date: (obj1(t, NS.dcterms + 'date') || '').slice(0, 10),
         energyKj: numOr(obj1(t, NS.ph + 'energyEstimate')),
         code: null,
+        seriesIris: [],   // as séries de que o passeio é edição (faceta Série)
       };
     });
+    // Séries (catálogo da faceta Série): código curto (o do rótulo dos
+    // passeios — "PH", "BP"…) + título por extenso. Uma série citada por uma
+    // edição e não declarada entra só com o código.
     var seriesLabel = function (iri) { var s = short(iri); return s === 'S' ? 'PH-S' : s; };
+    var series = {};
+    var seriesEntry = function (iri) {
+      if (!series[iri]) {
+        var code = seriesLabel(iri);
+        series[iri] = { code: code, title: obj1(iri, NS.dcterms + 'title') || code };
+      }
+      return series[iri];
+    };
+    ofType(NS.schema + 'EventSeries').forEach(seriesEntry);
     Object.keys(tours).forEach(function (t) {
       var parts = [];
       objs(t, NS.ph + 'inSeriesEdition').forEach(function (assoc) {
         var sIri = obj1(assoc, NS.ph + 'inEventSeries');
         var seq = obj1(assoc, NS.ph + 'sequenceInSeries');
         if (sIri && seq != null) parts.push(seriesLabel(sIri) + ' ' + seq);
+        if (sIri) {
+          seriesEntry(sIri);
+          if (tours[t].seriesIris.indexOf(sIri) < 0) tours[t].seriesIris.push(sIri);
+        }
       });
       parts.sort();
       if (parts.length) tours[t].code = parts.join(' & ');
@@ -332,6 +349,9 @@
           tourIri: tourIri,
           tourLabel: tourIri ? tourLabel(tourIri) : null,
           energyKj: (tourIri && tours[tourIri]) ? tours[tourIri].energyKj : null,
+          // As séries do passeio da mídia (um passeio pode ser edição de mais
+          // de uma: "BP 3 & PH 50"). Sem passeio → nenhuma.
+          seriesIris: (tourIri && tours[tourIri]) ? tours[tourIri].seriesIris : [],
           authorIris: authorIris,
           uploaderIris: uploaderIris,
           authors: authorIris.map(function (p) { return people[p] || short(p); }),
@@ -365,7 +385,7 @@
         records.push(rec);
       });
     });
-    return { records: records, tours: tours, people: people, lists: lists, tourLabel: tourLabel };
+    return { records: records, tours: tours, people: people, lists: lists, series: series, tourLabel: tourLabel };
   }
 
   // ── carga do catálogo (manifesto VoID → dumps) ───────────────────────────
@@ -405,12 +425,12 @@
     return parts.filter(function (t) { return t != null; }).join('\n\n');
   }
   // Catálogo → model da galeria, pelo índice leve. Devolve só DADOS (records,
-  // tours, people, lists): atravessa o postMessage do worker; quem recebe põe
-  // o tourLabel (makeTourLabel).
+  // tours, people, lists, series): atravessa o postMessage do worker; quem
+  // recebe põe o tourLabel (makeTourLabel).
   async function loadMediaModel(base) {
     var idx = await parseToIndex(await fetchCatalogText(base));
     var m = buildMediaRecords(idx);
-    return { records: m.records, tours: m.tours, people: m.people, lists: m.lists };
+    return { records: m.records, tours: m.tours, people: m.people, lists: m.lists, series: m.series };
   }
 
   // ── facetas → SPARQL (visível/editável) ───────────────────────────────────
@@ -422,7 +442,8 @@
   }
 
   // facets = {group:'tour'|'day'|'month'|'year'|'none', lists:[], authors:[],
-  //   uploaders:[], tours:[], dateFrom, dateTo, kjMin, kjMax, weekdays:[]}
+  //   uploaders:[], series:[], tours:[], dateFrom, dateTo, kjMin, kjMax,
+  //   weekdays:[]}
   // Nota: dia-da-semana NÃO tem função SPARQL nativa → é aplicado no cliente
   // (comentado na query pra ficar visível); todo o resto é SPARQL puro.
   function buildQueryFromFacets(facets) {
@@ -463,6 +484,13 @@
     if (facets.uploaders && facets.uploaders.length) {
       W.push(valuesBlock('uploader', facets.uploaders));
       W.push('?m pav:providedBy ?uploader .');
+    }
+    // Série: mídia de um passeio que é edição de QUALQUER uma das séries
+    // escolhidas. Passeio em duas delas casa duas vezes — o SELECT DISTINCT
+    // (que só projeta ?m e ?group) devolve a mídia uma vez só.
+    if (facets.series && facets.series.length) {
+      W.push(valuesBlock('fseries', facets.series));
+      W.push('?m ph:capturedDuring ?fst . ?fst ph:inSeriesEdition ?fed . ?fed ph:inEventSeries ?fseries .');
     }
     if (facets.tours && facets.tours.length) {
       W.push(valuesBlock('ftour', facets.tours));
@@ -523,8 +551,9 @@
   // devolve (SELECT DISTINCT ?m ?group), calculadas direto de model.records —
   // a galeria renderiza a visão padrão e cada faceta sem baixar/compilar o
   // Comunica nem consultar o catálogo inteiro. Mesma semântica da consulta
-  // (mudou uma, mude a outra): listas/autoras/quem subiu/passeios = "qualquer
-  // um de"; datas pelo dia-calendário gravado; kJ pela estimativa do passeio
+  // (mudou uma, mude a outra): listas/autoras/quem subiu/séries/passeios =
+  // "qualquer um de" (série = a do passeio da mídia; sem passeio → fora);
+  // datas pelo dia-calendário gravado; kJ pela estimativa do passeio
   // (sem passeio/estimativa → fora); grupo = passeio | dia | mês | ano |
   // nenhum. Dia da semana fica com quem chama (não existe em SPARQL). Sem
   // ordem: quem chama ordena (canonicalRowOrder na galeria).
@@ -542,7 +571,8 @@
     facets = facets || {};
     var asSet = function (a) { return (a && a.length) ? new Set(a) : null; };
     var lists = asSet(facets.lists), authors = asSet(facets.authors),
-      uploaders = asSet(facets.uploaders), tours = asSet(facets.tours);
+      uploaders = asSet(facets.uploaders), tours = asSet(facets.tours),
+      series = asSet(facets.series);
     var anyIn = function (vals, set) {
       for (var i = 0; vals && i < vals.length; i++) if (set.has(vals[i])) return true;
       return false;
@@ -556,6 +586,7 @@
       if (lists && !anyIn(r.lists, lists)) return;
       if (authors && !anyIn(r.authorIris, authors)) return;
       if (uploaders && !anyIn(r.uploaderIris, uploaders)) return;
+      if (series && !anyIn(r.seriesIris, series)) return;
       if (tours && !(r.tourIri && tours.has(r.tourIri))) return;
       if (facets.dateFrom || facets.dateTo) {
         var dm = DATE_RE.exec(r.datetime || '');
