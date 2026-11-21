@@ -5,6 +5,10 @@
 #   south-america-cicloinfra.fgb   camada "Cicloinfra OSM"
 #   south-america-water-areas.fgb  barreira de água do modo terreno (polígonos)
 #   south-america-water-rivers.fgb barreira de água do modo terreno (linhas)
+# e um do MUNDO inteiro, de outra fonte (osmdata.openstreetmap.de, ~910 MB de
+# download por rodada — também um serviço voluntário e gratuito):
+#   world-sea.fgb                  o mar como polígonos (~1,3 GB) — a barreira
+#                                  de oceano da máscara de água do Simujaules
 #
 # NÃO reassa `south-america-viario.fgb` (~4,5 GB) nem o grafo pré-cozido: são o
 # build caro e a malha viária muda devagar. Ficam no `workflow_dispatch` abaixo,
@@ -93,7 +97,7 @@ jobs:
       - name: Assar os FGBs
         run: |
           set -euo pipefail
-          ARGS="--water --layers"
+          ARGS="--water --layers --sea"
           if [ "${{ inputs.viario }}" != "true" ]; then
             ARGS="--no-viario $ARGS"
           fi
@@ -144,7 +148,8 @@ jobs:
       - name: Publicar no bucket
         run: |
           set -euo pipefail
-          for f in ignore/south-america-*.fgb; do
+          for f in ignore/south-america-*.fgb ignore/world-*.fgb; do
+            [ -e "$f" ] || continue   # um padrão sem arquivo fica literal
             if [ "$(stat -c %s "$f")" -gt 500000000 ]; then cc="private, max-age=86400"; else cc="public, max-age=86400"; fi
             gcloud storage cp --cache-control="$cc" "$f" gs://telhas/viario/
           done
@@ -171,7 +176,8 @@ jobs:
             echo "::warning::Segredos R2_* ausentes — o R2 (onde o navegador lê) fica com a versão anterior"
             exit 0
           fi
-          for f in ignore/south-america-*.fgb; do
+          for f in ignore/south-america-*.fgb ignore/world-*.fgb; do
+            [ -e "$f" ] || continue   # um padrão sem arquivo fica literal
             if [ "$(stat -c %s "$f")" -gt 500000000 ]; then cc="private, max-age=86400"; else cc="public, max-age=86400"; fi
             aws s3 cp "$f" "s3://fabdem/viario/$(basename "$f")" \
               --endpoint-url "$R2_ENDPOINT" --only-show-errors \
@@ -187,7 +193,8 @@ jobs:
           set -euo pipefail
           fail=0
           for f in south-america-hidro south-america-cicloinfra \
-                   south-america-water-areas south-america-water-rivers; do
+                   south-america-water-areas south-america-water-rivers \
+                   world-sea; do
             url="https://fabdem.pedalhidrografi.co/viario/$f.fgb"   # R2: de onde o navegador lê
             hdr=$(curl -sI -H 'Range: bytes=0-15' "$url")
             echo "→ $f: $(printf '%s' "$hdr" | head -1 | tr -d '\r')"
