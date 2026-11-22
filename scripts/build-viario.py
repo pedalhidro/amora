@@ -22,6 +22,16 @@ Pipeline (fonte = south-america-latest.osm.pbf, ~4 GB, cacheado em ignore/):
     `south-america-water-areas.fgb` (polígonos: natural=water /
     landuse=reservoir / waterway=riverbank) e
     `south-america-water-rivers.fgb` (linhas: waterway=river);
+  - `--sea`: `world-sea.fgb`, o MAR como polígonos, do MUNDO inteiro (~1,3 GB,
+    ~53 mil feições). Não vem do extrato Geofabrik: é o produto "water
+    polygons" do osmdata.openstreetmap.de (FOSSGIS), que o osmcoastline deriva
+    do `natural=coastline` do OSM e já entrega fechado, com a orientação
+    resolvida e recortado em ladrilhos que se sobrepõem 0,001°. Aqui é só
+    baixar o zip (~910 MB) e converter com um ogr2ogr (~1,5 min) — não precisa
+    do pbf nem do osmium, então `--no-viario --sea` roda sozinho. É o que barra
+    o oceano na máscara de água do Simujaules: os dois FGBs do `--water` não
+    trazem o mar (o OSM não tem polígono de mar, só a linha de costa), e o
+    FABDEM guarda o mar como terreno válido a 0 m;
   - `--layers`: os dois FGBs das CAMADAS DE MAPA (o que antes vinha do
     Overpass ao vivo):
     `south-america-hidro.fgb` (linhas: `waterway=*` + `natural=ridge`, com
@@ -36,9 +46,14 @@ Depois de gerar, suba pro mesmo host dos DEMs. ATENÇÃO: **SEM -Z nos .fgb** �
 (o transcoding decompressivo ignora Range):
 
     gcloud storage cp --cache-control="public,max-age=86400" \\
-        ignore/south-america-viario.fgb \\
         ignore/south-america-water-areas.fgb \\
         ignore/south-america-water-rivers.fgb \\
+        gs://telhas/viario/
+    # acima de 500 MB (viário, world-sea): `private`, senão a Cloudflare tenta
+    # cachear, ignora o Range e devolve o arquivo inteiro (ver build-fgb.yml)
+    gcloud storage cp --cache-control="private,max-age=86400" \\
+        ignore/south-america-viario.fgb \\
+        ignore/world-sea.fgb \\
         gs://telhas/viario/
 
 (servidos em https://fabdem.pedalhidrografi.co/viario/<nome>.fgb (R2) — ver
@@ -57,7 +72,9 @@ Roda:
     python scripts/build-viario.py --water        # viário + água
     python scripts/build-viario.py --water --graph
     # o que o job semanal roda (pula o viário, que é o build caro):
-    python scripts/build-viario.py --no-viario --water --layers
+    python scripts/build-viario.py --no-viario --water --layers --sea
+    # só o mar (não baixa o pbf de ~4 GB nem precisa do osmium):
+    python scripts/build-viario.py --no-viario --sea
     # teste rápido com um extrato pequeno (mesmos nomes de saída!):
     python scripts/build-viario.py --extract \\
         https://download.geofabrik.de/south-america/ecuador-latest.osm.pbf
@@ -106,6 +123,12 @@ OUT_WATER_AREAS = IGNORE / "south-america-water-areas.fgb"
 OUT_WATER_RIVERS = IGNORE / "south-america-water-rivers.fgb"
 # Camadas de mapa (--layers): o que a "Morros e Águas" e a "Cicloinfra OSM"
 # liam do Overpass ao vivo, agora assadas pro mesmo host dos outros FGBs.
+# O mar (--sea): polígonos de oceano do mundo inteiro, do osmdata.openstreetmap.de
+# (FOSSGIS; dados © OpenStreetMap, ODbL). "split" = recortado em ladrilhos, o
+# que mantém cada feição pequena pro range request; "4326" = já em lon/lat.
+OSMDATA_SEA_URL = "https://osmdata.openstreetmap.de/download/water-polygons-split-4326.zip"
+OSMDATA_SEA_SHP = "water-polygons-split-4326/water_polygons.shp"   # caminho DENTRO do zip
+OUT_SEA = IGNORE / "world-sea.fgb"
 OUT_HIDRO = IGNORE / "south-america-hidro.fgb"
 OUT_CICLOINFRA = IGNORE / "south-america-cicloinfra.fgb"
 
@@ -222,6 +245,35 @@ def build_water_fgbs(pbf: Path) -> None:
         tmp.unlink(missing_ok=True)
     print(f"→ {OUT_WATER_AREAS.name}: {OUT_WATER_AREAS.stat().st_size / 1e6:.0f} MB · "
           f"{OUT_WATER_RIVERS.name}: {OUT_WATER_RIVERS.stat().st_size / 1e6:.0f} MB")
+
+
+def build_sea_fgb() -> None:
+    """world-sea.fgb: o oceano como polígonos (mundo inteiro).
+
+    O OSM não tem polígono de mar — só `natural=coastline`, linhas com a terra
+    à esquerda. O osmcoastline (FOSSGIS) fecha essas linhas em polígonos de
+    água e publica o resultado todo dia; aqui só convertemos o shapefile pra
+    FlatGeobuf (o índice espacial é o default do driver). Sem atributos
+    (`-select ""`): o cliente só preenche a geometria.
+
+    Os ladrilhos SE SOBREPÕEM (0,001°) de propósito, pra não sobrar fresta na
+    emenda — quem rasteriza tem que tratar cada feição como um corpo próprio
+    (um par-ímpar único sobre dois polígonos sobrepostos cancela a faixa).
+    """
+    zip_path = IGNORE / Path(OSMDATA_SEA_URL).name
+    if zip_path.exists():
+        print(f"→ reusando {zip_path.name} ({zip_path.stat().st_size / 1e6:.0f} MB) — apague pra re-baixar")
+    else:
+        print(f"→ baixando os polígonos de mar (osmdata.openstreetmap.de) → {zip_path.name}")
+        _run(["curl", "-fL", "--retry", "4", "-C", "-", "-o", zip_path, OSMDATA_SEA_URL])
+    OUT_SEA.unlink(missing_ok=True)
+    _run(["ogr2ogr", "-f", "FlatGeobuf", OUT_SEA,
+          f"/vsizip/{zip_path.resolve()}/{OSMDATA_SEA_SHP}",
+          "-nln", "sea",
+          "-select", "",
+          "-nlt", "POLYGON",
+          "-lco", f"TEMPORARY_DIR={IGNORE}"])
+    print(f"→ {OUT_SEA.name}: {OUT_SEA.stat().st_size / 1e6:.0f} MB")
 
 
 # ─── Camadas de mapa (--layers) ───────────────────────────────────────────────
@@ -772,10 +824,17 @@ def bake_graph(fgb: Path | str, out: Path, graph_bbox: tuple[float, float, float
 def _print_upload_help(built: list[Path]) -> None:
     fgbs = [p for p in built if p.suffix == ".fgb"]
     if fgbs:
-        print("\nsuba pro bucket (SEM -Z nos .fgb — gzip quebraria os range requests):\n"
-              "    gcloud storage cp --cache-control=\"public,max-age=86400\" \\\n"
-              + "".join(f"        {p} \\\n" for p in fgbs)
-              + "        gs://telhas/viario/")
+        print("\nsuba pro bucket (SEM -Z nos .fgb — gzip quebraria os range requests):")
+        # Acima de 500 MB → `private`: com `public` a Cloudflare tenta cachear,
+        # ignora o Range e devolve o arquivo inteiro (ver build-fgb.yml).
+        big = [p for p in fgbs if p.stat().st_size > 500_000_000]
+        for cc, group in (("public,max-age=86400", [p for p in fgbs if p not in big]),
+                          ("private,max-age=86400", big)):
+            if group:
+                print(f"    gcloud storage cp --cache-control=\"{cc}\" \\\n"
+                      + "".join(f"        {p} \\\n" for p in group)
+                      + "        gs://telhas/viario/")
+        print("(e o espelho no R2, de onde o navegador lê — ver build-fgb.yml)")
     print("\ne confira VIARIO_FGB_URL / WATER_*_FGB_URL / OSM_FGB_* em web/app.js.")
 
 
@@ -791,6 +850,9 @@ def main() -> int:
                     help="também gera os dois FGBs de água (áreas + rios)")
     ap.add_argument("--layers", action="store_true",
                     help="também gera as camadas de mapa: hidro + cicloinfra (FGB)")
+    ap.add_argument("--sea", action="store_true",
+                    help="também gera o world-sea.fgb (polígonos de oceano do mundo, "
+                         "do osmdata.openstreetmap.de) — não usa o pbf nem o osmium")
     ap.add_argument("--no-viario", action="store_true",
                     help="pula o FGB do viário (~4,5 GB, o build mais caro) — "
                          "é o modo do job semanal, que só refaz água + camadas")
@@ -845,21 +907,28 @@ def main() -> int:
             return 1
         return 0
 
-    if not shutil.which("osmium"):
-        print("erro: osmium não está no PATH (brew install osmium-tool / "
-              "apt install osmium-tool).", file=sys.stderr)
+    if args.no_viario and not (args.water or args.layers or args.graph or args.sea):
+        print("erro: --no-viario sem --water/--layers/--graph/--sea não faria nada.",
+              file=sys.stderr)
         return 1
 
-    if args.no_viario and not (args.water or args.layers or args.graph):
-        print("erro: --no-viario sem --water/--layers/--graph não faria nada.",
-              file=sys.stderr)
+    # Só o mar (`--no-viario --sea`) não lê o extrato Geofabrik: nem baixa os
+    # ~4 GB do pbf, nem exige o osmium.
+    sea_only = args.sea and args.no_viario and not (args.water or args.layers or args.graph)
+    if not sea_only and not shutil.which("osmium"):
+        print("erro: osmium não está no PATH (brew install osmium-tool / "
+              "apt install osmium-tool).", file=sys.stderr)
         return 1
 
     IGNORE.mkdir(exist_ok=True)
     pbf = IGNORE / Path(args.extract).name
     built: list[Path] = []
     try:
-        download_pbf(args.extract, pbf)
+        if not sea_only:
+            download_pbf(args.extract, pbf)
+        if args.sea:
+            build_sea_fgb()
+            built.append(OUT_SEA)
         if not args.no_viario:
             build_viario_fgb(pbf, args.dst)
             built.append(args.dst)

@@ -181,6 +181,15 @@ one optional hosted deploy target, not a dependency.
   for "Cicloinfra OSM" (the collective's own cycle network —
   `cycle_network=BR:PedalHidrografico` relations, drawn over "Morros e Águas"
   — was DROPPED in v421: amora no longer builds, publishes or draws it);
+  **`--sea`** emits `world-sea.fgb`, the ocean as POLYGONS for the whole world
+  (~1.3 GB, ~53k features) — NOT from the Geofabrik extract but from
+  osmdata.openstreetmap.de's "water polygons" (osmcoastline's closed,
+  tile-split product of OSM's `natural=coastline`; the tiles OVERLAP by
+  0.001°, so a rasteriser must fill each feature as its own body), just
+  converted with one `ogr2ogr`; it needs neither the pbf nor osmium, so
+  `--no-viario --sea` runs alone. Its consumer is Simujaules' water mask
+  (`WATER_SEA_FGB_URL`): the two `--water` FGBs carry no sea, and FABDEM
+  stores the sea as valid 0 m terrain;
   **`--no-viario`** skips the expensive 4.5 GB viário build and is what the
   weekly CI job runs. **The browser reads the `.fgb` from R2**, not GCS:
   `https://fabdem.pedalhidrografi.co/viario/<name>.fgb` (the cameratopo
@@ -665,7 +674,7 @@ Key flows:
     used to boot with only the collective's network).
   - Rebuilt **weekly** by `.github/workflows/build-fgb.yml` (free: the repo
     is public). It reuses deploy.yml's keyless WIF and is inert until those
-    repo vars exist. It runs `--no-viario --water --layers`, so the 4.5 GB
+    repo vars exist. It runs `--no-viario --water --layers --sea`, so the 4.5 GB
     viário FGB and the baked graph are NOT in the weekly path —
     `workflow_dispatch` has a `viario` input for those.
   - **The SW keeps a block cache of FGB range requests** (`FGB_CACHE =
