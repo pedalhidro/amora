@@ -8,6 +8,17 @@
 # deixava memoria.html em branco na indexação); o Allow mais específico vence
 # o Disallow /data/ (longest match). Os .ttl em si não viram resultado de
 # busca: o backend manda X-Robots-Tag: noindex neles (ver get_data_ttl).
+# Crawlers de treino de IA ficam de fora por inteiro: em 11/2026 o
+# meta-externalagent sozinho fazia ~75% das requisições (milhares de /midia/
+# por dia) e o Amazonbot segurava a instância nas páginas de lista (5–20 s
+# cada), e no Cloud Run isso é CPU cobrada. Um grupo com nome próprio
+# substitui o grupo "*" pra aquele robô, então basta o Disallow: /. O
+# facebookexternalhit (prévia de link no WhatsApp/Instagram/Facebook) é outro
+# user-agent e continua liberado pelo grupo "*".
+User-agent: meta-externalagent
+User-agent: Amazonbot
+Disallow: /
+
 User-agent: *
 Allow: /
 Allow: /data/data_graphs.ttl
