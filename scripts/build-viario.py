@@ -94,9 +94,18 @@ relevo cru, e o ruído sub-célula inflaria h₊ (medido num trecho plano de
 route-level de 66 kJ). `--graph-src` aceita um `/vsicurl/https://…`, então
 dá pra assar sem baixar os ~4,5 GB do FGB (o índice serve só a bbox).
 
-Ver o bloco "Grafo pré-cozido" abaixo. Sobe com (-Z ok: é baixado inteiro):
+Ver o bloco "Grafo pré-cozido" abaixo. Sobe pro R2 (bucket `telhas`, que é quem
+responde por telhas.pedalhidrografi.co desde 11/2026 — o `gs://telhas` não é
+mais lido pelo navegador), guardado em gzip com Content-Encoding (ok: é baixado
+inteiro). Credenciais R2_TELHAS_* e R2_FABDEM_ENDPOINT no `.env`:
 
-    gcloud storage cp -Z ignore/sampa-viario-graph.bin gs://telhas/viario/
+    gzip -9 -c ignore/sampa-viario-graph.bin | \\
+      AWS_ACCESS_KEY_ID=$R2_TELHAS_ACCESS_KEY_ID \\
+      AWS_SECRET_ACCESS_KEY=$R2_TELHAS_ACCESS_SECRET AWS_REGION=auto \\
+      s5cmd --endpoint-url $R2_FABDEM_ENDPOINT pipe \\
+        --content-encoding gzip --content-type application/octet-stream \\
+        --cache-control "public,max-age=86400, no-transform" \\
+        s3://telhas/viario/sampa-viario-graph.bin
 """
 from __future__ import annotations
 import argparse
@@ -816,9 +825,17 @@ def bake_graph(fgb: Path | str, out: Path, graph_bbox: tuple[float, float, float
     raw_mb = out.stat().st_size / 1e6
     with open(out, "rb") as f:
         gz = len(gzip.compress(f.read(), 6)) / 1e6
-    print(f"\nok: {out.name} — {raw_mb:.0f} MB raw, ~{gz:.0f} MB gzip. Suba com:\n"
-          f"    gcloud storage cp -Z {out} gs://telhas/viario/sampa-viario-graph.bin\n"
-          f"(o -Z guarda gzip + Content-Encoding; ver VIARIO_GRAPH_URL em web/app.js)")
+    print(f"\nok: {out.name} — {raw_mb:.0f} MB raw, ~{gz:.0f} MB gzip. Suba pro R2 `telhas`\n"
+          f"(set -a; . ./.env; set +a — R2_TELHAS_* e R2_FABDEM_ENDPOINT):\n"
+          f"    gzip -9 -c {out} | \\\n"
+          f"      AWS_ACCESS_KEY_ID=$R2_TELHAS_ACCESS_KEY_ID \\\n"
+          f"      AWS_SECRET_ACCESS_KEY=$R2_TELHAS_ACCESS_SECRET AWS_REGION=auto \\\n"
+          f"      s5cmd --endpoint-url $R2_FABDEM_ENDPOINT pipe \\\n"
+          f"        --content-encoding gzip --content-type application/octet-stream \\\n"
+          f"        --cache-control \"public,max-age=86400, no-transform\" \\\n"
+          f"        s3://telhas/viario/sampa-viario-graph.bin\n"
+          f"(gzip + Content-Encoding, como o antigo `gcloud storage cp -Z`; ver\n"
+          f"VIARIO_GRAPH_URL em web/app.js)")
 
 
 def _print_upload_help(built: list[Path]) -> None:
