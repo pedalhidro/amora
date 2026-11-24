@@ -185,6 +185,34 @@ jobs:
             echo "→ R2: $(basename "$f") ($(stat -c %s "$f") B)"
           done
 
+      # Segundo espelho: bucket R2 `telhas`, que é quem responde por
+      # telhas.pedalhidrografi.co desde 11/2026 (antes era um proxy pro GCS).
+      # Sem isto o hostname serviria .fgb velhos a partir da rodada seguinte.
+      # Chave própria (o token do `fabdem` não escreve aqui): segredos
+      # R2_TELHAS_ACCESS_KEY_ID / R2_TELHAS_SECRET_ACCESS_KEY; o endpoint é o
+      # mesmo da conta (R2_ENDPOINT). Sem eles, pula com aviso.
+      - name: Espelhar os .fgb no R2 (telhas)
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_TELHAS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_TELHAS_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          AWS_DEFAULT_REGION: auto
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+        run: |
+          set -euo pipefail
+          if [ -z "${R2_ENDPOINT:-}" ] || [ -z "${AWS_ACCESS_KEY_ID:-}" ]; then
+            echo "::warning::Segredos R2_TELHAS_* ausentes — telhas.pedalhidrografi.co fica com a versão anterior"
+            exit 0
+          fi
+          for f in ignore/south-america-*.fgb; do
+            if [ "$(stat -c %s "$f")" -gt 500000000 ]; then cc="private, max-age=86400"; else cc="public, max-age=86400"; fi
+            aws s3 cp "$f" "s3://telhas/viario/$(basename "$f")" \
+              --endpoint-url "$R2_ENDPOINT" --only-show-errors \
+              --content-type application/octet-stream --cache-control "$cc"
+            echo "→ R2 telhas: $(basename "$f") ($(stat -c %s "$f") B)"
+          done
+
       # Guarda contra a regressão mais fácil de cometer aqui: se algum objeto
       # sair com Content-Encoding, os range requests param de funcionar e as
       # camadas quebram silenciosamente no cliente.
